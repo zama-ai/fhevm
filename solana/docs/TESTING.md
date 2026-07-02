@@ -24,7 +24,7 @@ Tests live in three places:
 
 Heavy emphasis on **negative tests**: most cases assert that a malformed account, an extra meta, a
 wrong authority, or stale handle metadata is *rejected*. That is the point of the suite, not an
-afterthought — see the hardening catalog in [`DEVELOPMENT_HISTORY.md`](./DEVELOPMENT_HISTORY.md).
+afterthought.
 
 ## Mollusk Runtime Coverage
 

@@ -1,15 +1,9 @@
 # EVM → Solana Parity Note
 
-> Partially superseded (reconciliation, June 2026). Rows mentioning `verify_input_and_bind`, the input
-> verifier set, the Ed25519 KMS cert, or the native-v0 "don't reuse EVM routing" path are stale: input
-> binding is now on-chain secp256k1 over the coprocessor attestation, and decrypt reuses the Gateway
-> V2 / EVM stack with on-chain secp256k1 cert verification. See `DESIGN_DECISIONS.md` DD-007, DD-012,
-> DD-020–DD-024, DD-026–DD-027 for the current view.
-
 This note maps each EVM-side capability of the Zama confidential-token + FHEVM host design to
 its Solana equivalent in this PoC, or records a justified divergence. It is grounded in direct
 code review of `ERC7984.sol`, `host-contracts/`, `gateway-contracts/`, and the Solana programs +
-adapters (`fhevm/solana/programs/{zama-host,confidential-token,confidential-token-receiver}`,
+adapters (`fhevm/solana/programs/{zama-host,confidential-token,confidential-deposit-app}`,
 `fhevm/coprocessor/.../host-listener`, `fhevm/kms-connector`).
 
 Legend:
@@ -24,8 +18,7 @@ Legend:
   Gateway registry, keygen, payment, live transport).
 
 Design rationale for the divergences below is recorded in
-[`DESIGN_DECISIONS.md`](./DESIGN_DECISIONS.md) (DD-001..DD-013), RFC 024, and
-[`TRANSIENT_ALLOW.md`](./TRANSIENT_ALLOW.md).
+[`DESIGN_DECISIONS.md`](./DESIGN_DECISIONS.md) (DD-001..DD-030) and RFC 024.
 
 ---
 
@@ -37,11 +30,11 @@ Design rationale for the divergences below is recorded in
 | `confidentialTransfer(to, externalEuint64, inputProof)` | transfer a freshly verified external input | `confidential_transfer(amount_attestation)` — the attestation is consumed inline as the `fhe_eval` `FheEvalOperand::VerifiedInput` operand (the Solana `FHE.fromExternal` analog): verified in-frame, transient-allowed, no persistent input ACL | **MET** (DD-007: verify ≠ allow; caller-is-contract enforced via `attestation.contract_address == compute_subject`) |
 | `confidentialTransferFrom(from,to,euint64)` | operator transfer; `require isOperator` + `isAllowed`; `allowTransient(transferred, sender)` | no Solana production equivalent | **INTENTIONAL GAP** — operator/delegated transfer APIs were removed to simplify authority and reduce attack surface |
 | `confidentialTransferFrom(from,to,externalEuint64,proof)` | operator transfer of external input | no Solana production equivalent | **INTENTIONAL GAP** — the owner-authorized `confidential_transfer(amount_attestation)` fromExternal path is the supported route |
-| `confidentialTransferAndCall(...)` ×4 | transfer then call `onConfidentialTransferReceived`; refund `select(success,0,sent)`; `transferred = sent - refund`; transient-allow to sender | `confidential_call_transfer_receiver` (hook, returns encrypted success handle) → `confidential_prepare_transfer_callback` (compute refund) → `confidential_finalize_transfer_callback` (credit refund, record transfer) | **DIVERGENCE** — split receiver-hook + settlement (DD-011: single-instruction callback exceeds SBF heap/CPI depth); hook causality + replay markers enforced explicitly |
+| `confidentialTransferAndCall(...)` ×4 | transfer then call `onConfidentialTransferReceived`; refund `select(success,0,sent)`; `transferred = sent - refund`; transient-allow to sender | not ported; a receiving app exposes its own instruction that CPIs `confidential_transfer` with the user as sole signer (see `confidential-deposit-app`) | **INTENTIONAL GAP** (DD-011) — the callback is an EVM workaround for contracts not observing incoming transfers; Solana propagates signer authority through CPI. Token-2022 transfer hooks are rejected as a substitute (veto-only, not receiver callbacks) |
 | `setOperator(operator, until)` | time-bounded operator approval (`uint48` deadline); `OperatorSet` event | no Solana production equivalent | **INTENTIONAL GAP** — no operator rows or operator events |
 | `isOperator(holder, spender)` | `holder==spender \|\| now <= until` | no Solana production equivalent | **INTENTIONAL GAP** — holder self-authority is handled by owner-signed paths |
 | `requestDiscloseEncryptedAmount(euint64)` | `makePubliclyDecryptable` + event; `require isAllowed(amount, sender)` | `request_disclose_balance` / `request_disclose_amount` → host `allow_for_decryption`; emits `*DisclosureRequestedEvent` | **MET** (DD-010: label-scoped — balance vs amount paths distinct) |
-| `discloseEncryptedAmount(euint64, cleartext, proof)` | `FHE.checkSignatures` + `AmountDisclosed` event | `disclose_balance` / `disclose_amount(cleartext)` — verify ACL + material commitment + `public_decrypt` + a preceding Ed25519 KMS-cert instruction | **MET** (DIVERGENCE: Ed25519 instructions-sysvar cert vs EIP-712 `checkSignatures`) |
+| `discloseEncryptedAmount(euint64, cleartext, proof)` | `FHE.checkSignatures` + `AmountDisclosed` event | `disclose_balance_secp` / `disclose_amount_secp(cleartext)` — verify ACL + material commitment + `public_decrypt` + on-chain secp256k1 KMS-cert verification against the witness-pinned `kms_context` (consume-once) | **MET** (DD-021/DD-022: mirrors EVM `KMSVerifier` — same threshold cert verifies on both sides) |
 | `confidentialTotalSupply()` view | encrypted total supply handle | `Mint` state total-supply handle (born in `initialize_mint`; rotated by `confidential_burn`) — read off-chain | **MET** (DIVERGENCE: account read, not a view call) |
 | `confidentialBalanceOf(account)` view | encrypted balance handle | `ConfidentialTokenAccount.balance_handle` (+ `balance_acl_record`, `next_balance_nonce_sequence`; RFC 024 token shape) — read off-chain | **MET** (DIVERGENCE: account read) |
 | `name/symbol/decimals(=6)/contractURI` views | metadata | mint/app config; `wrap_usdc` ties decimals to the underlying SPL mint | **DIVERGENCE** (app config / off-chain reads) |
@@ -49,7 +42,7 @@ Design rationale for the divergences below is recorded in
 | `_burn(from, amount)` | decrease balance + total supply | `confidential_burn` (rotate balance + total supply) + `redeem_burned_amount` (release underlying from vault — KMS-cert gated, public-decrypt gated) | **MET** + Solana-only redeem leg (no ERC7984 analogue; wrapper needs underlying release) |
 | `_update` safe-math (`tryIncrease`/`tryDecrease`, `select`, allow/allowThis) | overflow/underflow-safe FHE balance update, conditional transfer of `select(success, amount, 0)` | `confidential-token/src/fhe.rs` + host `fhe_binary_op*`/`fhe_ternary_op_*` (add/sub/ge/select) + producer ACL birth | **PARTIAL** — `tryDecrease` reproduced (transfer/burn debit: `ge` → `sub` → `select(success, candidate, balance)`); `tryIncrease` NOT reproduced — the wrap/mint total-supply increase and the recipient credit use a plain `add`. Total-supply overflow is instead bounded by the 1:1 SPL backing (a real `u64` mint), per the `_mint` DIVERGENCE above. Output ACL via authorized producer paths |
 | `FHE.allow / allowThis` | durable ACL grant to user / contract | output `*_and_bind` producer paths (births canonical `AclRecord` with subjects) + `allow_acl_subjects` (append) | **MET** |
-| `FHE.allowTransient(transferred, sender)` | transaction-local grant | instruction-local `AllowedLocal` value within one `fhe_eval`, or CPI signer propagation | **DIVERGENCE** (no tstore; DD-008 / TRANSIENT_ALLOW.md) |
+| `FHE.allowTransient(transferred, sender)` | transaction-local grant | instruction-local `AllowedLocal` value within one `fhe_eval`, plus CPI signer propagation within one instruction | **DIVERGENCE** (no tstore; DD-008) |
 | `ConfidentialTransfer` / `OperatorSet` / `AmountDisclose(d/Requested)` events | indexing | token-local + host events (`AclAllowedEvent`, transfer/disclosure events); no operator events | **PARTIAL** (DD-003: events are indexing hints, not authorization) |
 | self-transfer | (EVM updates regardless) | `confidential_transfer` no-op when from==to (no handle rotation, no output ACL) | **MET** (RFC 024 explicit; avoids useless historical handles) |
 
@@ -64,11 +57,11 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 |---|---|---|---|
 | `ACL.allow(handle, account)` | persistent grant; caller must be allowed | `allow_acl_subjects` — authority `Signer` + `ACL_ROLE_GRANT` on record + canonical PDA + deny-list + pause; append-only | **MET** (stricter: explicit grant role) |
 | `ACL.allowForDecryption(handles[])` | mark publicly decryptable | `allow_for_decryption` — dedicated `ACL_ROLE_PUBLIC_DECRYPT`, never set at birth, idempotent | **MET** (DIVERGENCE: per-handle; DD-005) |
-| `ACL.allowTransient(handle, account)` | tx-local grant | no durable analog; instruction-local `AllowedLocal` within one `fhe_eval`, or CPI signer propagation | **DIVERGENCE** (no tstore; DD-008) |
+| `ACL.allowTransient(handle, account)` | tx-local grant | no durable analog; instruction-local `AllowedLocal` within one `fhe_eval`, plus CPI signer propagation within one instruction | **DIVERGENCE** (no tstore; DD-008) |
 | `ACL.isAllowed(handle, account)` | transient OR persistent | `assert_acl_record` / `assert_record_subject_role(ACL_ROLE_USE)` | **MET** |
 | `ACL.isAllowedForDecryption(handle)` | public-decrypt flag | `AclRecord.public_decrypt` | **MET** |
-| `ACL.persistAllowed` / `allowedTransient` | read pair | inline subject lookup + `AclPermission` overflow PDA / sealed session | **MET** / **DIVERGENCE** |
-| `ACL.cleanTransientStorage()` | wipe tx transient (AA bundling) | `close_transient_session` (per-session rent reclaim) | **MET** (per-session) |
+| `ACL.persistAllowed` / `allowedTransient` | read pair | inline subject lookup + `AclPermission` overflow PDA; transient = instruction-local `AllowedLocal` | **MET** / **DIVERGENCE** |
+| `ACL.cleanTransientStorage()` | wipe tx transient (AA bundling) | nothing to reclaim — `AllowedLocal` values are instruction-scoped and never persisted (the one-shot `TransientSession` account tier was removed, DD-008) | **DIVERGENCE** (no durable transient state) |
 | `ACL.delegate/revokeForUserDecryption` | user-decrypt delegation lifecycle | `delegate_for_user_decryption` / `revoke_...` — PDA per `(delegator,delegate,app)`, slot-based expiry, same-slot double-update guard, wildcard-delegate rejected | **MET** |
 | `ACL` deny list (`blockAccount`/`isAccountDenied`) | owner deny list | `set_deny_subject` + `DenySubjectRecord`, gated into grant paths | **MET** |
 | `ACL` pause/owner/UUPS | pauser role, 2-step ownership, upgrade | single `admin` (`set_host_pause` etc.) | **DIVERGENCE** (admin signer) + **PRODUCT-OPEN** (BPF upgrade authority handles program upgrade) |
@@ -77,14 +70,14 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 | `FHEVMExecutor.fheIfThenElse(select)` | ternary; ebool control, branch type-checked | `fhe_ternary_op_and_bind_output` op=IfThenElse | **MET** |
 | `FHEVMExecutor.fheRand/fheRandBounded` | random / bounded random | `fhe_rand_and_bind` / `fhe_rand_bounded_and_bind` (pow2+≤max bound check) | **MET** (DIVERGENCE: slot/bankhash+nonce seed vs counterRand+blockhash) |
 | `FHEVMExecutor.trivialEncrypt` | plaintext → ct handle | `trivial_encrypt_and_bind` | **MET** |
-| `FHEVMExecutor.verifyCiphertext` (input) | verify signed/proved input, allowTransient | `verify_input_and_bind` (adjacent Ed25519 pre-ix quorum from the active host verifier set over canonical `SolanaInputProof`+intent) + test-only `mock_input_verified_and_bind` | **MET** (DIVERGENCE: verifier-set quorum vs EIP-712 coprocessor threshold; DD-007) |
-| `FHEVMExecutor` batched/expression compute | — | `fhe_eval` (bounded mixed-step eval; `MAX_FHE_EVAL_OPS=16`) | **MET** (Solana-native batching to limit CPI depth; DD-008 batch option; supports mixed binary/ternary/birth transient composition plus durable-only verified input steps) |
+| `FHEVMExecutor.verifyCiphertext` (input) | verify signed/proved input, allowTransient | `fhe_eval` `FheEvalOperand::VerifiedInput` operand — in-frame secp256k1 recover + threshold-check of the coprocessor EIP-712 `CiphertextVerification` attestation, asserts `contract_chain_id == host chain id`; transient-allowed, no persistent ACL | **MET** (DD-007: verify ≠ allow; same coprocessor EIP-712 trust root as EVM) |
+| `FHEVMExecutor` batched/expression compute | — | `fhe_eval` (bounded mixed-step eval; `MAX_FHE_EVAL_OPS=16`) | **MET** (Solana-native batching to limit CPI depth; DD-008; mixed binary/ternary/trivial-encrypt/rand steps with `AllowedLocal` transients, and `VerifiedInput` operands) |
 | operand ACL + scalar rule | encrypted operand needs ACL; scalar exempt | `assert_record_subject_role(ACL_ROLE_USE)` per operand; scalar RHS rejects a permission witness | **MET** (RFC 024 scalar rule; DD-006) |
 | handle byte-layout (ver/type/chainid/computed-marker) + entropy-seeded derivation | symbolic-exec handle | identical layout; `sha256(domain, op, operands, programID, chainid, prev_bank_hash, ts)` + nonce-bound variant for durable outputs | **MET** (DIVERGENCE: sha256 vs keccak, bankhash vs blockhash → handles not cross-chain-interoperable) |
 | compute identity = `msg.sender` | implicit caller | explicit `compute_subject: Signer` checked `is_signer && is_allowed` | **DIVERGENCE** (no `msg.sender`; RFC 024 compute-signer) |
 | `FHEVMExecutor` op breadth: Mul/Div/Rem/BitAnd/Or/Xor/Shl/Shr/Rotl/Rotr/Eq/Ne/Gt/Lt/Le/Min/Max, Neg/Not, cast, Sum/IsIn | full opcode catalog | only Add/Sub/Ge/IfThenElse shipped | **SCOPE** — not Solana-constrained; mechanically extensible (enum + per-op type-gate table + handle hash already op-parametrized + coprocessor map arm + tests); **not used by ERC7984** |
-| `HCULimit` (per-op/tx/block/depth homomorphic-compute caps) | gas-like metering | none on-chain; relies on Solana compute-budget + op-count/collection caps | **DIVERGENCE** (compute-budget) — see fragility #3 |
-| `KMSVerifier` (on-chain decrypt-sig threshold verify) | verify KMS sigs on-chain | none on-chain; host exposes witnesses (ACL record + material commitment + `public_decrypt`) for an external verifier | **PRODUCT-OPEN** (DD-012) |
+| `HCULimit` (per-op/tx/block/depth homomorphic-compute caps) | gas-like metering | `HostConfig::max_hcu_per_tx` / `max_hcu_depth_per_tx` summed over an `fhe_eval` plan (`0` = off), plus Solana compute-budget + op-count/collection caps | **DIVERGENCE** (per-plan cap + compute-budget vs per-block metering) — see fragility #3 |
+| `KMSVerifier` (on-chain decrypt-sig threshold verify) | verify KMS sigs on-chain | on-chain secp256k1: `eip712::verify_kms_public_decrypt` recovers EVM KMS signers and threshold-checks them against the witness-pinned `KmsContext` (rejects high-s) | **MET** (DD-021: mirrors EVM `KMSVerifier`) |
 | `ProtocolConfig` / `KMSGeneration` / `PauserSet` (role set) | KMS node/threshold registry, keygen, pauser role set | none (subset in `HostConfig`: authorities/chain_id/flags) | **PRODUCT-OPEN** |
 | `FheType` (86 variants) | type enum | supported set Bool/Uint8..Uint256 (covers token + shipped ops) | **MET (partial)** / **SCOPE** (signed/large/string types) |
 
@@ -94,10 +87,10 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 
 | EVM gateway capability | Semantics | Solana equivalent | Status |
 |---|---|---|---|
-| `Decryption.publicDecryptionRequest/Response` | request + threshold-consensus public decrypt | token `request_disclose_*` (sets `public_decrypt`); connector native-v0 PUBLIC mode + `verify_solana_kms_response_v0`; on-chain `disclose_*` consumes Ed25519 cert | **DIVERGENCE** (DD-012) |
-| `Decryption.userDecryptionRequest` + EIP-712 | user-signed, contract-scoped, validity window | connector native-v0 DIRECT_SCOPED (`verify_native_direct_request`) — owner-signed, ACL-domain-scoped | **DIVERGENCE** (Ed25519 over keccak domain-sep vs EIP-712) |
-| `Decryption.delegatedUserDecryptionRequest` + RFC-017 wildcard | delegate-signed; wildcard contract scope | native-v0 DELEGATED_SCOPED / DELEGATED_WILDCARD_SCOPED; `UserDecryptionDelegation` PDA; wildcard = `[0xff;32]` app-context sentinel | **MET** (semantics) / **DIVERGENCE** (mechanism) |
-| `Decryption.userDecryptionResponse` (per-share sigs → threshold) | threshold response | native-v0 `verify_response_certificate` (sorted distinct Ed25519 signer set, signer-set hash, request binding) | **DIVERGENCE** |
+| `Decryption.publicDecryptionRequest/Response` | request + threshold-consensus public decrypt | token `request_disclose_*` (sets `public_decrypt`, creates a `DisclosureRequest` witness PDA); on-chain `disclose_*_secp` consumes a secp256k1 KMS cert verified against the witness-pinned `KmsContext` | **MET** (DD-012/DD-021/DD-022: same EVM KMS trust model, verified on-chain) |
+| `Decryption.userDecryptionRequest` + EIP-712 | user-signed, contract-scoped, validity window | routed through the unified Gateway V2 path via the typed `userDecryptionRequestSolana(HandleEntry[], UserDecryptionRequestSolanaPayload)` entrypoint; chain-aware validator branches on `contracts_chain_id` | **MET** (DD-012/DD-026/DD-027: reuses the Gateway/EVM stack, typed Solana fields) |
+| `Decryption.delegatedUserDecryptionRequest` + RFC-017 wildcard | delegate-signed; wildcard contract scope | `UserDecryptionDelegation` PDA per `(delegator,delegate,app)`, slot expiry, wildcard = `[0xff;32]` app-context sentinel; carried in the same Gateway V2 Solana user-decrypt payload | **MET** (semantics) / **DIVERGENCE** (PDA mechanism) |
+| `Decryption.userDecryptionResponse` (per-share sigs → threshold) | threshold response | Gateway V2 response path; connector verifies the KMS threshold response | **MET** (DD-012) |
 | `checkDecryptionReady` (material added) | all handles have ciphertext material | `verify_material_commitment` (state==COMMITTED + canonical PDA) / on-chain `assert_material_commitment` | **MET** |
 | `CiphertextCommits.addCiphertextMaterial` | multi-coprocessor consensus adds (keyId, ctDigest, snsDigest) | `commit_handle_material` — single `material_authority` writes one-shot `HandleMaterialCommitment`, seals ACL record | **DIVERGENCE** (consensus → single authority; consensus is off-chain) |
 | `checkCiphertextMaterial` | material-present check | `commitment.state==COMMITTED` + hash binding | **MET** |
@@ -105,8 +98,8 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 | `HandleOps`/`FHETypeBitSizes` | parse chainId/fheType; bit-size table | mirrored exactly in connector (`solana_native_handle_chain_id`, `*_fhe_type_encrypted_bits`) | **MET** |
 | `MAX_DECRYPTION_REQUEST_BITS=2048` | per-request cleartext cap | `SOLANA_NATIVE_MAX_ENCRYPTED_BITS_PER_REQUEST=2048` enforced | **MET** |
 | `Structs` (Sns material, delegation, pairs) | cross-contract DTOs | witness structs + on-chain `AclRecord`/`UserDecryptionDelegation`/`HandleMaterialCommitment` | **MET** (re-modeled) |
-| native-v0 request/response transport loop + publisher | (the eventual EVM-bypass) | implemented + unit-tested (`solana_{request,live,native,response,flow,store,replay}.rs`) but **not wired into worker/tx-sender binaries**; `SolanaNativeResponsePublisher` target unimplemented | **PRODUCT-OPEN** (DD-012) |
-| `GatewayConfig` (KMS/coprocessor/host-chain/threshold registry) | on-chain registry | connector reads registry off-chain (`Config`); `HostConfig` holds authorities/flags plus the active input verifier-set pointer | **PRODUCT-OPEN** |
+| unified decrypt routing | (Solana as a Gateway host chain) | Solana is registered as a host chain (bytes32 ACL = the `zama_host` program id, high-bit chain id); decrypt reuses the Gateway V2 path rather than a parallel native stack. Residual `native-v0` connector library/store code exists but is not the chosen path (DD-012) | **MET** (unified) / superseded native-v0 subsystem |
+| `GatewayConfig` (KMS/coprocessor/host-chain/threshold registry) | on-chain registry | connector reads registry off-chain (`Config`); `HostConfig` holds authorities/flags, the single coprocessor input signer, and the current `KmsContext` pointer | **PRODUCT-OPEN** |
 | `KMSGeneration` (keygen/crsgen ceremony) | key/CRS lifecycle | none (referenced only by `key_id`) | **PRODUCT-OPEN** |
 | `ProtocolPayment` ($ZAMA fees) | per-request fee | none (rent/tx fees only) | **PRODUCT-OPEN** |
 
@@ -120,18 +113,18 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
   subscriber is wired (PRODUCT-OPEN, DD-003). Only Add/Sub/Ge / IfThenElse mapped (tracks §2 SCOPE).
 - **KMS connector** (`kms-connector/crates/kms-worker/src/core/solana_*.rs` and
   `kms-connector/crates/tx-sender/src/core/solana_native.rs`): witness decoders +
-  `SolanaAclVerifier` (canonical-PDA, owner, hash-domain, role checks). `cargo check
-  -p kms-worker` → exit 0; **100+ Solana unit tests**. The live Gateway decryption processor refuses
-  Solana ACL witnesses fail-closed because requester-supplied `extraData` is not chain truth; the
-  native-v0 RPC-verified flow is implemented as a library/store boundary but is **not wired into the
-  worker or tx-sender binaries**. Account layouts are hand-mirrored 1:1 against
+  `SolanaAclVerifier` (canonical-PDA, owner, hash-domain, role checks). Decrypt reuses the unified
+  Gateway V2 path with a typed Solana user-decrypt entrypoint and on-chain secp256k1 cert verification
+  (DD-012/DD-021/DD-026); the older `native-v0` request/response subsystem remains as library/store
+  code but is not the chosen path and is not wired into the worker/tx-sender binaries. Account layouts
+  are hand-mirrored 1:1 against
   `zama-host/src/state/` (verified) but **version-pinned / no compile-time link** — a
   layout/seed/hash-domain/EVENT_VERSION change in zama-host requires editing the connector decoder,
   bumping listener event constants, and regenerating the coprocessor IDLs/ABI golden manifest.
 
-**Adapters are present and integrated at the PoC boundary.** Live transport (Geyser provider,
-native-v0 binary wiring, native response publisher, live KMS Core dispatch) is PRODUCT-OPEN by
-design.
+**Adapters are present and integrated at the PoC boundary.** Live transport (production Geyser
+provider, full KMS-connector wiring beyond the harness, and wiring the Solana poller into the EVM
+reorg substrate) is PRODUCT-OPEN by design (DD-024/DD-025/DD-028).
 
 ---
 
@@ -148,27 +141,25 @@ connector's canonical-PDA + material-binding verification.
 
 **Fragile / attention for a security pass (PoC shortcuts, not correctness bugs):**
 
-1. **Input verification trust is now a host verifier set**, not a single Ed25519 key. The on-chain
-   path requires an N-of-M quorum over verifier-set-bound input messages. Remaining work is the
-   external proof/transciphering service behind those verifier signatures.
-2. **Test/mock bypass gates** (`mock_input_verified_and_bind`, `set_test_shims_enabled`,
-   `set_mock_input_enabled`, `test_emit_*`). The two that can mint/relax authorization are now
-   **chain-id confined**: `mock_input_verified_and_bind` and the zero birth-entropy fallback only run
-   on `SOLANA_POC_CHAIN_ID` (`HostConfig::mock_input_allowed` / `zero_birth_entropy_allowed`), so an
-   admin cannot enable them on a deployed chain regardless of the flags (DD-014). The residual is
-   `test_emit_*`, which only emits events and mutates no state; it should still be forced-off (ideally
-   compiled-out) for mainnet.
-3. **No on-chain HCU / complexity metering** (the EVM `HCULimit` plane has no analogue). Off-chain
-   workers get no on-chain cost signal beyond the CU budget + op-count/collection caps. Largest
-   semantic gap by surface area; relevant to DoS/cost-bounding.
-4. **On-chain disclosure/redemption now uses token-scoped verifier sets and request witnesses.**
-   The listener persists finalized account fetch intents and exposes claim/store/complete helpers for
-   finalized witnesses. The residual risk is off-chain integration: a deployed fetcher and token-aware
-   KMS certificate publication path still need to be wired before the flow is end-to-end production
-   ready.
-5. **Gateway-PoC witness helpers and native-v0 verification coexist in this branch.** Gateway-PoC
-   `extraData` is branch-local scaffolding; native-v0 is the production-shaped path. Keeping both is a
-   maintenance hazard until the PoC helper path is retired from tests/docs.
+1. **Input verification trusts a single coprocessor signer at threshold 1** (`HostConfig::coprocessor_signer`),
+   not yet a registered n-of-m set — the threshold machinery (`eip712::verify_threshold`) exists but
+   input verification uses the single-signer path. Remaining work is the registered signer set
+   (FUTURE_DESIGN §1) and the real proof/transciphering service behind the attestation.
+2. **Test/mock bypass gates** (`set_test_shims_enabled`, `test_emit_*`) are `#[cfg(feature = "poc")]`
+   — compiled out of default/production builds. The surviving state relaxation, the zero birth-entropy
+   fallback, is additionally confined to `SOLANA_POC_CHAIN_ID` via `HostConfig::zero_birth_entropy_allowed`,
+   so it cannot weaken birth entropy on a deployed chain regardless of flags (DD-014). The former
+   `mock_input_verified_and_bind` input short-circuit was removed entirely.
+3. **No per-block HCU / complexity metering.** The host caps total and critical-path HCU per
+   `fhe_eval` plan (`HostConfig::max_hcu_per_tx` / `max_hcu_depth_per_tx`, `0` = off) plus the Solana
+   compute budget, but there is no EVM-style per-block `HCULimit` plane. Relevant to DoS/cost-bounding.
+4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification + request witnesses.**
+   The listener persists finalized account fetch intents and exposes claim/store/complete helpers. The
+   residual risk is off-chain integration: a deployed fetcher and KMS certificate publication path
+   still need to be wired before the flow is end-to-end production ready.
+5. **The Solana poller is not wired into the EVM reorg substrate** (DD-025/DD-028): it polls at
+   `confirmed` and inserts directly, bypassing the block-status machine. Reorg correctness is an open
+   gap and the residual `native-v0` connector code is dead scaffolding to retire.
 6. **Hand-mirrored, version-pinned ABI across repos with no compile-time link** (connector decoders +
    vendored coprocessor IDL). Lengths are checked, but a same-length field reorder in `AclRecord`
    would not be caught at build time. Event versions are now pinned by
@@ -178,31 +169,30 @@ connector's canonical-PDA + material-binding verification.
    handle birth returns `PreviousBankHashUnavailable` rather than substituting a zero hash. The
    zero-hash fallback (intended only for local Mollusk bootstrap) is confined to `SOLANA_POC_CHAIN_ID` via
    `HostConfig::zero_birth_entropy_allowed`, so it cannot weaken birth entropy on a deployed chain
-   (DD-014). Bank-hash + timestamp entropy remains the current policy while native-v0 handle birth
-   tradeoffs are still open (DD-015).
+   (DD-014). Bank-hash + timestamp entropy is the resolved policy (keep per-block entropy, DD-015).
 8. **Material commitment is one-shot/irreversible** with single-authority blast radius — a wrong seal
    permanently bricks a handle's decryptability (matches EVM "no delete" but without consensus).
-9. **Transient capability `max_uses`/`max_entries` are silently pinned to 1** though the ABI advertises
-   them as configurable — a client foot-gun (conservative, safe default).
 
 None of the fragilities are correctness defects in the implemented paths (the negative-test suite is
 extensive); they are the expected boundary between a PoC and a production deployment, and every one
-maps to an item already tracked as PRODUCT-OPEN in `DESIGN_DECISIONS.md` / the issue ledger.
+maps to an item tracked as PRODUCT-OPEN in `DESIGN_DECISIONS.md` / `FUTURE_DESIGN.md`.
 
 ---
 
 ## 6. Net parity verdict
 
 - **Confidential token (ERC7984):** intentionally **not fully ported**. The owner-authorized
-  transfer, transfer-and-call settlement, wrap/burn/redeem, disclosure, and encrypted-balance flows
-  cover the Solana PoC surface; ERC7984 operator/delegated-transfer APIs and Solidity view-style
-  calls are deliberate gaps or account-read equivalents.
-- **FHEVM host authorization model** (ACL, executor authorization, input binding, transient,
+  transfer, wrap/burn/redeem, disclosure, and encrypted-balance flows cover the Solana PoC surface;
+  ERC7984 operator/delegated-transfer APIs are deliberate gaps, transfer-and-call is replaced by
+  app-driven CPI composition (DD-011), and Solidity view-style calls are account-read equivalents.
+- **FHEVM host authorization model** (ACL, executor authorization, input verification, transient,
   decrypt release, delegation, material commitment): faithfully ported, frequently stricter.
 - **Constraint-driven divergences** are all intentional and documented (no tstore, no `msg.sender`,
-  no `ecrecover`/EIP-712, shallow CPI, compute-budget vs HCU, account-witnesses vs storage reads).
+  shallow CPI, per-plan HCU cap vs per-block metering, account-witnesses vs storage reads). Input and
+  KMS-cert verification use on-chain secp256k1 recovery — the same EIP-712 trust roots as EVM.
 - **SCOPE** items (executor opcode breadth, full FheType set) are not Solana-limited and not needed
   by the token; mechanically extensible.
-- **PRODUCT-OPEN** items (on-chain KMSVerifier/ProtocolConfig/KMSGeneration/GatewayConfig/payment,
-  live native-v0 worker dispatch + tx-sender publisher, Geyser provider, external input proof
-  service) are off-chain services or future programs by design (DD-012, DD-003, DD-007).
+- **PRODUCT-OPEN** items (`ProtocolConfig`/`KMSGeneration`/`GatewayConfig`/payment, registered
+  coprocessor signer set, production Geyser provider + reorg wiring, full KMS-connector wiring,
+  external input proof service) are off-chain services or future work by design (DD-012, DD-003,
+  DD-007, DD-025).

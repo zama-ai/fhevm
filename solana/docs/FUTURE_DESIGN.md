@@ -1,0 +1,87 @@
+# Future Design Requirements
+
+Forward requirements and decisions the Solana port defers. Each item states what is built today and
+what production needs, phrased as a requirement or an open decision — not a narrative. Cross-refs are
+to [`DESIGN_DECISIONS.md`](./DESIGN_DECISIONS.md).
+
+## 1. Coprocessor signer set: single signer → registered n-of-m
+
+Today `HostConfig` holds one `coprocessor_signer: [u8; 20]` verified at threshold 1
+(`state/host_config.rs`). Input-attestation verification recovers that single EVM address and checks
+it (`eip712::verify_coprocessor_input`).
+
+**Requirement:** move input trust to a registered n-of-m coprocessor signer set. The threshold
+machinery already exists — `eip712::verify_threshold` (distinct-signer counting, high-s rejection) is
+used for the KMS cert path and should back input verification too — and the shape to follow is the
+`KmsContext` PDA (`state/kms_context.rs`: a `context_id`-keyed signer set + per-operation thresholds,
+synced from the EVM registry). Decision needed: whether input signers get their own context PDA or
+share the KMS context surface.
+
+## 2. Canonicalize the compute-authority-PDA binding convention
+
+The host enforces only `attestation.contract_address == compute_subject` (the msg.sender analog).
+The convention that `compute_subject` is an app compute-authority PDA (e.g. `[b"fhe-compute", mint]`)
+is **app policy**, not protocol-enforced. `EvalBuilder` cannot assert it because `compute_subject` is
+only known at eval-execution time.
+
+**Decision needed:** lift the PDA-binding discipline to a protocol-level assertion, or codify it as an
+SDK guardrail (documented convention + `zama-fhe` helper), or leave it as app responsibility. If
+protocol-level, define how the host recognizes an app's canonical compute PDA without coupling to a
+specific seed layout.
+
+## 3. Operator / delegated-transfer model
+
+EVM `setOperator` / `confidentialTransferFrom` are **deliberately absent** (DD-009): one owner-signed
+transfer authority, no operator rows. This is an intentional ERC7984 parity gap, not a Solana
+constraint.
+
+**Revisit** for RFQ / third-party settlement use cases. Any reintroduction must be a separate,
+signature-backed authority design — not hidden operator compatibility in the token surface.
+
+## 4. Arbitrary-receiver push payments
+
+There is **no Solana analog by design**. The EVM transfer-and-call callback (a contract can't observe
+an incoming transfer, so the token calls it back) was removed (DD-011); Solana apps drive their own
+atomic `deposit` that CPIs `confidential_transfer` (see `confidential-deposit-app`).
+
+**Requirement, if ever needed:** the only Solana idiom for token-driven receiver logic is a
+Token-2022-style transfer hook, which is a **veto-only** primitive (it can reject a transfer, not run
+privileged receiver logic). It is not a receiver callback and must not be documented as one.
+
+## 5. Gateway RFC-021 reconciliation and host-listener event surface
+
+The Solana input path uses the gateway `InputVerification.verifyProofRequestSolana` +
+`VerifyProofRequestSolana` bytes32 entrypoint (kept, not renamed to V2 — DD-030). User-decrypt uses the
+typed `userDecryptionRequestSolana` entrypoint (DD-026).
+
+**Requirement:** keep the PoC ↔ RFC-021 mirror in sync as the gateway evolves, and wire the Solana
+host-listener into the EVM block-status reorg substrate (`host_chain_blocks_valid` +
+`cmd/block_history.rs`) — today the Solana poller polls at `confirmed` and inserts directly, bypassing
+reorg handling (DD-024, DD-025, DD-028). Decide the finality-gate placement (DD-025 options A–D) and
+the decrypt-release commitment level (`finalized` vs `confirmed`).
+
+## 6. Dead enum variants kept for Anchor discriminants
+
+These variants are retained only to preserve Anchor error/enum discriminant ordering; their
+instructions were removed with the transfer-and-call callback flow (DD-011):
+
+- `zama_host` errors: `InputBindUserNotSubject`
+- `confidential_token` errors: `CallbackSettlementMismatch`, `ReceiverHookMismatch`,
+  `ReceiverHookInputTooLarge`
+- `confidential_token` events: `TransferCallbackRefundDebit`, `TransferCallbackRefundCredit` reasons
+
+**Requirement:** delete them at the next deliberate ABI break (when discriminant renumbering is
+already being paid for). Until then they are inert and must not be reintroduced as live paths.
+
+## Standing open decisions
+
+Carried from `DESIGN_DECISIONS.md` "Open Product Decisions":
+
+- Reject the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID`) unconditionally in production builds; the
+  `poc` cargo feature already compiles out the test shims and confines the zero-birth-entropy fallback.
+- Durable archival / compaction policy for ACL, material, delegation, and replay evidence (no
+  `close_acl_record` today).
+- Confidential-balance profile: keep the immediate available-balance profile or move to staged
+  inbound-credit (DD-016).
+- Full production KMS-connector wiring and real ZKPoK / transciphering behind the input attestation
+  (both are PoC shortcuts today — DD-028).

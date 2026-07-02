@@ -94,9 +94,6 @@ Admission invariants for `fhe_eval`:
 
 ## External Inputs
 
-> Superseded (reconciliation, June 2026): the Ed25519 verifier-set path described in older revisions
-> was REMOVED. See `solana/docs/DESIGN_DECISIONS.md` DD-007.
-
 The `FheEvalOperand::VerifiedInput` operand is the production encrypted-input path (the Solana
 `FHE.fromExternal` analog). When an `fhe_eval` step consumes it, the host re-verifies the
 **coprocessor's EIP-712 `CiphertextVerification` attestation on-chain via secp256k1** (recovering the
@@ -119,12 +116,11 @@ per-contract binding.
 
 This mirrors the EVM `InputVerification` coprocessor-threshold model; the gateway counterpart is the
 RFC-021 bytes32 path `InputVerification.verifyProofRequestSolana`. The host-listener reconstruct path
-resolves the operand from `attestation.input_handle`. The earlier standalone `verify_coprocessor_input`
-instruction and its `InputVerifiedEvent` receipt were removed.
-
-`mock_input_verified_and_bind` remains local-PoC test-only glue, chain-id confined (DD-014). The
-removed `verify_input_and_bind` (native Ed25519 over `SolanaInputProof` + `SolanaInputBindIntent`,
-anchored to a Solana input verifier set) is retained only as the superseded design in DD-007.
+resolves the operand from `attestation.input_handle`. The shared verifier is
+`eip712::verify_coprocessor_input` (via `instructions::input_verification::verify_input_attestation`);
+the earlier standalone `verify_coprocessor_input`/`verify_input_and_bind`/`mock_input_verified_and_bind`
+instructions and the `InputVerifiedEvent` receipt were removed. The former Ed25519 verifier-set path
+is retained only as the superseded-design stub in DD-007.
 
 ## Roles
 
@@ -145,15 +141,17 @@ remain full ACL subjects. Persistent grants require `ACL_ROLE_GRANT`. Public dec
 
 ## Test-Only Entrypoints
 
-`mock_input_verified_and_bind` and `test_emit_*` are not protocol APIs. They require `HostConfig`
-feature gates and the configured authority signer:
+`test_emit_*` (and `set_test_shims_enabled` / `set_mock_input_enabled`) are not protocol APIs. They are
+`#[cfg(feature = "poc")]` — compiled out of default/production builds — and additionally require a
+`HostConfig` feature gate and the configured authority signer:
 
 ```text
-mock_input_verified_and_bind -> mock_input_enabled + local PoC chain id (DD-014)
-test_emit_*                  -> test_shims_enabled + test_authority
+test_emit_*  ->  poc feature + test_shims_enabled + test_authority
 ```
 
-Threshold policy and real proof/transciphering validation are still external/open design items.
+The zero-birth-entropy fallback is the only surviving state relaxation; it is confined to the local
+PoC chain id (`HostConfig::zero_birth_entropy_allowed`, DD-014). Registered-signer threshold policy and
+real proof/transciphering validation are still external/open design items.
 Trivial and random handle birth paths include output nonce metadata in handle derivation before
 binding the result into a canonical ACL record. Random handle birth is covered by
 `fhe_rand_and_bind` and `fhe_rand_bounded_and_bind`, which derive the event seed on-chain.
