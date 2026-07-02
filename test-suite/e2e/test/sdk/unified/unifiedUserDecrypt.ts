@@ -213,11 +213,6 @@ function messageOf(req: UnifiedDecryptRequest): Record<string, unknown> {
 }
 
 /**
- * Compute the EIP-712 digest that both `ecrecover` and ERC-1271
- * `isValidSignature` receive. Exposed so Safe-style mocks can pre-approve it via
- * `approveHash(digest)` before an empty-signature request.
- */
-/**
  * Chain id of the request, derived from its first handle. Fails with a clear
  * error on an empty `handles` array instead of an opaque TypeError — the
  * relayer requires at least one handle anyway.
@@ -230,6 +225,11 @@ function requestChainId(req: UnifiedDecryptRequest): number {
   return chainIdFromHandle(first.ctHandle);
 }
 
+/**
+ * Compute the EIP-712 digest that both `ecrecover` and ERC-1271
+ * `isValidSignature` receive. Exposed so Safe-style mocks can pre-approve it via
+ * `approveHash(digest)` before an empty-signature request.
+ */
 export function computeUnifiedDigest(cfg: UnifiedConfig, req: UnifiedDecryptRequest): string {
   const chainId = requestChainId(req);
   return TypedDataEncoder.hash(domainOf(cfg, chainId), UNIFIED_USER_DECRYPT_TYPES, messageOf(req));

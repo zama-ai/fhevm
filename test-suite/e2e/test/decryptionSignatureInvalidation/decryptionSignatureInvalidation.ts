@@ -102,6 +102,11 @@ describe('Decryption signature invalidation (RFC-016)', function () {
     if (threshold === 0n) {
       await (await acl.invalidateDecryptionSignaturesBefore(0)).wait();
       threshold = await acl.decryptionSignatureInvalidatedBefore(signers.eve.address);
+      // Fresh write (a test running in isolation): let the KMS's lagging
+      // host-ACL read observe the new threshold before any request depends on
+      // it. In suite order the threshold was written tests ago, this branch is
+      // skipped, and no blocks are waited.
+      await awaitPropagation();
     }
     return threshold;
   }
