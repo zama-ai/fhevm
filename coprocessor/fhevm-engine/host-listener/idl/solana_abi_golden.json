@@ -184,22 +184,6 @@
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "cd6387d8119d1fc500",
-      "fixture_len": 9,
-      "name": "create_random_amount",
-      "program": "confidential_token",
-      "schema_hash": "b5dd3e98a06a88e6ac1248e2f72ff27c93e05dbc26d2438e07f1ad33ac2e364a"
-    },
-    {
-      "category": "instruction_args",
-      "fixture_hex": "d08fe2ba6ebc29af0002030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021",
-      "fixture_len": 41,
-      "name": "create_random_bounded_amount",
-      "program": "confidential_token",
-      "schema_hash": "a39513e683d33138688fe37ea33f13542182f6785e981a666491fff37c6159a6"
-    },
-    {
-      "category": "instruction_args",
       "fixture_hex": "b588585af899358f0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20420000000000000001000000030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f4041424303000000040506",
       "fixture_len": 124,
       "name": "disclose_amount_secp",

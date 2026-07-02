@@ -55,8 +55,8 @@ PINNED_SCHEMAS = [
     ("confidential_token", "instruction_args", "close_expired_disclosure_request", True),
     ("confidential_token", "instruction_args", "confidential_burn", True),
     ("confidential_token", "instruction_args", "confidential_transfer", True),
-    ("confidential_token", "instruction_args", "create_random_amount", True),
-    ("confidential_token", "instruction_args", "create_random_bounded_amount", True),
+    # create_random_amount / create_random_bounded_amount are `poc`-gated demo helpers and are
+    # intentionally absent from the production IDL, so they are not pinned here.
     ("confidential_token", "instruction_args", "disclose_amount_secp", True),
     ("confidential_token", "instruction_args", "disclose_balance_secp", True),
     ("confidential_token", "instruction_args", "initialize_mint", True),

@@ -10,6 +10,7 @@ pub mod close_expired_disclosure_request;
 pub mod common;
 pub mod confidential_burn;
 pub mod confidential_transfer;
+#[cfg(feature = "poc")]
 pub mod create_random_amount;
 pub mod disclose_amount_secp;
 pub mod disclose_balance_secp;
@@ -38,6 +39,7 @@ pub use close_expired_disclosure_request::*;
 pub(crate) use common::*;
 pub use confidential_burn::*;
 pub use confidential_transfer::*;
+#[cfg(feature = "poc")]
 pub use create_random_amount::*;
 pub use disclose_amount_secp::*;
 pub use disclose_balance_secp::*;

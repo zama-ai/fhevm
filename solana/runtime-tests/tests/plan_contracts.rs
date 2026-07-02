@@ -271,6 +271,12 @@ fn production_poc_paths_are_compile_feature_gated_and_runtime_rejected() {
             || cfg_gated_symbol(TOKEN_LIB, "TestReceiverReturnCallback"),
         "`test_receiver_return_callback` must be gated out of production/default token builds"
     );
+    for symbol in ["create_random_amount", "create_random_bounded_amount"] {
+        assert!(
+            cfg_gated_symbol(TOKEN_LIB, symbol) || cfg_gated_symbol(TOKEN_LIB, &camelish(symbol)),
+            "`{symbol}` must be gated out of production/default token builds"
+        );
+    }
 
     let token_idl = parse_idl(TOKEN_IDL);
     let token_instructions = names(&token_idl, "instructions");
@@ -280,6 +286,12 @@ fn production_poc_paths_are_compile_feature_gated_and_runtime_rejected() {
             .any(|name| name == "test_receiver_return_callback"),
         "production token IDL must not expose test_receiver_return_callback"
     );
+    for removed in ["create_random_amount", "create_random_bounded_amount"] {
+        assert!(
+            !token_instructions.iter().any(|name| name == removed),
+            "production token IDL must not expose `poc`-gated demo helper `{removed}`"
+        );
+    }
 
     assert!(
         HOST_CONFIG.contains("SOLANA_POC_CHAIN_ID") && HOST_CONFIG.contains("poc"),

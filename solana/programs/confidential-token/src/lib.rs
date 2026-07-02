@@ -30,14 +30,17 @@ pub use constants::*;
 pub use errors::*;
 /// Re-export events and instruction argument enums for generated clients and tests.
 pub use events::*;
+/// The random-amount PoC helper account context (gated behind `poc`, see below).
+#[cfg(feature = "poc")]
+pub use instructions::CreateRandomAmount;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
     CloseConsumedBurnRedemptionRequest, CloseConsumedDisclosureRequest,
     CloseExpiredBurnRedemptionRequest, CloseExpiredDisclosureRequest, ConfidentialBurn,
-    ConfidentialTransfer, CreateRandomAmount, DiscloseAmountSecp, DiscloseBalanceSecp,
-    InitializeMint, InitializeTokenAccount, RedeemBurnedAmountSecp, RequestBurnRedemption,
-    RequestDiscloseAmount, RequestDiscloseBalance, WrapUsdc,
+    ConfidentialTransfer, DiscloseAmountSecp, DiscloseBalanceSecp, InitializeMint,
+    InitializeTokenAccount, RedeemBurnedAmountSecp, RequestBurnRedemption, RequestDiscloseAmount,
+    RequestDiscloseBalance, WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
@@ -64,7 +67,8 @@ pub mod confidential_token {
 
     /// Creates a token-scoped random encrypted amount. Vestigial PoC/demo helper: production
     /// transfers and burns take a coprocessor-attested external amount (fromExternal), not a random
-    /// handle. Slated for removal in the cross-cutting cleanup once tests move to attestations.
+    /// handle. Gated behind the `poc` feature so it never ships in the production IDL.
+    #[cfg(feature = "poc")]
     pub fn create_random_amount(
         ctx: Context<CreateRandomAmount>,
         amount_kind: ConfidentialAmountKind,
@@ -73,6 +77,7 @@ pub mod confidential_token {
     }
 
     /// Creates a token-scoped bounded random encrypted amount. Vestigial PoC/demo helper (see above).
+    #[cfg(feature = "poc")]
     pub fn create_random_bounded_amount(
         ctx: Context<CreateRandomAmount>,
         amount_kind: ConfidentialAmountKind,
