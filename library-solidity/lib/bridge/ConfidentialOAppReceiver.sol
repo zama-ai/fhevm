@@ -29,9 +29,6 @@ abstract contract ConfidentialOAppReceiver is ConfidentialOAppCore, IDstApp {
 
     /**
      * @inheritdoc IDstApp
-     * @dev Enforces the two receiver security checks before dispatching to {_onReceiveHandles}:
-     *      reverts {OnlyConfidentialBridge} if `msg.sender` is not the local `ConfidentialBridge`
-     *      (resolved from the ACL), and {UntrustedPeer} if `srcApp` is not the configured peer for `srcEid`.
      */
     function onConfidentialBridgeReceived(
         uint32 srcEid,
@@ -41,16 +38,20 @@ abstract contract ConfidentialOAppReceiver is ConfidentialOAppCore, IDstApp {
         bytes32[] calldata dstHandleList,
         bytes32 guid
     ) external virtual {
+        // Ensure that the caller is the trusted local `ConfidentialBridge`.
         if (msg.sender != LZConfidentialBridgeAddress()) revert OnlyConfidentialBridge(msg.sender);
+
         // Ensure that the sender matches the expected peer for the source endpoint.
         if (_getPeerOrRevert(srcEid) != srcApp) revert OnlyPeer(srcEid, srcApp);
 
+        // Dispatch to the app hook to handle the bridged payload with the derived destination handles.
         _onReceiveHandles(srcEid, srcApp, payload, srcHandleList, dstHandleList, guid);
     }
 
     /**
      * @notice App hook: handle a bridged payload with the derived destination handles. Called by
      *         {onConfidentialBridgeReceived} only after the caller and peer have been authenticated.
+     * @dev    Must be implemented by inheriting contracts.
      * @param srcEid        Source LayerZero endpoint id.
      * @param srcApp        Source app (bytes32; for EVM, a left-padded address).
      * @param payload       Opaque app payload as encoded by the source app.
