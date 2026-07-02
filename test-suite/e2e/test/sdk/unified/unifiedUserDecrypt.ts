@@ -239,6 +239,18 @@ async function signRequest(cfg: UnifiedConfig, req: UnifiedDecryptRequest, mode:
   if (mode.kind === 'empty') {
     return '0x';
   }
+  if (mode.kind === 'eoa') {
+    // 'eoa' means "the user signs for themselves" — a mismatched signer would
+    // only surface later as a hard-to-diagnose relayer "Signature is invalid".
+    // Signing for a DIFFERENT userAddress is what kind 'erc1271' is for.
+    const signerAddress = (await mode.signer.getAddress()).toLowerCase();
+    if (signerAddress !== req.userAddress.toLowerCase()) {
+      throw new Error(
+        `SignMode 'eoa' requires the signer address to equal req.userAddress ` +
+          `(got ${signerAddress} vs ${req.userAddress.toLowerCase()}); use kind 'erc1271' to sign for a different userAddress`,
+      );
+    }
+  }
   const signer = mode.kind === 'eoa' ? mode.signer : mode.ownerSigner;
   const chainId = requestChainId(req);
   return signer.signTypedData(domainOf(cfg, chainId), UNIFIED_USER_DECRYPT_TYPES, messageOf(req));
@@ -380,6 +392,12 @@ export async function requestUnifiedUserDecrypt(
   opts?: RequestOptions,
 ): Promise<RequestOutcome> {
   const { post, digest } = await submitUnifiedRequest(cfg, req, mode);
+  if (opts?.waitForTerminal && post.httpStatus === 202 && !post.jobId) {
+    // A 202 without a jobId is a malformed relayer response. Returning it as a
+    // non-polled outcome would leave `poll` undefined, letting negative tests
+    // ("never succeeded") pass vacuously — fail fast instead.
+    throw new Error(`Relayer accepted request (202) but did not return a jobId: ${JSON.stringify(post.raw)}`);
+  }
   if (post.httpStatus !== 202 || !post.jobId || !opts?.waitForTerminal) {
     return { post, digest };
   }
