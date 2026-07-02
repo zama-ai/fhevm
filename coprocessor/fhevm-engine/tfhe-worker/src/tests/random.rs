@@ -36,11 +36,31 @@ const RANDOM_SUPPORTED_TYPES_GPU: &[i32] = &[
     8, // 256 bit
 ];
 
+// Small types only (bool..=64-bit). Generating oblivious pseudo-random values
+// for the wide types (128..=2048-bit) is by far the most expensive operator in
+// the suite, especially in the unoptimized test/coverage builds CI uses. PR CI
+// sets `TFHE_WORKER_EVENT_TYPE_MATRIX=local` for fast feedback (see
+// `operators_from_events::supported_types`); honor it here too so the random
+// tests don't dominate the job. The merge queue leaves the env unset and still
+// exercises the full type set below.
+const RANDOM_SUPPORTED_TYPES_LOCAL: &[i32] = &[
+    0, // bool
+    1, // 4 bit
+    2, // 8 bit
+    3, // 16 bit
+    4, // 32 bit
+    5, // 64 bit
+];
+
 fn random_test_supported_types() -> &'static [i32] {
     if cfg!(feature = "gpu") {
-        RANDOM_SUPPORTED_TYPES_GPU
-    } else {
-        RANDOM_SUPPORTED_TYPES_CPU
+        return RANDOM_SUPPORTED_TYPES_GPU;
+    }
+    match std::env::var("TFHE_WORKER_EVENT_TYPE_MATRIX") {
+        Ok(mode) if mode.eq_ignore_ascii_case("local") => RANDOM_SUPPORTED_TYPES_LOCAL,
+        // Any other mode (including the unset merge-queue default) keeps the
+        // full CPU type set so wide-type coverage is not lost.
+        _ => RANDOM_SUPPORTED_TYPES_CPU,
     }
 }
 

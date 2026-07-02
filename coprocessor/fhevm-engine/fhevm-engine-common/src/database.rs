@@ -384,6 +384,12 @@ fn identity_connect_options(options: PgConnectOptions) -> PgConnectOptions {
     options
 }
 
+/// Caps every statement on the connection at `timeout` so a pathological query
+/// cannot run unbounded.
+pub fn with_statement_timeout(options: PgConnectOptions, timeout: Duration) -> PgConnectOptions {
+    options.options([("statement_timeout", timeout.as_millis())])
+}
+
 fn apply_iam_ssl_settings_to_url(url: &mut Url, ssl_root_cert_path: Option<&str>) {
     let existing_pairs: Vec<(String, String)> = url
         .query_pairs()

@@ -138,6 +138,15 @@ async fn count_unassociated_handles(pool: &PgPool) -> Result<i64, sqlx::Error> {
         FROM handle_bridged_events
         WHERE NOT is_associated
           AND NOT EXISTS (SELECT 1 FROM ciphertexts WHERE handle = handle_bridged_events.dst_handle)
+          AND (
+                block_hash = ''::bytea
+                OR EXISTS (
+                    SELECT 1 FROM host_chain_blocks_valid dst_block
+                    WHERE dst_block.chain_id = handle_bridged_events.dst_chain_id
+                      AND dst_block.block_hash = handle_bridged_events.block_hash
+                      AND dst_block.block_status <> 'orphaned'
+                )
+          )
           AND created_at <= now() - make_interval(secs => $1::int)
         "#,
         IN_FLIGHT_GRACE_SECS,
@@ -153,6 +162,9 @@ async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Er
     // - the destination handle is not already materialized by another path
     // - both validated events are present: the destination `HandleBridged`
     //   and the matching source `BridgeHandle` one
+    // - the source approval's block is finalized; the destination event is
+    //   consumed as observed (no finality wait), skipped only when its block
+    //   is already known orphaned
     // - the source ciphertext is fully materialized: its ct64 blob exists and
     //   both digests (ct64 and ct128) are computed
     // - it has not been associated yet
@@ -164,10 +176,28 @@ async fn associate_batch(pool: &PgPool, batch_size: i64) -> Result<u64, sqlx::Er
           AND NOT EXISTS (
                 SELECT 1 FROM ciphertexts dst_ct
                 WHERE dst_ct.handle = dst_event.dst_handle)
+          AND (
+                dst_event.block_hash = ''::bytea
+                OR EXISTS (
+                    SELECT 1 FROM host_chain_blocks_valid dst_block
+                    WHERE dst_block.chain_id = dst_event.dst_chain_id
+                      AND dst_block.block_hash = dst_event.block_hash
+                      AND dst_block.block_status <> 'orphaned'
+                )
+          )
           AND EXISTS (
                 SELECT 1 FROM bridge_handle_events src_event
                 WHERE src_event.src_handle = dst_event.src_handle
-                  AND src_event.dst_chain_id = dst_event.dst_chain_id)
+                  AND src_event.dst_chain_id = dst_event.dst_chain_id
+                  AND (
+                        src_event.block_hash = ''::bytea
+                        OR EXISTS (
+                            SELECT 1 FROM host_chain_blocks_valid src_block
+                            WHERE src_block.chain_id = src_event.src_chain_id
+                              AND src_block.block_hash = src_event.block_hash
+                              AND src_block.block_status = 'finalized'
+                        )
+                  ))
           AND EXISTS (
                 SELECT 1 FROM ciphertexts src_ct
                 WHERE src_ct.handle = dst_event.src_handle)
@@ -243,6 +273,11 @@ pub(crate) async fn associate_pair(
     // Copy the digest and mark the event associated only when we actually placed
     // the ciphertext. If the destination was already materialized by another path
     // (e.g. a grantFallbackPlaintext recovery), the copy above is a no-op.
+    //
+    // Contract: `is_associated` is set in the SAME transaction as the copy —
+    // the host-listener's reorg cleanup uses a flagged observation in an
+    // orphaned block as proof that this association produced the
+    // materialization, and retracts it.
     if ciphertext_copied {
         sqlx::query!(
             r#"
