@@ -75,11 +75,12 @@ pub mod ILayerZeroComposer {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `lzCompose(address,bytes32,bytes,address,bytes)` and selector `0xd0a10260`.
-    ```solidity
-    function lzCompose(address _from, bytes32 _guid, bytes memory _message, address _executor, bytes memory _extraData) external payable;
-    ```*/
+```solidity
+function lzCompose(address _from, bytes32 _guid, bytes memory _message, address _executor, bytes memory _extraData) external payable;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct lzComposeCall {
@@ -125,7 +126,9 @@ pub mod ILayerZeroComposer {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -166,7 +169,9 @@ pub mod ILayerZeroComposer {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -189,7 +194,9 @@ pub mod ILayerZeroComposer {
             }
         }
         impl lzComposeReturn {
-            fn _tokenize(&self) -> <lzComposeCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            fn _tokenize(
+                &self,
+            ) -> <lzComposeCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
@@ -202,10 +209,14 @@ pub mod ILayerZeroComposer {
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = lzComposeReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "lzCompose(address,bytes32,bytes,address,bytes)";
             const SELECTOR: [u8; 4] = [208u8, 161u8, 2u8, 96u8];
             #[inline]
@@ -240,20 +251,25 @@ pub mod ILayerZeroComposer {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     ///Container for all the [`ILayerZeroComposer`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive()]
     pub enum ILayerZeroComposerCalls {
         #[allow(missing_docs)]
         lzCompose(lzComposeCall),
@@ -276,7 +292,9 @@ pub mod ILayerZeroComposer {
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::lzCompose(_) => <lzComposeCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::lzCompose(_) => {
+                    <lzComposeCall as alloy_sol_types::SolCall>::SELECTOR
+                }
             }
         }
         #[inline]
@@ -289,22 +307,30 @@ pub mod ILayerZeroComposer {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<ILayerZeroComposerCalls>] = &[{
-                fn lzCompose(data: &[u8]) -> alloy_sol_types::Result<ILayerZeroComposerCalls> {
-                    <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                        .map(ILayerZeroComposerCalls::lzCompose)
-                }
-                lzCompose
-            }];
+            ) -> alloy_sol_types::Result<ILayerZeroComposerCalls>] = &[
+                {
+                    fn lzCompose(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ILayerZeroComposerCalls> {
+                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(ILayerZeroComposerCalls::lzCompose)
+                    }
+                    lzCompose
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -316,20 +342,26 @@ pub mod ILayerZeroComposer {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                ILayerZeroComposerCalls,
-            >] = &[{
-                fn lzCompose(data: &[u8]) -> alloy_sol_types::Result<ILayerZeroComposerCalls> {
-                    <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
-                        .map(ILayerZeroComposerCalls::lzCompose)
-                }
-                lzCompose
-            }];
+            ) -> alloy_sol_types::Result<ILayerZeroComposerCalls>] = &[
+                {
+                    fn lzCompose(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ILayerZeroComposerCalls> {
+                        <lzComposeCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(ILayerZeroComposerCalls::lzCompose)
+                    }
+                    lzCompose
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -345,7 +377,10 @@ pub mod ILayerZeroComposer {
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::lzCompose(inner) => {
-                    <lzComposeCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
+                    <lzComposeCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
@@ -353,7 +388,7 @@ pub mod ILayerZeroComposer {
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ILayerZeroComposer`](self) contract instance.
 
-    See the [wrapper's documentation](`ILayerZeroComposerInstance`) for more details.*/
+See the [wrapper's documentation](`ILayerZeroComposerInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -366,41 +401,43 @@ pub mod ILayerZeroComposer {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
-        provider: P,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<ILayerZeroComposerInstance<P, N>>>
-    {
-        ILayerZeroComposerInstance::<P, N>::deploy(provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
-
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
+    pub fn deploy<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<ILayerZeroComposerInstance<P, N>>,
+    > {
+        ILayerZeroComposerInstance::<P, N>::deploy(provider)
+    }
+    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+and constructor arguments, if any.
+
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    #[inline]
+    pub fn deploy_builder<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
         ILayerZeroComposerInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`ILayerZeroComposer`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`ILayerZeroComposer`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`ILayerZeroComposer`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct ILayerZeroComposerInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -411,21 +448,23 @@ pub mod ILayerZeroComposer {
     impl<P, N> ::core::fmt::Debug for ILayerZeroComposerInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("ILayerZeroComposerInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("ILayerZeroComposerInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        ILayerZeroComposerInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > ILayerZeroComposerInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`ILayerZeroComposer`](self) contract instance.
 
-        See the [wrapper's documentation](`ILayerZeroComposerInstance`) for more details.*/
+See the [wrapper's documentation](`ILayerZeroComposerInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider,
@@ -434,9 +473,9 @@ pub mod ILayerZeroComposer {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             provider: P,
@@ -446,10 +485,10 @@ pub mod ILayerZeroComposer {
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -491,9 +530,10 @@ pub mod ILayerZeroComposer {
     }
     /// Function calls.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        ILayerZeroComposerInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > ILayerZeroComposerInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -513,20 +553,23 @@ pub mod ILayerZeroComposer {
             _executor: alloy::sol_types::private::Address,
             _extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, lzComposeCall, N> {
-            self.call_builder(&lzComposeCall {
-                _from,
-                _guid,
-                _message,
-                _executor,
-                _extraData,
-            })
+            self.call_builder(
+                &lzComposeCall {
+                    _from,
+                    _guid,
+                    _message,
+                    _executor,
+                    _extraData,
+                },
+            )
         }
     }
     /// Event filters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        ILayerZeroComposerInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > ILayerZeroComposerInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.

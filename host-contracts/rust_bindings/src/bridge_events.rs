@@ -205,11 +205,12 @@ pub mod BridgeEvents {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"`\x80`@R_\x80\xFD",
     );
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `BridgeHandle(address,bytes32,uint64,bytes32)` and selector `0x232d74a405b7390224b127ddebd1af9c6958450a736d9febbc1b383b6481f2b3`.
-    ```solidity
-    event BridgeHandle(address indexed senderDapp, bytes32 srcHandle, uint64 dstChainId, bytes32 guid);
-    ```*/
+```solidity
+event BridgeHandle(address indexed senderDapp, bytes32 srcHandle, uint64 dstChainId, bytes32 guid);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -242,18 +243,19 @@ pub mod BridgeEvents {
                 alloy::sol_types::sol_data::Uint<64>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "BridgeHandle(address,bytes32,uint64,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    35u8, 45u8, 116u8, 164u8, 5u8, 183u8, 57u8, 2u8, 36u8, 177u8, 39u8, 221u8,
-                    235u8, 209u8, 175u8, 156u8, 105u8, 88u8, 69u8, 10u8, 115u8, 109u8, 159u8,
-                    235u8, 188u8, 27u8, 56u8, 59u8, 100u8, 129u8, 242u8, 179u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                35u8, 45u8, 116u8, 164u8, 5u8, 183u8, 57u8, 2u8, 36u8, 177u8, 39u8,
+                221u8, 235u8, 209u8, 175u8, 156u8, 105u8, 88u8, 69u8, 10u8, 115u8, 109u8,
+                159u8, 235u8, 188u8, 27u8, 56u8, 59u8, 100u8, 129u8, 242u8, 179u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -273,11 +275,13 @@ pub mod BridgeEvents {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -307,7 +311,9 @@ pub mod BridgeEvents {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.senderDapp,
                 );
@@ -331,11 +337,12 @@ pub mod BridgeEvents {
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DstChainIdSet(uint32,uint64)` and selector `0x8e630faf3c47980270b08e22f845d1074e5def68dcf19efd1345d070360a4aa5`.
-    ```solidity
-    event DstChainIdSet(uint32 indexed dstEid, uint64 dstChainId);
-    ```*/
+```solidity
+event DstChainIdSet(uint32 indexed dstEid, uint64 dstChainId);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -360,18 +367,19 @@ pub mod BridgeEvents {
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for DstChainIdSet {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<32>,
             );
             const SIGNATURE: &'static str = "DstChainIdSet(uint32,uint64)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    142u8, 99u8, 15u8, 175u8, 60u8, 71u8, 152u8, 2u8, 112u8, 176u8, 142u8, 34u8,
-                    248u8, 69u8, 209u8, 7u8, 78u8, 93u8, 239u8, 104u8, 220u8, 241u8, 158u8, 253u8,
-                    19u8, 69u8, 208u8, 112u8, 54u8, 10u8, 74u8, 165u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                142u8, 99u8, 15u8, 175u8, 60u8, 71u8, 152u8, 2u8, 112u8, 176u8, 142u8,
+                34u8, 248u8, 69u8, 209u8, 7u8, 78u8, 93u8, 239u8, 104u8, 220u8, 241u8,
+                158u8, 253u8, 19u8, 69u8, 208u8, 112u8, 54u8, 10u8, 74u8, 165u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -389,20 +397,22 @@ pub mod BridgeEvents {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
-                        &self.dstChainId,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.dstChainId),
                 )
             }
             #[inline]
@@ -417,7 +427,9 @@ pub mod BridgeEvents {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     32,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.dstEid);
@@ -441,11 +453,12 @@ pub mod BridgeEvents {
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `FallbackGrantedPlaintext(bytes32,uint256)` and selector `0x9ef91fde0890247ab1a750380bb298d416cd17f4b5cc10947d91f044ab2cbc00`.
-    ```solidity
-    event FallbackGrantedPlaintext(bytes32 indexed dstHandle, uint256 plaintext);
-    ```*/
+```solidity
+event FallbackGrantedPlaintext(bytes32 indexed dstHandle, uint256 plaintext);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -470,18 +483,19 @@ pub mod BridgeEvents {
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for FallbackGrantedPlaintext {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
             const SIGNATURE: &'static str = "FallbackGrantedPlaintext(bytes32,uint256)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    158u8, 249u8, 31u8, 222u8, 8u8, 144u8, 36u8, 122u8, 177u8, 167u8, 80u8, 56u8,
-                    11u8, 178u8, 152u8, 212u8, 22u8, 205u8, 23u8, 244u8, 181u8, 204u8, 16u8, 148u8,
-                    125u8, 145u8, 240u8, 68u8, 171u8, 44u8, 188u8, 0u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                158u8, 249u8, 31u8, 222u8, 8u8, 144u8, 36u8, 122u8, 177u8, 167u8, 80u8,
+                56u8, 11u8, 178u8, 152u8, 212u8, 22u8, 205u8, 23u8, 244u8, 181u8, 204u8,
+                16u8, 148u8, 125u8, 145u8, 240u8, 68u8, 171u8, 44u8, 188u8, 0u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -499,20 +513,22 @@ pub mod BridgeEvents {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.plaintext,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.plaintext),
                 )
             }
             #[inline]
@@ -527,7 +543,9 @@ pub mod BridgeEvents {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::FixedBytes<
                     32,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.dstHandle);
@@ -546,16 +564,19 @@ pub mod BridgeEvents {
         #[automatically_derived]
         impl From<&FallbackGrantedPlaintext> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &FallbackGrantedPlaintext) -> alloy_sol_types::private::LogData {
+            fn from(
+                this: &FallbackGrantedPlaintext,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `HandleBridged(address,bytes32,bytes32,bytes32)` and selector `0x9fd75837ff96b464a8f26f13bff02e85e41f6f2b730135213e24c8e064ad6b40`.
-    ```solidity
-    event HandleBridged(address indexed receiverDapp, bytes32 srcHandle, bytes32 dstHandle, bytes32 guid);
-    ```*/
+```solidity
+event HandleBridged(address indexed receiverDapp, bytes32 srcHandle, bytes32 dstHandle, bytes32 guid);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -588,18 +609,19 @@ pub mod BridgeEvents {
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::FixedBytes<32>,
             );
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
             );
             const SIGNATURE: &'static str = "HandleBridged(address,bytes32,bytes32,bytes32)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    159u8, 215u8, 88u8, 55u8, 255u8, 150u8, 180u8, 100u8, 168u8, 242u8, 111u8,
-                    19u8, 191u8, 240u8, 46u8, 133u8, 228u8, 31u8, 111u8, 43u8, 115u8, 1u8, 53u8,
-                    33u8, 62u8, 36u8, 200u8, 224u8, 100u8, 173u8, 107u8, 64u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                159u8, 215u8, 88u8, 55u8, 255u8, 150u8, 180u8, 100u8, 168u8, 242u8,
+                111u8, 19u8, 191u8, 240u8, 46u8, 133u8, 228u8, 31u8, 111u8, 43u8, 115u8,
+                1u8, 53u8, 33u8, 62u8, 36u8, 200u8, 224u8, 100u8, 173u8, 107u8, 64u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -619,11 +641,13 @@ pub mod BridgeEvents {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -653,7 +677,9 @@ pub mod BridgeEvents {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
                     &self.receiverDapp,
                 );
@@ -677,11 +703,12 @@ pub mod BridgeEvents {
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `LzReceiveBaseGasSet(uint32,uint64)` and selector `0x3ef48f367039970bf87a27a88d8bd1b03fc1c2d110a7fea199c679ce3d9b3777`.
-    ```solidity
-    event LzReceiveBaseGasSet(uint32 indexed dstEid, uint64 lzReceiveBaseGas);
-    ```*/
+```solidity
+event LzReceiveBaseGasSet(uint32 indexed dstEid, uint64 lzReceiveBaseGas);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -706,18 +733,19 @@ pub mod BridgeEvents {
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for LzReceiveBaseGasSet {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<32>,
             );
             const SIGNATURE: &'static str = "LzReceiveBaseGasSet(uint32,uint64)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    62u8, 244u8, 143u8, 54u8, 112u8, 57u8, 151u8, 11u8, 248u8, 122u8, 39u8, 168u8,
-                    141u8, 139u8, 209u8, 176u8, 63u8, 193u8, 194u8, 209u8, 16u8, 167u8, 254u8,
-                    161u8, 153u8, 198u8, 121u8, 206u8, 61u8, 155u8, 55u8, 119u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                62u8, 244u8, 143u8, 54u8, 112u8, 57u8, 151u8, 11u8, 248u8, 122u8, 39u8,
+                168u8, 141u8, 139u8, 209u8, 176u8, 63u8, 193u8, 194u8, 209u8, 16u8,
+                167u8, 254u8, 161u8, 153u8, 198u8, 121u8, 206u8, 61u8, 155u8, 55u8, 119u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -735,20 +763,22 @@ pub mod BridgeEvents {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
-                        &self.lzReceiveBaseGas,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.lzReceiveBaseGas),
                 )
             }
             #[inline]
@@ -763,7 +793,9 @@ pub mod BridgeEvents {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     32,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.dstEid);
@@ -787,11 +819,12 @@ pub mod BridgeEvents {
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `LzReceivePerHandleGasSet(uint32,uint64)` and selector `0x25aeec3268f1810b2b3d0c7b8eaadc98df276318210e6a375937fed56ea6436b`.
-    ```solidity
-    event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint64 lzReceivePerHandleGas);
-    ```*/
+```solidity
+event LzReceivePerHandleGasSet(uint32 indexed dstEid, uint64 lzReceivePerHandleGas);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -816,18 +849,19 @@ pub mod BridgeEvents {
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for LzReceivePerHandleGasSet {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<32>,
             );
             const SIGNATURE: &'static str = "LzReceivePerHandleGasSet(uint32,uint64)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    37u8, 174u8, 236u8, 50u8, 104u8, 241u8, 129u8, 11u8, 43u8, 61u8, 12u8, 123u8,
-                    142u8, 170u8, 220u8, 152u8, 223u8, 39u8, 99u8, 24u8, 33u8, 14u8, 106u8, 55u8,
-                    89u8, 55u8, 254u8, 213u8, 110u8, 166u8, 67u8, 107u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                37u8, 174u8, 236u8, 50u8, 104u8, 241u8, 129u8, 11u8, 43u8, 61u8, 12u8,
+                123u8, 142u8, 170u8, 220u8, 152u8, 223u8, 39u8, 99u8, 24u8, 33u8, 14u8,
+                106u8, 55u8, 89u8, 55u8, 254u8, 213u8, 110u8, 166u8, 67u8, 107u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -845,18 +879,22 @@ pub mod BridgeEvents {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(
                         &self.lzReceivePerHandleGas,
                     ),
                 )
@@ -873,7 +911,9 @@ pub mod BridgeEvents {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     32,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.dstEid);
@@ -892,16 +932,19 @@ pub mod BridgeEvents {
         #[automatically_derived]
         impl From<&LzReceivePerHandleGasSet> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &LzReceivePerHandleGasSet) -> alloy_sol_types::private::LogData {
+            fn from(
+                this: &LzReceivePerHandleGasSet,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `LzReceivePerPayloadByteGasSet(uint32,uint64)` and selector `0x9365fb160bf0e4372e7c1b99983ee71b41cb5d94189d58d4097c5c5db0dc10eb`.
-    ```solidity
-    event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPayloadByteGas);
-    ```*/
+```solidity
+event LzReceivePerPayloadByteGasSet(uint32 indexed dstEid, uint64 lzReceivePerPayloadByteGas);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -926,18 +969,19 @@ pub mod BridgeEvents {
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for LzReceivePerPayloadByteGasSet {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<64>,);
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<32>,
             );
             const SIGNATURE: &'static str = "LzReceivePerPayloadByteGasSet(uint32,uint64)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    147u8, 101u8, 251u8, 22u8, 11u8, 240u8, 228u8, 55u8, 46u8, 124u8, 27u8, 153u8,
-                    152u8, 62u8, 231u8, 27u8, 65u8, 203u8, 93u8, 148u8, 24u8, 157u8, 88u8, 212u8,
-                    9u8, 124u8, 92u8, 93u8, 176u8, 220u8, 16u8, 235u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                147u8, 101u8, 251u8, 22u8, 11u8, 240u8, 228u8, 55u8, 46u8, 124u8, 27u8,
+                153u8, 152u8, 62u8, 231u8, 27u8, 65u8, 203u8, 93u8, 148u8, 24u8, 157u8,
+                88u8, 212u8, 9u8, 124u8, 92u8, 93u8, 176u8, 220u8, 16u8, 235u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -955,18 +999,22 @@ pub mod BridgeEvents {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<64> as alloy_sol_types::SolType>::tokenize(
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(
                         &self.lzReceivePerPayloadByteGas,
                     ),
                 )
@@ -983,7 +1031,9 @@ pub mod BridgeEvents {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     32,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.dstEid);
@@ -1002,13 +1052,16 @@ pub mod BridgeEvents {
         #[automatically_derived]
         impl From<&LzReceivePerPayloadByteGasSet> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &LzReceivePerPayloadByteGasSet) -> alloy_sol_types::private::LogData {
+            fn from(
+                this: &LzReceivePerPayloadByteGasSet,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
     ///Container for all the [`BridgeEvents`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum BridgeEventsEvents {
         #[allow(missing_docs)]
         BridgeHandle(BridgeHandle),
@@ -1035,39 +1088,39 @@ pub mod BridgeEvents {
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                35u8, 45u8, 116u8, 164u8, 5u8, 183u8, 57u8, 2u8, 36u8, 177u8, 39u8, 221u8, 235u8,
-                209u8, 175u8, 156u8, 105u8, 88u8, 69u8, 10u8, 115u8, 109u8, 159u8, 235u8, 188u8,
-                27u8, 56u8, 59u8, 100u8, 129u8, 242u8, 179u8,
+                35u8, 45u8, 116u8, 164u8, 5u8, 183u8, 57u8, 2u8, 36u8, 177u8, 39u8,
+                221u8, 235u8, 209u8, 175u8, 156u8, 105u8, 88u8, 69u8, 10u8, 115u8, 109u8,
+                159u8, 235u8, 188u8, 27u8, 56u8, 59u8, 100u8, 129u8, 242u8, 179u8,
             ],
             [
-                37u8, 174u8, 236u8, 50u8, 104u8, 241u8, 129u8, 11u8, 43u8, 61u8, 12u8, 123u8,
-                142u8, 170u8, 220u8, 152u8, 223u8, 39u8, 99u8, 24u8, 33u8, 14u8, 106u8, 55u8, 89u8,
-                55u8, 254u8, 213u8, 110u8, 166u8, 67u8, 107u8,
+                37u8, 174u8, 236u8, 50u8, 104u8, 241u8, 129u8, 11u8, 43u8, 61u8, 12u8,
+                123u8, 142u8, 170u8, 220u8, 152u8, 223u8, 39u8, 99u8, 24u8, 33u8, 14u8,
+                106u8, 55u8, 89u8, 55u8, 254u8, 213u8, 110u8, 166u8, 67u8, 107u8,
             ],
             [
-                62u8, 244u8, 143u8, 54u8, 112u8, 57u8, 151u8, 11u8, 248u8, 122u8, 39u8, 168u8,
-                141u8, 139u8, 209u8, 176u8, 63u8, 193u8, 194u8, 209u8, 16u8, 167u8, 254u8, 161u8,
-                153u8, 198u8, 121u8, 206u8, 61u8, 155u8, 55u8, 119u8,
+                62u8, 244u8, 143u8, 54u8, 112u8, 57u8, 151u8, 11u8, 248u8, 122u8, 39u8,
+                168u8, 141u8, 139u8, 209u8, 176u8, 63u8, 193u8, 194u8, 209u8, 16u8,
+                167u8, 254u8, 161u8, 153u8, 198u8, 121u8, 206u8, 61u8, 155u8, 55u8, 119u8,
             ],
             [
-                142u8, 99u8, 15u8, 175u8, 60u8, 71u8, 152u8, 2u8, 112u8, 176u8, 142u8, 34u8, 248u8,
-                69u8, 209u8, 7u8, 78u8, 93u8, 239u8, 104u8, 220u8, 241u8, 158u8, 253u8, 19u8, 69u8,
-                208u8, 112u8, 54u8, 10u8, 74u8, 165u8,
+                142u8, 99u8, 15u8, 175u8, 60u8, 71u8, 152u8, 2u8, 112u8, 176u8, 142u8,
+                34u8, 248u8, 69u8, 209u8, 7u8, 78u8, 93u8, 239u8, 104u8, 220u8, 241u8,
+                158u8, 253u8, 19u8, 69u8, 208u8, 112u8, 54u8, 10u8, 74u8, 165u8,
             ],
             [
-                147u8, 101u8, 251u8, 22u8, 11u8, 240u8, 228u8, 55u8, 46u8, 124u8, 27u8, 153u8,
-                152u8, 62u8, 231u8, 27u8, 65u8, 203u8, 93u8, 148u8, 24u8, 157u8, 88u8, 212u8, 9u8,
-                124u8, 92u8, 93u8, 176u8, 220u8, 16u8, 235u8,
+                147u8, 101u8, 251u8, 22u8, 11u8, 240u8, 228u8, 55u8, 46u8, 124u8, 27u8,
+                153u8, 152u8, 62u8, 231u8, 27u8, 65u8, 203u8, 93u8, 148u8, 24u8, 157u8,
+                88u8, 212u8, 9u8, 124u8, 92u8, 93u8, 176u8, 220u8, 16u8, 235u8,
             ],
             [
-                158u8, 249u8, 31u8, 222u8, 8u8, 144u8, 36u8, 122u8, 177u8, 167u8, 80u8, 56u8, 11u8,
-                178u8, 152u8, 212u8, 22u8, 205u8, 23u8, 244u8, 181u8, 204u8, 16u8, 148u8, 125u8,
-                145u8, 240u8, 68u8, 171u8, 44u8, 188u8, 0u8,
+                158u8, 249u8, 31u8, 222u8, 8u8, 144u8, 36u8, 122u8, 177u8, 167u8, 80u8,
+                56u8, 11u8, 178u8, 152u8, 212u8, 22u8, 205u8, 23u8, 244u8, 181u8, 204u8,
+                16u8, 148u8, 125u8, 145u8, 240u8, 68u8, 171u8, 44u8, 188u8, 0u8,
             ],
             [
-                159u8, 215u8, 88u8, 55u8, 255u8, 150u8, 180u8, 100u8, 168u8, 242u8, 111u8, 19u8,
-                191u8, 240u8, 46u8, 133u8, 228u8, 31u8, 111u8, 43u8, 115u8, 1u8, 53u8, 33u8, 62u8,
-                36u8, 200u8, 224u8, 100u8, 173u8, 107u8, 64u8,
+                159u8, 215u8, 88u8, 55u8, 255u8, 150u8, 180u8, 100u8, 168u8, 242u8,
+                111u8, 19u8, 191u8, 240u8, 46u8, 133u8, 228u8, 31u8, 111u8, 43u8, 115u8,
+                1u8, 53u8, 33u8, 62u8, 36u8, 200u8, 224u8, 100u8, 173u8, 107u8, 64u8,
             ],
         ];
     }
@@ -1081,48 +1134,73 @@ pub mod BridgeEvents {
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(<BridgeHandle as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <BridgeHandle as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <BridgeHandle as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::BridgeHandle)
                 }
                 Some(<DstChainIdSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <DstChainIdSet as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <DstChainIdSet as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::DstChainIdSet)
                 }
-                Some(<FallbackGrantedPlaintext as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                Some(
+                    <FallbackGrantedPlaintext as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
                     <FallbackGrantedPlaintext as alloy_sol_types::SolEvent>::decode_raw_log(
-                        topics, data,
-                    )
-                    .map(Self::FallbackGrantedPlaintext)
+                            topics,
+                            data,
+                        )
+                        .map(Self::FallbackGrantedPlaintext)
                 }
                 Some(<HandleBridged as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <HandleBridged as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                    <HandleBridged as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::HandleBridged)
                 }
-                Some(<LzReceiveBaseGasSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <LzReceiveBaseGasSet as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                Some(
+                    <LzReceiveBaseGasSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <LzReceiveBaseGasSet as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::LzReceiveBaseGasSet)
                 }
-                Some(<LzReceivePerHandleGasSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                Some(
+                    <LzReceivePerHandleGasSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
                     <LzReceivePerHandleGasSet as alloy_sol_types::SolEvent>::decode_raw_log(
-                        topics, data,
-                    )
-                    .map(Self::LzReceivePerHandleGasSet)
+                            topics,
+                            data,
+                        )
+                        .map(Self::LzReceivePerHandleGasSet)
                 }
                 Some(
                     <LzReceivePerPayloadByteGasSet as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => <LzReceivePerPayloadByteGasSet as alloy_sol_types::SolEvent>::decode_raw_log(
-                    topics, data,
-                )
-                .map(Self::LzReceivePerPayloadByteGasSet),
-                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                    log: alloy_sol_types::private::Box::new(
-                        alloy_sol_types::private::LogData::new_unchecked(
-                            topics.to_vec(),
-                            data.to_vec().into(),
+                ) => {
+                    <LzReceivePerPayloadByteGasSet as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::LzReceivePerPayloadByteGasSet)
+                }
+                _ => {
+                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                        log: alloy_sol_types::private::Box::new(
+                            alloy_sol_types::private::LogData::new_unchecked(
+                                topics.to_vec(),
+                                data.to_vec().into(),
+                            ),
                         ),
-                    ),
-                }),
+                    })
+                }
             }
         }
     }
@@ -1182,7 +1260,7 @@ pub mod BridgeEvents {
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`BridgeEvents`](self) contract instance.
 
-    See the [wrapper's documentation](`BridgeEventsInstance`) for more details.*/
+See the [wrapper's documentation](`BridgeEventsInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1195,41 +1273,43 @@ pub mod BridgeEvents {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
-        provider: P,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<BridgeEventsInstance<P, N>>>
-    {
-        BridgeEventsInstance::<P, N>::deploy(provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
-
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
+    pub fn deploy<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<BridgeEventsInstance<P, N>>,
+    > {
+        BridgeEventsInstance::<P, N>::deploy(provider)
+    }
+    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+and constructor arguments, if any.
+
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    #[inline]
+    pub fn deploy_builder<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
         BridgeEventsInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`BridgeEvents`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`BridgeEvents`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`BridgeEvents`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct BridgeEventsInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1240,21 +1320,23 @@ pub mod BridgeEvents {
     impl<P, N> ::core::fmt::Debug for BridgeEventsInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("BridgeEventsInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("BridgeEventsInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        BridgeEventsInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > BridgeEventsInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`BridgeEvents`](self) contract instance.
 
-        See the [wrapper's documentation](`BridgeEventsInstance`) for more details.*/
+See the [wrapper's documentation](`BridgeEventsInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider,
@@ -1263,20 +1345,22 @@ pub mod BridgeEvents {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(provider: P) -> alloy_contract::Result<BridgeEventsInstance<P, N>> {
+        pub async fn deploy(
+            provider: P,
+        ) -> alloy_contract::Result<BridgeEventsInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -1318,9 +1402,10 @@ pub mod BridgeEvents {
     }
     /// Function calls.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        BridgeEventsInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > BridgeEventsInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -1334,9 +1419,10 @@ pub mod BridgeEvents {
     }
     /// Event filters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        BridgeEventsInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > BridgeEventsInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
@@ -1351,7 +1437,9 @@ pub mod BridgeEvents {
             self.event_filter::<BridgeHandle>()
         }
         ///Creates a new event filter for the [`DstChainIdSet`] event.
-        pub fn DstChainIdSet_filter(&self) -> alloy_contract::Event<&P, DstChainIdSet, N> {
+        pub fn DstChainIdSet_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, DstChainIdSet, N> {
             self.event_filter::<DstChainIdSet>()
         }
         ///Creates a new event filter for the [`FallbackGrantedPlaintext`] event.
@@ -1361,7 +1449,9 @@ pub mod BridgeEvents {
             self.event_filter::<FallbackGrantedPlaintext>()
         }
         ///Creates a new event filter for the [`HandleBridged`] event.
-        pub fn HandleBridged_filter(&self) -> alloy_contract::Event<&P, HandleBridged, N> {
+        pub fn HandleBridged_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, HandleBridged, N> {
             self.event_filter::<HandleBridged>()
         }
         ///Creates a new event filter for the [`LzReceiveBaseGasSet`] event.
