@@ -141,10 +141,7 @@ async fn main() -> anyhow::Result<()> {
             "--ethereum-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
         ));
     }
-    let protocol_config_address =
-        args.protocol_config.parsed_address()?.ok_or_else(|| {
-            anyhow::anyhow!("--protocol-config-address is required")
-        })?;
+    let protocol_config_address = args.protocol_config.parsed_address()?;
 
     let cancel_token = CancellationToken::new();
     metrics_server::spawn(

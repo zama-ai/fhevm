@@ -42,7 +42,7 @@ pub struct ConsumerConfig {
     pub acl_address: Address,
     pub tfhe_address: Address,
     pub kms_generation_address: Option<Address>,
-    pub protocol_config_address: Address,
+    pub protocol_config_address: Option<Address>,
     pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,
     pub database_retry_interval: Duration,
@@ -299,11 +299,10 @@ async fn run_consumer_stats_observer(
 
 pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     info!("Starting consumer with config: {:?}", config);
-    let mut contracts = vec![
-        config.acl_address,
-        config.tfhe_address,
-        config.protocol_config_address,
-    ];
+    let mut contracts = vec![config.acl_address, config.tfhe_address];
+    if let Some(protocol_config_address) = config.protocol_config_address {
+        contracts.push(protocol_config_address);
+    }
     if let Some(kms_generation_address) = config.kms_generation_address {
         contracts.push(kms_generation_address);
     }
@@ -542,7 +541,7 @@ async fn ingest_with_retry(
     acl_address: Address,
     tfhe_address: Address,
     kms_generation_address: Option<Address>,
-    protocol_config_address: Address,
+    protocol_config_address: Option<Address>,
     confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
@@ -550,7 +549,7 @@ async fn ingest_with_retry(
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
-    let protocol_config = Some(protocol_config_address);
+    let protocol_config = protocol_config_address;
     loop {
         match ingest_block_logs(
             chain_id,
