@@ -1,5 +1,3 @@
-export { type ReadKmsSignersContextReturnType, readKmsSignersContext } from './readKmsSignersContext.js';
-
 export {
   type DecryptPublicValueParameters,
   type DecryptPublicValueReturnType,
@@ -33,46 +31,7 @@ export {
 } from './canDecryptPublicValues.js';
 
 export {
-  type CreateVerifiedInputProofFromRawBytesParameters,
-  type CreateVerifiedInputProofFromRawBytesReturnType,
-  createVerifiedInputProofFromRawBytes,
-} from './createVerifiedInputProofFromRawBytes.js';
-
-export {
-  type ReadCoprocessorSignersContextReturnType,
-  readCoprocessorSignersContext,
-} from './readCoprocessorSignersContext.js';
-
-export {
-  type VerifyInputProofParameters,
-  type VerifyInputProofReturnType,
-  verifyInputProof,
-} from './verifyInputProof.js';
-
-export {
-  type FetchVerifiedInputProofParameters,
-  type FetchVerifiedInputProofReturnType,
-  fetchVerifiedInputProof,
-} from './fetchVerifiedInputProof.js';
-
-export {
   type FetchEncryptedValuesParameters,
   type FetchEncryptedValuesReturnType,
   fetchEncryptedValues,
 } from './fetchEncryptedValues.js';
-
-export {
-  type VerifyZkProofCoprocessorSignaturesParameters,
-  verifyZkProofCoprocessorSignatures,
-} from './verifyZkProofCoprocessorSignatures.js';
-
-export {
-  type FetchKmsSigncryptedSharesParameters,
-  type FetchKmsSigncryptedSharesReturnType,
-  fetchKmsSigncryptedShares,
-} from './fetchKmsSigncryptedShares.js';
-
-export {
-  type VerifyHandlesCoprocessorSignaturesParameters,
-  verifyHandlesCoprocessorSignatures,
-} from './verifyHandlesCoprocessorSignatures.js';

@@ -1,5 +1,3 @@
-export { type CreateKmsEip812DomainReturnType, createKmsEip712Domain } from './createKmsEip712Domain.js';
-
 export {
   type FetchFheEncryptionKeyBytesParameters,
   type FetchFheEncryptionKeyBytesReturnType,
@@ -17,11 +15,6 @@ export {
   type SerializeTransportKeyPairReturnType,
   serializeTransportKeyPair,
 } from './serializeTransportKeyPair.js';
-
-export {
-  type CreateCoprocessorEip712DomainReturnType,
-  createCoprocessorEip712Domain,
-} from './createCoprocessorEip712Domain.js';
 
 export {
   type SignDecryptionPermitParameters,
