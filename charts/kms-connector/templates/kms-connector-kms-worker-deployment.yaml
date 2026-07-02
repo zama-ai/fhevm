@@ -80,7 +80,9 @@ spec:
             - name: KMS_CONNECTOR_POLYGON_ACL_ADDRESS
               value: {{ $contracts.polygonAcl | quote }}
             - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
-              value: {{ $contracts.kmsGeneration | quote }}
+              value: {{ $contracts.ethereumKmsGeneration | quote }}
+            - name: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
+              value: {{ $contracts.ethereumProtocolConfig | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorKmsWorker.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint }}

@@ -21,7 +21,7 @@ use kms_worker::core::{
     Config, CtAttestationConfig, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
     event_processor::{
         CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-        KMSGenerationProcessor, KmsClient,
+        KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
     },
 };
 use sqlx::{Pool, Postgres};
@@ -43,20 +43,19 @@ pub fn mock_copro_registry_load(asserter: &Asserter, s3_url: &str) -> Address {
     copro_tx_sender
 }
 
-pub async fn init_kms_worker<GP, HP>(
+pub async fn init_kms_worker<P>(
     config: Config,
-    gateway_provider: GP,
-    acl_contracts_mock: HashMap<u64, ACLInstance<HP>>,
+    provider: P,
+    acl_contracts_mock: HashMap<u64, ACLInstance<P>>,
     db: &Pool<Postgres>,
-) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<GP, HP, DbContextManager>>>
+) -> anyhow::Result<KmsWorker<DbEventPicker, DbEventProcessor<P, P, DbContextManager<P>>>>
 where
-    GP: Provider + Clone + 'static,
-    HP: Provider + Clone + 'static,
+    P: Provider + Clone + 'static,
 {
     // The 24h refresh interval (see `testing_ct_attestation_config`) means the refresh task
     // never fires during a test, so a throwaway token is fine here.
     let ciphertext_manager = CiphertextManager::connect(
-        gateway_provider.clone(),
+        provider.clone(),
         reqwest::Client::new(),
         &config,
         CancellationToken::new(),
@@ -66,19 +65,21 @@ where
     let kms_client = KmsClient::connect(&config).await?;
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
-    let context_manager = DbContextManager::new(db.clone());
+    let context_manager = DbContextManager::new(db.clone(), &config, provider.clone());
     let decryption_processor = DecryptionProcessor::new(
         &config,
         context_manager.clone(),
-        gateway_provider.clone(),
+        provider.clone(),
         acl_contracts_mock,
         ciphertext_manager,
     );
     let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
+    let protocol_config_processor = ProtocolConfigProcessor::new(&config, provider.clone());
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),
         decryption_processor,
         kms_generation_processor,
+        protocol_config_processor,
         config.max_decryption_attempts,
         db.clone(),
     );

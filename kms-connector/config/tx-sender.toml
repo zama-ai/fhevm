@@ -82,17 +82,17 @@ private_key = "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c77
 # ENV: KMS_CONNECTOR_TASK_LIMIT
 # task_limit = 1000
 
-# The interval between garbage collection runs (optional, defaults to 5m)
-# ENV: KMS_CONNECTOR_GC_RUN_INTERVAL (format: https://docs.rs/humantime/latest/humantime/)
-# gc_run_interval = "5m"
+# The interval between operation recovery runs (optional, defaults to 5m)
+# ENV: KMS_CONNECTOR_OPERATION_RECOVERY_RUN_INTERVAL (format: https://docs.rs/humantime/latest/humantime/)
+# operation_recovery_run_interval = "5m"
 
-# The expiration time for completed/failed decryptions, after which they will be deleted (optional, defaults 24h)
-# ENV: KMS_CONNECTOR_GC_DECRYPTION_EXPIRY (format: https://docs.rs/humantime/latest/humantime/)
-# gc_decryption_expiry = "24h"
+# The expiration time for decryptions, after which pending/under_process decryptions are marked as failed (optional, defaults 24h)
+# ENV: KMS_CONNECTOR_DECRYPTION_EXPIRY (format: https://docs.rs/humantime/latest/humantime/)
+# decryption_expiry = "24h"
 
-# The time limit for decryption to be under process, after which they will be considered as pending again (optional, defaults to 6m)
-# ENV: KMS_CONNECTOR_GC_DECRYPTION_UNDER_PROCESS_LIMIT (format: https://docs.rs/humantime/latest/humantime/)
-# gc_decryption_under_process_limit = "6m"
+# The timeout for operations to remain under process in the database, after which they will be considered as pending again (optional, defaults to 6m)
+# ENV: KMS_CONNECTOR_OPERATION_UNDER_PROCESS_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# operation_under_process_timeout = "6m"
 
 # Configuration of the Decryption contract (required)
 [decryption_contract]
@@ -118,6 +118,19 @@ address = "0x0000000000000000000000000000000000000000"
 # domain_name = "KMSGeneration"
 # EIP-712 domain version for KMSGeneration contract (optional, defaults to "1")
 # ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__DOMAIN_VERSION
+# domain_version = "1"
+
+# Configuration of the ProtocolConfig contract on Ethereum (required)
+[protocol_config_contract]
+# Address of the ProtocolConfig contract on Ethereum
+# Format: hex string with 0x prefix
+# ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
+address = "0x0000000000000000000000000000000000000000"
+# EIP-712 domain name for ProtocolConfig contract (optional, defaults to "ProtocolConfig")
+# ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__DOMAIN_NAME
+# domain_name = "ProtocolConfig"
+# EIP-712 domain version for ProtocolConfig contract (optional, defaults to "1")
+# ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
 # AWS KMS configuration (optional if `private_key` is configured)

@@ -65,6 +65,9 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
         // `fhevm_engine_common::versioning::resolve_gcs_mode`, which is async
         // and therefore cannot be called from this sync function.
         gcs_mode: false,
+        s3_migration: args.s3_migration,
+        s3_migration_sleep_duration: args.s3_migration_sleep_duration,
+        s3_migration_max_retries: args.s3_migration_max_retries,
     })
 }
 

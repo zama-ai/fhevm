@@ -664,33 +664,50 @@ impl Database {
         &self,
         block_summary: &BlockSummary,
         catchup: bool,
-    ) -> Result<(), SqlxError> {
+    ) -> Result<f64, SqlxError> {
         let duplicate_count_increase = if catchup { 0 } else { 1 };
         let Some(mut tx) = self.new_transaction().await? else {
-            return Ok(());
+            return Ok(0.0);
         };
-        sqlx::query!(
+        let delay_seconds = sqlx::query_scalar!(
             r#"
-            INSERT INTO host_chain_consumer_blocks (
-                chain_id,
-                block_hash,
-                block_number
+            WITH upserted AS (
+                INSERT INTO host_chain_consumer_blocks (
+                    chain_id,
+                    block_hash,
+                    block_number
+                )
+                VALUES ($1, $2, $3)
+                ON CONFLICT (chain_id, block_hash) DO UPDATE
+                SET duplicate_count =
+                    host_chain_consumer_blocks.duplicate_count + $4
+                RETURNING chain_id, block_hash, created_at
             )
-            VALUES ($1, $2, $3)
-            ON CONFLICT (chain_id, block_hash) DO UPDATE
-            SET duplicate_count =
-                host_chain_consumer_blocks.duplicate_count + $4
+            SELECT
+                COALESCE(
+                    GREATEST(
+                        EXTRACT(EPOCH FROM (c.created_at - v.created_at)),
+                        0
+                    ),
+                    0
+                )::DOUBLE PRECISION AS "delay_seconds!"
+            FROM upserted c
+            LEFT JOIN host_chain_blocks_valid v
+              ON v.chain_id = c.chain_id
+             AND v.block_hash = c.block_hash
+            WHERE c.chain_id = $1
+              AND c.block_hash = $2
             "#,
             self.chain_id.as_i64(),
             block_summary.hash.to_vec(),
             block_summary.number as i64,
             duplicate_count_increase
         )
-        .execute(tx.as_mut())
+        .fetch_one(tx.as_mut())
         .await?;
         tx.commit().await?;
 
-        Ok(())
+        Ok(delay_seconds)
     }
 
     // /// Called at regular interval

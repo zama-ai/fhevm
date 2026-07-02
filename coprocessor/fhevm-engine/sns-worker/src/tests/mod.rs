@@ -2,7 +2,8 @@ use crate::{
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
-    Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
+    Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy, SchedulePolicy,
+    DEFAULT_S3_MIGRATION_MAX_RETRIES,
 };
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
@@ -41,6 +42,9 @@ use tracing::{info, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
+
+mod s3_migration;
+mod s3_migration_dry_run;
 
 pub fn init_tracing() {
     TRACING_INIT.get_or_init(|| {
@@ -564,6 +568,8 @@ async fn setup_localstack(
 }
 
 async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> anyhow::Result<()> {
+    empty_bucket(s3_client, bucket_name).await?;
+
     s3_client
         .delete_bucket()
         .set_bucket(Some(bucket_name.to_string()))
@@ -577,6 +583,28 @@ async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> a
         .send()
         .await
         .expect("Failed to create bucket");
+
+    Ok(())
+}
+
+async fn empty_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> anyhow::Result<()> {
+    let result = match s3_client.list_objects().bucket(bucket_name).send().await {
+        std::result::Result::Ok(result) => result,
+        Err(_) => return Ok(()),
+    };
+
+    for object in result.contents() {
+        let Some(key) = object.key() else {
+            continue;
+        };
+
+        s3_client
+            .delete_object()
+            .bucket(bucket_name)
+            .key(key)
+            .send()
+            .await?;
+    }
 
     Ok(())
 }
@@ -1065,5 +1093,8 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         gcs_mode: false,
         private_key: None,
         signer_type: fhevm_engine_common::types::SignerType::PrivateKey,
+        s3_migration: S3MigrationMode::No,
+        s3_migration_sleep_duration: Duration::from_mins(5),
+        s3_migration_max_retries: DEFAULT_S3_MIGRATION_MAX_RETRIES,
     }
 }

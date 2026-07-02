@@ -21,7 +21,7 @@ use primitives::event::BlockFlow;
 use crate::cmd::block_history::BlockSummary;
 use crate::consumer::metrics::{
     inc_blocks_duplicated, inc_blocks_missing, inc_blocks_processed,
-    inc_db_errors,
+    inc_db_errors, observe_legacy_insert_delay_seconds,
 };
 use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
 use crate::database::tfhe_event_propagate::Database;
@@ -196,6 +196,31 @@ pub async fn promote_once_all_chains_to_fast(
             info!(
                 count,
                 "Slow-lane disabled: promoted all chains to fast on startup"
+            );
+        }
+    }
+}
+
+async fn observe_consumer_block_timing(
+    db: &Database,
+    chain_id: &str,
+    block_summary: &BlockSummary,
+    catchup: bool,
+) {
+    match db
+        .mark_block_as_seen_by_consumer(block_summary, catchup)
+        .await
+    {
+        Ok(delay_seconds) => {
+            observe_legacy_insert_delay_seconds(chain_id, delay_seconds)
+        }
+        Err(err) => {
+            inc_db_errors(chain_id, 1);
+            warn!(
+                block_number = block_summary.number,
+                block_hash = ?block_summary.hash,
+                error = %err,
+                "Failed to record host-listener consumer block timing"
             );
         }
     }
@@ -422,9 +447,13 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 timestamp: payload.timestamp,
             };
             let catchup = payload.flow == BlockFlow::Catchup;
-            let _ = db
-                .mark_block_as_seen_by_consumer(&block_summary, catchup)
-                .await;
+            observe_consumer_block_timing(
+                &db,
+                &chain_id_str,
+                &block_summary,
+                catchup,
+            )
+            .await;
             let logs = collect_logs(&payload);
             info!(
                 chain_id = %payload.chain_id,
