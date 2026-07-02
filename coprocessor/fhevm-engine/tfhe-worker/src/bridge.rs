@@ -273,6 +273,11 @@ pub(crate) async fn associate_pair(
     // Copy the digest and mark the event associated only when we actually placed
     // the ciphertext. If the destination was already materialized by another path
     // (e.g. a grantFallbackPlaintext recovery), the copy above is a no-op.
+    //
+    // Contract: `is_associated` is set in the SAME transaction as the copy —
+    // the host-listener's reorg cleanup uses a flagged observation in an
+    // orphaned block as proof that this association produced the
+    // materialization, and retracts it.
     if ciphertext_copied {
         sqlx::query!(
             r#"

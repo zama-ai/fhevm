@@ -644,3 +644,237 @@ async fn fallback_ignored_when_handle_has_ciphertext() {
     assert_eq!(computation_count(&db, dst_handle).await, 0);
     assert_eq!(pbs_count(&db, dst_handle).await, 0);
 }
+
+/// Seeds a bridge observation row directly, bypassing ingestion, so the
+/// association flag and block hash can be controlled.
+#[allow(clippy::too_many_arguments)]
+async fn seed_bridged_observation(
+    db: &Database,
+    dst_handle: &[u8],
+    dst_chain_id: u64,
+    block_hash: &[u8],
+    is_associated: bool,
+) {
+    let pool = db.pool().await;
+    sqlx::query(
+        "INSERT INTO handle_bridged_events
+             (src_handle, dst_handle, dst_chain_id, receiver_dapp, guid,
+              block_number, block_hash, is_associated)
+         VALUES ('\\x01'::bytea, $1, $2, '\\xdb'::bytea, '\\x02'::bytea,
+                 1, $3, $4)",
+    )
+    .bind(dst_handle)
+    .bind(dst_chain_id as i64)
+    .bind(block_hash)
+    .bind(is_associated)
+    .execute(&pool)
+    .await
+    .expect("seed handle_bridged_events");
+}
+
+async fn seed_materialization(db: &Database, handle: &[u8], chain_id: u64) {
+    let pool = db.pool().await;
+    sqlx::query(
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, '\\x11'::bytea, 0, 4)",
+    )
+    .bind(handle)
+    .execute(&pool)
+    .await
+    .expect("seed ciphertexts");
+    sqlx::query(
+        "INSERT INTO ciphertext_digest
+             (handle, ciphertext, ciphertext128, ciphertext128_format, host_chain_id, key_id_gw)
+         VALUES ($1, '\\xa1'::bytea, '\\xb2'::bytea, 11, $2, '\\xc3'::bytea)",
+    )
+    .bind(handle)
+    .bind(chain_id as i64)
+    .execute(&pool)
+    .await
+    .expect("seed ciphertext_digest");
+}
+
+async fn run_bridge_cleanup(db: &Database, orphaned_hashes: &[Vec<u8>]) {
+    let mut tx = db.new_transaction().await.expect("tx");
+    db.cleanup_orphaned_branch_state(&mut tx, orphaned_hashes)
+        .await
+        .expect("cleanup");
+    tx.commit().await.expect("commit");
+}
+
+async fn count_rows(db: &Database, sql: &str, bind: &[u8]) -> i64 {
+    let pool = db.pool().await;
+    sqlx::query_scalar::<_, i64>(sql)
+        .bind(bind)
+        .fetch_one(&pool)
+        .await
+        .expect("count")
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn reorg_retracts_associated_bridged_handle() {
+    let (db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = handle_for_chain(DST_CHAIN_ID, 0x33);
+    let orphaned_hash = vec![0x0A; 32];
+
+    // An association performed from a block that is now orphaned: flagged
+    // observation plus the copied ciphertext and publication-queue digest.
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &orphaned_hash,
+        true,
+    )
+    .await;
+    seed_materialization(&db, dst_handle.as_slice(), DST_CHAIN_ID).await;
+
+    run_bridge_cleanup(&db, &[orphaned_hash]).await;
+
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events WHERE dst_handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "orphaned observation should be deleted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "copied ciphertext should be retracted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "copied digest should be retracted (cancels unsent publication)"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn reorg_keeps_unassociated_and_canonical_bridge_state() {
+    let (db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let orphaned_hash = vec![0x0A; 32];
+    let canonical_hash = vec![0x0B; 32];
+
+    // Unflagged observation in the orphaned block whose handle was
+    // materialized by another path (fallback): the observation row goes,
+    // the materialization stays.
+    let fallback_handle = handle_for_chain(DST_CHAIN_ID, 0x44);
+    seed_bridged_observation(
+        &db,
+        fallback_handle.as_slice(),
+        DST_CHAIN_ID,
+        &orphaned_hash,
+        false,
+    )
+    .await;
+    seed_materialization(&db, fallback_handle.as_slice(), DST_CHAIN_ID).await;
+
+    // Association from a block that is NOT orphaned: fully untouched.
+    let canonical_handle = handle_for_chain(DST_CHAIN_ID, 0x55);
+    seed_bridged_observation(
+        &db,
+        canonical_handle.as_slice(),
+        DST_CHAIN_ID,
+        &canonical_hash,
+        true,
+    )
+    .await;
+    seed_materialization(&db, canonical_handle.as_slice(), DST_CHAIN_ID).await;
+
+    // Source-side approval observed in the orphaned block: removed; one in
+    // the canonical block: kept.
+    let pool = db.pool().await;
+    for (seed, hash) in [(0x66u8, &orphaned_hash), (0x77u8, &canonical_hash)] {
+        sqlx::query(
+            "INSERT INTO bridge_handle_events
+                 (src_handle, dst_chain_id, src_chain_id, sender_dapp, guid,
+                  block_number, block_hash)
+             VALUES ($1, 1, $2, '\\xda'::bytea, '\\x03'::bytea, 1, $3)",
+        )
+        .bind(vec![seed; 32])
+        .bind(DST_CHAIN_ID as i64)
+        .bind(hash)
+        .execute(&pool)
+        .await
+        .expect("seed bridge_handle_events");
+    }
+
+    run_bridge_cleanup(&db, &[orphaned_hash]).await;
+
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events WHERE dst_handle = $1",
+            fallback_handle.as_slice(),
+        )
+        .await,
+        0,
+        "orphaned unflagged observation should be deleted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            fallback_handle.as_slice(),
+        )
+        .await,
+        1,
+        "fallback materialization must not be retracted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events WHERE dst_handle = $1",
+            canonical_handle.as_slice(),
+        )
+        .await,
+        1,
+        "canonical observation must survive"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            canonical_handle.as_slice(),
+        )
+        .await,
+        1,
+        "canonical association must survive"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM bridge_handle_events WHERE src_handle = $1",
+            vec![0x66u8; 32].as_slice(),
+        )
+        .await,
+        0,
+        "orphaned source approval should be deleted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM bridge_handle_events WHERE src_handle = $1",
+            vec![0x77u8; 32].as_slice(),
+        )
+        .await,
+        1,
+        "canonical source approval must survive"
+    );
+}

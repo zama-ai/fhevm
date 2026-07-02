@@ -1230,6 +1230,70 @@ impl Database {
             .await?;
         }
 
+        // Confidential bridge: destination-side reorg retraction. The bridge
+        // worker sets `is_associated` in the same transaction as the
+        // ciphertext copy, so a flagged observation in an orphaned block is
+        // the provenance of a materialization that must be retracted (a
+        // fallback-materialized handle is never flagged and its state is
+        // compute-pipeline state, cleaned above). Deleting the copied
+        // `ciphertext_digest` row cancels a not-yet-sent
+        // `addCiphertextMaterial`; an already-sent one cannot be recalled and
+        // re-association after canonical re-inclusion re-sends it, which the
+        // contract's `CoprocessorAlreadyAdded` path treats as benign. The
+        // single DELETE .. RETURNING both removes the orphaned observations
+        // and captures the flag under the row lock, so an association racing
+        // finalization is either retracted or never happens.
+        let retracted_bridged = sqlx::query!(
+            r#"
+            DELETE FROM handle_bridged_events
+            WHERE dst_chain_id = $1
+              AND block_hash = ANY($2::bytea[])
+            RETURNING dst_handle AS "dst_handle!", is_associated AS "is_associated!"
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+
+        let retracted_dst_handles = retracted_bridged
+            .into_iter()
+            .filter(|row| row.is_associated)
+            .map(|row| row.dst_handle)
+            .collect::<Vec<_>>();
+
+        if !retracted_dst_handles.is_empty() {
+            sqlx::query!(
+                "DELETE FROM ciphertexts WHERE handle = ANY($1::bytea[])",
+                &retracted_dst_handles as _,
+            )
+            .execute(tx.deref_mut())
+            .await?;
+
+            sqlx::query!(
+                "DELETE FROM ciphertext_digest
+                 WHERE handle = ANY($1::bytea[]) AND host_chain_id = $2",
+                &retracted_dst_handles as _,
+                self.chain_id.as_i64(),
+            )
+            .execute(tx.deref_mut())
+            .await?;
+        }
+
+        // Source-side approvals from orphaned blocks were never consumable
+        // (their read path requires a finalized block); just remove them.
+        sqlx::query!(
+            r#"
+            DELETE FROM bridge_handle_events
+            WHERE src_chain_id = $1
+              AND block_hash = ANY($2::bytea[])
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
         Ok(())
     }
 
