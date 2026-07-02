@@ -10,6 +10,31 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo install sqlx-cli --version 0.7.2 \
     --no-default-features --features postgres,rustls --locked
 
+# Install AWS CLI v2 (self-contained bundle) for RDS IAM auth token generation.
+# prepare_database_url.sh shells out to `aws rds generate-db-auth-token`. The bundle
+# ships its own Python/libs and only depends on glibc, so it runs on the glibc-based
+# postgres runtime image below. Pinned to a specific version for reproducible builds.
+ARG TARGETARCH
+ARG AWS_CLI_VERSION="2.34.52"
+RUN set -eux; \
+    apk add --no-cache unzip; \
+    arch="${TARGETARCH:-}"; \
+    if [ -z "$arch" ]; then \
+      case "$(uname -m)" in \
+        x86_64) arch=amd64 ;; \
+        aarch64) arch=arm64 ;; \
+      esac; \
+    fi; \
+    case "$arch" in \
+      amd64) aws_arch=x86_64 ;; \
+      arm64) aws_arch=aarch64 ;; \
+      *) echo "unsupported architecture: ${arch}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}-${AWS_CLI_VERSION}.zip" -o /tmp/awscliv2.zip; \
+    unzip -q /tmp/awscliv2.zip -d /tmp; \
+    /tmp/aws/install --install-dir /usr/local/aws-cli --bin-dir /usr/local/aws-cli-bin; \
+    rm -rf /tmp/aws /tmp/awscliv2.zip
+
 # Copy migrations and initialization script
 COPY listener ./listener
 COPY coprocessor/fhevm-engine/ ./coprocessor/fhevm-engine
@@ -38,6 +63,11 @@ COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migrat
 COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/revert_coprocessor_db_state.sh /revert_coprocessor_db_state.sh
 COPY  --from=builder /etc/group /etc/group
 COPY  --from=builder /etc/passwd /etc/passwd
+
+# AWS CLI v2, used by prepare_database_url.sh to mint RDS IAM auth tokens.
+COPY  --from=builder /usr/local/aws-cli /usr/local/aws-cli
+COPY  --from=builder /usr/local/aws-cli-bin /usr/local/aws-cli-bin
+ENV PATH="/usr/local/aws-cli-bin:${PATH}"
 
 USER fhevm:fhevm
 
