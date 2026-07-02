@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pbs_computations AS p\n             SET key_material_kind = c.key_material_kind\n             FROM ciphertexts AS c\n             WHERE p.handle = $1 AND p.is_completed = false\n               AND c.handle = $1 AND c.ciphertext_version = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c26af9f6c026b22a7f08df77e3e31a1a5f2b137dcc7a6030425df3f1e0a9b2f3"
+}

@@ -1710,4 +1710,22 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, caller));
         kmsGeneration.scheduleCompressedKeyCutover(keyId, cutovers, 500);
     }
+    function test_genericKeyGettersRejectMigrationRequestId() public {
+        (, uint256 keyId) = _runFullKeygenCycle();
+        (, uint256 migrationRequestId) = _runFullMigrationCycle(keyId);
+
+        // A migration request ID is a request handle, not a key: the
+        // generic getters must revert instead of returning
+        // plausible-looking empty records.
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, migrationRequestId));
+        kmsGeneration.getKeyMaterials(migrationRequestId);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, migrationRequestId));
+        kmsGeneration.getKeyInfo(migrationRequestId);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, migrationRequestId));
+        kmsGeneration.getKeyParamsType(migrationRequestId);
+
+        // The real key stays fully readable.
+        (, IKMSGeneration.KeyDigest[] memory digests) = kmsGeneration.getKeyMaterials(keyId);
+        assertEq(digests.length, 1);
+    }
 }

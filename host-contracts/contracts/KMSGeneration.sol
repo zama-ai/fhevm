@@ -780,6 +780,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function getKeyParamsType(uint256 keyId) external view virtual returns (ParamsType) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
+        // A migration request ID is a request handle, not a key: the
+        // generic key getters must not return plausible-looking empty
+        // records for it (its digests live under the migrated keyId).
+        if ($.migrationRequests[keyId] != 0) {
+            revert KeyNotGenerated(keyId);
+        }
+
         if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
         }
@@ -886,6 +893,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     function getKeyMaterials(uint256 keyId) external view virtual returns (string[] memory, KeyDigest[] memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        // A migration request ID is a request handle, not a key: the
+        // generic key getters must not return plausible-looking empty
+        // records for it (its digests live under the migrated keyId).
+        if ($.migrationRequests[keyId] != 0) {
+            revert KeyNotGenerated(keyId);
+        }
+
         if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
         }
@@ -906,6 +920,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     function getKeyInfo(uint256 keyId) external view virtual returns (KeyInfo memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        // A migration request ID is a request handle, not a key: the
+        // generic key getters must not return plausible-looking empty
+        // records for it (its digests live under the migrated keyId).
+        if ($.migrationRequests[keyId] != 0) {
+            revert KeyNotGenerated(keyId);
+        }
+
         if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
         }

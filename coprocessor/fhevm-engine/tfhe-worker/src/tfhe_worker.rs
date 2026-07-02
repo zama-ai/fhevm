@@ -745,14 +745,20 @@ async fn upload_transaction_graph_results<'a>(
                     error!(target: "tfhe_worker", { error = %err }, "error while inserting new ciphertexts");
                     err
                 })?.rows_affected();
-            // Pin the SnS tasks of these handles to the source
-            // ciphertext's material kind (RFC-029: the task row is the
-            // sns-worker's only selection authority).
+            // Pin the SnS tasks of these handles to the CANONICAL
+            // ciphertext row's material kind (RFC-029: the task row is
+            // the sns-worker's only selection authority). Copying from
+            // the stored row keeps the pin deterministic even when the
+            // insert above was a conflict no-op and the canonical
+            // bytes were produced earlier.
             let _ = query!(
-                "UPDATE pbs_computations SET key_material_kind = $2
-                 WHERE handle = ANY($1::BYTEA[]) AND is_completed = false",
+                "UPDATE pbs_computations AS p
+                 SET key_material_kind = c.key_material_kind
+                 FROM ciphertexts AS c
+                 WHERE p.handle = ANY($1::BYTEA[]) AND p.is_completed = false
+                   AND c.handle = p.handle AND c.ciphertext_version = $2",
                 &handles,
-                key_material_kind
+                current_ciphertext_version()
             )
             .execute(trx.as_mut())
             .await?;

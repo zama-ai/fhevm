@@ -353,6 +353,7 @@ async fn execute_verify_proof_routine(
         let contract_address = row.contract_address;
         let user_address = row.user_address;
         let transaction_id: Option<Vec<u8>> = row.transaction_id;
+        let gateway_block_number = row.gateway_block_number;
 
         // RFC-029: with a scheduled cutover, the material is pinned by
         // the finalized Gateway block of the request. Rows without a
@@ -365,7 +366,7 @@ async fn execute_verify_proof_routine(
             .map_err(|err| ExecutionError::Other(err.into()))?
         {
             Some(cutover) => {
-                let gateway_block = row.gateway_block_number.unwrap_or(0).max(0) as u64;
+                let gateway_block = gateway_block_number.unwrap_or(0).max(0) as u64;
                 let kind = cutover.kind_for_gateway_block(gateway_block);
                 let mut conn = pool.acquire().await?;
                 match db_key_cache.fetch_latest_pinned(&mut conn, kind).await {
@@ -453,8 +454,16 @@ async fn execute_verify_proof_routine(
                     // Label outputs with the material that actually
                     // produced them; the gateway block is wired in
                     // once selection is cutover-driven.
-                    insert_ciphertexts(&mut txn, cts, blob_hash, material_kind.as_i16(), None)
-                        .await?;
+                    // The finalized Gateway block drives the
+                    // first-finalized-request-wins canonical upsert.
+                    insert_ciphertexts(
+                        &mut txn,
+                        cts,
+                        blob_hash,
+                        material_kind.as_i16(),
+                        gateway_block_number,
+                    )
+                    .await?;
                     tracing::Span::current().record("count", count);
 
                     info!(message = "Ciphertexts inserted", request_id, count);
@@ -826,14 +835,20 @@ pub(crate) async fn insert_ciphertexts(
         .execute(db_txn.as_mut())
         .await?;
 
-        // Pin any SnS task of this handle to the material kind that
-        // produced the canonical input ciphertext (RFC-029: the task
-        // row is the sns-worker's only selection authority).
+        // Pin any SnS task of this handle to the CANONICAL row's
+        // material kind (RFC-029: the task row is the sns-worker's
+        // only selection authority). Copying from the stored row —
+        // not from this request — keeps the pin deterministic even
+        // when this insert lost the first-finalized-request-wins
+        // conflict and the canonical bytes belong to another request.
         sqlx::query!(
-            "UPDATE pbs_computations SET key_material_kind = $2
-             WHERE handle = $1 AND is_completed = false",
+            "UPDATE pbs_computations AS p
+             SET key_material_kind = c.key_material_kind
+             FROM ciphertexts AS c
+             WHERE p.handle = $1 AND p.is_completed = false
+               AND c.handle = $1 AND c.ciphertext_version = $2",
             &ct.handle,
-            key_material_kind,
+            ct.ct_version,
         )
         .execute(db_txn.as_mut())
         .await?;
