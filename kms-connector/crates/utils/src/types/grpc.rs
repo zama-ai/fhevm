@@ -16,6 +16,8 @@ pub enum KmsGrpcRequest {
     PrepKeygen(KeyGenPreprocRequest),
     Keygen(KeyGenRequest),
     Crsgen(CrsGenRequest),
+    AbortKeygen(RequestId),
+    AbortCrsgen(RequestId),
     NewMpcContext {
         old: NewMpcContextRequest,
         new: NewMpcContextRequest,

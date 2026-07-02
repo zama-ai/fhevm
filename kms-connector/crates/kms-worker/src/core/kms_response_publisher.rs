@@ -223,7 +223,7 @@ impl DbKmsResponsePublisher {
     }
 
     /// Sets the `status` field of the event to `pending` in the database.
-    pub async fn mark_event_as_pending(&self, event: ProtocolEvent) {
+    pub async fn mark_event_as_pending(&self, event: ProtocolEvent) -> anyhow::Result<()> {
         event.mark_as_pending(&self.db_pool).await
     }
 }
