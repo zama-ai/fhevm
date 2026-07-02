@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /**
  * @title   IDstApp
  * @notice Interface implemented by confidential destination apps to receive bridged payloads.
-  * @dev `onConfidentialBridgeReceived` is invoked from `ConfidentialBridge.lzCompose` inside a dedicated
+ * @dev `onConfidentialBridgeReceived` is invoked from `ConfidentialBridge.lzCompose` inside a dedicated
  *      `lzCompose` transaction, after transient ACL allowance has been granted to the
  *      destination app for every derived handle in `dstHandleList`. Apps should treat
  *      `srcHandleList` entries as opaque bytes blobs (they are source-chain handles,
