@@ -131,17 +131,17 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         /// @notice Context owning each epoch.
         mapping(uint256 epochId => uint256 contextId) contextForEpoch;
         /// @notice Context creation confirmations.
-        mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextCreationConfirmedBySigner;
+        mapping(uint256 contextId => mapping(address txSender => bool confirmed)) contextCreationConfirmedByTxSender;
         /// @notice Epoch activation confirmations per signer (one digest per signer per epoch).
         mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochActivationConfirmedBySigner;
         /// @notice Number of epoch activation confirmations grouped by digest
         mapping(uint256 epochId => mapping(bytes32 dataHash => uint256 confirmations)) epochActivationConfirmationCountForDigest;
-        /// @notice Required previous-context signer quorum, cached at pending-context creation time.
-        mapping(uint256 contextId => uint256 threshold) contextCreationPreviousSignerThreshold;
-        /// @notice New-context signer confirmations for context creation.
-        mapping(uint256 contextId => uint256 confirmations) contextCreationNewSignerConfirmationCount;
-        /// @notice Previous-context signer confirmations for context creation.
-        mapping(uint256 contextId => uint256 confirmations) contextCreationPreviousSignerConfirmationCount;
+        /// @notice Required previous-context confirmation quorum, cached at pending-context creation time.
+        mapping(uint256 contextId => uint256 threshold) contextCreationPreviousTxSenderThreshold;
+        /// @notice New-context tx-sender confirmations for context creation.
+        mapping(uint256 contextId => uint256 confirmations) contextCreationNewTxSenderConfirmationCount;
+        /// @notice Previous-context tx-sender confirmations for context creation.
+        mapping(uint256 contextId => uint256 confirmations) contextCreationPreviousTxSenderConfirmationCount;
         /// @notice Context anchor recorded when NewKmsContext was emitted.
         mapping(uint256 contextId => KmsContextAnchor) contextAnchors;
     }
@@ -300,9 +300,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         $.contextState[contextId] = ContextState.Pending;
         _createPendingEpoch(contextId);
 
-        // Cache the previous-context signer quorum needed by confirmKmsContextCreation.
-        // `n - t + 1` (n = previous signers, t = previous MPC fault threshold) so no t-subset ratifies alone.
-        $.contextCreationPreviousSignerThreshold[contextId] =
+        // Cache the previous-context confirmation quorum needed by confirmKmsContextCreation.
+        // `n - t + 1` (n = previous committee size, t = previous MPC fault threshold) so no t-subset ratifies alone.
+        $.contextCreationPreviousTxSenderThreshold[contextId] =
             $.kmsSignerAddressesForContext[previousContextId].length -
             $.mpcThresholdForContext[previousContextId] +
             1;
@@ -339,39 +339,36 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    /// @dev Context-switch: previous+new signers confirm on split-threshold quorum.
+    /// @dev Context-switch: previous+new committee tx senders confirm on split-threshold quorum.
     function confirmKmsContextCreation(uint256 kmsContextId) external virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         if ($.contextState[kmsContextId] != ContextState.Pending) {
             revert KmsContextNotPending(kmsContextId);
         }
 
-        // Caller must belong to the outgoing or incoming signer set and confirm only once.
+        // Caller must belong to the outgoing or incoming committee and confirm only once.
         uint256 previousContextId = $.latestActiveKmsContextId;
         bool isPreviousTxSender = $.isKmsTxSenderForContext[previousContextId][msg.sender];
         bool isNewTxSender = $.isKmsTxSenderForContext[kmsContextId][msg.sender];
         if (!isPreviousTxSender && !isNewTxSender) {
             revert KmsContextCreationUnauthorized(msg.sender, kmsContextId);
         }
-        address signer = isNewTxSender
-            ? $.kmsNodeByTxSenderForContext[kmsContextId][msg.sender].signerAddress
-            : $.kmsNodeByTxSenderForContext[previousContextId][msg.sender].signerAddress;
-        if ($.contextCreationConfirmedBySigner[kmsContextId][signer]) {
-            revert KmsContextCreationAlreadyConfirmed(signer, kmsContextId);
+        if ($.contextCreationConfirmedByTxSender[kmsContextId][msg.sender]) {
+            revert KmsContextCreationAlreadyConfirmed(msg.sender, kmsContextId);
         }
 
         // Record the confirmation and counts separately for the split quorum.
-        $.contextCreationConfirmedBySigner[kmsContextId][signer] = true;
+        $.contextCreationConfirmedByTxSender[kmsContextId][msg.sender] = true;
         if (isPreviousTxSender) {
-            ++$.contextCreationPreviousSignerConfirmationCount[kmsContextId];
+            ++$.contextCreationPreviousTxSenderConfirmationCount[kmsContextId];
         }
         if (isNewTxSender) {
-            ++$.contextCreationNewSignerConfirmationCount[kmsContextId];
+            ++$.contextCreationNewTxSenderConfirmationCount[kmsContextId];
         }
 
-        emit KmsContextCreationConfirmation(kmsContextId, signer, isPreviousTxSender, isNewTxSender);
+        emit KmsContextCreationConfirmation(kmsContextId, msg.sender, isPreviousTxSender, isNewTxSender);
 
-        // All new signers + (n - t + 1) previous signers confirm to tell Connectors the epoch transition may start.
+        // All new nodes + (n - t + 1) previous nodes confirm to tell Connectors the epoch transition may start.
         if (_hasContextCreationQuorum(kmsContextId)) {
             $.contextState[kmsContextId] = ContextState.Created;
             // The context-switch created this context and its epoch as a paired (Pending, Pending). The DAO
@@ -913,10 +910,10 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     function _hasContextCreationQuorum(uint256 contextId) internal view virtual returns (bool) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return
-            $.contextCreationNewSignerConfirmationCount[contextId] ==
+            $.contextCreationNewTxSenderConfirmationCount[contextId] ==
             $.kmsSignerAddressesForContext[contextId].length &&
-            $.contextCreationPreviousSignerConfirmationCount[contextId] >=
-            $.contextCreationPreviousSignerThreshold[contextId];
+            $.contextCreationPreviousTxSenderConfirmationCount[contextId] >=
+            $.contextCreationPreviousTxSenderThreshold[contextId];
     }
 
     function _requireExpectedSigner(
@@ -1001,9 +998,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         if ($.epochState[latestEpochId] == EpochState.Pending && $.contextForEpoch[latestEpochId] == kmsContextId) {
             _clearEpoch(latestEpochId);
         }
-        delete $.contextCreationPreviousSignerThreshold[kmsContextId];
-        delete $.contextCreationNewSignerConfirmationCount[kmsContextId];
-        delete $.contextCreationPreviousSignerConfirmationCount[kmsContextId];
+        delete $.contextCreationPreviousTxSenderThreshold[kmsContextId];
+        delete $.contextCreationNewTxSenderConfirmationCount[kmsContextId];
+        delete $.contextCreationPreviousTxSenderConfirmationCount[kmsContextId];
     }
 
     /**

@@ -192,8 +192,8 @@ describe('KMS context tasks', function () {
   // ---------------------------------------------------------------------------
 
   describe('context-switch status', function () {
-    // Old context: 3 nodes, mpc=2 -> previous-signer creation target (n - t + 1) = 2.
-    // New context: 2 nodes, mpc=1. Old/new signer sets are disjoint so confirmations partition cleanly.
+    // Old context: 3 nodes, mpc=2 -> previous-side creation target (n - t + 1) = 2.
+    // New context: 2 nodes, mpc=1. Old/new committees are disjoint so confirmations partition cleanly.
     let proxyAddress: string;
     let protocolConfig: ProtocolConfig;
     let oldSigners: Signer[];
@@ -282,7 +282,7 @@ describe('KMS context tasks', function () {
         publicDecryption: 1,
         userDecryption: 1,
         kmsGen: 1,
-        mpc: 2, // -> previousSignerThreshold = 3 - 2 + 1 = 2
+        mpc: 2, // -> previousTxSenderThreshold = 3 - 2 + 1 = 2
       });
       protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
     });
@@ -301,8 +301,8 @@ describe('KMS context tasks', function () {
       expect(result.flow).to.equal('context-switch');
       expect(result.pendingContextId).to.equal(contextId);
       expect(result.contextState).to.equal('PENDING');
-      expect(result.newSignersConfirmed).to.have.lengthOf(1);
-      expect(result.newSignersOutstanding).to.deep.equal([await newSigners[1].getAddress()]);
+      expect(result.newTxSendersConfirmed).to.have.lengthOf(1);
+      expect(result.newTxSendersOutstanding).to.deep.equal([await newTxSenders[1].getAddress()]);
       expect(result.contextCreationQuorumReached).to.equal(false);
     });
 
@@ -312,8 +312,8 @@ describe('KMS context tasks', function () {
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.contextState).to.equal('PENDING');
-      expect(result.newSignersOutstanding).to.have.lengthOf(0);
-      expect(result.previousSignerThreshold).to.equal(2);
+      expect(result.newTxSendersOutstanding).to.have.lengthOf(0);
+      expect(result.previousTxSenderThreshold).to.equal(2);
       expect(result.previousConfirmationCount).to.equal(1);
       expect(result.stuckBelowPreviousThreshold).to.equal(true);
       expect(result.contextCreationQuorumReached).to.equal(false);

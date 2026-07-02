@@ -78,9 +78,9 @@ contract ProtocolConfigMock {
 
     event KmsContextCreationConfirmation(
         uint256 indexed kmsContextId,
-        address indexed signer,
-        bool isPreviousSigner,
-        bool isNewSigner
+        address indexed txSender,
+        bool isPreviousTxSender,
+        bool isNewTxSender
     );
 
     event EpochActivationConfirmation(uint256 indexed epochId, address indexed signer, bytes32 dataHash);

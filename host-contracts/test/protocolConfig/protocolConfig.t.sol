@@ -1423,7 +1423,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.expectRevert(
             abi.encodeWithSelector(
                 IProtocolConfig.KmsContextCreationAlreadyConfirmed.selector,
-                vm.addr(kmsPk0),
+                kmsTxSender0,
                 newContextId
             )
         );
@@ -2626,15 +2626,14 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     // Per-confirmation events and malformed-signature negative
     // -----------------------------------------------------------------------
 
-    /// @dev Asserts KmsContextCreationConfirmation fires with correct isPreviousSigner/isNewSigner flags,
-    ///      including a signer present in BOTH the previous and new committee.
+    /// @dev Asserts KmsContextCreationConfirmation fires with correct isPreviousTxSender/isNewTxSender
+    ///      flags, including a tx-sender present in BOTH the previous and new committee.
     function test_kmsContextCreationConfirmationEventFlags() public {
         _setupEpochLifecycle();
 
-        // New committee: kmsPk0 (also a previous signer -> both) and kmsPk2 (new only).
+        // New committee: node 0 stays same-set (tx-sender 0xA1 in both); node 1 is a fresh new-only
+        // node confirmable through a distinct tx-sender.
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        // kmsPk0 stays same-set (tx-sender 0xA1 in both); kmsPk2 is a fresh new-only node so each signer
-        // is confirmable through a distinct tx-sender.
         nodes[0].signerAddress = vm.addr(kmsPk0);
         nodes[1].txSenderAddress = address(0xC2);
         nodes[1].signerAddress = vm.addr(kmsPk2);
@@ -2642,22 +2641,56 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        // kmsPk1 is a previous signer only (confirmed via its previous tx-sender).
+        // kmsTxSender1 belongs to the previous committee only.
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, vm.addr(kmsPk1), true, false);
+        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, kmsTxSender1, true, false);
         vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(newContextId);
 
-        // kmsPk2 is a new signer only.
+        // 0xC2 belongs to the new committee only.
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, vm.addr(kmsPk2), false, true);
+        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, address(0xC2), false, true);
         vm.prank(address(0xC2));
         protocolConfig.confirmKmsContextCreation(newContextId);
 
-        // kmsPk0 belongs to both committees (same-set tx-sender).
+        // kmsTxSender0 belongs to both committees (same-set tx-sender).
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, vm.addr(kmsPk0), true, true);
+        emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, kmsTxSender0, true, true);
         vm.prank(kmsTxSender0);
+        protocolConfig.confirmKmsContextCreation(newContextId);
+    }
+
+    /// @dev A node that keeps its signer but rotates its tx-sender across the switch confirms from
+    ///      both wallets: dedup is per tx-sender, so neither call blocks the other side's count.
+    function test_confirmKmsContextCreationSignerKeptTxSenderRotated() public {
+        _setupEpochLifecycle();
+
+        // New committee reuses the previous signers but rotates both tx-senders.
+        KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        nodes[0].txSenderAddress = address(0xC1);
+        nodes[1].txSenderAddress = address(0xC2);
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
+        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+
+        // Old wallets confirm the previous side first, then the rotated wallets the new side.
+        vm.prank(kmsTxSender0);
+        protocolConfig.confirmKmsContextCreation(newContextId);
+        vm.prank(kmsTxSender1);
+        protocolConfig.confirmKmsContextCreation(newContextId);
+        vm.prank(address(0xC1));
+        protocolConfig.confirmKmsContextCreation(newContextId);
+
+        // The last new-side confirmation completes the split quorum and emits NewKmsEpoch.
+        vm.expectEmit(true, true, false, true, address(protocolConfig));
+        emit IProtocolConfig.NewKmsEpoch(
+            newContextId,
+            EPOCH_COUNTER_BASE + 2,
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            EPOCH_COUNTER_BASE + 1,
+            block.number - 1
+        );
+        vm.prank(address(0xC2));
         protocolConfig.confirmKmsContextCreation(newContextId);
     }
 

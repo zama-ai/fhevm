@@ -161,13 +161,11 @@ const proveSpareInQuorum = async (state: State, runDecryption: DecryptionRunner)
   const { continuing, added } = committeeSwapPlan(kms);
   const reconstruct = reconstructionThreshold(kms.threshold);
   const forced = continuing.slice(continuing.length - kms.threshold);
+  const forcedContainers = forced.flatMap((party) => partyContainers(party));
   console.log(
     `[kms-context-switch] stopping ${forced.join(",")} so spare(s) ${added.join(",")} are required for the ${reconstruct}/${kms.committeeSize} (2t+1) quorum…`,
   );
-  await setRunning(
-    forced.flatMap((party) => partyContainers(party)),
-    "stop",
-  );
+  await setRunning(forcedContainers, "stop");
   try {
     await waitForPartiesStopped(forced);
     if (!(await runDecryption(`kms-context-switch: decrypt with spare(s) ${added.join(",")} in the 2t+1 quorum`))) {
@@ -176,10 +174,7 @@ const proveSpareInQuorum = async (state: State, runDecryption: DecryptionRunner)
       );
     }
   } finally {
-    await setRunning(
-      forced.flatMap((party) => partyContainers(party)),
-      "start",
-    );
+    await setRunning(forcedContainers, "start");
     await waitForPartiesRunning(forced);
   }
 };
