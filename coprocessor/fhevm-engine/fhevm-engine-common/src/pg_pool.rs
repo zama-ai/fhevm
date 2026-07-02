@@ -61,6 +61,8 @@ impl PostgresPoolManager {
                 return None;
             }
 
+            let statement_timeout = std::cmp::max(acquire_timeout, Duration::from_secs(10));
+
             match connect_pool_with_options(
                 &database_url,
                 PgPoolOptions::new()
@@ -69,6 +71,19 @@ impl PostgresPoolManager {
                 .after_connect(move |conn, _meta| {
                     info!(auto_explain = ?auto_explain_with_min_duration, "New DB connection established");
                     Box::pin(async move {
+                        // Bound every statement on this pooled connection so a
+                        // pathological query cannot run (or hold row locks)
+                        // unbounded. Use the configured DB timeout, while
+                        // preserving the historical 10s floor.
+                        let statement_timeout_ms = statement_timeout.as_millis();
+                        let set_statement_timeout =
+                            format!("SET statement_timeout = '{}ms'", statement_timeout_ms);
+                        if let Err(err) = (&mut *conn)
+                            .execute(set_statement_timeout.as_str())
+                            .await
+                        {
+                            error!(error=%err, "Failed to set statement_timeout on new DB connection");
+                        }
                         if let Some(min_duration) = auto_explain_with_min_duration {
                             if let Err(err) = enable_auto_explain(conn, min_duration).await {
                                 error!(error=%err, "Failed to enable auto_explain");
