@@ -1,0 +1,67 @@
+version: 1
+kind: coprocessor-consensus
+name: RFC-029 Material-Version Cutover
+description: >
+  Purpose-built for the RFC-029 key-material version cutover (fhevm-internal#1568):
+  5 coprocessors at threshold 3, a real 4-party threshold-mode KMS (t=1) running
+  SECURE keygen with Test FHE parameters, and two host chains (L1 + a Polygon
+  stand-in). The 5-coprocessor fleet makes the zero-divergence assertion
+  meaningful -- if any coprocessor selects a different material version for an
+  operation around a cutover block, consensus splits and the standard suite goes
+  red. Two host chains exercise a per-chain cutover block on each chain
+  plus the single gateway cutover block. All five coprocessor instances are
+  built locally from the working tree (source.mode: local) so the branch's
+  material-version selection + version-partitioned worker code is what runs; the
+  connector and host-contracts are likewise built locally via ctx.up overrides in
+  run.ts. kms-core is pulled at the connector-matched release tag (CORE_VERSION in
+  the rollout versions.ts) so the migration keygen RPC is proto-compatible.
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+topology:
+  count: 5
+  threshold: 3
+instances:
+  - index: 0
+    source:
+      mode: local
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor-host-listener-consumer
+  - index: 1
+    source:
+      mode: local
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor1-host-listener-consumer
+  - index: 2
+    source:
+      mode: local
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor2-host-listener-consumer
+  - index: 3
+    source:
+      mode: local
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor3-host-listener-consumer
+  - index: 4
+    source:
+      mode: local
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor4-host-listener-consumer
+# Real 4-party threshold-mode KMS (parties == 3*threshold + 1). Test FHE params:
+# secure keygen does real MPC preprocessing and signs the on-chain prepKeygenId,
+# so the RFC-029 migration keygen-from-existing (UseExisting + CompressedAll +
+# copy_compressed_key_to_original) runs against a genuine multi-party KMS.
+kms:
+  mode: threshold
+  parties: 4
+  threshold: 1
+  fheParams: Test
