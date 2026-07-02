@@ -2,7 +2,13 @@ import type { ethers } from 'ethers';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
+import {
+  decryptTestCases,
+  fheTypeIdFromName,
+  clearTypeFromHandle,
+  fheTypeIdFromHandle,
+  createLogger,
+} from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 
@@ -29,10 +35,7 @@ export function defineClientDecryptDecryptTests(parameters: {
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
-        logger: {
-          debug: (message: string) => console.log(message),
-          error: (message: string) => console.log(message),
-        },
+        logger: createLogger(console.log),
       });
     });
 
@@ -71,13 +74,17 @@ export function defineClientDecryptDecryptTests(parameters: {
       const signedPermit = await client.signDecryptionPermit({
         transportKeyPair: keyPair,
         contractAddresses: [config.fheTestAddress],
-        durationDays: 1,
+        durationSeconds: 24 * 3600,
         startTimestamp: Math.floor(Date.now() / 1000) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
       });
 
       expect(signedPermit).toBeDefined();
+      const [major, minor] = client.protocolVersion!.version.split('.').map(Number);
+      const expectedPermitVersion = major! * 1000 + minor! < 14 ? 1 : 2;
+      expect(signedPermit.version).toBe(expectedPermitVersion);
+      expect(signedPermit.eip712.primaryType).toBe('UserDecryptRequestVerification');
       expect(signedPermit.isDelegated).toBe(false);
     });
 
@@ -118,7 +125,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         const signedPermit = await client.signDecryptionPermit({
           transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
-          durationDays: 1,
+          durationSeconds: 24 * 3600,
           startTimestamp: Math.floor(Date.now() / 1000) - 5,
           signerAddress: config.wallet.address,
           signer: config.signer,
@@ -188,7 +195,7 @@ export function defineClientDecryptDecryptTests(parameters: {
       const signedPermit = await client.signDecryptionPermit({
         transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
-        durationDays: 1,
+        durationSeconds: 24 * 3600,
         startTimestamp: Math.floor(Date.now() / 1000) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,

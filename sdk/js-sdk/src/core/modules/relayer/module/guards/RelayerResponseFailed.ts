@@ -63,7 +63,8 @@ export function assertIsRelayerApiError(
   if (
     value.label === ('malformed_json' satisfies RelayerApiError400NoDetails['label']) ||
     value.label === ('request_error' satisfies RelayerApiError400NoDetails['label']) ||
-    value.label === ('not_ready_for_decryption' satisfies RelayerApiError400NoDetails['label'])
+    value.label === ('not_ready_for_decryption' satisfies RelayerApiError400NoDetails['label']) ||
+    value.label === ('not_allowed_on_host_acl' satisfies RelayerApiError400NoDetails['label'])
   ) {
     assertIsRelayerApiError400NoDetails(value, name, options);
   }
@@ -94,6 +95,8 @@ export function assertIsRelayerApiError(
     value.label === ('readiness_check_timed_out' satisfies RelayerApiError503['label']) ||
     value.label === ('response_timed_out' satisfies RelayerApiError503['label']) ||
     value.label === ('protocol_paused' satisfies RelayerApiError503['label']) ||
+    value.label === ('insufficient_balance' satisfies RelayerApiError503['label']) ||
+    value.label === ('insufficient_allowance' satisfies RelayerApiError503['label']) ||
     value.label === ('gateway_not_reachable' satisfies RelayerApiError503['label'])
   ) {
     assertIsRelayerApiError503(value, name, options);
@@ -109,11 +112,14 @@ export function assertIsRelayerApiError(
           'malformed_json',
           'request_error',
           'not_ready_for_decryption',
+          'not_allowed_on_host_acl',
           'missing_fields',
           'validation_failed',
           'rate_limited',
           'internal_server_error',
           'protocol_paused',
+          'insufficient_balance',
+          'insufficient_allowance',
           'protocol_overload',
           'gateway_not_reachable',
           'readiness_check_timed_out',
@@ -150,7 +156,8 @@ export function assertIsRelayerResponseFailedWithError400(
   if (
     value.error.label === ('malformed_json' satisfies RelayerApiError400NoDetails['label']) ||
     value.error.label === ('request_error' satisfies RelayerApiError400NoDetails['label']) ||
-    value.error.label === ('not_ready_for_decryption' satisfies RelayerApiError400NoDetails['label'])
+    value.error.label === ('not_ready_for_decryption' satisfies RelayerApiError400NoDetails['label']) ||
+    value.error.label === ('not_allowed_on_host_acl' satisfies RelayerApiError400NoDetails['label'])
   ) {
     assertIsRelayerApiError400NoDetails(value.error, `${name}.error`, options);
   } else if (
@@ -168,6 +175,7 @@ export function assertIsRelayerResponseFailedWithError400(
           'malformed_json',
           'request_error',
           'not_ready_for_decryption',
+          'not_allowed_on_host_acl',
           'missing_fields',
           'validation_failed',
         ],

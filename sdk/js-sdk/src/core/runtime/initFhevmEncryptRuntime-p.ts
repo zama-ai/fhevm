@@ -5,5 +5,5 @@ import { verifyFhevmRuntime } from './CoreFhevmRuntime-p.js';
 export async function initFhevmEncryptRuntime(runtime: FhevmRuntime, ownerToken: symbol): Promise<void> {
   verifyFhevmRuntime(runtime, ownerToken);
   const encryptRuntime = runtime.extend(encryptModule);
-  await encryptRuntime.encrypt.initTfheModule({ tfheVersion: '1.6.1' });
+  await encryptRuntime.encrypt.initTfheModule({ tfheVersion: '1.6.2' });
 }

@@ -6,6 +6,7 @@ import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConf
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http } from 'viem';
 import {
+  createLogger,
   decryptTestCases,
   fheTypeIdFromName,
   clearTypeFromHandle,
@@ -115,6 +116,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
             type: 'ApiKeyHeader',
             value: config.zamaApiKey,
           },
+          logger: createLogger(console.log),
         });
         console.log(`  Alice: ${config.alice.account.address}`);
         console.log(`  Bob:   ${config.bob.account.address}`);
@@ -172,7 +174,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         const signedPermit = await client.signDecryptionPermit({
           transportKeyPair: keyPair,
           contractAddresses: [config.fheTestAddress],
-          durationDays: 1,
+          durationSeconds: 24 * 3600,
           startTimestamp: Math.floor(Date.now() / 1000) - 5,
           signerAddress: config.bob.account.address,
           signer: config.bob.account,
@@ -180,7 +182,12 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         });
 
         expect(signedPermit).toBeDefined();
-        expect(signedPermit.isDelegated).toBe(true);
+        const [major, minor] = client.protocolVersion!.version.split('.').map(Number);
+        const expectedPermitVersion = major! * 1000 + minor! < 14 ? 1 : 2;
+        expect(signedPermit.version).toBe(expectedPermitVersion);
+        const expectedPrimaryType =
+          signedPermit.version === 1 ? 'DelegatedUserDecryptRequestVerification' : 'UserDecryptRequestVerification';
+        expect(signedPermit.eip712.primaryType).toBe(expectedPrimaryType);
         expect(signedPermit.signerAddress.toLowerCase()).toBe(config.bob.account.address.toLowerCase());
         expect(signedPermit.encryptedDataOwnerAddress.toLowerCase()).toBe(config.alice.account.address.toLowerCase());
       });
@@ -229,7 +236,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           const bobSignedPermit = await client.signDecryptionPermit({
             transportKeyPair: transportKeyPair,
             contractAddresses: [config.fheTestAddress],
-            durationDays: 1,
+            durationSeconds: 24 * 3600,
             startTimestamp: Math.floor(Date.now() / 1000) - 5,
             signerAddress: config.bob.account.address,
             signer: config.bob.account,
@@ -303,7 +310,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         const bobSignedPermit = await bobClient.signDecryptionPermit({
           transportKeyPair: bobKeyPair,
           contractAddresses: [config.fheTestAddress],
-          durationDays: 1,
+          durationSeconds: 24 * 3600,
           startTimestamp: Math.floor(Date.now() / 1000) - 5,
           signerAddress: config.bob.account.address,
           signer: config.bob.account,

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname } from 'node:path';
@@ -44,34 +45,44 @@ const commands = [
   //'node test/multi-wasm/run.mjs',
 ];
 
-const longCommands = [
+const netCommands = [
   'npm run test:full:testnet',
   'npm run test:full:devnet',
+];
+
+const localstackCommands = [
   'npm run test:localstack:v11',
   'npm run test:localstack:v12',
   'npm run test:localstack:v13',
   'npm run test:localstack',
 ];
 
-const full = process.argv.includes('--full');
+const longCommands = [...netCommands, ...localstackCommands];
 
 if (process.argv.includes('--help')) {
   console.log(`Usage: node test/scripts/dod.mjs [options]
 
 Options:
-  --full   Also run long-running localstack tests after the standard commands
-  --help   Show this help message
+  --full              Also run long-running tests (net + localstack) after the standard commands
+  --localstacks-only  Run only the localstack tests (skips standard commands)
+  --help              Show this help message
 
 Standard commands (${commands.length}):
 ${commands.map((c) => `  ${c}`).join('\n')}
 
-Long commands (${longCommands.length}, requires --full):
-${longCommands.map((c) => `  ${c}`).join('\n')}
+Net commands (${netCommands.length}, requires --full):
+${netCommands.map((c) => `  ${c}`).join('\n')}
+
+Localstack commands (${localstackCommands.length}, requires --full or --localstacks-only):
+${localstackCommands.map((c) => `  ${c}`).join('\n')}
 `);
   process.exit(0);
 }
 
-const queue = [...commands, ...(full ? longCommands : [])];
+const full = process.argv.includes('--full');
+const localstacksOnly = process.argv.includes('--localstacks-only');
+
+const queue = localstacksOnly ? [...localstackCommands] : [...commands, ...(full ? longCommands : [])];
 const startTime = Date.now();
 
 for (const [i, cmd] of queue.entries()) {
