@@ -50,6 +50,81 @@ async fn test_verify_proof() {
         .unwrap());
 }
 
+/// RFC-029: canonical input storage is first-finalized-request-wins.
+/// The stored bytes for a handle must be those of the smaller
+/// finalized Gateway block, regardless of worker completion order.
+#[tokio::test]
+#[serial(db)]
+async fn test_canonical_input_is_first_finalized_request_wins() {
+    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let pool = pool_mngr.pool();
+
+    let handle = vec![0xABu8; 32];
+    let version = current_ciphertext_version();
+    let blob_hash = vec![0u8; 32];
+
+    let ct = |bytes: u8| crate::verifier::Ciphertext {
+        handle: handle.clone(),
+        compressed: vec![bytes; 8],
+        ct_type: 1,
+        ct_version: version,
+    };
+    async fn stored(pool: &sqlx::PgPool, handle: &[u8]) -> (Vec<u8>, i16, Option<i64>) {
+        let row = sqlx::query!(
+            "SELECT ciphertext, key_material_kind, gateway_block_number \
+             FROM ciphertexts WHERE handle = $1",
+            handle
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        (
+            row.ciphertext,
+            row.key_material_kind,
+            row.gateway_block_number,
+        )
+    }
+
+    // Later gateway block lands first (worker raced ahead).
+    let mut txn = pool.begin().await.unwrap();
+    crate::verifier::insert_ciphertexts(&mut txn, &[ct(0x22)], &blob_hash, 1, Some(100))
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    // Earlier gateway block arrives second and must take over.
+    let mut txn = pool.begin().await.unwrap();
+    crate::verifier::insert_ciphertexts(&mut txn, &[ct(0x11)], &blob_hash, 0, Some(90))
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    let (bytes, kind, gw_block) = stored(&pool, &handle).await;
+    assert_eq!(bytes, vec![0x11; 8]);
+    assert_eq!(kind, 0);
+    assert_eq!(gw_block, Some(90));
+
+    // A later block must not replace the canonical row.
+    let mut txn = pool.begin().await.unwrap();
+    crate::verifier::insert_ciphertexts(&mut txn, &[ct(0x33)], &blob_hash, 1, Some(95))
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    let (bytes, _, _) = stored(&pool, &handle).await;
+    assert_eq!(bytes, vec![0x11; 8]);
+
+    // A result with no gateway block (pre-feature path) never replaces.
+    let mut txn = pool.begin().await.unwrap();
+    crate::verifier::insert_ciphertexts(&mut txn, &[ct(0x44)], &blob_hash, 0, None)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    let (bytes, _, _) = stored(&pool, &handle).await;
+    assert_eq!(bytes, vec![0x11; 8]);
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn test_rolled_back_claim_is_reprocessed_exactly_once() {

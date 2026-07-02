@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ciphertexts (\n                handle, ciphertext, ciphertext_version, ciphertext_type,\n                input_blob_hash, input_blob_index, created_at,\n                key_material_kind, gateway_block_number\n            ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)\n            ON CONFLICT (handle, ciphertext_version) DO UPDATE SET\n                ciphertext = EXCLUDED.ciphertext,\n                ciphertext_type = EXCLUDED.ciphertext_type,\n                input_blob_hash = EXCLUDED.input_blob_hash,\n                input_blob_index = EXCLUDED.input_blob_index,\n                key_material_kind = EXCLUDED.key_material_kind,\n                gateway_block_number = EXCLUDED.gateway_block_number\n            WHERE EXCLUDED.gateway_block_number IS NOT NULL\n              AND ciphertexts.gateway_block_number IS NOT NULL\n              AND EXCLUDED.gateway_block_number < ciphertexts.gateway_block_number;\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int2",
+        "Int2",
+        "Bytea",
+        "Int4",
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1e023242f76319c18de249fe7961a98cf7b329205be00f1376178343d371a526"
+}

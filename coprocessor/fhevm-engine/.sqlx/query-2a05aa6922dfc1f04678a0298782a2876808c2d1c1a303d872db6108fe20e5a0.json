@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ciphertext, key_material_kind, gateway_block_number FROM ciphertexts WHERE handle = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "key_material_kind",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "gateway_block_number",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "2a05aa6922dfc1f04678a0298782a2876808c2d1c1a303d872db6108fe20e5a0"
+}

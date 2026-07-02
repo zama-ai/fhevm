@@ -44,10 +44,10 @@ const RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"ZKw_Rrnd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
 
 pub(crate) struct Ciphertext {
-    handle: Vec<u8>,
-    compressed: Vec<u8>,
-    ct_type: i16,
-    ct_version: i16,
+    pub(crate) handle: Vec<u8>,
+    pub(crate) compressed: Vec<u8>,
+    pub(crate) ct_type: i16,
+    pub(crate) ct_version: i16,
 }
 
 pub struct ZkProofService {
@@ -369,6 +369,7 @@ async fn execute_verify_proof_routine(
             "txn_id",
             transaction_id.as_deref(),
         );
+        let material_kind = db_key.material_kind;
         let res = tokio::task::spawn_blocking(move || {
             let _guard = verify_span.enter();
             let aux_data = auxiliary::ZkData {
@@ -412,7 +413,11 @@ async fn execute_verify_proof_routine(
                     });
                     verified = true;
                     let count = cts.len();
-                    insert_ciphertexts(&mut txn, cts, blob_hash).await?;
+                    // Label outputs with the material that actually
+                    // produced them; the gateway block is wired in
+                    // once selection is cutover-driven.
+                    insert_ciphertexts(&mut txn, cts, blob_hash, material_kind.as_i16(), None)
+                        .await?;
                     tracing::Span::current().record("count", count);
 
                     info!(message = "Ciphertexts inserted", request_id, count);
@@ -745,15 +750,32 @@ pub(crate) async fn insert_ciphertexts(
     db_txn: &mut Transaction<'_, Postgres>,
     cts: &[Ciphertext],
     blob_hash: &Vec<u8>,
+    key_material_kind: i16,
+    gateway_block_number: Option<i64>,
 ) -> Result<(), ExecutionError> {
     for (i, ct) in cts.iter().enumerate() {
+        // Canonical input storage is first-finalized-request-wins
+        // (RFC-029): for the same handle, the result from the smaller
+        // finalized Gateway block is canonical, regardless of which
+        // worker finished first. A stored row without a Gateway block
+        // (compute output or pre-feature row) is never replaced.
         sqlx::query!(
             r#"
             INSERT INTO ciphertexts (
-                handle, ciphertext, ciphertext_version, ciphertext_type, 
-                input_blob_hash, input_blob_index, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
-            ON CONFLICT (handle, ciphertext_version) DO NOTHING;
+                handle, ciphertext, ciphertext_version, ciphertext_type,
+                input_blob_hash, input_blob_index, created_at,
+                key_material_kind, gateway_block_number
+            ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)
+            ON CONFLICT (handle, ciphertext_version) DO UPDATE SET
+                ciphertext = EXCLUDED.ciphertext,
+                ciphertext_type = EXCLUDED.ciphertext_type,
+                input_blob_hash = EXCLUDED.input_blob_hash,
+                input_blob_index = EXCLUDED.input_blob_index,
+                key_material_kind = EXCLUDED.key_material_kind,
+                gateway_block_number = EXCLUDED.gateway_block_number
+            WHERE EXCLUDED.gateway_block_number IS NOT NULL
+              AND ciphertexts.gateway_block_number IS NOT NULL
+              AND EXCLUDED.gateway_block_number < ciphertexts.gateway_block_number;
             "#,
             &ct.handle,
             &ct.compressed,
@@ -761,6 +783,8 @@ pub(crate) async fn insert_ciphertexts(
             ct.ct_type,
             &blob_hash,
             i as i32,
+            key_material_kind,
+            gateway_block_number,
         )
         .execute(db_txn.as_mut())
         .await?;
