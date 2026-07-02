@@ -65,6 +65,26 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     bytes32 private constant EIP712_KEYGEN_TYPE_HASH = keccak256(bytes(EIP712_KEYGEN_TYPE));
 
     /**
+     * @notice The CompressedKeyMaterialsVerification typed definition (RFC-029 one-time
+     * compressed-key migration). Deliberately distinct from KeygenVerification so a digest
+     * set signed for one flow can never be replayed into the other.
+     * @dev The following fields are used for the CompressedKeyMaterialsVerification struct:
+     * - prepKeygenId: The ID of the migration preprocessing request.
+     * - migrationRequestId: The migration keygen request ID.
+     * - keyId: The ID of the existing key whose material is re-materialized.
+     * - keyDigests: The digests of the compressed key material.
+     * - extraData: Additional context data.
+     */
+    string private constant EIP712_COMPRESSED_KEY_MATERIALS_TYPE =
+        "CompressedKeyMaterialsVerification(uint256 prepKeygenId,uint256 migrationRequestId,uint256 keyId,KeyDigest[] keyDigests,bytes extraData)KeyDigest(uint8 keyType,bytes digest)";
+
+    /**
+     * @notice The hash of the CompressedKeyMaterialsVerification typed definition.
+     */
+    bytes32 private constant EIP712_COMPRESSED_KEY_MATERIALS_TYPE_HASH =
+        keccak256(bytes(EIP712_COMPRESSED_KEY_MATERIALS_TYPE));
+
+    /**
      * @notice The CrsgenVerification typed definition.
      * @dev The following fields are used for the CrsgenVerification struct:
      * - crsId: The ID of the generated CRS.
@@ -100,14 +120,14 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     string private constant CONTRACT_NAME = "KMSGeneration";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
      * @dev Constant used for making sure the version number used in the `reinitializer` modifier
-     * is identical between `initializeFromEmptyProxy` and `reinitializeV2`.
+     * is identical between `initializeFromEmptyProxy` and `reinitializeV3`.
      */
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     // ----------------------------------------------------------------------------------------------
     // Contract storage:
@@ -167,6 +187,23 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         uint256[] completedKeyIds;
         /// @notice CRS IDs that reached consensus.
         uint256[] completedCrsIds;
+        // ----------------------------------------------------------------------------------------------
+        // RFC-029 one-time compressed-key migration variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The existing key a migration keygen request re-materializes. Non-zero iff the
+        /// request ID is a migration request; this is what keeps the migration and normal keygen
+        /// response endpoints mutually exclusive.
+        mapping(uint256 migrationRequestId => uint256 keyId) migrationRequests;
+        /// @notice The migration request whose consensus published the compressed materials of a key.
+        mapping(uint256 keyId => uint256 migrationRequestId) compressedMaterialRequests;
+        /// @notice The published compressed key material digests, per existing key.
+        mapping(uint256 keyId => KeyDigest[] keyDigests) compressedKeyDigests;
+        /// @notice The scheduled per-host-chain cutover blocks, per existing key.
+        mapping(uint256 keyId => HostChainCutover[] hostChainCutovers) cutoverHostChains;
+        /// @notice The scheduled Gateway cutover block, per existing key.
+        mapping(uint256 keyId => uint64 gatewayCutoverBlock) cutoverGatewayBlock;
+        /// @notice Whether a cutover schedule is stored for the key (single-assignment).
+        mapping(uint256 keyId => bool scheduled) cutoverScheduled;
     }
 
     /**
@@ -215,28 +252,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
-        // Backfill completed key/CRS IDs from pre-V2 state. These arrays were added in V2: existing
-        // deployments reached consensus without populating them. "Completed" means consensus was
-        // reached, which is recorded by a non-zero consensusDigest, unlike `isRequestDone`, which is
-        // also set on abort (see abortKeygen/abortCrsgen).
-        for (uint256 keyId = KEY_COUNTER_BASE + 1; keyId <= $.keyCounter; keyId++) {
-            if ($.consensusDigest[keyId] != bytes32(0)) {
-                $.completedKeyIds.push(keyId);
-            }
-        }
-        for (uint256 crsId = CRS_COUNTER_BASE + 1; crsId <= $.crsCounter; crsId++) {
-            if ($.consensusDigest[crsId] != bytes32(0)) {
-                $.completedCrsIds.push(crsId);
-            }
-        }
-    }
+    // solhint-disable-next-line no-empty-blocks
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IKMSGeneration-keygen}.
@@ -330,7 +351,14 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             // Get the keyId associated to the prepKeygenId
             uint256 keyId = $.keygenIdPairs[prepKeygenId];
 
-            emit KeygenRequest(prepKeygenId, keyId, extraData);
+            // A migration preprocessing triggers the typed migration keygen request instead
+            // of the normal one, so downstream consumers can never confuse the two flows.
+            uint256 migratedKeyId = $.migrationRequests[keyId];
+            if (migratedKeyId != 0) {
+                emit CompressedKeyMigrationKeygenRequest(prepKeygenId, keyId, migratedKeyId, extraData);
+            } else {
+                emit KeygenRequest(prepKeygenId, keyId, extraData);
+            }
         }
     }
 
@@ -343,6 +371,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // Make sure the keyId corresponds to a generated keygen request.
         if (keyId > $.keyCounter || keyId <= KEY_COUNTER_BASE) {
             revert KeygenNotRequested(keyId);
+        }
+
+        // Migration keygen responses must go through `addCompressedKeyMaterials`: a normal
+        // keygen response for a migration request would otherwise activate a request ID that
+        // is not a key.
+        if ($.migrationRequests[keyId] != 0) {
+            revert WrongKeygenResponseEndpoint(keyId);
         }
 
         // Make sure the keygen response contains at least one key digest as keygen flow will always
@@ -403,6 +438,208 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
             emit ActivateKey(keyId, consensusUrls, keyDigests);
         }
+    }
+
+    /**
+     * @notice See {IKMSGeneration-compressedKeyMigrationKeygen}.
+     */
+    function compressedKeyMigrationKeygen(uint256 keyId) external virtual onlyACLOwner {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // The migrated key must be a generated, non-aborted key.
+        if (!$.isRequestDone[keyId] || keyId > $.keyCounter || keyId <= KEY_COUNTER_BASE) {
+            revert KeyNotGenerated(keyId);
+        }
+        if ($.consensusDigest[keyId] == bytes32(0)) {
+            revert KeyAborted(keyId);
+        }
+
+        // The migration is one-time per key: once compressed materials exist, they are immutable.
+        if ($.compressedMaterialRequests[keyId] != 0) {
+            revert CompressedKeyMaterialsAlreadyAdded(keyId);
+        }
+
+        // No interleaving with an ongoing keygen or migration (same check as `keygen`).
+        uint256 previousKeyId = $.keyCounter;
+        if (previousKeyId != KEY_COUNTER_BASE && !$.isRequestDone[previousKeyId]) {
+            revert KeygenOngoing(previousKeyId);
+        }
+
+        // Allocate the request pair from the same counters as normal keygen so request IDs stay
+        // globally unique and flow through the existing connector pipeline. The migration
+        // request ID is a correlation handle, not a key: it never becomes active, is never
+        // added to completedKeyIds, and never appears in coprocessor-facing events.
+        $.prepKeygenCounter++;
+        uint256 prepKeygenId = $.prepKeygenCounter;
+        $.keyCounter++;
+        uint256 migrationRequestId = $.keyCounter;
+
+        $.keygenIdPairs[prepKeygenId] = migrationRequestId;
+        $.keygenIdPairs[migrationRequestId] = prepKeygenId;
+        $.migrationRequests[migrationRequestId] = keyId;
+
+        // The re-materialized keyset uses the existing key's parameters.
+        ParamsType paramsType = $.requestParamsType[$.keygenIdPairs[keyId]];
+        $.requestParamsType[prepKeygenId] = paramsType;
+
+        (uint256 contextId, uint256 epochId) = PROTOCOL_CONFIG.getCurrentKmsContextAndEpoch();
+        bytes memory extraData = _encodeRequestExtraDataV2(contextId, epochId);
+        $.requestExtraData[prepKeygenId] = extraData;
+        $.requestExtraData[migrationRequestId] = extraData;
+
+        emit CompressedKeyMigrationPrepKeygenRequest(prepKeygenId, keyId, paramsType, extraData);
+    }
+
+    /**
+     * @notice See {IKMSGeneration-addCompressedKeyMaterials}.
+     */
+    function addCompressedKeyMaterials(
+        uint256 migrationRequestId,
+        KeyDigest[] calldata keyDigests,
+        bytes calldata signature
+    ) external virtual {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        if (migrationRequestId > $.keyCounter || migrationRequestId <= KEY_COUNTER_BASE) {
+            revert KeygenNotRequested(migrationRequestId);
+        }
+
+        // Normal keygen responses must go through `keygenResponse`.
+        uint256 keyId = $.migrationRequests[migrationRequestId];
+        if (keyId == 0) {
+            revert WrongKeygenResponseEndpoint(migrationRequestId);
+        }
+
+        if (keyDigests.length == 0) {
+            revert EmptyKeyDigests(migrationRequestId);
+        }
+
+        (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(migrationRequestId);
+
+        uint256 prepKeygenId = $.keygenIdPairs[migrationRequestId];
+        if (!$.isRequestDone[prepKeygenId]) {
+            revert KeyManagementRequestPending();
+        }
+
+        // Compute the digest of the CompressedKeyMaterialsVerification struct. The distinct
+        // typed payload binds the digests to this migration request and the existing key, so
+        // a set signed for the normal keygen flow can never be replayed here (and vice versa).
+        bytes32 digest = _hashCompressedKeyMaterialsVerification(
+            prepKeygenId,
+            migrationRequestId,
+            keyId,
+            keyDigests,
+            extraData
+        );
+
+        address kmsSigner = _validateEIP712Signature(contextId, digest, signature);
+
+        if ($.kmsHasSignedForResponse[migrationRequestId][kmsSigner]) {
+            revert KmsAlreadySignedForKeygen(migrationRequestId, kmsSigner);
+        }
+        $.kmsHasSignedForResponse[migrationRequestId][kmsSigner] = true;
+
+        address[] storage consensusTxSenders = $.consensusTxSenderAddresses[migrationRequestId][digest];
+        consensusTxSenders.push(msg.sender);
+
+        // Emit the event at each call for monitoring purposes.
+        emit CompressedKeyMaterialResponse(migrationRequestId, keyDigests, signature, msg.sender);
+
+        // On consensus, publish the compressed materials under the existing key. This never
+        // touches `activeKeyId`, never emits `ActivateKey`, and never extends
+        // `completedKeyIds`: publication is not activation, and workers only start using the
+        // material at the scheduled cutover.
+        if (
+            !$.isRequestDone[migrationRequestId] &&
+            _isKmsConsensusReachedForContext(contextId, consensusTxSenders.length)
+        ) {
+            $.isRequestDone[migrationRequestId] = true;
+            $.consensusDigest[migrationRequestId] = digest;
+
+            for (uint256 i = 0; i < keyDigests.length; i++) {
+                $.compressedKeyDigests[keyId].push(keyDigests[i]);
+            }
+            $.compressedMaterialRequests[keyId] = migrationRequestId;
+
+            string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
+            emit CompressedKeyMaterialAdded(keyId, consensusUrls, keyDigests);
+        }
+    }
+
+    /**
+     * @notice See {IKMSGeneration-scheduleCompressedKeyCutover}.
+     */
+    function scheduleCompressedKeyCutover(
+        uint256 keyId,
+        HostChainCutover[] calldata hostChainCutovers,
+        uint64 gatewayCutoverBlock
+    ) external virtual onlyACLOwner {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        // The cutover can only be scheduled once the compressed materials are published, so
+        // coprocessors always observe the material before any boundary can be reached.
+        if ($.compressedMaterialRequests[keyId] == 0) {
+            revert CompressedKeyMaterialsNotAdded(keyId);
+        }
+
+        // Single-assignment: the stored schedule is immutable, even for identical values.
+        if ($.cutoverScheduled[keyId]) {
+            revert CompressedKeyCutoverAlreadyScheduled(keyId);
+        }
+
+        if (hostChainCutovers.length == 0) {
+            revert EmptyHostChainCutovers();
+        }
+        if (gatewayCutoverBlock == 0) {
+            revert InvalidCutoverBlock();
+        }
+        for (uint256 i = 0; i < hostChainCutovers.length; i++) {
+            if (hostChainCutovers[i].cutoverBlock == 0) {
+                revert InvalidCutoverBlock();
+            }
+            for (uint256 j = 0; j < i; j++) {
+                if (hostChainCutovers[j].chainId == hostChainCutovers[i].chainId) {
+                    revert DuplicateCutoverChainId(hostChainCutovers[i].chainId);
+                }
+            }
+            $.cutoverHostChains[keyId].push(hostChainCutovers[i]);
+        }
+        $.cutoverGatewayBlock[keyId] = gatewayCutoverBlock;
+        $.cutoverScheduled[keyId] = true;
+
+        // Emitted only after the schedule is fully stored.
+        emit CompressedKeyCutoverScheduled(keyId, hostChainCutovers, gatewayCutoverBlock);
+    }
+
+    /**
+     * @notice See {IKMSGeneration-getCompressedKeyMaterials}.
+     */
+    function getCompressedKeyMaterials(
+        uint256 keyId
+    ) external view virtual returns (string[] memory, KeyDigest[] memory) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        uint256 migrationRequestId = $.compressedMaterialRequests[keyId];
+        if (migrationRequestId == 0) {
+            revert CompressedKeyMaterialsNotAdded(keyId);
+        }
+
+        bytes32 digest = $.consensusDigest[migrationRequestId];
+        address[] memory consensusTxSenders = $.consensusTxSenderAddresses[migrationRequestId][digest];
+        uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[migrationRequestId]);
+        string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
+
+        return (consensusUrls, $.compressedKeyDigests[keyId]);
+    }
+
+    /**
+     * @notice See {IKMSGeneration-getCompressedKeyCutoverSchedule}.
+     */
+    function getCompressedKeyCutoverSchedule(
+        uint256 keyId
+    ) external view virtual returns (bool, HostChainCutover[] memory, uint64) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        return ($.cutoverScheduled[keyId], $.cutoverHostChains[keyId], $.cutoverGatewayBlock[keyId]);
     }
 
     /**
@@ -809,6 +1046,44 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
                     abi.encode(
                         EIP712_KEYGEN_TYPE_HASH,
                         prepKeygenId,
+                        keyId,
+                        keccak256(abi.encodePacked(keyDigestHashes)),
+                        keccak256(extraData)
+                    )
+                )
+            );
+    }
+
+    /**
+     * @notice Computes the hash of a CompressedKeyMaterialsVerification struct
+     * @param prepKeygenId The ID of the migration preprocessing request.
+     * @param migrationRequestId The migration keygen request ID.
+     * @param keyId The ID of the existing key.
+     * @param keyDigests The digests of the compressed key material.
+     * @param extraData The extra data for replay protection.
+     * @return The hash of the CompressedKeyMaterialsVerification struct
+     */
+    function _hashCompressedKeyMaterialsVerification(
+        uint256 prepKeygenId,
+        uint256 migrationRequestId,
+        uint256 keyId,
+        KeyDigest[] calldata keyDigests,
+        bytes memory extraData
+    ) internal view virtual returns (bytes32) {
+        bytes32[] memory keyDigestHashes = new bytes32[](keyDigests.length);
+        for (uint256 i = 0; i < keyDigests.length; i++) {
+            keyDigestHashes[i] = keccak256(
+                abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
+            );
+        }
+
+        return
+            _hashTypedDataV4(
+                keccak256(
+                    abi.encode(
+                        EIP712_COMPRESSED_KEY_MATERIALS_TYPE_HASH,
+                        prepKeygenId,
+                        migrationRequestId,
                         keyId,
                         keccak256(abi.encodePacked(keyDigestHashes)),
                         keccak256(extraData)

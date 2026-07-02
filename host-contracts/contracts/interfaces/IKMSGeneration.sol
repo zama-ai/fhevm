@@ -89,6 +89,87 @@ interface IKMSGeneration {
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     /**
+     * @notice A per-host-chain cutover block for the one-time compressed-key migration (RFC-029).
+     * @param chainId The host chain ID.
+     * @param cutoverBlock The block number at which the chain switches to compressed material
+     * (inclusive: blocks at or after it use the compressed material).
+     */
+    struct HostChainCutover {
+        uint256 chainId;
+        uint64 cutoverBlock;
+    }
+
+    /**
+     * @notice Emitted to trigger the preprocessing round of the one-time compressed-key
+     * migration keygen (RFC-029): re-materializing compressed key material for an existing,
+     * already-active key. Not a key rotation: the key and its ID never change, and this flow
+     * never activates anything.
+     * @param prepKeygenId The ID of the preprocessing request.
+     * @param keyId The ID of the existing key whose material is being re-materialized.
+     * @param paramsType The parameters type of the existing key.
+     * @param extraData Additional context data.
+     */
+    event CompressedKeyMigrationPrepKeygenRequest(
+        uint256 prepKeygenId,
+        uint256 keyId,
+        ParamsType paramsType,
+        bytes extraData
+    );
+
+    /**
+     * @notice Emitted when the migration preprocessing reaches consensus, triggering the
+     * compressed-key migration keygen itself.
+     * @param prepKeygenId The ID of the preprocessing request.
+     * @param migrationRequestId The migration keygen request ID. This is a request correlation
+     * handle, never a key identity: it must not appear anywhere outside this request lifecycle.
+     * @param keyId The ID of the existing key whose material is being re-materialized.
+     * @param extraData Additional context data.
+     */
+    event CompressedKeyMigrationKeygenRequest(
+        uint256 prepKeygenId,
+        uint256 migrationRequestId,
+        uint256 keyId,
+        bytes extraData
+    );
+
+    /**
+     * @notice Emitted when a KMS node has responded to a compressed-key migration keygen request.
+     * @param migrationRequestId The migration keygen request ID.
+     * @param keyDigests The digests of the re-materialized compressed key material.
+     * @param signature The signature of the KMS node that has responded.
+     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
+     */
+    event CompressedKeyMaterialResponse(
+        uint256 migrationRequestId,
+        KeyDigest[] keyDigests,
+        bytes signature,
+        address kmsTxSender
+    );
+
+    /**
+     * @notice Emitted when KMS consensus is reached on the re-materialized compressed key
+     * material for an existing key. Does not activate anything: the active key is unchanged
+     * and workers only start using the material at the scheduled cutover.
+     * @param keyId The ID of the existing key.
+     * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in the consensus.
+     * @param keyDigests The digests of the compressed key material.
+     */
+    event CompressedKeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+
+    /**
+     * @notice Emitted when governance schedules the one-time compressed-key cutover.
+     * @param keyId The ID of the existing key.
+     * @param hostChainCutovers The per-host-chain cutover blocks.
+     * @param gatewayCutoverBlock The Gateway block at which input verification switches
+     * (inclusive on the compressed side).
+     */
+    event CompressedKeyCutoverScheduled(
+        uint256 keyId,
+        HostChainCutover[] hostChainCutovers,
+        uint64 gatewayCutoverBlock
+    );
+
+    /**
      * @notice Emitted to trigger a CRS (Common Reference String) generation.
      * @param crsId The ID of the CRS to generate.
      * @param maxBitLength The max bit length for generating the CRS.
@@ -267,6 +348,47 @@ interface IKMSGeneration {
     error AbortCrsgenAlreadyDone(uint256 crsId);
 
     /**
+     * @notice Error thrown when a response is sent to the wrong endpoint: a normal keygen
+     * response for a migration request, or a migration response for a normal keygen request.
+     * @param requestId The mismatched request ID.
+     */
+    error WrongKeygenResponseEndpoint(uint256 requestId);
+
+    /**
+     * @notice Error thrown when compressed key materials already exist for the key.
+     * @param keyId The ID of the key.
+     */
+    error CompressedKeyMaterialsAlreadyAdded(uint256 keyId);
+
+    /**
+     * @notice Error thrown when compressed key materials do not exist (yet) for the key.
+     * @param keyId The ID of the key.
+     */
+    error CompressedKeyMaterialsNotAdded(uint256 keyId);
+
+    /**
+     * @notice Error thrown when a compressed-key cutover is already scheduled for the key.
+     * @param keyId The ID of the key.
+     */
+    error CompressedKeyCutoverAlreadyScheduled(uint256 keyId);
+
+    /**
+     * @notice Error thrown when the host chain cutover list is empty.
+     */
+    error EmptyHostChainCutovers();
+
+    /**
+     * @notice Error thrown when the host chain cutover list contains a duplicate chain ID.
+     * @param chainId The duplicated chain ID.
+     */
+    error DuplicateCutoverChainId(uint256 chainId);
+
+    /**
+     * @notice Error thrown when a cutover block is zero.
+     */
+    error InvalidCutoverBlock();
+
+    /**
      * @notice Trigger an FHE key generation.
      * @param paramsType The type of FHE parameters to use.
      */
@@ -286,6 +408,60 @@ interface IKMSGeneration {
      * @param signature The signature of the KMS node that has responded.
      */
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
+
+    /**
+     * @notice Trigger the one-time compressed-key migration keygen for an existing key
+     * (RFC-029). The key and its ID are unchanged; only new material bytes are produced.
+     * This flow never emits {ActivateKey} and never changes the active key.
+     * @param keyId The ID of the existing, generated key.
+     */
+    function compressedKeyMigrationKeygen(uint256 keyId) external;
+
+    /**
+     * @notice Handle a KMS node's response to a compressed-key migration keygen request and,
+     * on consensus, publish the compressed key material digests for the existing key.
+     * Reverts for normal keygen request IDs; see {WrongKeygenResponseEndpoint}.
+     * @param migrationRequestId The migration keygen request ID.
+     * @param keyDigests The digests of the compressed key material.
+     * @param signature The signature of the KMS node that has responded.
+     */
+    function addCompressedKeyMaterials(
+        uint256 migrationRequestId,
+        KeyDigest[] calldata keyDigests,
+        bytes calldata signature
+    ) external;
+
+    /**
+     * @notice Schedule the one-time compressed-key cutover for an existing key whose
+     * compressed materials have been published. Single-assignment: a second call reverts
+     * even with identical values.
+     * @param keyId The ID of the existing key.
+     * @param hostChainCutovers The per-host-chain cutover blocks (non-empty, unique chain IDs).
+     * @param gatewayCutoverBlock The Gateway block boundary for input verification.
+     */
+    function scheduleCompressedKeyCutover(
+        uint256 keyId,
+        HostChainCutover[] calldata hostChainCutovers,
+        uint64 gatewayCutoverBlock
+    ) external;
+
+    /**
+     * @notice Get the compressed key materials published for a given key ID.
+     * @param keyId The ID of the key.
+     * @return The compressed key materials (storage URLs, key digests).
+     */
+    function getCompressedKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
+
+    /**
+     * @notice Get the stored compressed-key cutover schedule for a given key ID.
+     * @param keyId The ID of the key.
+     * @return exists Whether a schedule is stored.
+     * @return hostChainCutovers The per-host-chain cutover blocks.
+     * @return gatewayCutoverBlock The Gateway block boundary.
+     */
+    function getCompressedKeyCutoverSchedule(
+        uint256 keyId
+    ) external view returns (bool exists, HostChainCutover[] memory hostChainCutovers, uint64 gatewayCutoverBlock);
 
     /**
      * @notice Trigger a CRS generation.
