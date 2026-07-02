@@ -6,3 +6,6 @@ docs/**
 src/wasm
 test/manual-pack
 test/fheTest/.keys
+# browser-next is an isolated platform; its Next-generated files are not ours to format.
+test/browser-next/.next
+test/browser-next/next-env.d.ts

@@ -9,6 +9,7 @@ import {
   type FheTestViemConfig,
 } from '../setup-viem.js';
 import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
+import { createLogger } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -36,6 +37,7 @@ export function defineClientBaseTests(
           type: 'ApiKeyHeader',
           value: config.zamaApiKey,
         },
+        logger: createLogger(console.log),
       });
     });
 
