@@ -4,7 +4,7 @@ import { getCurrentKmsContextIdAbi } from './abi-fragments/fragments.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
 import { getHostContractVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import { assertIsUint256 } from '../base/uint.js';
-import { CACHE_TTL_24H, createCachedFetch } from '../base/cachedFetch.js';
+import { CACHE_TTL_15MIN, createCachedFetch } from '../base/cachedFetch.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -25,7 +25,7 @@ const cachedGetCurrentKmsContextId = createCachedFetch<Context, Parameters, Retu
   executeFn: _getCurrentKmsContextId,
   cacheKeyFn: (context, params) => `${context.runtime.uid.toLowerCase()}:${params.kmsVerifierAddress.toLowerCase()}`,
   // Host contract versions are immutable per deployment, so a long TTL is safe.
-  ttlMs: CACHE_TTL_24H,
+  ttlMs: CACHE_TTL_15MIN,
 });
 
 /**
