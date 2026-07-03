@@ -42,23 +42,22 @@ struct KmsStorageNode {
     storage_prefix: String,
 }
 
-/// Build the full object URLs the KMS Core writes to, one per node:
+/// Build the full object URL the KMS Core writes to:
 /// `{storage_url}/{storage_prefix}/{segment}/{id_hex}` (`segment` = `PublicKey`|`CRS`, `id_hex` =
 /// 32-byte big-endian id, lowercase, no `0x`). The getters return only `storage_url`.
-fn build_object_urls(nodes: &[KmsStorageNode], segment: &str, id: U256) -> Vec<String> {
+///
+/// The key/CRS is a global artifact stored under each node's prefix, so any node's copy is
+/// equivalent; the served response carries a single URL (the SDK requires exactly one), built
+/// from the first context node.
+fn build_object_url(node: &KmsStorageNode, segment: &str, id: U256) -> String {
     let id_hex = hex::encode(id.to_be_bytes::<32>());
-    nodes
-        .iter()
-        .map(|node| {
-            format!(
-                "{}/{}/{}/{}",
-                node.storage_url.trim_end_matches('/'),
-                node.storage_prefix,
-                segment,
-                id_hex
-            )
-        })
-        .collect()
+    format!(
+        "{}/{}/{}/{}",
+        node.storage_url.trim_end_matches('/'),
+        node.storage_prefix,
+        segment,
+        id_hex
+    )
 }
 
 /// Run a host-chain view call with bounded retries, redacting RPC URLs from any error.
@@ -207,16 +206,17 @@ impl KeyUrlPoller {
                 .call()
         )?;
 
-        let nodes = self.fetch_context_nodes(ids.context_id).await?;
+        // `fetch_context_nodes` guarantees at least one node; serve the first node's copy.
+        let node = &self.fetch_context_nodes(ids.context_id).await?[0];
 
         Ok(KeyUrlResponseJson::new(
             KeyData {
                 data_id: ids.key_id.to_string(),
-                urls: build_object_urls(&nodes, "PublicKey", ids.key_id),
+                urls: vec![build_object_url(node, "PublicKey", ids.key_id)],
             },
             KeyData {
                 data_id: ids.crs_id.to_string(),
-                urls: build_object_urls(&nodes, "CRS", ids.crs_id),
+                urls: vec![build_object_url(node, "CRS", ids.crs_id)],
             },
         ))
     }

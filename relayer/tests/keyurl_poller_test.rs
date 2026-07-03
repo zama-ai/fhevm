@@ -74,21 +74,29 @@ fn crs_materials_bytes() -> Bytes {
     Bytes::from((urls, Bytes::new()).abi_encode_params())
 }
 
+/// Build a `KmsNodeParams` for `party` with a per-party storage prefix (`PUB-p{party}`).
+fn kms_node(party: i32, storage_prefix: &str) -> IProtocolConfig::KmsNodeParams {
+    IProtocolConfig::KmsNodeParams {
+        txSenderAddress: Address::ZERO,
+        signerAddress: Address::ZERO,
+        ipAddress: String::new(),
+        storageUrl: STORAGE_URL.to_string(),
+        partyId: party,
+        mpcIdentity: String::new(),
+        caCert: Bytes::new(),
+        storagePrefix: storage_prefix.to_string(),
+    }
+}
+
 /// Build the `NewKmsContext` log the poller reads to recover the node storage URL + prefix.
+///
+/// Seeds a two-node (threshold) committee so the test also proves the served response carries a
+/// single URL — the first node's (`STORAGE_PREFIX`) — not one per node, which the SDK rejects.
 fn new_kms_context_log() -> Log {
     let event = IProtocolConfig::NewKmsContext {
         contextId: U256::from(1u64),
         previousContextId: U256::ZERO,
-        kmsNodeParams: vec![IProtocolConfig::KmsNodeParams {
-            txSenderAddress: Address::ZERO,
-            signerAddress: Address::ZERO,
-            ipAddress: String::new(),
-            storageUrl: STORAGE_URL.to_string(),
-            partyId: 1,
-            mpcIdentity: String::new(),
-            caCert: Bytes::new(),
-            storagePrefix: STORAGE_PREFIX.to_string(),
-        }],
+        kmsNodeParams: vec![kms_node(1, STORAGE_PREFIX), kms_node(2, "PUB-p2")],
         thresholds: IProtocolConfig::KmsThresholds {
             publicDecryption: U256::from(1u64),
             userDecryption: U256::from(1u64),
