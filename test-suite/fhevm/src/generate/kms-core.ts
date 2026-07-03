@@ -61,28 +61,46 @@ export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
   s3SecretKey: "fhevm-access-secret-key",
 });
 
-/** The single cluster-shared threshold config filename (mounted into every core). */
+/** The committee threshold config filename (mounted into the `committeeSize` committee cores). */
 export const KMS_THRESHOLD_CONFIG_NAME = "kms-core-threshold.toml";
+/** The spare threshold config filename: same template with NO peer roster (peers=None), so spare
+ *  cores skip the `3t+1` startup validation and boot idle, joining a committee dynamically when a
+ *  context names them. Mounted into cores with party id > committeeSize. */
+export const KMS_THRESHOLD_SPARE_CONFIG_NAME = "kms-core-threshold-spare.toml";
 /** Marker in the checked-in template where the per-cluster peer roster is injected. */
 export const THRESHOLD_PEERS_MARKER = "# __THRESHOLD_PEERS__";
 
-/** The `[[threshold.peers]]` roster for the whole cluster (identical for every party). */
+/** The `[[threshold.peers]]` roster for the committee (the first `committeeSize` parties). The MPC
+ *  group is the committee, so the roster is committee-sized (3t+1), not cluster-sized.
+ *  `mpc_identity` must equal the on-chain KMS_NODE_MPC_IDENTITY (kmsCoreName); otherwise the core
+ *  derives it as "hostname:port" here but as the on-chain value in a dynamically-added context, so a
+ *  reshare across the two contexts can't match a node's identity across them. */
 export const renderThresholdPeers = (topology: ResolvedKmsTopology): string =>
-  kmsPartyIds(topology.parties)
+  kmsPartyIds(topology.committeeSize)
     .map(
       (peer) => `[[threshold.peers]]
 party_id = ${peer}
 address = "${kmsCoreName(peer)}"
-port = ${kmsMpcPort(peer)}`,
+port = ${kmsMpcPort(peer)}
+mpc_identity = "${kmsCoreName(peer)}"`,
     )
     .join("\n\n");
 
-/** Injects the peer roster into the checked-in template; the rest of the config is static. */
+/** Injects the committee peer roster into the checked-in template; the rest of the config is static. */
 export const renderThresholdCoreConfig = (templateText: string, topology: ResolvedKmsTopology): string => {
   if (!templateText.includes(THRESHOLD_PEERS_MARKER)) {
     throw new Error(`threshold core config template is missing the ${THRESHOLD_PEERS_MARKER} marker`);
   }
   return templateText.replace(THRESHOLD_PEERS_MARKER, renderThresholdPeers(topology));
+};
+
+/** Spare-core config: drops the peer roster entirely (peers=None) so the core skips `3t+1`
+ *  validation and boots idle. */
+export const renderThresholdSpareConfig = (templateText: string): string => {
+  if (!templateText.includes(THRESHOLD_PEERS_MARKER)) {
+    throw new Error(`threshold core config template is missing the ${THRESHOLD_PEERS_MARKER} marker`);
+  }
+  return templateText.replace(THRESHOLD_PEERS_MARKER, "");
 };
 
 /**
@@ -167,19 +185,23 @@ export const buildKmsThresholdOverride = (
     environment: { AWS_ACCESS_KEY_ID: opts.s3AccessKey, AWS_SECRET_ACCESS_KEY: opts.s3SecretKey },
   };
 
-  const sharedConfigMount = `${path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME)}:/app/kms/core/service/config/${KMS_THRESHOLD_CONFIG_NAME}`;
+  const configMountFor = (configName: string) =>
+    `${path.join(GENERATED_CONFIG_DIR, configName)}:/app/kms/core/service/config/${configName}`;
 
   for (const partyId of kmsPartyIds(topology.parties)) {
     const name = kmsCoreName(partyId);
+    // Cores beyond the committee boot as spares with the peers=None config (idle until a context names them).
+    const configName =
+      partyId > topology.committeeSize ? KMS_THRESHOLD_SPARE_CONFIG_NAME : KMS_THRESHOLD_CONFIG_NAME;
     services[name] = {
       container_name: name,
       image: opts.coreImage,
       // No shell wrapper: per-party config comes from KMS_CORE__* env and AWS creds
       // come from the environment, so the core binary runs directly.
-      entrypoint: ["kms-server", "--config-file", `config/${KMS_THRESHOLD_CONFIG_NAME}`],
+      entrypoint: ["kms-server", "--config-file", `config/${configName}`],
       // Per-party identity/ports/prefixes (override the template placeholders) + AWS creds.
       environment: thresholdCoreEnv(partyId, topology, opts),
-      volumes: [sharedConfigMount],
+      volumes: [configMountFor(configName)],
       // No host port mapping: connectors and kms-init dial the cores over the docker network.
       healthcheck: {
         // The core image ships no grpc_health_probe; probe the metrics port.
@@ -195,9 +217,10 @@ export const buildKmsThresholdOverride = (
     };
   }
 
-  // Once all cores are healthy, kms-init establishes the MPC context/epoch
-  // across the parties (required before the cluster can serve requests).
-  const initEndpoints = kmsPartyIds(topology.parties)
+  // Once all cores are healthy, kms-init establishes the MPC context/epoch across the COMMITTEE
+  // (the first committeeSize cores) — required before the cluster can serve requests. Spares are not
+  // part of the initial context; they join later via a context switch.
+  const initEndpoints = kmsPartyIds(topology.committeeSize)
     .map((partyId) => `http://${kmsCoreName(partyId)}:${kmsServicePort(partyId)}`)
     .join(" ");
   services["kms-core-init"] = {

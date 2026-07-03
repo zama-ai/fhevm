@@ -35,6 +35,7 @@ export const DEFAULT_KMS_TOPOLOGY: ResolvedKmsTopology = {
   mode: "centralized",
   parties: 1,
   threshold: 1,
+  committeeSize: 1,
   fheParams: "Default",
 };
 
@@ -75,23 +76,30 @@ export const resolveKmsTopology = (
       mode,
       parties: 1,
       threshold: 1,
+      committeeSize: 1,
       fheParams: "Default",
     };
   }
   const parties = block.parties ?? 4;
   const threshold = block.threshold ?? 1;
+  const committeeSize = block.committeeSize ?? parties;
   if (!Number.isInteger(parties) || parties < 4) {
     throw new Error(`${sourceLabel}.parties must be an integer >= 4 for threshold mode`);
   }
   if (parties > MAX_KMS_PARTIES) {
     throw new Error(`${sourceLabel}.parties must be <= ${MAX_KMS_PARTIES}`);
   }
-  // The KMS core enforces parties === 3*threshold + 1 (see zama-ai/kms
-  // core/service/src/conf/threshold.rs). Valid cluster sizes are therefore only
-  // 4, 7, 10, ... — 2 and 3 parties cannot form a threshold-mode cluster at all.
-  if (!Number.isInteger(threshold) || threshold < 1 || 3 * threshold + 1 !== parties) {
+  if (!Number.isInteger(committeeSize) || committeeSize < 4 || committeeSize > parties) {
     throw new Error(
-      `${sourceLabel}: KMS core requires parties === 3*threshold + 1; smallest threshold-mode cluster is 4 parties (t=1), next valid sizes 7, 10. Got parties=${parties}, threshold=${threshold}`,
+      `${sourceLabel}.committeeSize must be an integer in [4, parties=${parties}] (defaults to parties); got ${committeeSize}`,
+    );
+  }
+  // The KMS core enforces committee === 3*threshold + 1 for the MPC group (see zama-ai/kms
+  // core/service/src/conf/threshold.rs). Valid committee sizes are 4, 7, 10, ... Extra cores
+  // (parties > committeeSize) boot as spares so a context switch can rotate one into the committee.
+  if (!Number.isInteger(threshold) || threshold < 1 || 3 * threshold + 1 !== committeeSize) {
+    throw new Error(
+      `${sourceLabel}: KMS core requires committee === 3*threshold + 1; smallest committee is 4 (t=1), next valid sizes 7, 10. Got committeeSize=${committeeSize}, threshold=${threshold}`,
     );
   }
   // Threshold uses SECURE keygen (real DKG preprocessing): it signs the on-chain prepKeygenId, so it
@@ -104,7 +112,7 @@ export const resolveKmsTopology = (
       `${sourceLabel}.fheParams must be "Test" for threshold mode (Default params are deferred to a follow-up PR: secure DKG with Default params is hours + 32-96 GiB/party, not viable in CI)`,
     );
   }
-  return { mode, parties, threshold, fheParams };
+  return { mode, parties, threshold, committeeSize, fheParams };
 };
 
 const COPROCESSOR_SCENARIO_KIND = "coprocessor-consensus";
