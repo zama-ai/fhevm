@@ -74,7 +74,10 @@ const providers = new Map<string, ethers.JsonRpcProvider>();
 
 export function getProvider(chain: ChainConfig): ethers.JsonRpcProvider {
   if (!providers.has(chain.rpcUrl)) {
-    providers.set(chain.rpcUrl, new ethers.JsonRpcProvider(chain.rpcUrl));
+    // cacheTimeout: -1 disables ethers' 250ms result sharing. Tests assert on
+    // freshly-read chain state, and with 1s block times a cached eth_blockNumber
+    // can lag a receipt observed in the same window (head appears to go backwards).
+    providers.set(chain.rpcUrl, new ethers.JsonRpcProvider(chain.rpcUrl, undefined, { cacheTimeout: -1 }));
   }
   return providers.get(chain.rpcUrl)!;
 }

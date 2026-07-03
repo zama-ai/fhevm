@@ -471,6 +471,9 @@ async fn build_transaction_graph_and_execute<'a>(
     dcid_mngr: &dependence_chain::LockMngr,
 ) -> Result<DFComponentGraph, CoprocessorError> {
     let mut tx_graph = DFComponentGraph::default();
+    if txs.is_empty() {
+        return Ok(tx_graph);
+    }
     if let Err(e) = tx_graph.build(txs) {
         // If we had an error while building the graph, we don't
         // execute anything and return to allow any set results

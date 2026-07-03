@@ -143,6 +143,26 @@ run_remove_tenants_prerequisites() {
     "CREATE UNIQUE INDEX CONCURRENTLY idx_pbs_computations_no_tenant ON pbs_computations (handle);"
 }
 
+run_block_scope_materialization_wave1_prerequisites() {
+  # Pre-upgrade step for the block-scope materialization (wave1) rollout.
+  #
+  # The wave1 migration 20260610130000 builds idx_host_chain_blocks_valid_parent_hash
+  # on the populated, monotonically-growing host_chain_blocks_valid table. A plain
+  # CREATE INDEX takes a SHARE lock that blocks block ingestion for the whole build.
+  # Build it CONCURRENTLY here, while existing services keep running, so the
+  # in-migration CREATE INDEX IF NOT EXISTS later no-ops.
+  echo "Pre-creating block-scope materialization (wave1) ancestry index concurrently..."
+
+  # parent_hash is metadata-only (constant NULL default) and must exist before
+  # the concurrent index build. Idempotent: no-op if the column already exists.
+  run_sql "ALTER TABLE host_chain_blocks_valid
+           ADD COLUMN IF NOT EXISTS parent_hash BYTEA NULL DEFAULT NULL;"
+
+  precreate_index "idx_host_chain_blocks_valid_parent_hash" \
+    "CREATE INDEX CONCURRENTLY idx_host_chain_blocks_valid_parent_hash \
+     ON host_chain_blocks_valid (chain_id, parent_hash);"
+}
+
 echo "-------------- Start database initilaization --------------"
 
 echo "Creating database..."
@@ -153,6 +173,11 @@ if [ "${RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS:-}" = "true" ]; then
   # Partial migrations — the host_chains table doesn't exist yet on this path,
   # so do not attempt to seed.
   run_remove_tenants_prerequisites
+elif [ "${RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES:-}" = "true" ]; then
+  # Pre-upgrade pass: build the wave1 ancestry index CONCURRENTLY against the
+  # live DB before `helm upgrade` applies the rest of the wave1 migrations.
+  # Does not run the remaining migrations and does not seed.
+  run_block_scope_materialization_wave1_prerequisites
 else
   sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }
   seed_host_chains
