@@ -13,16 +13,16 @@ import "encrypted-types/EncryptedTypes.sol";
  *          handles to it through `FHE.sendLZConfidentialBridge`.
  * @dev     A message may carry up to 32 handes.
  * @dev     The destination is taken from {peers} (a `bytes32`, so non-EVM peers work too).
- * @dev     Quote the fee with {_quoteSendSingleHandleToPeer/_quoteSendHandlesToPeer} and forward it as `msg.value`
- *          when sending, i.e before calling any of {_sendSingleHandleToPeer/_sendHandlesToPeer}.
+ * @dev     Quote the fee with {_quoteSendHandleToPeer/_quoteSendHandlesToPeer} and forward it as `msg.value`
+ *          when sending, i.e before calling any of {_sendHandleToPeer/_sendHandlesToPeer}.
  */
 abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
     /**
      * @notice Bridges a single raw `bytes32` handle to the peer cOApp configured for `dstEid`.
-     * @dev    *Private* core behind the per-type {_sendSingleHandleToPeer} overloads. Wraps `handle` in a
+     * @dev    *Private* core behind the per-type {_sendHandleToPeer} overloads. Wraps `handle` in a
      *         one-element list; the destination receiver references it at index 0. Forwards `msg.value` as the
      *         LayerZero native fee, so the calling entrypoint must be `payable` and funded with
-     *         the amount returned by {_quoteSendSingleHandleToPeer}.
+     *         the amount returned by {_quoteSendHandleToPeer}.
      * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
      * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
      * @param payload       Opaque app payload; decoded by the destination receiver, which references the handle by index.
@@ -32,7 +32,7 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
      * @return guid         The LayerZero message guid.
      * @return nonce        The LayerZero message nonce.
      */
-    function _sendSingleHandleToPeer(
+    function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
         bytes32 handle,
@@ -50,84 +50,84 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         );
     }
 
-    /// @notice Type-safe {ebool} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendSingleHandleToPeer} core for the full semantics.
-    function _sendSingleHandleToPeer(
+    /// @notice Type-safe {ebool} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
         ebool handle,
         uint64 lzComposeGas
     ) internal returns (bytes32 guid, uint64 nonce) {
-        (guid, nonce) = _sendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
+        (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint8} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendSingleHandleToPeer} core for the full semantics.
-    function _sendSingleHandleToPeer(
+    /// @notice Type-safe {euint8} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
         euint8 handle,
         uint64 lzComposeGas
     ) internal returns (bytes32 guid, uint64 nonce) {
-        (guid, nonce) = _sendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
+        (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint16} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendSingleHandleToPeer} core for the full semantics.
-    function _sendSingleHandleToPeer(
+    /// @notice Type-safe {euint16} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
         euint16 handle,
         uint64 lzComposeGas
     ) internal returns (bytes32 guid, uint64 nonce) {
-        (guid, nonce) = _sendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
+        (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint32} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendSingleHandleToPeer} core for the full semantics.
-    function _sendSingleHandleToPeer(
+    /// @notice Type-safe {euint32} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
         euint32 handle,
         uint64 lzComposeGas
     ) internal returns (bytes32 guid, uint64 nonce) {
-        (guid, nonce) = _sendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
+        (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint64} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendSingleHandleToPeer} core for the full semantics.
-    function _sendSingleHandleToPeer(
+    /// @notice Type-safe {euint64} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
         euint64 handle,
         uint64 lzComposeGas
     ) internal returns (bytes32 guid, uint64 nonce) {
-        (guid, nonce) = _sendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
+        (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint128} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendSingleHandleToPeer} core for the full semantics.
-    function _sendSingleHandleToPeer(
+    /// @notice Type-safe {euint128} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
         euint128 handle,
         uint64 lzComposeGas
     ) internal returns (bytes32 guid, uint64 nonce) {
-        (guid, nonce) = _sendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
+        (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint256} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendSingleHandleToPeer} core for the full semantics.
-    function _sendSingleHandleToPeer(
+    /// @notice Type-safe {euint256} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
         euint256 handle,
         uint64 lzComposeGas
     ) internal returns (bytes32 guid, uint64 nonce) {
-        (guid, nonce) = _sendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
+        (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {eaddress} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`.. See the private {_sendSingleHandleToPeer} core for the full semantics.
-    function _sendSingleHandleToPeer(
+    /// @notice Type-safe {eaddress} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`.. See the private {_sendHandleToPeer} core for the full semantics.
+    function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
         eaddress handle,
         uint64 lzComposeGas
     ) internal returns (bytes32 guid, uint64 nonce) {
-        (guid, nonce) = _sendSingleHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
+        (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
     /**
@@ -162,16 +162,16 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
 
     /**
      * @notice Quotes the LayerZero native fee to bridge a single handle to the peer configured for `dstEid`.
-     * @dev    Call this function before calling {_sendSingleHandleToPeer} and forward the result as `msg.value`.
+     * @dev    Call this function before calling {_sendHandleToPeer} and forward the result as `msg.value`.
      * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
      * @dev    See {FHE-quoteLZConfidentialBridge} for the race-condition caveat.
      * @param  dstEid        Destination LayerZero endpoint id (must have a configured peer).
      * @param  payload       Opaque app payload matching the intended send (only its length affects the fee).
      * @param  lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
      *                       app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
-     * @return nativeFee     The native fee to forward as `msg.value` to {_sendSingleHandleToPeer}.
+     * @return nativeFee     The native fee to forward as `msg.value` to {_sendHandleToPeer}.
      */
-    function _quoteSendSingleHandleToPeer(
+    function _quoteSendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
         uint64 lzComposeGas

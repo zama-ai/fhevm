@@ -26,7 +26,7 @@ import {ConfidentialOApp} from "../../lib/bridge/ConfidentialOApp.sol";
  * @dev    An instance of this contract is deployed on each supported chain. Peers are
  *         configured by the owner via {ConfidentialOAppCore-setPeer}, and the canonical
  *         peer per eid serves both directions (outbound send and inbound receive).
- *         The send side is handled by {ConfidentialOAppSender-_sendSingleHandleToPeer},
+ *         The send side is handled by {ConfidentialOAppSender-_sendHandleToPeer},
  *         while inbound messages are authenticated by {ConfidentialOAppReceiver} (which
  *         checks the caller is the local ConfidentialBridge and that `(srcEid, srcApp)`
  *         is a trusted peer) before dispatching to {_onReceiveHandles} to mint.
@@ -76,7 +76,7 @@ contract ConfidentialMultiChainToken is ConfidentialOApp {
         // `_burn` granted ACL allowance to this contract on `actualAmount`,
         // so the bridge's `isAllowed(actualAmount, srcApp=this)` check passes.
         bytes memory payload = abi.encode(recipient);
-        _sendSingleHandleToPeer(dstEid, payload, actualAmount, mintComposeGas);
+        _sendHandleToPeer(dstEid, payload, actualAmount, mintComposeGas);
 
         emit Bridged(msg.sender, dstEid, recipient);
     }
@@ -99,7 +99,7 @@ contract ConfidentialMultiChainToken is ConfidentialOApp {
         // single bridged handle. Values don't affect the fee, so a placeholder address
         // (e.g here: msg.sender) prices identically to a real send.
         bytes memory payload = abi.encode(msg.sender);
-        nativeFee = _quoteSendSingleHandleToPeer(dstEid, payload, mintComposeGas);
+        nativeFee = _quoteSendHandleToPeer(dstEid, payload, mintComposeGas);
     }
 
     /**
