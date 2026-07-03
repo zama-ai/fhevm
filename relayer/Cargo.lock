@@ -2631,6 +2631,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-kms",
  "axum",
+ "borsh",
  "built",
  "chrono",
  "clap",
@@ -2670,6 +2671,7 @@ dependencies = [
  "utoipa-redoc",
  "uuid",
  "validator",
+ "zama-solana-acl",
 ]
 
 [[package]]
@@ -7144,6 +7146,14 @@ dependencies = [
  "quote",
  "syn 2.0.118",
  "synstructure",
+]
+
+[[package]]
+name = "zama-solana-acl"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "sha2 0.10.9",
 ]
 
 [[package]]

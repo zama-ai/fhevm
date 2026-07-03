@@ -59,6 +59,10 @@ fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-
 fhevm_host_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "2a6cf820b", default-features = false }
 # Shared utils for signature verification in user-decrypt requests.
 user-decryption-signature = { path = "../shared/user-decryption-signature" }
+# Shared MMR/lineage proof math for the Solana ACL (RFC-024); source of truth
+# also used by the zama-host program and the KMS connector.
+zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
+borsh = { version = "1", features = ["derive"] }
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_path_order"] }
 utoipa-redoc = { version = "6.0.0", features = ["axum"] }
 validator = { version = "0.20.0", features = ["derive"] }
