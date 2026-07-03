@@ -534,7 +534,7 @@ where
         // ACL phase: read each handle's record at finalized commitment and run the domain-scoped
         // verifier with the identity as subject.
         let handles: Vec<HandleBytes> = request.handles.iter().map(|e| e.handle.0).collect();
-        check_solana_handles_acl(host, &handles, auth.identity, &auth.allowed_acl_domain_keys)
+        check_solana_handles_acl(host, &handles, &auth)
             .await
             .map_err(|e| RequestCheckError::from_processing(RequestCheckKind::Acl, e))?;
 

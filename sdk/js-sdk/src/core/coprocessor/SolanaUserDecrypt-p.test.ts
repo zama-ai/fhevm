@@ -42,7 +42,7 @@ const VECTOR: SolanaUserDecryptInput = {
 };
 
 const RUST_PREIMAGE =
-  '0x7a616d612d736f6c616e612d757365722d646563727970742d7631' + // "zama-solana-user-decrypt-v1"
+  '0x7a616d612d736f6c616e612d757365722d646563727970742d7632' + // "zama-solana-user-decrypt-v2"
   '000000000000cafe' + // contracts_chain_id u64 BE
   '00000010' +
   '7075626c69632d6b65792d6279746573' + // "public-key-bytes"
@@ -56,7 +56,10 @@ const RUST_PREIMAGE =
   '0101010101010101010101010101010101010101010101010101010101010101' +
   '0202020202020202020202020202020202020202020202020202020202020202' +
   '00000000000003e8' + // start_timestamp 1000
-  '0000000000000e10'; // duration_seconds 3600
+  '0000000000000e10' + // duration_seconds 3600
+  '0000000000000000000000000000000000000000000000000000000000000000' + // acl_value_key (absent)
+  '0000000000000000' + // proof_slot (absent)
+  '00000000'; // mmr_proof_len (absent, empty proof)
 
 describe('SolanaUserDecrypt byte-parity with Rust source of truth', () => {
   it('builds the signing preimage byte-identically to solana_user_decrypt_signing_preimage', () => {

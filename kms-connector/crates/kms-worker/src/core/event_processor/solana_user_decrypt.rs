@@ -1,4 +1,4 @@
-//! Solana branch of the V2 user-decryption authorization check.
+//! Solana branch of the V2 user-decryption authorization check (RFC-024 `EncryptedValue` rewrite).
 //!
 //! ## Why this exists (the bug it closes)
 //!
@@ -10,41 +10,101 @@
 //! victim's plaintext re-encrypted to the attacker's key.
 //!
 //! This module re-verifies the ed25519 signature **inside every KMS party's connector**, binding
-//! the re-encryption `publicKey` (and the handles, identity, nonce, allowed domains, and validity
-//! window) to the Solana identity. A substituted key or a relayer-forged signature cannot pass.
+//! the re-encryption `publicKey` (handles, identity, nonce, allowed domains, validity window) AND
+//! — new in this rewrite — the MMR proof tail (`acl_value_key`, `proof_slot`, `mmr_proof_bytes`)
+//! to the Solana identity. A relayer cannot substitute the proof, the lineage, or the slot any
+//! more than it could substitute the re-encryption key: `SOLANA_USER_DECRYPT_DOMAIN_TAG` was
+//! bumped to `v2` specifically so a `v1` signature (proof-less) can never verify against the `v2`
+//! preimage, closing the same class of relayer-bypass bug for the new MMR fields.
 //!
-//! ## Flow
+//! ## DEVIATION FROM THE REFERENCE DESIGN: MMR fields travel in `extraData`, not typed fields
 //!
-//! 1. parse the canonical Solana `extraData` (identity, nonce, allowed ACL domain keys),
-//! 2. rebuild the canonical signing preimage and verify `payload.signature` as an ed25519
-//!    signature by the identity over that preimage,
-//! 3. read each handle's ACL record from the Solana host RPC at `finalized` commitment, check the
-//!    account owner and canonical PDA, then run the domain-scoped ACL verifier with the identity
-//!    as the subject.
+//! The reference design assumed `aclValueKey` / `mmrProof` / `proofSlot` are typed
+//! `UserDecryptionRequestSolanaPayload` fields. Those fields do not exist on the
+//! `gateway-contracts` Solidity interface / generated Rust bindings today, and adding them is a
+//! `gateway-contracts` change outside this workstream's scope (`kms-connector/` +
+//! `sdk/js-sdk/` only). Instead, they are packed into the existing `extraData` blob, versioned
+//! (see `connector_utils::types::solana_extra_data`): `v0x01` = context-only (no MMR tail, as
+//! before), `v0x02` = context + MMR tail. This is transport-only: the signed preimage bytes and
+//! the signature-binding property are unchanged from the reference design.
+//!
+//! ## Dual-path ACL check
+//!
+//! Every Solana user-decrypt / public-decrypt request now names its `EncryptedValue` lineage by
+//! `acl_value_key` and is single-handle (see [`require_single_handle`] — a proof, when present,
+//! authorizes exactly one handle, so multi-handle Solana requests are out of scope for this
+//! rewrite):
+//!
+//! - **current-handle** (`mmr_proof_bytes` empty): the lineage account, fetched at `finalized`
+//!   commitment, is checked for canonical PDA derivation + program ownership + `current_handle ==
+//!   handle` + `subject ∈ subjects` ([`dispatch_solana_current`]).
+//! - **historical / public** (`mmr_proof_bytes` non-empty): the request carries an MMR inclusion
+//!   proof, verified against the LIVE finalized peaks (the account is always freshly fetched, never
+//!   a cached/proof-time snapshot) via the shared crate's `authorize_historical` /
+//!   `authorize_public` ([`dispatch_solana_mmr_proof`]). There is no live "is public" flag any
+//!   more — public-ness is only provable via a `PublicDecryptLeaf` MMR leaf.
+//!
+//! ## Freshness contract: Recoverable (budget-exempt) vs Irrecoverable
+//!
+//! [`dispatch_solana_mmr_proof`] verifies the proof against the live peaks FIRST. Only on
+//! verification failure does it compare `proof_slot` (the leaf_count the proof was built against)
+//! to the account's live `leaf_count`:
+//! - **mismatch** → `ProcessingError::RecoverableBudgetExempt`: the lineage advanced since the
+//!   proof was built and the proof's mountain may have merged, so the client can rebuild and
+//!   resubmit a fresh proof. This variant is retried by `DbEventProcessor` exactly like
+//!   `Recoverable` (marks the event pending) but is EXEMPT from the attempt budget — the
+//!   processor never increments `event.error_counter` for it, and `max_decryption_attempts` is
+//!   never consulted for it — because this is a legitimate client retry, not a failure to charge
+//!   against.
+//! - **match** (proof_slot == live leaf_count but still fails to verify) → `Irrecoverable`: the
+//!   proof is simply wrong for the account's actual state, not stale.
+//!
+//! A proof that still verifies against the live peaks despite `proof_slot != leaf_count` (count
+//! drifted but the relevant mountain never merged) is accepted — verify-first, never rebuilt from
+//! a mere count mismatch.
 
 use crate::core::{
     event_processor::ProcessingError,
-    solana_acl::{
-        ACL_RECORD_SEED, AclRecordWitness, HandleBytes, SolanaAclVerifier, SolanaPubkeyBytes,
-        decode_acl_record_witness,
+    solana_acl::{HandleBytes, SolanaAclVerifier, SolanaPubkeyBytes},
+    solana_encrypted_value_acl::{
+        EncryptedValueTarget, decode_encrypted_value_acl, encrypted_value_acl_address,
     },
     solana_v2_fetcher::SolanaV2Fetcher,
 };
 use alloy::primitives::U256;
 use anyhow::anyhow;
+use borsh::BorshDeserialize;
 use connector_utils::types::solana_extra_data::{
-    SolanaUserDecryptSigningInput, solana_user_decrypt_signing_preimage,
+    SolanaUserDecryptSigningInput, parse_solana_user_decrypt_extra_data,
+    solana_user_decrypt_signing_preimage,
 };
 use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequestSolana;
 use ring::signature::{ED25519, UnparsedPublicKey};
 use solana_pubkey::Pubkey;
+use zama_solana_acl::{EncryptedValue, MmrProof};
 
-/// The verified Solana auth data the ACL phase needs: the ed25519 identity (the ACL subject) and
-/// the signed allowed-ACL-domain-keys scope. Returned by [`verify_solana_user_decrypt_signature`].
+/// Transport-blob mode byte for a historical-access MMR proof (see `mmr_proof_bytes`).
+pub const MMR_MODE_HISTORICAL: u8 = 0x01;
+/// Transport-blob mode byte for a public-decrypt MMR proof.
+pub const MMR_MODE_PUBLIC: u8 = 0x02;
+/// Upper bound on `MmrProof::siblings` accepted from an untrusted request, matching the MMR's
+/// `u64` height ceiling (`mmr.rs` iterates heights `0..64`); bounds the decode-time allocation.
+pub const MAX_MMR_SIBLINGS: usize = 64;
+
+/// The verified Solana auth data the ACL phase needs.
 #[derive(Debug)]
 pub struct VerifiedSolanaAuth {
     pub identity: SolanaPubkeyBytes,
     pub allowed_acl_domain_keys: Vec<SolanaPubkeyBytes>,
+    /// The `EncryptedValue` lineage this request targets. All-zero is only meaningful for the
+    /// synthetic "current-ACL-shaped" preimage used to guard against MMR-proof injection (see the
+    /// `current_acl_mmr_proof_injection_rejected` test) — a real request always names its lineage.
+    pub acl_value_key: [u8; 32],
+    /// The full MMR-proof transport blob (mode byte ‖ Borsh `MmrProof`); empty for a current-ACL
+    /// (no-proof) request.
+    pub mmr_proof_bytes: Vec<u8>,
+    /// The lineage `leaf_count` the proof was built against; 0 for a current-ACL request.
+    pub proof_slot: u64,
 }
 
 /// Per-chain Solana host configuration needed to authorize a user-decrypt request: the expected
@@ -55,11 +115,10 @@ pub struct SolanaHost {
     pub fetcher: SolanaV2Fetcher,
 }
 
-/// Verifies the ed25519 signature binding for a Solana user-decryption request. Pure (no I/O), so
-/// the publicKey-substitution and forged-signature rejections are unit-testable without a live
-/// RPC. The auth fields (identity, nonce, allowed ACL domain keys) are read as TYPED fields off the
-/// request — there is no `extraData` blob to decode; `extraData` carries only the KMS context.
-/// Returns the [`VerifiedSolanaAuth`] (identity + scope) for the caller to drive the ACL phase.
+/// Verifies the ed25519 signature binding for a Solana user-decryption request, over the `v2`
+/// preimage (handles, identity, nonce, allowed domains, validity window, AND the MMR-proof tail).
+/// Pure (no I/O), so the publicKey-substitution, forged-signature, and proof-tail-tampering
+/// rejections are unit-testable without a live RPC.
 pub fn verify_solana_user_decrypt_signature(
     request: &UserDecryptionRequestSolana,
     contracts_chain_id: u64,
@@ -70,8 +129,8 @@ pub fn verify_solana_user_decrypt_signature(
     let nonce: SolanaPubkeyBytes = payload.nonce.0;
     let allowed_acl_domain_keys: Vec<SolanaPubkeyBytes> =
         payload.allowedAclDomainKeys.iter().map(|k| k.0).collect();
-    // extraData carries only the KMS context (v0x01: version ‖ contextId(32)).
-    let context_id = extract_context_id_be(payload.extraData.as_ref());
+
+    let extra = parse_solana_user_decrypt_extra_data(payload.extraData.as_ref());
 
     let handles: Vec<HandleBytes> = request.handles.iter().map(|entry| entry.handle.0).collect();
 
@@ -80,125 +139,58 @@ pub fn verify_solana_user_decrypt_signature(
         public_key: payload.publicKey.as_ref(),
         handles: &handles,
         identity: &identity,
-        context_id: &context_id,
+        context_id: &extra.context_id,
         nonce: &nonce,
         allowed_acl_domain_keys: &allowed_acl_domain_keys,
         start_timestamp: saturating_u256_to_u64(payload.requestValidity.startTimestamp),
         duration_seconds: saturating_u256_to_u64(payload.requestValidity.durationSeconds),
+        acl_value_key: &extra.acl_value_key,
+        mmr_proof_bytes: &extra.mmr_proof_bytes,
+        proof_slot: extra.proof_slot,
     });
 
     let signature = payload.signature.as_ref();
     let identity_key = UnparsedPublicKey::new(&ED25519, identity);
     identity_key.verify(&preimage, signature).map_err(|_| {
-        // A substituted publicKey, a forged/relayer-only signature, or a wrong identity all land
-        // here: the signature does not verify against the claimed Solana identity over the bound
-        // re-encryption key. This is the check that closes the substitution bug.
+        // A substituted publicKey, a substituted/mutated MMR-proof tail, a forged/relayer-only
+        // signature, or a wrong identity all land here.
         ProcessingError::Irrecoverable(anyhow!(
             "Solana user-decryption ed25519 signature verification failed: the signature does not \
-             bind the re-encryption publicKey to the claimed identity"
+             bind the re-encryption publicKey and MMR-proof tail to the claimed identity"
         ))
     })?;
 
     Ok(VerifiedSolanaAuth {
         identity,
         allowed_acl_domain_keys,
+        acl_value_key: extra.acl_value_key,
+        mmr_proof_bytes: extra.mmr_proof_bytes,
+        proof_slot: extra.proof_slot,
     })
 }
 
-/// Verifies, for a single handle, that its on-chain ACL record authorizes `subject` for USE
-/// within the signed `allowed_acl_domain_keys` scope. Pure (no I/O): the caller supplies the
-/// fetched-and-owner/PDA-checked record. Kept separate so the domain-scoping rejection is
-/// unit-testable with a crafted witness.
-pub fn authorize_solana_handle(
-    verifier: &SolanaAclVerifier,
-    record: &AclRecordWitness,
-    handle: HandleBytes,
-    subject: SolanaPubkeyBytes,
-    allowed_acl_domain_keys: &[SolanaPubkeyBytes],
-) -> Result<(), ProcessingError> {
-    // Domain-scoped verifier: rejects a subject that holds USE on a handle whose acl_domain_key is
-    // outside the request's signed allowedContracts scope.
-    verifier
-        .verify_user_decrypt(record, &[], handle, subject, allowed_acl_domain_keys)
-        .map_err(|e| {
-            ProcessingError::Recoverable(anyhow!(
-                "Solana ACL authorization failed for handle {}: {e}",
-                hex_handle(&handle)
-            ))
-        })
-}
-
-/// Full Solana user-decryption ACL check for one request against its host: verifies each handle's
-/// ACL record fetched at `finalized` commitment.
-///
-/// For every handle:
-/// 1. re-derive the canonical ACL-record PDA from the (domain, app, label, sequence) decoded from
-///    the on-chain account, rejecting a non-canonical address,
-/// 2. require `account.owner == ZamaHost program id`,
-/// 3. run the domain-scoped [`SolanaAclVerifier::verify_user_decrypt`] with the identity as the
-///    subject.
-///
-/// The record is located by the canonical PDA, so a multi-account ambiguity cannot arise: a
-/// handle maps to exactly one ACL-record address. The fetch is rejected (not silently skipped) if
-/// the account is missing or owned by the wrong program.
-pub async fn check_solana_handles_acl(
-    host: &SolanaHost,
-    handles: &[HandleBytes],
-    subject: SolanaPubkeyBytes,
-    allowed_acl_domain_keys: &[SolanaPubkeyBytes],
-) -> Result<(), ProcessingError> {
-    let verifier = SolanaAclVerifier::new(host.program_id);
-
-    for handle in handles {
-        let record = fetch_acl_record_for_handle(host, *handle).await?;
-        authorize_solana_handle(
-            &verifier,
-            &record,
-            *handle,
-            subject,
-            allowed_acl_domain_keys,
-        )?;
+/// Enforces the single-handle scope of the `EncryptedValue` rewrite: an MMR proof (when present)
+/// authorizes exactly one handle, and the current-ACL path is likewise scoped to the one lineage
+/// named by `acl_value_key` — so every Solana user-decrypt/public-decrypt request under this
+/// rewrite must name exactly one handle. Pure so the rejection is unit-testable without a host.
+pub fn require_single_handle(handles: &[HandleBytes]) -> Result<HandleBytes, ProcessingError> {
+    match handles {
+        [single] => Ok(*single),
+        other => Err(ProcessingError::Irrecoverable(anyhow!(
+            "Solana EncryptedValue user-decrypt requires exactly one handle per request, got {}",
+            other.len()
+        ))),
     }
-    Ok(())
 }
 
-/// Solana public-decryption ACL check: each handle's on-chain ACL record (fetched at `finalized`
-/// with the same owner + canonical-PDA checks as the user-decrypt path) must carry the
-/// `public_decrypt` flag, i.e. the handle was released for public decryption on the host
-/// (`allow_for_decryption`). Unlike user-decrypt there is no subject/domain scope — a publicly
-/// released handle is decryptable by anyone.
-pub async fn check_solana_handles_public_decrypt(
+/// Fetches the `EncryptedValue` lineage for `value_key` at `finalized` commitment and decodes it.
+/// Never a snapshot: every call re-reads the live account, which is what lets
+/// [`dispatch_solana_mmr_proof`] verify against the LIVE peaks.
+async fn fetch_encrypted_value_acl(
     host: &SolanaHost,
-    handles: &[HandleBytes],
-) -> Result<(), ProcessingError> {
-    let verifier = SolanaAclVerifier::new(host.program_id);
-
-    for handle in handles {
-        let record = fetch_acl_record_for_handle(host, *handle).await?;
-        verifier
-            .verify_public_decrypt(&record, *handle)
-            .map_err(|e| {
-                ProcessingError::Recoverable(anyhow!(
-                    "Solana public-decrypt not authorized for handle {}: {e}",
-                    hex_handle(handle)
-                ))
-            })?;
-    }
-    Ok(())
-}
-
-/// Fetches and decodes the ACL record for `handle`, enforcing owner + canonical-PDA invariants.
-///
-/// The ACL-record PDA is derived from the record's nonce metadata, which the connector does not
-/// know up front from the handle alone. The connector therefore reads the candidate record, then
-/// re-derives the PDA from the decoded metadata and rejects any account whose address is not the
-/// canonical PDA — closing the door on a substituted account. `verify_user_decrypt` re-checks the
-/// same PDA and owner, so this is defense-in-depth, not the sole gate.
-async fn fetch_acl_record_for_handle(
-    host: &SolanaHost,
-    handle: HandleBytes,
-) -> Result<AclRecordWitness, ProcessingError> {
-    let account_key = acl_record_account_for_handle(host, handle).await?;
+    value_key: [u8; 32],
+) -> Result<(SolanaPubkeyBytes, EncryptedValue), ProcessingError> {
+    let (account_key, _bump) = encrypted_value_acl_address(host.program_id, value_key);
 
     let account = host
         .fetcher
@@ -207,64 +199,163 @@ async fn fetch_acl_record_for_handle(
         .map_err(ProcessingError::Recoverable)?
         .ok_or_else(|| {
             ProcessingError::Recoverable(anyhow!(
-                "Solana ACL record account {} for handle {} not found at finalized commitment",
+                "Solana EncryptedValue lineage account {} not found at finalized commitment",
                 Pubkey::new_from_array(account_key),
-                hex_handle(&handle)
             ))
         })?;
 
     if account.owner != host.program_id {
         return Err(ProcessingError::Irrecoverable(anyhow!(
-            "Solana ACL record account {} is owned by {}, expected ZamaHost program {}",
+            "Solana EncryptedValue lineage account {} is owned by {}, expected ZamaHost program {}",
             Pubkey::new_from_array(account_key),
             Pubkey::new_from_array(account.owner),
             Pubkey::new_from_array(host.program_id),
         )));
     }
 
-    decode_acl_record_witness(account_key, account.owner, &account.data)
-        .map_err(|e| ProcessingError::Irrecoverable(anyhow!("failed to decode ACL record: {e}")))
+    let acl = decode_encrypted_value_acl(&account.data).map_err(|e| {
+        ProcessingError::Irrecoverable(anyhow!("failed to decode EncryptedValue lineage: {e}"))
+    })?;
+    Ok((account_key, acl))
 }
 
-/// Resolves the single canonical ACL-record account address for `handle` by scanning the host
-/// program's ACL-record accounts.
-///
-/// ZamaHost derives the ACL-record PDA from `(nonce_key, nonce_sequence)`, neither of which is
-/// recoverable from the handle alone, so the connector locates the record by querying the program
-/// for accounts whose decoded `handle` matches. Exactly one match is required: a missing record is
-/// rejected, and **multiple matches are rejected** rather than silently taking the first.
-async fn acl_record_account_for_handle(
-    host: &SolanaHost,
+/// Current-handle path: no MMR proof, `handle` must be the lineage's live `current_handle` and
+/// `auth.identity` a current member, within the signed domain scope.
+pub fn dispatch_solana_current(
+    verifier: &SolanaAclVerifier,
+    account_key: SolanaPubkeyBytes,
+    owner: SolanaPubkeyBytes,
+    acl: &EncryptedValue,
     handle: HandleBytes,
-) -> Result<SolanaPubkeyBytes, ProcessingError> {
-    let matches = host
-        .fetcher
-        .find_acl_records_by_handle(&host.program_id, ACL_RECORD_SEED, &handle)
-        .await
-        .map_err(ProcessingError::Recoverable)?;
+    auth: &VerifiedSolanaAuth,
+) -> Result<(), ProcessingError> {
+    verifier
+        .verify_current_user_decrypt(
+            account_key,
+            owner,
+            acl,
+            handle,
+            auth.identity,
+            &auth.allowed_acl_domain_keys,
+        )
+        .map_err(|e| {
+            ProcessingError::Recoverable(anyhow!(
+                "Solana current-lineage ACL check failed for handle {}: {e}",
+                hex_handle(&handle)
+            ))
+        })
+}
 
-    match matches.as_slice() {
-        [] => Err(ProcessingError::Recoverable(anyhow!(
-            "no Solana ACL record found for handle {} under program {}",
-            hex_handle(&handle),
-            Pubkey::new_from_array(host.program_id),
-        ))),
-        [single] => Ok(*single),
-        many => Err(ProcessingError::Irrecoverable(anyhow!(
-            "ambiguous Solana ACL records for handle {}: {} accounts matched, refusing to choose",
-            hex_handle(&handle),
-            many.len(),
-        ))),
+/// Historical/public path: decodes the mode byte + `MmrProof` from `auth.mmr_proof_bytes`,
+/// verifies it against the LIVE peaks in `acl`, and classifies a verification failure by
+/// `auth.proof_slot` vs `acl.leaf_count` (see the module doc's freshness contract).
+pub fn dispatch_solana_mmr_proof(
+    verifier: &SolanaAclVerifier,
+    account_key: SolanaPubkeyBytes,
+    owner: SolanaPubkeyBytes,
+    acl: &EncryptedValue,
+    handle: HandleBytes,
+    auth: &VerifiedSolanaAuth,
+) -> Result<(), ProcessingError> {
+    let [mode, proof_body @ ..] = auth.mmr_proof_bytes.as_slice() else {
+        return Err(ProcessingError::Irrecoverable(anyhow!(
+            "Solana MMR-proof blob is empty (missing mode byte)"
+        )));
+    };
+    let mut cursor = proof_body;
+    let proof = MmrProof::deserialize(&mut cursor).map_err(|e| {
+        ProcessingError::Irrecoverable(anyhow!("failed to decode Solana MMR proof: {e}"))
+    })?;
+    if proof.siblings.len() > MAX_MMR_SIBLINGS {
+        return Err(ProcessingError::Irrecoverable(anyhow!(
+            "Solana MMR proof carries {} siblings, exceeding the cap of {MAX_MMR_SIBLINGS}",
+            proof.siblings.len()
+        )));
+    }
+
+    let target = EncryptedValueTarget {
+        account_key,
+        owner,
+        acl,
+        encrypted_value: handle,
+    };
+
+    let result = match *mode {
+        MMR_MODE_HISTORICAL => verifier.verify_historical_user_decrypt(
+            target,
+            auth.identity,
+            &auth.allowed_acl_domain_keys,
+            &proof,
+        ),
+        MMR_MODE_PUBLIC => verifier.verify_public_decrypt_exact(target, &proof),
+        other => {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "unknown Solana MMR proof mode byte {other:#04x}"
+            )));
+        }
+    };
+
+    result.map_err(|e| classify_mmr_verification_failure(e, auth.proof_slot, acl.leaf_count))
+}
+
+/// Verify-FIRST staleness classification: only reached after `verify_*` has already rejected the
+/// proof. A `proof_slot`/live-`leaf_count` mismatch at that point means the lineage moved since
+/// the proof was built (its mountain may have merged) — Recoverable, budget-exempt (see module
+/// doc). Equal counts with a still-failing proof means the proof is simply wrong — Irrecoverable.
+fn classify_mmr_verification_failure(
+    error: crate::core::solana_acl::SolanaAclVerificationError,
+    proof_slot: u64,
+    live_leaf_count: u64,
+) -> ProcessingError {
+    if proof_slot != live_leaf_count {
+        ProcessingError::RecoverableBudgetExempt(anyhow!(
+            "Solana MMR proof stale: built at leaf_count={proof_slot}, live leaf_count={live_leaf_count} ({error})"
+        ))
+    } else {
+        ProcessingError::Irrecoverable(anyhow!(
+            "Solana MMR proof invalid at matching leaf_count={live_leaf_count}: {error}"
+        ))
     }
 }
 
-/// Reads the 32-byte context_id from a Solana extraData blob (bytes 1..33), zero-filled if absent.
-fn extract_context_id_be(extra_data: &[u8]) -> [u8; 32] {
-    let mut context_id = [0u8; 32];
-    if extra_data.len() >= 33 {
-        context_id.copy_from_slice(&extra_data[1..33]);
+/// Full Solana user-decryption ACL check for one request: fetches the named `EncryptedValue`
+/// lineage at `finalized` commitment and dispatches to the current or MMR-proof path.
+pub async fn check_solana_handles_acl(
+    host: &SolanaHost,
+    handles: &[HandleBytes],
+    auth: &VerifiedSolanaAuth,
+) -> Result<(), ProcessingError> {
+    let handle = require_single_handle(handles)?;
+    let verifier = SolanaAclVerifier::new(host.program_id);
+    let (account_key, acl) = fetch_encrypted_value_acl(host, auth.acl_value_key).await?;
+
+    if auth.mmr_proof_bytes.is_empty() {
+        dispatch_solana_current(&verifier, account_key, host.program_id, &acl, handle, auth)
+    } else {
+        dispatch_solana_mmr_proof(&verifier, account_key, host.program_id, &acl, handle, auth)
     }
-    context_id
+}
+
+/// Solana public-decryption ACL check. Unlike the pre-RFC-024 flag-based check, there is no live
+/// "is public" flag any more: public-ness is only provable via a `PublicDecryptLeaf` MMR leaf, so
+/// this requires the caller to supply that proof exactly like a historical decrypt.
+///
+/// KNOWN GAP: the gateway's public-decryption request event does not currently carry a
+/// `value_key`/MMR-proof tail at all (unlike user-decrypt, which at least has `extraData` to
+/// repurpose) — extending it is a `gateway-contracts` change outside this workstream's scope.
+/// Until that lands, this fails closed with an explanatory `Irrecoverable` error rather than
+/// silently granting (or silently denying via a wrong flag read of a deleted account).
+pub async fn check_solana_handles_public_decrypt(
+    _host: &SolanaHost,
+    handles: &[HandleBytes],
+) -> Result<(), ProcessingError> {
+    Err(ProcessingError::Irrecoverable(anyhow!(
+        "Solana public decryption for {} handle(s) requires a PublicDecryptLeaf MMR proof, which \
+         the gateway public-decryption request does not yet carry (pending a gateway-contracts \
+         payload extension outside this workstream's scope); refusing rather than granting or \
+         reading a deleted on-chain flag",
+        handles.len()
+    )))
 }
 
 fn saturating_u256_to_u64(value: U256) -> u64 {
@@ -278,24 +369,29 @@ fn hex_handle(handle: &HandleBytes) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::solana_acl::{ACL_ROLE_USE, SubjectRole, acl_nonce_key, acl_record_address};
     use alloy::primitives::{Address, Bytes, FixedBytes};
+    use connector_utils::types::solana_extra_data::{
+        SOLANA_USER_DECRYPT_DOMAIN_TAG, encode_solana_extra_data_context_only,
+        encode_solana_extra_data_mmr_proof,
+    };
     use fhevm_gateway_bindings::decryption::{
         Decryption::{HandleEntry, SnsCiphertextMaterial, UserDecryptionRequestSolana},
         IDecryption::{RequestValiditySeconds, UserDecryptionRequestSolanaPayload},
     };
     use ring::signature::{Ed25519KeyPair, KeyPair};
+    use zama_solana_acl::{
+        derive_value_key, historical_access_leaf_commitment, mmr_append, mmr_build_proof,
+        public_decrypt_leaf_commitment,
+    };
 
     const CHAIN_ID: u64 = 7777;
-    const HOST_PROGRAM_ID: SolanaPubkeyBytes = [42u8; 32];
-    const APP_ACCOUNT: SolanaPubkeyBytes = [2u8; 32];
-    const LABEL: [u8; 32] = *b"balance_________________________";
+    const HOST: SolanaPubkeyBytes = [42u8; 32];
     const DOMAIN: SolanaPubkeyBytes = [1u8; 32];
+    const APP: SolanaPubkeyBytes = [2u8; 32];
+    const LABEL: [u8; 32] = *b"balance_________________________";
 
-    /// Wraps a raw ed25519 seed in a minimal PKCS#8 v1 document (the form ring's
-    /// `from_pkcs8_maybe_unchecked` accepts for Ed25519, public key omitted).
+    /// Wraps a raw ed25519 seed in a minimal PKCS#8 v1 document.
     fn pkcs8_from_seed(seed: &[u8; 32]) -> Vec<u8> {
-        // PKCS#8 v1 prefix for Ed25519 private keys (RFC 8410), followed by the 32-byte seed.
         let prefix: [u8; 16] = [
             0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22,
             0x04, 0x20,
@@ -305,28 +401,106 @@ mod tests {
         doc
     }
 
-    fn identity_keypair() -> Ed25519KeyPair {
-        let seed = [11u8; 32];
-        let pkcs8 = pkcs8_from_seed(&seed);
-        Ed25519KeyPair::from_pkcs8_maybe_unchecked(&pkcs8).unwrap()
+    fn identity_kp(seed: u8) -> Ed25519KeyPair {
+        Ed25519KeyPair::from_pkcs8_maybe_unchecked(&pkcs8_from_seed(&[seed; 32])).unwrap()
     }
 
-    fn handle_with_chain(byte: u8) -> [u8; 32] {
-        let mut h = [byte; 32];
-        h[22..30].copy_from_slice(&CHAIN_ID.to_be_bytes());
-        h
+    fn h(tag: u8) -> HandleBytes {
+        [tag; 32]
     }
 
-    /// Builds a typed Solana request signed by `identity_keypair()` over the canonical preimage.
-    fn signed_request(
-        public_key: Vec<u8>,
-        allowed_acl_domain_keys: Vec<SolanaPubkeyBytes>,
-    ) -> (UserDecryptionRequestSolana, SolanaPubkeyBytes) {
-        let kp = identity_keypair();
-        let identity: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+    /// A lineage whose account bytes and proofs are produced by the shared crate, mirroring the
+    /// helper in `solana_encrypted_value_acl.rs`.
+    struct Lineage {
+        acl: EncryptedValue,
+        account: SolanaPubkeyBytes,
+        leaves: Vec<[u8; 32]>,
+    }
+
+    fn lineage(handle: HandleBytes, subjects: &[SolanaPubkeyBytes]) -> Lineage {
+        let value_key = derive_value_key(DOMAIN, APP, LABEL);
+        let (account, bump) = encrypted_value_acl_address(HOST, value_key);
+        Lineage {
+            acl: EncryptedValue {
+                acl_domain_key: DOMAIN,
+                app_account: APP,
+                encrypted_value_label: LABEL,
+                current_handle: handle,
+                subjects: subjects.to_vec(),
+                leaf_count: 0,
+                peaks: Vec::new(),
+                bump,
+            },
+            account,
+            leaves: Vec::new(),
+        }
+    }
+
+    impl Lineage {
+        fn value_key(&self) -> [u8; 32] {
+            derive_value_key(
+                self.acl.acl_domain_key,
+                self.acl.app_account,
+                self.acl.encrypted_value_label,
+            )
+        }
+        fn append(&mut self, commitment: [u8; 32]) {
+            mmr_append(&mut self.acl.peaks, &mut self.acl.leaf_count, commitment).unwrap();
+            self.leaves.push(commitment);
+        }
+        fn rotate(&mut self, new_handle: HandleBytes) {
+            let old = self.acl.current_handle;
+            for i in 0..self.acl.subjects.len() {
+                let idx = self.acl.leaf_count;
+                self.append(historical_access_leaf_commitment(
+                    self.account,
+                    idx,
+                    old,
+                    self.acl.subjects[i],
+                ));
+            }
+            self.acl.current_handle = new_handle;
+        }
+        fn mark_public(&mut self) {
+            let idx = self.acl.leaf_count;
+            self.append(public_decrypt_leaf_commitment(
+                self.account,
+                idx,
+                self.acl.current_handle,
+            ));
+        }
+        fn proof(&self, i: u64) -> MmrProof {
+            mmr_build_proof(&self.leaves, i).unwrap()
+        }
+        fn proof_for_empty(&self) -> MmrProof {
+            MmrProof {
+                leaf_index: 0,
+                siblings: Vec::new(),
+            }
+        }
+    }
+
+    /// The full transport blob: 1-byte mode prefix ‖ Borsh(MmrProof).
+    fn proof_blob(mode: u8, proof: &MmrProof) -> Vec<u8> {
+        let mut blob = vec![mode];
+        blob.extend_from_slice(&borsh::to_vec(proof).unwrap());
+        blob
+    }
+
+    /// Builds a v2-signed single-handle request. `proof_blob`/`value_key`/`proof_slot` (when
+    /// non-empty/non-zero) are packed into `extraData` and bound into the signature exactly as
+    /// production does.
+    fn signed_mmr_request(
+        identity_kp: &Ed25519KeyPair,
+        handle: HandleBytes,
+        value_key: [u8; 32],
+        proof_blob: Vec<u8>,
+        proof_slot: u64,
+    ) -> UserDecryptionRequestSolana {
+        let identity: SolanaPubkeyBytes = identity_kp.public_key().as_ref().try_into().unwrap();
+        let public_key = b"reencryption-public-key".to_vec();
         let nonce = [5u8; 32];
         let context_id = [0u8; 32];
-        let handle = handle_with_chain(7);
         let start: u64 = 1_000;
         let duration: u64 = 3_600;
 
@@ -337,23 +511,25 @@ mod tests {
             identity: &identity,
             context_id: &context_id,
             nonce: &nonce,
-            allowed_acl_domain_keys: &allowed_acl_domain_keys,
+            allowed_acl_domain_keys: &[DOMAIN],
             start_timestamp: start,
             duration_seconds: duration,
+            acl_value_key: &value_key,
+            mmr_proof_bytes: &proof_blob,
+            proof_slot,
         });
-        let signature = kp.sign(&preimage);
+        let signature = identity_kp.sign(&preimage);
 
-        // extraData is context-only (v0x01: version ‖ contextId) — no auth blob.
-        let mut extra_data = vec![0x01u8];
-        extra_data.extend_from_slice(&context_id);
+        let extra_data = if proof_blob.is_empty() && value_key == [0u8; 32] {
+            encode_solana_extra_data_context_only(context_id)
+        } else {
+            encode_solana_extra_data_mmr_proof(context_id, value_key, proof_slot, &proof_blob)
+        };
 
         let payload = UserDecryptionRequestSolanaPayload {
             userIdentity: FixedBytes::from(identity),
             publicKey: Bytes::from(public_key),
-            allowedAclDomainKeys: allowed_acl_domain_keys
-                .iter()
-                .map(|k| FixedBytes::from(*k))
-                .collect(),
+            allowedAclDomainKeys: vec![FixedBytes::from(DOMAIN)],
             requestValidity: RequestValiditySeconds {
                 startTimestamp: U256::from(start),
                 durationSeconds: U256::from(duration),
@@ -362,7 +538,7 @@ mod tests {
             extraData: Bytes::from(extra_data),
             signature: Bytes::from(signature.as_ref().to_vec()),
         };
-        let request = UserDecryptionRequestSolana {
+        UserDecryptionRequestSolana {
             decryptionId: U256::from(1u64),
             snsCtMaterials: vec![SnsCiphertextMaterial {
                 ctHandle: FixedBytes::from(handle),
@@ -374,114 +550,369 @@ mod tests {
                 ownerAddress: Address::ZERO,
             }],
             payload,
-        };
-        (request, identity)
+        }
     }
 
     #[test]
     fn accepts_valid_signature() {
-        let (request, _identity) =
-            signed_request(b"reencryption-public-key".to_vec(), vec![DOMAIN]);
+        let kp = identity_kp(1);
+        let request = signed_mmr_request(&kp, h(1), [0u8; 32], Vec::new(), 0);
         let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
         assert_eq!(auth.allowed_acl_domain_keys, vec![DOMAIN]);
     }
 
-    // (a) publicKey substitution: a request whose publicKey differs from the key the signature
-    // committed to is REJECTED.
     #[test]
     fn rejects_public_key_substitution() {
-        let (mut request, _identity) =
-            signed_request(b"reencryption-public-key".to_vec(), vec![DOMAIN]);
-        // Swap in an attacker-controlled re-encryption key, keeping the user's signature.
+        let kp = identity_kp(1);
+        let mut request = signed_mmr_request(&kp, h(1), [0u8; 32], Vec::new(), 0);
         request.payload.publicKey = Bytes::from_static(b"attacker-public-key");
-
         let result = verify_solana_user_decrypt_signature(&request, CHAIN_ID);
-        assert!(
-            matches!(result, Err(ProcessingError::Irrecoverable(_))),
-            "publicKey substitution must be rejected, got {result:?}",
-        );
+        assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
     }
 
-    // (b) forged / relayer-bypass signature: a signature not from the claimed identity is REJECTED.
     #[test]
     fn rejects_forged_signature() {
-        let (mut request, _identity) =
-            signed_request(b"reencryption-public-key".to_vec(), vec![DOMAIN]);
-        // Forge a signature with a *different* key over the same preimage — i.e. a relayer that
-        // never held the user's identity key.
-        let attacker_seed = [99u8; 32];
-        let attacker =
-            Ed25519KeyPair::from_pkcs8_maybe_unchecked(&pkcs8_from_seed(&attacker_seed)).unwrap();
-        // Re-sign whatever preimage the connector will build (publicKey unchanged), but with the
-        // attacker key. The identity in extraData still names the victim.
+        let kp = identity_kp(1);
+        let mut request = signed_mmr_request(&kp, h(1), [0u8; 32], Vec::new(), 0);
+        let attacker = identity_kp(99);
         let forged = attacker.sign(b"any-bytes");
         request.payload.signature = Bytes::from(forged.as_ref().to_vec());
-
         let result = verify_solana_user_decrypt_signature(&request, CHAIN_ID);
-        assert!(
-            matches!(result, Err(ProcessingError::Irrecoverable(_))),
-            "forged signature must be rejected, got {result:?}",
-        );
+        assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
     }
 
     #[test]
     fn rejects_wrong_chain_id_binding() {
-        let (request, _identity) =
-            signed_request(b"reencryption-public-key".to_vec(), vec![DOMAIN]);
-        // Verifier uses a different contracts_chain_id than the signer committed to.
+        let kp = identity_kp(1);
+        let request = signed_mmr_request(&kp, h(1), [0u8; 32], Vec::new(), 0);
         let result = verify_solana_user_decrypt_signature(&request, CHAIN_ID + 1);
         assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
     }
 
-    fn record_for(
-        handle: [u8; 32],
-        domain: SolanaPubkeyBytes,
-        subject: SolanaPubkeyBytes,
-    ) -> AclRecordWitness {
-        let nonce_key = acl_nonce_key(domain, APP_ACCOUNT, LABEL);
-        let (account_key, bump) = acl_record_address(HOST_PROGRAM_ID, nonce_key, 3);
-        AclRecordWitness {
-            account_key,
-            owner: HOST_PROGRAM_ID,
-            handle,
-            nonce_key,
-            nonce_sequence: 3,
-            acl_domain_key: domain,
-            app_account: APP_ACCOUNT,
-            encrypted_value_label: LABEL,
-            subjects: vec![SubjectRole {
-                subject,
-                role_flags: ACL_ROLE_USE,
-            }],
-            overflow_subject_count: 0,
-            public_decrypt: false,
-            material_commitment: [0u8; 32],
-            material_commitment_hash: [0u8; 32],
-            material_key_id: [0u8; 32],
-            created_slot: 1,
-            bump,
+    // (1) HISTORICAL ACCEPT
+    #[test]
+    fn historical_accept() {
+        let kp = identity_kp(11);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut l = lineage(h(10), &[owner]);
+        l.rotate(h(11));
+        let proof = l.proof(0);
+        let blob = proof_blob(MMR_MODE_HISTORICAL, &proof);
+
+        let request = signed_mmr_request(&kp, h(10), l.value_key(), blob, l.acl.leaf_count);
+        let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
+
+        let verifier = SolanaAclVerifier::new(HOST);
+        dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(10), &auth)
+            .expect("historical decrypt must authorize");
+    }
+
+    // (2) PUBLIC ACCEPT
+    #[test]
+    fn public_accept() {
+        let kp = identity_kp(12);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut l = lineage(h(20), &[owner]);
+        l.mark_public();
+        l.rotate(h(21));
+        let proof = l.proof(0);
+        let blob = proof_blob(MMR_MODE_PUBLIC, &proof);
+
+        let request = signed_mmr_request(&kp, h(20), l.value_key(), blob, l.acl.leaf_count);
+        let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
+
+        let verifier = SolanaAclVerifier::new(HOST);
+        dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(20), &auth)
+            .expect("public decrypt must authorize");
+    }
+
+    // (3) STALE RETRYABLE
+    #[test]
+    fn stale_merged_proof_is_recoverable() {
+        let kp = identity_kp(11);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut l = lineage(h(10), &[owner]);
+        l.rotate(h(11));
+        l.rotate(h(12));
+        l.rotate(h(13));
+        assert_eq!(l.acl.leaf_count, 3);
+        let blob = proof_blob(MMR_MODE_HISTORICAL, &l.proof(2));
+        let proof_slot = 3u64;
+        l.rotate(h(14));
+        assert_eq!(l.acl.leaf_count, 4);
+
+        let request = signed_mmr_request(&kp, h(12), l.value_key(), blob, proof_slot);
+        let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
+
+        let verifier = SolanaAclVerifier::new(HOST);
+        let err = dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(12), &auth)
+            .expect_err("a stale (merged) proof must be rejected");
+        match err {
+            ProcessingError::RecoverableBudgetExempt(e) => {
+                let msg = e.to_string();
+                assert!(msg.contains("leaf_count=3"), "got: {msg}");
+                assert!(msg.contains("leaf_count=4"), "got: {msg}");
+            }
+            other => {
+                panic!("a stale (merged) proof must be RecoverableBudgetExempt, got {other:?}")
+            }
         }
     }
 
-    // (d) domain scoping: a subject holding USE on a handle whose acl_domain_key is NOT in the
-    // request's allowedContracts scope is REJECTED (when scope is non-empty).
+    // (3b) VERIFY-FIRST ACCEPTS COUNT DRIFT WITHOUT A MERGE
     #[test]
-    fn rejects_out_of_scope_domain() {
-        let verifier = SolanaAclVerifier::new(HOST_PROGRAM_ID);
-        let subject = [77u8; 32];
-        let handle = handle_with_chain(7);
-        let record = record_for(handle, DOMAIN, subject);
+    fn valid_proof_survives_count_drift_without_merge() {
+        let kp = identity_kp(13);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut l = lineage(h(30), &[owner]);
+        l.rotate(h(31));
+        l.rotate(h(32));
+        assert_eq!(l.acl.leaf_count, 2);
+        let blob = proof_blob(MMR_MODE_HISTORICAL, &l.proof(0));
+        let proof_slot = 2u64;
+        l.rotate(h(33));
+        assert_eq!(l.acl.leaf_count, 3);
 
-        // In scope → accepted.
-        assert!(authorize_solana_handle(&verifier, &record, handle, subject, &[DOMAIN]).is_ok());
+        let request = signed_mmr_request(&kp, h(30), l.value_key(), blob, proof_slot);
+        let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
 
-        // Out of scope (some other domain authorized) → rejected, even though the subject holds
-        // USE on this record.
-        let other_domain = [200u8; 32];
-        let result = authorize_solana_handle(&verifier, &record, handle, subject, &[other_domain]);
-        assert!(
-            matches!(result, Err(ProcessingError::Recoverable(_))),
-            "out-of-scope domain must be rejected, got {result:?}",
+        let verifier = SolanaAclVerifier::new(HOST);
+        dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(30), &auth)
+            .expect("a proof that still verifies against live peaks must be accepted");
+    }
+
+    // (3c) CURRENT ACCEPT
+    #[test]
+    fn current_lineage_accept() {
+        let kp = identity_kp(21);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let l = lineage(h(40), &[owner]);
+
+        let request = signed_mmr_request(&kp, h(40), l.value_key(), Vec::new(), 0);
+        let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
+        assert!(auth.mmr_proof_bytes.is_empty());
+        assert_ne!(auth.acl_value_key, [0u8; 32]);
+
+        let verifier = SolanaAclVerifier::new(HOST);
+        dispatch_solana_current(&verifier, l.account, HOST, &l.acl, h(40), &auth)
+            .expect("current-lineage decrypt of the live handle by a subject must authorize");
+    }
+
+    // (3d) CURRENT NON-SUBJECT REJECTED
+    #[test]
+    fn current_lineage_non_subject_rejected() {
+        let kp = identity_kp(22);
+        let other: SolanaPubkeyBytes = [99u8; 32];
+        let l = lineage(h(50), &[other]);
+
+        let request = signed_mmr_request(&kp, h(50), l.value_key(), Vec::new(), 0);
+        let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
+
+        let verifier = SolanaAclVerifier::new(HOST);
+        let err = dispatch_solana_current(&verifier, l.account, HOST, &l.acl, h(50), &auth)
+            .expect_err("a non-subject must not be authorized for the current handle");
+        assert!(matches!(err, ProcessingError::Recoverable(_)));
+    }
+
+    // (3e) CURRENT REJECTS A ROTATED-AWAY HANDLE
+    #[test]
+    fn current_lineage_rejects_rotated_away_handle() {
+        let kp = identity_kp(23);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut l = lineage(h(60), &[owner]);
+        l.rotate(h(61));
+
+        let request = signed_mmr_request(&kp, h(60), l.value_key(), Vec::new(), 0);
+        let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
+
+        let verifier = SolanaAclVerifier::new(HOST);
+        let err = dispatch_solana_current(&verifier, l.account, HOST, &l.acl, h(60), &auth)
+            .expect_err("a rotated-away handle must not authorize via the no-proof current path");
+        assert!(matches!(err, ProcessingError::Recoverable(_)));
+    }
+
+    // (4) V1-SIGNED REJECTED UNDER V2
+    #[test]
+    fn v1_signature_rejected_under_v2() {
+        let kp = identity_kp(11);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut l = lineage(h(10), &[owner]);
+        l.rotate(h(11));
+        let proof = l.proof(0);
+        let blob = proof_blob(MMR_MODE_HISTORICAL, &proof);
+        let value_key = l.value_key();
+
+        assert_eq!(
+            SOLANA_USER_DECRYPT_DOMAIN_TAG,
+            b"zama-solana-user-decrypt-v2"
         );
+
+        let identity: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let public_key = b"reencryption-public-key".to_vec();
+        let nonce = [5u8; 32];
+        let context_id = [0u8; 32];
+        let (start, duration) = (1_000u64, 3_600u64);
+        let mut v1_preimage = b"zama-solana-user-decrypt-v1".to_vec();
+        v1_preimage.extend_from_slice(&CHAIN_ID.to_be_bytes());
+        v1_preimage.extend_from_slice(&(public_key.len() as u32).to_be_bytes());
+        v1_preimage.extend_from_slice(&public_key);
+        v1_preimage.extend_from_slice(&1u32.to_be_bytes());
+        v1_preimage.extend_from_slice(&h(10));
+        v1_preimage.extend_from_slice(&identity);
+        v1_preimage.extend_from_slice(&context_id);
+        v1_preimage.extend_from_slice(&nonce);
+        v1_preimage.extend_from_slice(&1u32.to_be_bytes());
+        v1_preimage.extend_from_slice(&DOMAIN);
+        v1_preimage.extend_from_slice(&start.to_be_bytes());
+        v1_preimage.extend_from_slice(&duration.to_be_bytes());
+        let v1_signature = kp.sign(&v1_preimage);
+
+        let extra_data =
+            encode_solana_extra_data_mmr_proof(context_id, value_key, l.acl.leaf_count, &blob);
+        let payload = UserDecryptionRequestSolanaPayload {
+            userIdentity: FixedBytes::from(identity),
+            publicKey: Bytes::from(public_key),
+            allowedAclDomainKeys: vec![FixedBytes::from(DOMAIN)],
+            requestValidity: RequestValiditySeconds {
+                startTimestamp: U256::from(start),
+                durationSeconds: U256::from(duration),
+            },
+            nonce: FixedBytes::from(nonce),
+            extraData: Bytes::from(extra_data),
+            signature: Bytes::from(v1_signature.as_ref().to_vec()),
+        };
+        let request = UserDecryptionRequestSolana {
+            decryptionId: U256::from(1u64),
+            snsCtMaterials: vec![SnsCiphertextMaterial {
+                ctHandle: FixedBytes::from(h(10)),
+                ..Default::default()
+            }],
+            handles: vec![HandleEntry {
+                handle: FixedBytes::from(h(10)),
+                contractAddress: Address::ZERO,
+                ownerAddress: Address::ZERO,
+            }],
+            payload,
+        };
+
+        let result = verify_solana_user_decrypt_signature(&request, CHAIN_ID);
+        assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
+    }
+
+    // (5) PROOF-FIELD BINDING
+    #[test]
+    fn proof_fields_bound_into_signature() {
+        let kp = identity_kp(11);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut l = lineage(h(10), &[owner]);
+        l.rotate(h(11));
+        let blob = proof_blob(MMR_MODE_HISTORICAL, &l.proof(0));
+
+        let mut req = signed_mmr_request(&kp, h(10), l.value_key(), blob.clone(), l.acl.leaf_count);
+        let mut tampered = blob.clone();
+        *tampered.last_mut().unwrap() ^= 0xff;
+        req.payload.extraData = Bytes::from(encode_solana_extra_data_mmr_proof(
+            [0u8; 32],
+            l.value_key(),
+            l.acl.leaf_count,
+            &tampered,
+        ));
+        assert!(matches!(
+            verify_solana_user_decrypt_signature(&req, CHAIN_ID),
+            Err(ProcessingError::Irrecoverable(_))
+        ));
+
+        let mut req = signed_mmr_request(&kp, h(10), l.value_key(), blob.clone(), l.acl.leaf_count);
+        req.payload.extraData = Bytes::from(encode_solana_extra_data_mmr_proof(
+            [0u8; 32],
+            [0x99u8; 32],
+            l.acl.leaf_count,
+            &blob,
+        ));
+        assert!(matches!(
+            verify_solana_user_decrypt_signature(&req, CHAIN_ID),
+            Err(ProcessingError::Irrecoverable(_))
+        ));
+
+        let mut req = signed_mmr_request(&kp, h(10), l.value_key(), blob.clone(), l.acl.leaf_count);
+        req.payload.extraData = Bytes::from(encode_solana_extra_data_mmr_proof(
+            [0u8; 32],
+            l.value_key(),
+            l.acl.leaf_count + 1,
+            &blob,
+        ));
+        assert!(matches!(
+            verify_solana_user_decrypt_signature(&req, CHAIN_ID),
+            Err(ProcessingError::Irrecoverable(_))
+        ));
+    }
+
+    // (6) CURRENT-ACL → MMR PATH-CONFUSION
+    #[test]
+    fn current_acl_mmr_proof_injection_rejected() {
+        let kp = identity_kp(11);
+        let l = lineage(h(10), &[kp.public_key().as_ref().try_into().unwrap()]);
+
+        let mut req = signed_mmr_request(&kp, h(10), [0u8; 32], Vec::new(), 0);
+
+        let injected = proof_blob(MMR_MODE_HISTORICAL, &l.proof_for_empty());
+        req.payload.extraData = Bytes::from(encode_solana_extra_data_mmr_proof(
+            [0u8; 32], [0u8; 32], 0, &injected,
+        ));
+
+        let result = verify_solana_user_decrypt_signature(&req, CHAIN_ID);
+        assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
+    }
+
+    // MULTI-HANDLE GUARD
+    #[test]
+    fn mmr_proof_multi_handle_rejected() {
+        let two = [h(10), h(11)];
+        let err = require_single_handle(&two)
+            .expect_err("a two-handle MMR-proof request must be rejected");
+        match err {
+            ProcessingError::Irrecoverable(e) => {
+                assert!(e.to_string().contains("exactly one handle"));
+            }
+            other => panic!("multi-handle MMR request must be Irrecoverable, got {other:?}"),
+        }
+        assert_eq!(require_single_handle(&[h(10)]).unwrap(), h(10));
+        assert!(matches!(
+            require_single_handle(&[]),
+            Err(ProcessingError::Irrecoverable(_))
+        ));
+    }
+
+    // (7) SIBLINGS CAP
+    #[test]
+    fn siblings_cap_rejected() {
+        let kp = identity_kp(11);
+        let oversized = MmrProof {
+            leaf_index: 0,
+            siblings: vec![[0u8; 32]; MAX_MMR_SIBLINGS + 1],
+        };
+        let blob = proof_blob(MMR_MODE_HISTORICAL, &oversized);
+        let l = lineage(h(10), &[kp.public_key().as_ref().try_into().unwrap()]);
+        let request = signed_mmr_request(&kp, h(10), l.value_key(), blob, 0);
+        let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
+
+        let verifier = SolanaAclVerifier::new(HOST);
+        let err = dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(10), &auth)
+            .expect_err("oversized sibling list must be rejected");
+        assert!(matches!(err, ProcessingError::Irrecoverable(_)));
+    }
+
+    // Unknown mode byte
+    #[test]
+    fn unknown_mode_rejected() {
+        let kp = identity_kp(11);
+        let l = lineage(h(10), &[kp.public_key().as_ref().try_into().unwrap()]);
+        let blob = proof_blob(0x09, &l.proof_for_empty());
+        let request = signed_mmr_request(&kp, h(10), l.value_key(), blob, 0);
+        let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
+        let verifier = SolanaAclVerifier::new(HOST);
+        let err = dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(10), &auth)
+            .expect_err("unknown mode must be rejected");
+        assert!(matches!(err, ProcessingError::Irrecoverable(_)));
     }
 }
