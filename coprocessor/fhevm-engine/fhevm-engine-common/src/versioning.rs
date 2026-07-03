@@ -237,21 +237,22 @@ fn is_undefined_table(err: &sqlx::Error) -> bool {
 /// db-migration Job has created the table does not fail (see [`resolve_gcs_mode`]
 /// and [`assert_not_retired`], which read this as "unseeded → blue / not-retired").
 async fn live_stack_version(conn: &mut PgConnection) -> Result<Option<String>, sqlx::Error> {
-    let row: Option<(String,)> =
-        match sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
-            .fetch_optional(conn)
-            .await
-        {
-            Ok(row) => row,
-            Err(err) if is_undefined_table(&err) => {
-                warn!(
+    let row: Option<(String,)> = match sqlx::query_as(
+        "SELECT stack_version FROM versioning WHERE singleton = TRUE",
+    )
+    .fetch_optional(conn)
+    .await
+    {
+        Ok(row) => row,
+        Err(err) if is_undefined_table(&err) => {
+            warn!(
                     binary_stack_version = STACK_VERSION,
                     "versioning table does not exist yet (migrations not applied?); treating as unseeded"
                 );
-                None
-            }
-            Err(err) => return Err(err),
-        };
+            None
+        }
+        Err(err) => return Err(err),
+    };
     Ok(row.map(|(v,)| v))
 }
 
