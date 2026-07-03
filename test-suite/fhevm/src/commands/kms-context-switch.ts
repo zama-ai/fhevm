@@ -13,6 +13,11 @@
  * advance. If that never happens the ids stay put and the profile fails with the last-read state —
  * so this doubles as the discovery test for whether the cluster reshares at all. Threshold-only:
  * the switch tasks act on the host ProtocolConfig.
+ *
+ * App-level checkpoints: the transitions must stay transparent to a normal encrypted-input flow,
+ * not only to the dedicated user-decryption probe — so the input-proof smoke runs at baseline,
+ * while the switch is pending (the previous context must keep serving during the reshare), and
+ * after each transition.
  */
 import { PreflightError } from "../errors";
 import { castCall, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
@@ -32,6 +37,9 @@ const ACTIVATION_TIMEOUT_MS = 600_000;
 const ACTIVATION_POLL_MS = 5_000;
 
 export type ContextAndEpoch = { contextId: bigint; epochId: bigint };
+
+/** Runs the app-level input-proof smoke; throws when the flow regresses. */
+export type SmokeRunner = (label: string) => Promise<void>;
 
 /** Parses `cast call getCurrentKmsContextAndEpoch()(uint256,uint256)` output into bigints. cast prints
  * each return value as `<decimal> [<scientific-notation>]` (one per line for a tuple), so strip the
@@ -105,6 +113,7 @@ const committeeSwapPlan = (kms: State["scenario"]["kms"]) => {
 const switchKmsContext = async (
   state: State,
   runDecryption: DecryptionRunner,
+  runSmoke: SmokeRunner,
   target: SwitchTarget,
   baseline: ContextAndEpoch,
 ): Promise<ContextAndEpoch> => {
@@ -120,6 +129,17 @@ const switchKmsContext = async (
   );
   await stepComposeTask("host-sc", state, ["host-sc-context-switch"], { noDeps: true, env: hostEnv });
   await waitForContainer("host-sc-context-switch", "complete");
+
+  // In-flight transparency: while the new context is PENDING (the cores are resharing), the
+  // previous context keeps serving — app flows and user decryption must work unchanged. Racy by
+  // nature: if activation completes mid-probe the checks must still pass (that is the invariant).
+  await runSmoke("kms-context-switch: input-proof while the switch is pending (previous context serving)");
+  if (!(await runDecryption("kms-context-switch: decrypt while the switch is pending (previous context serving)"))) {
+    throw new PreflightError(
+      "kms-context-switch: user-decryption failed while the context switch was pending — the previous context must keep serving until the new one activates",
+    );
+  }
+
   const afterSwitch = await waitForActivation(
     target.rpcUrl,
     target.configAddress,
@@ -147,6 +167,7 @@ const switchKmsContext = async (
       `kms-context-switch: user-decryption failed after the context switch to contextId=${afterSwitch.contextId}`,
     );
   }
+  await runSmoke(`kms-context-switch: input-proof after the context switch (contextId=${afterSwitch.contextId})`);
   return afterSwitch;
 };
 
@@ -179,7 +200,11 @@ const proveSpareInQuorum = async (state: State, runDecryption: DecryptionRunner)
   }
 };
 
-export const runKmsContextSwitchProfile = async (state: State, runDecryption: DecryptionRunner) => {
+export const runKmsContextSwitchProfile = async (
+  state: State,
+  runDecryption: DecryptionRunner,
+  runSmoke: SmokeRunner,
+) => {
   if (state.scenario.kms.mode !== "threshold") {
     throw new PreflightError(
       "kms-context-switch requires a threshold-mode KMS cluster; rerun `fhevm-cli up --scenario four-party-threshold-kms`",
@@ -195,8 +220,11 @@ export const runKmsContextSwitchProfile = async (state: State, runDecryption: De
   const baseline = await readContextAndEpoch(rpcUrl, configAddress);
   console.log(`[kms-context-switch] baseline on ${where}: contextId=${baseline.contextId} epochId=${baseline.epochId}`);
 
+  // Baseline app smoke first, so a later failure is attributable to the transition it follows.
+  await runSmoke("kms-context-switch: input-proof at baseline (before any switch)");
+
   // 1) NewKmsContext: a node swap when the cluster has a spare core, a same-committee reshare otherwise.
-  const afterSwitch = await switchKmsContext(state, runDecryption, { rpcUrl, configAddress, where }, baseline);
+  const afterSwitch = await switchKmsContext(state, runDecryption, runSmoke, { rpcUrl, configAddress, where }, baseline);
 
   // 2) NewKmsEpoch: same-set epoch rotation under the (now active) context, then prove it activates.
   console.log("[kms-context-switch] broadcasting defineNewEpochForCurrentKmsContext (NewKmsEpoch)…");
@@ -216,6 +244,7 @@ export const runKmsContextSwitchProfile = async (state: State, runDecryption: De
       `kms-context-switch: user-decryption failed after the epoch rotation to epochId=${afterEpoch.epochId}`,
     );
   }
+  await runSmoke(`kms-context-switch: input-proof after the epoch rotation (epochId=${afterEpoch.epochId})`);
 
   // 3) Node swap only: prove the promoted spare actually holds a working reshared key (runs last so
   //    the earlier steps see a healthy cluster and the stopped member is restored at the end).
@@ -224,6 +253,6 @@ export const runKmsContextSwitchProfile = async (state: State, runDecryption: De
   }
 
   console.log(
-    "[kms-context-switch] PASS — NewKmsContext and NewKmsEpoch both activated on chain and user-decryption works under each",
+    "[kms-context-switch] PASS — NewKmsContext and NewKmsEpoch both activated on chain, user-decryption works under each, and the input-proof app flow held at every checkpoint",
   );
 };
