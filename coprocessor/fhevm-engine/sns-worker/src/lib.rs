@@ -811,7 +811,7 @@ pub async fn run_all(
     let uploader_mode = stack_mode.clone();
     let uploader_token = token.child_token();
     let uploader = spawn(async move {
-        if let Err(err) = run_uploader_loop(
+        run_uploader_loop(
             &pg_mngr,
             &conf,
             jobs_rx,
@@ -823,16 +823,17 @@ pub async fn run_all(
             signer,
         )
         .await
-        {
-            error!(error = %err, "Failed to run the upload-worker");
-        }
     });
 
-    // Exit if either the service loop or the uploader fails.
+    // Exit if either the service loop or the uploader fails. Propagate the
+    // uploader's own error (`Ok(inner)`), not just a JoinError — otherwise a
+    // persistent upload failure would return `Ok(())` here and the process
+    // would exit 0, skipping the fatal log, telemetry::flush(), and exit(1)
+    // that alerting keys on.
     let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = tokio::select! {
         res = service.run(&pool_mngr) => res.map_err(Into::into),
         res = uploader => match res {
-            Ok(()) => Ok(()),
+            Ok(inner) => inner,
             Err(join_err) => Err(join_err.into()),
         },
     };
