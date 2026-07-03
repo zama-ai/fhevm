@@ -6,7 +6,7 @@
 mod common;
 
 use crate::common::utils::{
-    TestSetup, TEST_KEYURL_CRS_ID, TEST_KEYURL_CRS_URL, TEST_KEYURL_KEY_ID, TEST_KEYURL_KEY_URL,
+    test_keyurl_expected_url, TestSetup, TEST_KEYURL_CRS_ID, TEST_KEYURL_KEY_ID,
 };
 use rstest::rstest;
 use serde_json::Value;
@@ -121,16 +121,17 @@ mod helpers {
             "crs.2048.dataId should equal on-chain getActiveCrsId"
         );
 
-        // urls come from getKeyMaterials / getCrsMaterials.
+        // urls are reconstructed from the KMS context node's storageUrl/storagePrefix and the
+        // hex-encoded id: {storageUrl}/{storagePrefix}/{PublicKey|CRS}/{id_hex}.
         assert_eq!(
             fhe_public_key["urls"][0].as_str().unwrap(),
-            TEST_KEYURL_KEY_URL,
-            "fhePublicKey.urls[0] should come from getKeyMaterials"
+            test_keyurl_expected_url("PublicKey", TEST_KEYURL_KEY_ID),
+            "fhePublicKey.urls[0] should be the reconstructed object URL"
         );
         assert_eq!(
             crs_2048["urls"][0].as_str().unwrap(),
-            TEST_KEYURL_CRS_URL,
-            "crs.2048.urls[0] should come from getCrsMaterials"
+            test_keyurl_expected_url("CRS", TEST_KEYURL_CRS_ID),
+            "crs.2048.urls[0] should be the reconstructed object URL"
         );
 
         body

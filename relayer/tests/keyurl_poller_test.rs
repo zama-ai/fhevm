@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use alloy::primitives::{Address, Bytes, U256};
-use alloy::sol_types::{SolCall, SolValue};
+use alloy::primitives::{hex, Address, Bytes, Log, B256, U256};
+use alloy::sol_types::{SolCall, SolEvent, SolValue};
 use ethereum_rpc_mock::{MockConfig, MockServer, Response, UsageLimit};
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
 use fhevm_host_bindings::ikms_generation::IKMSGeneration;
@@ -23,8 +23,14 @@ use fhevm_relayer::host::KeyUrlPoller;
 use tokio::sync::watch;
 
 const CONTRACT_ADDR: &str = "0x1234567890123456789012345678901234567890";
-const KEY_URL: &str = "https://example.com/PublicKey/0400";
-const CRS_URL: &str = "https://example.com/CRS/0500";
+const STORAGE_URL: &str = "http://minio:9000/kms-public";
+const STORAGE_PREFIX: &str = "PUB-p1";
+
+/// Full object URL the poller reconstructs: `{storage_url}/{prefix}/{segment}/{id_hex}`.
+fn expected_url(segment: &str, id: u64) -> String {
+    let id_hex = hex::encode(U256::from(id).to_be_bytes::<32>());
+    format!("{STORAGE_URL}/{STORAGE_PREFIX}/{segment}/{id_hex}")
+}
 
 fn get_free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
@@ -55,16 +61,47 @@ fn addr() -> Address {
 }
 
 fn key_materials_bytes() -> Bytes {
-    // (string[] urls, KeyDigest[] digests) — empty digest array (element type irrelevant when empty)
-    let urls = vec![KEY_URL.to_string()];
+    // (string[] urls, KeyDigest[] digests) — empty digest array (element type irrelevant when empty).
+    // The URL is only the bucket base; the poller rebuilds the full object URL from the context node.
+    let urls = vec![STORAGE_URL.to_string()];
     let empty: Vec<Bytes> = Vec::new();
     Bytes::from((urls, empty).abi_encode_params())
 }
 
 fn crs_materials_bytes() -> Bytes {
     // (string[] urls, bytes digest)
-    let urls = vec![CRS_URL.to_string()];
+    let urls = vec![STORAGE_URL.to_string()];
     Bytes::from((urls, Bytes::new()).abi_encode_params())
+}
+
+/// Build the `NewKmsContext` log the poller reads to recover the node storage URL + prefix.
+fn new_kms_context_log() -> Log {
+    let event = IProtocolConfig::NewKmsContext {
+        contextId: U256::from(1u64),
+        previousContextId: U256::ZERO,
+        kmsNodeParams: vec![IProtocolConfig::KmsNodeParams {
+            txSenderAddress: Address::ZERO,
+            signerAddress: Address::ZERO,
+            ipAddress: String::new(),
+            storageUrl: STORAGE_URL.to_string(),
+            partyId: 1,
+            mpcIdentity: String::new(),
+            caCert: Bytes::new(),
+            storagePrefix: STORAGE_PREFIX.to_string(),
+        }],
+        thresholds: IProtocolConfig::KmsThresholds {
+            publicDecryption: U256::from(1u64),
+            userDecryption: U256::from(1u64),
+            kmsGen: U256::from(1u64),
+            mpc: U256::from(1u64),
+        },
+        softwareVersion: String::new(),
+        pcrValues: Vec::new(),
+    };
+    Log {
+        address: addr(),
+        data: event.encode_log_data(),
+    }
 }
 
 /// Register the static getters (CRS id, context/epoch, materials). The active key id is
@@ -110,6 +147,20 @@ fn register_static_getters(server: &MockServer) {
         Response::call_success(crs_materials_bytes()),
         UsageLimit::Unlimited,
     );
+    // getKmsContextAnchor(uint256) -> (uint256 emissionBlockNumber, bytes32 contextInfoHash)
+    server.on_call(
+        move |p| {
+            p.to == contract
+                && p.input.len() >= 4
+                && p.input[0..4] == IProtocolConfig::getKmsContextAnchorCall::SELECTOR
+        },
+        Response::call_success(Bytes::from(
+            (U256::from(1u64), B256::ZERO).abi_encode_params(),
+        )),
+        UsageLimit::Unlimited,
+    );
+    // Seed the NewKmsContext log the poller fetches (via eth_getLogs) at the anchor block.
+    server.blockchain_state().add_log(new_kms_context_log());
 }
 
 #[tokio::test]
@@ -146,14 +197,15 @@ async fn initialize_maps_chain_state_to_response() {
         "3"
     );
     assert_eq!(response.response.crs["2048"].data_id, "4");
-    // urls come from getKeyMaterials / getCrsMaterials.
+    // urls are reconstructed as {storageUrl}/{storagePrefix}/{PublicKey|CRS}/{id_hex} from the
+    // NewKmsContext node config and the hex-encoded id.
     assert_eq!(
         response.response.fhe_key_info[0].fhe_public_key.urls,
-        vec![KEY_URL.to_string()]
+        vec![expected_url("PublicKey", 3)]
     );
     assert_eq!(
         response.response.crs["2048"].urls,
-        vec![CRS_URL.to_string()]
+        vec![expected_url("CRS", 4)]
     );
 }
 

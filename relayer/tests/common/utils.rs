@@ -9,9 +9,9 @@ use fhevm_relayer::run_fhevm_relayer;
 use fhevm_relayer::store::sql::client::PgClient;
 use fhevm_relayer::tracing::init_tracing_once;
 
-use alloy::primitives::{Address, Bytes, U256};
+use alloy::primitives::{hex, Address, Bytes, Log, B256, U256};
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
-use alloy::sol_types::{SolCall, SolValue};
+use alloy::sol_types::{SolCall, SolEvent, SolValue};
 use fhevm_gateway_bindings::decryption::IDecryption::{
     RequestValiditySeconds, UserDecryptionRequestPayload,
 };
@@ -1003,10 +1003,20 @@ pub const TEST_KEYURL_CRS_ID: u64 = 4;
 pub const TEST_KEYURL_CONTEXT_ID: u64 = 1;
 #[allow(dead_code)]
 pub const TEST_KEYURL_EPOCH_ID: u64 = 1;
+/// KMS node public-storage config carried by the seeded `NewKmsContext` event: the poller
+/// reconstructs the served material URLs from these plus the hex-encoded key/CRS id.
 #[allow(dead_code)]
-pub const TEST_KEYURL_KEY_URL: &str = "https://example.com/PublicKey/0400";
+pub const TEST_KEYURL_STORAGE_URL: &str = "http://minio:9000/kms-public";
 #[allow(dead_code)]
-pub const TEST_KEYURL_CRS_URL: &str = "https://example.com/CRS/0500";
+pub const TEST_KEYURL_STORAGE_PREFIX: &str = "PUB-p1";
+
+/// The full object URL the poller reconstructs for a given `segment` (`PublicKey` / `CRS`) and id:
+/// `{storage_url}/{storage_prefix}/{segment}/{id_hex}` (id as 32-byte big-endian, lowercase hex).
+#[allow(dead_code)]
+pub fn test_keyurl_expected_url(segment: &str, id: u64) -> String {
+    let id_hex = hex::encode(U256::from(id).to_be_bytes::<32>());
+    format!("{TEST_KEYURL_STORAGE_URL}/{TEST_KEYURL_STORAGE_PREFIX}/{segment}/{id_hex}")
+}
 
 /// Register a single `eth_call` response keyed by destination address and 4-byte selector.
 fn register_call_response(
@@ -1059,7 +1069,7 @@ fn register_default_keyurl_poller_responses(
     // getKeyMaterials(uint256) -> (string[] urls, KeyDigest[] digests)
     // The digests array is empty, so its element type does not affect the ABI bytes (an empty
     // dynamic array encodes as just a length of 0); `Vec<Bytes>` stands in for `Vec<KeyDigest>`.
-    let key_urls = vec![TEST_KEYURL_KEY_URL.to_string()];
+    let key_urls = vec![TEST_KEYURL_STORAGE_URL.to_string()];
     let empty_digests: Vec<Bytes> = Vec::new();
     register_call_response(
         host_server,
@@ -1067,14 +1077,52 @@ fn register_default_keyurl_poller_responses(
         IKMSGeneration::getKeyMaterialsCall::SELECTOR,
         (key_urls, empty_digests).abi_encode_params(),
     );
-    // getCrsMaterials(uint256) -> (string[] urls, bytes digest)
-    let crs_urls = vec![TEST_KEYURL_CRS_URL.to_string()];
+    // getCrsMaterials(uint256) -> (string[] urls, bytes digest). The returned URLs are only the
+    // bucket base; the poller rebuilds the full object URLs from the KMS context nodes, so the
+    // exact value here is irrelevant beyond the call succeeding.
+    let crs_urls = vec![TEST_KEYURL_STORAGE_URL.to_string()];
     register_call_response(
         host_server,
         kms_generation_address,
         IKMSGeneration::getCrsMaterialsCall::SELECTOR,
         (crs_urls, Bytes::new()).abi_encode_params(),
     );
+    // getKmsContextAnchor(uint256) -> (uint256 emissionBlockNumber, bytes32 contextInfoHash).
+    // A non-zero block points the poller at the NewKmsContext log seeded below.
+    register_call_response(
+        host_server,
+        protocol_config_address,
+        IProtocolConfig::getKmsContextAnchorCall::SELECTOR,
+        (U256::from(1u64), B256::ZERO).abi_encode_params(),
+    );
+    // Seed the NewKmsContext log the poller reads (via eth_getLogs at the anchor block) to recover
+    // each KMS node's storage URL + prefix, which it needs to reconstruct the material object URLs.
+    let event = IProtocolConfig::NewKmsContext {
+        contextId: U256::from(TEST_KEYURL_CONTEXT_ID),
+        previousContextId: U256::ZERO,
+        kmsNodeParams: vec![IProtocolConfig::KmsNodeParams {
+            txSenderAddress: Address::ZERO,
+            signerAddress: Address::ZERO,
+            ipAddress: String::new(),
+            storageUrl: TEST_KEYURL_STORAGE_URL.to_string(),
+            partyId: 1,
+            mpcIdentity: String::new(),
+            caCert: Bytes::new(),
+            storagePrefix: TEST_KEYURL_STORAGE_PREFIX.to_string(),
+        }],
+        thresholds: IProtocolConfig::KmsThresholds {
+            publicDecryption: U256::from(1u64),
+            userDecryption: U256::from(1u64),
+            kmsGen: U256::from(1u64),
+            mpc: U256::from(1u64),
+        },
+        softwareVersion: String::new(),
+        pcrValues: Vec::new(),
+    };
+    host_server.blockchain_state().add_log(Log {
+        address: protocol_config_address,
+        data: event.encode_log_data(),
+    });
 }
 
 /// Register an ACL multicall pattern that returns an RPC error.
