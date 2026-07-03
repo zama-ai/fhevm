@@ -76,16 +76,6 @@ pub mod confidential_token {
         instructions::create_random_amount(ctx, amount_kind)
     }
 
-    /// Creates a token-scoped bounded random encrypted amount. Vestigial PoC/demo helper (see above).
-    #[cfg(feature = "poc")]
-    pub fn create_random_bounded_amount(
-        ctx: Context<CreateRandomAmount>,
-        amount_kind: ConfidentialAmountKind,
-        upper_bound: [u8; 32],
-    ) -> Result<()> {
-        instructions::create_random_bounded_amount(ctx, amount_kind, upper_bound)
-    }
-
     /// Escrows public USDC and rotates the confidential balance by `amount`.
     pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
         instructions::wrap_usdc(ctx, amount)

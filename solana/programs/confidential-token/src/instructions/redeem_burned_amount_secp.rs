@@ -40,10 +40,8 @@ pub struct RedeemBurnedAmountSecp<'info> {
     /// CHECK: PDA authority for the underlying-token vault.
     #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
-    /// Burned amount ACL record whose handle is redeemed.
-    pub burned_amount_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// Material commitment witness for the burned handle.
-    pub burned_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    /// Burned amount `EncryptedValue` lineage whose handle is redeemed.
+    pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Account-backed redemption request witness pinned to a KMS context id.
     #[account(mut)]
     pub redemption_request: Box<Account<'info, BurnRedemptionRequest>>,
@@ -112,24 +110,17 @@ pub fn redeem_burned_amount_secp(
         mint_key,
         ctx.accounts.owner.key(),
     )?;
-    assert_burned_amount_acl(
-        &ctx.accounts.burned_amount_acl,
+    assert_burned_amount_encrypted_value(
+        &ctx.accounts.burned_amount_value,
         burned_handle,
         mint_key,
         token_account_key,
         ctx.accounts.owner.key(),
         ctx.accounts.mint.compute_signer,
     )?;
-    assert_material_commitment(
-        &ctx.accounts.burned_material_commitment,
-        ctx.accounts.burned_material_commitment.key(),
-        &ctx.accounts.burned_amount_acl,
-        burned_handle,
-    )?;
-    assert_public_decrypt_released(&ctx.accounts.burned_amount_acl)?;
 
-    // Bind the redemption to a previously created request witness: same handle, accounts,
-    // material, host config; still PENDING and not expired; recomputed request_hash matches.
+    // Bind the redemption to a previously created request witness: same handle, accounts, host
+    // config; still PENDING and not expired; recomputed request_hash matches.
     assert_burn_redemption_request_witness(
         &ctx.accounts.redemption_request,
         ctx.accounts.redemption_request.key(),
@@ -140,8 +131,7 @@ pub fn redeem_burned_amount_secp(
         ctx.accounts.destination_usdc.owner,
         ctx.accounts.destination_usdc.key(),
         burned_handle,
-        ctx.accounts.burned_amount_acl.key(),
-        &ctx.accounts.burned_material_commitment,
+        ctx.accounts.burned_amount_value.key(),
         ctx.accounts.host_config.key(),
     )?;
     // Verify the KMS PublicDecryptVerification secp256k1 cert against the context the witness was
@@ -179,7 +169,7 @@ pub fn redeem_burned_amount_secp(
     redemption.owner = ctx.accounts.owner.key();
     redemption.token_account = token_account_key;
     redemption.burned_handle = burned_handle;
-    redemption.burned_acl_record = ctx.accounts.burned_amount_acl.key();
+    redemption.burned_encrypted_value = ctx.accounts.burned_amount_value.key();
     redemption.cleartext_amount = cleartext_amount;
     redemption.bump = ctx.bumps.redemption_record;
     ctx.accounts.redemption_request.status = REQUEST_STATUS_CONSUMED;
@@ -190,7 +180,7 @@ pub fn redeem_burned_amount_secp(
         owner: ctx.accounts.owner.key(),
         token_account: token_account_key,
         burned_handle,
-        burned_acl_record: ctx.accounts.burned_amount_acl.key(),
+        burned_encrypted_value: ctx.accounts.burned_amount_value.key(),
         destination_usdc: ctx.accounts.destination_usdc.key(),
         request: ctx.accounts.redemption_request.key(),
         request_hash: ctx.accounts.redemption_request.request_hash,

@@ -24,7 +24,7 @@ pub struct InitializeTokenAccount<'info> {
     pub token_account: Account<'info, ConfidentialTokenAccount>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub acl_record: UncheckedAccount<'info>,
+    pub balance_encrypted_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used to create the initial balance handle.
@@ -50,10 +50,7 @@ pub fn initialize_token_account(
         let token_account = &mut ctx.accounts.token_account;
         token_account.owner = ctx.accounts.owner.key();
         token_account.mint = ctx.accounts.mint.key();
-        token_account.balance_handle = [0; 32];
-        token_account.balance_acl_record = Pubkey::default();
-        token_account.next_balance_nonce_sequence = 1;
-        token_account.next_amount_nonce_sequence = 0;
+        token_account.balance_encrypted_value = Pubkey::default();
         token_account.bump = ctx.bumps.token_account;
     }
     require_keys_eq!(
@@ -70,10 +67,10 @@ pub fn initialize_token_account(
     let owner = ctx.accounts.owner.key();
     let compute_signer = ctx.accounts.compute_signer.key();
     let token_account_key = ctx.accounts.token_account.key();
-    let acl_record = ctx.accounts.acl_record.key();
+    let balance_encrypted_value = ctx.accounts.balance_encrypted_value.key();
     let balance_output = fhe::DurableOutput::new(
-        ctx.accounts.acl_record.to_account_info(),
-        durable_slot(mint_key, token_account_key, balance_label(), 0),
+        ctx.accounts.balance_encrypted_value.to_account_info(),
+        durable_slot(mint_key, token_account_key, balance_label()),
         zama_fhe::AccessPolicy::for_owner_and_compute(owner, compute_signer)
             .map_err(invalid_eval_plan)?,
     )?;
@@ -83,8 +80,6 @@ pub fn initialize_token_account(
         token_account_key,
         token_account_key,
         [0; 32],
-        0,
-        0,
     )?;
     let mut builder = zama_fhe::EvalBuilder::new(
         context_id,
@@ -120,17 +115,16 @@ pub fn initialize_token_account(
     })?;
     let balance_handle = balance_output.handle()?;
     let token_account = &mut ctx.accounts.token_account;
-    token_account.balance_handle = balance_handle;
-    token_account.balance_acl_record = acl_record;
+    token_account.balance_encrypted_value = balance_encrypted_value;
     emit_cpi!(BalanceHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: ctx.accounts.mint.key(),
         owner: ctx.accounts.owner.key(),
         token_account: token_account.key(),
         old_handle: [0; 32],
-        old_acl_record: Pubkey::default(),
+        old_encrypted_value: Pubkey::default(),
         new_handle: balance_handle,
-        new_acl_record: acl_record,
+        new_encrypted_value: balance_encrypted_value,
         reason: BalanceHandleUpdateReason::Initialize,
     });
     Ok(())

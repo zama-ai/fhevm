@@ -5,52 +5,57 @@
 //! output handles.
 
 use anchor_lang::{prelude::*, AccountDeserialize};
-use zama_host::{
-    cpi, cpi::accounts::AllowForDecryption as HostAllowForDecryption, program::ZamaHost, HostConfig,
-};
+use zama_host::{cpi, program::ZamaHost, EncryptedValue, HostConfig};
 
 use crate::{
     compute_signer_address, token_account_address, total_supply_authority_address,
     ConfidentialTokenAccount, ConfidentialTokenError,
 };
 
-/// A durable eval output account bound to the exact slot it is allowed to create.
+/// A durable eval output account bound to the exact `EncryptedValue` lineage
+/// it is allowed to create or supersede.
 pub(crate) struct DurableOutput<'info> {
-    acl_record: AccountInfo<'info>,
+    encrypted_value: AccountInfo<'info>,
     output: Box<zama_fhe::DurableOutput>,
 }
 
 impl<'info> DurableOutput<'info> {
+    /// Binds `encrypted_value` as the output of a durable eval step: creates the
+    /// lineage's first handle if the PDA does not exist yet, or supersedes it
+    /// (reading `previous_handle`/`previous_subjects` off the on-chain account)
+    /// if it does. Either way the eval CPI's attestation matches exactly what
+    /// the host will verify.
     pub(crate) fn new(
-        acl_record: AccountInfo<'info>,
+        encrypted_value: AccountInfo<'info>,
         slot: zama_fhe::DurableSlot,
         access: zama_fhe::AccessPolicy,
     ) -> Result<Self> {
         require_keys_eq!(
-            acl_record.key(),
+            encrypted_value.key(),
             slot.address(),
             ConfidentialTokenError::AmountAclMismatch
         );
-        require_keys_eq!(
-            *acl_record.owner,
-            System::id(),
-            ConfidentialTokenError::AmountAclMismatch
-        );
-        require!(
-            acl_record.data_is_empty(),
-            ConfidentialTokenError::AmountAclMismatch
-        );
-        require!(
-            !acl_record.executable,
-            ConfidentialTokenError::AmountAclMismatch
-        );
-        let output = zama_fhe::DurableOutput::new(slot, access);
+        let output = if *encrypted_value.owner == System::id() {
+            require!(
+                encrypted_value.data_is_empty() && !encrypted_value.executable,
+                ConfidentialTokenError::AmountAclMismatch
+            );
+            zama_fhe::DurableOutput::create(slot, access)
+        } else {
+            let value = read_encrypted_value(&encrypted_value)?;
+            zama_fhe::DurableOutput::supersede(
+                slot,
+                access,
+                value.current_handle,
+                value.subjects.clone(),
+            )
+        };
         output.birth().map_err(|error| {
             msg!("invalid durable FHE output: {:?}", error);
             error!(ConfidentialTokenError::InvalidFheEvalPlan)
         })?;
         Ok(Self {
-            acl_record,
+            encrypted_value,
             output: Box::new(output),
         })
     }
@@ -59,53 +64,21 @@ impl<'info> DurableOutput<'info> {
         zama_fhe::Output::durable_output((*self.output).clone())
     }
 
+    /// Reads the handle the host bound into `encrypted_value` by this eval CPI.
+    /// Call only after the CPI that carries this output has executed.
     pub(crate) fn handle(&self) -> Result<[u8; 32]> {
         let birth = self.birth()?;
         require_keys_eq!(
-            self.acl_record.key(),
-            birth.acl_record(),
+            self.encrypted_value.key(),
+            birth.encrypted_value(),
             ConfidentialTokenError::CurrentAclRecordMismatch
         );
-        require_keys_eq!(
-            *self.acl_record.owner,
-            zama_host::ID,
-            ConfidentialTokenError::CurrentAclRecordMismatch
-        );
-        require!(
-            self.acl_record.data_len() == 8 + zama_host::AclRecord::SPACE,
-            ConfidentialTokenError::CurrentAclRecordMismatch
-        );
-        let data = self.acl_record.try_borrow_data()?;
-        let mut data_slice: &[u8] = &data;
-        let record = zama_host::AclRecord::try_deserialize(&mut data_slice)?;
-        require!(
-            zama_host::acl_record_subject_slots_are_canonical(&record),
-            ConfidentialTokenError::CurrentAclRecordMismatch
-        );
-        require!(
-            record.nonce_key == birth.nonce_key()
-                && record.nonce_sequence == birth.sequence()
-                && record.acl_domain_key == birth.acl_domain_key()
-                && record.app_account == birth.app_account()
-                && record.encrypted_value_label == birth.encrypted_value_label()
-                && record.public_decrypt == birth.public_decrypt()
-                && record.subject_count as usize == birth.subjects().len()
-                && record.overflow_subject_count == 0
-                && record.bump
-                    == zama_host::acl_record_address(birth.nonce_key(), birth.sequence()).1,
-            ConfidentialTokenError::CurrentAclRecordMismatch
-        );
-        for (index, subject) in birth.subjects().iter().enumerate() {
-            require!(
-                subject.matches_record_entry(record.subjects[index], record.subject_roles[index]),
-                ConfidentialTokenError::CurrentAclRecordMismatch
-            );
-        }
-        Ok(record.handle)
+        let value = read_encrypted_value(&self.encrypted_value)?;
+        Ok(value.current_handle)
     }
 
     pub(crate) fn account_info(&self) -> AccountInfo<'info> {
-        self.acl_record.clone()
+        self.encrypted_value.clone()
     }
 
     fn birth(&self) -> Result<zama_fhe::DurableOutputBirth> {
@@ -114,6 +87,18 @@ impl<'info> DurableOutput<'info> {
             error!(ConfidentialTokenError::InvalidFheEvalPlan)
         })
     }
+}
+
+/// Decodes a canonical, program-owned `EncryptedValue` account.
+pub(crate) fn read_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue> {
+    require_keys_eq!(
+        *info.owner,
+        zama_host::ID,
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    let data = info.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    EncryptedValue::try_deserialize(&mut slice).map_err(Into::into)
 }
 
 /// Program-controlled compute signer PDA plus the ACL domain it signs for.
@@ -445,112 +430,78 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
     Ok(())
 }
 
-/// Inputs required for bounded random `euint64` amount creation plus ACL record birth.
-// Only constructed by the `poc`-gated create_random_amount helpers.
-#[cfg_attr(not(feature = "poc"), allow(dead_code))]
-pub struct BoundedRandU64<'a, 'info> {
-    /// Transaction payer and rent payer for the output ACL record.
-    pub payer: &'a Signer<'info>,
-    /// Anchor event CPI authority for ZamaHost.
-    pub event_authority: &'a UncheckedAccount<'info>,
-    /// ZamaHost program account.
-    pub zama_program: &'a Program<'info, ZamaHost>,
-    /// Host config used for chain-id-aware handle derivation.
-    pub host_config: &'a Account<'info, HostConfig>,
-    /// Program-controlled compute signer PDA and its ACL domain.
-    pub compute_authority: ComputeAuthority<'info>,
-    /// App authority that signs for the durable random output.
-    pub output_authority: OutputAuthority<'info>,
-    /// Canonical output target to initialize.
-    pub output: DurableOutput<'info>,
-    /// System program used for output ACL creation.
-    pub system_program: &'a Program<'info, System>,
-}
-
-/// Performs host-owned bounded random amount creation and returns the created handle.
-#[cfg_attr(not(feature = "poc"), allow(dead_code))]
-pub fn rand_bounded_u64<'info>(
-    request: BoundedRandU64<'_, 'info>,
-    upper_bound: zama_fhe::BoundedU64UpperBound,
-) -> Result<[u8; 32]> {
-    let output_birth = request.output.birth()?;
-    require_keys_eq!(
-        request.compute_authority.acl_domain_key,
-        output_birth.acl_domain_key(),
-        ConfidentialTokenError::InvalidFheEvalPlan
-    );
-    require_keys_eq!(
-        request.output_authority.key(),
-        output_birth.app_account(),
-        ConfidentialTokenError::InvalidFheEvalPlan
-    );
-    let compute_bump = [request.compute_authority.bump];
-    let compute_signer_seeds = request.compute_authority.signer_seeds(&compute_bump);
-    let output_authority_seed_bytes = request.output_authority.signer.seed_bytes();
-    let output_authority_seeds: Vec<&[u8]> = output_authority_seed_bytes
-        .iter()
-        .map(Vec::as_slice)
-        .collect();
-    let mut signer_seed_vec: Vec<&[&[u8]]> = vec![compute_signer_seeds.as_slice()];
-    if !output_authority_seeds.is_empty() {
-        signer_seed_vec.push(output_authority_seeds.as_slice());
-    }
-
-    zama_fhe::invoke_rand_bounded_u64_and_bind_signed(
-        &output_birth,
-        upper_bound,
-        zama_fhe::BoundedRandU64CpiAccounts {
-            payer: request.payer.to_account_info(),
-            compute_subject: request.compute_authority.account_info(),
-            app_account_authority: request.output_authority.account.clone(),
-            host_config: request.host_config.to_account_info(),
-            output_acl_record: request.output.account_info(),
-            system_program: request.system_program.to_account_info(),
-            event_authority: request.event_authority.to_account_info(),
-            program: request.zama_program.to_account_info(),
-        },
-        &signer_seed_vec,
-    )?;
-
-    request.output.handle()
-}
-
 /// Inputs required to mark a host handle publicly decryptable.
 pub struct AllowPublicDecrypt<'a, 'info> {
-    /// Subject that already has `ACL_ROLE_PUBLIC_DECRYPT` on the ACL record.
+    /// Subject that already has `ACL_ROLE_PUBLIC_DECRYPT` on the lineage.
     pub authority: &'a Signer<'info>,
-    /// Optional overflow permission witness when the authority is not inline.
-    pub authority_permission_record: Option<AccountInfo<'info>>,
-    /// ACL record whose public-decrypt flag is updated.
-    pub acl_record: AccountInfo<'info>,
+    /// Rent payer for the account's growth, if any.
+    pub payer: &'a Signer<'info>,
+    /// `EncryptedValue` lineage whose current handle is marked public.
+    pub encrypted_value: AccountInfo<'info>,
     /// ZamaHost config account.
     pub host_config: &'a Account<'info, HostConfig>,
     /// Optional deny-list witness when grant deny-lists are enabled.
     pub deny_subject_record: Option<AccountInfo<'info>>,
-    /// Anchor event CPI authority for ZamaHost.
-    pub event_authority: &'a UncheckedAccount<'info>,
     /// ZamaHost program account.
     pub zama_program: &'a Program<'info, ZamaHost>,
-    /// Handle stored in `acl_record`.
-    pub handle: [u8; 32],
+    /// System program used for the account's growth, if any.
+    pub system_program: &'a Program<'info, System>,
 }
 
 /// Delegates public-decrypt authorization to ZamaHost.
 pub fn allow_public_decrypt<'info>(request: AllowPublicDecrypt<'_, 'info>) -> Result<()> {
-    cpi::allow_for_decryption(
+    cpi::make_handle_public(CpiContext::new(
+        request.zama_program.key(),
+        cpi::accounts::MakeEncryptedValueHandlePublic {
+            payer: request.payer.to_account_info(),
+            authority: request.authority.to_account_info(),
+            encrypted_value: request.encrypted_value,
+            host_config: request.host_config.to_account_info(),
+            deny_subject_record: request.deny_subject_record,
+            system_program: request.system_program.to_account_info(),
+        },
+    ))
+}
+
+/// Inputs required to escalate a subject's roles on an existing lineage.
+pub struct AllowSubjects<'a, 'info> {
+    /// Rent payer for the account's growth, if any.
+    pub payer: &'a Signer<'info>,
+    /// Current subject with `ACL_ROLE_GRANT` on the lineage.
+    pub authority: &'a Signer<'info>,
+    /// `EncryptedValue` lineage receiving the new role grants.
+    pub encrypted_value: AccountInfo<'info>,
+    /// ZamaHost config account.
+    pub host_config: &'a Account<'info, HostConfig>,
+    /// Optional deny-list witness when grant deny-lists are enabled.
+    pub deny_subject_record: Option<AccountInfo<'info>>,
+    /// ZamaHost program account.
+    pub zama_program: &'a Program<'info, ZamaHost>,
+    /// System program used for the account's growth, if any.
+    pub system_program: &'a Program<'info, System>,
+}
+
+/// Escalates a subject's role bitset on an existing `EncryptedValue` lineage,
+/// e.g. adding `ACL_ROLE_PUBLIC_DECRYPT` before a disclosure request. Roles
+/// cannot be granted at birth (the host rejects public-decrypt-at-creation),
+/// so disclosure flows always go through this before `make_handle_public`.
+pub(crate) fn allow_subjects<'info>(
+    request: AllowSubjects<'_, 'info>,
+    subjects: Vec<zama_host::instructions::EncryptedValueSubjectGrant>,
+) -> Result<()> {
+    cpi::allow_subjects(
         CpiContext::new(
             request.zama_program.key(),
-            HostAllowForDecryption {
+            cpi::accounts::AllowEncryptedValueSubjects {
+                payer: request.payer.to_account_info(),
                 authority: request.authority.to_account_info(),
-                authority_permission_record: request.authority_permission_record,
-                acl_record: request.acl_record,
+                encrypted_value: request.encrypted_value,
                 host_config: request.host_config.to_account_info(),
                 deny_subject_record: request.deny_subject_record,
-                event_authority: request.event_authority.to_account_info(),
-                program: request.zama_program.to_account_info(),
+                system_program: request.system_program.to_account_info(),
             },
         ),
-        request.handle,
+        subjects,
     )
 }
 
@@ -587,12 +538,11 @@ mod tests {
         }
     }
 
-    fn durable_slot(account: Pubkey, sequence: u64) -> zama_fhe::DurableSlot {
+    fn durable_slot(account: Pubkey, label_tag: u8) -> zama_fhe::DurableSlot {
         zama_fhe::DurableSlot::new(
             Pubkey::new_unique(),
             account,
-            zama_fhe::DurableLabel::new(handle(5)),
-            sequence,
+            zama_fhe::DurableLabel::new(handle(label_tag)),
         )
     }
 

@@ -17,10 +17,8 @@ pub struct DiscloseBalanceSecp<'info> {
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Confidential token account whose current balance is disclosed.
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// Current balance ACL record for the disclosed handle.
-    pub balance_acl_record: Box<Account<'info, zama_host::AclRecord>>,
-    /// Material commitment witness for the disclosed handle.
-    pub balance_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    /// Current balance `EncryptedValue` lineage for the disclosed handle.
+    pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Account-backed disclosure request witness consumed by this instruction.
     #[account(mut)]
     pub disclosure_request: Box<Account<'info, DisclosureRequest>>,
@@ -59,23 +57,15 @@ pub fn disclose_balance_secp(
         mint_key,
         ctx.accounts.token_account.owner,
     )?;
-    assert_current_balance_acl(
-        &ctx.accounts.balance_acl_record,
-        ctx.accounts.balance_acl_record.key(),
+    assert_current_balance_encrypted_value(
+        &ctx.accounts.balance_value,
         &ctx.accounts.token_account,
         mint_key,
     )?;
-    let handle = ctx.accounts.token_account.balance_handle;
-    assert_material_commitment(
-        &ctx.accounts.balance_material_commitment,
-        ctx.accounts.balance_material_commitment.key(),
-        &ctx.accounts.balance_acl_record,
-        handle,
-    )?;
-    assert_public_decrypt_released(&ctx.accounts.balance_acl_record)?;
+    let handle = ctx.accounts.balance_value.current_handle;
 
-    // Bind to the request witness: same mode/handle/accounts/material/host config; PENDING and
-    // unexpired; recomputed request_hash matches.
+    // Bind to the request witness: same mode/handle/accounts/host config; PENDING and unexpired;
+    // recomputed request_hash matches.
     let token_account_key = ctx.accounts.token_account.key();
     assert_disclosure_request_witness(
         &ctx.accounts.disclosure_request,
@@ -85,8 +75,7 @@ pub fn disclose_balance_secp(
         token_account_key,
         token_account_key,
         handle,
-        ctx.accounts.balance_acl_record.key(),
-        &ctx.accounts.balance_material_commitment,
+        ctx.accounts.balance_value.key(),
         ctx.accounts.host_config.key(),
     )?;
     // Verify the cert against the witness-pinned context, closing rotation reuse.

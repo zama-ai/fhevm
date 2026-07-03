@@ -990,6 +990,7 @@ dependencies = [
  "solana-sha256-hasher",
  "zama-fhe",
  "zama-host",
+ "zama-solana-acl",
 ]
 
 [[package]]
@@ -4922,6 +4923,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "zama-host",
+ "zama-solana-acl",
 ]
 
 [[package]]

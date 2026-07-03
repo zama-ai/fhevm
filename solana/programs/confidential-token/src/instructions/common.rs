@@ -17,14 +17,17 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) payer: &'a Signer<'info>,
     pub(crate) transfer_authority: Pubkey,
     pub(crate) mint: &'a Account<'info, ConfidentialMint>,
-    pub(crate) from_account: &'a mut Box<Account<'info, ConfidentialTokenAccount>>,
-    pub(crate) to_account: &'a mut Box<Account<'info, ConfidentialTokenAccount>>,
+    pub(crate) from_account: &'a Account<'info, ConfidentialTokenAccount>,
+    pub(crate) to_account: &'a Account<'info, ConfidentialTokenAccount>,
     pub(crate) compute_signer: &'a UncheckedAccount<'info>,
-    pub(crate) from_current_compute_acl: &'a Account<'info, zama_host::AclRecord>,
-    pub(crate) to_current_compute_acl: &'a Account<'info, zama_host::AclRecord>,
-    pub(crate) from_output_acl: AccountInfo<'info>,
-    pub(crate) transferred_amount_acl: AccountInfo<'info>,
-    pub(crate) to_output_acl: AccountInfo<'info>,
+    /// Sender's stable balance lineage: read for the current handle, then
+    /// superseded in place as the output.
+    pub(crate) from_balance_value: AccountInfo<'info>,
+    /// Recipient's stable balance lineage: read for the current handle, then
+    /// superseded in place as the output.
+    pub(crate) to_balance_value: AccountInfo<'info>,
+    /// Sender's stable transferred-amount lineage, superseded every transfer.
+    pub(crate) transferred_amount_value: AccountInfo<'info>,
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
     pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
@@ -36,17 +39,15 @@ pub(crate) struct TransferOutcome {
     pub(crate) from_owner: Pubkey,
     pub(crate) from_token_account: Pubkey,
     pub(crate) old_from_handle: [u8; 32],
-    pub(crate) old_from_acl_record: Pubkey,
     pub(crate) new_from_handle: [u8; 32],
-    pub(crate) new_from_acl_record: Pubkey,
+    pub(crate) from_encrypted_value: Pubkey,
     pub(crate) transferred_handle: [u8; 32],
-    pub(crate) transferred_acl_record: Pubkey,
+    pub(crate) transferred_encrypted_value: Pubkey,
     pub(crate) to_owner: Pubkey,
     pub(crate) to_token_account: Pubkey,
     pub(crate) old_to_handle: [u8; 32],
-    pub(crate) old_to_acl_record: Pubkey,
     pub(crate) new_to_handle: [u8; 32],
-    pub(crate) new_to_acl_record: Pubkey,
+    pub(crate) to_encrypted_value: Pubkey,
 }
 
 pub(crate) fn execute_transfer<'info>(
@@ -57,14 +58,8 @@ pub(crate) fn execute_transfer<'info>(
     assert_confidential_mint_shape(accounts.mint)?;
     let mint_key = accounts.mint.key();
     let compute_signer = accounts.mint.compute_signer;
-    let from = accounts.from_account.as_ref();
-    let to = accounts.to_account.as_ref();
-    let from_nonce_sequence = from.next_balance_nonce_sequence;
-    let to_nonce_sequence = to.next_balance_nonce_sequence;
-    let old_from_handle = from.balance_handle;
-    let old_from_acl_record = from.balance_acl_record;
-    let old_to_handle = to.balance_handle;
-    let old_to_acl_record = to.balance_acl_record;
+    let from = accounts.from_account;
+    let to = accounts.to_account;
 
     // EVM `fromExternal` parity for the amount: the attested input must be authored by the sender
     // (user) and bound to this mint's compute-signer PDA (the `msg.sender`/contract analog the host
@@ -83,108 +78,79 @@ pub(crate) fn execute_transfer<'info>(
         compute_signer,
         ConfidentialTokenError::ComputeSignerMismatch
     );
-    assert_current_balance_acl(
-        accounts.from_current_compute_acl,
-        accounts.from_current_compute_acl.key(),
-        from,
-        mint_key,
-    )?;
-    assert_current_balance_acl(
-        accounts.to_current_compute_acl,
-        accounts.to_current_compute_acl.key(),
-        to,
-        mint_key,
-    )?;
-    if from.key() == to.key() {
-        assert_self_transfer_output_accounts(&accounts, mint_key, from.key(), from_nonce_sequence)?;
+    require_keys_eq!(
+        accounts.from_balance_value.key(),
+        from.balance_encrypted_value,
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    require_keys_eq!(
+        accounts.to_balance_value.key(),
+        to.balance_encrypted_value,
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    let from_key = from.key();
+    let to_key = to.key();
+    let from_owner = from.owner;
+    let to_owner = to.owner;
+    let from_encrypted_value = accounts.from_balance_value.key();
+    let to_encrypted_value = accounts.to_balance_value.key();
+    if from_key == to_key {
         return Ok(None);
     }
+
+    let old_from_handle = fhe::read_encrypted_value(&accounts.from_balance_value)?.current_handle;
+    let old_to_handle = fhe::read_encrypted_value(&accounts.to_balance_value)?.current_handle;
 
     let (new_from_handle, transferred_handle, new_to_handle) = execute_transfer_eval(
         &accounts,
         compute_signer_bump,
         amount_attestation,
         mint_key,
-        from_nonce_sequence,
-        to_nonce_sequence,
-        from,
-        to,
+        old_from_handle,
+        old_to_handle,
     )?;
 
-    let from = accounts.from_account.as_mut();
-    from.balance_handle = new_from_handle;
-    from.balance_acl_record = accounts.from_output_acl.key();
-    from.next_balance_nonce_sequence = from_nonce_sequence
-        .checked_add(1)
-        .ok_or(ConfidentialTokenError::AclNonceOverflow)?;
-    let from_owner = from.owner;
-    let from_token_account = from.key();
-    let new_from_acl_record = accounts.from_output_acl.key();
+    let transferred_encrypted_value = accounts.transferred_amount_value.key();
 
-    let to = accounts.to_account.as_mut();
-    to.balance_handle = new_to_handle;
-    to.balance_acl_record = accounts.to_output_acl.key();
-    to.next_balance_nonce_sequence = to_nonce_sequence
-        .checked_add(1)
-        .ok_or(ConfidentialTokenError::AclNonceOverflow)?;
     Ok(Some(TransferOutcome {
         mint: mint_key,
         from_owner,
-        from_token_account,
+        from_token_account: from_key,
         old_from_handle,
-        old_from_acl_record,
         new_from_handle,
-        new_from_acl_record,
+        from_encrypted_value,
         transferred_handle,
-        transferred_acl_record: accounts.transferred_amount_acl.key(),
-        to_owner: to.owner,
-        to_token_account: to.key(),
+        transferred_encrypted_value,
+        to_owner,
+        to_token_account: to_key,
         old_to_handle,
-        old_to_acl_record,
         new_to_handle,
-        new_to_acl_record: accounts.to_output_acl.key(),
+        to_encrypted_value,
     }))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn execute_transfer_eval<'info>(
     accounts: &TransferAccounts<'_, 'info>,
     compute_signer_bump: u8,
     amount_attestation: zama_host::CoprocessorInputAttestation,
     mint_key: Pubkey,
-    from_nonce_sequence: u64,
-    to_nonce_sequence: u64,
-    from: &Account<'info, ConfidentialTokenAccount>,
-    to: &Account<'info, ConfidentialTokenAccount>,
+    old_from_handle: [u8; 32],
+    old_to_handle: [u8; 32],
 ) -> Result<([u8; 32], [u8; 32], [u8; 32])> {
+    let from_key = accounts.from_account.key();
+    let to_key = accounts.to_account.key();
+    let from_owner = accounts.from_account.owner;
+    let to_owner = accounts.to_account.owner;
     let context_id = transfer_eval_context(
         b"combined",
         mint_key,
-        from.key(),
-        to.key(),
+        from_key,
+        to_key,
         amount_attestation.input_handle,
-        from_nonce_sequence,
-        to_nonce_sequence,
     )?;
-    let from_balance = zama_fhe::Uint64Handle::durable(
-        from.balance_handle,
-        durable_slot(
-            mint_key,
-            from.key(),
-            balance_label(),
-            accounts.from_current_compute_acl.nonce_sequence,
-        ),
-    )
-    .map_err(invalid_eval_plan)?;
-    let to_balance = zama_fhe::Uint64Handle::durable(
-        to.balance_handle,
-        durable_slot(
-            mint_key,
-            to.key(),
-            balance_label(),
-            accounts.to_current_compute_acl.nonce_sequence,
-        ),
-    )
-    .map_err(invalid_eval_plan)?;
+    let from_balance = uint64_from_value(old_from_handle, mint_key, from_key, balance_label())?;
+    let to_balance = uint64_from_value(old_to_handle, mint_key, to_key, balance_label())?;
     let compute_signer = accounts.compute_signer.key();
     let balance_access = |owner| {
         zama_fhe::AccessPolicy::for_owner_and_compute(owner, compute_signer)
@@ -192,36 +158,31 @@ fn execute_transfer_eval<'info>(
     };
     let transferred_access = {
         let mut access =
-            zama_fhe::AccessPolicy::for_owner(from.owner).map_err(invalid_eval_plan)?;
-        if to.owner != from.owner {
-            access = access.with_owner(to.owner).map_err(invalid_eval_plan)?;
+            zama_fhe::AccessPolicy::for_owner(from_owner).map_err(invalid_eval_plan)?;
+        if to_owner != from_owner {
+            access = access.with_owner(to_owner).map_err(invalid_eval_plan)?;
         }
         access
             .with_compute(compute_signer)
             .map_err(invalid_eval_plan)?
     };
     let from_output = fhe::DurableOutput::new(
-        accounts.from_output_acl.clone(),
-        durable_slot(mint_key, from.key(), balance_label(), from_nonce_sequence),
-        balance_access(from.owner)?,
+        accounts.from_balance_value.clone(),
+        durable_slot(mint_key, from_key, balance_label()),
+        balance_access(from_owner)?,
     )?;
     let transferred_output = fhe::DurableOutput::new(
-        accounts.transferred_amount_acl.clone(),
-        durable_slot(
-            mint_key,
-            from.key(),
-            transferred_amount_label(),
-            from_nonce_sequence,
-        ),
+        accounts.transferred_amount_value.clone(),
+        durable_slot(mint_key, from_key, transferred_amount_label()),
         transferred_access,
     )?;
     let to_output = fhe::DurableOutput::new(
-        accounts.to_output_acl.clone(),
-        durable_slot(mint_key, to.key(), balance_label(), to_nonce_sequence),
-        balance_access(to.owner)?,
+        accounts.to_balance_value.clone(),
+        durable_slot(mint_key, to_key, balance_label()),
+        balance_access(to_owner)?,
     )?;
     let mut builder =
-        zama_fhe::EvalBuilder::new(context_id, zama_fhe::EvalAppAuthority::new(from.key()));
+        zama_fhe::EvalBuilder::new(context_id, zama_fhe::EvalAppAuthority::new(from_key));
     // fromExternal: the amount is a coprocessor-attested external input, verified in-frame and
     // transient-allowed for this eval (no durable amount handle / ACL account).
     let amount: zama_fhe::Uint64Handle = builder
@@ -248,15 +209,13 @@ fn execute_transfer_eval<'info>(
     let eval_accounts = fhe::EvalAccountSet::for_plan(
         &plan,
         [
-            accounts.from_current_compute_acl.to_account_info(),
-            accounts.to_current_compute_acl.to_account_info(),
             from_output.account_info(),
             transferred_output.account_info(),
             to_output.account_info(),
         ],
         [
-            fhe::OutputAuthority::token_account(from)?,
-            fhe::OutputAuthority::token_account(to)?,
+            fhe::OutputAuthority::token_account(accounts.from_account)?,
+            fhe::OutputAuthority::token_account(accounts.to_account)?,
         ],
     )?;
 
@@ -289,30 +248,25 @@ pub(crate) fn durable_slot(
     acl_domain_key: Pubkey,
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
-    nonce_sequence: u64,
 ) -> zama_fhe::DurableSlot {
     zama_fhe::DurableSlot::new(
         acl_domain_key,
         app_account,
         zama_fhe::DurableLabel::new(encrypted_value_label),
-        nonce_sequence,
     )
 }
 
-pub(crate) fn durable_slot_from_acl(acl: &zama_host::AclRecord) -> zama_fhe::DurableSlot {
-    durable_slot(
-        acl.acl_domain_key,
-        acl.app_account,
-        acl.encrypted_value_label,
-        acl.nonce_sequence,
-    )
-}
-
-pub(crate) fn uint64_from_acl(
+pub(crate) fn uint64_from_value(
     handle: [u8; 32],
-    acl: &zama_host::AclRecord,
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
 ) -> Result<zama_fhe::Uint64Handle> {
-    zama_fhe::Uint64Handle::durable(handle, durable_slot_from_acl(acl)).map_err(invalid_eval_plan)
+    zama_fhe::Uint64Handle::durable(
+        handle,
+        durable_slot(acl_domain_key, app_account, encrypted_value_label),
+    )
+    .map_err(invalid_eval_plan)
 }
 
 pub(crate) fn access_policy_from_subjects(
@@ -327,11 +281,7 @@ pub(crate) fn transfer_eval_context(
     from_token_account: Pubkey,
     to_token_account: Pubkey,
     amount_handle: [u8; 32],
-    from_nonce_sequence: u64,
-    to_nonce_sequence: u64,
 ) -> Result<zama_fhe::EvalContextId> {
-    let from_sequence_bytes = from_nonce_sequence.to_be_bytes();
-    let to_sequence_bytes = to_nonce_sequence.to_be_bytes();
     let context_id = solana_sha256_hasher::hashv(&[
         b"confidential-token-transfer-eval-v1",
         tag,
@@ -339,68 +289,9 @@ pub(crate) fn transfer_eval_context(
         from_token_account.as_ref(),
         to_token_account.as_ref(),
         &amount_handle,
-        &from_sequence_bytes,
-        &to_sequence_bytes,
     ])
     .to_bytes();
     zama_fhe::EvalContextId::new(context_id).map_err(invalid_eval_plan)
-}
-
-pub(crate) fn assert_self_transfer_output_accounts(
-    accounts: &TransferAccounts<'_, '_>,
-    mint: Pubkey,
-    token_account: Pubkey,
-    nonce_sequence: u64,
-) -> Result<()> {
-    let balance_output =
-        acl_record_address_for(mint, token_account, balance_label(), nonce_sequence);
-    assert_unused_acl_target(&accounts.from_output_acl, balance_output)?;
-    assert_unused_acl_target(&accounts.to_output_acl, balance_output)?;
-    assert_unused_acl_target(
-        &accounts.transferred_amount_acl,
-        acl_record_address_for(
-            mint,
-            token_account,
-            transferred_amount_label(),
-            nonce_sequence,
-        ),
-    )?;
-    Ok(())
-}
-
-pub(crate) fn assert_unused_acl_target(account: &AccountInfo, expected_key: Pubkey) -> Result<()> {
-    require_keys_eq!(
-        account.key(),
-        expected_key,
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require_keys_eq!(
-        *account.owner,
-        System::id(),
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        account.data_is_empty(),
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        !account.executable,
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn acl_record_address_for(
-    mint: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    nonce_sequence: u64,
-) -> Pubkey {
-    zama_host::acl_record_address(
-        nonce_key(mint, app_account, encrypted_value_label),
-        nonce_sequence,
-    )
-    .0
 }
 
 /// Validates a coprocessor-attested transfer/burn amount (EVM `fromExternal` parity). The host
@@ -430,41 +321,43 @@ pub(crate) fn assert_amount_attestation_binding(
     Ok(())
 }
 
-pub(crate) fn assert_token_amount_acl(
-    amount_acl: &Account<zama_host::AclRecord>,
+/// Verifies a token-scoped amount `EncryptedValue` lineage: canonical address, correct domain,
+/// a recognized amount label, and `ACL_ROLE_USE` for the mint's compute signer.
+pub(crate) fn assert_token_amount_encrypted_value(
+    amount_value: &Account<zama_host::EncryptedValue>,
     amount_handle: [u8; 32],
     mint: Pubkey,
     compute_signer: Pubkey,
 ) -> Result<()> {
-    assert_amount_acl_record_shape(amount_acl)?;
     require!(
         zama_host::handle_fhe_type(amount_handle) == BALANCE_FHE_TYPE,
         ConfidentialTokenError::AmountHandleTypeMismatch
     );
     require!(
-        amount_acl.handle == amount_handle,
+        amount_value.current_handle == amount_handle,
         ConfidentialTokenError::AmountAclMismatch
     );
     require_keys_eq!(
-        amount_acl.acl_domain_key,
+        amount_value.acl_domain_key,
         mint,
         ConfidentialTokenError::AmountAclMismatch
     );
     require!(
-        is_token_amount_label(amount_acl.encrypted_value_label),
+        is_token_amount_label(amount_value.encrypted_value_label),
+        ConfidentialTokenError::AmountAclMismatch
+    );
+    require_keys_eq!(
+        amount_value.key(),
+        encrypted_value_address(
+            mint,
+            amount_value.app_account,
+            amount_value.encrypted_value_label
+        )
+        .0,
         ConfidentialTokenError::AmountAclMismatch
     );
     require!(
-        amount_acl.nonce_key
-            == nonce_key(
-                mint,
-                amount_acl.app_account,
-                amount_acl.encrypted_value_label
-            ),
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        amount_acl.inline_subject_has_role(compute_signer, zama_host::ACL_ROLE_USE),
+        amount_value.subject_has_role(compute_signer, zama_host::ACL_ROLE_USE),
         ConfidentialTokenError::AmountAclMismatch
     );
     Ok(())
@@ -478,118 +371,50 @@ pub(crate) fn is_token_amount_label(encrypted_value_label: [u8; 32]) -> bool {
         || encrypted_value_label == transferred_amount_label()
 }
 
-pub(crate) fn assert_burned_amount_acl(
-    amount_acl: &Account<zama_host::AclRecord>,
+/// Verifies a token account's burned-amount `EncryptedValue` lineage: canonical address, correct
+/// domain/app account, the burned-amount label, and `ACL_ROLE_PUBLIC_DECRYPT`/`ACL_ROLE_USE` grants.
+pub(crate) fn assert_burned_amount_encrypted_value(
+    amount_value: &Account<zama_host::EncryptedValue>,
     burned_handle: [u8; 32],
     mint: Pubkey,
     token_account: Pubkey,
     owner: Pubkey,
     compute_signer: Pubkey,
 ) -> Result<()> {
-    assert_amount_acl_record_shape(amount_acl)?;
     require!(
         zama_host::handle_fhe_type(burned_handle) == BALANCE_FHE_TYPE,
         ConfidentialTokenError::AmountHandleTypeMismatch
     );
     require!(
-        amount_acl.handle == burned_handle,
+        amount_value.current_handle == burned_handle,
         ConfidentialTokenError::AmountAclMismatch
     );
     require_keys_eq!(
-        amount_acl.acl_domain_key,
+        amount_value.acl_domain_key,
         mint,
         ConfidentialTokenError::AmountAclMismatch
     );
     require_keys_eq!(
-        amount_acl.app_account,
+        amount_value.app_account,
         token_account,
         ConfidentialTokenError::AmountAclMismatch
     );
     require!(
-        amount_acl.encrypted_value_label == burned_amount_label(),
+        amount_value.encrypted_value_label == burned_amount_label(),
         ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        amount_acl.nonce_key == nonce_key(mint, token_account, burned_amount_label()),
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        amount_acl.inline_subject_has_role(owner, zama_host::ACL_ROLE_PUBLIC_DECRYPT),
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        amount_acl.inline_subject_has_role(compute_signer, zama_host::ACL_ROLE_USE),
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_material_commitment(
-    material: &Account<zama_host::HandleMaterialCommitment>,
-    material_key: Pubkey,
-    acl_record: &Account<zama_host::AclRecord>,
-    handle: [u8; 32],
-) -> Result<()> {
-    let acl_record_key = acl_record.key();
-    let (expected_key, expected_bump) = zama_host::handle_material_address(acl_record_key);
-    require_keys_eq!(
-        material_key,
-        expected_key,
-        ConfidentialTokenError::MaterialCommitmentMismatch
-    );
-    require!(
-        material.bump == expected_bump,
-        ConfidentialTokenError::MaterialCommitmentMismatch
-    );
-    require!(
-        material.to_account_info().data_len() == 8 + zama_host::HandleMaterialCommitment::SPACE,
-        ConfidentialTokenError::MaterialCommitmentMismatch
     );
     require_keys_eq!(
-        material.acl_record,
-        acl_record_key,
-        ConfidentialTokenError::MaterialCommitmentMismatch
+        amount_value.key(),
+        encrypted_value_address(mint, token_account, burned_amount_label()).0,
+        ConfidentialTokenError::AmountAclMismatch
     );
     require!(
-        material.handle == handle,
-        ConfidentialTokenError::MaterialCommitmentMismatch
+        amount_value.subject_has_role(owner, zama_host::ACL_ROLE_PUBLIC_DECRYPT),
+        ConfidentialTokenError::AmountAclMismatch
     );
     require!(
-        material.state == zama_host::HANDLE_MATERIAL_STATE_COMMITTED,
-        ConfidentialTokenError::MaterialCommitmentMismatch
-    );
-    require!(
-        material.material_commitment_hash
-            == zama_host::handle_material_commitment_hash(
-                material_key,
-                acl_record_key,
-                material.key_id,
-                material.ciphertext_digest,
-                material.sns_ciphertext_digest,
-                material.coprocessor_set_digest,
-            ),
-        ConfidentialTokenError::MaterialCommitmentMismatch
-    );
-    require_keys_eq!(
-        acl_record.material_commitment,
-        material_key,
-        ConfidentialTokenError::MaterialCommitmentMismatch
-    );
-    require!(
-        acl_record.material_commitment_hash == material.material_commitment_hash
-            && acl_record.material_key_id == material.key_id,
-        ConfidentialTokenError::MaterialCommitmentMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_public_decrypt_released(
-    acl_record: &Account<zama_host::AclRecord>,
-) -> Result<()> {
-    assert_amount_acl_record_shape(acl_record)?;
-    require!(
-        acl_record.public_decrypt,
-        ConfidentialTokenError::PublicDecryptNotReleased
+        amount_value.subject_has_role(compute_signer, zama_host::ACL_ROLE_USE),
+        ConfidentialTokenError::AmountAclMismatch
     );
     Ok(())
 }
@@ -696,6 +521,34 @@ pub(crate) fn assert_confidential_token_account_shape(
     Ok(())
 }
 
+/// Verifies a token account's current balance `EncryptedValue` lineage against its stored pointer.
+pub(crate) fn assert_current_balance_encrypted_value(
+    balance_value: &Account<zama_host::EncryptedValue>,
+    token_account: &Account<ConfidentialTokenAccount>,
+    mint: Pubkey,
+) -> Result<()> {
+    require_keys_eq!(
+        balance_value.key(),
+        token_account.balance_encrypted_value,
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    require_keys_eq!(
+        balance_value.acl_domain_key,
+        mint,
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    require_keys_eq!(
+        balance_value.app_account,
+        token_account.key(),
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    require!(
+        balance_value.encrypted_value_label == balance_label(),
+        ConfidentialTokenError::CurrentAclRecordMismatch
+    );
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn assert_disclosure_request_witness(
     request: &Account<DisclosureRequest>,
@@ -705,8 +558,7 @@ pub(crate) fn assert_disclosure_request_witness(
     token_account: Pubkey,
     app_account: Pubkey,
     handle: [u8; 32],
-    acl_record: Pubkey,
-    material_commitment: &Account<zama_host::HandleMaterialCommitment>,
+    encrypted_value: Pubkey,
     host_config: Pubkey,
 ) -> Result<()> {
     let (expected_key, expected_bump) =
@@ -731,10 +583,7 @@ pub(crate) fn assert_disclosure_request_witness(
             && request.token_account == token_account
             && request.app_account == app_account
             && request.handle == handle
-            && request.acl_record == acl_record
-            && request.material_commitment == material_commitment.key()
-            && request.material_commitment_hash == material_commitment.material_commitment_hash
-            && request.material_key_id == material_commitment.key_id
+            && request.encrypted_value == encrypted_value
             && request.host_config == host_config
             && request.kms_context_id != 0
             && request.chain_id != 0,
@@ -748,10 +597,7 @@ pub(crate) fn assert_disclosure_request_witness(
         request.token_account,
         request.app_account,
         request.handle,
-        request.acl_record,
-        request.material_commitment,
-        request.material_commitment_hash,
-        request.material_key_id,
+        request.encrypted_value,
         request.host_config,
         request.kms_context_id,
         request.request_nonce,
@@ -777,8 +623,7 @@ pub(crate) fn assert_burn_redemption_request_witness(
     destination_owner: Pubkey,
     destination_account: Pubkey,
     burned_handle: [u8; 32],
-    burned_acl_record: Pubkey,
-    material_commitment: &Account<zama_host::HandleMaterialCommitment>,
+    burned_encrypted_value: Pubkey,
     host_config: Pubkey,
 ) -> Result<()> {
     let (expected_key, expected_bump) =
@@ -805,10 +650,7 @@ pub(crate) fn assert_burn_redemption_request_witness(
             && request.destination_owner == destination_owner
             && request.destination_account == destination_account
             && request.burned_handle == burned_handle
-            && request.burned_acl_record == burned_acl_record
-            && request.material_commitment == material_commitment.key()
-            && request.material_commitment_hash == material_commitment.material_commitment_hash
-            && request.material_key_id == material_commitment.key_id
+            && request.burned_encrypted_value == burned_encrypted_value
             && request.host_config == host_config
             && request.kms_context_id != 0
             && request.chain_id != 0,
@@ -824,10 +666,7 @@ pub(crate) fn assert_burn_redemption_request_witness(
         request.destination_owner,
         request.destination_account,
         request.burned_handle,
-        request.burned_acl_record,
-        request.material_commitment,
-        request.material_commitment_hash,
-        request.material_key_id,
+        request.burned_encrypted_value,
         request.host_config,
         request.kms_context_id,
         request.request_nonce,
@@ -898,131 +737,6 @@ pub(crate) fn assert_kms_public_decrypt_cert_for_request(
             signatures,
         ),
         ConfidentialTokenError::InvalidKmsCertificate
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_current_balance_acl(
-    balance_acl: &Account<zama_host::AclRecord>,
-    balance_acl_key: Pubkey,
-    token_account: &Account<ConfidentialTokenAccount>,
-    mint: Pubkey,
-) -> Result<()> {
-    assert_current_acl_record_shape(balance_acl)?;
-    require_keys_eq!(
-        balance_acl_key,
-        token_account.balance_acl_record,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        balance_acl.handle == token_account.balance_handle,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require_keys_eq!(
-        balance_acl.acl_domain_key,
-        mint,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require_keys_eq!(
-        balance_acl.app_account,
-        token_account.key(),
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        balance_acl.encrypted_value_label == balance_label(),
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        balance_acl.nonce_key == balance_nonce_key(mint, token_account.key()),
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_current_total_supply_acl(
-    supply_acl: &Account<zama_host::AclRecord>,
-    supply_acl_key: Pubkey,
-    mint: &Account<ConfidentialMint>,
-    mint_key: Pubkey,
-    total_supply_authority: Pubkey,
-) -> Result<()> {
-    assert_current_acl_record_shape(supply_acl)?;
-    require_keys_eq!(
-        supply_acl_key,
-        mint.total_supply_acl_record,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        supply_acl.handle == mint.total_supply_handle,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require_keys_eq!(
-        supply_acl.acl_domain_key,
-        mint_key,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require_keys_eq!(
-        supply_acl.app_account,
-        total_supply_authority,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        supply_acl.encrypted_value_label == total_supply_label(),
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        supply_acl.nonce_key == total_supply_nonce_key(mint_key, total_supply_authority),
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_current_acl_record_shape(
-    acl_record: &Account<zama_host::AclRecord>,
-) -> Result<()> {
-    let (expected_key, expected_bump) =
-        zama_host::acl_record_address(acl_record.nonce_key, acl_record.nonce_sequence);
-    require_keys_eq!(
-        acl_record.key(),
-        expected_key,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        acl_record.to_account_info().data_len() == 8 + zama_host::AclRecord::SPACE,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        acl_record.bump == expected_bump,
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    require!(
-        zama_host::acl_record_subject_slots_are_canonical(acl_record),
-        ConfidentialTokenError::CurrentAclRecordMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_amount_acl_record_shape(
-    acl_record: &Account<zama_host::AclRecord>,
-) -> Result<()> {
-    let (expected_key, expected_bump) =
-        zama_host::acl_record_address(acl_record.nonce_key, acl_record.nonce_sequence);
-    require_keys_eq!(
-        acl_record.key(),
-        expected_key,
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        acl_record.to_account_info().data_len() == 8 + zama_host::AclRecord::SPACE,
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        acl_record.bump == expected_bump,
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        zama_host::acl_record_subject_slots_are_canonical(acl_record),
-        ConfidentialTokenError::AmountAclMismatch
     );
     Ok(())
 }
