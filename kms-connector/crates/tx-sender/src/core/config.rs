@@ -183,7 +183,7 @@ fn default_gas_multiplier_percent() -> usize {
 }
 
 fn default_gauge_update_interval() -> Duration {
-    Duration::from_secs(10)
+    Duration::from_secs(30)
 }
 
 fn default_operation_recovery_run_interval() -> Duration {
