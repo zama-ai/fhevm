@@ -515,7 +515,10 @@ task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
       HOST_ENV_FILE,
       fs
         .readFileSync(HOST_ENV_FILE, 'utf8')
-        .replace(`CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${zero}`, `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${proxyAddress}`),
+        .replace(
+          `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${zero}`,
+          `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${proxyAddress}`,
+        ),
     );
     fs.writeFileSync(
       HOST_ADDRESSES_FILE,
