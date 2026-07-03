@@ -110,7 +110,7 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
 
   // Node swap: when the cluster has spare cores, emit swap-committee envs (the last committee
   // slot remapped to the spare) for defineNewKmsContextAndEpoch (host) and updateKmsContext (gateway).
-  const hostScSwap = buildHostScSwapEnv(rendered.componentEnvs["host-sc"], rendered.componentEnvs["gateway-sc"], plan);
+  const hostScSwap = buildHostScSwapEnv(rendered.componentEnvs["host-sc"], plan);
   if (hostScSwap) await writeEnvFile(envPath("host-sc-swap"), hostScSwap);
   const gatewayScSwap = buildGatewayScSwapEnv(rendered.componentEnvs["gateway-sc"], plan);
   if (gatewayScSwap) await writeEnvFile(envPath("gateway-sc-swap"), gatewayScSwap);

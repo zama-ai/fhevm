@@ -328,6 +328,9 @@ const applyKmsThresholdGatewayEnv = async (
     hostSc[`KMS_NODE_PARTY_ID_${idx}`] = String(party);
     hostSc[`KMS_NODE_MPC_IDENTITY_${idx}`] = kmsCoreName(party);
     hostSc[`KMS_NODE_STORAGE_PREFIX_${idx}`] = kmsPublicPrefix(party);
+    hostSc[`KMS_TX_SENDER_ADDRESS_${idx}`] = wallet.address;
+    hostSc[`KMS_NODE_IP_${idx}`] = gw[`KMS_NODE_IP_ADDRESS_${idx}`];
+    hostSc[`KMS_NODE_STORAGE_URL_${idx}`] = gw[`KMS_NODE_STORAGE_URL_${idx}`];
     // KMS_SIGNER_ADDRESS_{idx} comes from per-party signing-key discovery.
     const endpoint = `http://${kmsCoreName(party)}:${kmsServicePort(party)}`;
     const dbName = kmsConnectorDbName(party);
@@ -354,13 +357,11 @@ const kmsSwapSlots = (plan: StackSpec): { slot: number; src: number }[] => {
   return Array.from({ length: spares }, (_, k) => ({ slot: committeeSize - spares + k, src: committeeSize + k }));
 };
 
-/** host ProtocolConfig swap-committee env for `defineNewKmsContextAndEpoch`. The spare's connection
- * vars (tx-sender/ip/storage-url) live only in gateway-sc (host copies just the committee), so they
- * are pulled from there; its identity + discovered signer/CA-cert come from host-sc. Returns
- * undefined for non-swap topologies or before the spare's signer is discovered. */
+/** host ProtocolConfig swap-committee env for `defineNewKmsContextAndEpoch`. host-sc carries every
+ * provisioned party (committee + spares).
+ * Returns undefined for non-swap topologies or before the spare's signer is discovered. */
 export const buildHostScSwapEnv = (
   hostSc: Record<string, string>,
-  gatewaySc: Record<string, string>,
   plan: StackSpec,
 ): Record<string, string> | undefined => {
   if (!isKmsSwapTopology(plan)) return undefined;
@@ -370,10 +371,10 @@ export const buildHostScSwapEnv = (
     // The spare joins at the dropped node's MPC position, so KMS_NODE_PARTY_ID_{slot} stays the
     // positional id (1..committeeSize) — the core rejects party ids outside that range. Only the
     // node's identity (signer, tx-sender, cert), address and storage prefix move to the spare.
-    swap[`KMS_TX_SENDER_ADDRESS_${slot}`] = gatewaySc[`KMS_TX_SENDER_ADDRESS_${src}`];
+    swap[`KMS_TX_SENDER_ADDRESS_${slot}`] = hostSc[`KMS_TX_SENDER_ADDRESS_${src}`];
     swap[`KMS_SIGNER_ADDRESS_${slot}`] = hostSc[`KMS_SIGNER_ADDRESS_${src}`];
-    swap[`KMS_NODE_IP_${slot}`] = gatewaySc[`KMS_NODE_IP_ADDRESS_${src}`];
-    swap[`KMS_NODE_STORAGE_URL_${slot}`] = gatewaySc[`KMS_NODE_STORAGE_URL_${src}`];
+    swap[`KMS_NODE_IP_${slot}`] = hostSc[`KMS_NODE_IP_${src}`];
+    swap[`KMS_NODE_STORAGE_URL_${slot}`] = hostSc[`KMS_NODE_STORAGE_URL_${src}`];
     swap[`KMS_NODE_MPC_IDENTITY_${slot}`] = hostSc[`KMS_NODE_MPC_IDENTITY_${src}`];
     swap[`KMS_NODE_CA_CERT_${slot}`] = hostSc[`KMS_NODE_CA_CERT_${src}`];
     swap[`KMS_NODE_STORAGE_PREFIX_${slot}`] = hostSc[`KMS_NODE_STORAGE_PREFIX_${src}`];

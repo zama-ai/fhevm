@@ -343,15 +343,18 @@ describe("buildHostScSwapEnv / buildGatewayScSwapEnv (node swap)", () => {
   const swapPlan = { kms: swapTopology } as unknown as StackSpec;
   const noSwapPlan = { kms: fourParty } as unknown as StackSpec;
 
-  // Rendered host-sc has the spare's identity + discovered signer/CA-cert at index 4, but NOT its
-  // connection vars (host copies only the committee 0..3); those live in gateway-sc for every party.
+  // Rendered host-sc carries every provisioned party: connection vars + MPC metadata for the
+  // committee (0..3) and the spare (4); signer/CA-cert come from post-boot discovery.
   const hostSc = (): Record<string, string> => ({
     NUM_KMS_NODES: "4",
     KMS_TX_SENDER_ADDRESS_3: "0xtx4",
+    KMS_TX_SENDER_ADDRESS_4: "0xtx5",
     KMS_SIGNER_ADDRESS_3: "0xsigner4",
     KMS_SIGNER_ADDRESS_4: "0xsigner5",
     KMS_NODE_IP_3: "http://kms-core-4:50004",
+    KMS_NODE_IP_4: "http://kms-core-5:50005",
     KMS_NODE_STORAGE_URL_3: "http://minio/kms-public",
+    KMS_NODE_STORAGE_URL_4: "http://minio/kms-public",
     KMS_NODE_PARTY_ID_3: "4",
     KMS_NODE_PARTY_ID_4: "5",
     KMS_NODE_MPC_IDENTITY_3: "kms-core-4",
@@ -374,14 +377,14 @@ describe("buildHostScSwapEnv / buildGatewayScSwapEnv (node swap)", () => {
   });
 
   test("host swap env promotes the spare (node 5) into the dropped committee slot, keeping NUM_KMS_NODES", () => {
-    const swap = buildHostScSwapEnv(hostSc(), gatewaySc(), swapPlan)!;
+    const swap = buildHostScSwapEnv(hostSc(), swapPlan)!;
     expect(swap).toBeDefined();
     expect(swap.NUM_KMS_NODES).toBe("4"); // still a 4-node committee, just a different member
     // The spare takes the dropped node's MPC position, so the party id stays positional (the core
     // rejects ids outside 1..n); only the node's identity/address/material move to the spare.
     expect(swap.KMS_NODE_PARTY_ID_3).toBe("4");
     expect(swap.KMS_SIGNER_ADDRESS_3).toBe("0xsigner5");
-    expect(swap.KMS_TX_SENDER_ADDRESS_3).toBe("0xtx5"); // sourced from gateway-sc (absent from host-sc)
+    expect(swap.KMS_TX_SENDER_ADDRESS_3).toBe("0xtx5");
     expect(swap.KMS_NODE_IP_3).toBe("http://kms-core-5:50005");
     expect(swap.KMS_NODE_MPC_IDENTITY_3).toBe("kms-core-5"); // physical core is the spare
     expect(swap.KMS_NODE_CA_CERT_3).toBe("cert5");
@@ -398,14 +401,14 @@ describe("buildHostScSwapEnv / buildGatewayScSwapEnv (node swap)", () => {
   });
 
   test("returns undefined for a non-swap topology (no spare)", () => {
-    expect(buildHostScSwapEnv(hostSc(), gatewaySc(), noSwapPlan)).toBeUndefined();
+    expect(buildHostScSwapEnv(hostSc(), noSwapPlan)).toBeUndefined();
     expect(buildGatewayScSwapEnv(gatewaySc(), noSwapPlan)).toBeUndefined();
   });
 
   test("returns undefined before the spare's signer is discovered (so no half-built env is written)", () => {
     const hostPre = hostSc();
     delete hostPre.KMS_SIGNER_ADDRESS_4;
-    expect(buildHostScSwapEnv(hostPre, gatewaySc(), swapPlan)).toBeUndefined();
+    expect(buildHostScSwapEnv(hostPre, swapPlan)).toBeUndefined();
     const gwPre = gatewaySc();
     delete gwPre.KMS_SIGNER_ADDRESS_4;
     expect(buildGatewayScSwapEnv(gwPre, swapPlan)).toBeUndefined();
