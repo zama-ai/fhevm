@@ -255,43 +255,42 @@ task('task:deployEmptyUUPSProxies')
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
 
-    // ConfidentialBridge is opt-in via LZ_ENDPOINT_ADDRESS. We only deploy its empty proxy when a
-    // real LayerZero endpoint is configured (env var set and code deployed at that address). When
-    // it isn't, we deploy nothing for the bridge — not even an empty proxy — so dev tooling can
-    // detect the absence of a confidential bridge simply by calling ACL:getConfidentialBridgeAddress()
-    // and noticing that it returns the null address.
+    // ConfidentialBridge is opt-in. We provision its empty proxy when a bridge is intended on this
+    // host — either a real LayerZero endpoint is already configured, or the caller explicitly asks
+    // via PROVISION_BRIDGE_PROXY. The flag exists because the multi-chain e2e deploys its LZ endpoint
+    // AFTER the host contracts and upgrades this proxy later (task:deployBridge): the proxy must
+    // exist here so the ACL bakes its (deterministic) address. When neither holds we deploy nothing
+    // and pin the null address, so tooling can detect the bridge's absence via
+    // ACL.getConfidentialBridgeAddress() returning address(0).
     const lzEndpoint = process.env.LZ_ENDPOINT_ADDRESS;
-    if (!lzEndpoint) {
-      console.log(
-        '[task:deployEmptyUUPSProxies] LZ_ENDPOINT_ADDRESS not set; ' +
-          'skipping ConfidentialBridge empty-proxy deployment. This will set the constant bridge address in ACL as the null address, ' +
-          'otherwise if it was a mistake please set LZ_ENDPOINT_ADDRESS and re-run to deploy the bridge.',
-      );
-      await run('task:setBridgeAddress', { address: ethers.ZeroAddress });
-    } else if (!ethers.isAddress(lzEndpoint)) {
-      throw new Error(
-        `[task:deployEmptyUUPSProxies] LZ_ENDPOINT_ADDRESS (${lzEndpoint}) is not a valid address. ` +
-          'Fix LZ_ENDPOINT_ADDRESS, or unset it to skip the bridge, and re-run.',
-      );
-    } else if ((await ethers.provider.getCode(lzEndpoint)) === '0x') {
-      // No code at the endpoint is a fatal misconfiguration on real networks, but expected on the
-      // in-memory 'hardhat' network (bridge tests deploy their own proxies), so there we skip and
-      // pin the null bridge address instead of panicking.
-      if (network.name !== 'hardhat') {
+    const provisionBridgeProxy = process.env.PROVISION_BRIDGE_PROXY === 'true';
+    let endpointHasCode = false;
+    if (lzEndpoint) {
+      if (!ethers.isAddress(lzEndpoint)) {
+        throw new Error(
+          `[task:deployEmptyUUPSProxies] LZ_ENDPOINT_ADDRESS (${lzEndpoint}) is not a valid address. ` +
+            'Fix LZ_ENDPOINT_ADDRESS, or unset it to skip the bridge, and re-run.',
+        );
+      }
+      endpointHasCode = (await ethers.provider.getCode(lzEndpoint)) !== '0x';
+      // No code at a configured endpoint is a fatal misconfiguration on real networks, but expected
+      // on the in-memory 'hardhat' network (bridge tests deploy their own proxies).
+      if (!endpointHasCode && network.name !== 'hardhat') {
         throw new Error(
           `[task:deployEmptyUUPSProxies] No contract deployed at LZ_ENDPOINT_ADDRESS (${lzEndpoint}) on network "${network.name}". ` +
             'Point LZ_ENDPOINT_ADDRESS at a real LayerZero endpoint, or unset it to skip the bridge, and re-run.',
         );
       }
-      console.log(
-        `[task:deployEmptyUUPSProxies] No contract deployed at LZ_ENDPOINT_ADDRESS (${lzEndpoint}) ` +
-          "on the in-memory 'hardhat' network; skipping ConfidentialBridge empty-proxy deployment. " +
-          'This will set the constant bridge address in ACL as the null address.',
-      );
-      await run('task:setBridgeAddress', { address: ethers.ZeroAddress });
-    } else {
+    }
+    if (endpointHasCode || provisionBridgeProxy) {
       const confidentialBridgeAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
       await run('task:setBridgeAddress', { address: confidentialBridgeAddress });
+    } else {
+      console.log(
+        '[task:deployEmptyUUPSProxies] No LayerZero endpoint configured and PROVISION_BRIDGE_PROXY not set; ' +
+          'skipping ConfidentialBridge empty-proxy deployment. The ACL bridge address is pinned to the null address.',
+      );
+      await run('task:setBridgeAddress', { address: ethers.ZeroAddress });
     }
   });
 
@@ -489,20 +488,30 @@ task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
         'Run task:deployEmptyUUPSProxies first.',
     );
   }
-  // task:deployEmptyUUPSProxies only provisions a bridge empty proxy when a real LayerZero endpoint
-  // is configured; otherwise it pins the null address. A null address means "no bridge on this host",
-  // so there is nothing to upgrade — skip instead of failing the forceImport on the zero address.
+  // A null address means no bridge proxy was provisioned on this host — nothing to upgrade.
   if (proxyAddress === ethers.ZeroAddress) {
     console.log(
       '[task:deployBridge] CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS is the null address; ' +
-        'no ConfidentialBridge proxy was provisioned (LZ_ENDPOINT_ADDRESS unset or has no code). Skipping bridge upgrade.',
+        'no ConfidentialBridge proxy was provisioned. Skipping bridge upgrade.',
     );
     return;
   }
 
-  const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
-  if (!ethers.isAddress(lzEndpoint)) {
+  // The proxy is only upgraded to the real ConfidentialBridge once a LayerZero endpoint is
+  // available. The e2e provisions the empty proxy at host-deploy time (PROVISION_BRIDGE_PROXY) and
+  // deploys the endpoint later, then re-runs this task — so when the proxy exists but no endpoint is
+  // configured yet, leave the empty proxy in place for that later upgrade instead of failing.
+  const lzEndpoint = process.env.LZ_ENDPOINT_ADDRESS;
+  if (lzEndpoint && !ethers.isAddress(lzEndpoint)) {
     throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid address: ${lzEndpoint}`);
+  }
+  const endpointHasCode = !!lzEndpoint && (await ethers.provider.getCode(lzEndpoint)) !== '0x';
+  if (!endpointHasCode) {
+    console.log(
+      '[task:deployBridge] Bridge proxy provisioned but no LayerZero endpoint with code is configured yet; ' +
+        'leaving the empty proxy for a later upgrade. Skipping.',
+    );
+    return;
   }
 
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
