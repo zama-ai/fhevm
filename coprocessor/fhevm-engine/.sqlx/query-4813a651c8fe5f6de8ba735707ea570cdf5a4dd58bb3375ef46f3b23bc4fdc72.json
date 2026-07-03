@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                status AS \"status!\",\n                key_content_sks_key AS \"key_content_sks_key!\",\n                key_content_public AS \"key_content_public!\"\n             FROM kms_key_activation_events\n             WHERE chain_id = $1 AND block_hash = $2 AND key_id = $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "key_content_sks_key!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "key_content_public!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "4813a651c8fe5f6de8ba735707ea570cdf5a4dd58bb3375ef46f3b23bc4fdc72"
+}
