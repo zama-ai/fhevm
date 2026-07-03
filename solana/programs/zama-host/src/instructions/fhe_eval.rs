@@ -3,13 +3,11 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
+use super::encrypted_value::{grow_account_if_needed, supersede_current_handle};
 use super::input_verification::{verify_input_attestation, InputVerifierParams};
 use crate::{
     errors::ZamaHostError,
-    events::{
-        AclAllowedEvent, AclRecordBoundEvent, AclSubjectAllowedEvent, FheBinaryOpEvent,
-        FheRandEvent, FheTernaryOpEvent, TrivialEncryptEvent,
-    },
+    events::{FheBinaryOpEvent, FheRandEvent, FheTernaryOpEvent, TrivialEncryptEvent},
     state::*,
 };
 
@@ -25,12 +23,12 @@ use admission::admit_eval_frame;
 use event_budget::eval_event_capacity;
 use event_transport::{emit_eval_events, EvalEvent};
 use handles::EvalHandleContext;
-use preflight::{assert_eval_step_birth_policy, preflight_eval_frame};
+use preflight::preflight_eval_frame;
 use walk::{walk_eval_frame, EvalStepVisitor};
 
 /// Accounts for composed instruction-local FHE evaluation.
 ///
-/// Durable input ACL records and durable output ACL records are supplied in
+/// Durable input and output `EncryptedValue` accounts are supplied in
 /// `remaining_accounts` and referenced by index from [`FheEvalArgs`].
 #[derive(Accounts)]
 #[event_cpi]
@@ -60,9 +58,6 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
         !args.steps.is_empty() && args.steps.len() <= MAX_FHE_EVAL_OPS,
         ZamaHostError::InvalidFheEvalOperationCount
     );
-    for step in &args.steps {
-        assert_eval_step_birth_policy(step)?;
-    }
     preflight_eval_frame(ctx.remaining_accounts, &args)?;
 
     let subject = ctx.accounts.compute_subject.key();
@@ -71,7 +66,6 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
         clock.slot,
         ctx.accounts.host_config.zero_birth_entropy_allowed(),
     )?;
-    let current_slot = clock.slot;
     let handle_context = EvalHandleContext {
         chain_id: ctx.accounts.host_config.chain_id,
         previous_bank_hash: &previous_bank_hash,
@@ -79,7 +73,7 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
         context_id: &args.context_id,
     };
     admit_eval_frame(&ctx, &args, subject, &handle_context)?;
-    let events = execute_eval_frame(&ctx, &args, subject, current_slot, &handle_context)?;
+    let events = execute_eval_frame(&ctx, &args, subject, &handle_context)?;
     emit_eval_events(&ctx, events)?;
     Ok(())
 }
@@ -89,7 +83,6 @@ fn execute_eval_frame<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     args: &FheEvalArgs,
     subject: Pubkey,
-    current_slot: u64,
     handle_context: &EvalHandleContext<'_>,
 ) -> Result<Vec<EvalEvent>> {
     let mut execution = EvalExecutionState::new(
@@ -98,7 +91,6 @@ fn execute_eval_frame<'info>(
         eval_event_capacity(args),
         subject,
         handle_context.chain_id,
-        current_slot,
         InputVerifierParams::from_config(&ctx.accounts.host_config),
     );
     walk_eval_frame(&mut execution, ctx, args, handle_context)?;
@@ -114,7 +106,6 @@ struct EvalExecutionState<'a, 'info> {
     events: Vec<EvalEvent>,
     subject: Pubkey,
     chain_id: u64,
-    current_slot: u64,
     verifier_params: InputVerifierParams,
 }
 
@@ -125,7 +116,6 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
         event_capacity: usize,
         subject: Pubkey,
         chain_id: u64,
-        current_slot: u64,
         verifier_params: InputVerifierParams,
     ) -> Self {
         Self {
@@ -135,7 +125,6 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
             events: Vec::with_capacity(event_capacity),
             subject,
             chain_id,
-            current_slot,
             verifier_params,
         }
     }
@@ -172,29 +161,48 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
     fn resolve_durable_operand(
         &mut self,
         handle: [u8; 32],
-        acl_record_index: u16,
-        permission_index: Option<u16>,
+        encrypted_value_index: u16,
     ) -> Result<ResolvedOperand> {
-        let record_info = self.remaining_account(acl_record_index)?;
-        let permission_info = permission_index
-            .map(|index| self.remaining_account(index))
-            .transpose()?;
-        assert_unchecked_acl_record_subject_role(
-            record_info,
+        let value_info = self.remaining_account(encrypted_value_index)?;
+        assert_encrypted_value_subject_role(
+            value_info,
             handle,
             self.chain_id,
             self.subject,
             ACL_ROLE_USE,
-            permission_info,
         )?;
-        let public_decrypt_allowed = unchecked_acl_record_subject_has_role(
-            record_info,
+        let public_decrypt_allowed = encrypted_value_subject_has_role(
+            value_info,
             handle,
             self.subject,
             ACL_ROLE_PUBLIC_DECRYPT,
-            permission_info,
         )?;
         Ok(ResolvedOperand::encrypted(handle, public_decrypt_allowed))
+    }
+
+    fn resolve_output_binding<'info>(
+        &mut self,
+        _ctx: &Context<'info, FheEval<'info>>,
+        output: &FheEvalOutput,
+    ) -> Result<Option<OutputBinding>> {
+        let FheEvalOutput::AllowedDurable {
+            output_encrypted_value_index,
+            output_acl_domain_key,
+            output_app_account,
+            output_encrypted_value_label,
+            ..
+        } = output
+        else {
+            return Ok(None);
+        };
+        let output_info = self.remaining_account(*output_encrypted_value_index)?;
+        output_binding_from_account(
+            output_info,
+            *output_acl_domain_key,
+            *output_app_account,
+            *output_encrypted_value_label,
+        )
+        .map(Some)
     }
 
     #[inline(never)]
@@ -239,12 +247,10 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             ctx,
             &mut self.remaining_accounts_used,
             &mut self.produced,
-            &mut self.events,
             result,
             output,
             output_public_decrypt_allowed,
             enforce_public_decrypt_role_propagation,
-            self.current_slot,
         )
     }
 }
@@ -270,12 +276,10 @@ fn accept_eval_output<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     remaining_accounts_used: &mut [bool],
     produced: &mut Vec<ProducedValue>,
-    events: &mut Vec<EvalEvent>,
     result: [u8; 32],
     output: &FheEvalOutput,
     output_public_decrypt_allowed: bool,
     enforce_public_decrypt_role_propagation: bool,
-    current_slot: u64,
 ) -> Result<()> {
     require!(
         !produced.iter().any(|value| value.handle == result),
@@ -285,15 +289,14 @@ fn accept_eval_output<'info>(
     match output {
         FheEvalOutput::AllowedLocal => {}
         FheEvalOutput::AllowedDurable {
-            output_acl_record_index,
+            output_encrypted_value_index,
             output_app_account_authority_index,
-            output_nonce_key,
-            output_nonce_sequence,
             output_acl_domain_key,
             output_app_account,
             output_encrypted_value_label,
             output_subjects,
-            output_public_decrypt,
+            previous_handle,
+            previous_subjects,
         } => {
             let app_account_authority = durable_output_authority(
                 ctx,
@@ -311,18 +314,15 @@ fn accept_eval_output<'info>(
             bind_eval_output(
                 ctx,
                 remaining_accounts_used,
-                events,
-                *output_acl_record_index,
+                *output_encrypted_value_index,
                 result,
                 app_account_authority.key(),
-                *output_nonce_key,
-                *output_nonce_sequence,
                 *output_acl_domain_key,
                 *output_app_account,
                 *output_encrypted_value_label,
                 output_subjects,
-                *output_public_decrypt,
-                current_slot,
+                previous_handle,
+                previous_subjects,
             )?
         }
     };
@@ -412,113 +412,158 @@ fn inputs3_allow_public_decrypt(
 fn bind_eval_output<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     remaining_accounts_used: &mut [bool],
-    events: &mut Vec<EvalEvent>,
-    output_acl_record_index: u16,
+    output_encrypted_value_index: u16,
     result: [u8; 32],
     app_account_authority: Pubkey,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
     output_acl_domain_key: Pubkey,
     output_app_account: Pubkey,
     output_encrypted_value_label: [u8; 32],
     output_subjects: &[AclSubjectEntry],
-    output_public_decrypt: bool,
-    current_slot: u64,
+    previous_handle: &Option<[u8; 32]>,
+    previous_subjects: &Option<Vec<Pubkey>>,
 ) -> Result<()> {
-    assert_output_acl_metadata(
-        app_account_authority,
-        output_nonce_key,
-        output_acl_domain_key,
-        output_app_account,
-        output_encrypted_value_label,
-        output_subjects,
-    )?;
-    assert_public_decrypt_not_set_at_birth(output_public_decrypt)?;
+    assert_output_acl_metadata(app_account_authority, output_app_account, output_subjects)?;
 
     let output_info = remaining_account(
         ctx.remaining_accounts,
         remaining_accounts_used,
-        output_acl_record_index,
+        output_encrypted_value_index,
     )?;
-    let (expected, bump) = acl_record_address(output_nonce_key, output_nonce_sequence);
+    let value_key = zama_solana_acl::derive_value_key(
+        output_acl_domain_key.to_bytes(),
+        output_app_account.to_bytes(),
+        output_encrypted_value_label,
+    );
+    let (expected, bump) = encrypted_value_address(value_key);
     require_keys_eq!(
         output_info.key(),
         expected,
-        ZamaHostError::AclRecordPdaMismatch
+        ZamaHostError::EncryptedValuePdaMismatch
     );
-    let sequence_bytes = output_nonce_sequence.to_le_bytes();
-    create_pda_strict(
-        &ctx.accounts.payer.to_account_info(),
-        output_info,
-        &ctx.accounts.system_program.to_account_info(),
-        8 + AclRecord::SPACE,
-        &[
-            ACL_RECORD_SEED,
-            output_nonce_key.as_ref(),
-            &sequence_bytes,
-            &[bump],
-        ],
-    )?;
 
-    let mut subjects = [Pubkey::default(); MAX_ACL_SUBJECTS];
-    let mut subject_roles = [0; MAX_ACL_SUBJECTS];
-    for (index, subject) in output_subjects.iter().enumerate() {
-        subjects[index] = subject.pubkey;
-        subject_roles[index] = subject.role_flags;
-    }
-    let record = AclRecord {
-        handle: result,
-        nonce_key: output_nonce_key,
-        nonce_sequence: output_nonce_sequence,
-        acl_domain_key: output_acl_domain_key,
-        app_account: output_app_account,
-        encrypted_value_label: output_encrypted_value_label,
-        subjects,
-        subject_roles,
-        subject_count: output_subjects.len() as u8,
-        overflow_subject_count: 0,
-        public_decrypt: output_public_decrypt,
-        material_commitment: Pubkey::default(),
-        material_commitment_hash: [0; 32],
-        material_key_id: [0; 32],
-        created_slot: current_slot,
-        bump,
-    };
-    write_account(output_info, &record)?;
-
-    let record_key = output_info.key();
-    events.push(EvalEvent::AclRecordBound(AclRecordBoundEvent {
-        version: EVENT_VERSION,
-        acl_record: record_key,
-        handle: record.handle,
-        nonce_key: record.nonce_key,
-        nonce_sequence: record.nonce_sequence,
-        acl_domain_key: record.acl_domain_key,
-        app_account: record.app_account,
-        encrypted_value_label: record.encrypted_value_label,
-        subject_count: record.subject_count,
-        public_decrypt: record.public_decrypt,
-        created_slot: record.created_slot,
-    }));
-    for output_subject in output_subjects.iter().copied() {
-        events.push(EvalEvent::AclAllowed(AclAllowedEvent {
-            version: EVENT_VERSION,
-            handle: result,
-            subject: output_subject.pubkey.to_bytes(),
-        }));
-        events.push(EvalEvent::AclSubjectAllowed(AclSubjectAllowedEvent {
-            version: EVENT_VERSION,
-            acl_record: record_key,
-            handle: result,
-            authority_subject: Pubkey::default(),
-            subject: output_subject.pubkey.to_bytes(),
-            role_flags: output_subject.role_flags,
-            overflow_permission_record: Pubkey::default(),
-            inline_index: u8::MAX,
-            updated_slot: current_slot,
-        }));
+    if output_info.owner == &crate::ID {
+        // Supersede: the plan's previous_* fields must match the stored state
+        // exactly, so indexers can reconstruct the appended MMR leaves from
+        // instruction data alone.
+        let mut value = read_canonical_encrypted_value(output_info)?;
+        validate_durable_output_previous_state(
+            &value,
+            output_subjects,
+            previous_handle,
+            previous_subjects,
+        )?;
+        supersede_current_handle(output_info, &mut value, result)?;
+        let space = 8 + EncryptedValue::space(value.subjects.len(), value.peaks.len());
+        grow_account_if_needed(
+            &ctx.accounts.payer.to_account_info(),
+            output_info,
+            &ctx.accounts.system_program.to_account_info(),
+            space,
+        )?;
+        write_account(output_info, &value)?;
+    } else {
+        // Create: a fresh lineage has no previous state to reconstruct, and (like
+        // `create_encrypted_value`) cannot be born public-decryptable.
+        require!(
+            previous_handle.is_none() && previous_subjects.is_none(),
+            ZamaHostError::PreviousStateMismatch
+        );
+        require!(
+            output_subjects
+                .iter()
+                .all(|s| !subject_has_role(s.role_flags, ACL_ROLE_PUBLIC_DECRYPT)),
+            ZamaHostError::PublicDecryptAtBirthUnsupported
+        );
+        create_pda_strict(
+            &ctx.accounts.payer.to_account_info(),
+            output_info,
+            &ctx.accounts.system_program.to_account_info(),
+            8 + EncryptedValue::space(output_subjects.len(), 0),
+            &[
+                zama_solana_acl::ENCRYPTED_VALUE_SEED,
+                value_key.as_ref(),
+                &[bump],
+            ],
+        )?;
+        let value = EncryptedValue {
+            acl_domain_key: output_acl_domain_key,
+            app_account: output_app_account,
+            encrypted_value_label: output_encrypted_value_label,
+            current_handle: result,
+            subjects: output_subjects.iter().map(|s| s.pubkey).collect(),
+            subject_roles: output_subjects.iter().map(|s| s.role_flags).collect(),
+            leaf_count: 0,
+            peaks: Vec::new(),
+            bump,
+        };
+        write_account(output_info, &value)?;
     }
     Ok(())
+}
+
+/// Shared create-or-supersede plan validation against an existing lineage.
+/// Membership is immutable through eval binding: the plan's subject pubkeys
+/// must equal the stored subjects (roles are set at create, changed only via
+/// `allow_subjects`).
+pub(super) fn validate_durable_output_previous_state(
+    value: &EncryptedValue,
+    output_subjects: &[AclSubjectEntry],
+    previous_handle: &Option<[u8; 32]>,
+    previous_subjects: &Option<Vec<Pubkey>>,
+) -> Result<()> {
+    require!(
+        *previous_handle == Some(value.current_handle),
+        ZamaHostError::PreviousStateMismatch
+    );
+    require!(
+        previous_subjects.as_deref() == Some(value.subjects.as_slice()),
+        ZamaHostError::PreviousStateMismatch
+    );
+    require!(
+        output_subjects.len() == value.subjects.len()
+            && output_subjects
+                .iter()
+                .zip(value.subjects.iter())
+                .all(|(planned, stored)| planned.pubkey == *stored),
+        ZamaHostError::PreviousStateMismatch
+    );
+    Ok(())
+}
+
+/// Handle-binding parameters for one durable eval output.
+pub(super) struct OutputBinding {
+    pub(super) value_key: [u8; 32],
+    pub(super) sequence: u64,
+}
+
+/// Derives the output lineage's value key, pins the PDA, and reads its current
+/// MMR leaf count (0 when the lineage does not exist yet).
+pub(super) fn output_binding_from_account(
+    output_info: &AccountInfo,
+    output_acl_domain_key: Pubkey,
+    output_app_account: Pubkey,
+    output_encrypted_value_label: [u8; 32],
+) -> Result<OutputBinding> {
+    let value_key = zama_solana_acl::derive_value_key(
+        output_acl_domain_key.to_bytes(),
+        output_app_account.to_bytes(),
+        output_encrypted_value_label,
+    );
+    let (expected, _) = encrypted_value_address(value_key);
+    require_keys_eq!(
+        output_info.key(),
+        expected,
+        ZamaHostError::EncryptedValuePdaMismatch
+    );
+    let sequence = if output_info.owner == &crate::ID {
+        read_canonical_encrypted_value(output_info)?.leaf_count
+    } else {
+        0
+    };
+    Ok(OutputBinding {
+        value_key,
+        sequence,
+    })
 }
 
 fn remaining_account<'a, 'info>(
@@ -532,4 +577,81 @@ fn remaining_account<'a, 'info>(
         .ok_or_else(|| error!(ZamaHostError::InvalidFheEvalAccount))?;
     remaining_accounts_used[account_index] = true;
     Ok(account)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lineage(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
+        EncryptedValue {
+            acl_domain_key: Pubkey::default(),
+            app_account: Pubkey::default(),
+            encrypted_value_label: [0; 32],
+            current_handle: handle,
+            subjects: subjects.to_vec(),
+            subject_roles: vec![ACL_ROLE_USE; subjects.len()],
+            leaf_count: 0,
+            peaks: Vec::new(),
+            bump: 0,
+        }
+    }
+
+    fn grants(subjects: &[Pubkey]) -> Vec<AclSubjectEntry> {
+        subjects
+            .iter()
+            .map(|subject| AclSubjectEntry {
+                pubkey: *subject,
+                role_flags: ACL_ROLE_USE,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn durable_output_previous_state_accepts_exact_match() {
+        let subjects = vec![Pubkey::new_unique(), Pubkey::new_unique()];
+        let value = lineage([9; 32], &subjects);
+        assert!(validate_durable_output_previous_state(
+            &value,
+            &grants(&subjects),
+            &Some([9; 32]),
+            &Some(subjects),
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn durable_output_previous_state_rejects_mismatches() {
+        let subjects = vec![Pubkey::new_unique()];
+        let value = lineage([9; 32], &subjects);
+        // Wrong previous handle.
+        assert!(validate_durable_output_previous_state(
+            &value,
+            &grants(&subjects),
+            &Some([8; 32]),
+            &Some(subjects.clone()),
+        )
+        .is_err());
+        // Wrong previous subjects.
+        assert!(validate_durable_output_previous_state(
+            &value,
+            &grants(&subjects),
+            &Some([9; 32]),
+            &Some(vec![Pubkey::new_unique()]),
+        )
+        .is_err());
+        // Missing previous_* on an existing lineage (create shape on supersede).
+        assert!(
+            validate_durable_output_previous_state(&value, &grants(&subjects), &None, &None)
+                .is_err()
+        );
+        // Planned output subjects diverge from stored membership.
+        assert!(validate_durable_output_previous_state(
+            &value,
+            &grants(&[Pubkey::new_unique()]),
+            &Some([9; 32]),
+            &Some(subjects),
+        )
+        .is_err());
+    }
 }

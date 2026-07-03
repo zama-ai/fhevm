@@ -16,10 +16,10 @@ pub(super) fn expected_binary_eval_result(
     output_fhe_type: u8,
     handle_context: &EvalHandleContext<'_>,
     op_index: u16,
-    output: &FheEvalOutput,
+    binding: Option<&OutputBinding>,
 ) -> [u8; 32] {
-    match output {
-        FheEvalOutput::AllowedLocal => computed_eval_handle(
+    match binding {
+        None => computed_eval_handle(
             op,
             lhs,
             rhs,
@@ -31,11 +31,7 @@ pub(super) fn expected_binary_eval_result(
             *handle_context.context_id,
             op_index,
         ),
-        FheEvalOutput::AllowedDurable {
-            output_nonce_key,
-            output_nonce_sequence,
-            ..
-        } => computed_bound_eval_handle(
+        Some(binding) => computed_bound_eval_handle(
             op,
             lhs,
             rhs,
@@ -46,8 +42,8 @@ pub(super) fn expected_binary_eval_result(
             handle_context.unix_timestamp,
             *handle_context.context_id,
             op_index,
-            *output_nonce_key,
-            *output_nonce_sequence,
+            binding.value_key,
+            binding.sequence,
         ),
     }
 }
@@ -61,10 +57,10 @@ pub(super) fn expected_ternary_eval_result(
     output_fhe_type: u8,
     handle_context: &EvalHandleContext<'_>,
     op_index: u16,
-    output: &FheEvalOutput,
+    binding: Option<&OutputBinding>,
 ) -> [u8; 32] {
-    match output {
-        FheEvalOutput::AllowedLocal => computed_eval_ternary_handle(
+    match binding {
+        None => computed_eval_ternary_handle(
             op,
             control,
             if_true,
@@ -76,11 +72,7 @@ pub(super) fn expected_ternary_eval_result(
             *handle_context.context_id,
             op_index,
         ),
-        FheEvalOutput::AllowedDurable {
-            output_nonce_key,
-            output_nonce_sequence,
-            ..
-        } => computed_bound_eval_ternary_handle(
+        Some(binding) => computed_bound_eval_ternary_handle(
             op,
             control,
             if_true,
@@ -91,8 +83,8 @@ pub(super) fn expected_ternary_eval_result(
             handle_context.unix_timestamp,
             *handle_context.context_id,
             op_index,
-            *output_nonce_key,
-            *output_nonce_sequence,
+            binding.value_key,
+            binding.sequence,
         ),
     }
 }
@@ -103,10 +95,10 @@ pub(super) fn expected_trivial_eval_result(
     fhe_type: u8,
     handle_context: &EvalHandleContext<'_>,
     op_index: u16,
-    output: &FheEvalOutput,
+    binding: Option<&OutputBinding>,
 ) -> [u8; 32] {
-    match output {
-        FheEvalOutput::AllowedLocal => computed_eval_trivial_handle(
+    match binding {
+        None => computed_eval_trivial_handle(
             plaintext,
             fhe_type,
             handle_context.chain_id,
@@ -115,11 +107,7 @@ pub(super) fn expected_trivial_eval_result(
             *handle_context.context_id,
             op_index,
         ),
-        FheEvalOutput::AllowedDurable {
-            output_nonce_key,
-            output_nonce_sequence,
-            ..
-        } => computed_bound_eval_trivial_handle(
+        Some(binding) => computed_bound_eval_trivial_handle(
             plaintext,
             fhe_type,
             handle_context.chain_id,
@@ -127,8 +115,8 @@ pub(super) fn expected_trivial_eval_result(
             handle_context.unix_timestamp,
             *handle_context.context_id,
             op_index,
-            *output_nonce_key,
-            *output_nonce_sequence,
+            binding.value_key,
+            binding.sequence,
         ),
     }
 }
@@ -136,28 +124,24 @@ pub(super) fn expected_trivial_eval_result(
 pub(super) fn expected_rand_eval_seed(
     handle_context: &EvalHandleContext<'_>,
     op_index: u16,
-    output: &FheEvalOutput,
+    binding: Option<&OutputBinding>,
 ) -> [u8; 16] {
-    match output {
-        FheEvalOutput::AllowedLocal => computed_eval_rand_seed(
+    match binding {
+        None => computed_eval_rand_seed(
             handle_context.chain_id,
             *handle_context.previous_bank_hash,
             handle_context.unix_timestamp,
             *handle_context.context_id,
             op_index,
         ),
-        FheEvalOutput::AllowedDurable {
-            output_nonce_key,
-            output_nonce_sequence,
-            ..
-        } => computed_bound_eval_rand_seed(
+        Some(binding) => computed_bound_eval_rand_seed(
             handle_context.chain_id,
             *handle_context.previous_bank_hash,
             handle_context.unix_timestamp,
             *handle_context.context_id,
             op_index,
-            *output_nonce_key,
-            *output_nonce_sequence,
+            binding.value_key,
+            binding.sequence,
         ),
     }
 }

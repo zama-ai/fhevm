@@ -278,8 +278,7 @@ mod tests {
             },
             rhs: FheEvalOperand::AllowedDurable {
                 handle: [7u8; 32],
-                acl_record_index: 0,
-                permission_index: None,
+                encrypted_value_index: 0,
             },
             output_fhe_type: ty,
             output: FheEvalOutput::AllowedLocal,

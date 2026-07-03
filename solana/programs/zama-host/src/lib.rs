@@ -1,8 +1,8 @@
 //! Anchor program for the Solana FHEVM host PoC.
 //!
-//! `zama-host` owns the protocol-facing parts of the PoC:
-//! ACL records, handle derivation, FHE event emission, public-decrypt state,
-//! test/mock gates, and the small set of account witnesses that a future
+//! `zama-host` owns the protocol-facing parts of the PoC: the append-only
+//! `EncryptedValue` ACL/MMR model, handle derivation, FHE eval, public-decrypt
+//! state, test/mock gates, and the small set of account witnesses that a future
 //! Gateway/KMS request must verify.
 //!
 //! The program intentionally keeps app semantics outside this crate. App
@@ -118,223 +118,8 @@ pub mod zama_host {
         instructions::revoke_delegation_for_user_decryption(ctx)
     }
 
-    #[cfg(feature = "poc")]
-    pub fn test_emit_acl_allowed(
-        ctx: Context<TestEmitProtocolEvent>,
-        handle: [u8; 32],
-        subject: Pubkey,
-    ) -> Result<()> {
-        instructions::test_emit_acl_allowed(ctx, handle, subject)
-    }
-
-    pub fn allow_acl_subjects<'info>(
-        ctx: Context<'info, AllowAclSubjects<'info>>,
-        handle: [u8; 32],
-        subjects: Vec<AclSubjectEntry>,
-    ) -> Result<()> {
-        instructions::allow_acl_subjects(ctx, handle, subjects)
-    }
-
-    pub fn assert_acl_record(
-        ctx: Context<AssertAclRecord>,
-        nonce_key: [u8; 32],
-        nonce_sequence: u64,
-        acl_domain_key: Pubkey,
-        app_account: Pubkey,
-        encrypted_value_label: [u8; 32],
-        handle: [u8; 32],
-        subject: Pubkey,
-    ) -> Result<()> {
-        instructions::assert_acl_record(
-            ctx,
-            nonce_key,
-            nonce_sequence,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
-            handle,
-            subject,
-        )
-    }
-
-    pub fn allow_for_decryption(ctx: Context<AllowForDecryption>, handle: [u8; 32]) -> Result<()> {
-        instructions::allow_for_decryption(ctx, handle)
-    }
-
-    pub fn commit_handle_material(
-        ctx: Context<CommitHandleMaterial>,
-        key_id: [u8; 32],
-        ciphertext_digest: [u8; 32],
-        sns_ciphertext_digest: [u8; 32],
-        coprocessor_set_digest: [u8; 32],
-    ) -> Result<()> {
-        instructions::commit_handle_material(
-            ctx,
-            key_id,
-            ciphertext_digest,
-            sns_ciphertext_digest,
-            coprocessor_set_digest,
-        )
-    }
-
-    pub fn trivial_encrypt_and_bind(
-        ctx: Context<TrivialEncryptAndBind>,
-        plaintext: [u8; 32],
-        fhe_type: u8,
-        output_nonce_key: [u8; 32],
-        output_nonce_sequence: u64,
-        output_acl_domain_key: Pubkey,
-        output_app_account: Pubkey,
-        output_encrypted_value_label: [u8; 32],
-        output_subjects: Vec<AclSubjectEntry>,
-        output_public_decrypt: bool,
-    ) -> Result<()> {
-        instructions::trivial_encrypt_and_bind(
-            ctx,
-            plaintext,
-            fhe_type,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
-            output_public_decrypt,
-        )
-    }
-
-    pub fn fhe_binary_op(
-        ctx: Context<FheBinaryOp>,
-        op: FheBinaryOpCode,
-        lhs: [u8; 32],
-        rhs: [u8; 32],
-        scalar: bool,
-        output_fhe_type: u8,
-        result: [u8; 32],
-    ) -> Result<()> {
-        instructions::fhe_binary_op(ctx, op, lhs, rhs, scalar, output_fhe_type, result)
-    }
-
-    pub fn fhe_binary_op_and_bind_output(
-        ctx: Context<FheBinaryOpAndBindOutput>,
-        op: FheBinaryOpCode,
-        lhs: [u8; 32],
-        rhs: [u8; 32],
-        scalar: bool,
-        output_fhe_type: u8,
-        result: [u8; 32],
-        output_nonce_key: [u8; 32],
-        output_nonce_sequence: u64,
-        output_acl_domain_key: Pubkey,
-        output_app_account: Pubkey,
-        output_encrypted_value_label: [u8; 32],
-        output_subjects: Vec<AclSubjectEntry>,
-        output_public_decrypt: bool,
-    ) -> Result<()> {
-        instructions::fhe_binary_op_and_bind_output(
-            ctx,
-            op,
-            lhs,
-            rhs,
-            scalar,
-            output_fhe_type,
-            result,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
-            output_public_decrypt,
-        )
-    }
-
-    pub fn fhe_ternary_op_and_bind_output(
-        ctx: Context<FheTernaryOpAndBindOutput>,
-        op: FheTernaryOpCode,
-        control: [u8; 32],
-        if_true: [u8; 32],
-        if_false: [u8; 32],
-        output_fhe_type: u8,
-        result: [u8; 32],
-        output_nonce_key: [u8; 32],
-        output_nonce_sequence: u64,
-        output_acl_domain_key: Pubkey,
-        output_app_account: Pubkey,
-        output_encrypted_value_label: [u8; 32],
-        output_subjects: Vec<AclSubjectEntry>,
-        output_public_decrypt: bool,
-    ) -> Result<()> {
-        instructions::fhe_ternary_op_and_bind_output(
-            ctx,
-            op,
-            control,
-            if_true,
-            if_false,
-            output_fhe_type,
-            result,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
-            output_public_decrypt,
-        )
-    }
-
     pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -> Result<()> {
         instructions::fhe_eval(ctx, args)
-    }
-
-    pub fn fhe_rand_and_bind(
-        ctx: Context<FheRandAndBind>,
-        fhe_type: u8,
-        output_nonce_key: [u8; 32],
-        output_nonce_sequence: u64,
-        output_acl_domain_key: Pubkey,
-        output_app_account: Pubkey,
-        output_encrypted_value_label: [u8; 32],
-        output_subjects: Vec<AclSubjectEntry>,
-        output_public_decrypt: bool,
-    ) -> Result<()> {
-        instructions::fhe_rand_and_bind(
-            ctx,
-            fhe_type,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
-            output_public_decrypt,
-        )
-    }
-
-    pub fn fhe_rand_bounded_and_bind(
-        ctx: Context<FheRandBoundedAndBind>,
-        upper_bound: [u8; 32],
-        fhe_type: u8,
-        output_nonce_key: [u8; 32],
-        output_nonce_sequence: u64,
-        output_acl_domain_key: Pubkey,
-        output_app_account: Pubkey,
-        output_encrypted_value_label: [u8; 32],
-        output_subjects: Vec<AclSubjectEntry>,
-        output_public_decrypt: bool,
-    ) -> Result<()> {
-        instructions::fhe_rand_bounded_and_bind(
-            ctx,
-            upper_bound,
-            fhe_type,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            output_subjects,
-            output_public_decrypt,
-        )
     }
 
     #[cfg(feature = "poc")]
@@ -357,5 +142,45 @@ pub mod zama_host {
         result: [u8; 32],
     ) -> Result<()> {
         instructions::test_emit_fhe_rand(ctx, subject, seed, fhe_type, result)
+    }
+
+    // ---- RFC-024 EncryptedValue ACL model ----
+
+    pub fn create_encrypted_value(
+        ctx: Context<CreateEncryptedValue>,
+        acl_domain_key: Pubkey,
+        app_account: Pubkey,
+        encrypted_value_label: [u8; 32],
+        handle: [u8; 32],
+        subjects: Vec<EncryptedValueSubjectGrant>,
+    ) -> Result<()> {
+        instructions::create_encrypted_value(
+            ctx,
+            acl_domain_key,
+            app_account,
+            encrypted_value_label,
+            handle,
+            subjects,
+        )
+    }
+
+    pub fn allow_subjects(
+        ctx: Context<AllowEncryptedValueSubjects>,
+        subjects: Vec<EncryptedValueSubjectGrant>,
+    ) -> Result<()> {
+        instructions::allow_subjects(ctx, subjects)
+    }
+
+    pub fn update_encrypted_value(
+        ctx: Context<UpdateEncryptedValue>,
+        new_handle: [u8; 32],
+        previous_handle: [u8; 32],
+        previous_subjects: Vec<Pubkey>,
+    ) -> Result<()> {
+        instructions::update_encrypted_value(ctx, new_handle, previous_handle, previous_subjects)
+    }
+
+    pub fn make_handle_public(ctx: Context<MakeEncryptedValueHandlePublic>) -> Result<()> {
+        instructions::make_handle_public(ctx)
     }
 }

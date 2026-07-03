@@ -3,20 +3,14 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{program::invoke_signed, system_instruction, system_program};
 
-// AclRecordBoundEvent / AclSubjectAllowedEvent are only used by the emit funnels,
-// which are no-ops when `emit-events` is off.
-#[cfg(feature = "emit-events")]
-use crate::events::{AclRecordBoundEvent, AclSubjectAllowedEvent};
 use crate::{
     errors::ZamaHostError,
     events::HostConfigUpdatedEvent,
     state::{
-        acl_nonce_key, acl_permission_address, acl_record_address,
-        acl_record_subject_slots_are_canonical, assert_handle_for_chain, deny_subject_address,
-        host_config_address, role_flags_are_known, subject_has_role, AclPermission, AclRecord,
-        AclSubjectEntry, DenySubjectRecord, HostConfig, ACL_PERMISSION_SEED,
-        ACL_ROLE_PUBLIC_DECRYPT, ACL_ROLE_USE, EVENT_VERSION, MAX_ACL_SUBJECTS,
-        MAX_ACL_SUBJECT_GRANTS_PER_CALL,
+        assert_handle_for_chain, deny_subject_address, encrypted_value_address,
+        host_config_address, role_flags_are_known, subject_has_role, AclSubjectEntry,
+        DenySubjectRecord, EncryptedValue, HostConfig, ACL_ROLE_PUBLIC_DECRYPT, ACL_ROLE_USE,
+        EVENT_VERSION, MAX_ACL_SUBJECTS,
     },
 };
 
@@ -109,131 +103,9 @@ pub(super) fn check_hcu_ordering(total: u64, depth: u64) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn write_acl_record(
-    record: &mut Account<AclRecord>,
-    nonce_key: [u8; 32],
-    nonce_sequence: u64,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-    subjects: &[AclSubjectEntry],
-    public_decrypt: bool,
-    created_slot: u64,
-    bump: u8,
-) {
-    record.handle = handle;
-    record.nonce_key = nonce_key;
-    record.nonce_sequence = nonce_sequence;
-    record.acl_domain_key = acl_domain_key;
-    record.app_account = app_account;
-    record.encrypted_value_label = encrypted_value_label;
-    record.subjects = [Pubkey::default(); MAX_ACL_SUBJECTS];
-    record.subject_roles = [0; MAX_ACL_SUBJECTS];
-    record.subject_count = subjects.len() as u8;
-    record.overflow_subject_count = 0;
-    record.public_decrypt = public_decrypt;
-    record.material_commitment = Pubkey::default();
-    record.material_commitment_hash = [0; 32];
-    record.material_key_id = [0; 32];
-    record.created_slot = created_slot;
-    record.bump = bump;
-
-    for (index, subject) in subjects.iter().enumerate() {
-        record.subjects[index] = subject.pubkey;
-        record.subject_roles[index] = subject.role_flags;
-    }
-}
-
-pub(super) struct AclSubjectUpdate {
-    pub subject: AclSubjectEntry,
-    pub permission_record: Pubkey,
-    pub inline_index: u8,
-}
-
-pub(super) fn extend_acl_subjects<'info>(
-    payer: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    record_key: Pubkey,
-    record: &mut Account<AclRecord>,
-    subjects: &[AclSubjectEntry],
-    permission_accounts: &[AccountInfo<'info>],
-) -> Result<Vec<AclSubjectUpdate>> {
-    require!(
-        !subjects.is_empty() && subjects.len() <= MAX_ACL_SUBJECT_GRANTS_PER_CALL,
-        ZamaHostError::AclSubjectCapacityExceeded
-    );
-
-    let mut overflow_index = 0usize;
-    let mut subject_count = record.subject_count as usize;
-    let mut emitted = Vec::new();
-    for subject in subjects {
-        require!(
-            subject.pubkey != Pubkey::default() && role_flags_are_known(subject.role_flags),
-            ZamaHostError::AclSubjectRoleMismatch
-        );
-        if let Some(index) = record.inline_subject_index(subject.pubkey) {
-            let updated_roles = record.subject_roles[index] | subject.role_flags;
-            if updated_roles != record.subject_roles[index] {
-                record.subject_roles[index] = updated_roles;
-                emitted.push(AclSubjectUpdate {
-                    subject: *subject,
-                    permission_record: Pubkey::default(),
-                    inline_index: index as u8,
-                });
-            }
-            continue;
-        }
-        if subject_count < MAX_ACL_SUBJECTS {
-            let inline_index = subject_count as u8;
-            record.subjects[subject_count] = subject.pubkey;
-            record.subject_roles[subject_count] = subject.role_flags;
-            subject_count += 1;
-            emitted.push(AclSubjectUpdate {
-                subject: *subject,
-                permission_record: Pubkey::default(),
-                inline_index,
-            });
-            continue;
-        }
-
-        let permission = permission_accounts
-            .get(overflow_index)
-            .ok_or(ZamaHostError::AclPermissionMissing)?;
-        overflow_index += 1;
-        let update = create_or_update_permission(
-            payer,
-            system_program,
-            permission,
-            record_key,
-            subject.pubkey,
-            subject.role_flags,
-        )?;
-        if update.created {
-            record.overflow_subject_count = record.overflow_subject_count.saturating_add(1);
-        }
-        if update.changed {
-            emitted.push(AclSubjectUpdate {
-                subject: *subject,
-                permission_record: permission.key(),
-                inline_index: u8::MAX,
-            });
-        }
-    }
-    record.subject_count = subject_count as u8;
-    require!(
-        overflow_index == permission_accounts.len(),
-        ZamaHostError::AclPermissionMismatch
-    );
-    Ok(emitted)
-}
-
 pub(super) fn assert_output_acl_metadata(
     app_account_authority: Pubkey,
-    nonce_key: [u8; 32],
-    acl_domain_key: Pubkey,
     app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
     subjects: &[AclSubjectEntry],
 ) -> Result<()> {
     require_keys_eq!(
@@ -241,15 +113,9 @@ pub(super) fn assert_output_acl_metadata(
         app_account,
         ZamaHostError::AppAccountAuthorityMismatch
     );
-    assert_nonce_key_matches_fields(
-        nonce_key,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-    )?;
     require!(
         !subjects.is_empty() && subjects.len() <= MAX_ACL_SUBJECTS,
-        ZamaHostError::AclSubjectCapacityExceeded
+        ZamaHostError::EncryptedValueSubjectCapacityExceeded
     );
     require!(
         subjects
@@ -257,7 +123,7 @@ pub(super) fn assert_output_acl_metadata(
             .all(|subject| subject.pubkey != Pubkey::default()
                 && role_flags_are_known(subject.role_flags)
                 && subject_has_role(subject.role_flags, ACL_ROLE_USE)),
-        ZamaHostError::AclSubjectRoleMismatch
+        ZamaHostError::SubjectMissingRole
     );
     for (index, subject) in subjects.iter().enumerate() {
         require!(
@@ -265,18 +131,77 @@ pub(super) fn assert_output_acl_metadata(
                 .iter()
                 .skip(index + 1)
                 .any(|later| later.pubkey == subject.pubkey),
-            ZamaHostError::AclSubjectRoleMismatch
+            ZamaHostError::SubjectMissingRole
         );
     }
     Ok(())
 }
 
-pub(super) fn assert_public_decrypt_not_set_at_birth(output_public_decrypt: bool) -> Result<()> {
+/// Decodes an `EncryptedValue` and checks it is program-owned and the
+/// canonical PDA for its stored `(domain, app_account, label)` triple.
+pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue> {
+    require_keys_eq!(
+        *info.owner,
+        crate::ID,
+        ZamaHostError::EncryptedValueAccountInvalid
+    );
+    let data = info.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    let value = EncryptedValue::try_deserialize(&mut slice)?;
+    let (expected, expected_bump) = encrypted_value_address(value.value_key());
+    require_keys_eq!(
+        info.key(),
+        expected,
+        ZamaHostError::EncryptedValuePdaMismatch
+    );
     require!(
-        !output_public_decrypt,
-        ZamaHostError::PublicDecryptAtBirthUnsupported
+        value.bump == expected_bump,
+        ZamaHostError::EncryptedValuePdaMismatch
+    );
+    Ok(value)
+}
+
+/// Durable input authorization: the account must be a canonical program-owned
+/// `EncryptedValue`, `handle` must be its *current* handle (for this chain),
+/// and `subject` must be a current member holding `role`.
+pub(super) fn assert_encrypted_value_subject_role(
+    info: &AccountInfo,
+    handle: [u8; 32],
+    chain_id: u64,
+    subject: Pubkey,
+    role: u8,
+) -> Result<()> {
+    let value = read_canonical_encrypted_value(info)?;
+    assert_handle_for_chain(value.current_handle, chain_id)?;
+    require!(
+        value.current_handle == handle,
+        ZamaHostError::PreviousStateMismatch
+    );
+    require!(
+        value.subject_index(subject).is_some(),
+        ZamaHostError::SubjectNotFound
+    );
+    require!(
+        value.subject_has_role(subject, role),
+        ZamaHostError::SubjectMissingRole
     );
     Ok(())
+}
+
+/// Non-asserting role query on a canonical `EncryptedValue` whose current
+/// handle must match; used for public-decrypt capability propagation.
+pub(super) fn encrypted_value_subject_has_role(
+    info: &AccountInfo,
+    handle: [u8; 32],
+    subject: Pubkey,
+    role: u8,
+) -> Result<bool> {
+    let value = read_canonical_encrypted_value(info)?;
+    require!(
+        value.current_handle == handle,
+        ZamaHostError::PreviousStateMismatch
+    );
+    Ok(value.subject_has_role(subject, role))
 }
 
 pub(super) fn assert_derived_public_decrypt_roles_allowed(
@@ -295,239 +220,6 @@ pub(super) fn assert_derived_public_decrypt_roles_allowed(
             && !app_account_authority.executable
             && !app_account_authority.data_is_empty(),
         ZamaHostError::DerivedOutputPublicDecryptDenied
-    );
-    Ok(())
-}
-
-pub(super) fn assert_record(
-    record_info: &AccountInfo,
-    record: &Account<AclRecord>,
-    nonce_key: [u8; 32],
-    nonce_sequence: u64,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-    subject: Pubkey,
-    permission_info: Option<&AccountInfo>,
-) -> Result<()> {
-    assert_nonce_key_matches_fields(
-        nonce_key,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-    )?;
-    assert_canonical_acl_record(record_info, record)?;
-    require!(
-        record.nonce_key == nonce_key,
-        ZamaHostError::AclNonceKeyMismatch
-    );
-    require!(
-        record.nonce_sequence == nonce_sequence,
-        ZamaHostError::AclNonceSequenceMismatch
-    );
-    require_keys_eq!(
-        record.acl_domain_key,
-        acl_domain_key,
-        ZamaHostError::AclDomainKeyMismatch
-    );
-    require_keys_eq!(
-        record.app_account,
-        app_account,
-        ZamaHostError::AclAppAccountMismatch
-    );
-    require!(
-        record.encrypted_value_label == encrypted_value_label,
-        ZamaHostError::AclEncryptedValueLabelMismatch
-    );
-    assert_record_subject_role(
-        record,
-        record_info.key(),
-        handle,
-        subject,
-        ACL_ROLE_USE,
-        permission_info,
-    )
-}
-
-pub(super) fn assert_canonical_acl_record(
-    record_info: &AccountInfo,
-    record: &Account<AclRecord>,
-) -> Result<()> {
-    require!(
-        record_info.data_len() == 8 + AclRecord::SPACE,
-        ZamaHostError::AclRecordPdaMismatch
-    );
-    assert_canonical_acl_record_data(record_info.key(), record)
-}
-
-pub(super) fn assert_acl_record_handle_for_chain(record: &AclRecord, chain_id: u64) -> Result<()> {
-    assert_handle_for_chain(record.handle, chain_id)
-}
-
-fn assert_canonical_acl_record_data(record_key: Pubkey, record: &AclRecord) -> Result<()> {
-    assert_nonce_key_matches_fields(
-        record.nonce_key,
-        record.acl_domain_key,
-        record.app_account,
-        record.encrypted_value_label,
-    )?;
-
-    let (expected, expected_bump) = acl_record_address(record.nonce_key, record.nonce_sequence);
-    require_keys_eq!(record_key, expected, ZamaHostError::AclRecordPdaMismatch);
-    require!(
-        record.bump == expected_bump,
-        ZamaHostError::AclRecordPdaMismatch
-    );
-    require!(
-        acl_record_subject_slots_are_canonical(record),
-        ZamaHostError::AclSubjectRoleMismatch
-    );
-    Ok(())
-}
-
-pub(super) fn assert_unchecked_acl_record_subject_role(
-    record_info: &AccountInfo,
-    handle: [u8; 32],
-    chain_id: u64,
-    subject: Pubkey,
-    role: u8,
-    permission_info: Option<&AccountInfo>,
-) -> Result<()> {
-    require_keys_eq!(
-        *record_info.owner,
-        crate::ID,
-        ZamaHostError::AclRecordPdaMismatch
-    );
-    let record = read_acl_record(record_info)?;
-    assert_canonical_acl_record_data(record_info.key(), &record)?;
-    assert_acl_record_handle_for_chain(&record, chain_id)?;
-    assert_record_subject_role(
-        &record,
-        record_info.key(),
-        handle,
-        subject,
-        role,
-        permission_info,
-    )
-}
-
-pub(super) fn unchecked_acl_record_subject_has_role(
-    record_info: &AccountInfo,
-    handle: [u8; 32],
-    subject: Pubkey,
-    role: u8,
-    permission_info: Option<&AccountInfo>,
-) -> Result<bool> {
-    require_keys_eq!(
-        *record_info.owner,
-        crate::ID,
-        ZamaHostError::AclRecordPdaMismatch
-    );
-    let record = read_acl_record(record_info)?;
-    assert_canonical_acl_record_data(record_info.key(), &record)?;
-    require!(record.handle == handle, ZamaHostError::AclHandleMismatch);
-    if let Some(index) = record.inline_subject_index(subject) {
-        require!(
-            permission_info.is_none(),
-            ZamaHostError::AclPermissionMismatch
-        );
-        return Ok(subject_has_role(record.subject_roles[index], role));
-    }
-    let Some(permission_info) = permission_info else {
-        return Ok(false);
-    };
-    let permission = read_permission(permission_info)?;
-    let (expected, expected_bump) = acl_permission_address(record_info.key(), subject);
-    require_keys_eq!(
-        permission_info.key(),
-        expected,
-        ZamaHostError::AclPermissionPdaMismatch
-    );
-    require!(
-        permission.bump == expected_bump,
-        ZamaHostError::AclPermissionPdaMismatch
-    );
-    require_keys_eq!(
-        permission.acl_record,
-        record_info.key(),
-        ZamaHostError::AclPermissionMismatch
-    );
-    require_keys_eq!(
-        permission.subject,
-        subject,
-        ZamaHostError::AclPermissionMismatch
-    );
-    Ok(subject_has_role(permission.role_flags, role))
-}
-
-pub(super) fn read_acl_record(record_info: &AccountInfo) -> Result<AclRecord> {
-    require!(
-        record_info.data_len() == 8 + AclRecord::SPACE,
-        ZamaHostError::AclRecordPdaMismatch
-    );
-    let data = record_info.try_borrow_data()?;
-    let mut data_slice: &[u8] = &data;
-    AclRecord::try_deserialize(&mut data_slice)
-}
-
-fn assert_nonce_key_matches_fields(
-    nonce_key: [u8; 32],
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> Result<()> {
-    require!(
-        nonce_key == acl_nonce_key(acl_domain_key, app_account, encrypted_value_label),
-        ZamaHostError::AclNonceKeyMismatch
-    );
-    Ok(())
-}
-
-pub(super) fn assert_record_subject_role(
-    record: &AclRecord,
-    record_key: Pubkey,
-    handle: [u8; 32],
-    subject: Pubkey,
-    role: u8,
-    permission_info: Option<&AccountInfo>,
-) -> Result<()> {
-    require!(record.handle == handle, ZamaHostError::AclHandleMismatch);
-    if let Some(index) = record.inline_subject_index(subject) {
-        require!(
-            permission_info.is_none(),
-            ZamaHostError::AclPermissionMismatch
-        );
-        if subject_has_role(record.subject_roles[index], role) {
-            return Ok(());
-        }
-        return err!(ZamaHostError::AclSubjectRoleMismatch);
-    }
-    let permission_info = permission_info.ok_or(ZamaHostError::AclPermissionMissing)?;
-    let permission = read_permission(permission_info)?;
-    let (expected, expected_bump) = acl_permission_address(record_key, subject);
-    require_keys_eq!(
-        permission_info.key(),
-        expected,
-        ZamaHostError::AclPermissionPdaMismatch
-    );
-    require!(
-        permission.bump == expected_bump,
-        ZamaHostError::AclPermissionPdaMismatch
-    );
-    require_keys_eq!(
-        permission.acl_record,
-        record_key,
-        ZamaHostError::AclPermissionMismatch
-    );
-    require_keys_eq!(
-        permission.subject,
-        subject,
-        ZamaHostError::AclPermissionMismatch
-    );
-    require!(
-        subject_has_role(permission.role_flags, role),
-        ZamaHostError::AclSubjectRoleMismatch
     );
     Ok(())
 }
@@ -575,85 +267,6 @@ pub(super) fn is_absent_deny_record(info: &AccountInfo) -> Result<bool> {
         return Ok(true);
     }
     Ok(false)
-}
-
-struct PermissionUpdate {
-    created: bool,
-    changed: bool,
-}
-
-fn create_or_update_permission<'info>(
-    payer: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    permission_info: &AccountInfo<'info>,
-    record_key: Pubkey,
-    subject: Pubkey,
-    role_flags: u8,
-) -> Result<PermissionUpdate> {
-    let (expected, bump) = acl_permission_address(record_key, subject);
-    require_keys_eq!(
-        permission_info.key(),
-        expected,
-        ZamaHostError::AclPermissionPdaMismatch
-    );
-    let created = permission_info.owner != &crate::ID;
-    create_pda_if_needed(
-        payer,
-        permission_info,
-        system_program,
-        8 + AclPermission::SPACE,
-        &[
-            ACL_PERMISSION_SEED,
-            record_key.as_ref(),
-            subject.as_ref(),
-            &[bump],
-        ],
-    )?;
-
-    let mut permission = if created {
-        AclPermission {
-            acl_record: record_key,
-            subject,
-            role_flags: 0,
-            bump,
-        }
-    } else {
-        read_permission(permission_info)?
-    };
-    require_keys_eq!(
-        permission.acl_record,
-        record_key,
-        ZamaHostError::AclPermissionMismatch
-    );
-    require_keys_eq!(
-        permission.subject,
-        subject,
-        ZamaHostError::AclPermissionMismatch
-    );
-    require!(
-        permission.bump == bump,
-        ZamaHostError::AclPermissionPdaMismatch
-    );
-    let updated_roles = permission.role_flags | role_flags;
-    let changed = created || updated_roles != permission.role_flags;
-    permission.role_flags = updated_roles;
-    write_account(permission_info, &permission)?;
-    Ok(PermissionUpdate { created, changed })
-}
-
-fn read_permission(permission_info: &AccountInfo) -> Result<AclPermission> {
-    require_keys_eq!(
-        *permission_info.owner,
-        crate::ID,
-        ZamaHostError::AclPermissionMismatch
-    );
-    require!(
-        permission_info.data_len() == 8 + AclPermission::SPACE,
-        ZamaHostError::AclPermissionMismatch
-    );
-    let data = permission_info.try_borrow_data()?;
-    let mut data_slice: &[u8] = &data;
-    AclPermission::try_deserialize(&mut data_slice)
 }
 
 pub(super) fn create_pda_if_needed<'info>(
@@ -748,60 +361,6 @@ pub(super) fn write_account<T: AccountSerialize>(info: &AccountInfo, account: &T
     let mut cursor = &mut data[..];
     account.try_serialize(&mut cursor)?;
     Ok(())
-}
-
-/// With `emit-events` disabled, off-chain reconstruction is the sole event source,
-/// so the ACL-record-bound emit is a no-op.
-#[cfg(not(feature = "emit-events"))]
-pub(super) fn emit_record_bound(_record_key: Pubkey, _record: &AclRecord) {}
-
-#[cfg(feature = "emit-events")]
-pub(super) fn emit_record_bound(record_key: Pubkey, record: &AclRecord) {
-    emit!(AclRecordBoundEvent {
-        version: EVENT_VERSION,
-        acl_record: record_key,
-        handle: record.handle,
-        nonce_key: record.nonce_key,
-        nonce_sequence: record.nonce_sequence,
-        acl_domain_key: record.acl_domain_key,
-        app_account: record.app_account,
-        encrypted_value_label: record.encrypted_value_label,
-        subject_count: record.subject_count,
-        public_decrypt: record.public_decrypt,
-        created_slot: record.created_slot,
-    });
-}
-
-/// With `emit-events` disabled, off-chain reconstruction is the sole event source,
-/// so the ACL-subject-allowed emit is a no-op.
-#[cfg(not(feature = "emit-events"))]
-pub(super) fn emit_subject_event(
-    _record_key: Pubkey,
-    _handle: [u8; 32],
-    _subject: AclSubjectEntry,
-    _overflow_permission_record: Pubkey,
-) {
-}
-
-#[cfg(feature = "emit-events")]
-pub(super) fn emit_subject_event(
-    record_key: Pubkey,
-    handle: [u8; 32],
-    subject: AclSubjectEntry,
-    overflow_permission_record: Pubkey,
-) {
-    let updated_slot = Clock::get().map_or(0, |clock| clock.slot);
-    emit!(AclSubjectAllowedEvent {
-        version: EVENT_VERSION,
-        acl_record: record_key,
-        handle,
-        authority_subject: Pubkey::default(),
-        subject: subject.pubkey.to_bytes(),
-        role_flags: subject.role_flags,
-        overflow_permission_record,
-        inline_index: u8::MAX,
-        updated_slot,
-    });
 }
 
 #[cfg(test)]

@@ -33,18 +33,6 @@ pub enum ZamaHostError {
     /// The input verifier authority account does not match host config.
     #[msg("input verifier authority does not match config")]
     InputVerifierMismatch,
-    /// The material commitment authority account does not match host config.
-    #[msg("material authority does not match config")]
-    MaterialAuthorityMismatch,
-    /// A material commitment account is not the canonical PDA for its ACL record.
-    #[msg("material commitment account does not match the canonical PDA")]
-    MaterialCommitmentPdaMismatch,
-    /// A material commitment payload or account is invalid.
-    #[msg("material commitment is invalid")]
-    InvalidMaterialCommitment,
-    /// The ACL record is already sealed to a material commitment.
-    #[msg("ACL record already has sealed material")]
-    MaterialAlreadySealed,
     /// A signed input proof has an invalid handle list, payload, or binding.
     #[msg("input proof is invalid")]
     InvalidInputProof,
@@ -105,48 +93,9 @@ pub enum ZamaHostError {
     /// The app account did not sign the ACL birth instruction.
     #[msg("ACL app account authority does not match app account")]
     AppAccountAuthorityMismatch,
-    /// The supplied nonce key does not match the app metadata fields.
-    #[msg("ACL record nonce key does not match")]
-    AclNonceKeyMismatch,
-    /// The ACL record account is not the canonical PDA for its stored nonce.
-    #[msg("ACL record address is not the canonical PDA for its nonce key")]
-    AclRecordPdaMismatch,
-    /// The ACL record nonce sequence does not match the expected sequence.
-    #[msg("ACL record nonce sequence does not match")]
-    AclNonceSequenceMismatch,
-    /// The ACL record domain key does not match the expected domain.
-    #[msg("ACL record domain key does not match")]
-    AclDomainKeyMismatch,
-    /// The ACL record app account does not match the expected app account.
-    #[msg("ACL record app account does not match")]
-    AclAppAccountMismatch,
-    /// The ACL record encrypted value label does not match the expected label.
-    #[msg("ACL record encrypted value label does not match")]
-    AclEncryptedValueLabelMismatch,
-    /// The ACL record stores a different handle than the instruction requested.
-    #[msg("ACL record handle does not match")]
-    AclHandleMismatch,
-    /// The subject is not allowed by the ACL record.
-    #[msg("ACL record subject is not allowed")]
-    AclSubjectMismatch,
-    /// The subject exists but does not carry the role required by the instruction.
-    #[msg("ACL record subject lacks the required role")]
-    AclSubjectRoleMismatch,
-    /// Public decrypt release must happen through allow_for_decryption after handle birth.
-    #[msg("public decrypt cannot be set during ACL record birth")]
+    /// Public decrypt release must happen through an explicit make-public instruction, never at birth.
+    #[msg("public decrypt cannot be set at encrypted value birth")]
     PublicDecryptAtBirthUnsupported,
-    /// Inline subject capacity was exceeded without overflow witnesses, or input was empty.
-    #[msg("ACL record has too many inline subjects")]
-    AclSubjectCapacityExceeded,
-    /// An overflow permission PDA is required but was not supplied.
-    #[msg("ACL permission account is required for an overflow subject")]
-    AclPermissionMissing,
-    /// An overflow permission account is not the canonical PDA.
-    #[msg("ACL permission account does not match the canonical PDA")]
-    AclPermissionPdaMismatch,
-    /// An overflow permission account does not match the requested record or subject.
-    #[msg("ACL permission account data does not match the requested subject")]
-    AclPermissionMismatch,
     /// A deny-list witness is required but was not supplied.
     #[msg("ACL deny-list account is required")]
     AclDenyRecordMissing,
@@ -171,9 +120,6 @@ pub enum ZamaHostError {
     /// The slot-hash sysvar did not contain the expected previous hash.
     #[msg("previous bank hash is not available")]
     PreviousBankHashUnavailable,
-    /// A caller-supplied output handle does not match the host formula.
-    #[msg("computed handle does not match host formula")]
-    ComputedHandleMismatch,
     /// A PDA account was not fresh or canonical after creation.
     #[msg("PDA creation target is invalid")]
     PdaCreationMismatch,
@@ -225,4 +171,30 @@ pub enum ZamaHostError {
     /// The attested `contract_chain_id` does not match the host chain id (EVM `contractChainId == block.chainid`).
     #[msg("attested contract chain id does not match the host chain id")]
     AttestationChainIdMismatch,
+
+    // ---- RFC-024 EncryptedValue ACL model ----
+    /// An `EncryptedValue` account is not the canonical PDA for its value key.
+    #[msg("encrypted value account does not match the canonical PDA")]
+    EncryptedValuePdaMismatch,
+    /// An `EncryptedValue` account has an unexpected owner or discriminator.
+    #[msg("encrypted value account is not a valid EncryptedValue account")]
+    EncryptedValueAccountInvalid,
+    /// A subject list would exceed `MAX_ENCRYPTED_VALUE_SUBJECTS`.
+    #[msg("encrypted value subject capacity exceeded")]
+    EncryptedValueSubjectCapacityExceeded,
+    /// `previous_handle`/`previous_subjects` did not match the account's current state.
+    #[msg("encrypted value previous state does not match the account")]
+    PreviousStateMismatch,
+    /// The caller subject is missing the role required by the instruction.
+    #[msg("encrypted value subject lacks the required role")]
+    SubjectMissingRole,
+    /// The caller subject is not a current member of the encrypted value.
+    #[msg("encrypted value subject is not a current member")]
+    SubjectNotFound,
+    /// `create_encrypted_value` was called with an empty subject list.
+    #[msg("encrypted value must be created with at least one subject")]
+    EncryptedValueEmptySubjects,
+    /// The MMR peaks/leaf-count invariant was violated.
+    #[msg("encrypted value MMR state is inconsistent")]
+    EncryptedValueMmrInconsistent,
 }

@@ -31,6 +31,8 @@ solana-instructions-sysvar = "3.0.1"
 solana-sysvar = { version = "3.1.1", features = ["bytemuck"] }
 solana-ed25519-instruction = { path = "../../crates/solana-ed25519-instruction" }
 solana-secp256k1-recover = "3.1.1"
+zama-solana-acl = { path = "../../crates/zama-solana-acl" }
+borsh = "1"
 
 [dev-dependencies]
 k256 = { version = "0.13.4", features = ["ecdsa"] }

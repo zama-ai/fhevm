@@ -1,28 +1,9 @@
 use super::*;
 
+/// One compute event per step; the RFC-024 ACL lifecycle is event-free
+/// (indexers reconstruct MMR leaves from instruction data).
 pub(super) fn eval_event_capacity(args: &FheEvalArgs) -> usize {
-    args.steps
-        .iter()
-        .map(|step| 1 + durable_output_event_capacity(eval_step_output(step)))
-        .sum()
-}
-
-fn eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
-    match step {
-        FheEvalStep::Binary { output, .. }
-        | FheEvalStep::Ternary { output, .. }
-        | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. } => output,
-    }
-}
-
-fn durable_output_event_capacity(output: &FheEvalOutput) -> usize {
-    match output {
-        FheEvalOutput::AllowedDurable {
-            output_subjects, ..
-        } => 1 + output_subjects.len() * 2,
-        FheEvalOutput::AllowedLocal => 0,
-    }
+    args.steps.len()
 }
 
 // Anchor self-CPI events allocate one CPI frame per event. Large composed eval
@@ -35,7 +16,6 @@ const EVENT_VERSION_BYTES: usize = 1;
 const EVENT_ENUM_BYTES: usize = 1;
 const EVENT_BOOL_BYTES: usize = 1;
 const EVENT_U8_BYTES: usize = 1;
-const EVENT_U64_BYTES: usize = 8;
 const EVENT_PUBKEY_BYTES: usize = 32;
 const EVENT_HANDLE_BYTES: usize = 32;
 const EVENT_SEED_BYTES: usize = 16;
@@ -63,28 +43,6 @@ const FHE_RAND_EVENT_BYTES: usize = EVENT_VERSION_BYTES
     + EVENT_SEED_BYTES
     + EVENT_U8_BYTES
     + EVENT_HANDLE_BYTES;
-const ACL_RECORD_BOUND_EVENT_BYTES: usize = EVENT_VERSION_BYTES
-    + EVENT_PUBKEY_BYTES
-    + EVENT_HANDLE_BYTES
-    + EVENT_HANDLE_BYTES
-    + EVENT_U64_BYTES
-    + EVENT_PUBKEY_BYTES
-    + EVENT_PUBKEY_BYTES
-    + EVENT_HANDLE_BYTES
-    + EVENT_U8_BYTES
-    + EVENT_BOOL_BYTES
-    + EVENT_U64_BYTES;
-const ACL_ALLOWED_EVENT_BYTES: usize =
-    EVENT_VERSION_BYTES + EVENT_HANDLE_BYTES + EVENT_PUBKEY_BYTES;
-const ACL_SUBJECT_ALLOWED_EVENT_BYTES: usize = EVENT_VERSION_BYTES
-    + EVENT_PUBKEY_BYTES
-    + EVENT_HANDLE_BYTES
-    + EVENT_PUBKEY_BYTES
-    + EVENT_PUBKEY_BYTES
-    + EVENT_U8_BYTES
-    + EVENT_PUBKEY_BYTES
-    + EVENT_U8_BYTES
-    + EVENT_U64_BYTES;
 
 pub(super) fn should_emit_eval_events_as_cpi(event_count: usize) -> bool {
     event_count <= MAX_CPI_EVAL_EVENTS
@@ -107,24 +65,11 @@ fn estimated_eval_program_data_log_bytes(args: &FheEvalArgs) -> usize {
 }
 
 fn eval_step_program_data_log_bytes(step: &FheEvalStep, log_transport: bool) -> usize {
-    let mut bytes = 0;
     if log_transport {
-        bytes += anchor_program_data_log_bytes(eval_step_event_payload_bytes(step));
+        anchor_program_data_log_bytes(eval_step_event_payload_bytes(step))
+    } else {
+        0
     }
-
-    if let FheEvalOutput::AllowedDurable {
-        output_subjects, ..
-    } = eval_step_output(step)
-    {
-        bytes += anchor_program_data_log_bytes(ACL_RECORD_BOUND_EVENT_BYTES);
-        bytes +=
-            output_subjects.len() * anchor_program_data_log_bytes(ACL_SUBJECT_ALLOWED_EVENT_BYTES);
-        if log_transport {
-            bytes += output_subjects.len() * anchor_program_data_log_bytes(ACL_ALLOWED_EVENT_BYTES);
-        }
-    }
-
-    bytes
 }
 
 fn eval_step_event_payload_bytes(step: &FheEvalStep) -> usize {
@@ -150,7 +95,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn eval_event_capacity_counts_all_deferred_events() {
+    fn eval_event_capacity_is_one_compute_event_per_step() {
         let args = FheEvalArgs {
             context_id: [1; 32],
             steps: vec![
@@ -167,24 +112,18 @@ mod tests {
             ],
         };
 
-        assert_eq!(eval_event_capacity(&args), 1 + 1 + 1 + 3 * 2);
+        assert_eq!(eval_event_capacity(&args), 2);
     }
 
     #[test]
     fn eval_event_transport_threshold_is_event_count_based() {
         assert!(should_emit_eval_events_as_cpi(MAX_CPI_EVAL_EVENTS));
         assert!(!should_emit_eval_events_as_cpi(MAX_CPI_EVAL_EVENTS + 1));
-        assert_eq!(
-            durable_output_event_capacity(&durable_output_with_subjects(MAX_ACL_SUBJECTS)),
-            1 + MAX_ACL_SUBJECTS * 2
-        );
-        assert!(!should_emit_eval_events_as_cpi(
-            MAX_FHE_EVAL_OPS * (1 + 1 + MAX_ACL_SUBJECTS * 2)
-        ));
+        assert!(!should_emit_eval_events_as_cpi(MAX_FHE_EVAL_OPS * 2));
     }
 
     #[test]
-    fn eval_event_log_budget_counts_rich_acl_logs_for_cpi_frames() {
+    fn eval_event_log_budget_is_zero_for_cpi_frames() {
         let args = FheEvalArgs {
             context_id: [1; 32],
             steps: vec![FheEvalStep::TrivialEncrypt {
@@ -195,42 +134,15 @@ mod tests {
         };
 
         assert!(should_emit_eval_events_as_cpi(eval_event_capacity(&args)));
-        assert_eq!(
-            estimated_eval_program_data_log_bytes(&args),
-            anchor_program_data_log_bytes(ACL_RECORD_BOUND_EVENT_BYTES)
-                + anchor_program_data_log_bytes(ACL_SUBJECT_ALLOWED_EVENT_BYTES)
-        );
+        // No ACL lifecycle events remain, so CPI-transported frames log nothing.
+        assert_eq!(estimated_eval_program_data_log_bytes(&args), 0);
         assert_eval_log_budget(&args).unwrap();
     }
 
     #[test]
-    fn eval_event_log_budget_allows_threshold_replay_shape() {
-        let args = FheEvalArgs {
-            context_id: [1; 32],
-            steps: vec![FheEvalStep::Binary {
-                op: FheBinaryOpCode::Add,
-                lhs: FheEvalOperand::AllowedDurable {
-                    handle: [1; 32],
-                    acl_record_index: 0,
-                    permission_index: None,
-                },
-                rhs: FheEvalOperand::AllowedDurable {
-                    handle: [2; 32],
-                    acl_record_index: 1,
-                    permission_index: None,
-                },
-                output_fhe_type: 5,
-                output: durable_output_with_subjects(4),
-            }],
-        };
-
-        assert!(!should_emit_eval_events_as_cpi(eval_event_capacity(&args)));
-        assert!(estimated_eval_program_data_log_bytes(&args) < MAX_FHE_EVAL_EVENT_LOG_BYTES);
-        assert_eval_log_budget(&args).unwrap();
-    }
-
-    #[test]
-    fn eval_event_log_budget_rejects_worst_case_durable_frame() {
+    fn eval_event_log_budget_allows_worst_case_durable_frame() {
+        // The worst-case frame (max steps, max subjects) now fits the log
+        // budget: only compute events remain and per-step payloads are small.
         let args = FheEvalArgs {
             context_id: [1; 32],
             steps: (0..MAX_FHE_EVAL_OPS)
@@ -242,16 +154,15 @@ mod tests {
                 .collect(),
         };
 
-        assert!(estimated_eval_program_data_log_bytes(&args) > MAX_FHE_EVAL_EVENT_LOG_BYTES);
-        assert!(assert_eval_log_budget(&args).is_err());
+        assert!(!should_emit_eval_events_as_cpi(eval_event_capacity(&args)));
+        assert!(estimated_eval_program_data_log_bytes(&args) < MAX_FHE_EVAL_EVENT_LOG_BYTES);
+        assert_eval_log_budget(&args).unwrap();
     }
 
     fn durable_output_with_subjects(subject_count: usize) -> FheEvalOutput {
         FheEvalOutput::AllowedDurable {
-            output_acl_record_index: 0,
+            output_encrypted_value_index: 0,
             output_app_account_authority_index: None,
-            output_nonce_key: [0; 32],
-            output_nonce_sequence: 0,
             output_acl_domain_key: Pubkey::new_unique(),
             output_app_account: Pubkey::new_unique(),
             output_encrypted_value_label: [0; 32],
@@ -261,7 +172,8 @@ mod tests {
                     role_flags: ACL_ROLE_USE,
                 })
                 .collect(),
-            output_public_decrypt: false,
+            previous_handle: None,
+            previous_subjects: None,
         }
     }
 }

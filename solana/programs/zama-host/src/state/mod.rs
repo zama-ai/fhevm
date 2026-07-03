@@ -14,19 +14,15 @@ use crate::constants::{
 };
 use crate::errors::ZamaHostError;
 
-pub mod acl_permission;
-pub mod acl_record;
 pub mod deny_subject_record;
-pub mod handle_material_commitment;
+pub mod encrypted_value;
 pub mod host_chain_address;
 pub mod host_config;
 pub mod kms_context;
 pub mod user_decryption_delegation;
 
-pub use acl_permission::*;
-pub use acl_record::*;
 pub use deny_subject_record::*;
-pub use handle_material_commitment::*;
+pub use encrypted_value::*;
 pub use host_chain_address::*;
 pub use host_config::*;
 pub use kms_context::*;
@@ -201,14 +197,13 @@ pub struct CoprocessorInputAttestation {
 /// Operand source for a composed FHE eval operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheEvalOperand {
-    /// Input allowed through durable ACL state: a canonical ACL record in `remaining_accounts`.
+    /// Input allowed through durable ACL state: a canonical `EncryptedValue`
+    /// account in `remaining_accounts` whose current handle matches.
     AllowedDurable {
-        /// Handle expected in the ACL record.
+        /// Handle expected as the encrypted value's current handle.
         handle: [u8; 32],
-        /// Index into `remaining_accounts` for the ACL record.
-        acl_record_index: u16,
-        /// Optional index into `remaining_accounts` for overflow subject permission.
-        permission_index: Option<u16>,
+        /// Index into `remaining_accounts` for the `EncryptedValue` account.
+        encrypted_value_index: u16,
     },
     /// Instruction-local value produced by an earlier operation in this `fhe_eval`; allowed only
     /// inside the current evaluation scope and never stored.
@@ -232,30 +227,34 @@ pub enum FheEvalOperand {
 pub enum FheEvalOutput {
     /// Output stays allowed only inside the current `fhe_eval` scope; no durable ACL record.
     AllowedLocal,
-    /// Output is bound into durable ACL state (a new ACL record).
+    /// Output is bound into durable ACL state: the `EncryptedValue` lineage PDA
+    /// is created when absent, or superseded (`update_encrypted_value`
+    /// semantics) when it exists.
     AllowedDurable {
-        /// Index into `remaining_accounts` for the output ACL record PDA.
-        output_acl_record_index: u16,
+        /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
+        output_encrypted_value_index: u16,
         /// Optional index into `remaining_accounts` for the app account authority signer.
         ///
         /// `None` uses the fixed `app_account_authority` account in the eval
         /// context. `Some(index)` requires that remaining account to be a signer
         /// and to match `output_app_account`.
         output_app_account_authority_index: Option<u16>,
-        /// Nonce key for the output ACL record.
-        output_nonce_key: [u8; 32],
-        /// Nonce sequence for the output ACL record.
-        output_nonce_sequence: u64,
-        /// ACL domain key for the output ACL record.
+        /// ACL domain key for the output lineage.
         output_acl_domain_key: Pubkey,
-        /// App account authorized to create the output ACL record.
+        /// App account authorized to bind the output lineage.
         output_app_account: Pubkey,
-        /// Encrypted value label for the output ACL record.
+        /// Encrypted value label for the output lineage.
         output_encrypted_value_label: [u8; 32],
-        /// Initial subjects on the output ACL record.
+        /// Subjects on the output lineage. On create these are the initial
+        /// subjects; on supersede they must equal the stored subjects exactly.
         output_subjects: Vec<AclSubjectEntry>,
-        /// Initial public decrypt flag on the output ACL record.
-        output_public_decrypt: bool,
+        /// Superseded handle: `None` on create, `Some(current_handle)` on update.
+        /// Carried in instruction data so indexers can reconstruct the appended
+        /// MMR leaves without reading the account; validated against the account.
+        previous_handle: Option<[u8; 32]>,
+        /// Superseded subject set, parallel to `previous_handle` (`None` on create,
+        /// exact stored subjects on update). Same indexer-reconstruction purpose.
+        previous_subjects: Option<Vec<Pubkey>>,
     },
 }
 
@@ -287,37 +286,6 @@ pub fn subject_has_role(role_flags: u8, role: u8) -> bool {
 /// Returns true when a role bitset is nonempty and uses only known role bits.
 pub fn role_flags_are_known(role_flags: u8) -> bool {
     role_flags != 0 && role_flags & !ACL_ROLE_KNOWN == 0
-}
-
-/// Returns true when the inline ACL subject arrays are exact and KMS-decodable.
-pub fn acl_record_subject_slots_are_canonical(record: &AclRecord) -> bool {
-    let subject_count = record.subject_count as usize;
-    if subject_count > MAX_ACL_SUBJECTS {
-        return false;
-    }
-    let mut index = 0usize;
-    while index < subject_count {
-        let subject = record.subjects[index];
-        let role_flags = record.subject_roles[index];
-        if subject == Pubkey::default() || !role_flags_are_known(role_flags) {
-            return false;
-        }
-        let mut previous = 0usize;
-        while previous < index {
-            if record.subjects[previous] == subject {
-                return false;
-            }
-            previous += 1;
-        }
-        index += 1;
-    }
-    while index < MAX_ACL_SUBJECTS {
-        if record.subjects[index] != Pubkey::default() || record.subject_roles[index] != 0 {
-            return false;
-        }
-        index += 1;
-    }
-    true
 }
 
 /// Returns the chain id embedded in a handle.
@@ -488,26 +456,6 @@ pub fn kms_context_address(context_id: u64) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[KMS_CONTEXT_SEED, &context_id.to_le_bytes()], &crate::ID)
 }
 
-/// Returns the canonical ACL record address for a nonce key and sequence.
-pub fn acl_record_address(nonce_key: [u8; 32], nonce_sequence: u64) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[
-            ACL_RECORD_SEED,
-            nonce_key.as_ref(),
-            &nonce_sequence.to_le_bytes(),
-        ],
-        &crate::ID,
-    )
-}
-
-/// Returns the canonical overflow permission address for a subject.
-pub fn acl_permission_address(acl_record: Pubkey, subject: Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[ACL_PERMISSION_SEED, acl_record.as_ref(), subject.as_ref()],
-        &crate::ID,
-    )
-}
-
 /// Returns the canonical deny-list address for a subject.
 pub fn deny_subject_address(subject: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[DENY_SUBJECT_SEED, subject.as_ref()], &crate::ID)
@@ -528,62 +476,6 @@ pub fn user_decryption_delegation_address(
         ],
         &crate::ID,
     )
-}
-
-/// Returns the canonical material commitment address for an ACL record.
-pub fn handle_material_address(acl_record: Pubkey) -> (Pubkey, u8) {
-    let (host_config, _) = host_config_address();
-    Pubkey::find_program_address(
-        &[
-            HANDLE_MATERIAL_SEED,
-            host_config.as_ref(),
-            acl_record.as_ref(),
-        ],
-        &crate::ID,
-    )
-}
-
-/// Computes the commitment hash stored in [`HandleMaterialCommitment`].
-pub fn handle_material_commitment_hash(
-    material_commitment: Pubkey,
-    acl_record: Pubkey,
-    key_id: [u8; 32],
-    ciphertext_digest: [u8; 32],
-    sns_ciphertext_digest: [u8; 32],
-    coprocessor_set_digest: [u8; 32],
-) -> [u8; 32] {
-    let (host_config, _) = host_config_address();
-    hashv(&[
-        b"zama-solana-material-commitment-v1",
-        host_config.as_ref(),
-        crate::ID.as_ref(),
-        material_commitment.as_ref(),
-        acl_record.as_ref(),
-        &key_id,
-        &ciphertext_digest,
-        &sns_ciphertext_digest,
-        &coprocessor_set_digest,
-    ])
-    .to_bytes()
-}
-
-/// Derives the app-controlled nonce key for one encrypted field.
-///
-/// The nonce key intentionally contains app metadata, not the opaque handle.
-/// This lets the app predeclare the ACL account address before the host program
-/// computes or binds the final handle.
-pub fn acl_nonce_key(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> [u8; 32] {
-    hashv(&[
-        b"zama-acl-nonce-key-v1",
-        acl_domain_key.as_ref(),
-        app_account.as_ref(),
-        &encrypted_value_label,
-    ])
-    .to_bytes()
 }
 
 /// Derives an unbound binary-op handle using the current slot context.
@@ -1562,11 +1454,6 @@ where
     entries
         .into_iter()
         .find_map(|(slot, hash)| (slot < current_slot).then_some(hash))
-}
-
-/// Returns true when an ACL record grants the base use role to an inline subject.
-pub fn record_allows(record: &AclRecord, subject: Pubkey) -> bool {
-    record.inline_subject_has_role(subject, ACL_ROLE_USE)
 }
 
 #[cfg(test)]

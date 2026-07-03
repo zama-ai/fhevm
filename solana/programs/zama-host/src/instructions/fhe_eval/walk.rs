@@ -17,19 +17,29 @@ use super::*;
 /// transient producer lookups), parameterized by the phase-specific account
 /// access and transient-session handling.
 pub(super) trait EvalStepVisitor {
-    /// Subject required to hold the input role on durable ACL records.
+    /// Subject required to hold the input role on durable `EncryptedValue` accounts.
     fn subject(&self) -> Pubkey;
     /// Transient values produced by earlier steps in this frame.
     fn produced(&self) -> &[ProducedValue];
 
-    /// Resolves a durable encrypted input, fetching its ACL record (and optional
-    /// overflow permission witness) the way this phase fetches accounts.
+    /// Resolves a durable encrypted input, fetching its `EncryptedValue`
+    /// account the way this phase fetches accounts.
     fn resolve_durable_operand(
         &mut self,
         handle: [u8; 32],
-        acl_record_index: u16,
-        permission_index: Option<u16>,
+        encrypted_value_index: u16,
     ) -> Result<ResolvedOperand>;
+
+    /// Resolves the handle-binding parameters for a durable output: the
+    /// lineage's value key plus its current MMR leaf count (0 when the PDA does
+    /// not exist yet). `None` for instruction-local outputs. Reading the leaf
+    /// count keeps bound handles unique across successive supersessions of the
+    /// same lineage within one eval frame.
+    fn resolve_output_binding<'info>(
+        &mut self,
+        ctx: &Context<'info, FheEval<'info>>,
+        output: &FheEvalOutput,
+    ) -> Result<Option<OutputBinding>>;
 
     /// Resolves an external input verified in-frame via the coprocessor attestation. Admission
     /// resolves it structurally (the handle is known from the operand data); execution re-runs the
@@ -59,9 +69,8 @@ pub(super) trait EvalStepVisitor {
         match operand {
             FheEvalOperand::AllowedDurable {
                 handle,
-                acl_record_index,
-                permission_index,
-            } => self.resolve_durable_operand(*handle, *acl_record_index, *permission_index),
+                encrypted_value_index,
+            } => self.resolve_durable_operand(*handle, *encrypted_value_index),
             FheEvalOperand::AllowedLocal { producer_index } => self
                 .produced()
                 .get(*producer_index as usize)
@@ -139,6 +148,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     rhs.scalar,
                     *output_fhe_type,
                 )?;
+                let binding = visitor.resolve_output_binding(ctx, output)?;
                 let result = expected_binary_eval_result(
                     *op,
                     lhs.handle,
@@ -147,7 +157,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     *output_fhe_type,
                     handle_context,
                     op_index,
-                    output,
+                    binding.as_ref(),
                 );
                 visitor.record_op_event(EvalEvent::Binary(FheBinaryOpEvent {
                     version: EVENT_VERSION,
@@ -183,6 +193,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     if_false.handle,
                     *output_fhe_type,
                 )?;
+                let binding = visitor.resolve_output_binding(ctx, output)?;
                 let result = expected_ternary_eval_result(
                     *op,
                     control.handle,
@@ -191,7 +202,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     *output_fhe_type,
                     handle_context,
                     op_index,
-                    output,
+                    binding.as_ref(),
                 );
                 visitor.record_op_event(EvalEvent::Ternary(FheTernaryOpEvent {
                     version: EVENT_VERSION,
@@ -216,12 +227,13 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 output,
             } => {
                 assert_supported_fhe_type(*fhe_type)?;
+                let binding = visitor.resolve_output_binding(ctx, output)?;
                 let result = expected_trivial_eval_result(
                     *plaintext,
                     *fhe_type,
                     handle_context,
                     op_index,
-                    output,
+                    binding.as_ref(),
                 );
                 visitor.record_op_event(EvalEvent::Trivial(TrivialEncryptEvent {
                     version: EVENT_VERSION,
@@ -234,7 +246,8 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
             }
             FheEvalStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
-                let seed = expected_rand_eval_seed(handle_context, op_index, output);
+                let binding = visitor.resolve_output_binding(ctx, output)?;
+                let seed = expected_rand_eval_seed(handle_context, op_index, binding.as_ref());
                 let result = computed_rand_handle(seed, *fhe_type, handle_context.chain_id);
                 visitor.record_op_event(EvalEvent::Rand(FheRandEvent {
                     version: EVENT_VERSION,

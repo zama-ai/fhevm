@@ -1,23 +1,6 @@
 use super::event_budget::assert_eval_log_budget;
 use super::*;
 
-pub(super) fn assert_eval_step_birth_policy(step: &FheEvalStep) -> Result<()> {
-    let output = match step {
-        FheEvalStep::Binary { output, .. }
-        | FheEvalStep::Ternary { output, .. }
-        | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. } => output,
-    };
-    if let FheEvalOutput::AllowedDurable {
-        output_public_decrypt,
-        ..
-    } = output
-    {
-        assert_public_decrypt_not_set_at_birth(*output_public_decrypt)?;
-    }
-    Ok(())
-}
-
 pub(super) fn preflight_eval_frame(
     remaining_accounts: &[AccountInfo],
     args: &FheEvalArgs,
@@ -125,14 +108,10 @@ fn preflight_encrypted_operand(
 ) -> Result<()> {
     match operand {
         FheEvalOperand::AllowedDurable {
-            acl_record_index,
-            permission_index,
+            encrypted_value_index,
             ..
         } => {
-            preflight.mark_account(*acl_record_index)?;
-            if let Some(index) = permission_index {
-                preflight.mark_account(*index)?;
-            }
+            preflight.mark_account(*encrypted_value_index)?;
         }
         FheEvalOperand::AllowedLocal { producer_index } => {
             require!(
@@ -152,11 +131,11 @@ fn preflight_output(output: &FheEvalOutput, preflight: &mut EvalPreflight) -> Re
     match output {
         FheEvalOutput::AllowedLocal => {}
         FheEvalOutput::AllowedDurable {
-            output_acl_record_index,
+            output_encrypted_value_index,
             output_app_account_authority_index,
             ..
         } => {
-            preflight.mark_account(*output_acl_record_index)?;
+            preflight.mark_account(*output_encrypted_value_index)?;
             if let Some(index) = output_app_account_authority_index {
                 preflight.mark_account(*index)?;
             }
@@ -178,13 +157,11 @@ mod tests {
                 op: FheBinaryOpCode::Add,
                 lhs: FheEvalOperand::AllowedDurable {
                     handle: [1; 32],
-                    acl_record_index: 0,
-                    permission_index: None,
+                    encrypted_value_index: 0,
                 },
                 rhs: FheEvalOperand::AllowedDurable {
                     handle: [2; 32],
-                    acl_record_index: 1,
-                    permission_index: None,
+                    encrypted_value_index: 1,
                 },
                 output_fhe_type: 5,
                 output: FheEvalOutput::AllowedLocal,
