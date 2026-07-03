@@ -559,18 +559,6 @@ impl ContractConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct KeyUrl {
-    pub fhe_public_key: KeyData,
-    pub crs: KeyData,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct KeyData {
-    pub data_id: String,
-    pub url: String,
-}
-
 #[derive(Debug, Deserialize, Clone)]
 pub struct HostChainConfig {
     pub chain_id: u64,
@@ -585,6 +573,15 @@ pub struct ProtocolConfigSettings {
     pub retry: RetrySettings,
 }
 
+/// `/v2/keyurl` poller settings (KMSGeneration contract on the Ethereum host chain).
+#[derive(Debug, Deserialize, Clone)]
+pub struct KeyUrlConfig {
+    /// KMSGeneration contract address on the Ethereum host chain (source for `/v2/keyurl`).
+    pub kms_generation_address: String,
+    /// How often the `/v2/keyurl` poller reads the active key/CRS/KMS context from the host chain.
+    pub poll_interval_ms: u64,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 /// Top-level configuration structure.
 ///
@@ -594,8 +591,6 @@ pub struct Settings {
     pub gateway: GatewayConfig,
     /// Logging configuration
     pub log: LogConfig,
-    /// Hard-coded data (from config for keyurl)
-    pub keyurl: KeyUrl,
     /// HTTP server configuration
     pub http: HttpConfig,
     /// Metrics server configuration
@@ -607,6 +602,8 @@ pub struct Settings {
     pub host_chains: Vec<HostChainConfig>,
     /// ProtocolConfig contract settings for dynamic threshold resolution
     pub protocol_config: ProtocolConfigSettings,
+    /// `/v2/keyurl` poller settings (KMSGeneration contract)
+    pub keyurl: KeyUrlConfig,
     /// User-decryption signature check configuration
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
 }
@@ -678,6 +675,9 @@ impl Settings {
         // Validate protocol_config settings
         settings.validate_protocol_config()?;
 
+        // Validate keyurl poller settings
+        settings.validate_keyurl()?;
+
         // Validate listener pool configuration
         settings.validate_listener_pool_config()?;
 
@@ -695,6 +695,10 @@ impl Settings {
                 &self.gateway.contracts.input_verification_address,
             ),
             ("protocol_config", &self.protocol_config.address),
+            (
+                "keyurl.kms_generation_address",
+                &self.keyurl.kms_generation_address,
+            ),
         ];
 
         for (name, address) in addresses {
@@ -756,6 +760,15 @@ impl Settings {
         if pc.retry.max_attempts < 1 {
             return Err(AppConfigError::Config(
                 "protocol_config.retry.max_attempts must be at least 1".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_keyurl(&self) -> Result<(), AppConfigError> {
+        if self.keyurl.poll_interval_ms < 1 {
+            return Err(AppConfigError::Config(
+                "keyurl.poll_interval_ms must be at least 1".to_string(),
             ));
         }
         Ok(())
@@ -1467,9 +1480,10 @@ mod tests {
 
         // keyurl: env overrides
         assert_eq!(
-            settings.keyurl.fhe_public_key.data_id,
-            "env-override-key-id"
+            settings.keyurl.kms_generation_address,
+            "0x00000000000000000000000000000000000000ff"
         );
+        assert_eq!(settings.keyurl.poll_interval_ms, 12000);
 
         // storage: env overrides
         assert!(settings.storage.sql_database_url.contains("env-override"));

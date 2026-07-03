@@ -16,6 +16,8 @@ use fhevm_gateway_bindings::decryption::IDecryption::{
     RequestValiditySeconds, UserDecryptionRequestPayload,
 };
 use fhevm_host_bindings::acl::ACL;
+use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
+use fhevm_host_bindings::ikms_generation::IKMSGeneration;
 use rand::{rng, RngExt};
 use std::str::FromStr;
 use tempfile::TempDir;
@@ -220,6 +222,18 @@ impl TestSetup {
 
         // Register default ACL allow-all pattern on host mock
         register_default_host_acl_allow_all(&host_server_clone, &settings.host_chains);
+
+        // Register KMSGeneration / ProtocolConfig getter responses so the /v2/keyurl poller's
+        // startup fetch succeeds (the relayer gates startup on the first successful poll).
+        let kms_generation_addr = Address::from_str(&settings.keyurl.kms_generation_address)
+            .expect("Invalid kms_generation_address in test config");
+        let protocol_config_addr = Address::from_str(&settings.protocol_config.address)
+            .expect("Invalid protocol_config address in test config");
+        register_default_keyurl_poller_responses(
+            &host_server_clone,
+            kms_generation_addr,
+            protocol_config_addr,
+        );
 
         // Start relayer service with isolated settings
         let cancellation_token = CancellationToken::new();
@@ -975,6 +989,91 @@ pub fn register_host_acl_partial_deny(
             Response::call_success(host_acl_multicall_deny_response(count, &denied_indices))
         },
         UsageLimit::Unlimited,
+    );
+}
+
+/// Canned on-chain values the `/v2/keyurl` poller reads in tests. Exposed so test
+/// assertions can compare the served `dataId` against them. `contextId` / `epochId`
+/// are read by the poller (change detection) but not part of the served response.
+#[allow(dead_code)]
+pub const TEST_KEYURL_KEY_ID: u64 = 3;
+#[allow(dead_code)]
+pub const TEST_KEYURL_CRS_ID: u64 = 4;
+#[allow(dead_code)]
+pub const TEST_KEYURL_CONTEXT_ID: u64 = 1;
+#[allow(dead_code)]
+pub const TEST_KEYURL_EPOCH_ID: u64 = 1;
+#[allow(dead_code)]
+pub const TEST_KEYURL_KEY_URL: &str = "https://example.com/PublicKey/0400";
+#[allow(dead_code)]
+pub const TEST_KEYURL_CRS_URL: &str = "https://example.com/CRS/0500";
+
+/// Register a single `eth_call` response keyed by destination address and 4-byte selector.
+fn register_call_response(
+    host_server: &MockServer,
+    to: Address,
+    selector: [u8; 4],
+    return_data: Vec<u8>,
+) {
+    let return_bytes = Bytes::from(return_data);
+    host_server.on_call(
+        move |params| params.to == to && params.input.len() >= 4 && params.input[0..4] == selector,
+        Response::call_success(return_bytes.clone()),
+        UsageLimit::Unlimited,
+    );
+}
+
+/// Register canned `KMSGeneration` / `ProtocolConfig` getter responses on the host mock so the
+/// `/v2/keyurl` poller's startup fetch succeeds. Without these the relayer would fail its startup
+/// gate (the poller blocks startup until the first successful poll).
+fn register_default_keyurl_poller_responses(
+    host_server: &MockServer,
+    kms_generation_address: Address,
+    protocol_config_address: Address,
+) {
+    // getActiveKeyId() -> uint256
+    register_call_response(
+        host_server,
+        kms_generation_address,
+        IKMSGeneration::getActiveKeyIdCall::SELECTOR,
+        U256::from(TEST_KEYURL_KEY_ID).abi_encode(),
+    );
+    // getActiveCrsId() -> uint256
+    register_call_response(
+        host_server,
+        kms_generation_address,
+        IKMSGeneration::getActiveCrsIdCall::SELECTOR,
+        U256::from(TEST_KEYURL_CRS_ID).abi_encode(),
+    );
+    // getCurrentKmsContextAndEpoch() -> (uint256 contextId, uint256 epochId)
+    register_call_response(
+        host_server,
+        protocol_config_address,
+        IProtocolConfig::getCurrentKmsContextAndEpochCall::SELECTOR,
+        (
+            U256::from(TEST_KEYURL_CONTEXT_ID),
+            U256::from(TEST_KEYURL_EPOCH_ID),
+        )
+            .abi_encode_params(),
+    );
+    // getKeyMaterials(uint256) -> (string[] urls, KeyDigest[] digests)
+    // The digests array is empty, so its element type does not affect the ABI bytes (an empty
+    // dynamic array encodes as just a length of 0); `Vec<Bytes>` stands in for `Vec<KeyDigest>`.
+    let key_urls = vec![TEST_KEYURL_KEY_URL.to_string()];
+    let empty_digests: Vec<Bytes> = Vec::new();
+    register_call_response(
+        host_server,
+        kms_generation_address,
+        IKMSGeneration::getKeyMaterialsCall::SELECTOR,
+        (key_urls, empty_digests).abi_encode_params(),
+    );
+    // getCrsMaterials(uint256) -> (string[] urls, bytes digest)
+    let crs_urls = vec![TEST_KEYURL_CRS_URL.to_string()];
+    register_call_response(
+        host_server,
+        kms_generation_address,
+        IKMSGeneration::getCrsMaterialsCall::SELECTOR,
+        (crs_urls, Bytes::new()).abi_encode_params(),
     );
 }
 

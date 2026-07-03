@@ -5,7 +5,9 @@
 
 mod common;
 
-use crate::common::utils::TestSetup;
+use crate::common::utils::{
+    TestSetup, TEST_KEYURL_CRS_ID, TEST_KEYURL_CRS_URL, TEST_KEYURL_KEY_ID, TEST_KEYURL_KEY_URL,
+};
 use rstest::rstest;
 use serde_json::Value;
 
@@ -104,6 +106,32 @@ mod helpers {
             "'dataId' should be a string"
         );
         assert!(crs_2048["urls"].is_array(), "'urls' should be an array");
+
+        // --- Chain-sourced values (served from the host-chain poller) ---
+
+        // dataId carries the real on-chain getActiveKeyId / getActiveCrsId (decimal string).
+        assert_eq!(
+            fhe_public_key["dataId"].as_str().unwrap(),
+            TEST_KEYURL_KEY_ID.to_string(),
+            "fhePublicKey.dataId should equal on-chain getActiveKeyId"
+        );
+        assert_eq!(
+            crs_2048["dataId"].as_str().unwrap(),
+            TEST_KEYURL_CRS_ID.to_string(),
+            "crs.2048.dataId should equal on-chain getActiveCrsId"
+        );
+
+        // urls come from getKeyMaterials / getCrsMaterials.
+        assert_eq!(
+            fhe_public_key["urls"][0].as_str().unwrap(),
+            TEST_KEYURL_KEY_URL,
+            "fhePublicKey.urls[0] should come from getKeyMaterials"
+        );
+        assert_eq!(
+            crs_2048["urls"][0].as_str().unwrap(),
+            TEST_KEYURL_CRS_URL,
+            "crs.2048.urls[0] should come from getCrsMaterials"
+        );
 
         body
     }
