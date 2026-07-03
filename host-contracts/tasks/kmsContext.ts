@@ -186,11 +186,12 @@ export interface KmsContextSwitchStatus {
   previousContextId?: bigint;
   contextState?: ContextState;
   newSigners?: string[];
-  newSignersConfirmed?: string[];
-  newSignersOutstanding?: string[];
-  previousSignersConfirmed?: string[];
+  newTxSenders?: string[];
+  newTxSendersConfirmed?: string[];
+  newTxSendersOutstanding?: string[];
+  previousTxSendersConfirmed?: string[];
   previousConfirmationCount?: number;
-  previousSignerThreshold?: number; // the (n - t + 1) old-side quorum target
+  previousTxSenderThreshold?: number; // the (n - t + 1) old-side quorum target
   contextCreationQuorumReached?: boolean;
   stuckBelowPreviousThreshold?: boolean;
 
@@ -276,7 +277,11 @@ async function fillContextSwitch(
   pc: ProtocolConfig,
   status: KmsContextSwitchStatus,
   newContextEvent: {
-    args: { contextId: bigint; previousContextId: bigint; kmsNodeParams: { signerAddress: string }[] };
+    args: {
+      contextId: bigint;
+      previousContextId: bigint;
+      kmsNodeParams: { txSenderAddress: string; signerAddress: string }[];
+    };
   },
   newEpochEvents: { args: { kmsContextId: bigint; epochId: bigint } }[],
   fromBlock: number,
@@ -301,14 +306,17 @@ async function fillContextSwitch(
     status.abortReason = 'context-destroyed';
   }
 
-  // New signer set: read from the event (the pending context is not yet readable via views).
+  // New committee: read from the event (the pending context is not yet readable via views).
+  // Signers drive the epoch phase; tx-senders drive the creation-confirmation tally.
   const newSigners = newContextEvent.args.kmsNodeParams.map((node) => checksum(node.signerAddress));
   status.newSigners = newSigners;
+  const newTxSenders = newContextEvent.args.kmsNodeParams.map((node) => checksum(node.txSenderAddress));
+  status.newTxSenders = newTxSenders;
 
   // Old-side (n - t + 1) target: the previous context is still active, so its views are readable.
   const previousSigners: string[] = await pc.getKmsSignersForContext(previousContextId);
   const previousMpcThreshold: bigint = await pc.getMpcThresholdForContext(previousContextId);
-  status.previousSignerThreshold = previousSigners.length - Number(previousMpcThreshold) + 1;
+  status.previousTxSenderThreshold = previousSigners.length - Number(previousMpcThreshold) + 1;
 
   // Tally creation confirmations from events.
   const creationConfirmations = await pc.queryFilter(
@@ -319,23 +327,23 @@ async function fillContextSwitch(
   const newConfirmed = new Set<string>();
   const previousConfirmed = new Set<string>();
   for (const event of creationConfirmations) {
-    const signer = checksum(event.args.signer);
-    if (event.args.isNewSigner) {
-      newConfirmed.add(signer);
+    const txSender = checksum(event.args.txSender);
+    if (event.args.isNewTxSender) {
+      newConfirmed.add(txSender);
     }
-    if (event.args.isPreviousSigner) {
-      previousConfirmed.add(signer);
+    if (event.args.isPreviousTxSender) {
+      previousConfirmed.add(txSender);
     }
   }
-  status.newSignersConfirmed = [...newConfirmed];
-  status.newSignersOutstanding = outstanding(newSigners, newConfirmed);
-  status.previousSignersConfirmed = [...previousConfirmed];
+  status.newTxSendersConfirmed = [...newConfirmed];
+  status.newTxSendersOutstanding = outstanding(newTxSenders, newConfirmed);
+  status.previousTxSendersConfirmed = [...previousConfirmed];
   status.previousConfirmationCount = previousConfirmed.size;
 
   status.contextCreationQuorumReached =
-    status.newSignersOutstanding.length === 0 && previousConfirmed.size >= status.previousSignerThreshold;
+    status.newTxSendersOutstanding.length === 0 && previousConfirmed.size >= status.previousTxSenderThreshold;
   status.stuckBelowPreviousThreshold =
-    !status.contextCreationQuorumReached && previousConfirmed.size < status.previousSignerThreshold;
+    !status.contextCreationQuorumReached && previousConfirmed.size < status.previousTxSenderThreshold;
 
   // `Created` is signaled by the NewKmsEpoch emitted once the creation quorum is reached; it also
   // reveals the pending epoch id, which has no view getter.
@@ -432,13 +440,13 @@ function printStatus(status: KmsContextSwitchStatus): void {
     console.log('pendingContextId:', status.pendingContextId?.toString());
     console.log('previousContextId:', status.previousContextId?.toString());
     console.log('contextState:', status.contextState);
-    console.log('new signers confirmed:', `${status.newSignersConfirmed?.length}/${status.newSigners?.length}`);
-    if (status.newSignersOutstanding && status.newSignersOutstanding.length > 0) {
-      console.log('  outstanding new signers:', status.newSignersOutstanding.join(', '));
+    console.log('new tx senders confirmed:', `${status.newTxSendersConfirmed?.length}/${status.newTxSenders?.length}`);
+    if (status.newTxSendersOutstanding && status.newTxSendersOutstanding.length > 0) {
+      console.log('  outstanding new tx senders:', status.newTxSendersOutstanding.join(', '));
     }
     console.log(
-      'previous signers confirmed:',
-      `${status.previousConfirmationCount} (need >= ${status.previousSignerThreshold} = n - t + 1)`,
+      'previous tx senders confirmed:',
+      `${status.previousConfirmationCount} (need >= ${status.previousTxSenderThreshold} = n - t + 1)`,
     );
     if (status.stuckBelowPreviousThreshold) {
       console.log('  ⚠ stuck below the (n - t + 1) old-side confirmation target');

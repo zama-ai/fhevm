@@ -166,14 +166,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function _activatePendingTwoNodeContext(uint256 contextId, uint256 epochId, uint256 pk0, uint256 pk1) internal {
-        _confirmContextCreation(contextId, kmsPk0);
-        _confirmContextCreation(contextId, kmsPk1);
-        if (pk0 != kmsPk0 && pk0 != kmsPk1) {
-            _confirmContextCreation(contextId, pk0);
-        }
-        if (pk1 != kmsPk0 && pk1 != kmsPk1 && pk1 != pk0) {
-            _confirmContextCreation(contextId, pk1);
-        }
+        // New and previous committees share tx-senders 0xA1/0xA2, so each confirmation counts on both sides.
+        _confirmContextCreation(contextId, kmsTxSender0);
+        _confirmContextCreation(contextId, kmsTxSender1);
         _confirmEpochActivation(contextId, epochId, pk0, kmsTxSender0, 0, 0);
         _confirmEpochActivation(contextId, epochId, pk1, kmsTxSender1, 0, 0);
     }
@@ -186,23 +181,20 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256 pk1,
         address txSender1
     ) internal {
-        _confirmContextCreation(contextId, kmsPk0);
-        _confirmContextCreation(contextId, kmsPk1);
-        if (pk0 != kmsPk0 && pk0 != kmsPk1) {
-            _confirmContextCreation(contextId, pk0);
-        }
-        if (pk1 != kmsPk0 && pk1 != kmsPk1 && pk1 != pk0) {
-            _confirmContextCreation(contextId, pk1);
-        }
+        // Disjoint rotation: previous tx-senders for the old quorum, new tx-senders for the new quorum.
+        _confirmContextCreation(contextId, kmsTxSender0);
+        _confirmContextCreation(contextId, kmsTxSender1);
+        _confirmContextCreation(contextId, txSender0);
+        _confirmContextCreation(contextId, txSender1);
         _confirmEpochActivation(contextId, epochId, pk0, txSender0, 0, 0);
         _confirmEpochActivation(contextId, epochId, pk1, txSender1, 0, 0);
     }
 
     function _activatePendingFourNodeContext(uint256 contextId, uint256 epochId) internal {
-        _confirmContextCreation(contextId, kmsPk0);
-        _confirmContextCreation(contextId, kmsPk1);
-        _confirmContextCreation(contextId, kmsPk2);
-        _confirmContextCreation(contextId, kmsPk3);
+        _confirmContextCreation(contextId, kmsTxSender0);
+        _confirmContextCreation(contextId, kmsTxSender1);
+        _confirmContextCreation(contextId, kmsTxSender2);
+        _confirmContextCreation(contextId, kmsTxSender3);
         _confirmEpochActivation(contextId, epochId, kmsPk0, kmsTxSender0, 0, 0);
         _confirmEpochActivation(contextId, epochId, kmsPk1, kmsTxSender1, 0, 0);
         _confirmEpochActivation(contextId, epochId, kmsPk2, kmsTxSender2, 0, 0);
@@ -587,21 +579,21 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
 
         // Override both tx sender and signer fields: `_makeKmsNodeParams` reuses kmsTxSender0/1 by
-        // default, and we need a context fully disjoint from the original committee.
+        // default, and we need a context fully disjoint from the original committee {kmsPk0, kmsPk1}.
         KmsNodeParams[] memory rotatedNodes = _makeKmsNodeParams(2);
         rotatedNodes[0].txSenderAddress = address(0xB1);
-        rotatedNodes[0].signerAddress = kmsSigner1;
+        rotatedNodes[0].signerAddress = kmsSigner2;
         rotatedNodes[1].txSenderAddress = address(0xB2);
-        rotatedNodes[1].signerAddress = kmsSigner2;
+        rotatedNodes[1].signerAddress = kmsSigner3;
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
         _activatePendingDisjointTwoNodeContext(
             KMS_CONTEXT_COUNTER_BASE + 2,
             EPOCH_COUNTER_BASE + 2,
-            kmsPk1,
-            address(0xB1),
             kmsPk2,
+            address(0xB1),
+            kmsPk3,
             address(0xB2)
         );
 
@@ -664,9 +656,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
-        _confirmContextCreation(KMS_CONTEXT_COUNTER_BASE + 2, kmsPk0);
-        _confirmContextCreation(KMS_CONTEXT_COUNTER_BASE + 2, kmsPk1);
-        _confirmContextCreation(KMS_CONTEXT_COUNTER_BASE + 2, kmsPk2);
+        _confirmContextCreation(KMS_CONTEXT_COUNTER_BASE + 2, kmsTxSender0);
+        _confirmContextCreation(KMS_CONTEXT_COUNTER_BASE + 2, kmsTxSender1);
 
         vm.prank(owner);
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);

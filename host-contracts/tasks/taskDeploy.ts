@@ -1173,7 +1173,9 @@ task('task:setLzReceiveBaseGas')
     const newBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
     console.log(
       `setLzReceiveBaseGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
-        `(remoteEid=${taskArguments.remoteEid}): effective base gas ${oldBaseGas.toString()} -> ${newBaseGas.toString()}`,
+        `(remoteEid=${
+          taskArguments.remoteEid
+        }): effective base gas ${oldBaseGas.toString()} -> ${newBaseGas.toString()}`,
     );
   });
 
@@ -1195,7 +1197,9 @@ task('task:setLzReceivePerHandleGas')
     const newPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
     console.log(
       `setLzReceivePerHandleGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
-        `(remoteEid=${taskArguments.remoteEid}): effective per-handle gas ${oldPerHandleGas.toString()} -> ${newPerHandleGas.toString()}`,
+        `(remoteEid=${
+          taskArguments.remoteEid
+        }): effective per-handle gas ${oldPerHandleGas.toString()} -> ${newPerHandleGas.toString()}`,
     );
   });
 
@@ -1217,7 +1221,9 @@ task('task:setLzReceivePerPayloadByteGas')
     const newPerPayloadByteGas = await confidentialBridge.getLzReceivePerPayloadByteGas(taskArguments.remoteEid);
     console.log(
       `setLzReceivePerPayloadByteGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
-        `(remoteEid=${taskArguments.remoteEid}): effective per-payload-byte gas ${oldPerPayloadByteGas.toString()} -> ${newPerPayloadByteGas.toString()}`,
+        `(remoteEid=${
+          taskArguments.remoteEid
+        }): effective per-payload-byte gas ${oldPerPayloadByteGas.toString()} -> ${newPerPayloadByteGas.toString()}`,
     );
   });
 

@@ -38,7 +38,7 @@ export const quorumPlan = (parties: number, threshold: number) => {
 };
 
 /** Stops or starts each container, tolerating already-stopped / missing ones. */
-const setRunning = async (containers: string[], action: "start" | "stop") => {
+export const setRunning = async (containers: string[], action: "start" | "stop") => {
   for (const container of containers) {
     await run(["docker", action, container], { allowFailure: true });
   }
@@ -62,7 +62,7 @@ const waitForContainerStopped = async (container: string) => {
 /** Confirms every stopped party is genuinely down before a quorum verdict is read. `setRunning`
  * tolerates stop failures for idempotency, so without this check a silently no-op'd stop would
  * probe with too many live parties and misdiagnose "2t+1 not enforced". */
-const waitForPartiesStopped = async (parties: number[]) => {
+export const waitForPartiesStopped = async (parties: number[]) => {
   for (const party of parties) {
     for (const container of partyContainers(party)) {
       await waitForContainerStopped(container);
@@ -73,9 +73,13 @@ const waitForPartiesStopped = async (parties: number[]) => {
 /** Asserts the on-chain key/CRS generation state (KMSGeneration contract) and returns the
  * verified topology numbers. */
 export const auditKmsGeneration = async (state: State) => {
-  const { parties, threshold, fheParams } = state.scenario.kms;
-  if (parties !== 3 * threshold + 1) {
-    throw new PreflightError(`kms-generation: parties ${parties} must equal 3*threshold+1 (threshold=${threshold})`);
+  // kms-generation audits the on-chain COMMITTEE (the serving MPC group), which is committeeSize —
+  // not the cluster size (`parties`), which may include idle spares.
+  const { threshold, fheParams, committeeSize } = state.scenario.kms;
+  if (committeeSize !== 3 * threshold + 1) {
+    throw new PreflightError(
+      `kms-generation: committee ${committeeSize} must equal 3*threshold+1 (threshold=${threshold})`,
+    );
   }
   // Re-reads activeKeyId/activeCrsId on chain, confirms they are set, match discovery, and that
   // the key + CRS materials are published. Returns null until keygen/crsgen has finalized.
@@ -109,9 +113,9 @@ export const auditKmsGeneration = async (state: State) => {
   // registration check — unlike scraping KMS-core logs, it confirms the deploy wired N signers.
   const onChainSigners = (await castCall(rpcUrl, configAddress, "getKmsSigners()(address[])")).match(/0x[0-9a-fA-F]{40}/g) ?? [];
   const distinct = new Set(onChainSigners.map((address) => address.toLowerCase()));
-  if (distinct.size !== parties) {
+  if (distinct.size !== committeeSize) {
     throw new PreflightError(
-      `kms-generation: ProtocolConfig registered ${distinct.size} distinct KMS signer(s), expected ${parties} (${[...distinct].join(", ")})`,
+      `kms-generation: ProtocolConfig registered ${distinct.size} distinct KMS signer(s), expected ${committeeSize} (${[...distinct].join(", ")})`,
     );
   }
 
@@ -120,13 +124,14 @@ export const auditKmsGeneration = async (state: State) => {
     `[kms-generation] on-chain audit OK: activeKeyId=0x${probe.actualFheKeyId} activeCrsId=0x${probe.actualCrsKeyId} paramsType=${fheParams}(${expectedParams})`,
   );
   console.log(
-    `[kms-generation] ${parties} parties, t=${threshold}, reconstruction=${reconstruct} (2t+1), ${distinct.size} signers registered in ProtocolConfig on ${where}`,
+    `[kms-generation] ${committeeSize}-node committee, t=${threshold}, reconstruction=${reconstruct} (2t+1), ${distinct.size} signers registered in ProtocolConfig on ${where}`,
   );
-  return { parties, threshold, reconstruct };
+  // Return committeeSize as the serving-party count so the quorum probe stops committee nodes only.
+  return { parties: committeeSize, threshold, reconstruct };
 };
 
 /** Waits for restarted party containers to be running again before probing recovery. */
-const waitForPartiesRunning = async (parties: number[]) => {
+export const waitForPartiesRunning = async (parties: number[]) => {
   for (const party of parties) {
     for (const container of partyContainers(party)) {
       await waitForContainer(container, "running");

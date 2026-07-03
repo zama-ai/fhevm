@@ -116,7 +116,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
   "kms-context-switch":
-    "Drive RFC-005 NewKmsContext + NewKmsEpoch on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each (threshold-mode KMS).",
+    "Drive the NewKmsContext + NewKmsEpoch lifecycle on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each, with the input-proof app smoke at baseline, while the switch is pending, and after each transition. On a cluster with a spare core (e.g. --scenario swap-threshold-kms) the NewKmsContext step is a genuine node swap — drop a committee node, promote the spare, and force it into the 2t+1 quorum (threshold-mode KMS).",
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -979,12 +979,26 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     return false;
   };
 
+  // App-level smoke for the kms-context-switch checkpoints: a normal encrypted-input flow (the
+  // input-proof grep) must keep working before, while, and after a KMS context/epoch transition —
+  // not only the dedicated user-decryption probe. Same key-bootstrap wait as the input-proof
+  // profile (a no-op once the sns-workers have fetched the keyset).
+  const runInputProofSmoke = async (label: string) => {
+    const grep = TEST_GREP["input-proof"];
+    if (!grep) {
+      throw new PreflightError("kms-context-switch: missing input-proof grep pattern");
+    }
+    console.log(`[test] ${label}`);
+    await waitForKeyBootstrap(state);
+    await runNamedE2e(options, grep, label);
+  };
+
   const runProfile = async (name: string) => {
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
     }
     if (name === "kms-context-switch") {
-      return runKmsContextSwitchProfile(state, runUserDecryption);
+      return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
