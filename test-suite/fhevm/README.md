@@ -342,6 +342,9 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli logs --no-follow relayer
 ./fhevm-cli test input-proof
 ./fhevm-cli test erc20
+./fhevm-cli test erc1271-user-decryption
+./fhevm-cli test unified-user-decryption
+./fhevm-cli test decryption-signature-invalidation
 ./fhevm-cli test light
 ./fhevm-cli test standard
 ./fhevm-cli test heavy
