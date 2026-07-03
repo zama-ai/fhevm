@@ -1,6 +1,6 @@
 [package]
 name = "relayer-migrate"
-version = "0.9.0-rc.3"
+version = "0.14.0"
 edition = "2024"
 
 [[bin]]
