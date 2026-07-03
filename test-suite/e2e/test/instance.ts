@@ -110,4 +110,21 @@ export const createInstance = async () => {
 };
 
 // Export coprocessor config addresses for smoke tests
-export { aclAddress, coprocessorAddress, kmsVerifierAddress };
+export { aclAddress, coprocessorAddress, kmsVerifierAddress, protocolConfigAddress };
+
+// Values the unified user-decryption helper needs to build and
+// submit requests directly against the relayer's `/v3/user-decrypt` endpoint
+// (see test/sdk/unified/unifiedUserDecrypt.ts for why the public SDK is not
+// used there). Re-declared with explicit `string` types: the module-level
+// throw guards above narrow them within this module, but the exported declared
+// type would otherwise remain `string | undefined` and fail strict-mode
+// consumers.
+const unifiedRelayerUrl: string = relayerUrl;
+const unifiedDecryptionAddress: string = verifyingContractAddressDecryption;
+/** `x-api-key` value for auth-fronted relayers; empty string on local stacks. */
+const relayerApiKey: string = apiKey;
+export {
+  unifiedRelayerUrl as relayerUrl,
+  unifiedDecryptionAddress as verifyingContractAddressDecryption,
+  relayerApiKey,
+};
