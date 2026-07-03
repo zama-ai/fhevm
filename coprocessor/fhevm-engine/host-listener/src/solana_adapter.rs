@@ -21,8 +21,7 @@ use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    tfhe_result_handle, ClearConst, Database, Handle, LogTfhe, Transaction,
-    TransactionHash,
+    ClearConst, Database, Handle, LogTfhe, Transaction, TransactionHash,
 };
 
 #[derive(Clone, Debug)]
@@ -684,6 +683,24 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
     }
 }
 
+// --- Eager compute scheduling (RFC-024 / Q11 option A) ---------------------
+//
+// Historically, a Solana compute's `is_allowed` bit was derived from allow
+// events observed in the SAME transaction, and `mark_solana_computation_allowed`
+// (below) re-opened it later if the allow instead landed in a following slot.
+// That machinery is now retired as a *scheduling* gate: every Solana
+// computation is inserted eager (`is_allowed = TRUE` unconditionally), so the
+// tfhe-worker schedules it immediately regardless of ACL/allow state. Allow
+// signals (`create_encrypted_value`, `allow_subjects`, `update_encrypted_value`,
+// `make_handle_public`) still matter for DECRYPT availability (SNS/ct128 prep,
+// `allowed_handles`) — they are not needed to unblock computation.
+//
+// Reorg unwind for eagerly-scheduled computations remains unimplemented: a
+// computation whose containing block loses a fork race is wasted work, not a
+// correctness bug, because `solana_finalized_account_fetcher` is the sole gate
+// on releasing a decrypt for a *finalized* handle+subject/public state. Eager
+// compute can never cause a wrong decrypt; at worst it burns cycles on a
+// minority fork.
 pub fn normalize_solana_events_for_db(
     events: impl IntoIterator<Item = SolanaHostEvent>,
     transaction_id: TransactionHash,
@@ -691,30 +708,19 @@ pub fn normalize_solana_events_for_db(
 ) -> (Vec<LogTfhe>, Vec<SolanaFinalizedAccountFetch>) {
     let events = events.into_iter().collect::<Vec<_>>();
 
-    // Handles allowed within THIS transaction. A compute event whose result is
-    // allowed must be inserted with is_allowed=true so the tfhe-worker
-    // materializes its ciphertext (it only schedules is_allowed=TRUE rows); an
-    // unallowed result is inserted is_completed=true and never materialized,
-    // mirroring the EVM ingest path (database::ingest collects ACL-allowed
-    // handles in the block, then sets is_allowed per compute result). The allow
-    // signal lives in the same confirmed Solana transaction as the compute, so
-    // materialization need not wait on finalization — finalization independently
-    // gates only the DECRYPT release (pbs/allowed_handles), via the fetch queue.
-    let allowed_handles = solana_allowed_result_handles(&events);
-
     let mut tfhe_logs = Vec::new();
     let mut account_fetches = Vec::new();
 
     for (index, event) in events.into_iter().enumerate() {
         match map_solana_event(event) {
             SolanaMappedEvent::Tfhe(event) => {
-                let is_allowed = tfhe_result_handle(&event.data)
-                    .is_some_and(|handle| allowed_handles.contains(&handle));
+                // Eager: schedulable the moment the compute itself confirms,
+                // independent of any allow/ACL signal. See module note above.
                 tfhe_logs.push(to_log_tfhe(
                     event,
                     transaction_id,
                     block,
-                    is_allowed,
+                    true,
                     index as u64,
                 ));
             }
@@ -729,37 +735,36 @@ pub fn normalize_solana_events_for_db(
     (tfhe_logs, account_fetches)
 }
 
-/// Result-handles allowed within one Solana transaction, gathered from the rich
-/// allow events that are routed to finalized-account fetches
-/// (`public_decrypt_allowed`, `acl_subject_allowed`, `acl_record_bound`) — each
-/// carries the handle being allowed. The legacy flat `AclAllowed` event is NOT
-/// an allow signal here: this design deliberately drops it (it is mapped to
-/// `IgnoredAclAllowed`), so trusting it to drive materialization would
-/// contradict that. Material-sealed/committed fetches are not allow signals
-/// either, so they are excluded.
-fn solana_allowed_result_handles(
-    events: &[SolanaHostEvent],
-) -> HashSet<Handle> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            SolanaHostEvent::FinalizedAccountFetch(fetch)
-                if is_solana_allow_reason(fetch.reason) =>
-            {
-                fetch.handle
-            }
-            _ => None,
-        })
-        .collect()
-}
-
-/// Whether a finalized-account-fetch reason denotes an ACL allow that releases a
-/// handle (vs. a material-commitment or request witness). Shared by the
-/// in-tx materialization mark and the finalized decrypt-release consumer.
+/// Whether a finalized-account-fetch reason denotes an ACL allow signal that
+/// feeds decrypt availability (vs. a material-commitment or request witness).
+/// Used only by the finalized decrypt-release consumer now — no longer by any
+/// compute-scheduling path (see the eager-compute note above).
+///
+/// `encrypted_value_created` / `handle_superseded` / `handle_made_public` /
+/// `subject_allowed` name the RFC-024 `EncryptedValue` instruction-derived
+/// signals (`create_encrypted_value`, `update_encrypted_value`,
+/// `make_handle_public`, `allow_subjects`); the legacy `public_decrypt_allowed`
+/// / `acl_subject_allowed` / `acl_record_bound` reasons are kept for the
+/// still-IDL-driven decode path pending its RFC-024 instruction-decode rewrite
+/// (tracked separately — see host-listener README/TODO).
+///
+/// TODO(RFC-024 instruction decode): currently unreferenced because nothing
+/// yet emits `SolanaFinalizedAccountFetch::reason` from the new
+/// `EncryptedValue` instructions (`create_encrypted_value`/`allow_subjects`/
+/// `update_encrypted_value`/`make_handle_public`) — see the host-listener
+/// section of the RFC-024 rollout notes. Once that decode lands, this becomes
+/// the finalized-fetcher's filter again.
+#[allow(dead_code)]
 pub(crate) fn is_solana_allow_reason(reason: &str) -> bool {
     matches!(
         reason,
-        "public_decrypt_allowed" | "acl_subject_allowed" | "acl_record_bound"
+        "public_decrypt_allowed"
+            | "acl_subject_allowed"
+            | "acl_record_bound"
+            | "encrypted_value_created"
+            | "handle_superseded"
+            | "handle_made_public"
+            | "subject_allowed"
     )
 }
 
@@ -796,16 +801,10 @@ pub async fn insert_solana_events(
         {
             inserted_rows += 1;
         }
-        // The allow for a computed handle lands a slot after the compute, which
-        // was therefore inserted unallowed (is_completed=true) and skipped by the
-        // worker. Re-open it for materialization now that the allow is known. The
-        // finalized fetch above independently gates the later DECRYPT release.
-        if is_solana_allow_reason(fetch.reason) {
-            if let Some(handle) = fetch.handle {
-                db.mark_solana_computation_allowed(tx, handle.as_slice())
-                    .await?;
-            }
-        }
+        // No re-open needed: computations are inserted eager (is_allowed=TRUE
+        // unconditionally, see `normalize_solana_events_for_db`), so there is
+        // nothing left to activate here. This fetch only feeds the finalized
+        // decrypt-release gate (`solana_finalized_account_fetcher`).
     }
 
     // Populate the dependence_chain scheduling table the tfhe-worker locks against; without
@@ -2156,14 +2155,17 @@ mod tests {
 
         assert!(acl_events.is_empty());
         assert_eq!(tfhe_logs.len(), 1);
-        assert!(!tfhe_logs[0].is_allowed);
+        assert!(
+            tfhe_logs[0].is_allowed,
+            "eager compute: scheduled regardless of allow signals"
+        );
         assert_eq!(tfhe_logs[0].transaction_hash, Some(tx_id));
         assert_eq!(tfhe_logs[0].dependence_chain, tx_id);
         assert_eq!(tfhe_logs[0].log_index, Some(0));
     }
 
     #[test]
-    fn leaves_unallowed_tfhe_result_pending() {
+    fn eager_compute_is_schedulable_without_any_allow_signal() {
         let tx_id = solana_transaction_id(&[3_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
@@ -2198,17 +2200,18 @@ mod tests {
 
         assert!(acl_events.is_empty());
         assert_eq!(tfhe_logs.len(), 1);
-        assert!(!tfhe_logs[0].is_allowed);
+        assert!(
+            tfhe_logs[0].is_allowed,
+            "eager compute: no allow event named this handle, still schedulable"
+        );
     }
 
     #[test]
-    fn public_decrypt_allow_in_same_tx_marks_compute_result_for_materialization(
-    ) {
-        // The eval frame that computes a handle also emits PublicDecryptAllowed
-        // for it (TE_ALLOW). That rich allow is routed to a finalized fetch, but
-        // its presence in the SAME tx must mark the compute is_allowed=true so the
-        // tfhe-worker (is_completed=FALSE AND is_allowed=TRUE) materializes the
-        // ciphertext; the finalized fetch separately gates the decrypt release.
+    fn compute_is_eager_regardless_of_same_tx_allow_signal() {
+        // Historically, the eval frame's compute would only be marked
+        // materializable when an allow for its result landed in the same tx.
+        // Under eager compute (RFC-024 Q11), it is unconditionally allowed;
+        // the finalized fetch below separately gates the decrypt release.
         let tx_id = solana_transaction_id(&[7_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
@@ -2240,7 +2243,7 @@ mod tests {
         assert_eq!(tfhe_logs.len(), 1);
         assert!(
             tfhe_logs[0].is_allowed,
-            "compute whose result is allowed in-tx must be materializable"
+            "eager compute: schedulable independent of the allow signal"
         );
         // The allow is still queued for the finalized decrypt-release check.
         assert_eq!(acl_events.len(), 1);
@@ -2248,8 +2251,9 @@ mod tests {
     }
 
     #[test]
-    fn unrelated_allow_handle_does_not_mark_compute_result() {
-        // An allow for a DIFFERENT handle must not mark this compute allowed.
+    fn unrelated_allow_handle_does_not_affect_eager_compute_result() {
+        // An allow for a DIFFERENT handle is irrelevant either way under eager
+        // compute: this compute is schedulable regardless.
         let tx_id = solana_transaction_id(&[8_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
@@ -2279,7 +2283,7 @@ mod tests {
         );
 
         assert_eq!(tfhe_logs.len(), 1);
-        assert!(!tfhe_logs[0].is_allowed);
+        assert!(tfhe_logs[0].is_allowed, "eager compute: always schedulable");
     }
 
     #[test]
@@ -2362,10 +2366,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![Some(0), Some(2), Some(3), Some(5)]
         );
-        assert!(!tfhe_logs[0].is_allowed);
-        assert!(!tfhe_logs[1].is_allowed);
-        assert!(!tfhe_logs[2].is_allowed);
-        assert!(!tfhe_logs[3].is_allowed);
+        assert!(tfhe_logs[0].is_allowed, "eager compute: always schedulable");
+        assert!(tfhe_logs[1].is_allowed, "eager compute: always schedulable");
+        assert!(tfhe_logs[2].is_allowed, "eager compute: always schedulable");
+        assert!(tfhe_logs[3].is_allowed, "eager compute: always schedulable");
         assert!(matches!(
             tfhe_logs[0].event.data,
             TfheContractEvents::TrivialEncrypt(_)

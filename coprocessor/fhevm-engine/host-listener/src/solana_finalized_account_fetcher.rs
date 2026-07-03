@@ -70,10 +70,14 @@ pub fn decrypt_enqueue_for_fetch(
         return None;
     }
     let allow_event = match job.reason.as_str() {
-        "public_decrypt_allowed" => AllowEvents::AllowedForDecryption,
-        "acl_subject_allowed" | "acl_record_bound" => {
-            AllowEvents::AllowedAccount
+        "public_decrypt_allowed" | "handle_made_public" => {
+            AllowEvents::AllowedForDecryption
         }
+        "acl_subject_allowed"
+        | "acl_record_bound"
+        | "encrypted_value_created"
+        | "handle_superseded"
+        | "subject_allowed" => AllowEvents::AllowedAccount,
         // handle_material_sealed also emits an AclRecord fetch, but the allow it
         // confirms already arrived via its own subject/public-decrypt event; the
         // material-sealed fetch is only a witness for the on-chain consume path.
@@ -518,6 +522,46 @@ mod tests {
                 AllowEvents::AllowedAccount as i16
             );
         }
+    }
+
+    #[test]
+    fn encrypted_value_instruction_reasons_release_the_expected_allow_kind() {
+        // RFC-024 EncryptedValue instruction-decode reasons (create/update/
+        // allow_subjects -> durable account allow; make_handle_public -> public
+        // decrypt), same trust guard as the legacy AclRecord reasons above.
+        for reason in [
+            "encrypted_value_created",
+            "handle_superseded",
+            "subject_allowed",
+        ] {
+            let handle = Handle::from([6; 32]);
+            let job = acl_record_job(reason, Some(handle));
+            let enqueue = decrypt_enqueue_for_fetch(
+                &job,
+                &witness_owned_by(HOST_PROGRAM),
+                Some(HOST_PROGRAM),
+            )
+            .unwrap_or_else(|| panic!("{reason} must enqueue"));
+            assert_eq!(enqueue.handle, handle);
+            assert_eq!(
+                enqueue.allow_event as i16,
+                AllowEvents::AllowedAccount as i16
+            );
+        }
+
+        let handle = Handle::from([7; 32]);
+        let job = acl_record_job("handle_made_public", Some(handle));
+        let enqueue = decrypt_enqueue_for_fetch(
+            &job,
+            &witness_owned_by(HOST_PROGRAM),
+            Some(HOST_PROGRAM),
+        )
+        .expect("handle_made_public must enqueue");
+        assert_eq!(enqueue.handle, handle);
+        assert_eq!(
+            enqueue.allow_event as i16,
+            AllowEvents::AllowedForDecryption as i16
+        );
     }
 
     #[test]

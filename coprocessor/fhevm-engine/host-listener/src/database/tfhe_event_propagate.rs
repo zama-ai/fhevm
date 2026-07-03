@@ -966,6 +966,14 @@ impl Database {
     /// `is_completed = FALSE AND is_allowed = TRUE` rows), and re-arms its
     /// dependence_chain so the worker re-acquires it.
     ///
+    /// Retired as a compute-activation trigger (RFC-024 eager compute, Q11
+    /// option A): Solana computations are now inserted with `is_allowed = TRUE`
+    /// unconditionally (see `solana_adapter::normalize_solana_events_for_db`),
+    /// so there is nothing left to re-open here. Kept, unused, as the
+    /// documented historical mechanism and in case a future reorg-unwind
+    /// implementation needs to re-arm a chain by the same means; delete once
+    /// that's confirmed unnecessary.
+    ///
     /// On Solana the allow event arrives in a LATER slot than the compute, so
     /// the compute was inserted `is_completed = true` (the "unallowed" default)
     /// and the worker already locked its chain, found no allowed work, and set
@@ -974,6 +982,7 @@ impl Database {
     /// worker never looks at it again. The computation flip is gated on
     /// `completed_at IS NULL` so a genuinely materialized computation is never
     /// reopened — only the never-run placeholder is.
+    #[allow(dead_code)]
     pub async fn mark_solana_computation_allowed(
         &self,
         tx: &mut Transaction<'_>,

@@ -431,6 +431,250 @@ pub fn decode_fhe_eval_args(instruction_data: &[u8]) -> Option<FheEvalArgs> {
     FheEvalArgs::try_from_slice(payload).ok()
 }
 
+// --- RFC-024 `EncryptedValue` instruction decode -----------------------------
+//
+// `EncryptedValue` is event-free by design (see zama-host's
+// `instructions/encrypted_value.rs` module doc): the program does not
+// `emit!`/`emit_cpi!` for `create_encrypted_value` / `update_encrypted_value` /
+// `make_handle_public` / `allow_subjects`. There is therefore no event to
+// decode — the four instructions themselves ARE the allow signal, and must be
+// decoded directly from instruction data (top-level AND inner/CPI, since an
+// app program may invoke these via CPI) by their Anchor discriminator
+// (`sha256("global:<name>")[..8]`).
+
+/// One subject grant, matching `zama_host::instructions::encrypted_value::
+/// EncryptedValueSubjectGrant`'s wire layout (`Pubkey` + `u8`, borsh).
+#[derive(AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EncryptedValueSubjectGrant {
+    pub subject: [u8; 32],
+    pub role_flags: u8,
+}
+
+#[derive(AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct CreateEncryptedValueArgs {
+    pub acl_domain_key: [u8; 32],
+    pub app_account: [u8; 32],
+    pub encrypted_value_label: [u8; 32],
+    pub handle: [u8; 32],
+    pub subjects: Vec<EncryptedValueSubjectGrant>,
+}
+
+#[derive(AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct UpdateEncryptedValueArgs {
+    pub new_handle: [u8; 32],
+    pub previous_handle: [u8; 32],
+    pub previous_subjects: Vec<[u8; 32]>,
+}
+
+#[derive(AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AllowSubjectsArgs {
+    pub subjects: Vec<EncryptedValueSubjectGrant>,
+}
+
+/// A decoded `EncryptedValue` instruction, args-only (accounts are resolved by
+/// the caller from the instruction's account list — see
+/// [`ENCRYPTED_VALUE_ACCOUNT_INDEX`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EncryptedValueInstruction {
+    Create(CreateEncryptedValueArgs),
+    Update(UpdateEncryptedValueArgs),
+    /// No args: which handle/lineage this affects is resolved from
+    /// [`EncryptedValueLineageTracker`], not from the instruction.
+    MakeHandlePublic,
+    AllowSubjects(AllowSubjectsArgs),
+}
+
+/// `sha256("global:create_encrypted_value")[..8]`.
+const CREATE_ENCRYPTED_VALUE_DISCRIMINATOR: [u8; 8] =
+    [16, 78, 219, 132, 226, 111, 211, 78];
+/// `sha256("global:update_encrypted_value")[..8]`.
+const UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR: [u8; 8] =
+    [134, 7, 12, 247, 233, 80, 35, 215];
+/// `sha256("global:make_handle_public")[..8]`.
+const MAKE_HANDLE_PUBLIC_DISCRIMINATOR: [u8; 8] =
+    [66, 199, 252, 247, 244, 172, 42, 118];
+/// `sha256("global:allow_subjects")[..8]`.
+const ALLOW_SUBJECTS_DISCRIMINATOR: [u8; 8] =
+    [186, 205, 31, 20, 183, 17, 5, 26];
+
+/// Every `EncryptedValue` instruction accounts struct places `encrypted_value`
+/// at this index (`payer`, `app_account_authority`/`authority`,
+/// `encrypted_value`, ...) — see `CreateEncryptedValue`,
+/// `AllowEncryptedValueSubjects`, `UpdateEncryptedValue`,
+/// `MakeEncryptedValueHandlePublic` in zama-host's `encrypted_value.rs`.
+pub const ENCRYPTED_VALUE_ACCOUNT_INDEX: usize = 2;
+
+/// Decodes one `EncryptedValue` instruction from raw instruction data
+/// (discriminator + borsh args), or `None` if the discriminator doesn't match
+/// any of the four (i.e. it is not an `EncryptedValue` instruction at all —
+/// the caller tries this decoder against every top-level and inner
+/// instruction of the zama-host program).
+pub fn decode_encrypted_value_instruction(
+    data: &[u8],
+) -> Option<EncryptedValueInstruction> {
+    if data.len() < 8 {
+        return None;
+    }
+    let (discriminator, payload) = data.split_at(8);
+    match discriminator {
+        d if d == CREATE_ENCRYPTED_VALUE_DISCRIMINATOR => {
+            CreateEncryptedValueArgs::try_from_slice(payload)
+                .ok()
+                .map(EncryptedValueInstruction::Create)
+        }
+        d if d == UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR => {
+            UpdateEncryptedValueArgs::try_from_slice(payload)
+                .ok()
+                .map(EncryptedValueInstruction::Update)
+        }
+        d if d == MAKE_HANDLE_PUBLIC_DISCRIMINATOR => {
+            Some(EncryptedValueInstruction::MakeHandlePublic)
+        }
+        d if d == ALLOW_SUBJECTS_DISCRIMINATOR => {
+            AllowSubjectsArgs::try_from_slice(payload)
+                .ok()
+                .map(EncryptedValueInstruction::AllowSubjects)
+        }
+        _ => None,
+    }
+}
+
+/// Tracks each `EncryptedValue` lineage's current handle across the
+/// instructions the listener has decoded so far (in on-chain order), so
+/// `make_handle_public` and `allow_subjects` — which carry no handle
+/// themselves — resolve to the right handle without an extra account fetch.
+///
+/// Chosen over finalized-account-fetcher resolution: at decode time the
+/// transaction is only confirmed, not finalized, so the fetcher hasn't run
+/// yet and re-fetching mid-decode would make decode async/fallible on RPC
+/// availability. The handle is fully determined by the most recent
+/// create/update this tracker has seen for the same `encrypted_value` PDA —
+/// exactly the on-chain precondition `update_encrypted_value` itself enforces
+/// (`current_handle == previous_handle`) — so a listener that processes
+/// instructions in order can reconstruct it for free. Persist one tracker
+/// across the whole listener run (keyed by the `encrypted_value` account
+/// address, which is stable for a lineage's lifetime).
+#[derive(Default, Debug)]
+pub struct EncryptedValueLineageTracker {
+    current_handle: HashMap<[u8; 32], [u8; 32]>,
+}
+
+impl EncryptedValueLineageTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn record(
+        &mut self,
+        encrypted_value_account: [u8; 32],
+        handle: [u8; 32],
+    ) {
+        self.current_handle.insert(encrypted_value_account, handle);
+    }
+
+    pub fn current_handle(
+        &self,
+        encrypted_value_account: [u8; 32],
+    ) -> Option<[u8; 32]> {
+        self.current_handle.get(&encrypted_value_account).copied()
+    }
+}
+
+/// The allow-fetch(es) one decoded `EncryptedValue` instruction produces,
+/// updating `tracker` as a side effect for `create`/`update` (so later
+/// `make_handle_public`/`allow_subjects` in this or a later transaction
+/// resolve correctly). `encrypted_value_account` is
+/// `accounts[ENCRYPTED_VALUE_ACCOUNT_INDEX]`, resolved by the caller.
+///
+/// `update_encrypted_value`'s `previous_handle` is included as its own fetch
+/// (reason `handle_superseded` is reused for the new handle; the previous
+/// handle keeps its historical decrypt path alive via the SAME reason on the
+/// old handle) so a still-outstanding decrypt of the superseded handle is not
+/// silently dropped just because the lineage moved on.
+pub fn encrypted_value_instruction_fetches(
+    instruction: &EncryptedValueInstruction,
+    encrypted_value_account: [u8; 32],
+    tracker: &mut EncryptedValueLineageTracker,
+) -> Vec<SolanaFinalizedAccountFetch> {
+    match instruction {
+        EncryptedValueInstruction::Create(args) => {
+            tracker.record(encrypted_value_account, args.handle);
+            vec![acl_record_fetch(
+                encrypted_value_account,
+                args.handle,
+                "encrypted_value_created",
+            )]
+        }
+        EncryptedValueInstruction::Update(args) => {
+            tracker.record(encrypted_value_account, args.new_handle);
+            vec![
+                acl_record_fetch(
+                    encrypted_value_account,
+                    args.new_handle,
+                    "handle_superseded",
+                ),
+                // The outgoing handle must remain decryptable historically
+                // (SNS/ct128 prep already exists for it); still fetch it so
+                // the finalized consumer doesn't treat it as dropped.
+                acl_record_fetch(
+                    encrypted_value_account,
+                    args.previous_handle,
+                    "handle_superseded",
+                ),
+            ]
+        }
+        EncryptedValueInstruction::MakeHandlePublic => tracker
+            .current_handle(encrypted_value_account)
+            .map(|handle| {
+                vec![acl_record_fetch(
+                    encrypted_value_account,
+                    handle,
+                    "handle_made_public",
+                )]
+            })
+            .unwrap_or_default(),
+        EncryptedValueInstruction::AllowSubjects(_) => tracker
+            .current_handle(encrypted_value_account)
+            .map(|handle| {
+                vec![acl_record_fetch(
+                    encrypted_value_account,
+                    handle,
+                    "subject_allowed",
+                )]
+            })
+            .unwrap_or_default(),
+    }
+}
+
+/// Decodes the `EncryptedValue` allow-fetches for one transaction's
+/// instructions, given in on-chain execution order and MUST include inner
+/// (CPI-invoked) instructions interleaved in that same order — an app program
+/// may invoke `allow_subjects`/`make_handle_public`/etc. via CPI, and the
+/// lineage tracker's ordering guarantee only holds if CPI instructions are not
+/// dropped. Non-`EncryptedValue`/non-matching-program instructions are
+/// skipped. `tracker` persists across transactions (own one per listener run).
+pub fn decode_encrypted_value_instructions<'a>(
+    instructions: impl IntoIterator<Item = (&'a str, &'a [u8], &'a [[u8; 32]])>,
+    zama_host_program_id: &str,
+    tracker: &mut EncryptedValueLineageTracker,
+) -> Vec<SolanaFinalizedAccountFetch> {
+    instructions
+        .into_iter()
+        .filter(|(program_id, _, _)| *program_id == zama_host_program_id)
+        .filter_map(|(_, data, accounts)| {
+            let instruction = decode_encrypted_value_instruction(data)?;
+            let encrypted_value_account =
+                accounts.get(ENCRYPTED_VALUE_ACCOUNT_INDEX).copied()?;
+            Some(encrypted_value_instruction_fetches(
+                &instruction,
+                encrypted_value_account,
+                tracker,
+            ))
+        })
+        .flatten()
+        .collect()
+}
+
 // `previous_bank_hash` sourcing lives in `solana_slot_hashes` (feature-independent
 // so the gRPC transport can use it too); re-exported here for the reconstruction API.
 pub use crate::solana_slot_hashes::{
@@ -766,6 +1010,282 @@ pub fn reconstruct_fhe_eval_events(
             .map(|step| step.event)
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod encrypted_value_decode_tests {
+    use super::*;
+    use anchor_lang::AnchorSerialize;
+
+    const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";
+    const ENCRYPTED_VALUE: [u8; 32] = [0x22; 32];
+
+    fn encode(discriminator: [u8; 8], args: impl AnchorSerialize) -> Vec<u8> {
+        let mut bytes = discriminator.to_vec();
+        args.serialize(&mut bytes).unwrap();
+        bytes
+    }
+
+    fn accounts_with_encrypted_value_at_index_2() -> [[u8; 32]; 6] {
+        let mut accounts = [[0u8; 32]; 6];
+        accounts[ENCRYPTED_VALUE_ACCOUNT_INDEX] = ENCRYPTED_VALUE;
+        accounts
+    }
+
+    #[test]
+    fn decodes_create_encrypted_value() {
+        let args = CreateEncryptedValueArgs {
+            acl_domain_key: [1; 32],
+            app_account: [2; 32],
+            encrypted_value_label: [3; 32],
+            handle: [4; 32],
+            subjects: vec![EncryptedValueSubjectGrant {
+                subject: [5; 32],
+                role_flags: 1,
+            }],
+        };
+        let data = encode(CREATE_ENCRYPTED_VALUE_DISCRIMINATOR, args.clone());
+        let decoded = decode_encrypted_value_instruction(&data)
+            .expect("must decode create_encrypted_value");
+        assert_eq!(decoded, EncryptedValueInstruction::Create(args));
+    }
+
+    #[test]
+    fn decodes_update_encrypted_value() {
+        let args = UpdateEncryptedValueArgs {
+            new_handle: [9; 32],
+            previous_handle: [8; 32],
+            previous_subjects: vec![[7; 32]],
+        };
+        let data = encode(UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR, args.clone());
+        let decoded = decode_encrypted_value_instruction(&data)
+            .expect("must decode update_encrypted_value");
+        assert_eq!(decoded, EncryptedValueInstruction::Update(args));
+    }
+
+    #[test]
+    fn decodes_make_handle_public_with_no_args() {
+        let data = MAKE_HANDLE_PUBLIC_DISCRIMINATOR.to_vec();
+        assert_eq!(
+            decode_encrypted_value_instruction(&data),
+            Some(EncryptedValueInstruction::MakeHandlePublic)
+        );
+    }
+
+    #[test]
+    fn decodes_allow_subjects() {
+        let args = AllowSubjectsArgs {
+            subjects: vec![EncryptedValueSubjectGrant {
+                subject: [6; 32],
+                role_flags: 2,
+            }],
+        };
+        let data = encode(ALLOW_SUBJECTS_DISCRIMINATOR, args.clone());
+        let decoded = decode_encrypted_value_instruction(&data)
+            .expect("must decode allow_subjects");
+        assert_eq!(decoded, EncryptedValueInstruction::AllowSubjects(args));
+    }
+
+    #[test]
+    fn unknown_discriminator_decodes_to_none() {
+        let data = [0xFFu8; 8].to_vec();
+        assert!(decode_encrypted_value_instruction(&data).is_none());
+    }
+
+    #[test]
+    fn create_produces_encrypted_value_created_fetch_and_records_lineage() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        let args = CreateEncryptedValueArgs {
+            acl_domain_key: [1; 32],
+            app_account: [2; 32],
+            encrypted_value_label: [3; 32],
+            handle: [4; 32],
+            subjects: vec![],
+        };
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::Create(args),
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].account_key, ENCRYPTED_VALUE);
+        assert_eq!(fetches[0].reason, "encrypted_value_created");
+        assert_eq!(
+            tracker.current_handle(ENCRYPTED_VALUE),
+            Some([4; 32]),
+            "lineage tracker must record the birth handle"
+        );
+    }
+
+    #[test]
+    fn update_keeps_previous_handle_decryptable_and_advances_lineage() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [8; 32]);
+        let args = UpdateEncryptedValueArgs {
+            new_handle: [9; 32],
+            previous_handle: [8; 32],
+            previous_subjects: vec![],
+        };
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::Update(args),
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert_eq!(
+            fetches.len(),
+            2,
+            "both the new and the superseded handle must be fetched"
+        );
+        let handles: Vec<_> =
+            fetches.iter().map(|f| f.handle.unwrap()).collect();
+        assert!(handles.contains(
+            &crate::database::tfhe_event_propagate::Handle::from([9; 32])
+        ));
+        assert!(
+            handles.contains(&crate::database::tfhe_event_propagate::Handle::from([8; 32])),
+            "superseded handle must remain fetchable so historical decrypts keep working"
+        );
+        assert_eq!(
+            tracker.current_handle(ENCRYPTED_VALUE),
+            Some([9; 32]),
+            "lineage tracker must advance to the new handle"
+        );
+    }
+
+    #[test]
+    fn make_handle_public_resolves_current_handle_from_lineage_tracker() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [4; 32]);
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::MakeHandlePublic,
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].reason, "handle_made_public");
+        assert_eq!(
+            fetches[0].handle,
+            Some(crate::database::tfhe_event_propagate::Handle::from([4; 32]))
+        );
+    }
+
+    #[test]
+    fn make_handle_public_with_unknown_lineage_yields_no_fetch() {
+        // No prior create/update seen for this account: cannot resolve which
+        // handle -> no fetch (rather than guessing).
+        let mut tracker = EncryptedValueLineageTracker::new();
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::MakeHandlePublic,
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert!(fetches.is_empty());
+    }
+
+    #[test]
+    fn allow_subjects_resolves_current_handle_from_lineage_tracker() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [4; 32]);
+        let args = AllowSubjectsArgs {
+            subjects: vec![EncryptedValueSubjectGrant {
+                subject: [6; 32],
+                role_flags: 1,
+            }],
+        };
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::AllowSubjects(args),
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].reason, "subject_allowed");
+        assert_eq!(
+            fetches[0].handle,
+            Some(crate::database::tfhe_event_propagate::Handle::from([4; 32]))
+        );
+    }
+
+    #[test]
+    fn transaction_decode_includes_inner_cpi_instructions() {
+        // A top-level instruction from a different (app) program CPIs into
+        // zama_host's create_encrypted_value, then allow_subjects; both must be
+        // picked up even though only the second is literally top-level here —
+        // the walk must not special-case position, only program id.
+        let mut tracker = EncryptedValueLineageTracker::new();
+        let create_data = encode(
+            CREATE_ENCRYPTED_VALUE_DISCRIMINATOR,
+            CreateEncryptedValueArgs {
+                acl_domain_key: [1; 32],
+                app_account: [2; 32],
+                encrypted_value_label: [3; 32],
+                handle: [4; 32],
+                subjects: vec![],
+            },
+        );
+        let allow_data = encode(
+            ALLOW_SUBJECTS_DISCRIMINATOR,
+            AllowSubjectsArgs {
+                subjects: vec![EncryptedValueSubjectGrant {
+                    subject: [6; 32],
+                    role_flags: 1,
+                }],
+            },
+        );
+        let accounts = accounts_with_encrypted_value_at_index_2();
+        let app_program = "AppProgram111111111111111111111111111111";
+        let instructions: Vec<(&str, &[u8], &[[u8; 32]])> = vec![
+            (app_program, b"unrelated top-level ix data...", &accounts),
+            // Inner (CPI-invoked) instruction from the app's top-level call.
+            (ZAMA_HOST, &create_data, &accounts),
+            (ZAMA_HOST, &allow_data, &accounts),
+        ];
+        let fetches = decode_encrypted_value_instructions(
+            instructions,
+            ZAMA_HOST,
+            &mut tracker,
+        );
+        assert_eq!(
+            fetches.len(),
+            2,
+            "both inner zama_host instructions must decode to a fetch"
+        );
+        assert_eq!(fetches[0].reason, "encrypted_value_created");
+        assert_eq!(fetches[1].reason, "subject_allowed");
+        assert_eq!(
+            fetches[1].handle,
+            Some(crate::database::tfhe_event_propagate::Handle::from(
+                [4; 32]
+            )),
+            "allow_subjects (CPI) must resolve the handle create_encrypted_value (also CPI) just bound"
+        );
+    }
+
+    #[test]
+    fn non_zama_host_program_instructions_are_skipped() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        let data = encode(
+            CREATE_ENCRYPTED_VALUE_DISCRIMINATOR,
+            CreateEncryptedValueArgs {
+                acl_domain_key: [1; 32],
+                app_account: [2; 32],
+                encrypted_value_label: [3; 32],
+                handle: [4; 32],
+                subjects: vec![],
+            },
+        );
+        let accounts = accounts_with_encrypted_value_at_index_2();
+        let instructions: Vec<(&str, &[u8], &[[u8; 32]])> = vec![(
+            "SomeOtherProgram1111111111111111111111111",
+            &data,
+            &accounts,
+        )];
+        let fetches = decode_encrypted_value_instructions(
+            instructions,
+            ZAMA_HOST,
+            &mut tracker,
+        );
+        assert!(fetches.is_empty());
+    }
 }
 
 #[cfg(test)]
