@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)\n        FROM delegate_user_decrypt\n        WHERE host_chain_id = $1\n          AND block_hash = ANY($2::bytea[])\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c8c20bc65468c4b7866f0478224bfcab1549d95ce16a3990def84561823d676e"
+}

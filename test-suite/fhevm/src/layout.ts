@@ -207,6 +207,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "gateway-sc-add-pausers",
     "gateway-sc-trigger-keygen",
     "gateway-sc-trigger-crsgen",
+    "gateway-sc-context-switch",
   ],
   "host-contracts": [
     "host-sc-deploy",
@@ -278,6 +279,9 @@ export const TEST_GREP: Record<string, string> = {
   "priority-coprocessor": "test priority coprocessor input flow",
   "user-decryption": "test user decrypt",
   "delegated-user-decryption": "test delegated user decrypt",
+  "erc1271-user-decryption": "ERC-1271 user decryption",
+  "unified-user-decryption": "Unified user decryption",
+  "decryption-signature-invalidation": "Decryption signature invalidation",
   "public-decryption":
     "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)",
   "public-decrypt-http-ebool": "test HTTPPublicDecrypt ebool",
@@ -320,6 +324,9 @@ export const STANDARD_TEST_PROFILES = [
   "input-proof-compute-decrypt",
   "user-decryption",
   "delegated-user-decryption",
+  "erc1271-user-decryption",
+  "unified-user-decryption",
+  "decryption-signature-invalidation",
   "erc20",
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
