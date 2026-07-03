@@ -23,6 +23,19 @@ pub fn redact_alloy_error(err: &ContractError) -> String {
     }
 }
 
+/// Like [`redact_alloy_error`] but for errors that aren't a [`ContractError`] (e.g. the transport
+/// `RpcError` from `Provider::get_logs`): walk the source chain and strip the `reqwest` URL suffix.
+pub fn redact_error(err: &(dyn std::error::Error + 'static)) -> String {
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(err) = source {
+        if let Some(reqwest_err) = err.downcast_ref::<reqwest::Error>() {
+            return strip_url_suffix(reqwest_err);
+        }
+        source = err.source();
+    }
+    err.to_string()
+}
+
 /// Strip the ` for url (…)` suffix that `reqwest::Error::Display` appends.
 fn strip_url_suffix(err: &reqwest::Error) -> String {
     let msg = err.to_string();
