@@ -1,6 +1,6 @@
 import { HardhatUpgrades } from '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
-import { Wallet } from 'ethers';
+import { JsonRpcProvider, type Signer, Wallet } from 'ethers';
 import fs from 'fs';
 import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
@@ -1260,20 +1260,26 @@ task('task:setLzReceivePerPayloadByteGas')
 task('task:deployLocalLzEndpoint')
   .addParam('eid', 'This chain LayerZero endpoint id', undefined, types.int)
   .addParam('remoteEid', 'Remote endpoint id to default the libraries for', undefined, types.int)
-  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
-    // LZ_ENDPOINT_DEPLOYER (anvil only): deploy from this impersonated account so the endpoint deploy stays off the host deployer's nonce sequence (keeps host-contract addresses deterministic).
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    // LZ_ENDPOINT_DEPLOYER (anvil only): deploy from this impersonated account via a RAW JSON-RPC
+    // signer. hardhat signs locally (the network is configured with a private key), so it can't send
+    // from an unmanaged account; a raw provider makes anvil sign for the unlocked account instead.
+    // Keeps the endpoint deploy off the host deployer's nonce, so host-contract addresses stay fixed.
     const impersonatedDeployer = process.env.LZ_ENDPOINT_DEPLOYER;
-    let deployer: Wallet | Awaited<ReturnType<typeof ethers.getImpersonatedSigner>>;
+    let deployer: Signer;
     if (impersonatedDeployer) {
-      await network.provider.send('hardhat_setBalance', [impersonatedDeployer, '0x21e19e0c9bab2400000']); // 10000 ETH
-      deployer = await ethers.getImpersonatedSigner(impersonatedDeployer);
+      const rpcProvider = new JsonRpcProvider(getRequiredEnvVar('RPC_URL'));
+      await rpcProvider.send('anvil_impersonateAccount', [impersonatedDeployer]);
+      await rpcProvider.send('anvil_setBalance', [impersonatedDeployer, '0x21e19e0c9bab2400000']); // 10000 ETH
+      deployer = await rpcProvider.getSigner(impersonatedDeployer);
     } else {
       deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
     }
+    const deployerAddress = await deployer.getAddress();
 
     const endpoint = await (
       await ethers.getContractFactory('EndpointV2Mock', deployer)
-    ).deploy(taskArguments.eid, deployer.address);
+    ).deploy(taskArguments.eid, deployerAddress);
     await endpoint.waitForDeployment();
     const endpointAddress = await endpoint.getAddress();
 
