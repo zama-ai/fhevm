@@ -126,6 +126,12 @@ fn parse_optional_address(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Handle `--stack-version` before clap parsing: it prints the compiled-in
+    // STACK_VERSION and exits 0. Without this, clap rejects the unknown flag
+    // with exit code 2, so the Helm `--stack-version` startupProbe would never
+    // pass and the pod would CrashLoop.
+    fhevm_engine_common::handle_stack_version_flag();
+
     let args = Args::parse();
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
