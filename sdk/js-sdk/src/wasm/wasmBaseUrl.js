@@ -9,63 +9,26 @@
  * detection self-contained in this file.
  */
 
-/**
- * Returns true in browser or web-worker-like runtimes where `import.meta.url`
- * is the authoritative module location, even if a bundler injects Node-shaped
- * globals such as `__filename`.
- *
- * Bun is excluded because it exposes web APIs while still supporting Node-style
- * filesystem resolution.
- *
- * @returns {boolean}
- */
-function __isBrowserLike() {
-  return (
-    // @ts-ignore
-    typeof Bun === 'undefined' &&
-    // @ts-ignore
-    typeof process === 'undefined' &&
-    typeof location !== 'undefined' &&
-    typeof location.href === 'string' &&
-    typeof addEventListener === 'function' &&
-    typeof removeEventListener === 'function'
-  );
-}
-
-/**
- * Returns true only for real Node CommonJS execution, where `__filename` and
- * `require` refer to the current file and can safely be used to build a file URL.
- *
- * This deliberately rejects browser bundler shims that define `__filename`
- * without a real Node `process.versions.node`.
- *
- * @returns {boolean}
- */
-function __isNodeCjsLike() {
-  return (
-    !__isBrowserLike() &&
-    // @ts-ignore
-    typeof __filename === 'string' &&
-    // @ts-ignore
-    typeof require === 'function' &&
-    // @ts-ignore
-    typeof process !== 'undefined' &&
-    // @ts-ignore
-    typeof process.versions?.node === 'string'
-  );
-}
-
 function __resolveWasmBaseUrl() {
-  if (__isNodeCjsLike()) {
-    // Keep this indirect so bundlers do not rewrite `node:url` in browser builds.
-    // @ts-ignore
-    const nodeRequire = require;
-    const nodeUrlModule = 'node:url';
-    // @ts-ignore
-    return nodeRequire(nodeUrlModule).pathToFileURL(__filename).href;
+  // In the CommonJS build tsc lowers `import.meta` to `{}`, so a usable string
+  // here means the ESM build (browser, worker, or Node ESM) — it's authoritative.
+  const metaUrl = import.meta.url;
+  if (typeof metaUrl === 'string' && metaUrl.length > 0) {
+    return metaUrl;
   }
 
-  return import.meta.url;
+  // CommonJS build: trust `__filename` ONLY in a genuine Node process, never a
+  // bundler shim. Turbopack/webpack inject `__filename` + a partial `process`
+  // into client bundles, but never populate `process.versions.node`.
+  // @ts-ignore
+  const isRealNode = typeof process !== 'undefined' && typeof process.versions?.node === 'string';
+  // @ts-ignore
+  if (isRealNode && typeof __filename === 'string' && typeof require === 'function') {
+    // @ts-ignore — keep `node:url` indirect so bundlers don't rewrite it
+    return require('node:url').pathToFileURL(__filename).href;
+  }
+
+  return metaUrl; // undefined → caller surfaces a clear "could not resolve" error
 }
 
 /**

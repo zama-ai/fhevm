@@ -256,7 +256,7 @@ contract ACL is
      * @notice Invalidates decryption signatures before a given timestamp for the caller.
      * @param timestamp Oldest timestamp that remains valid. Passing 0 resolves to the current block timestamp.
      */
-    function invalidateDecryptionSignaturesBefore(uint256 timestamp) external virtual whenNotPaused {
+    function invalidateDecryptionSignaturesBefore(uint256 timestamp) external virtual {
         uint256 resolvedTimestamp = timestamp == 0 ? block.timestamp : timestamp;
         ACLStorage storage $ = _getACLStorage();
         if (resolvedTimestamp <= $.decryptionSignatureInvalidatedBefore[msg.sender]) {

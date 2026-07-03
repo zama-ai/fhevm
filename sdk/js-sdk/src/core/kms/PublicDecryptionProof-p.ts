@@ -89,7 +89,7 @@ type Parameters = {
   readonly originToken: symbol;
   readonly orderedHandles: readonly Handle[];
   readonly orderedAbiEncodedClearValues: BytesHex;
-  readonly kmsPublicDecryptEIP712Signatures: readonly Bytes65Hex[];
+  readonly kmsPublicDecryptEip712Signatures: readonly Bytes65Hex[];
   readonly kmsSignersContext: KmsSignersContext;
 };
 
@@ -108,7 +108,7 @@ export async function createPublicDecryptionProof(
   const {
     orderedHandles: orderedEncryptedValues,
     orderedAbiEncodedClearValues,
-    kmsPublicDecryptEIP712Signatures,
+    kmsPublicDecryptEip712Signatures,
     kmsSignersContext,
     originToken,
   } = parameters;
@@ -133,12 +133,12 @@ export async function createPublicDecryptionProof(
 
   const packedNumSigners: BytesHex = context.runtime.ethereum.encodePacked({
     types: ['uint8'],
-    values: [kmsPublicDecryptEIP712Signatures.length],
+    values: [kmsPublicDecryptEip712Signatures.length],
   });
 
   const packedSignatures = context.runtime.ethereum.encodePacked({
-    types: Array(kmsPublicDecryptEIP712Signatures.length).fill('bytes') as string[],
-    values: kmsPublicDecryptEIP712Signatures,
+    types: Array(kmsPublicDecryptEip712Signatures.length).fill('bytes') as string[],
+    values: kmsPublicDecryptEip712Signatures,
   });
 
   const decryptionProof: BytesHex = concatBytesHex([packedNumSigners, packedSignatures, signedExtraData]);
