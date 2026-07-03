@@ -11,7 +11,7 @@ import "encrypted-types/EncryptedTypes.sol";
  * @notice  Send side of a confidential omnichain app (cOApp) relying on a LayerZero-enabled ConfidentialBridge.
  *          Looks up the destination peer from the shared {ConfidentialOAppCore} registry and bridges encrypted
  *          handles to it through `FHE.sendLZConfidentialBridge`.
- * @dev     A message may carry up to 32 handes.
+ * @dev     A message may carry up to 32 handles.
  * @dev     The destination is taken from {peers} (a `bytes32`, so non-EVM peers work too).
  * @dev     Quote the fee with {_quoteSendHandleToPeer/_quoteSendHandlesToPeer} and forward it as `msg.value`
  *          when sending, i.e before calling any of {_sendHandleToPeer/_sendHandlesToPeer}.
@@ -50,7 +50,22 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         );
     }
 
-    /// @notice Type-safe {ebool} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    /**
+     * @notice Type-safe {ebool} overload: bridges a single encrypted `ebool` handle to the peer cOApp
+     *         configured for `dstEid`.
+     * @dev    Unwraps `handle` to `bytes32` and forwards to the private core. Wraps it in a one-element
+     *         list; the destination receiver references it at index 0. Forwards `msg.value` as the
+     *         LayerZero native fee, so the calling entrypoint must be `payable` and funded with
+     *         the amount returned by {_quoteSendHandleToPeer}.
+     * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
+     * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
+     * @param payload       Opaque app payload; decoded by the destination receiver, which references the handle by index.
+     * @param handle        Encrypted `ebool` handle to bridge; this contract must hold ACL allowance on it.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @return guid         The LayerZero message guid.
+     * @return nonce        The LayerZero message nonce.
+     */
     function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
@@ -60,7 +75,22 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint8} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    /**
+     * @notice Type-safe {euint8} overload: bridges a single encrypted `euint8` handle to the peer cOApp
+     *         configured for `dstEid`.
+     * @dev    Unwraps `handle` to `bytes32` and forwards to the private core. Wraps it in a one-element
+     *         list; the destination receiver references it at index 0. Forwards `msg.value` as the
+     *         LayerZero native fee, so the calling entrypoint must be `payable` and funded with
+     *         the amount returned by {_quoteSendHandleToPeer}.
+     * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
+     * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
+     * @param payload       Opaque app payload; decoded by the destination receiver, which references the handle by index.
+     * @param handle        Encrypted `euint8` handle to bridge; this contract must hold ACL allowance on it.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @return guid         The LayerZero message guid.
+     * @return nonce        The LayerZero message nonce.
+     */
     function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
@@ -70,7 +100,22 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint16} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    /**
+     * @notice Type-safe {euint16} overload: bridges a single encrypted `euint16` handle to the peer cOApp
+     *         configured for `dstEid`.
+     * @dev    Unwraps `handle` to `bytes32` and forwards to the private core. Wraps it in a one-element
+     *         list; the destination receiver references it at index 0. Forwards `msg.value` as the
+     *         LayerZero native fee, so the calling entrypoint must be `payable` and funded with
+     *         the amount returned by {_quoteSendHandleToPeer}.
+     * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
+     * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
+     * @param payload       Opaque app payload; decoded by the destination receiver, which references the handle by index.
+     * @param handle        Encrypted `euint16` handle to bridge; this contract must hold ACL allowance on it.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @return guid         The LayerZero message guid.
+     * @return nonce        The LayerZero message nonce.
+     */
     function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
@@ -80,7 +125,22 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint32} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    /**
+     * @notice Type-safe {euint32} overload: bridges a single encrypted `euint32` handle to the peer cOApp
+     *         configured for `dstEid`.
+     * @dev    Unwraps `handle` to `bytes32` and forwards to the private core. Wraps it in a one-element
+     *         list; the destination receiver references it at index 0. Forwards `msg.value` as the
+     *         LayerZero native fee, so the calling entrypoint must be `payable` and funded with
+     *         the amount returned by {_quoteSendHandleToPeer}.
+     * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
+     * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
+     * @param payload       Opaque app payload; decoded by the destination receiver, which references the handle by index.
+     * @param handle        Encrypted `euint32` handle to bridge; this contract must hold ACL allowance on it.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @return guid         The LayerZero message guid.
+     * @return nonce        The LayerZero message nonce.
+     */
     function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
@@ -90,7 +150,22 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint64} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    /**
+     * @notice Type-safe {euint64} overload: bridges a single encrypted `euint64` handle to the peer cOApp
+     *         configured for `dstEid`.
+     * @dev    Unwraps `handle` to `bytes32` and forwards to the private core. Wraps it in a one-element
+     *         list; the destination receiver references it at index 0. Forwards `msg.value` as the
+     *         LayerZero native fee, so the calling entrypoint must be `payable` and funded with
+     *         the amount returned by {_quoteSendHandleToPeer}.
+     * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
+     * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
+     * @param payload       Opaque app payload; decoded by the destination receiver, which references the handle by index.
+     * @param handle        Encrypted `euint64` handle to bridge; this contract must hold ACL allowance on it.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @return guid         The LayerZero message guid.
+     * @return nonce        The LayerZero message nonce.
+     */
     function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
@@ -100,7 +175,22 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint128} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    /**
+     * @notice Type-safe {euint128} overload: bridges a single encrypted `euint128` handle to the peer cOApp
+     *         configured for `dstEid`.
+     * @dev    Unwraps `handle` to `bytes32` and forwards to the private core. Wraps it in a one-element
+     *         list; the destination receiver references it at index 0. Forwards `msg.value` as the
+     *         LayerZero native fee, so the calling entrypoint must be `payable` and funded with
+     *         the amount returned by {_quoteSendHandleToPeer}.
+     * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
+     * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
+     * @param payload       Opaque app payload; decoded by the destination receiver, which references the handle by index.
+     * @param handle        Encrypted `euint128` handle to bridge; this contract must hold ACL allowance on it.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @return guid         The LayerZero message guid.
+     * @return nonce        The LayerZero message nonce.
+     */
     function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
@@ -110,7 +200,22 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {euint256} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`. See the private {_sendHandleToPeer} core for the full semantics.
+    /**
+     * @notice Type-safe {euint256} overload: bridges a single encrypted `euint256` handle to the peer cOApp
+     *         configured for `dstEid`.
+     * @dev    Unwraps `handle` to `bytes32` and forwards to the private core. Wraps it in a one-element
+     *         list; the destination receiver references it at index 0. Forwards `msg.value` as the
+     *         LayerZero native fee, so the calling entrypoint must be `payable` and funded with
+     *         the amount returned by {_quoteSendHandleToPeer}.
+     * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
+     * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
+     * @param payload       Opaque app payload; decoded by the destination receiver, which references the handle by index.
+     * @param handle        Encrypted `euint256` handle to bridge; this contract must hold ACL allowance on it.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @return guid         The LayerZero message guid.
+     * @return nonce        The LayerZero message nonce.
+     */
     function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,
@@ -120,7 +225,22 @@ abstract contract ConfidentialOAppSender is ConfidentialOAppCore {
         (guid, nonce) = _sendHandleToPeer(dstEid, payload, FHE.toBytes32(handle), lzComposeGas);
     }
 
-    /// @notice Type-safe {eaddress} overload of the single-handle send; unwraps `handle` and bridges it to the peer on `dstEid`.. See the private {_sendHandleToPeer} core for the full semantics.
+    /**
+     * @notice Type-safe {eaddress} overload: bridges a single encrypted `eaddress` handle to the peer cOApp
+     *         configured for `dstEid`.
+     * @dev    Unwraps `handle` to `bytes32` and forwards to the private core. Wraps it in a one-element
+     *         list; the destination receiver references it at index 0. Forwards `msg.value` as the
+     *         LayerZero native fee, so the calling entrypoint must be `payable` and funded with
+     *         the amount returned by {_quoteSendHandleToPeer}.
+     * @dev    Reverts {NoPeer} if no peer is configured for `dstEid`.
+     * @param dstEid        Destination LayerZero endpoint id (must have a configured peer).
+     * @param payload       Opaque app payload; decoded by the destination receiver, which references the handle by index.
+     * @param handle        Encrypted `eaddress` handle to bridge; this contract must hold ACL allowance on it.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @return guid         The LayerZero message guid.
+     * @return nonce        The LayerZero message nonce.
+     */
     function _sendHandleToPeer(
         uint32 dstEid,
         bytes memory payload,

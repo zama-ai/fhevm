@@ -84,7 +84,7 @@ contract ConfidentialMultiChainToken is ConfidentialOApp {
     /**
      * @notice Quote the LayerZero native fee for a {send} call, without sending.
      * @dev    Mirrors {send}'s wire shape so the returned fee matches what {send} would
-     *         charge: the payload is an abi-encoded `(address, bytes32)` pair and a single
+     *         charge: the payload is an abi-encoded `address` (the recipient) and a single
      *         handle is bridged. The fee is a function only of that message shape and the
      *         execution options (derived from `mintComposeGas`), not of the
      *         `amount`/`recipient` values — so this view takes no amount and quotes with a
