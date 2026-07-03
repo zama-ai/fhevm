@@ -9,7 +9,7 @@ import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
 /// @notice Minimal ERC-1271 smart-account mock that validates a single owner's
 ///         ECDSA signature — the canonical single-signer wallet (Safe/Argent-style
 ///         single owner). Exercises the `ecrecover`-inside-`isValidSignature`
-///         branch of the RFC-012 fallback: the KMS Connector / relayer recover the
+///         branch of the ERC-1271 fallback: the KMS Connector / relayer recover the
 ///         signer inside this contract and compare it to the configured owner.
 contract ERC1271OwnerWallet is IERC1271, E2ECoprocessorConfig {
     bytes4 private constant MAGIC_VALUE = 0x1626ba7e;

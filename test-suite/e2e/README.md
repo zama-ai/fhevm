@@ -12,12 +12,12 @@ npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/Lock.ts
 ```
 
-## Unified user-decryption suites (RFC-012 / RFC-016)
+## Unified user-decryption suites
 
-E2E coverage for ERC-1271 smart-account signature verification (RFC-012) and the
-unified EIP-712 decryption request (RFC-016):
+E2E coverage for ERC-1271 smart-account signature verification and the unified
+EIP-712 user-decryption request:
 
-- `test/erc1271UserDecryption/` — smart-account signing modes and every RFC-012
+- `test/erc1271UserDecryption/` — smart-account signing modes and every ERC-1271
   rejection path
 - `test/unifiedUserDecryption/` — `allowedContracts` modes, validity window,
   mixed direct+delegated batches, `extraData` version matrix
@@ -26,10 +26,14 @@ unified EIP-712 decryption request (RFC-016):
 
 These suites POST the unified `eip712-unified-user-decrypt-v1` envelope directly
 to the relayer's `/v3/user-decrypt` endpoint via
-`test/sdk/unified/unifiedUserDecrypt.ts` (the public SDK wrapper only drives the
-legacy path). The helper's header comment documents the assertion model; each
-suite documents its RFC coverage inline. If the relayer is fronted by auth, set
-`ZAMA_FHEVM_API_KEY` (sent as `x-api-key`).
+`test/sdk/unified/unifiedUserDecrypt.ts` — the public SDK builds the same
+envelope on protocol >= 0.14, but always signs as the connected signer and does
+not expose the fields these suites must control (distinct `userAddress`, empty
+signatures, extraData versions, malformed shapes). Positives additionally
+decrypt through the public SDK and assert the known plaintext where the
+scenario is SDK-expressible. The helper's header comment documents the
+assertion model. If the relayer is fronted by auth, set `ZAMA_FHEVM_API_KEY`
+(sent as `x-api-key`).
 
 Run via the fhevm-cli profiles `erc1271-user-decryption`,
 `unified-user-decryption`, and `decryption-signature-invalidation` (all part of

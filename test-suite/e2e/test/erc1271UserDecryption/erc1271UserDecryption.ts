@@ -27,15 +27,18 @@ const POSITIVE_TIMEOUT_MS = 3 * 60 * 1000;
 const TIMEOUT_MARGIN_MS = 60 * 1000;
 
 /**
- * RFC-012 — ERC-1271 support for smart-account signature verification.
+ * ERC-1271 support for smart-account signature verification.
  *
  * These exercise the relayer's synchronous signature pre-check (which runs the
  * shared `verify_signature`: `ecrecover` -> ERC-1271 `isValidSignature`
  * fallback) via the unified `/v3/user-decrypt` endpoint. A definitively-bad
  * signature is rejected synchronously (`400`); a valid one is accepted (`202`)
- * and — for the positive cases — driven to a `succeeded` job.
+ * and — for the positive cases — driven to a `succeeded` job. The smart-account
+ * positives cannot additionally assert the plaintext through the public SDK
+ * (it signs as the connected signer and cannot act as a wallet userAddress);
+ * the EOA fast-path positive does assert it.
  */
-describe('ERC-1271 user decryption (RFC-012)', function () {
+describe('ERC-1271 user decryption', function () {
   let signers: Signers;
   let instances: FhevmInstances;
   let cfg: UnifiedConfig;
@@ -104,6 +107,13 @@ describe('ERC-1271 user decryption (RFC-012)', function () {
     });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    // Decrypt the same handle through the public SDK and assert the known plaintext.
+    const clear = await instances.alice.userDecryptSingleHandle({
+      handle,
+      contractAddress: userDecryptAddress,
+      signer: signers.alice,
+    });
+    expect(clear).to.equal(18446744073709551600n);
   });
 
   it('test erc1271 user decrypt smart account (owner ECDSA signature) succeeds', async function () {
@@ -177,7 +187,7 @@ describe('ERC-1271 user decryption (RFC-012)', function () {
     expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
   });
 
-  // RFC-012 step 2.4 enumerates three rejection branches for a contract
+  // The ERC-1271 verification has three rejection branches for a contract
   // userAddress: wrong return value, revert, and returndata shorter than 32
   // bytes. Each gets its own mode on the reject wallet.
 

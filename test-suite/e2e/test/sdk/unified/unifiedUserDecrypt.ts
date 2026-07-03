@@ -1,36 +1,38 @@
-// Self-contained client for the RFC-016 UNIFIED user-decryption path
+// Self-contained client for the UNIFIED user-decryption path
 // (`POST /v3/user-decrypt`, envelope `eip712-unified-user-decrypt-v1`) with the
-// RFC-012 ERC-1271 signing modes.
+// ERC-1271 smart-account signing modes.
 //
-// Why this exists: the public `@fhevm/sdk` wrapper used elsewhere in the e2e
-// suite only drives the legacy user-decrypt path — it forces `userAddress ==
-// signer`, cannot send `allowedContracts`/`durationSeconds`, and posts a V1
-// payload to `/v2/user-decrypt`. None of the RFC-012/016 behavior is reachable
-// through it. This helper builds and signs the unified EIP-712 request itself
-// (with a distinct `userAddress` for smart accounts, `allowedContracts`, and
-// per-handle `ownerAddress`), posts the v3 envelope, and reports the outcome.
+// Why this exists: the public `@fhevm/sdk` builds the same unified envelope on
+// protocol >= 0.14, but always signs as the connected signer and does not
+// expose the envelope fields these suites must control — a `userAddress`
+// distinct from the ECDSA signer (smart accounts), empty signatures
+// (approveHash flows), custom `extraData` versions, custom `startTimestamp`s,
+// or deliberately malformed shapes for negative cases. This helper builds and
+// signs the unified EIP-712 request itself, posts the v3 envelope, and reports
+// the raw outcome so tests can assert exact acceptance/rejection modes.
 //
 // Assertion model (see the suites under test/erc1271UserDecryption,
 // test/unifiedUserDecryption, test/decryptionSignatureInvalidation):
-//   - Signature verification (RFC-012) is run SYNCHRONOUSLY by the relayer's
+//   - ERC-1271 signature verification is run SYNCHRONOUSLY by the relayer's
 //     pre-check (the shared `verify_signature`: ecrecover -> ERC-1271 fallback).
 //     A definitively-bad signature yields `POST 400 invalid_signature`; a valid
-//     one yields `POST 202 queued`. This is the authoritative, deterministic
-//     signal for the ERC-1271 fallback logic.
-//   - Per-handle ACL / ownership / `allowedContracts` / signature-invalidation
-//     (RFC-016) are authoritative only in the KMS Connector, which processes the
-//     request asynchronously. A request that passes those checks drives the job
-//     to `succeeded` (KMS produced re-encrypted shares — which only happens once
-//     every check passed). A request that fails them never succeeds (the relayer
-//     eventually times it out to `failed`).
-//
-// The helper intentionally does NOT reconstruct the plaintext from the returned
-// shares: that requires the js-sdk's internal `createKmsSigncryptedShares`
-// (reads the on-chain KMS signers context and needs a full client context),
-// which is not part of the public surface. Reaching `succeeded` already proves
-// the full authorization pipeline accepted and processed the request, which is
-// exactly what RFC-012/016 govern.
+//     one yields `POST 202 queued`.
+//   - Per-handle ownership/delegation ACL failures are surfaced by the relayer's
+//     per-job host-ACL check as terminal `failed` with
+//     `error.label == "not_allowed_on_host_acl"` — assert via
+//     `expectRelayerAclRejection`.
+//   - Checks enforced only by the KMS Connector (`allowedContracts` semantics,
+//     signature invalidation, extraData context/epoch validation) reject without
+//     a relayer-visible response: the job stays queued for the whole observation
+//     window — assert via `expectStuckAtKms`.
+//   - A request that passes every check drives the job to `succeeded` (the KMS
+//     produced re-encrypted shares). Where the scenario is expressible through
+//     the public SDK (EOA-owned or delegated handles), the suites additionally
+//     decrypt the same handle via the SDK and assert the known plaintext;
+//     wallet-owned handles (`userAddress` = a contract) cannot be decrypted
+//     through the public SDK, so those positives assert `succeeded` only.
 
+import { expect } from 'chai';
 import { TypedDataEncoder } from 'ethers';
 import type { Signer, TypedDataDomain } from 'ethers';
 
@@ -407,7 +409,7 @@ export async function requestUnifiedUserDecrypt(
 
 /**
  * True iff the POST was rejected specifically because SIGNATURE VERIFICATION
- * failed — the synchronous RFC-012 pre-check (`ecrecover` -> ERC-1271
+ * failed — the relayer's synchronous pre-check (`ecrecover` -> ERC-1271
  * fallback). The relayer surfaces exactly `400` + `error.details` containing
  * `{field: "signature", issue: "Signature is invalid"}`
  * (`V2ErrorResponseBody::invalid_signature`). Matching the issue text as well
@@ -426,6 +428,33 @@ export function isSignatureRejection(post: PostResult): boolean {
       typeof d.issue === 'string' &&
       d.issue.toLowerCase().includes('signature is invalid'),
   );
+}
+
+/**
+ * Assert an async rejection surfaced by the RELAYER's per-job host-ACL check:
+ * terminal `failed` with `error.label == "not_allowed_on_host_acl"`. Used for
+ * negatives whose cause is a per-handle ownership/delegation ACL failure —
+ * pinning the reason so the test cannot pass on an unintended failure.
+ */
+export function expectRelayerAclRejection(poll: PollResult | undefined, messagePattern?: RegExp): void {
+  expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('failed');
+  expect(poll?.errorLabel, JSON.stringify(poll?.raw)).to.equal('not_allowed_on_host_acl');
+  if (messagePattern) {
+    const message = ((poll?.raw as { error?: { message?: string } })?.error?.message ?? '') as string;
+    expect(message, JSON.stringify(poll?.raw)).to.match(messagePattern);
+  }
+}
+
+/**
+ * Assert an async rejection enforced ONLY by the KMS Connector
+ * (`allowedContracts` semantics, signature invalidation, extraData
+ * context/epoch validation): the connector rejects without a relayer-visible
+ * response, so the job stays queued for the whole observation window. Requiring
+ * exactly `pending` pins the rejection mode — an unintended failure (bad
+ * signature, ACL failure) would surface as `400`/`failed` and fail this assert.
+ */
+export function expectStuckAtKms(poll: PollResult | undefined): void {
+  expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('pending');
 }
 
 /** Build a direct-access handle entry (`ownerAddress == userAddress`). */

@@ -6,7 +6,7 @@ import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
 
 /// @notice ERC-1271 mock that NEVER validates a signature, with a configurable
-///         rejection mode covering each rejection branch of RFC-012 step 2.4:
+///         rejection mode covering each ERC-1271 verification rejection branch:
 ///         - `WrongMagic`: returns a non-magic `bytes4` (well-formed reject);
 ///         - `Revert`: `isValidSignature` reverts;
 ///         - `ShortReturndata`: returns fewer than 32 bytes, like a
@@ -34,7 +34,7 @@ contract ERC1271RejectWallet is IERC1271, E2ECoprocessorConfig {
         FHE.allowThis(value);
     }
 
-    /// @notice Select which RFC-012 step 2.4 rejection branch to exercise.
+    /// @notice Select which ERC-1271 rejection branch to exercise.
     function setMode(RejectMode m) external {
         mode = m;
     }

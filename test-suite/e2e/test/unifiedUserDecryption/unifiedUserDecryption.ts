@@ -12,11 +12,14 @@ import {
 import { Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
 import { waitForBlock } from '../utils';
+import { isLiveNetwork } from '../network';
 import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
 import {
   backdatedStartTimestamp,
   delegatedHandle,
   directHandle,
+  expectRelayerAclRejection,
+  expectStuckAtKms,
   requestUnifiedUserDecrypt,
   submitUnifiedRequest,
 } from '../sdk/unified/unifiedUserDecrypt';
@@ -25,11 +28,10 @@ const DURATION_SECONDS = 7 * 24 * 60 * 60;
 const POSITIVE_TIMEOUT_MS = 3 * 60 * 1000;
 // Mocha timeout margin on top of the poll window (pre-poll on-chain work + POST).
 const TIMEOUT_MARGIN_MS = 60 * 1000;
-// Floor for the bounded window used by async-rejected requests. A correctly-
-// rejected request is never forwarded to the KMS, so it never reaches
-// `succeeded`; the relayer only flips it to `failed` after its own ~300s
-// user-decrypt timeout. Asserting "not succeeded" within a bounded window keeps
-// negatives deterministic and fast — the window is calibrated at runtime to a
+// Floor for the bounded observation window used by async negatives. Ownership/
+// delegation ACL failures terminate fast (relayer-`failed` with
+// `not_allowed_on_host_acl`); checks enforced only by the KMS Connector leave
+// the job queued for the whole window. The window is calibrated at runtime to a
 // multiple of the observed positive-control latency (see below) so a slow stack
 // cannot false-pass a negative that would have succeeded a moment later.
 const NEGATIVE_WINDOW_FLOOR_MS = 60 * 1000;
@@ -39,24 +41,44 @@ const SLOW_TEST_TIMEOUT_MS = 10 * 60 * 1000;
 // host-chain reads observe it (same wait the delegated-user-decryption suite uses).
 const PROPAGATION_BLOCKS = 15;
 const ONE_DAY_SECONDS = 24 * 60 * 60;
+// Short delegation lifetime for the expiry test (same value as the legacy
+// delegated suite; the deployed ACL may reject it — the test probes and skips).
+const DELEGATION_EXPIRY_SECONDS = 75;
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
+/** Advance past `expirationTimestamp`: fast-forward chain time locally, then poll until a block is past it. */
+const expireDelegation = async (expirationTimestamp: number): Promise<void> => {
+  if (!isLiveNetwork()) {
+    const latestBlock = await ethers.provider.getBlock('latest');
+    const secondsUntilExpiry = Math.max(0, expirationTimestamp - latestBlock!.timestamp);
+    await ethers.provider.send('evm_increaseTime', [secondsUntilExpiry + 1]);
+    await ethers.provider.send('evm_mine', []);
+  }
+  for (;;) {
+    const latestBlock = await ethers.provider.getBlock('latest');
+    if (latestBlock && latestBlock.timestamp > expirationTimestamp) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+};
+
 /**
- * RFC-016 — Unified EIP-712 decryption request with `allowedContracts`
- * (permissive vs. app-bounded), per-handle `ownerAddress` (direct + delegated in
- * one signature), the `userAddress ∉ allowedContracts` rule, and the validity
- * window.
+ * Unified EIP-712 user-decryption request: `allowedContracts` (permissive vs.
+ * app-bounded), per-handle `ownerAddress` (direct + delegated in one
+ * signature), the `userAddress ∉ allowedContracts` rule, the validity window,
+ * and the extraData versions.
  *
- * Positive authorizations are driven to a `succeeded` job (the KMS produced
- * shares — which only happens once every RFC-016 check passed). Validity-window
- * violations are rejected synchronously by the relayer (`400`); the remaining
- * authorization failures are checked in the KMS Connector asynchronously —
- * since the gateway emits the event unconditionally, a rejected request is
- * never forwarded and simply never succeeds (asserted within a bounded window,
- * calibrated against the positive-control latency).
+ * Positive authorizations are driven to a `succeeded` job and — where the
+ * scenario is expressible through the public SDK — the same handle is
+ * decrypted via the SDK and the known plaintext asserted. Validity-window
+ * violations are rejected synchronously by the relayer (`400`); ownership/
+ * delegation ACL failures surface as relayer-`failed` with
+ * `not_allowed_on_host_acl`; checks enforced only by the KMS Connector leave
+ * the job queued (see the helper's assertion-model notes).
  */
-describe('Unified user decryption (RFC-016)', function () {
+describe('Unified user decryption', function () {
   let signers: Signers;
   let instances: FhevmInstances;
   let cfg: UnifiedConfig;
@@ -73,7 +95,7 @@ describe('Unified user decryption (RFC-016)', function () {
 
   before(async function () {
     this.timeout(180_000);
-    await initSigners(3);
+    await initSigners(5);
     signers = await getSigners();
     instances = await createInstances(signers);
     cfg = {
@@ -112,6 +134,14 @@ describe('Unified user decryption (RFC-016)', function () {
     });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    // Decrypt the same handle through the public SDK (which builds the same
+    // unified envelope on protocol >= 0.14) and assert the known plaintext.
+    const clear = await instances.alice.userDecryptSingleHandle({
+      handle,
+      contractAddress: aliceContractAddress,
+      signer: signers.alice,
+    });
+    expect(clear).to.equal(18446744073709551600n);
     // Calibrate the async-negative observation window to this stack's latency.
     const elapsedMs = Date.now() - startedAt;
     negativeWindowMs = Math.min(Math.max(NEGATIVE_WINDOW_FLOOR_MS, 3 * elapsedMs), NEGATIVE_WINDOW_CAP_MS);
@@ -134,14 +164,20 @@ describe('Unified user decryption (RFC-016)', function () {
     });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    const clear = await instances.alice.userDecryptSingleHandle({
+      handle: handle,
+      contractAddress: aliceContractAddress,
+      signer: signers.alice,
+    });
+    expect(clear).to.equal(32n);
   });
 
   it('test unified user decrypt app-bounded mode accepts when ANY listed contract is allowed (any-of semantics)', async function () {
     this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
     const handle = await aliceContract.xUint8();
-    // First entry is NOT allowed on the handle; the second is. RFC-016 requires
-    // "at least one listed contract" — an implementation wrongly requiring ALL
-    // entries to be allowed would fail this test.
+    // First entry is NOT allowed on the handle; the second is. The unified
+    // contract check requires "at least one listed contract" — an implementation
+    // wrongly requiring ALL entries to be allowed would fail this test.
     const unrelated = ethers.Wallet.createRandom().address;
     const req: UnifiedDecryptRequest = {
       handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
@@ -157,6 +193,12 @@ describe('Unified user decryption (RFC-016)', function () {
     });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    const clear = await instances.alice.userDecryptSingleHandle({
+      handle: handle,
+      contractAddress: aliceContractAddress,
+      signer: signers.alice,
+    });
+    expect(clear).to.equal(42n);
   });
 
   it('test unified user decrypt multi-handle batch (same owner, one signature) succeeds', async function () {
@@ -180,6 +222,18 @@ describe('Unified user decryption (RFC-016)', function () {
     });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    const clear32 = await instances.bob.userDecryptSingleHandle({
+      handle: handle32,
+      contractAddress: bobContractAddress,
+      signer: signers.bob,
+    });
+    expect(clear32).to.equal(32n);
+    const clear64 = await instances.bob.userDecryptSingleHandle({
+      handle: handle64,
+      contractAddress: bobContractAddress,
+      signer: signers.bob,
+    });
+    expect(clear64).to.equal(18446744073709551600n);
   });
 
   it('test unified user decrypt rejects an expired validity window', async function () {
@@ -201,7 +255,7 @@ describe('Unified user decryption (RFC-016)', function () {
   });
 
   it('test unified user decrypt rejects a future startTimestamp (invalidation-bypass vector)', async function () {
-    // RFC-016 warns that a future-dated startTimestamp would survive an
+    // A future-dated startTimestamp would survive an
     // invalidation set to block.timestamp; the relayer rejects it up front
     // ("Timestamp must not be in the future").
     const handle = await aliceContract.xUint64();
@@ -234,10 +288,11 @@ describe('Unified user decryption (RFC-016)', function () {
       waitForTerminal: true,
       timeoutMs: negativeWindowMs,
     });
-    // Signature is valid, so the relayer accepts; the KMS then rejects on the
-    // contract-allowance check and the job never succeeds.
+    // Signature is valid, so the relayer accepts; the contract-allowance check
+    // is enforced only by the KMS Connector, which rejects without responding —
+    // the job stays queued.
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.not.equal('succeeded');
+    expectStuckAtKms(poll);
   });
 
   it('test unified user decrypt rejects when userAddress appears in allowedContracts', async function () {
@@ -256,7 +311,7 @@ describe('Unified user decryption (RFC-016)', function () {
       timeoutMs: negativeWindowMs,
     });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.not.equal('succeeded');
+    expectStuckAtKms(poll);
   });
 
   it('test unified user decrypt rejects a spoofed ownerAddress (handle not owned by userAddress)', async function () {
@@ -274,18 +329,19 @@ describe('Unified user decryption (RFC-016)', function () {
       waitForTerminal: true,
       timeoutMs: negativeWindowMs,
     });
-    // bob's signature is valid, so the relayer accepts; the ACL ownership check
-    // (isAllowed(handle, bob) == false) rejects it in the KMS Connector.
+    // bob's signature is valid, so the POST is accepted; the per-job host-ACL
+    // check then fails (isAllowed(handle, bob) == false) and the job terminates
+    // as failed with not_allowed_on_host_acl.
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.not.equal('succeeded');
+    expectRelayerAclRejection(poll, /isAllowed/);
   });
 
   it('test unified user decrypt rejects a delegated handle entry when no delegation exists', async function () {
     this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
     // ownerAddress = alice != userAddress = bob triggers the delegated branch:
     // isHandleDelegatedForUserDecryption(alice, bob, contract, handle). No
-    // delegation alice -> bob exists, so the KMS rejects (RFC-016 "ownerAddress
-    // = X != userAddress" spoof scenario).
+    // delegation alice -> bob exists, so the ACL check fails (the "ownerAddress
+    // = X != userAddress" spoofing scenario).
     const handle = await aliceContract.xUint64();
     const req: UnifiedDecryptRequest = {
       handles: [delegatedHandle(handle, aliceContractAddress, signers.alice.address)],
@@ -300,7 +356,33 @@ describe('Unified user decryption (RFC-016)', function () {
       timeoutMs: negativeWindowMs,
     });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.not.equal('succeeded');
+    expectRelayerAclRejection(poll, /ACL check failed/);
+  });
+
+  it('test unified user decrypt rejects a batch containing one bad handle', async function () {
+    this.timeout(negativeWindowMs + TIMEOUT_MARGIN_MS);
+    // One legitimate bob-owned handle plus one alice-owned handle claimed as
+    // bob's: authorization is all-or-nothing per request, so a single bad
+    // handle rejects the whole batch — the good handle is not decrypted.
+    const goodHandle = await bobContract.xUint32();
+    const badHandle = await aliceContract.xUint64(); // owned by alice, claimed by bob
+    const req: UnifiedDecryptRequest = {
+      handles: [
+        directHandle(goodHandle, bobContractAddress, signers.bob.address),
+        directHandle(badHandle, aliceContractAddress, signers.bob.address),
+      ],
+      userAddress: signers.bob.address,
+      allowedContracts: [],
+      publicKey,
+      startTimestamp: backdatedStartTimestamp(),
+      durationSeconds: DURATION_SECONDS,
+    };
+    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.bob }, {
+      waitForTerminal: true,
+      timeoutMs: negativeWindowMs,
+    });
+    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expectRelayerAclRejection(poll, /isAllowed/);
   });
 
   describe('extraData versions', function () {
@@ -359,6 +441,12 @@ describe('Unified user decryption (RFC-016)', function () {
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+      const clear = await instances.alice.userDecryptSingleHandle({
+        handle: handle,
+        contractAddress: aliceContractAddress,
+        signer: signers.alice,
+      });
+      expect(clear).to.equal(18446744073709551600n);
     });
 
     it('test unified user decrypt accepts extraData v1 with the current contextId', async function () {
@@ -383,6 +471,12 @@ describe('Unified user decryption (RFC-016)', function () {
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+      const clear = await instances.alice.userDecryptSingleHandle({
+        handle: handle,
+        contractAddress: aliceContractAddress,
+        signer: signers.alice,
+      });
+      expect(clear).to.equal(32n);
     });
 
     it('test unified user decrypt accepts extraData v2 with the current contextId and active epochId (new-SDK path)', async function () {
@@ -408,6 +502,12 @@ describe('Unified user decryption (RFC-016)', function () {
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+      const clear = await instances.alice.userDecryptSingleHandle({
+        handle: handle,
+        contractAddress: aliceContractAddress,
+        signer: signers.alice,
+      });
+      expect(clear).to.equal(16n);
     });
 
     it('test unified user decrypt rejects extraData v2 with an inactive epochId (0)', async function () {
@@ -431,7 +531,7 @@ describe('Unified user decryption (RFC-016)', function () {
         timeoutMs: negativeWindowMs,
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expect(poll?.status, JSON.stringify(poll?.raw)).to.not.equal('succeeded');
+      expectStuckAtKms(poll);
     });
 
     it('test unified user decrypt rejects extraData with an unknown contextId', async function () {
@@ -455,7 +555,7 @@ describe('Unified user decryption (RFC-016)', function () {
         timeoutMs: negativeWindowMs,
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expect(poll?.status, JSON.stringify(poll?.raw)).to.not.equal('succeeded');
+      expectStuckAtKms(poll);
     });
 
     it('test unified user decrypt rejects a malformed extraData version', async function () {
@@ -489,9 +589,10 @@ describe('Unified user decryption (RFC-016)', function () {
       this.timeout(SLOW_TEST_TIMEOUT_MS);
 
       // carol owns a SmartWallet holding an encrypted token balance. She
-      // delegates decryption of the token contract's handles to (a) bob's EOA
-      // and (b) an ERC-1271 wallet owned by bob — covering both the mixed-batch
-      // and the three-address cases with a single propagation wait.
+      // delegates decryption of the token contract's handles to (a) bob's EOA,
+      // (b) an ERC-1271 wallet owned by bob, and (c) dave's EOA (revoked later
+      // by the revocation test) — covering the mixed-batch, three-address, and
+      // revocation cases with a single propagation wait.
       const tokenFactory = await ethers.getContractFactory('EncryptedERC20');
       token = await tokenFactory.connect(signers.alice).deploy('Zama Confidential Token', 'ZAMA');
       await token.waitForDeployment();
@@ -526,6 +627,9 @@ describe('Unified user decryption (RFC-016)', function () {
       await (
         await smartWallet.connect(signers.carol).delegateUserDecryption(erc1271WalletAddress, tokenAddress, expiration)
       ).wait();
+      await (
+        await smartWallet.connect(signers.carol).delegateUserDecryption(signers.dave.address, tokenAddress, expiration)
+      ).wait();
       const currentBlock = await ethers.provider.getBlockNumber();
       await waitForBlock(currentBlock + PROPAGATION_BLOCKS);
 
@@ -552,15 +656,33 @@ describe('Unified user decryption (RFC-016)', function () {
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
       expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+      // Assert the known plaintexts of both legs through the public SDK: the
+      // direct handle via the standard decrypt, the delegated handle via the
+      // delegated decrypt (same pattern as the legacy delegated suite).
+      const clearDirect = await instances.bob.userDecryptSingleHandle({
+        handle: directCtHandle,
+        contractAddress: bobContractAddress,
+        signer: signers.bob,
+      });
+      expect(clearDirect).to.equal(18446744073709551600n);
+      const clearDelegated = await instances.bob.delegatedUserDecryptSingleHandle({
+        handle: delegatedCtHandle,
+        contractAddress: tokenAddress,
+        delegatorAddress: smartWalletAddress,
+        signer: signers.bob,
+      });
+      expect(clearDelegated).to.equal(500_000n);
     });
 
     it('test unified user decrypt three-address case (ERC-1271 wallet decrypting a delegated handle) succeeds', async function () {
       this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
-      // The composition both RFCs single out: the ECDSA signer is bob (owner
-      // key inside the wallet), userAddress is the ERC-1271 wallet (verified
-      // via isValidSignature), and ownerAddress is the third-party delegator
+      // The headline composition: the ECDSA signer is bob (owner key inside
+      // the wallet), userAddress is the ERC-1271 wallet (verified via
+      // isValidSignature), and ownerAddress is the third-party delegator
       // (the SmartWallet) — isValidSignature + isHandleDelegatedForUserDecryption
-      // in a single request.
+      // in a single request. The plaintext cannot be additionally asserted via
+      // the public SDK here: it signs as the connected signer and cannot act
+      // as the wallet userAddress.
       const req: UnifiedDecryptRequest = {
         handles: [delegatedHandle(delegatedCtHandle, tokenAddress, smartWalletAddress)],
         userAddress: erc1271WalletAddress,
@@ -582,7 +704,7 @@ describe('Unified user decryption (RFC-016)', function () {
       // The delegation smartWallet -> bob exists via tokenAddress only.
       // Substituting a different contractAddress in the (unsigned) HandleEntry
       // must fail isHandleDelegatedForUserDecryption — delegation is
-      // contract-scoped (RFC-016 "fabricated contractAddress" spoof scenario).
+      // contract-scoped (the "fabricated contractAddress" spoofing scenario).
       const req: UnifiedDecryptRequest = {
         handles: [delegatedHandle(delegatedCtHandle, bobContractAddress, smartWalletAddress)],
         userAddress: signers.bob.address,
@@ -596,7 +718,70 @@ describe('Unified user decryption (RFC-016)', function () {
         timeoutMs: negativeWindowMs,
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expect(poll?.status, JSON.stringify(poll?.raw)).to.not.equal('succeeded');
+      expectRelayerAclRejection(poll, /ACL check failed/);
+    });
+
+    it('test unified user decrypt rejects a revoked delegation', async function () {
+      this.timeout(SLOW_TEST_TIMEOUT_MS);
+      // dave was delegated in before(); revoking must close the delegated path
+      // through the unified route as well.
+      await (
+        await smartWallet.connect(signers.carol).revokeUserDecryptionDelegation(signers.dave.address, tokenAddress)
+      ).wait();
+      const currentBlock = await ethers.provider.getBlockNumber();
+      await waitForBlock(currentBlock + PROPAGATION_BLOCKS);
+
+      const req: UnifiedDecryptRequest = {
+        handles: [delegatedHandle(delegatedCtHandle, tokenAddress, smartWalletAddress)],
+        userAddress: signers.dave.address,
+        allowedContracts: [],
+        publicKey,
+        startTimestamp: backdatedStartTimestamp(),
+        durationSeconds: DURATION_SECONDS,
+      };
+      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.dave }, {
+        waitForTerminal: true,
+        timeoutMs: negativeWindowMs,
+      });
+      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+      expectRelayerAclRejection(poll, /ACL check failed/);
+    });
+
+    it('test unified user decrypt rejects an expired delegation', async function () {
+      this.timeout(SLOW_TEST_TIMEOUT_MS);
+      // Same probe/skip pattern as the legacy delegated suite: some deployed
+      // ACLs enforce a minimum delegation lifetime and reject short expiries.
+      const latestBlock = await ethers.provider.getBlock('latest');
+      const shortExpiry = latestBlock!.timestamp + DELEGATION_EXPIRY_SECONDS;
+      try {
+        await smartWallet
+          .connect(signers.carol)
+          .delegateUserDecryption.staticCall(signers.eve.address, tokenAddress, shortExpiry);
+      } catch {
+        this.skip(); // deployed ACL rejects short expiries — scenario untestable here
+      }
+
+      await (
+        await smartWallet.connect(signers.carol).delegateUserDecryption(signers.eve.address, tokenAddress, shortExpiry)
+      ).wait();
+      await expireDelegation(shortExpiry);
+      const currentBlock = await ethers.provider.getBlockNumber();
+      await waitForBlock(currentBlock + PROPAGATION_BLOCKS);
+
+      const req: UnifiedDecryptRequest = {
+        handles: [delegatedHandle(delegatedCtHandle, tokenAddress, smartWalletAddress)],
+        userAddress: signers.eve.address,
+        allowedContracts: [],
+        publicKey,
+        startTimestamp: backdatedStartTimestamp(),
+        durationSeconds: DURATION_SECONDS,
+      };
+      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.eve }, {
+        waitForTerminal: true,
+        timeoutMs: negativeWindowMs,
+      });
+      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+      expectRelayerAclRejection(poll, /ACL check failed/);
     });
   });
 });

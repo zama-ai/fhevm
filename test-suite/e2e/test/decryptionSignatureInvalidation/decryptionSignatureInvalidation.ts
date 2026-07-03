@@ -11,12 +11,13 @@ import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifie
 import {
   computeUnifiedDigest,
   directHandle,
+  expectStuckAtKms,
   pollJob,
   requestUnifiedUserDecrypt,
   submitUnifiedRequest,
 } from '../sdk/unified/unifiedUserDecrypt';
 
-// Minimal ABI for the RFC-016 invalidation surface on the host-chain ACL.
+// Minimal ABI for the decryption-signature-invalidation surface on the host-chain ACL.
 const ACL_ABI = [
   'function invalidateDecryptionSignaturesBefore(uint256 timestamp)',
   'function decryptionSignatureInvalidatedBefore(address account) view returns (uint256)',
@@ -72,20 +73,19 @@ const expectReverts = async (send: () => Promise<{ wait: () => Promise<unknown> 
 };
 
 /**
- * RFC-016 — on-chain signature invalidation
+ * On-chain decryption-signature invalidation
  * (`ACL.invalidateDecryptionSignaturesBefore`). The monotonic / zero-shorthand /
  * future-cap rules are asserted directly on the ACL; the end-to-end effect (the
  * KMS Connector rejecting a request whose `startTimestamp` predates the
  * invalidation) is asserted through the unified `/v3/user-decrypt` path,
- * including the multisig-rotation scenario the RFC presents as the mechanism's
- * motivation.
+ * including the multisig-rotation scenario that motivates the mechanism.
  *
  * Dedicated accounts (`eve` for EOA invalidation, a fresh wallet contract for
  * the rotation case) are used throughout so the (irreversible, monotonic)
  * invalidation state set here cannot interfere with the other suites. `dave`
  * never invalidates — he is the cross-account isolation control.
  */
-describe('Decryption signature invalidation (RFC-016)', function () {
+describe('Decryption signature invalidation', function () {
   let signers: Signers;
   let instances: FhevmInstances;
   let cfg: UnifiedConfig;
@@ -201,10 +201,11 @@ describe('Decryption signature invalidation (RFC-016)', function () {
       waitForTerminal: true,
       timeoutMs: NEGATIVE_WINDOW_MS,
     });
-    // Signature is valid, so the relayer accepts; the KMS invalidation check
-    // (startTimestamp < invalidatedBefore) rejects it and it never succeeds.
+    // Signature is valid, so the relayer accepts; the invalidation check is
+    // enforced only by the KMS Connector (startTimestamp < invalidatedBefore),
+    // which rejects without responding — the job stays queued.
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.not.equal('succeeded');
+    expectStuckAtKms(poll);
   });
 
   it('test decryption signature invalidation accepts a request signed at/after the invalidation timestamp', async function () {
@@ -243,6 +244,13 @@ describe('Decryption signature invalidation (RFC-016)', function () {
     });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    // Decrypt the same handle through the public SDK and assert the known plaintext.
+    const clear = await instances.carol.userDecryptSingleHandle({
+      handle,
+      contractAddress: carolContractAddress,
+      signer: signers.carol,
+    });
+    expect(clear).to.equal(18446744073709551600n);
   });
 
   it('test decryption signature invalidation for one account leaves other accounts unaffected', async function () {
@@ -265,11 +273,18 @@ describe('Decryption signature invalidation (RFC-016)', function () {
     });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    // Decrypt the same handle through the public SDK and assert the known plaintext.
+    const clear = await instances.dave.userDecryptSingleHandle({
+      handle,
+      contractAddress: daveContractAddress,
+      signer: signers.dave,
+    });
+    expect(clear).to.equal(18446744073709551600n);
   });
 
   it('test decryption signature invalidation kills pre-approved smart-account requests after signer rotation', async function () {
     this.timeout(POSITIVE_TIMEOUT_MS + NEGATIVE_WINDOW_MS + 3 * TIMEOUT_MARGIN_MS);
-    // RFC-016's motivating scenario: a Safe-style wallet pre-approves a
+    // The motivating scenario for invalidation: a Safe-style wallet pre-approves a
     // decryption request; after a signer rotation the pre-approval is STILL
     // ERC-1271-valid (approveHash survives rotation), so the wallet must call
     // invalidateDecryptionSignaturesBefore(0) — as the wallet, since the
@@ -320,6 +335,6 @@ describe('Decryption signature invalidation (RFC-016)', function () {
     const { post: postB } = await submitUnifiedRequest(cfg, reqB, { kind: 'empty' });
     expect(postB.httpStatus, JSON.stringify(postB.raw)).to.equal(202);
     const pollB = await pollJob(cfg, postB.jobId!, { timeoutMs: NEGATIVE_WINDOW_MS });
-    expect(pollB.status, JSON.stringify(pollB.raw)).to.not.equal('succeeded');
+    expectStuckAtKms(pollB);
   });
 });

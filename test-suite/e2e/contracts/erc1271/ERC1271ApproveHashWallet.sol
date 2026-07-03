@@ -5,7 +5,7 @@ import "@fhevm/solidity/lib/FHE.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
 
-/// @dev RFC-016 signature-invalidation surface on the host-chain ACL.
+/// @dev Decryption-signature-invalidation surface on the host-chain ACL.
 interface IACLDecryptionSignatureInvalidation {
     function invalidateDecryptionSignaturesBefore(uint256 timestamp) external;
 }
@@ -13,7 +13,7 @@ interface IACLDecryptionSignatureInvalidation {
 /// @notice ERC-1271 smart-account mock following Safe's `approveHash` /
 ///         `signedMessages` pattern: a request carries an EMPTY signature and is
 ///         considered valid iff the message hash was previously approved on-chain.
-///         Exercises the RFC-012 empty-signature path (the Connector calls
+///         Exercises the ERC-1271 empty-signature path (the Connector calls
 ///         `isValidSignature(digest, "")`).
 contract ERC1271ApproveHashWallet is IERC1271, E2ECoprocessorConfig {
     bytes4 private constant MAGIC_VALUE = 0x1626ba7e;
@@ -41,11 +41,11 @@ contract ERC1271ApproveHashWallet is IERC1271, E2ECoprocessorConfig {
         approvedHashes[hash] = true;
     }
 
-    /// @notice RFC-016 rotation hygiene: invalidate ALL decryption signatures
+    /// @notice Signer-rotation hygiene: invalidate ALL decryption signatures
     ///         issued for this wallet before now (`0` resolves to
     ///         `block.timestamp` inside the ACL). The invalidation mapping is
     ///         keyed by `msg.sender`, so the wallet itself must send the call —
-    ///         mirroring the RFC's recommended practice of calling
+    ///         mirroring the recommended practice of calling
     ///         `invalidateDecryptionSignaturesBefore(0)` on every signer rotation.
     function invalidateDecryptionSignatures(address acl) external {
         require(msg.sender == owner, "only owner");
