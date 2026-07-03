@@ -11,8 +11,8 @@ import { protocolContextFromAclVersion } from './ProtocolVersionResolver-p.js';
 const KNOWN_EXACT_ACL_WASM_CASES = [
   { acl: [0, 2, 0], tfhe: '1.5.3', kms: '0.13.10' },
   { acl: [0, 3, 0], tfhe: '1.5.3', kms: '0.13.10' },
-  { acl: [0, 4, 0], tfhe: '1.6.1', kms: '0.13.20-0' },
-  { acl: [0, 5, 0], tfhe: '1.6.1', kms: '0.13.20-0' },
+  { acl: [0, 4, 0], tfhe: '1.6.2', kms: '0.13.20-0' },
+  { acl: [0, 5, 0], tfhe: '1.6.2', kms: '0.13.20-0' },
 ] as const;
 
 type ResolveParameters = Parameters<typeof hyperWasmResolveTfheModuleVersion>[0];
@@ -71,11 +71,11 @@ describe('HyperWasmSolver', () => {
     expect(
       hyperWasmResolveTfheModuleVersion(
         makeParameters({
-          clientModuleVersions: { tfhe: '1.6.1' },
+          clientModuleVersions: { tfhe: '1.6.2' },
           runtimeModuleVersions: { tfhe: '1.5.3' },
         }),
       ),
-    ).toBe('1.6.1');
+    ).toBe('1.6.2');
   });
 
   it('uses runtime tfhe fallback when client module version is missing that field', () => {
@@ -120,11 +120,11 @@ describe('HyperWasmSolver', () => {
     expect(() =>
       hyperWasmResolveTfheModuleVersion(
         makeParameters({
-          clientModuleVersions: { tfhe: '1.6.1' },
+          clientModuleVersions: { tfhe: '1.6.2' },
         }),
         protocolContext,
       ),
-    ).toThrow('Explicit tfhe WASM version "1.6.1" is not compatible');
+    ).toThrow('Explicit tfhe WASM version "1.6.2" is not compatible');
   });
 
   it('throws by default when an explicit runtime kms module version is incompatible', () => {
@@ -174,23 +174,23 @@ describe('HyperWasmSolver', () => {
     expect(
       hyperWasmResolveTfheModuleVersion(
         makeParameters({
-          clientModuleVersions: { tfhe: '1.6.1', checkCompatibility: 'warn' },
+          clientModuleVersions: { tfhe: '1.6.2', checkCompatibility: 'warn' },
           logger,
         }),
         protocolContext,
       ),
-    ).toBe('1.6.1');
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Explicit tfhe WASM version "1.6.1"'));
+    ).toBe('1.6.2');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Explicit tfhe WASM version "1.6.2"'));
 
     expect(
       hyperWasmResolveTfheModuleVersion(
         makeParameters({
-          clientModuleVersions: { tfhe: '1.6.1', checkCompatibility: 'off' },
+          clientModuleVersions: { tfhe: '1.6.2', checkCompatibility: 'off' },
           logger,
         }),
         protocolContext,
       ),
-    ).toBe('1.6.1');
+    ).toBe('1.6.2');
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
@@ -219,7 +219,7 @@ describe('HyperWasmSolver', () => {
           protocolVersion: { version: '0.13.0', comparator: 'eq' },
           pubKeyCrsVersion: { version: '1.4.0-alpha.3', comparator: 'eq' },
         }),
-        tfhe: '1.6.1',
+        tfhe: '1.6.2',
         kms: '0.13.20-0',
       },
       {
@@ -227,7 +227,7 @@ describe('HyperWasmSolver', () => {
           protocolVersion: { version: '0.13.0', comparator: 'eq' },
           pubKeyCrsVersion: { version: '1.6.1', comparator: 'eq' },
         }),
-        tfhe: '1.6.1',
+        tfhe: '1.6.2',
         kms: '0.13.20-0',
       },
       {
@@ -235,7 +235,7 @@ describe('HyperWasmSolver', () => {
           protocolVersion: { version: '0.13.0', comparator: 'gt' },
           pubKeyCrsVersion: { version: '1.6.1', comparator: 'gt' },
         }),
-        tfhe: '1.6.1',
+        tfhe: '1.6.2',
         kms: '0.13.20-0',
       },
     ] as const satisfies ReadonlyArray<{
@@ -309,7 +309,7 @@ describe('HyperWasmSolver', () => {
       pubKeyCrsVersion: { version: '1.6.1', comparator: 'eq' },
     });
 
-    expect(hyperWasmResolveTfheModuleVersion(parameters, protocolContext)).toBe('1.6.1');
+    expect(hyperWasmResolveTfheModuleVersion(parameters, protocolContext)).toBe('1.6.2');
     expect(hyperWasmResolveTkmsModuleVersion(parameters, protocolContext)).toBe('0.13.20-0');
   });
 
@@ -320,7 +320,7 @@ describe('HyperWasmSolver', () => {
       pubKeyCrsVersion: { version: '1.4.0-alpha.3', comparator: 'eq' },
     });
 
-    expect(hyperWasmResolveTfheModuleVersion(parameters, protocolContext)).toBe('1.6.1');
+    expect(hyperWasmResolveTfheModuleVersion(parameters, protocolContext)).toBe('1.6.2');
     expect(hyperWasmResolveTkmsModuleVersion(parameters, protocolContext)).toBe('0.13.20-0');
   });
 
@@ -331,7 +331,7 @@ describe('HyperWasmSolver', () => {
       protocolVersion: { version: '0.14.0', comparator: 'gt' },
       pubKeyCrsVersion: { version: '1.6.1', comparator: 'gt' },
     });
-    expect(hyperWasmResolveTfheModuleVersion(parameters, newerContext)).toBe('1.6.1');
+    expect(hyperWasmResolveTfheModuleVersion(parameters, newerContext)).toBe('1.6.2');
     expect(hyperWasmResolveTkmsModuleVersion(parameters, newerContext)).toBe('0.13.20-0');
 
     const olderContext = makeProtocolContext({

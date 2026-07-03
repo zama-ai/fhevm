@@ -355,6 +355,9 @@ export type WasmAssetLoadMode =
 export function setWorkerUrlConfig(parameters?: {
   readonly workerUrl?: URL | undefined;
   readonly wasmAssetLoadMode?: WasmAssetLoadMode | undefined;
+  // Required: the SDK injects the resolved runtime kind (browser vs Node); the
+  // worker bootstrap no longer detects it itself.
+  readonly isBrowserLike: boolean;
   readonly logger?:
     | {
         debug: (message: string) => void;

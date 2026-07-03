@@ -6,6 +6,7 @@ use host_listener::database::tfhe_event_propagate::{
 };
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
+use std::time::Duration;
 use test_harness::instance::ImportMode;
 
 fn block_summary(number: u64) -> BlockSummary {
@@ -45,6 +46,16 @@ async fn mark_seen_blocks(
     Ok(())
 }
 
+async fn simulate_main_host_listener_insert(
+    database: &Database,
+    pool: &sqlx::PgPool,
+    block: &BlockSummary,
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    database.mark_block_as_valid(&mut tx, block, false).await?;
+    tx.commit().await
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn mark_block_as_seen_by_consumer_counts_duplicates(
@@ -77,6 +88,50 @@ async fn mark_block_as_seen_by_consumer_counts_duplicates(
     assert_eq!(row.block_number, block.number as i64);
     assert_eq!(row.duplicate_count, 1);
     assert!(!row.stats_processed);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn mark_block_as_seen_by_consumer_reports_delay_after_main_listener_insert(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (database, pool, _db_instance) = setup_db().await?;
+    let block = block_summary(11);
+
+    simulate_main_host_listener_insert(&database, &pool, &block).await?;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let delay = database
+        .mark_block_as_seen_by_consumer(&block, false)
+        .await?;
+
+    assert!(delay > 0.0, "expected positive delay, got {delay}");
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn mark_block_as_seen_by_consumer_reports_zero_when_consumer_inserts_first(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (database, pool, _db_instance) = setup_db().await?;
+    let block = block_summary(12);
+
+    let delay = database
+        .mark_block_as_seen_by_consumer(&block, false)
+        .await?;
+
+    assert_eq!(delay, 0.0);
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    simulate_main_host_listener_insert(&database, &pool, &block).await?;
+
+    let duplicate_delay = database
+        .mark_block_as_seen_by_consumer(&block, false)
+        .await?;
+
+    assert_eq!(duplicate_delay, 0.0);
 
     Ok(())
 }

@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,7 +21,7 @@ use primitives::event::BlockFlow;
 use crate::cmd::block_history::BlockSummary;
 use crate::consumer::metrics::{
     inc_blocks_duplicated, inc_blocks_missing, inc_blocks_processed,
-    inc_db_errors,
+    inc_db_errors, observe_legacy_insert_delay_seconds,
 };
 use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
 use crate::database::tfhe_event_propagate::Database;
@@ -33,6 +34,7 @@ mod metrics;
 
 const MAX_DB_RETRIES: u64 = 10;
 const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(60);
+static SLOW_LANE_PROMOTION_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 const STATS_FINALIZATION_MARGIN: i64 = 5;
 
 #[derive(Clone, Debug)]
@@ -181,9 +183,16 @@ pub async fn promote_once_all_chains_to_fast(
     dependent_ops_max_per_chain: u32,
 ) {
     if dependent_ops_max_per_chain == 0 {
+        if SLOW_LANE_PROMOTION_ATTEMPTED
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
         let count = match db.promote_all_dep_chains_to_fast_priority().await {
             Ok(count) => count,
             Err(err) => {
+                SLOW_LANE_PROMOTION_ATTEMPTED.store(false, Ordering::Release);
                 error!(error = %err, "Failed to initially promote dependence chains to fast priority on startup");
                 return;
             }
@@ -192,6 +201,31 @@ pub async fn promote_once_all_chains_to_fast(
             info!(
                 count,
                 "Slow-lane disabled: promoted all chains to fast on startup"
+            );
+        }
+    }
+}
+
+async fn observe_consumer_block_timing(
+    db: &Database,
+    chain_id: &str,
+    block_summary: &BlockSummary,
+    catchup: bool,
+) {
+    match db
+        .mark_block_as_seen_by_consumer(block_summary, catchup)
+        .await
+    {
+        Ok(delay_seconds) => {
+            observe_legacy_insert_delay_seconds(chain_id, delay_seconds)
+        }
+        Err(err) => {
+            inc_db_errors(chain_id, 1);
+            warn!(
+                block_number = block_summary.number,
+                block_hash = ?block_summary.hash,
+                error = %err,
+                "Failed to record host-listener consumer block timing"
             );
         }
     }
@@ -374,9 +408,13 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 timestamp: payload.timestamp,
             };
             let catchup = payload.flow == BlockFlow::Catchup;
-            let _ = db
-                .mark_block_as_seen_by_consumer(&block_summary, catchup)
-                .await;
+            observe_consumer_block_timing(
+                &db,
+                &chain_id_str,
+                &block_summary,
+                catchup,
+            )
+            .await;
             let logs = collect_logs(&payload);
             info!(
                 chain_id = %payload.chain_id,

@@ -8,19 +8,19 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export const TFHE_VERSIONS = Object.freeze(['1.5.3', '1.6.1']);
-export const DEFAULT_TFHE_VERSION = '1.6.1';
+export const TFHE_VERSIONS = Object.freeze(['1.5.3', '1.6.2']);
+export const DEFAULT_TFHE_VERSION = '1.6.2';
 
 const _loaders = {
   '1.5.3': () => import('./v1.5.3/tfhe.js'),
-  '1.6.1': () => import('./v1.6.1/tfhe.js'),
+  '1.6.2': () => import('./v1.6.2/tfhe.js'),
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const _wasmBase64Loaders = {
   '1.5.3': () => import('./v1.5.3/tfhe_bg.wasm.base64.js'),
-  '1.6.1': () => import('./v1.6.1/tfhe_bg.wasm.base64.js'),
+  '1.6.2': () => import('./v1.6.2/tfhe_bg.wasm.base64.js'),
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -38,16 +38,16 @@ const _assets = Object.freeze({
       sha256: '3f93fe86a8dfa6e25ae5fcfe28d19833219cba8f45f81c6dd05c2f3cc5323c52',
     }),
   }),
-  '1.6.1': Object.freeze({
+  '1.6.2': Object.freeze({
     wasm: Object.freeze({
-      filename: 'tfhe_bg.v1.6.1.wasm',
-      localRelativePath: './v1.6.1/tfhe_bg.wasm',
-      sha256: 'd470dc00347cdc83135e29700abe54c6a7ee9ba4ad58449bfc2494dfa4423f38',
+      filename: 'tfhe_bg.v1.6.2.wasm',
+      localRelativePath: './v1.6.2/tfhe_bg.wasm',
+      sha256: 'ecd1841ad42226629c1a665ba784e073f2e780137f7986b00088c9227acb9760',
     }),
     worker: Object.freeze({
-      filename: 'tfhe-worker.v1.6.1.mjs',
-      localRelativePath: './v1.6.1/tfhe-worker.mjs',
-      sha256: '348fe6c2e77bafe0cbfb9c0a512af99b5f97de1119ceadf07cc34620dbc5690e',
+      filename: 'tfhe-worker.v1.6.2.mjs',
+      localRelativePath: './v1.6.2/tfhe-worker.mjs',
+      sha256: '2c648dd89132bb63d37e8b47c6fe1f53b06abb1389faeb9b3f671eea9a0db5dd',
     }),
   }),
 });

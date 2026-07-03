@@ -109,13 +109,13 @@ impl KmsResponse {
     }
 
     /// Sets the response's `status` field to `pending` in the database.
-    pub async fn mark_as_pending(&self, db: &Pool<Postgres>) {
+    pub async fn mark_as_pending(&self, db: &Pool<Postgres>) -> anyhow::Result<()> {
         warn!("Failed to process response. Restoring `status` field to `pending` in DB...");
         self.update_status(db, OperationStatus::Pending).await
     }
 
     /// Sets the response's `status` field to `completed` in the database.
-    pub async fn mark_as_completed(&self, db: &Pool<Postgres>) {
+    pub async fn mark_as_completed(&self, db: &Pool<Postgres>) -> anyhow::Result<()> {
         info!(
             "Response successfully processed. Setting its `status` field to `completed` in DB..."
         );
@@ -123,12 +123,16 @@ impl KmsResponse {
     }
 
     /// Sets the response's `status` field to `failed` in the database.
-    pub async fn mark_as_failed(&self, db: &Pool<Postgres>) {
+    pub async fn mark_as_failed(&self, db: &Pool<Postgres>) -> anyhow::Result<()> {
         warn!("Failed to process response. Restoring `status` field to `failed` in DB...");
         self.update_status(db, OperationStatus::Failed).await
     }
 
-    async fn update_status(&self, db: &Pool<Postgres>, status: OperationStatus) {
+    async fn update_status(
+        &self,
+        db: &Pool<Postgres>,
+        status: OperationStatus,
+    ) -> anyhow::Result<()> {
         let query = match &self.kind {
             KmsResponseKind::PublicDecryption(r) => sqlx::query!(
                 "UPDATE public_decryption_responses SET status = $1 WHERE decryption_id = $2",
@@ -167,18 +171,19 @@ impl KmsResponse {
             ),
         };
 
-        let query_result = match query.execute(db).await {
-            Ok(result) => result,
-            Err(e) => return warn!("Failed to update response: {e}"),
-        };
-
-        if query_result.rows_affected() == 1 {
-            info!("Successfully updated response in DB!");
-        } else {
-            warn!(
-                "Unexpected query result while updating response: {:?}",
-                query_result
-            )
+        match query.execute(db).await {
+            Ok(r) if r.rows_affected() == 1 => {
+                info!("Successfully updated response in DB!");
+                Ok(())
+            }
+            Ok(r) => Err(anyhow!(
+                "Failed to set {} status to `{status}` in DB: unexpected query result: {r:?}",
+                self.kind
+            )),
+            Err(e) => Err(anyhow!(
+                "Failed to set {} status to `{status}` in DB: {e}",
+                self.kind
+            )),
         }
     }
 }

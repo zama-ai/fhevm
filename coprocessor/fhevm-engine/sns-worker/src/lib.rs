@@ -1,9 +1,12 @@
 mod aws_upload;
 mod executor;
 mod keyset;
+mod s3_migration;
+mod s3_migration_dry_run;
 mod squash_noise;
 
 pub mod metrics;
+pub use crate::s3_migration::{S3MigrationMode, DEFAULT_S3_MIGRATION_MAX_RETRIES};
 
 #[cfg(test)]
 mod tests;
@@ -50,13 +53,18 @@ use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
     executor::SwitchNSquashService,
     metrics::spawn_gauge_update_routine,
+    s3_migration::{run_startup_migrations, S3MigrationConfig},
+    s3_migration_dry_run::run_startup_migration_dry_run,
 };
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
-pub(crate) const S3_FORMAT_VERSION_LEGACY: i16 = 0;
+
+pub(crate) const CLEAN_OLD_S3_FORMAT_VERSION: i16 = 0;
+pub(crate) const S3_FORMAT_VERSION_V0: i16 = 0;
 pub(crate) const S3_FORMAT_VERSION_V1: i16 = 1;
 pub(crate) const CURRENT_S3_FORMAT_VERSION: i16 = S3_FORMAT_VERSION_V1;
+pub(crate) const S3_FORMAT_VERSION_LEGACY: i16 = S3_FORMAT_VERSION_V0;
 pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
 
 #[cfg(feature = "gpu")]
@@ -133,6 +141,9 @@ pub struct Config {
     pub pg_auto_explain_with_min_duration: Option<Duration>,
     pub signer_type: SignerType,
     pub private_key: Option<String>,
+    pub s3_migration: S3MigrationMode,
+    pub s3_migration_sleep_duration: Duration,
+    pub s3_migration_max_retries: i32,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -474,7 +485,7 @@ pub async fn run_uploader_loop(
     is_ready: Arc<AtomicBool>,
     signer: CoproSigner,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let (is_ready_res, _) = check_is_ready(&client, conf).await;
+    let (is_ready_res, _) = check_is_ready(&client, &conf.s3).await;
     is_ready.store(is_ready_res, Ordering::Release);
 
     let mut handle_resubmit = spawn_resubmit_task(
@@ -526,7 +537,7 @@ pub async fn create_s3_client(conf: &Config) -> (Arc<aws_sdk_s3::Client>, bool) 
         .build();
 
     let client = Arc::new(Client::from_conf(config));
-    let (is_ready, is_connected) = check_is_ready(&client, conf).await;
+    let (is_ready, is_connected) = check_is_ready(&client, &conf.s3).await;
     if is_connected {
         info!(is_ready = is_ready, "Connected to S3");
     }
@@ -554,8 +565,8 @@ pub async fn run_all(
     let token = parent_token.child_token();
     let tx = uploads_tx.clone();
     // Initialize the S3 uploader
-    let (client, is_ready) = create_s3_client(&conf).await;
-    let is_ready = Arc::new(AtomicBool::new(is_ready));
+    let (client, is_ready_bool) = create_s3_client(&conf).await;
+    let is_ready = Arc::new(AtomicBool::new(is_ready_bool));
     let s3 = client.clone();
     let jobs_rx: Arc<RwLock<mpsc::Receiver<UploadJob>>> = Arc::new(RwLock::new(uploads_rx));
 
@@ -615,7 +626,7 @@ pub async fn run_all(
             conf.clone(),
             uploads_tx,
             token.child_token(),
-            client,
+            client.clone(),
             events_tx.clone(),
         )
         .await?,
@@ -648,6 +659,65 @@ pub async fn run_all(
     )
     .await?;
 
+    let migration_config = S3MigrationConfig {
+        batch_size: 16,
+        signer: signer.clone(),
+        s3: conf.s3.clone(),
+        mode: conf.s3_migration,
+        sleep_duration: conf.s3_migration_sleep_duration,
+        max_retries: conf.s3_migration_max_retries,
+    };
+
+    let not_ready_error = Err(ExecutionError::BucketNotFound(conf.s3.bucket_ct128.clone()).into());
+    let mut concurrent_migration = None;
+    match migration_config.mode {
+        S3MigrationMode::No => {
+            info!("S3 migration is disabled");
+        }
+        S3MigrationMode::Before | S3MigrationMode::BeforeAndQuit | S3MigrationMode::DryRun => {
+            info!("S3 migration is enabled: {}", conf.s3_migration);
+            if !is_ready_bool {
+                error!("S3 is not ready, migration cannot be done");
+                return not_ready_error;
+            };
+            let db_pool = pool_mngr.pool();
+            if matches!(migration_config.mode, S3MigrationMode::DryRun) {
+                run_startup_migration_dry_run(&migration_config, &db_pool, &client).await?;
+            } else {
+                run_startup_migrations(&migration_config, &token, &db_pool, &client).await?;
+            }
+        }
+        S3MigrationMode::Concurrent => {
+            let token = token.clone();
+            let db_pool = pool_mngr.pool();
+            let client = client.clone();
+            let task = spawn(async move {
+                info!("S3 migration is enabled: {}", conf.s3_migration);
+                if !is_ready_bool {
+                    error!("S3 is not ready but will start when ready");
+                };
+                if let Err(err) =
+                    run_startup_migrations(&migration_config, &token, &db_pool, &client).await
+                {
+                    error!(
+                        error = %err,
+                        "Failed to run concurrent S3 format migration"
+                    );
+                }
+            });
+            concurrent_migration = Some(task)
+        }
+    }
+
+    if matches!(
+        conf.s3_migration,
+        S3MigrationMode::BeforeAndQuit | S3MigrationMode::DryRun
+    ) {
+        info!("SNS worker stopped after S3 migration-only run");
+        token.cancel();
+        return Ok(());
+    }
+
     // Keep the uploader's handle so its failure exits the process too.
     let uploader = spawn(async move {
         run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready, signer).await
@@ -666,6 +736,13 @@ pub async fn run_all(
     if let Err(err) = result {
         error!(error = %err, "SNS worker exited with a fatal error");
         return Err(err);
+    }
+
+    if let Some(migration_task) = concurrent_migration {
+        if let Err(join_err) = migration_task.await {
+            error!(error = %join_err, "SNS worker, S3 migration exited with a fatal error");
+            return Err(join_err.into());
+        }
     }
 
     info!("Worker stopped");

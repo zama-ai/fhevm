@@ -1,6 +1,7 @@
 import { setFhevmRuntimeConfig, createFhevmClient } from '../../../src/ethers/index.js';
 import { sepolia } from '../../../src/core/chains/index.js';
 import { ethers } from 'ethers';
+import { createLogger } from './common.js';
 
 const logEl = document.getElementById('log')!;
 const t0 = performance.now();
@@ -23,15 +24,7 @@ async function run() {
   try {
     log('Setting runtime config (base64 WASM)...');
     setFhevmRuntimeConfig({
-      logger: {
-        debug: (message: string) => log(`  [debug] ${message}`),
-        error: (message: string, cause: unknown) => {
-          log(`  [error] ${message}`);
-          if (cause !== undefined) {
-            log(`  [error] ${cause}`);
-          }
-        },
-      },
+      logger: createLogger(log),
     });
     log('[PASS] Runtime config set');
 

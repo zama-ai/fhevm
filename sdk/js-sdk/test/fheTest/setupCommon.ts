@@ -2,6 +2,7 @@ import type { FhevmChain } from '@fhevm/sdk/chains';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
 import type { ProtocolVersion } from '../../src/core/types/coreFhevmClient.js';
 import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
+import type { Logger } from '../../src/core/types/logger.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -89,7 +90,7 @@ export function getExpectedProtocolVersion(chainName: FheTestChainName): Protoco
 // TFHE wasm version per chain
 // ---------------------------------------------------------------------------
 
-export type TfheVersion = '1.5.3' | '1.6.1';
+export type TfheVersion = '1.5.3' | '1.6.2';
 
 const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | undefined>> = {
   sepolia: '1.5.3',
@@ -100,11 +101,11 @@ const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | und
   localcleartext_v13: undefined,
   localstack_v11: '1.5.3',
   localstack_v12: '1.5.3',
-  devnet: '1.6.1',
-  polygon_devnet: '1.6.1',
-  localstack: '1.6.1',
-  localstack_v13: '1.6.1',
-  localstack_v14: '1.6.1',
+  devnet: '1.6.2',
+  polygon_devnet: '1.6.2',
+  localstack: '1.6.2',
+  localstack_v13: '1.6.2',
+  localstack_v14: '1.6.2',
 };
 
 /** Returns the TFHE wasm version for a given test chain, or `undefined` for cleartext chains. */
@@ -125,6 +126,23 @@ const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestC
 
 export function getFheEncryptionKeyTfheVersion(chainName: FheTestChainName): string {
   return FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN[chainName] ?? getTfheVersion(chainName) ?? 'unknown';
+}
+
+// ---------------------------------------------------------------------------
+// createLogger
+// ---------------------------------------------------------------------------
+
+export function createLogger(log: (msg: string) => void): Logger {
+  return {
+    debug: (message: string) => log(`[debug] ${message}`),
+    warn: (message: string) => log(`[warn] ${message}`),
+    error: (message: string, cause: unknown) => {
+      log(`[error] ${message}`);
+      if (cause !== undefined) {
+        log(`[error] ${String(cause)}`);
+      }
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -356,12 +374,6 @@ function initAliceFheTestHandlesIfNeeded(
   if (!aliceHasAllFheTestHandles(fheTestAddress, aliceAddress, rpcUrl)) {
     throw new Error(`FHETest initFheTest(false) completed but Alice handles are still missing for ${aliceAddress}.`);
   }
-
-  // The coprocessor registers Alice's handles on the gateway CiphertextCommits contract
-  // asynchronously. Tests that call the relayer for public/user decryption need
-  // this registration to complete before the relayer's readiness check passes.
-  // We block the setup thread briefly so the coprocessor can catch up.
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30_000);
 }
 
 /**

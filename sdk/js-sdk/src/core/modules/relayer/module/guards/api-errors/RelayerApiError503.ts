@@ -20,6 +20,8 @@ export function assertIsRelayerApiError503(
   assertRecordStringProperty(value, 'label' satisfies keyof T, name, {
     expectedValue: [
       'protocol_paused' satisfies T['label'],
+      'insufficient_balance' satisfies T['label'],
+      'insufficient_allowance' satisfies T['label'],
       'gateway_not_reachable' satisfies T['label'],
       'readiness_check_timed_out' satisfies T['label'],
       'response_timed_out' satisfies T['label'],

@@ -135,7 +135,7 @@ describe("env", () => {
       requiresGitHub: true,
       versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
       overrides: [],
-      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" } }),
+      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
       discovery: {
         gateway: {},
         hosts: {},
@@ -192,7 +192,7 @@ describe("env", () => {
       requiresGitHub: true,
       versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
       overrides: [],
-      scenario: testDefaultScenario({ kms: { mode: "centralized", parties: 1, threshold: 1, fheParams: "Default" } }),
+      scenario: testDefaultScenario({ kms: { mode: "centralized", parties: 1, threshold: 1, committeeSize: 1, fheParams: "Default" } }),
       discovery: {
         gateway: {},
         hosts: {},

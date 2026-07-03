@@ -99,6 +99,17 @@ The fhevm Gateway has a single set of coprocessors, which must be constituted of
 
 Currently, they are set at deployment and it is currently _not_ possible to add or remove a coprocessor to the fhevm Gateway later on.
 
+#### Coprocessor threshold
+
+A `coprocessorThreshold` is attached to the coprocessor set. It is the minimum number of coprocessors that must agree for the Gateway to reach a coprocessor consensus — for example on a ciphertext commitment (`CiphertextCommits`) or an input verification (`InputVerification`).
+
+This threshold should be :
+
+- non-null: coprocessor consensus should require at least one vote
+- less or equal to the number of registered coprocessors
+
+> **Drift auto-reversal requires a majority quorum.** Coprocessors can optionally auto-revert their own state when it drifts from the Gateway consensus. Because this trusts the consensus as the source of truth, it is only safe when a faulty minority cannot reach consensus on its own — i.e. at least 3 registered coprocessors with `coprocessorThreshold` set to a strict majority. Do **not** enable drift auto-reversal with 2 or fewer coprocessors, or with a non-majority threshold. The contract only enforces `1 ≤ threshold ≤ number of coprocessors`, so ensuring a proper quorum is the DAO's and operators' responsibility.
+
 ### Sender and signer
 
 Despite the above differences, each operator has both a transaction sender and a signer assigned to it:
