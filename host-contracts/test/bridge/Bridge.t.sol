@@ -9,12 +9,13 @@ import {Vm} from "forge-std/Vm.sol";
 
 import {DeployableERC1967Proxy, HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ACL} from "../../contracts/ACL.sol";
+import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {ConfidentialBridge} from "../../contracts/bridge/ConfidentialBridge.sol";
 import {HandlesSender} from "../../contracts/bridge/HandlesSender.sol";
 import {HandlesReceiver} from "../../contracts/bridge/HandlesReceiver.sol";
 import {BridgeEvents} from "../../contracts/bridge/BridgeEvents.sol";
-import {aclAdd, confidentialBridgeAdd, fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 import {MockDstApp} from "./mocks/MockDstApp.sol";
 
@@ -142,6 +143,19 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
 
     function _addressToBytes32(address a) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(a)));
+    }
+
+    /// @dev Pauses the source-chain ACL: deploys the PauserSet at its canonical address,
+    ///      registers a pauser (as the ACL owner), and pauses as that pauser. Mirrors
+    ///      acl.t.sol's pause setup.
+    function _pauseACL() internal {
+        PauserSet pauserSet = _deployPauserSet();
+        address pauser = makeAddr("pauser");
+        vm.prank(owner);
+        pauserSet.addPauser(pauser);
+        vm.prank(pauser);
+        acl.pause();
+        assertTrue(acl.paused(), "ACL should be paused");
     }
 
     /// @dev Decodes the `lzReceive` gas from a type-3 LayerZero options blob whose first
@@ -317,6 +331,122 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(30_000));
     }
 
+    /// @dev A paused source-chain ACL halts `send`. The handle is ACL-allowed and all
+    ///      other inputs are valid, so {ACLPaused} — not the allowance or input guards —
+    ///      is what reverts, confirming the pause check fires up-front.
+    function test_Send_RevertsWhenACLPaused() public {
+        bytes32 h = _makeHandle(0);
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = h;
+        _allow(h, srcApp);
+
+        _pauseACL();
+
+        vm.prank(srcApp);
+        vm.expectRevert(HandlesSender.ACLPaused.selector);
+        srcBridge.send{value: 0}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, uint64(30_000));
+    }
+
+    /// @dev Once the ACL is unpaused, `send` works again — a full send goes through and
+    ///      produces a LayerZero GUID, proving the pause guard didn't leave the bridge stuck.
+    function test_Send_SucceedsAfterUnpause() public {
+        bytes32 h = _makeHandle(0);
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = h;
+        _allow(h, srcApp);
+
+        _pauseACL();
+        vm.prank(owner);
+        acl.unpause();
+
+        MessagingFee memory fee = srcBridge.quote(
+            DST_EID,
+            srcApp,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            uint64(200_000)
+        );
+
+        vm.prank(srcApp);
+        MessagingReceipt memory receipt = srcBridge.send{value: fee.nativeFee}(
+            DST_EID,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            uint64(200_000)
+        );
+        assertTrue(receipt.guid != bytes32(0), "send should produce a LayerZero GUID once unpaused");
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Native-fee payment: msg.value must exactly equal the quoted nativeFee
+    ////////////////////////////////////////////////////////////////////////////////
+
+    /// @dev Sets up a single ACL-allowed handle and returns the handle list plus the
+    ///      native fee quoted for bridging it with `composeGas`.
+    function _sendableHandleAndFee(
+        uint64 composeGas
+    ) internal returns (bytes32[] memory handleList, uint256 nativeFee) {
+        bytes32 h = _makeHandle(0);
+        handleList = new bytes32[](1);
+        handleList[0] = h;
+        _allow(h, srcApp);
+
+        MessagingFee memory fee = srcBridge.quote(
+            DST_EID,
+            srcApp,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            composeGas
+        );
+        nativeFee = fee.nativeFee;
+    }
+
+    /// @dev Paying exactly the quoted native fee succeeds and produces a LayerZero GUID.
+    function test_Send_SucceedsWhenMsgValueEqualsQuotedFee() public {
+        uint64 composeGas = 200_000;
+        (bytes32[] memory handleList, uint256 nativeFee) = _sendableHandleAndFee(composeGas);
+        assertGt(nativeFee, 0, "quote should return a positive native fee");
+
+        vm.prank(srcApp);
+        MessagingReceipt memory receipt = srcBridge.send{value: nativeFee}(
+            DST_EID,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            composeGas
+        );
+        assertTrue(receipt.guid != bytes32(0), "exact-fee send should produce a LayerZero GUID");
+    }
+
+    /// @dev Overpaying by 1 wei reverts with {MsgValueMustEqualQuotedFee}, confirming the
+    ///      exact-match override rejects excess (no refund path) rather than forwarding it.
+    function test_Send_RevertsWhenMsgValueOverpaysQuotedFee() public {
+        uint64 composeGas = 200_000;
+        (bytes32[] memory handleList, uint256 nativeFee) = _sendableHandleAndFee(composeGas);
+
+        uint256 overpaid = nativeFee + 1;
+        vm.prank(srcApp);
+        vm.expectRevert(abi.encodeWithSelector(HandlesSender.MsgValueMustEqualQuotedFee.selector, overpaid, nativeFee));
+        srcBridge.send{value: overpaid}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, composeGas);
+    }
+
+    /// @dev Underpaying by 1 wei reverts with {MsgValueMustEqualQuotedFee}, carrying the
+    ///      supplied and required amounts.
+    function test_Send_RevertsWhenMsgValueUnderpaysQuotedFee() public {
+        uint64 composeGas = 200_000;
+        (bytes32[] memory handleList, uint256 nativeFee) = _sendableHandleAndFee(composeGas);
+
+        uint256 underpaid = nativeFee - 1;
+        vm.prank(srcApp);
+        vm.expectRevert(
+            abi.encodeWithSelector(HandlesSender.MsgValueMustEqualQuotedFee.selector, underpaid, nativeFee)
+        );
+        srcBridge.send{value: underpaid}(DST_EID, _addressToBytes32(address(dstApp)), "", handleList, composeGas);
+    }
+
     ////////////////////////////////////////////////////////////////////////////////
     // quote: mirrors send's input validation, except the ACL allowance check
     ////////////////////////////////////////////////////////////////////////////////
@@ -347,6 +477,39 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         handleList[0] = _makeHandle(0);
         vm.expectRevert(HandlesSender.ZeroLzComposeGas.selector);
         srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(0));
+    }
+
+    /// @dev A paused source-chain ACL halts `quote` too, so callers cannot estimate a
+    ///      fee for a bridge operation that `send` would reject while the host is stopped.
+    function test_Quote_RevertsWhenACLPaused() public {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+
+        _pauseACL();
+
+        vm.expectRevert(HandlesSender.ACLPaused.selector);
+        srcBridge.quote(DST_EID, srcApp, _addressToBytes32(address(dstApp)), "", handleList, uint64(30_000));
+    }
+
+    /// @dev Once the ACL is unpaused, `quote` works again — proving the pause guard is the
+    ///      only thing that blocked it (and does not leave the bridge permanently stuck).
+    function test_Quote_SucceedsAfterUnpause() public {
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = _makeHandle(0);
+
+        _pauseACL();
+        vm.prank(owner);
+        acl.unpause();
+
+        MessagingFee memory fee = srcBridge.quote(
+            DST_EID,
+            srcApp,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handleList,
+            uint64(30_000)
+        );
+        assertGt(fee.nativeFee, 0, "quote should succeed once the ACL is unpaused");
     }
 
     /// @dev The key difference from `send`: `quote` does NOT run the ACL allowance check,

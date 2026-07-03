@@ -101,6 +101,7 @@ const chainIds = {
   zwsDev: 1337,
   mainnet: 1,
   polygonAmoy: 80002,
+  polygon: 137,
   custom: 9999,
 };
 
@@ -147,6 +148,7 @@ const config: HardhatUserConfig = {
     localHostChain: getChainConfig('localHostChain'),
     mainnet: getChainConfig('mainnet'),
     polygonAmoy: getChainConfig('polygonAmoy'),
+    polygon: getChainConfig('polygon'),
     custom: getChainConfig('custom'),
   },
   paths: {

@@ -8,6 +8,10 @@
  *
  * Adding a new chain = adding an entry to `CHAINS` below. No other code path
  * needs to change.
+ *
+ * Each chain belongs to an environment (`testnet` or `mainnet`). The daemon
+ * watches exactly the two chains of the *active* environment, selected by the
+ * `BRIDGE_ENV` env var (defaults to `testnet` for backward compatibility).
  */
 import { config as dotenvConfig } from 'dotenv';
 import { existsSync, readFileSync } from 'fs';
@@ -30,7 +34,11 @@ export interface ChainConfig {
   confidentialBridge: string;
 }
 
+export type BridgeEnv = 'testnet' | 'mainnet';
+
 interface ChainSpec {
+  /** Environment this chain belongs to. The daemon runs one environment at a time. */
+  env: BridgeEnv;
   name: string;
   chainId: number;
   lzEid: number;
@@ -40,7 +48,9 @@ interface ChainSpec {
 }
 
 const CHAINS: ChainSpec[] = [
+  // ── testnet ──────────────────────────────────────────────────────────────
   {
+    env: 'testnet',
     name: 'sepolia',
     chainId: 11155111,
     lzEid: 40161,
@@ -49,6 +59,7 @@ const CHAINS: ChainSpec[] = [
     addressesEnv: 'addresses-sepolia/.env.host',
   },
   {
+    env: 'testnet',
     name: 'polygonAmoy',
     chainId: 80002,
     lzEid: 40267,
@@ -56,7 +67,36 @@ const CHAINS: ChainSpec[] = [
     rpcDefault: 'https://rpc-amoy.polygon.technology',
     addressesEnv: 'addresses-amoy/.env.host',
   },
+  // ── mainnet ──────────────────────────────────────────────────────────────
+  {
+    env: 'mainnet',
+    name: 'ethereum',
+    chainId: 1,
+    lzEid: 30101,
+    rpcEnvVar: 'ETHEREUM_MAINNET_RPC_URL',
+    rpcDefault: 'https://eth.llamarpc.com',
+    addressesEnv: 'addresses-ethereum/.env.host',
+  },
+  {
+    env: 'mainnet',
+    name: 'polygon',
+    chainId: 137,
+    lzEid: 30109,
+    rpcEnvVar: 'POLYGON_MAINNET_RPC_URL',
+    rpcDefault: 'https://polygon-rpc.com',
+    addressesEnv: 'addresses-polygon/.env.host',
+  },
 ];
+
+/**
+ * Resolve the active bridge environment from `BRIDGE_ENV` (default `testnet`).
+ */
+export function activeBridgeEnv(): BridgeEnv {
+  const raw = (process.env.BRIDGE_ENV ?? 'testnet').trim().toLowerCase();
+  if (raw === 'mainnet' || raw === 'main' || raw === 'prod') return 'mainnet';
+  if (raw === 'testnet' || raw === 'test' || raw === '') return 'testnet';
+  throw new Error(`Invalid BRIDGE_ENV="${process.env.BRIDGE_ENV}". Use "testnet" (default) or "mainnet".`);
+}
 
 function parseEnvFile(path: string): Record<string, string> {
   if (!existsSync(path)) {
@@ -107,7 +147,12 @@ function buildConfig(spec: ChainSpec): ChainConfig {
 }
 
 export function loadChainConfigs(): ChainConfig[] {
-  return CHAINS.map(buildConfig);
+  const env = activeBridgeEnv();
+  const specs = CHAINS.filter((c) => c.env === env);
+  if (specs.length === 0) {
+    throw new Error(`[mock-coprocessor] no chains configured for BRIDGE_ENV=${env}.`);
+  }
+  return specs.map(buildConfig);
 }
 
 /**

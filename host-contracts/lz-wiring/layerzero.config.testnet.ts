@@ -19,7 +19,7 @@ const pathways: TwoWayConfig[] = [
         // [requiredDVN[], [optionalDVN[], threshold]] — TESTNET-grade single DVN.
         [['LayerZero Labs'], []], // WARNING: This is a testnet configuration, for production use at least 2 independent operators, e.g. [['LayerZero Labs', 'Google Cloud'], []].
         // Block confirmations [src→dst, dst→src].
-        [1, 1], // WARNING: This is a testnet configuration, for production use 15 and 120 confirmations respectively.
+        [15, 120],
         [undefined, undefined],
     ],
 ]
