@@ -3,7 +3,13 @@ import { ethers } from 'ethers';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
-import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, fheTypeIdFromHandle } from '../setupCommon.js';
+import {
+  createLogger,
+  decryptTestCases,
+  fheTypeIdFromName,
+  clearTypeFromHandle,
+  fheTypeIdFromHandle,
+} from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -101,6 +107,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
             type: 'ApiKeyHeader',
             value: config.zamaApiKey,
           },
+          logger: createLogger(console.log),
         });
         console.log(`  Alice: ${config.alice.wallet.address}`);
         console.log(`  Bob:   ${config.bob.wallet.address}`);
@@ -156,7 +163,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         const signedPermit = await client.signDecryptionPermit({
           transportKeyPair: keyPair,
           contractAddresses: [config.fheTestAddress],
-          durationDays: 1,
+          durationSeconds: 24 * 3600,
           startTimestamp: Math.floor(Date.now() / 1000) - 5,
           signerAddress: config.bob.wallet.address,
           signer: config.bob.signer,
@@ -164,6 +171,12 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         });
 
         expect(signedPermit).toBeDefined();
+        const [major, minor] = client.protocolVersion!.version.split('.').map(Number);
+        const expectedPermitVersion = major! * 1000 + minor! < 14 ? 1 : 2;
+        expect(signedPermit.version).toBe(expectedPermitVersion);
+        const expectedPrimaryType =
+          signedPermit.version === 1 ? 'DelegatedUserDecryptRequestVerification' : 'UserDecryptRequestVerification';
+        expect(signedPermit.eip712.primaryType).toBe(expectedPrimaryType);
         expect(signedPermit.isDelegated).toBe(true);
         expect(signedPermit.signerAddress.toLowerCase()).toBe(config.bob.wallet.address.toLowerCase());
         expect(signedPermit.encryptedDataOwnerAddress.toLowerCase()).toBe(config.alice.wallet.address.toLowerCase());
@@ -204,7 +217,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           const bobSignedPermit = await client.signDecryptionPermit({
             transportKeyPair: transportKeyPair,
             contractAddresses: [config.fheTestAddress],
-            durationDays: 1,
+            durationSeconds: 24 * 3600,
             startTimestamp: Math.floor(Date.now() / 1000) - 5,
             signerAddress: config.bob.wallet.address,
             signer: config.bob.signer,
@@ -270,7 +283,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
         const bobSignedPermit = await bobClient.signDecryptionPermit({
           transportKeyPair: bobKeyPair,
           contractAddresses: [config.fheTestAddress],
-          durationDays: 1,
+          durationSeconds: 24 * 3600,
           startTimestamp: Math.floor(Date.now() / 1000) - 5,
           signerAddress: config.bob.wallet.address,
           signer: config.bob.signer,

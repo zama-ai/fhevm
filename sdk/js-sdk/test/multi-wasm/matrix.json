@@ -11,7 +11,7 @@
   },
   "supportedVersionPairs": [
     { "tfhe": "1.5.3", "kms": "0.13.10" },
-    { "tfhe": "1.6.1", "kms": "0.13.20-0" },
+    { "tfhe": "1.6.2", "kms": "0.13.20-0" },
     { "tfhe": "1.6.0-dev", "kms": "0.13.20-0", "cdns": ["local"] }
   ],
   "assetUrlSets": {

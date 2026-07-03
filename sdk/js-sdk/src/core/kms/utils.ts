@@ -26,35 +26,3 @@ export function assertKmsDecryptionBitLimit(handles: readonly Handle[]): UintNum
 
   return total as UintNumber;
 }
-
-export function assertKmsEIP712DeadlineValidity(
-  {
-    startTimestamp,
-    durationDays,
-  }: {
-    startTimestamp: bigint | number | string;
-    durationDays: bigint | number | string;
-  },
-  maxDurationDays: UintNumber,
-): void {
-  if (durationDays === 0) {
-    throw Error('durationDays is zero');
-  }
-
-  const durationDaysBigInt = BigInt(durationDays);
-  if (durationDaysBigInt > BigInt(maxDurationDays)) {
-    throw Error(`durationDays is above max duration of ${maxDurationDays}`);
-  }
-
-  const startTimestampBigInt = BigInt(startTimestamp);
-
-  const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
-  if (startTimestampBigInt > currentTimestamp) {
-    throw Error('startTimestamp is set in the future');
-  }
-
-  const durationInSeconds = durationDaysBigInt * BigInt(24 * 60 * 60);
-  if (startTimestampBigInt + durationInSeconds < currentTimestamp) {
-    throw Error('request has expired');
-  }
-}

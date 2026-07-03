@@ -1,15 +1,13 @@
 import type { FhevmChain } from '../types/fhevmChain.js';
-import type { SignedDelegatedDecryptionPermit, SignedSelfDecryptionPermit } from '../types/signedDecryptionPermit.js';
+import type { SignedDecryptionPermit } from '../types/signedDecryptionPermit.js';
 import type { TransportKeyPair } from '../kms/TransportKeyPair-p.js';
 import type { ChecksummedAddress, Uint64BigInt } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../base/address.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
-import {
-  assertIsSignedDecryptionPermit,
-  assertPermitIncludesContractAddresses,
-} from '../kms/SignedDecryptionPermit-p.js';
+import { assertIsSignedDecryptionPermit } from '../kms/SignedDecryptionPermit-p.js';
+import { assertPermitV1IncludesContractAddresses } from '../kms/fetchKmsSigncryptedSharesV1-p.js';
 import { assertPermitMatchesKeyPair } from '../utils-p/decrypt/assertPermitMatchesKeyPair.js';
 import { isUserDecryptable } from '../host-contracts/isUserDecryptable.js';
 
@@ -29,7 +27,7 @@ type Parameters =
     }
   | {
       readonly pairs: ReadonlyArray<{ readonly handle: Handle; readonly contractAddress: ChecksummedAddress }>;
-      readonly signedPermit: SignedSelfDecryptionPermit | SignedDelegatedDecryptionPermit;
+      readonly signedPermit: SignedDecryptionPermit;
       readonly transportKeyPair?: TransportKeyPair | undefined;
     };
 
@@ -64,7 +62,9 @@ export async function canDecryptValuesFromPairs(context: Context, parameters: Pa
 
     assertIsSignedDecryptionPermit(signedPermit, { subject: 'signedPermit' });
     signedPermit.assertNotExpired();
-    assertPermitIncludesContractAddresses(signedPermit, contractAddresses);
+    if (signedPermit.version === 1) {
+      assertPermitV1IncludesContractAddresses(signedPermit, contractAddresses);
+    }
 
     if (parameters.transportKeyPair !== undefined) {
       assertPermitMatchesKeyPair(signedPermit, parameters.transportKeyPair);

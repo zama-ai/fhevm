@@ -32,7 +32,7 @@ use fhevm_host_bindings::{
 use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct sending stored KMS Core's responses to the Gateway and Ethereum.
@@ -143,17 +143,21 @@ where
             _ => eth_sender.send_to_ethereum(response.kind.clone()).await,
         };
 
-        match result {
+        let status_update_result = match result {
             Err(Error::Recoverable(_)) => response.mark_as_pending(&db_pool).await,
             Err(Error::Irrecoverable(_)) => response.mark_as_failed(&db_pool).await,
             Err(Error::AlloyBackendGone) => {
-                response.mark_as_pending(&db_pool).await;
+                let status_update_result = response.mark_as_pending(&db_pool).await;
                 cancel_token.cancel();
+                status_update_result
             }
             Ok(()) => {
-                response.mark_as_completed(&db_pool).await;
                 register_response_forwarding_latency(&response);
+                response.mark_as_completed(&db_pool).await
             }
+        };
+        if let Err(e) = status_update_result {
+            warn!("{e}");
         }
     }
 }

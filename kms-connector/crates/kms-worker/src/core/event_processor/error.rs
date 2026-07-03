@@ -6,21 +6,23 @@ use user_decryption_signature::Erc1271Error;
 
 #[derive(Debug, Error)]
 pub enum ProcessingError {
-    #[error("Processing failed with irrecoverable error : {0}")]
+    #[error("Processing failed with irrecoverable error: {0}")]
     Irrecoverable(anyhow::Error),
     #[error("Processing failed: {0}")]
     Recoverable(anyhow::Error),
+    #[error("Processing stopped: the operation was aborted on the KMS Core")]
+    Aborted,
 }
 
 impl ProcessingError {
     /// Converts GRPC status of the polling of a KMS Response into a `ProcessingError`.
     pub fn from_response_status(value: tonic::Status) -> Self {
-        let anyhow_error = anyhow!("KMS GRPC error: {value}");
         match value.code() {
+            Code::Aborted => Self::Aborted,
             Code::DeadlineExceeded | Code::Unavailable | Code::ResourceExhausted => {
-                Self::Recoverable(anyhow_error)
+                Self::Recoverable(anyhow!("KMS GRPC error: {value}"))
             }
-            _ => Self::Irrecoverable(anyhow_error),
+            _ => Self::Irrecoverable(anyhow!("KMS GRPC error: {value}")),
         }
     }
 }
