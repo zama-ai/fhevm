@@ -303,7 +303,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // Cache the previous-context confirmation quorum needed by confirmKmsContextCreation.
         // `n - t + 1` (n = previous committee size, t = previous MPC fault threshold) so no t-subset ratifies alone.
         $.contextCreationPreviousTxSenderThreshold[contextId] =
-            $.kmsSignerAddressesForContext[previousContextId].length -
+            $.kmsNodesForContext[previousContextId].length -
             $.mpcThresholdForContext[previousContextId] +
             1;
 
@@ -910,8 +910,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     function _hasContextCreationQuorum(uint256 contextId) internal view virtual returns (bool) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return
-            $.contextCreationNewTxSenderConfirmationCount[contextId] ==
-            $.kmsSignerAddressesForContext[contextId].length &&
+            $.contextCreationNewTxSenderConfirmationCount[contextId] == $.kmsNodesForContext[contextId].length &&
             $.contextCreationPreviousTxSenderConfirmationCount[contextId] >=
             $.contextCreationPreviousTxSenderThreshold[contextId];
     }
