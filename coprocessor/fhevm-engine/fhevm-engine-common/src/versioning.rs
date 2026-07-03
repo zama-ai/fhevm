@@ -175,8 +175,10 @@ pub async fn run_stack_version_listener(
 ///
 /// Opens a short-lived connection with the default `public` search_path, so it
 /// works before the service's main pool — whose search_path may be pinned to
-/// `gcs,public` — is built. If the `versioning` row is missing the service
-/// defaults to non-GCS (blue) mode.
+/// `gcs,public` — is built. If the `versioning` row is missing — or the table
+/// itself does not exist yet (a fresh deploy where the db-migration Job has not
+/// finished) — the service defaults to non-GCS (blue) mode rather than failing
+/// startup, so it does not CrashLoop waiting on migration ordering.
 pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     // Route through `resolve_runtime_database_url` so that when AWS IAM auth is
     // enabled we connect with a freshly rendered IAM token instead of the raw,
@@ -187,18 +189,15 @@ pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     )
     .await?;
     let mut conn = PgConnection::connect(&runtime_url).await?;
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
-            .fetch_optional(&mut conn)
-            .await?;
+    let live = live_stack_version(&mut conn).await?;
     let _ = conn.close().await;
 
-    let live = match row {
-        Some((v,)) => v,
+    let live = match live {
+        Some(v) => v,
         None => {
             warn!(
                 binary_stack_version = STACK_VERSION,
-                "versioning table has no row; defaulting to non-GCS (blue) mode"
+                "versioning table is empty or not yet created; defaulting to non-GCS (blue) mode"
             );
             return Ok(false);
         }
@@ -224,13 +223,35 @@ pub struct StaleStackError {
     pub live: String,
 }
 
+/// True if `err` is Postgres `undefined_table` (SQLSTATE 42P01) — i.e. the
+/// `versioning` table does not exist yet (migrations not applied).
+fn is_undefined_table(err: &sqlx::Error) -> bool {
+    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("42P01"))
+}
+
 /// Fetch the live stack version singleton, or `None` if the `versioning` row is
 /// absent (fresh/unseeded DB). Shared by the retirement checks below.
+///
+/// A missing `versioning` *table* (SQLSTATE 42P01) is treated the same as a
+/// missing row — `None`, not an error — so a service that starts before the
+/// db-migration Job has created the table does not fail (see [`resolve_gcs_mode`]
+/// and [`assert_not_retired`], which read this as "unseeded → blue / not-retired").
 async fn live_stack_version(conn: &mut PgConnection) -> Result<Option<String>, sqlx::Error> {
     let row: Option<(String,)> =
-        sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
+        match sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
             .fetch_optional(conn)
-            .await?;
+            .await
+        {
+            Ok(row) => row,
+            Err(err) if is_undefined_table(&err) => {
+                warn!(
+                    binary_stack_version = STACK_VERSION,
+                    "versioning table does not exist yet (migrations not applied?); treating as unseeded"
+                );
+                None
+            }
+            Err(err) => return Err(err),
+        };
     Ok(row.map(|(v,)| v))
 }
 
