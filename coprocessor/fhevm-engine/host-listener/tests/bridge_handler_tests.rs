@@ -701,7 +701,11 @@ async fn seed_materialization(db: &Database, handle: &[u8], chain_id: u64) {
 }
 
 async fn run_bridge_cleanup(db: &Database, orphaned_hashes: &[Vec<u8>]) {
-    let mut tx = db.new_transaction().await.expect("tx");
+    let mut tx = db
+        .new_transaction()
+        .await
+        .expect("tx")
+        .expect("new_transaction() returns Some on a live stack");
     db.cleanup_orphaned_branch_state(&mut tx, orphaned_hashes)
         .await
         .expect("cleanup");

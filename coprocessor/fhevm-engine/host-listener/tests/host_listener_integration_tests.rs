@@ -328,7 +328,10 @@ async fn test_mark_block_as_valid_repairs_missing_parent_hash(
     .execute(&pool)
     .await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     db.mark_block_as_valid(
         &mut tx,
         &BlockSummary {
@@ -338,6 +341,8 @@ async fn test_mark_block_as_valid_repairs_missing_parent_hash(
             timestamp: 0,
         },
         false,
+        0,
+        0,
     )
     .await?;
     tx.commit().await?;
@@ -1381,7 +1386,10 @@ async fn test_update_block_as_finalized_returns_direct_and_descendant_orphans(
     .execute(&setup.db_pool)
     .await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let orphaned_hashes = db
         .update_block_as_finalized(&mut tx, block_number, &canonical_hash)
         .await?;
@@ -1428,7 +1436,10 @@ async fn test_update_block_as_finalized_does_not_resurrect_orphaned_block(
     .execute(&setup.db_pool)
     .await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let orphaned_hashes = db
         .update_block_as_finalized(&mut tx, block_number, &stale_hash)
         .await?;
@@ -2116,7 +2127,10 @@ async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
     .execute(&setup.db_pool)
     .await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     db.mark_block_as_valid(
         &mut tx,
         &BlockSummary {
@@ -2126,6 +2140,8 @@ async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
             timestamp: 0,
         },
         true,
+        0,
+        0,
     )
     .await?;
     tx.commit().await?;
@@ -3351,7 +3367,10 @@ async fn test_wave1_dual_writes_legacy_and_branch_tables(
         tx_depth_size: 0,
         log_index: None,
     };
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     db.insert_tfhe_event(&mut tx, &event).await?;
 
     // 2. Allowed handle + PBS computations.
@@ -3446,7 +3465,10 @@ async fn test_acl_branch_rows_keep_acl_block_context(
     .execute(&pool)
     .await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     db.insert_tfhe_event(
         &mut tx,
         &LogTfhe {
@@ -3705,7 +3727,10 @@ async fn test_acl_branch_rows_keep_acl_block_context(
     .await?;
     assert_eq!(branchless_digest_before_cleanup, 1);
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     db.cleanup_orphaned_branch_state(&mut tx, &[orphan_acl_hash.to_vec()])
         .await?;
     tx.commit().await?;
@@ -3990,7 +4015,10 @@ async fn test_wave1_branch_write_failure_aborts_dual_write_transaction(
         log_index: None,
     };
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let err = db
         .insert_tfhe_event(&mut tx, &event)
         .await
@@ -4002,7 +4030,10 @@ async fn test_wave1_branch_write_failure_aborts_dual_write_transaction(
     );
     tx.rollback().await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let err = db
         .insert_allowed_handle(
             &mut tx,
@@ -4023,7 +4054,10 @@ async fn test_wave1_branch_write_failure_aborts_dual_write_transaction(
     );
     tx.rollback().await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let err = db
         .insert_pbs_computations(
             &mut tx,
@@ -4172,7 +4206,10 @@ async fn test_wave1_reorg_cleanup_preserves_legacy_ciphertext_bytes(
     .execute(&pool)
     .await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     db.cleanup_orphaned_branch_state(&mut tx, &[orphan_hash.to_vec()])
         .await?;
     tx.commit().await?;
