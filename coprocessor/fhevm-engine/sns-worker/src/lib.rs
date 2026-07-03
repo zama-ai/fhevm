@@ -14,7 +14,7 @@ mod tests;
 use std::{
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
         Arc,
     },
     time::Duration,
@@ -31,11 +31,13 @@ use fhevm_engine_common::{
     chain_id::ChainId,
     db_keys::DbKeyId,
     drift_revert,
+    gcs_activation::{run_gcs_activation_watcher, GCS_NOT_ACTIVATED},
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
     types::{CoproSigner, FhevmError, SignerType},
     utils::{to_hex, DatabaseURL},
+    versioning::{run_stack_version_listener, StackMode},
 };
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
@@ -139,6 +141,11 @@ pub struct Config {
     pub enable_compression: bool,
     pub schedule_policy: SchedulePolicy,
     pub pg_auto_explain_with_min_duration: Option<Duration>,
+    /// When true, the sns-worker runs in GCS mode. It connects with
+    /// `search_path = gcs,public` so writes (`ciphertexts128`,
+    /// `pbs_computations`) land in the `gcs` schema, and it pauses until
+    /// `event_upgrade_activated` is received before processing any work.
+    pub gcs_mode: bool,
     pub signer_type: SignerType,
     pub private_key: Option<String>,
     pub s3_migration: S3MigrationMode,
@@ -168,8 +175,12 @@ impl std::fmt::Display for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "db_url: {},  db_listen_channel: {:?}, db_notify_channel: {}, db_batch_limit: {}",
-            self.db.url, self.db.listen_channels, self.db.notify_channel, self.db.batch_limit
+            "db_url: {},  db_listen_channel: {:?}, db_notify_channel: {}, db_batch_limit: {}, gcs_mode: {}",
+            self.db.url,
+            self.db.listen_channels,
+            self.db.notify_channel,
+            self.db.batch_limit,
+            self.gcs_mode
         )
     }
 }
@@ -309,7 +320,8 @@ impl HandleItem {
     ) -> Result<(), ExecutionError> {
         if self.ct128.is_empty() {
             sqlx::query(
-                "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
+                "INSERT INTO ciphertext_digest
+                    (host_chain_id, key_id_gw, handle, transaction_id)
                 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
             )
             .bind(self.host_chain_id.as_i64())
@@ -476,6 +488,7 @@ impl UploadJob {
 }
 
 /// Runs the uploader loop
+#[allow(clippy::too_many_arguments)]
 pub async fn run_uploader_loop(
     pool_mngr: &PostgresPoolManager,
     conf: &Config,
@@ -483,8 +496,24 @@ pub async fn run_uploader_loop(
     tx: Sender<UploadJob>,
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
+    mode: Arc<StackMode>,
+    token: CancellationToken,
     signer: CoproSigner,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Park until uploads are enabled. A blue (live) worker has `gcs_mode == false`
+    // and proceeds immediately; a green worker parks for the whole dry-run
+    // window and only begins uploading after cutover flips the mode (on
+    // `event_stack_version_upgraded`), at which point it drains the accumulated
+    // `ciphertext_digest` backlog via the resubmit loop.
+    while mode.gcs_mode() {
+        if token.is_cancelled() {
+            info!("Uploader cancelled before activation");
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    info!("uploads enabled — starting S3 uploader and resubmit loops");
+
     let (is_ready_res, _) = check_is_ready(&client, &conf.s3).await;
     is_ready.store(is_ready_res, Ordering::Release);
 
@@ -570,13 +599,18 @@ pub async fn run_all(
     let s3 = client.clone();
     let jobs_rx: Arc<RwLock<mpsc::Receiver<UploadJob>>> = Arc::new(RwLock::new(uploads_rx));
 
-    let Some(pool_mngr) = PostgresPoolManager::connect_pool(
+    // In --gcs-mode the pool is pinned to `search_path = gcs,public` so
+    // unqualified writes (`ciphertexts128`, `pbs_computations`) land in the
+    // `gcs` schema; shared read-only tables (keys, crs, host_chains,
+    // upgrade_state, …) still resolve from `public` via fallback.
+    let Some(pool_mngr) = PostgresPoolManager::connect_pool_with_gcs_mode(
         token.child_token(),
         conf.db.url.as_str(),
         conf.db.timeout,
         conf.db.max_connections,
         Duration::from_secs(2),
         conf.pg_auto_explain_with_min_duration,
+        conf.gcs_mode,
     )
     .await
     else {
@@ -585,6 +619,57 @@ pub async fn run_all(
     };
 
     let pg_mngr = pool_mngr.clone();
+
+    // Shared blue-green stack mode, seeded from the startup-resolved gcs_mode.
+    // The version-upgrade listener flips it out of GCS mode when the cutover
+    // commits (on `event_stack_version_upgraded`); that transition is what
+    // re-enables S3 uploads + GC for the now-live green worker. A blue (live)
+    // worker starts with `gcs_mode == false`, so uploads run immediately.
+    let stack_mode = StackMode::new(conf.gcs_mode);
+    {
+        let listener_pool = pool_mngr.pool();
+        let listener_mode = stack_mode.clone();
+        let listener_token = token.child_token();
+        spawn(async move {
+            if let Err(err) =
+                run_stack_version_listener(listener_pool, listener_mode, listener_token).await
+            {
+                error!(error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
+
+    // GCS gating: spawn the activation watcher and pause until it observes
+    // `upgrade_state.start_block` for stack_role='GCS'. In BCS mode this is
+    // a no-op — the loop falls through immediately.
+    let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
+    if conf.gcs_mode {
+        let watcher_pool = pool_mngr.pool();
+        let watcher_state = start_block_state.clone();
+        spawn(async move {
+            loop {
+                if let Err(err) = run_gcs_activation_watcher(&watcher_pool, &watcher_state).await {
+                    error!(error = %err, "GCS activation watcher errored; restarting in 5s");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            }
+        });
+
+        info!("sns-worker in --gcs-mode (paused, not yet activated). Waiting for event_upgrade_activated.");
+        loop {
+            if token.is_cancelled() {
+                return Ok(());
+            }
+            if start_block_state.load(Ordering::SeqCst) != GCS_NOT_ACTIVATED {
+                break;
+            }
+            tokio::select! {
+                _ = token.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+            }
+        }
+        info!("sns-worker observed GCS activation; resuming.");
+    }
 
     // Start metrics server
     metrics_server::spawn(conf.metrics.addr.clone(), token.child_token());
@@ -628,6 +713,7 @@ pub async fn run_all(
             token.child_token(),
             client.clone(),
             events_tx.clone(),
+            stack_mode.clone(),
         )
         .await?,
     );
@@ -718,16 +804,35 @@ pub async fn run_all(
         return Ok(());
     }
 
-    // Keep the uploader's handle so its failure exits the process too.
+    // Spawns a task to handle S3 uploads. In GCS mode the loop parks until the
+    // cutover flips `stack_mode` out of GCS mode, so nothing is uploaded during
+    // the dry-run window. Keep the uploader's handle so its failure exits the
+    // process too.
+    let uploader_mode = stack_mode.clone();
+    let uploader_token = token.child_token();
     let uploader = spawn(async move {
-        run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready, signer).await
+        if let Err(err) = run_uploader_loop(
+            &pg_mngr,
+            &conf,
+            jobs_rx,
+            tx,
+            s3,
+            is_ready,
+            uploader_mode,
+            uploader_token,
+            signer,
+        )
+        .await
+        {
+            error!(error = %err, "Failed to run the upload-worker");
+        }
     });
 
     // Exit if either the service loop or the uploader fails.
     let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = tokio::select! {
         res = service.run(&pool_mngr) => res.map_err(Into::into),
         res = uploader => match res {
-            Ok(inner) => inner,
+            Ok(()) => Ok(()),
             Err(join_err) => Err(join_err.into()),
         },
     };

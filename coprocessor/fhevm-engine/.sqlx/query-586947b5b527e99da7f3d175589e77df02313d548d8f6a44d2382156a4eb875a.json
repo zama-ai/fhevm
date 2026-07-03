@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT sh.chain_id AS \"chain_id!\", sh.block_number AS \"block_number!\",\n               sh.state_hash AS \"state_hash!\", b.block_hash AS \"block_hash!\"\n          FROM state_hash sh\n          JOIN host_chain_blocks_valid b\n            ON b.chain_id = sh.chain_id AND b.block_number = sh.block_number\n         WHERE sh.s3_uploaded_at IS NULL\n         ORDER BY sh.chain_id, sh.block_number\n         LIMIT $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chain_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_number!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "state_hash!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "block_hash!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "586947b5b527e99da7f3d175589e77df02313d548d8f6a44d2382156a4eb875a"
+}

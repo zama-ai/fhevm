@@ -50,7 +50,11 @@ async fn ingest(
         address: Address::ZERO,
         data: event,
     };
-    let mut tx = db.new_transaction().await.expect("tx");
+    let mut tx = db
+        .new_transaction()
+        .await
+        .expect("tx")
+        .expect("new_transaction() returns Some on a live stack");
     let inserted = db
         .handle_bridge_event(
             &mut tx,
@@ -411,12 +415,14 @@ async fn ingest_fallback_block(
         dependence_by_connexity: false,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
+        is_protocol_config_listener: false,
     };
     let chain_id = db.chain_id;
     ingest_block_logs(
         chain_id,
         db,
         &block_logs,
+        &None,
         &None,
         &None,
         &None,

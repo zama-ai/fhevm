@@ -52,7 +52,9 @@ async fn simulate_main_host_listener_insert(
     block: &BlockSummary,
 ) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
-    database.mark_block_as_valid(&mut tx, block, false).await?;
+    database
+        .mark_block_as_valid(&mut tx, block, false, 0, 0)
+        .await?;
     tx.commit().await
 }
 

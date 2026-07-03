@@ -259,7 +259,7 @@ pub fn trivial_encrypt_be_bytes(
 }
 
 pub fn current_ciphertext_version() -> i16 {
-    0
+    crate::CIPHERTEXT_VERSION
 }
 
 pub fn extract_ct_list(

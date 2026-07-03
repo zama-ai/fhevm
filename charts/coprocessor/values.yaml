@@ -79,6 +79,11 @@ commonConfig:
   aclContractAddress: {}            # required — e.g. 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
   fhevmExecutorContractAddress: {}  # required — e.g. 0x...
   kmsGenerationContractAddress: {}  # optional — e.g. 0x...
+  protocolConfigContractAddress: {}  # optional — e.g. 0x...
+
+  # Ethereum host chain id. Only the host-listener whose own chain id matches
+  # this value decodes ProtocolConfig.CoprocessorUpgradeProposed events.
+  ethereumChainId: ""
 
   # Gateway chain configuration. Consumed by gwListener and txSender.
   # Each field accepts either a literal `value` or a `valueFrom` block
