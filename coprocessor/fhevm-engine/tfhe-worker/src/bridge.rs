@@ -279,11 +279,15 @@ pub(crate) async fn associate_pair(
     // orphaned block as proof that this association produced the
     // materialization, and retracts it.
     if ciphertext_copied {
+        // `s3_format_version` travels with the digests: the copied row points at
+        // the source's S3 objects, so it must carry the version those objects
+        // were written with (NULL means "not uploaded" and would make the row
+        // self-contradictory — digests present but officially absent from S3).
         sqlx::query!(
             r#"
             INSERT INTO ciphertext_digest
-                (handle, ciphertext, ciphertext128, ciphertext128_format, host_chain_id, key_id_gw)
-            SELECT $1, ciphertext, ciphertext128, ciphertext128_format, $2, key_id_gw
+                (handle, ciphertext, ciphertext128, ciphertext128_format, host_chain_id, key_id_gw, s3_format_version)
+            SELECT $1, ciphertext, ciphertext128, ciphertext128_format, $2, key_id_gw, s3_format_version
             FROM ciphertext_digest
             WHERE handle = $3
             ON CONFLICT (handle) DO NOTHING

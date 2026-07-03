@@ -14,6 +14,7 @@ const CT64_DIGEST: &[u8] = &[0xA1; 4];
 const CT128_DIGEST: &[u8] = &[0xB2; 4];
 const CT128_FORMAT: i16 = 11;
 const KEY_ID_GW: &[u8] = &[0xC3, 0xC4];
+const S3_FORMAT_VERSION: i16 = 1;
 const CIPHERTEXT_VERSION: i16 = 0;
 const CIPHERTEXT_TYPE: i16 = 4;
 const SRC_BLOCK_HASH: &[u8] = &[0x51; 32];
@@ -26,6 +27,7 @@ struct CopiedDigest {
     ciphertext128: Option<Vec<u8>>,
     ciphertext128_format: i16,
     key_id_gw: Vec<u8>,
+    s3_format_version: Option<i16>,
 }
 
 /// Returns the `DBInstance` (kept alive by the caller) and a connected pool.
@@ -62,8 +64,8 @@ async fn insert_digest(
 ) {
     sqlx::query(
         "INSERT INTO ciphertext_digest
-             (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, ciphertext128_format)
-         VALUES ($1, $2, $3, $4, $5, $6)",
+             (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, ciphertext128_format, s3_format_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(host_chain_id)
     .bind(KEY_ID_GW)
@@ -71,6 +73,7 @@ async fn insert_digest(
     .bind(ct64_digest)
     .bind(ct128_digest)
     .bind(CT128_FORMAT)
+    .bind(S3_FORMAT_VERSION)
     .execute(pool)
     .await
     .expect("insert ciphertext_digest");
@@ -240,7 +243,7 @@ async fn associates_ready_pair() {
     // The digest values are copied verbatim, so the destination handle resolves
     // to the same S3 blobs as the source (no re-SnS).
     let digest: CopiedDigest = sqlx::query_as(
-        "SELECT ciphertext, ciphertext128, ciphertext128_format, key_id_gw
+        "SELECT ciphertext, ciphertext128, ciphertext128_format, key_id_gw, s3_format_version
          FROM ciphertext_digest WHERE handle = $1",
     )
     .bind(&dst)
@@ -251,6 +254,9 @@ async fn associates_ready_pair() {
     assert_eq!(digest.ciphertext128.as_deref(), Some(CT128_DIGEST));
     assert_eq!(digest.ciphertext128_format, CT128_FORMAT);
     assert_eq!(digest.key_id_gw, KEY_ID_GW);
+    // NULL here means "not uploaded" to the S3 migration machinery; the copy
+    // points at the source's blobs, so it must inherit their format version.
+    assert_eq!(digest.s3_format_version, Some(S3_FORMAT_VERSION));
 
     assert!(is_associated(&pool, &dst).await);
 
