@@ -6,8 +6,7 @@
 mod common;
 
 use crate::common::utils::{
-    TestSetup, TEST_KEYURL_CONTEXT_ID, TEST_KEYURL_CRS_ID, TEST_KEYURL_CRS_URL,
-    TEST_KEYURL_EPOCH_ID, TEST_KEYURL_KEY_ID, TEST_KEYURL_KEY_URL,
+    TestSetup, TEST_KEYURL_CRS_ID, TEST_KEYURL_CRS_URL, TEST_KEYURL_KEY_ID, TEST_KEYURL_KEY_URL,
 };
 use rstest::rstest;
 use serde_json::Value;
@@ -132,18 +131,6 @@ mod helpers {
             crs_2048["urls"][0].as_str().unwrap(),
             TEST_KEYURL_CRS_URL,
             "crs.2048.urls[0] should come from getCrsMaterials"
-        );
-
-        // contextId / epochId come from getCurrentKmsContextAndEpoch (additive fields).
-        assert_eq!(
-            response["contextId"].as_str().expect("missing 'contextId'"),
-            TEST_KEYURL_CONTEXT_ID.to_string(),
-            "contextId should equal on-chain getCurrentKmsContextAndEpoch context"
-        );
-        assert_eq!(
-            response["epochId"].as_str().expect("missing 'epochId'"),
-            TEST_KEYURL_EPOCH_ID.to_string(),
-            "epochId should equal on-chain getCurrentKmsContextAndEpoch epoch"
         );
 
         body

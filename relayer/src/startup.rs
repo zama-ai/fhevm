@@ -152,7 +152,7 @@ pub async fn run_fhevm_relayer(
 
         // Gate startup on the first successful host-chain poll so `/v2/keyurl` always serves a
         // chain-sourced value; if it keeps failing the relayer exits and is restarted.
-        let mut keyurl_poller = KeyUrlPoller::new(&settings.protocol_config)
+        let mut keyurl_poller = KeyUrlPoller::new(&settings.protocol_config, &settings.keyurl)
             .context("Failed to build KeyUrl poller")?;
         let initial_keyurl = keyurl_poller
             .initialize()

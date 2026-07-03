@@ -571,10 +571,15 @@ pub struct ProtocolConfigSettings {
     pub ethereum_http_rpc_url: String,
     pub address: String,
     pub retry: RetrySettings,
-    /// KMSGeneration contract address on the Ethereum host chain.
+}
+
+/// `/v2/keyurl` poller settings (KMSGeneration contract on the Ethereum host chain).
+#[derive(Debug, Deserialize, Clone)]
+pub struct KeyUrlConfig {
+    /// KMSGeneration contract address on the Ethereum host chain (source for `/v2/keyurl`).
     pub kms_generation_address: String,
-    /// How often the `/v2/keyurl` poller reads the active key/CRS/context from the host chain.
-    pub keyurl_poll_interval_ms: u64,
+    /// How often the `/v2/keyurl` poller reads the active key/CRS/KMS context from the host chain.
+    pub poll_interval_ms: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -597,6 +602,8 @@ pub struct Settings {
     pub host_chains: Vec<HostChainConfig>,
     /// ProtocolConfig contract settings for dynamic threshold resolution
     pub protocol_config: ProtocolConfigSettings,
+    /// `/v2/keyurl` poller settings (KMSGeneration contract)
+    pub keyurl: KeyUrlConfig,
     /// User-decryption signature check configuration
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
 }
@@ -668,6 +675,9 @@ impl Settings {
         // Validate protocol_config settings
         settings.validate_protocol_config()?;
 
+        // Validate keyurl poller settings
+        settings.validate_keyurl()?;
+
         // Validate listener pool configuration
         settings.validate_listener_pool_config()?;
 
@@ -686,8 +696,8 @@ impl Settings {
             ),
             ("protocol_config", &self.protocol_config.address),
             (
-                "protocol_config.kms_generation_address",
-                &self.protocol_config.kms_generation_address,
+                "keyurl.kms_generation_address",
+                &self.keyurl.kms_generation_address,
             ),
         ];
 
@@ -752,9 +762,13 @@ impl Settings {
                 "protocol_config.retry.max_attempts must be at least 1".to_string(),
             ));
         }
-        if pc.keyurl_poll_interval_ms < 1 {
+        Ok(())
+    }
+
+    fn validate_keyurl(&self) -> Result<(), AppConfigError> {
+        if self.keyurl.poll_interval_ms < 1 {
             return Err(AppConfigError::Config(
-                "protocol_config.keyurl_poll_interval_ms must be at least 1".to_string(),
+                "keyurl.poll_interval_ms must be at least 1".to_string(),
             ));
         }
         Ok(())
@@ -1464,12 +1478,12 @@ mod tests {
             vec![0.01, 0.05, 0.1]
         );
 
-        // protocol_config: env overrides
+        // keyurl: env overrides
         assert_eq!(
-            settings.protocol_config.kms_generation_address,
+            settings.keyurl.kms_generation_address,
             "0x00000000000000000000000000000000000000ff"
         );
-        assert_eq!(settings.protocol_config.keyurl_poll_interval_ms, 12000);
+        assert_eq!(settings.keyurl.poll_interval_ms, 12000);
 
         // storage: env overrides
         assert!(settings.storage.sql_database_url.contains("env-override"));

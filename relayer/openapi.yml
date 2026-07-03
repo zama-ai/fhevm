@@ -1741,23 +1741,13 @@ components:
       required:
       - fheKeyInfo
       - crs
-      - contextId
-      - epochId
       properties:
-        contextId:
-          type: string
-          description: Active KMS context id.
-          example: '1'
         crs:
           type: object
           additionalProperties:
             $ref: '#/components/schemas/KeyData'
           propertyNames:
             type: string
-        epochId:
-          type: string
-          description: Active epoch id.
-          example: '1'
         fheKeyInfo:
           type: array
           items:
