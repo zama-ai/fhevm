@@ -17,6 +17,8 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
+# Test-emit-only instructions (test_emit_*) for runtime-tests; must never be
+# enabled in a production build.
 poc = []
 # Emit on-chain events (`emit_cpi!`/`emit!`). Default-on so all existing builds
 # behave identically; disable with `--no-default-features` to let off-chain

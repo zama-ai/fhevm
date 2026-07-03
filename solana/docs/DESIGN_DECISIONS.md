@@ -13,6 +13,20 @@ adopted
 product-open
   The PoC has a clear direction, but production API, governance, service integration, or encoding
   details still need a final product decision.
+
+superseded
+  A later DD or code change replaced this design; kept for history. The entry names its successor.
+```
+
+Index by subsystem (jump targets for the "read before changing X" pointer in the top README):
+
+```text
+ACL & handles            DD-001, DD-002, DD-005, DD-006, DD-008, DD-015, DD-019
+Input verification       DD-007, DD-013, DD-014, DD-026
+Decrypt / KMS / gateway  DD-012, DD-020, DD-021, DD-022, DD-024, DD-025, DD-027, DD-030
+Token & transfer         DD-009, DD-010, DD-011, DD-016, DD-018 (superseded)
+fhe_eval & events        DD-003, DD-004, DD-017, DD-023, DD-029
+Scope boundaries         DD-028
 ```
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds

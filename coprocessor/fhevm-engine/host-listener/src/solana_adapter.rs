@@ -1,3 +1,12 @@
+//! Transport-agnostic core of the Solana ingestion path: Anchor event decoding
+//! (`zama-host` + `confidential-token`) and mapping into the coprocessor
+//! database, shared by every transport ([`crate::solana_listener`] RPC polling,
+//! [`crate::solana_grpc_listener`] Yellowstone, LiteSVM in-process tests) and by
+//! the emitless reconstruction path ([`crate::solana_reconstruct`]).
+//!
+//! Design rationale lives in `solana/docs/DESIGN_DECISIONS.md` (event transport:
+//! DD-003; finalized-fetch decrypt trust model: DD-024).
+
 use std::{collections::HashSet, fmt, ops::DerefMut};
 
 use alloy_primitives::{Address, FixedBytes, Log};
