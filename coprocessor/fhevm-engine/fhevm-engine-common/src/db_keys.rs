@@ -126,6 +126,17 @@ impl DbKeyCache {
         executor: &mut PgConnection,
         kind: KeyMaterialKind,
     ) -> anyhow::Result<DbKey> {
+        // A GPU worker cannot execute legacy ServerKey material at all;
+        // the RFC-029 migration window runs on CPU coprocessors, and GPU
+        // deployments only join once every boundary selects compressed.
+        #[cfg(feature = "gpu")]
+        if kind == KeyMaterialKind::Legacy {
+            anyhow::bail!(
+                "GPU coprocessor cannot load legacy key material; \
+                 pre-cutover work must be executed by CPU coprocessors"
+            );
+        }
+
         let row = sqlx::query!(
             "SELECT key_id, sequence_number FROM keys ORDER BY sequence_number DESC LIMIT 1",
         )

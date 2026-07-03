@@ -103,7 +103,9 @@ async fn test_fetch_latest_refreshes_cache_after_key_rotation(
 }
 
 /// RFC-029: pinned fetches load exactly the requested material kind,
-/// and both kinds of the same key coexist in the cache.
+/// and both kinds of the same key coexist in the cache. GPU builds
+/// cannot execute legacy material, so the legacy half is CPU-only.
+#[cfg(not(feature = "gpu"))]
 #[tokio::test]
 #[serial(db)]
 async fn test_fetch_latest_pinned_loads_exactly_the_requested_kind(
@@ -134,7 +136,9 @@ async fn test_fetch_latest_pinned_loads_exactly_the_requested_kind(
 
 /// RFC-029: a pinned fetch for material the row does not carry fails
 /// with the retryable `KeyMaterialUnavailable` error — it never
-/// substitutes the other kind.
+/// substitutes the other kind. (CPU-only: the legacy-side load at the
+/// end cannot succeed on GPU builds by construction.)
+#[cfg(not(feature = "gpu"))]
 #[tokio::test]
 #[serial(db)]
 async fn test_fetch_latest_pinned_halts_when_material_is_missing(
@@ -169,5 +173,32 @@ async fn test_fetch_latest_pinned_halts_when_material_is_missing(
         .await?;
     assert_eq!(legacy.material_kind, KeyMaterialKind::Legacy);
 
+    Ok(())
+}
+
+/// GPU builds refuse pinned legacy material outright: the migration
+/// window is CPU-only, and substituting compressed bytes for a
+/// legacy-pinned task would be byte divergence.
+#[cfg(feature = "gpu")]
+#[tokio::test]
+#[serial(db)]
+async fn test_fetch_latest_pinned_legacy_is_rejected_on_gpu(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let pool = PgPoolOptions::new()
+        .max_connections(4)
+        .connect(db.db_url())
+        .await?;
+    let cache = DbKeyCache::new(4)?;
+
+    let mut conn = pool.acquire().await?;
+    let err = match cache
+        .fetch_latest_pinned(&mut conn, KeyMaterialKind::Legacy)
+        .await
+    {
+        Ok(_) => panic!("GPU build must reject pinned legacy material"),
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("cannot load legacy key material"));
     Ok(())
 }
