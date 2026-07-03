@@ -13,7 +13,10 @@ use alloy::{
 use anyhow::Context;
 use aws_config::BehaviorVersion;
 use clap::Parser;
-use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
+use fhevm_engine_common::database::{
+    connect_pool_with_options_and_connect_options, resolve_database_url_from_option,
+    with_statement_timeout,
+};
 use fhevm_engine_common::drift_revert;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
@@ -313,10 +316,12 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let database_url = resolve_database_url_from_option(conf.database_url)?;
-    let (db_pool, _pool_refresh_handle) = connect_pool_with_options(
+    let (db_pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &database_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(conf.database_pool_size),
         Some(&cancel_token),
+        // Bound this writer's statements so none can run unbounded against the DB.
+        |options| with_statement_timeout(options, Duration::from_secs(10)),
     )
     .await?;
 
