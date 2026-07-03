@@ -4,12 +4,16 @@ out = 'out'
 libs = ['node_modules', 'lib', "dependencies"]
 test = 'test'
 cache_path  = 'cache_forge'
-allow_paths = ['../']
+solc = '0.8.24'
+optimizer = true
+optimizer_runs = 200
 
 remappings = [
     '@fhevm-host-contracts/=../host-contracts/',
     '@fhevm-foundry/=../host-contracts/fhevm-foundry/',
-    'forge-std/=dependencies/forge-std-1.11.0/src/'
+    'forge-std/=dependencies/forge-std-1.11.0/src/',
+    '@layerzerolabs/=../host-contracts/node_modules/@layerzerolabs/',
+    'solidity-bytes-utils/=../host-contracts/node_modules/solidity-bytes-utils/'
 ]
 
 [dependencies]
