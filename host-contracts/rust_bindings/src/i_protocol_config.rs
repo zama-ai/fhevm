@@ -567,7 +567,7 @@ interface IProtocolConfig {
     error InvalidKmsContext(uint256 kmsContextId);
     error InvalidNullThreshold(string thresholdName);
     error InvalidProposalId();
-    error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
+    error KmsContextCreationAlreadyConfirmed(address txSender, uint256 kmsContextId);
     error KmsContextCreationUnauthorized(address caller, uint256 kmsContextId);
     error KmsContextNotCreated(uint256 kmsContextId);
     error KmsContextNotPending(uint256 kmsContextId);
@@ -585,7 +585,7 @@ interface IProtocolConfig {
     event ActivateEpoch(uint256 indexed kmsContextId, uint256 indexed epochId, EpochKeyResult[] keys, EpochCrsResult[] crsList, string[] kmsNodeStorageUrls);
     event CoprocessorUpgradeProposed(uint256 indexed proposalId, string softwareVersion, ChainUpgradeWindow[] chainUpgradeWindows, uint64 gwStartBlock);
     event EpochActivationConfirmation(uint256 indexed epochId, address indexed signer, bytes32 dataHash);
-    event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed signer, bool isPreviousSigner, bool isNewSigner);
+    event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed txSender, bool isPreviousTxSender, bool isNewTxSender);
     event KmsContextDestroyed(uint256 indexed kmsContextId);
     event KmsGenThresholdUpdated(uint256 indexed kmsContextId, uint256 threshold);
     event MirrorKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
@@ -1742,19 +1742,19 @@ interface IProtocolConfig {
         "internalType": "uint256"
       },
       {
-        "name": "signer",
+        "name": "txSender",
         "type": "address",
         "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "isPreviousSigner",
+        "name": "isPreviousTxSender",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
       },
       {
-        "name": "isNewSigner",
+        "name": "isNewTxSender",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
@@ -2373,7 +2373,7 @@ interface IProtocolConfig {
     "name": "KmsContextCreationAlreadyConfirmed",
     "inputs": [
       {
-        "name": "signer",
+        "name": "txSender",
         "type": "address",
         "internalType": "address"
       },
@@ -5765,13 +5765,13 @@ error InvalidProposalId();
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsContextCreationAlreadyConfirmed(address,uint256)` and selector `0x62585cc8`.
 ```solidity
-error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
+error KmsContextCreationAlreadyConfirmed(address txSender, uint256 kmsContextId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct KmsContextCreationAlreadyConfirmed {
         #[allow(missing_docs)]
-        pub signer: alloy::sol_types::private::Address,
+        pub txSender: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
         pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -5809,7 +5809,7 @@ error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
         impl ::core::convert::From<KmsContextCreationAlreadyConfirmed>
         for UnderlyingRustTuple<'_> {
             fn from(value: KmsContextCreationAlreadyConfirmed) -> Self {
-                (value.signer, value.kmsContextId)
+                (value.txSender, value.kmsContextId)
             }
         }
         #[automatically_derived]
@@ -5818,7 +5818,7 @@ error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
         for KmsContextCreationAlreadyConfirmed {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    signer: tuple.0,
+                    txSender: tuple.0,
                     kmsContextId: tuple.1,
                 }
             }
@@ -5841,7 +5841,7 @@ error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.signer,
+                        &self.txSender,
                     ),
                     <alloy::sol_types::sol_data::Uint<
                         256,
@@ -7379,7 +7379,7 @@ event EpochActivationConfirmation(uint256 indexed epochId, address indexed signe
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `KmsContextCreationConfirmation(uint256,address,bool,bool)` and selector `0xb79c48003695b6ebe555afa36fad071deeee75eb3718ad63de5621d35ba44b4f`.
 ```solidity
-event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed signer, bool isPreviousSigner, bool isNewSigner);
+event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed txSender, bool isPreviousTxSender, bool isNewTxSender);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -7392,11 +7392,11 @@ event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address index
         #[allow(missing_docs)]
         pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub signer: alloy::sol_types::private::Address,
+        pub txSender: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub isPreviousSigner: bool,
+        pub isPreviousTxSender: bool,
         #[allow(missing_docs)]
-        pub isNewSigner: bool,
+        pub isNewTxSender: bool,
     }
     #[allow(
         non_camel_case_types,
@@ -7435,9 +7435,9 @@ event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address index
             ) -> Self {
                 Self {
                     kmsContextId: topics.1,
-                    signer: topics.2,
-                    isPreviousSigner: data.0,
-                    isNewSigner: data.1,
+                    txSender: topics.2,
+                    isPreviousTxSender: data.0,
+                    isNewTxSender: data.1,
                 }
             }
             #[inline]
@@ -7459,10 +7459,10 @@ event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address index
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
                     <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.isPreviousSigner,
+                        &self.isPreviousTxSender,
                     ),
                     <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        &self.isNewSigner,
+                        &self.isNewTxSender,
                     ),
                 )
             }
@@ -7471,7 +7471,7 @@ event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address index
                 (
                     Self::SIGNATURE_HASH.into(),
                     self.kmsContextId.clone(),
-                    self.signer.clone(),
+                    self.txSender.clone(),
                 )
             }
             #[inline]
@@ -7489,7 +7489,7 @@ event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address index
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.kmsContextId);
                 out[2usize] = <alloy::sol_types::sol_data::Address as alloy_sol_types::EventTopic>::encode_topic(
-                    &self.signer,
+                    &self.txSender,
                 );
                 Ok(())
             }
