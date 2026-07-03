@@ -482,27 +482,52 @@ task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
 
   const parsedEnv = readHostEnv();
-  const proxyAddress = parsedEnv.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
+  let proxyAddress = parsedEnv.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
   if (!proxyAddress) {
     throw new Error(
       'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS not found in addresses/.env.host. ' +
         'Run task:deployEmptyUUPSProxies first.',
     );
   }
-  // task:deployEmptyUUPSProxies only provisions a bridge empty proxy when a real LayerZero endpoint
-  // is configured; otherwise it pins the null address. A null address means "no bridge on this host",
-  // so there is nothing to upgrade — skip instead of failing the forceImport on the zero address.
+
+  const lzEndpoint = process.env.LZ_ENDPOINT_ADDRESS;
+  const endpointHasCode =
+    !!lzEndpoint && ethers.isAddress(lzEndpoint) && (await ethers.provider.getCode(lzEndpoint)) !== '0x';
+
+  // deployEmptyUUPSProxies pins the null address when no endpoint was set at host-deploy time; if one
+  // is available now (e.g. deployed after the host contracts, as the e2e does), provision on demand.
   if (proxyAddress === ethers.ZeroAddress) {
+    if (!endpointHasCode) {
+      console.log(
+        '[task:deployBridge] CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS is the null address and no LayerZero ' +
+          'endpoint with code is configured; no ConfidentialBridge on this host. Skipping.',
+      );
+      return;
+    }
     console.log(
-      '[task:deployBridge] CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS is the null address; ' +
-        'no ConfidentialBridge proxy was provisioned (LZ_ENDPOINT_ADDRESS unset or has no code). Skipping bridge upgrade.',
+      '[task:deployBridge] No bridge proxy was provisioned at host-deploy time, but a LayerZero ' +
+        `endpoint (${lzEndpoint}) is now available; deploying a fresh empty proxy to upgrade.`,
     );
-    return;
+    proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    // Rewrite in place (not append) to avoid a duplicate `confidentialBridgeAdd` in the addresses file.
+    const zero = ethers.ZeroAddress;
+    fs.writeFileSync(
+      HOST_ENV_FILE,
+      fs
+        .readFileSync(HOST_ENV_FILE, 'utf8')
+        .replace(`CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${zero}`, `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${proxyAddress}`),
+    );
+    fs.writeFileSync(
+      HOST_ADDRESSES_FILE,
+      fs
+        .readFileSync(HOST_ADDRESSES_FILE, 'utf8')
+        .replace(`confidentialBridgeAdd = ${zero}`, `confidentialBridgeAdd = ${proxyAddress}`),
+    );
+    console.log(`[task:deployBridge] Provisioned bridge proxy at ${proxyAddress}.`);
   }
 
-  const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
-  if (!ethers.isAddress(lzEndpoint)) {
-    throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid address: ${lzEndpoint}`);
+  if (!endpointHasCode) {
+    throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid deployed LayerZero endpoint: ${lzEndpoint ?? '(unset)'}`);
   }
 
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
