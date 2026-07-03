@@ -414,7 +414,7 @@ contract ConfidentialMultiChainRandomGeneratorTest is TestHelperOz5, HostContrac
         assertEq(appDst.resultBridgedHash(guid), keccak256(abi.encode(srcList, dstList, payload)));
 
         // The app owner and the app itself both hold persistent decryption rights now (what a real
-        // userDecrypt would gate on).
+        // `userDecrypt` would gate on).
         assertTrue(acl.isAllowed(dstList[0], owner));
         assertTrue(acl.isAllowed(dstList[0], address(appDst)));
         assertTrue(acl.isAllowed(dstList[1], owner));
