@@ -117,8 +117,6 @@ const applyBaseRuntimeEnv = (
   envs["coprocessor"].KMS_SERVER_KEY = `${minioInternal}/kms-public/${keyPrefix}/ServerKey/${fheKeyId}`;
   envs["coprocessor"].KMS_SNS_KEY = `${minioInternal}/kms-public/${keyPrefix}/SnsKey/${fheKeyId}`;
   envs["coprocessor"].KMS_CRS_KEY = `${minioInternal}/kms-public/${keyPrefix}/CRS/${crsKeyId}`;
-  envs["relayer"].APP_KEYURL__FHE_PUBLIC_KEY__URL = `${minioInternal}/kms-public/${keyPrefix}/PublicKey/${fheKeyId}`;
-  envs["relayer"].APP_KEYURL__CRS__URL = `${minioInternal}/kms-public/${keyPrefix}/CRS/${crsKeyId}`;
 };
 
 /** Applies compatibility-driven env aliases and URL rewrites. */
