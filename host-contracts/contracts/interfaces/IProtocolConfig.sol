@@ -117,15 +117,15 @@ interface IProtocolConfig {
     /**
      * @notice Emitted on every successful KMS context creation confirmation.
      * @param kmsContextId The pending context ID being confirmed.
-     * @param signer The KMS signer that confirmed.
-     * @param isPreviousSigner Whether the signer is part of the previous active context.
-     * @param isNewSigner Whether the signer is part of the new pending context.
+     * @param txSender The KMS tx sender that confirmed.
+     * @param isPreviousTxSender Whether the tx sender is part of the previous active context.
+     * @param isNewTxSender Whether the tx sender is part of the new pending context.
      */
     event KmsContextCreationConfirmation(
         uint256 indexed kmsContextId,
-        address indexed signer,
-        bool isPreviousSigner,
-        bool isNewSigner
+        address indexed txSender,
+        bool isPreviousTxSender,
+        bool isNewTxSender
     );
 
     /**
@@ -283,10 +283,10 @@ interface IProtocolConfig {
     /// @param kmsContextId The context ID.
     error KmsContextCreationUnauthorized(address caller, uint256 kmsContextId);
 
-    /// @notice The signer has already confirmed creation for the KMS context.
-    /// @param signer The signer address.
+    /// @notice The tx sender has already confirmed creation for the KMS context.
+    /// @param txSender The tx sender address.
     /// @param kmsContextId The context ID.
-    error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
+    error KmsContextCreationAlreadyConfirmed(address txSender, uint256 kmsContextId);
 
     /// @notice The caller cannot confirm activation for the epoch.
     /// @param caller The unauthorized caller.

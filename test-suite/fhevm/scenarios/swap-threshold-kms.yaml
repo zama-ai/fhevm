@@ -1,0 +1,29 @@
+version: 1
+kind: coprocessor-consensus
+name: Node-Swap Threshold KMS
+description: >
+  Like four-party-threshold-kms, but provisions a 5-core cluster with an initial 4-node committee
+  (t=1) and one SPARE core (party 5, peers=None) that boots idle. This is the substrate for a
+  node-swap context switch: a switch defines a new committee {1,2,3,5} (drop node 4, add the
+  spare node 5), keeping n=4 so the threshold stays valid, exercising the KMS core's two-sets
+  resharing with a genuine membership change (node 4 leaves Set 1, node 5 joins Set 2). Slice 1
+  validates the spare boots and the 4-node baseline (kms-generation) works with node 5 idle; the
+  swap orchestration is layered on top once that holds.
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 0
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor-host-listener-consumer
+  - index: 1
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor1-host-listener-consumer
+kms:
+  mode: threshold
+  parties: 5          # cluster cores: 4-node committee + 1 spare
+  threshold: 1        # t for the committee (reconstruction needs 2t+1 = 3 matching responses)
+  committeeSize: 4    # initial on-chain committee == 3*t+1; cores beyond it (party 5) are spares
+  fheParams: Test

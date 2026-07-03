@@ -6,8 +6,13 @@ import path from "node:path";
 
 import type { StackSpec } from "../stack-spec/stack-spec";
 import { renderKmsCoreConfig, renderRelayerConfig } from "./config";
-import { KMS_THRESHOLD_CONFIG_NAME, renderThresholdCoreConfig } from "./kms-core";
-import { renderEnvMaps, type WalletMaterial } from "./env";
+import {
+  KMS_THRESHOLD_CONFIG_NAME,
+  KMS_THRESHOLD_SPARE_CONFIG_NAME,
+  renderThresholdCoreConfig,
+  renderThresholdSpareConfig,
+} from "./kms-core";
+import { buildGatewayScSwapEnv, buildHostScSwapEnv, renderEnvMaps, type WalletMaterial } from "./env";
 import {
   renderGatewayAddressesEnv,
   renderGatewayAddressesSolidity,
@@ -103,6 +108,13 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
   }
   await writeEnvFile(versionsEnvPath, rendered.versionsEnv);
 
+  // Node swap: when the cluster has spare cores, emit swap-committee envs (the last committee
+  // slot remapped to the spare) for defineNewKmsContextAndEpoch (host) and updateKmsContext (gateway).
+  const hostScSwap = buildHostScSwapEnv(rendered.componentEnvs["host-sc"], plan);
+  if (hostScSwap) await writeEnvFile(envPath("host-sc-swap"), hostScSwap);
+  const gatewayScSwap = buildGatewayScSwapEnv(rendered.componentEnvs["gateway-sc"], plan);
+  if (gatewayScSwap) await writeEnvFile(envPath("gateway-sc-swap"), gatewayScSwap);
+
   await fs.writeFile(
     relayerConfigPath,
     renderRelayerConfig(state, await fs.readFile(TEMPLATE_RELAYER_CONFIG, "utf8"), plan),
@@ -119,10 +131,19 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
   // with the peer roster injected). Per-party values come from KMS_CORE__* env, so one
   // file is mounted into every kms-core-{i}. Centralized mode ignores it.
   if (plan.kms.mode === "threshold") {
+    const thresholdTemplate = await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_THRESHOLD, "utf8");
     await writeWritableFile(
       path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
-      renderThresholdCoreConfig(await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_THRESHOLD, "utf8"), plan.kms),
+      renderThresholdCoreConfig(thresholdTemplate, plan.kms),
     );
+    // Spare cores (parties > committeeSize) mount a peers=None config so they boot idle and join a
+    // committee dynamically via a context switch.
+    if (plan.kms.parties > plan.kms.committeeSize) {
+      await writeWritableFile(
+        path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_SPARE_CONFIG_NAME),
+        renderThresholdSpareConfig(thresholdTemplate),
+      );
+    }
   }
   await writeWritableFile(gatewayAddressesPath, renderGatewayAddressesEnv(state));
   await writeWritableFile(gatewayAddressesSolidityPath, renderGatewayAddressesSolidity(state));
