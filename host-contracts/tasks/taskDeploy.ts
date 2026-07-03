@@ -1260,8 +1260,16 @@ task('task:setLzReceivePerPayloadByteGas')
 task('task:deployLocalLzEndpoint')
   .addParam('eid', 'This chain LayerZero endpoint id', undefined, types.int)
   .addParam('remoteEid', 'Remote endpoint id to default the libraries for', undefined, types.int)
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
-    const deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+  .setAction(async function (taskArguments: TaskArguments, { ethers, network }) {
+    // LZ_ENDPOINT_DEPLOYER (anvil only): deploy from this impersonated account so the endpoint deploy stays off the host deployer's nonce sequence (keeps host-contract addresses deterministic).
+    const impersonatedDeployer = process.env.LZ_ENDPOINT_DEPLOYER;
+    let deployer: Wallet | Awaited<ReturnType<typeof ethers.getImpersonatedSigner>>;
+    if (impersonatedDeployer) {
+      await network.provider.send('hardhat_setBalance', [impersonatedDeployer, '0x21e19e0c9bab2400000']); // 10000 ETH
+      deployer = await ethers.getImpersonatedSigner(impersonatedDeployer);
+    } else {
+      deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+    }
 
     const endpoint = await (
       await ethers.getContractFactory('EndpointV2Mock', deployer)

@@ -237,6 +237,9 @@ const postgresExec = async (dbName: string, args: string[]) => {
 
 const sqlLiteral = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
+/** Impersonated (anvil-only) account that deploys the local LZ endpoint, so it stays off the host deployer's nonce and host-contract addresses remain deterministic. */
+const LZ_ENDPOINT_DEPLOYER_ADDRESS = "0x000000000000000000000000000000000000e2e2";
+
 /** Logs elapsed time for one stack subtask. */
 const timed = async <T>(label: string, task: () => Promise<T>) => {
   const started = Date.now();
@@ -654,11 +657,32 @@ export const runStep = async (state: State, step: StepName) => {
       await stepComposeTask("gateway-mocked-payment", state, ["gateway-set-relayer-mocked-payment"], { noDeps: true });
       await waitForContainer("gateway-set-relayer-mocked-payment", "complete");
       break;
-    case "host-deploy":
+    case "host-deploy": {
       if (!defaultHostChain(state)) {
         throw new PreflightError("Missing default host chain");
       }
-      await stepComposeTask("host-sc", state, ["host-sc-deploy"]);
+      // Bridge scenarios: per-chain vars so host-sc-deploy deploys a local LZ endpoint (or uses a preconfigured one) before the deploy, letting the unchanged deploy script provision + upgrade the bridge.
+      const bridgeChains = hostChainsForState(state);
+      const remoteOfChain = (i: number) => bridgeChains[(i + 1) % bridgeChains.length];
+      const bridgeDeployEnv = (chainKey: string): Record<string, string> => {
+        if (bridgeChains.length < 2) return {};
+        const i = bridgeChains.findIndex((c) => c.key === chainKey);
+        const realEndpoint = realLzEndpointFor(chainKey);
+        if (realEndpoint) return { LZ_ENDPOINT_PRESET: realEndpoint };
+        return {
+          BRIDGE_EID: bridgeChains[i].chainId,
+          BRIDGE_REMOTE_EID: remoteOfChain(i).chainId,
+          LZ_ENDPOINT_DEPLOYER: LZ_ENDPOINT_DEPLOYER_ADDRESS,
+        };
+      };
+
+      const canonicalBridgeEnv = bridgeDeployEnv(defaultHostChain(state)!.key);
+      await stepComposeTask(
+        "host-sc",
+        state,
+        ["host-sc-deploy"],
+        Object.keys(canonicalBridgeEnv).length ? { env: canonicalBridgeEnv } : undefined,
+      );
       await waitForContainer("host-sc-deploy", "complete");
       await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), "host-sc-deploy", [
         "ACL_CONTRACT_ADDRESS",
@@ -675,10 +699,14 @@ export const runStep = async (state: State, step: StepName) => {
       const canonicalSeedingArgs = await canonicalProtocolConfigSeedingArgs(state);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
-        if (canonicalSeedingArgs) {
+        const chainBridgeEnv = bridgeDeployEnv(chain.key);
+        if (canonicalSeedingArgs || Object.keys(chainBridgeEnv).length) {
           const scEnvPath = envPath(scKey);
           const scEnv = await readEnvFile(scEnvPath);
-          scEnv.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = canonicalSeedingArgs;
+          if (canonicalSeedingArgs) {
+            scEnv.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = canonicalSeedingArgs;
+          }
+          Object.assign(scEnv, chainBridgeEnv);
           await writeEnvFile(scEnvPath, scEnv);
         }
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {
@@ -702,6 +730,7 @@ export const runStep = async (state: State, step: StepName) => {
         });
       }
       break;
+    }
     case "discover": {
       const contracts = await discoverContracts(state);
       const discovery = await ensureDiscovery(state);
@@ -710,8 +739,8 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "bridge-deploy": {
-      // Confidential bridge needs >= 2 host chains. Per chain: deploy a LayerZero endpoint +
-      // upgrade the bridge, then wire each chain to its remote (peer + dstChainId). eid == chainId
+      // Confidential bridge needs >= 2 host chains. The endpoint + bridge are deployed during
+      // host-deploy; here we only wire each chain to its remote (peer + dstChainId). eid == chainId
       // locally. Verify with: ./fhevm-cli up --scenario multi-chain --build
       const chains = hostChainsForState(state);
       if (chains.length < 2) {
@@ -725,7 +754,6 @@ export const runStep = async (state: State, step: StepName) => {
         chain: (typeof chains)[number],
         suffix: string,
         env: Record<string, string>,
-        onComplete?: (service: string) => Promise<void>,
       ) => {
         Object.assign(process.env, env);
         const service = chain.isDefault ? `host-sc-${suffix}` : `${chain.sc}-${suffix}`;
@@ -736,34 +764,14 @@ export const runStep = async (state: State, step: StepName) => {
             await multiChainComposeTask(chain.sc, [service]);
           }
           await waitForContainer(service, "complete");
-          await onComplete?.(service);
         });
       };
 
-      // Pass 1: deploy the LZ endpoint (local mock unless a real one is configured) and upgrade
-      // the bridge proxy against it. LZ_ENDPOINT_ADDRESS is always pinned (empty = deploy mock) so
-      // a real value from a prior chain or the ambient env can't leak into a mock chain's command.
-      for (let i = 0; i < chains.length; i++) {
-        const chain = chains[i];
-        const realEndpoint = realLzEndpointFor(chain.key);
-        console.log(
-          realEndpoint
-            ? `[bridge-deploy] ${chain.key}: using preconfigured LZ endpoint ${realEndpoint} (skipping local mock)`
-            : `[bridge-deploy] ${chain.key}: deploying local LZ mock endpoint`,
-        );
-        await runBridgeService(
-          chain,
-          "deploy-bridge",
-          { BRIDGE_EID: chain.chainId, BRIDGE_REMOTE_EID: remoteOf(i).chainId, LZ_ENDPOINT_ADDRESS: realEndpoint ?? "" },
-          (service) => ensureGeneratedAddressFile(hostChainAddressesPath(chain.key), service, ["LZ_ENDPOINT_ADDRESS"]),
-        );
-      }
-
-      // Reload addresses so LZ_ENDPOINT_ADDRESS and the bridge proxies are in discovery.
+      // The bridge is deployed during host-deploy; reload addresses so its proxies are in discovery.
       const refreshed = await discoverContracts(state);
       discovery.hosts = { ...discovery.hosts, ...refreshed.hosts };
 
-      // Pass 2: wire each chain to its remote.
+      // Wire each chain to its remote (peer + dstChainId).
       for (let i = 0; i < chains.length; i++) {
         const chain = chains[i];
         const remote = remoteOf(i);

@@ -5,7 +5,8 @@ services:
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/host-sc.env
     command:
-      - npx hardhat task:deployAllHostContracts $${HOST_SC_DEPLOY_KMS_GENERATION_ARGS} $${HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS}
+      # Bridge scenarios: deploy a functional LZ endpoint first (impersonated, nonce-isolated) so the unchanged deploy script provisions + upgrades the bridge; re-append LZ_ENDPOINT_ADDRESS since deployAllHostContracts truncates .env.host.
+      - if [ -n "${LZ_ENDPOINT_PRESET}" ]; then export LZ_ENDPOINT_ADDRESS="${LZ_ENDPOINT_PRESET}"; elif [ -n "${BRIDGE_EID}" ]; then npx hardhat compile:specific --contract examples/bridge/mocks && LZ_ENDPOINT_DEPLOYER="${LZ_ENDPOINT_DEPLOYER}" npx hardhat task:deployLocalLzEndpoint --eid ${BRIDGE_EID} --remote-eid ${BRIDGE_REMOTE_EID} && export $(grep -E '^LZ_ENDPOINT_ADDRESS=' addresses/.env.host | xargs); fi && npx hardhat task:deployAllHostContracts $${HOST_SC_DEPLOY_KMS_GENERATION_ARGS} $${HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS} && if [ -n "$${LZ_ENDPOINT_ADDRESS}" ]; then echo "LZ_ENDPOINT_ADDRESS=$${LZ_ENDPOINT_ADDRESS}" >> addresses/.env.host; fi
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/${HOST_ADDRESS_DIR:-host}:/app/addresses # workdir in host's Dockerfile is /app
 
