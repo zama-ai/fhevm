@@ -96,11 +96,11 @@ State types, one line each (the names are close; the purposes are not):
 `AclPermission` — overflow witness PDA for subjects beyond the inline 8;
 `HandleMaterialCommitment` — ciphertext-material availability, separate from authorization (DD-006).
 
-Handle derivation preserves the EVM byte layout (version/type/chain-id/computed-marker) but hashes
-with sha256 over bank-hash entropy instead of keccak over blockhash — handles are therefore **not
-cross-chain interoperable** (accepted divergence). Fail-closed when the prior bank hash is
-unavailable; the zero-entropy fallback is compile- and chain-id-confined to the local PoC chain
-(DD-014, DD-015).
+Handle derivation preserves the EVM byte layout (version/type/chain-id/computed-marker) **and the
+keccak256 hash**; what differs is the entropy source (previous bank hash + timestamp vs blockhash)
+and the embedded chain id, which keep handles chain-scoped by construction. (sha256 appears only in
+the ACL nonce-key domain hash, DD-001.) Fail-closed when the prior bank hash is unavailable; the
+zero-entropy fallback is compile- and chain-id-confined to the local PoC chain (DD-014, DD-015).
 
 Code: `zama-host/src/state/{acl_record,acl_permission,deny_subject_record}.rs`,
 `instructions/{allow_acl_subjects,assert_acl_record,allow_for_decryption,set_deny_subject}.rs`,
@@ -161,7 +161,7 @@ explicit `compute_subject: Signer` (constraint 1). Per-op standalone instruction
 | Capability | Status |
 |---|---|
 | Add / Sub / Ge / IfThenElse(select) / Rand / RandBounded / trivialEncrypt / fromExternal | **MET** — exactly ERC7984's op footprint; the token is **op-complete** |
-| Remaining opcode catalog (Mul, Div, bitwise, shifts, Eq/Ne/Gt/…, casts, Sum/IsIn) | **SCOPE** — mechanically extensible: enum + per-op type-gate row + handle hash (already op-parametrized) + coprocessor map arm + tests |
+| Remaining opcode catalog (Mul, Div, bitwise, shifts, Eq/Ne/Gt/…, casts, Sum/IsIn) | **SCOPE, closing** — being added by fhevm#2975 (fheSum/fheIsIn/fheMulDiv, unary + missing binary ops); the extension recipe is mechanical: enum + per-op type-gate row + handle hash (already op-parametrized) + coprocessor map arm + tests |
 | operand ACL + scalar rule | **MET** — `ACL_ROLE_USE` per encrypted operand; scalar RHS rejects a permission witness |
 | `FheType` breadth (86 variants) | **MET (partial)** — Bool/Uint8..Uint256; signed/large/string types are SCOPE |
 | `HCULimit` per-op/tx/block/depth metering | **DIVERGENCE** — per-plan caps (`HostConfig::max_hcu_per_tx`, `max_hcu_depth_per_tx`, 0 = off) + Solana compute budget; **no per-block plane** (fragility #3) |
