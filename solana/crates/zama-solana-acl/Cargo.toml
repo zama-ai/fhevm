@@ -1,0 +1,17 @@
+[package]
+name = "zama-solana-acl"
+version = "0.1.0"
+description = "Shared encrypted-value ACL layout, MMR history, and authorization for the Zama Solana port"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "zama_solana_acl"
+
+[dependencies]
+# Pure-Rust, solana-version-agnostic so the on-chain programs (solana 3.x), the
+# relayer proof service, and the KMS connector (solana 2.x) can depend on this
+# one crate. SHA-256 via `sha2` is byte-identical to the on-chain syscall hasher.
+borsh = { version = "1", features = ["derive"] }
+sha2 = { version = "0.10", default-features = false }
