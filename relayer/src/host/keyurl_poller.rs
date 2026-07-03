@@ -11,7 +11,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use alloy::eips::BlockId;
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{hex, Address, B256, U256};
+use alloy::providers::Provider as _;
+use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
+use alloy::sol_types::SolEvent;
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig;
 use fhevm_host_bindings::i_protocol_config::IProtocolConfig::IProtocolConfigInstance;
 use fhevm_host_bindings::ikms_generation::IKMSGeneration;
@@ -20,7 +23,7 @@ use tokio::sync::watch;
 use tracing::{error, info, warn};
 
 use crate::config::settings::{KeyUrlConfig, ProtocolConfigSettings};
-use crate::host::error_redact::redact_alloy_error;
+use crate::host::error_redact::{redact_alloy_error, redact_error};
 use crate::host::provider::{build_host_provider, Provider};
 use crate::http::endpoints::v2::types::keyurl::{KeyData, KeyUrlResponseJson};
 
@@ -30,6 +33,32 @@ type HostProtocolConfig = IProtocolConfigInstance<Arc<Provider>, alloy::network:
 /// Read on-chain state at the finalized block tag to avoid serving a reorged-away activation.
 fn finalized() -> BlockId {
     BlockId::finalized()
+}
+
+/// A KMS node's public-storage location. `storage_prefix` (e.g. `PUB` / `PUB-p1`) isn't exposed
+/// by any getter, so it's recovered from the `NewKmsContext` event.
+struct KmsStorageNode {
+    storage_url: String,
+    storage_prefix: String,
+}
+
+/// Build the full object URLs the KMS Core writes to, one per node:
+/// `{storage_url}/{storage_prefix}/{segment}/{id_hex}` (`segment` = `PublicKey`|`CRS`, `id_hex` =
+/// 32-byte big-endian id, lowercase, no `0x`). The getters return only `storage_url`.
+fn build_object_urls(nodes: &[KmsStorageNode], segment: &str, id: U256) -> Vec<String> {
+    let id_hex = hex::encode(id.to_be_bytes::<32>());
+    nodes
+        .iter()
+        .map(|node| {
+            format!(
+                "{}/{}/{}/{}",
+                node.storage_url.trim_end_matches('/'),
+                node.storage_prefix,
+                segment,
+                id_hex
+            )
+        })
+        .collect()
 }
 
 /// Run a host-chain view call with bounded retries, redacting RPC URLs from any error.
@@ -157,9 +186,11 @@ impl KeyUrlPoller {
         })
     }
 
-    /// Fetch the key/CRS materials for the given ids and build the served response.
+    /// Build the served response for the given ids. `getKeyMaterials` / `getCrsMaterials` are
+    /// called only to assert the material exists (they revert otherwise); their URLs are the
+    /// bucket base only, so the full object URLs are rebuilt from the KMS context nodes.
     async fn build_response(&self, ids: &ActiveIds) -> anyhow::Result<KeyUrlResponseJson> {
-        let key_materials = retry_view!(
+        retry_view!(
             self.retry,
             "getKeyMaterials",
             self.kms_generation
@@ -167,7 +198,7 @@ impl KeyUrlPoller {
                 .block(finalized())
                 .call()
         )?;
-        let crs_materials = retry_view!(
+        retry_view!(
             self.retry,
             "getCrsMaterials",
             self.kms_generation
@@ -176,15 +207,98 @@ impl KeyUrlPoller {
                 .call()
         )?;
 
+        let nodes = self.fetch_context_nodes(ids.context_id).await?;
+
         Ok(KeyUrlResponseJson::new(
             KeyData {
                 data_id: ids.key_id.to_string(),
-                urls: key_materials._0,
+                urls: build_object_urls(&nodes, "PublicKey", ids.key_id),
             },
             KeyData {
                 data_id: ids.crs_id.to_string(),
-                urls: crs_materials._0,
+                urls: build_object_urls(&nodes, "CRS", ids.crs_id),
             },
+        ))
+    }
+
+    /// Read the KMS nodes for `context_id` from its `NewKmsContext` event. The contract anchors
+    /// the exact emission block (`getKmsContextAnchor`), so we fetch that single event by the
+    /// `contextId` topic and decode `KmsNodeParams` — no block-range scan.
+    async fn fetch_context_nodes(&self, context_id: U256) -> anyhow::Result<Vec<KmsStorageNode>> {
+        let anchor = retry_view!(
+            self.retry,
+            "getKmsContextAnchor",
+            self.protocol_config
+                .getKmsContextAnchor(context_id)
+                .block(finalized())
+                .call()
+        )?;
+        let block_number: u64 = anchor.emissionBlockNumber.try_into().map_err(|e| {
+            anyhow::anyhow!("KMS context {context_id} anchor block number is out of range: {e}")
+        })?;
+        if block_number == 0 {
+            anyhow::bail!("no KMS context anchor recorded for context {context_id}");
+        }
+
+        let filter = Filter::new()
+            .address(*self.protocol_config.address())
+            .event_signature(IProtocolConfig::NewKmsContext::SIGNATURE_HASH)
+            .topic1(B256::from(context_id.to_be_bytes::<32>()))
+            .from_block(BlockNumberOrTag::Number(block_number))
+            .to_block(BlockNumberOrTag::Number(block_number));
+
+        let logs = self.get_logs_with_retry(&filter).await?;
+        let log = logs.last().ok_or_else(|| {
+            anyhow::anyhow!(
+                "NewKmsContext event for context {context_id} not found at block {block_number}"
+            )
+        })?;
+
+        let event = IProtocolConfig::NewKmsContext::decode_log_data(log.data())
+            .map_err(|e| anyhow::anyhow!("failed to decode NewKmsContext event: {e}"))?;
+
+        let nodes: Vec<KmsStorageNode> = event
+            .kmsNodeParams
+            .into_iter()
+            .map(|node| KmsStorageNode {
+                storage_url: node.storageUrl,
+                storage_prefix: node.storagePrefix,
+            })
+            .collect();
+        if nodes.is_empty() {
+            anyhow::bail!("NewKmsContext for context {context_id} contains no KMS nodes");
+        }
+        Ok(nodes)
+    }
+
+    /// `eth_getLogs` with the same bounded retry as the view calls; a separate helper because
+    /// `get_logs` returns a transport `RpcError`, not the `ContractError` `retry_view!` expects.
+    async fn get_logs_with_retry(&self, filter: &Filter) -> anyhow::Result<Vec<Log>> {
+        let interval = Duration::from_millis(self.retry.retry_interval_ms);
+        let max_attempts = self.retry.max_attempts;
+        let mut last_error = String::new();
+        for attempt in 0..max_attempts {
+            match self.protocol_config.provider().get_logs(filter).await {
+                Ok(logs) => return Ok(logs),
+                Err(e) => {
+                    last_error = redact_error(&e);
+                    if attempt + 1 < max_attempts {
+                        warn!(
+                            op = "get_logs",
+                            attempt = attempt + 1,
+                            max_attempts,
+                            error = %last_error,
+                            "host-chain call failed, retrying"
+                        );
+                        tokio::time::sleep(interval).await;
+                    }
+                }
+            }
+        }
+        Err(anyhow::anyhow!(
+            "host-chain call 'get_logs' failed after {} attempts: {}",
+            max_attempts,
+            last_error
         ))
     }
 
