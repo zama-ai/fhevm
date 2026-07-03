@@ -46,11 +46,25 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     /// @notice Returned when the caller is not allowed to use a handle.
     error HandleNotAllowed(bytes32 handle, address srcApp);
 
+    /// @notice Returned when a bridge {send} or {quote} is attempted while the source-chain
+    ///         ACL is paused. Bridging is halted alongside the ACL so no new cross-chain
+    ///         handle approvals are created while the host is in its stopped state.
+    error ACLPaused();
+
     /// @notice Returned when `lzComposeGas` is 0. LayerZero rejects a compose option with
     ///         zero gas (`Executor_ZeroLzComposeGasProvided`), and the bridge requires the
     ///         destination `lzCompose` to be executor-driven, so a non-zero budget is
     ///         mandatory.
     error ZeroLzComposeGas();
+
+    /// @notice Returned when `msg.value` does not exactly equal the LayerZero native fee
+    ///         quoted internally for the call. The fee is computed via {quote}; callers
+    ///         must send exactly that amount. Both underpayment and overpayment revert —
+    ///         there is no refund path. Replaces LayerZero's {NotEnoughNative}, whose name
+    ///         misleadingly implies only underpayment fails.
+    /// @param provided The `msg.value` supplied by the caller.
+    /// @param required The exact native fee required (the quoted `nativeFee`).
+    error MsgValueMustEqualQuotedFee(uint256 provided, uint256 required);
 
     /// @notice Maximum number of handles per bridge call.
     uint256 public constant MAX_HANDLES = 32;
@@ -118,7 +132,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *                       protocol change. EVM callers pass
      *                       `bytes32(uint256(uint160(dstAppAddress)))`.
      * @param payload        Opaque app-level payload; encoding is fully app-defined.
-     * @param handleList     Source-chain handles referenced by `payload`. Order is
+     * @param handleList     Source-chain handles to bridge to `dstEid`. Order is
      *                       preserved on the destination, so apps can index into
      *                       `dstHandleList` by position.
      * @param lzComposeGas   Gas budget for the destination-side `lzCompose` (which runs
@@ -140,10 +154,13 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      * @dev    Reverts with {UnknownDstEid} if no destination chain id has been registered
      *         for `dstEid` (via {setDstChainId}); a chain id of 0 is treated as unset.
      * @dev    Reverts with {ZeroLzComposeGas} if `lzComposeGas` is 0.
+     * @dev    Reverts with {ACLPaused} if the source-chain ACL is paused; bridging is
+     *         halted alongside the ACL so no new cross-chain handle approvals are created
+     *         while the host is stopped.
      * @dev    Reverts if any handle is not ACL-allowed for `msg.sender` on this chain.
-     *         The native fee is computed internally via `_quote`, so `msg.value` must
-     *         equal it exactly; otherwise the call reverts with `NotEnoughNative`. Use
-     *         {quote} to obtain the required `msg.value` beforehand.
+     * @dev    The native fee is computed internally via `_quote`, so `msg.value` must
+     *         equal it exactly; otherwise the call reverts with {MsgValueMustEqualQuotedFee(msg.value, requiredFee)}
+     *         i.e. there is no refund path. Use {quote} to obtain the required `msg.value` beforehand.
      */
     function send(
         uint32 dstEid,
@@ -152,6 +169,8 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32[] calldata handleList,
         uint64 lzComposeGas
     ) external payable virtual returns (MessagingReceipt memory receipt) {
+        _requireACLNotPaused();
+
         uint256 nHandles = handleList.length;
         if (nHandles == 0) revert EmptyHandleList();
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
@@ -218,8 +237,8 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      * @notice Quote the native fee for a `send` call without sending.
      * @dev    Useful for callers wishing to compute msg.value before invoking `send`.
      * @dev    Applies the same input validation as {send} — reverts with {EmptyHandleList},
-     *         {TooManyHandles}, {UnknownDstEid}, or {ZeroLzComposeGas} under the same
-     *         conditions — so a successful quote guarantees those `send` guards will pass.
+     *         {TooManyHandles}, {UnknownDstEid}, {ZeroLzComposeGas}, or {ACLPaused} under the
+     *         same conditions — so a successful quote guarantees those `send` guards will pass.
      *         The ACL allowance check is intentionally NOT applied: this lets callers
      *         estimate `msg.value` before the transaction that grants ACL access to the
      *         handles being bridged.
@@ -228,6 +247,28 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
      *                        to match the bytes32 wire format used by `send`.
      *  @param dstApp        Destination app on the destination chain, as bytes32. See
      *                        {send} for the encoding convention.
+     * @param payload        Bytes used only to size the quote. It does NOT need
+     *                       to equal the payload ultimately passed to {send}; only
+     *                       its length matters. It MUST, however, have the same length as
+     *                       the payload that will be sent to obtain a correct fee estimate,
+     *                       for the same reason as `handleList`: the fee is priced on the
+     *                       encoded message *size*, not its contents, and `payload.length`
+     *                       also feeds the destination `lzReceive` gas formula.
+     * @param handleList     A `bytes32[]` used only to size the quote. It does NOT need to
+     *                       equal the list ultimately passed to {send}, and its entries do
+     *                       NOT need to be ACL-allowed to any account — it may be an array
+     *                       of arbitrary or null handles. It MUST, however, have the same
+     *                       length as the list that will be sent to obtain a correct fee
+     *                       estimate: the LayerZero SendUln302 message library quotes on the
+     *                       encoded message *size* only, not its contents, so the fee
+     *                       depends on the number of handles (and payload length) rather
+     *                       than the specific handle values.
+     * @param lzComposeGas   Gas budget for the destination-side `lzCompose` (which runs
+     *                       the destination app's `onConfidentialBridgeReceived`). Must be
+     *                       non-zero: a 0 budget reverts with {ZeroLzComposeGas}. The amount needed is
+     *                       app-specific, so the bridge enforces only this non-zero floor;
+     *                       apps should size it for their `onConfidentialBridgeReceived` work.
+     * @return fee           LayerZero messaging fee.
      */
     function quote(
         uint32 dstEid,
@@ -237,6 +278,8 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes32[] calldata handleList,
         uint64 lzComposeGas
     ) external view virtual returns (MessagingFee memory fee) {
+        _requireACLNotPaused();
+
         uint256 nHandles = handleList.length;
         if (nHandles == 0) revert EmptyHandleList();
         if (nHandles > MAX_HANDLES) revert TooManyHandles(nHandles, MAX_HANDLES);
@@ -295,6 +338,14 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
     }
 
     /**
+     * @dev Reverts with {ACLPaused} when the source-chain ACL is paused. Both {send} and
+     *      {quote} short-circuit on this so bridging tracks the ACL's stopped state.
+     */
+    function _requireACLNotPaused() internal view virtual {
+        if (ACL_CONTRACT.paused()) revert ACLPaused();
+    }
+
+    /**
      * @dev Per-handle ACL check.
      */
     function _checkAllAllowed(bytes32[] calldata handleList) internal view virtual {
@@ -334,6 +385,20 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         bytes memory message = abi.encode(srcApp, dstApp, payload, handleList);
         MessagingFee memory fee = _quote(dstEid, message, finalOptions, false);
         receipt = _lzSend(dstEid, message, finalOptions, fee, payable(msg.sender));
+    }
+
+    /**
+     * @dev Overrides LayerZero's `_payNative`, preserving its exact-match semantics
+     *      (`msg.value` must equal the quoted `nativeFee`) but reverting with the clearer
+     *      {MsgValueMustEqualQuotedFee} instead of the original {NotEnoughNative}, whose name
+     *      misleadingly implies that only underpayment fails. Overpayment reverts too:
+     *      keeping the exact-match invariant means the endpoint's refund branch is never
+     *      reached, avoiding a failure mode where a caller that cannot receive native
+     *      would have its overpaid `send` revert deep inside the endpoint.
+     */
+    function _payNative(uint256 _nativeFee) internal virtual override returns (uint256 nativeFee) {
+        if (msg.value != _nativeFee) revert MsgValueMustEqualQuotedFee(msg.value, _nativeFee);
+        return _nativeFee;
     }
 
     /**

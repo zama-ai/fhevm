@@ -466,7 +466,10 @@ contract ACL is
 
     /**
      * @notice Getter function for the ConfidentialBridge contract address.
-     * @return confidentialBridgeAddress Address of the ConfidentialBridge contract.
+     * @dev    Returns the null address (address(0)) when no ConfidentialBridge was deployed on
+     *         this host chain, so callers can use a null result to detect the bridge's absence.
+     * @return confidentialBridgeAddress Address of the ConfidentialBridge contract, or the null
+     *         address if no ConfidentialBridge is deployed on this host chain.
      */
     function getConfidentialBridgeAddress() public view virtual returns (address) {
         return CONFIDENTIAL_BRIDGE_ADDRESS;
