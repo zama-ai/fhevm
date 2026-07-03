@@ -178,7 +178,15 @@ pub async fn run_stack_version_listener(
 /// `gcs,public` — is built. If the `versioning` row is missing the service
 /// defaults to non-GCS (blue) mode.
 pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
-    let mut conn = PgConnection::connect(database_url).await?;
+    // Route through `resolve_runtime_database_url` so that when AWS IAM auth is
+    // enabled we connect with a freshly rendered IAM token instead of the raw,
+    // password-less URL (which would bypass IAM auth and fail to authenticate).
+    // With IAM auth disabled this returns the URL unchanged.
+    let runtime_url = crate::database::resolve_runtime_database_url(
+        &crate::utils::DatabaseURL::from(database_url),
+    )
+    .await?;
+    let mut conn = PgConnection::connect(&runtime_url).await?;
     let row: Option<(String,)> =
         sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
             .fetch_optional(&mut conn)

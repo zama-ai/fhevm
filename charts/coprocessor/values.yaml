@@ -85,6 +85,19 @@ commonConfig:
   # this value decodes ProtocolConfig.CoprocessorUpgradeProposed events.
   ethereumChainId: ""
 
+  # Coprocessor stack version baked into the service images (the value printed
+  # by `<binary> --stack-version`). When set, it is surfaced as the
+  # `app.kubernetes.io/version` pod label so blue/green tooling can select pods
+  # by stack version. Should mirror the STACK_VERSION compiled into the images.
+  stackVersion: ""
+  # Optional startup probe that runs `<binary> --stack-version` in-cluster to
+  # confirm the deployed image exposes the expected stack-version flag. Disabled
+  # by default so it does not affect existing deployments.
+  stackVersionProbe:
+    enabled: false
+    periodSeconds: 10
+    failureThreshold: 30
+
   # Gateway chain configuration. Consumed by gwListener and txSender.
   # Each field accepts either a literal `value` or a `valueFrom` block
   # (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
