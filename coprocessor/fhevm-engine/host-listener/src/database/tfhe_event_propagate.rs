@@ -843,6 +843,16 @@ impl Database {
         block_number: i64,
         block_hash: &BlockHash,
     ) -> Result<Vec<Vec<u8>>, SqlxError> {
+        // Finalization is destructive (orphaned siblings' state is deleted by
+        // the caller), yet the hash comes from a single by-number RPC lookup.
+        // Two defenses gate it: the (number, hash) row must have been
+        // observed by ingestion (pre-existing), and its recorded parent hash
+        // must not contradict the finalized predecessor — a stale or poisoned
+        // RPC answering with a fork sibling fails the linkage check and the
+        // block is retried on a later pass instead of orphaning the true
+        // chain. Rows with the '' parent sentinel (recorded before parent
+        // tracking, not yet repaired) pass vacuously: only positive evidence
+        // of a mismatch blocks finalization.
         let finalized_result = sqlx::query!(
             r#"
             UPDATE host_chain_blocks_valid
@@ -851,6 +861,15 @@ impl Database {
               AND block_hash = $2
               AND block_number = $3
               AND block_status <> 'orphaned'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM host_chain_blocks_valid prev
+                  WHERE prev.chain_id = $1
+                    AND prev.block_number = $3 - 1
+                    AND prev.block_status = 'finalized'
+                    AND host_chain_blocks_valid.parent_hash <> ''::BYTEA
+                    AND host_chain_blocks_valid.parent_hash <> prev.block_hash
+              )
             "#,
             self.chain_id.as_i64(),
             block_hash.to_vec(),
@@ -864,7 +883,8 @@ impl Database {
                 chain_id = self.chain_id.as_i64(),
                 block_number,
                 block_hash = %to_hex(block_hash.as_slice()),
-                "skipping finalization for missing or already orphaned block"
+                "skipping finalization: block missing, already orphaned, or parent \
+                 linkage contradicts the finalized predecessor"
             );
             return Ok(vec![]);
         }

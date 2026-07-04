@@ -709,6 +709,67 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
 {
     info!(last_block_number, finality_lag, "Updating finalized blocks");
+    let last_finalized_block = last_block_number.saturating_sub(finality_lag);
+
+    // Read the candidate numbers in a short transaction, then resolve the
+    // canonical hashes over RPC with NO transaction open: block fetches can
+    // take seconds each, and holding the finalization transaction across the
+    // round-trips kept its row locks pinned for the whole time.
+    let blocks_number = {
+        let mut tx = match db.new_transaction().await {
+            Ok(tx) => tx,
+            Err(err) => {
+                error!(
+                    ?err,
+                    "Failed to create transaction for finalized blocks update"
+                );
+                return;
+            }
+        };
+        match Database::get_finalized_blocks_number(
+            &mut tx,
+            last_finalized_block as i64,
+            db.chain_id,
+        )
+        .await
+        {
+            Ok(numbers) => numbers,
+            Err(err) => {
+                error!(
+                    ?err,
+                    last_finalized_block,
+                    "Failed to fetch finalized blocks number"
+                );
+                return;
+            }
+        }
+    };
+    info!(?blocks_number, "Finalizing blocks");
+
+    // Ascending: finalization verifies each block's parent linkage against
+    // its finalized predecessor, so within one batch the predecessor must be
+    // finalized first.
+    let mut blocks_number: Vec<i64> = blocks_number.into_iter().collect();
+    blocks_number.sort_unstable();
+
+    let mut canonical = Vec::with_capacity(blocks_number.len());
+    for block_number in blocks_number {
+        match get_block_hash_by_number(block_number as u64).await {
+            Ok(block_hash) => canonical.push((block_number, block_hash)),
+            Err(err) => {
+                error!(
+                    block_number,
+                    ?err,
+                    "Failed to fetch block for finalization"
+                );
+                continue;
+            }
+        }
+    }
+    if canonical.is_empty() {
+        return;
+    }
+
     let mut tx = match db.new_transaction().await {
         Ok(Some(tx)) => tx,
         Ok(None) => {
@@ -723,37 +784,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             return;
         }
     };
-    let last_finalized_block = last_block_number.saturating_sub(finality_lag);
-    let blocks_number = match Database::get_finalized_blocks_number(
-        &mut tx,
-        last_finalized_block as i64,
-        db.chain_id,
-    )
-    .await
-    {
-        Ok(numbers) => numbers,
-        Err(err) => {
-            error!(
-                ?err,
-                last_finalized_block, "Failed to fetch finalized blocks number"
-            );
-            return;
-        }
-    };
-    info!(?blocks_number, "Finalizing blocks");
-    for block_number in blocks_number {
-        let block_hash =
-            match get_block_hash_by_number(block_number as u64).await {
-                Ok(block_hash) => block_hash,
-                Err(err) => {
-                    error!(
-                        block_number,
-                        ?err,
-                        "Failed to fetch block for finalization"
-                    );
-                    continue;
-                }
-            };
+    for (block_number, block_hash) in canonical {
         match db
             .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
