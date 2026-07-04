@@ -126,17 +126,13 @@ async fn run_uploader_loop(
 
                 let mut trx = fhevm_engine_common::versioning::begin_guarded_pool(&pool).await?;
 
-                let item = match job {
-                    UploadJob::Normal(item) => {
-                        if !item.enqueue_upload_task(&mut trx).await? {
-                            // Provenance deleted by reorg cleanup: the
-                            // publication is cancelled, skip the upload.
-                            trx.rollback().await?;
-                            continue;
-                        }
-                        create_upload_task_savepoint(&mut trx).await?;
-                        item
-                    }
+                // Normal jobs defer their enqueue into the spawned task: the
+                // provenance witness takes FOR KEY SHARE on the pbs row,
+                // which blocks while the originating batch transaction still
+                // holds its FOR UPDATE work locks — the dispatch loop must
+                // never park head-of-line on that.
+                let (item, needs_enqueue) = match job {
+                    UploadJob::Normal(item) => (item, true),
                     UploadJob::DatabaseLock(mut item) => {
                         create_upload_task_savepoint(&mut trx).await?;
                         let row = match sqlx::query!(
@@ -199,7 +195,7 @@ async fn run_uploader_loop(
                             item.ct128 = Arc::new(BigCiphertext::new(Vec::new(), ct128_format));
                         }
 
-                        item
+                        (item, false)
                     }
                 };
                 debug!(handle = hex::encode(&item.handle), "Received task, handle");
@@ -233,9 +229,35 @@ async fn run_uploader_loop(
                     // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3");
                     upload_span.set_parent(item.span.context());
-                    let result = upload_ciphertexts(&mut trx, item, &client, &conf, signer)
-                        .instrument(upload_span.clone())
-                        .await;
+                    // Enqueue deferred from the dispatch loop (see above). A
+                    // dead witness means reorg cleanup cancelled the
+                    // publication while this job was queued: drop it.
+                    let prep: anyhow::Result<bool> = async {
+                        if needs_enqueue {
+                            if !item.enqueue_upload_task(&mut trx).await? {
+                                return Ok(false);
+                            }
+                            create_upload_task_savepoint(&mut trx).await?;
+                        }
+                        Ok(true)
+                    }
+                    .await;
+                    let result = match prep {
+                        Ok(false) => {
+                            if let Err(err) = trx.rollback().await {
+                                warn!(error = %err, "Failed to roll back cancelled upload");
+                            }
+                            drop(upload_span);
+                            drop(permit);
+                            return Ok(());
+                        }
+                        Ok(true) => {
+                            upload_ciphertexts(&mut trx, item, &client, &conf, signer)
+                                .instrument(upload_span.clone())
+                                .await
+                        }
+                        Err(err) => Err(err),
+                    };
                     let outcome = match result {
                         Ok(()) => {
                             if let Err(err) = trx.commit().await {

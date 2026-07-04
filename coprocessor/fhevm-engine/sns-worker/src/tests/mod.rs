@@ -334,6 +334,11 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
         .await
         .unwrap();
 
+    // Persistent-DB (COPROCESSOR_TEST_LOCALHOST) runs reuse the database:
+    // start from a clean slate so query_sns_tasks below fetches OUR row and
+    // this test leaves nothing behind for the next one.
+    clean_up(&pool).await.unwrap();
+
     let host_chain_id: i64 = 1;
     let handle = vec![0x42u8; 32];
     let key_id_gw: DbKeyId = vec![0u8; 32];
@@ -392,6 +397,28 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
         .expect("mark after cleanup must be a no-op");
     trx.commit().await.unwrap();
     assert_eq!(digest_rows().await, 0);
+
+    // Bridge-retraction variant: the pbs row survives (allow events created
+    // it) but the copied ciphertexts row was retracted. The ciphertext
+    // witness must veto the enqueue on its own.
+    test_harness::db_utils::insert_into_pbs_computations(&pool, host_chain_id, &handle)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM ciphertexts WHERE handle = $1")
+        .bind(&handle)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut trx = pool.begin().await.unwrap();
+    assert!(
+        !task.enqueue_upload_task(&mut trx).await.unwrap(),
+        "missing ciphertexts row must veto the enqueue"
+    );
+    trx.commit().await.unwrap();
+    assert_eq!(digest_rows().await, 0);
+
+    // Leave the shared (localhost-mode) database as we found it.
+    clean_up(&pool).await.unwrap();
 }
 
 #[tokio::test]

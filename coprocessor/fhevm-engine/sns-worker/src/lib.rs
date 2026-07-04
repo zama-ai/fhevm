@@ -315,14 +315,22 @@ impl HandleItem {
     /// If inserted into the `ciphertext_digest` table means that the both (ct64 and ct128)
     /// ciphertexts are ready to be uploaded to S3.
     ///
-    /// Returns `false` (and inserts nothing) when the handle's
-    /// `pbs_computations` row no longer exists: reorg cleanup deletes it for
-    /// handles that lived solely on an orphaned fork, together with the
-    /// digest row, and an unguarded insert here would resurrect the digest
-    /// and drive a phantom `addCiphertextMaterial` publication. The witness
-    /// row is locked FOR KEY SHARE so a concurrent cleanup orders against
-    /// this transaction (cleanup deletes pbs before digest and its pbs
-    /// DELETE blocks on this lock).
+    /// Returns `false` (and inserts nothing) when the handle's provenance is
+    /// gone: reorg cleanup deletes the `pbs_computations` row of handles that
+    /// lived solely on an orphaned fork, and bridge retraction deletes the
+    /// copied `ciphertexts` row of a retracted bridged handle — both also
+    /// delete the digest row, so an unguarded insert here would resurrect it
+    /// and drive a phantom `addCiphertextMaterial` publication. Both witness
+    /// rows are locked FOR KEY SHARE, and both deleters remove their witness
+    /// BEFORE the digest row, so whichever transaction commits first, the
+    /// other observes it: the deleter's digest DELETE (a later statement)
+    /// removes a just-committed insert, and a later witness read sees the
+    /// deletion and skips. The mirror triggers' advisory stripe locks make a
+    /// deadlock between this transaction and a concurrent cleanup possible
+    /// instead of a clean block; that is safe — the victim rolls back whole
+    /// (an aborted finalization pass re-runs from scratch, an aborted sns
+    /// batch is re-fetched) and the retry converges. What can never happen
+    /// is a silent resurrection.
     pub(crate) async fn enqueue_upload_task(
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
@@ -338,11 +346,24 @@ impl HandleItem {
         .await?
         .is_some();
 
-        if !provenance_alive {
+        let ciphertext_alive = sqlx::query_scalar::<_, i32>(
+            "SELECT 1 FROM ciphertexts
+             WHERE handle = $1
+             LIMIT 1
+             FOR KEY SHARE",
+        )
+        .bind(&self.handle)
+        .fetch_optional(db_txn.as_mut())
+        .await?
+        .is_some();
+
+        if !provenance_alive || !ciphertext_alive {
             warn!(
                 handle = %to_hex(&self.handle),
                 host_chain_id = self.host_chain_id.as_i64(),
-                "Skipping upload enqueue: pbs_computations row is gone (reorg cleanup)"
+                provenance_alive,
+                ciphertext_alive,
+                "Skipping upload enqueue: provenance gone (reorg cleanup or bridge retraction)"
             );
             return Ok(false);
         }
