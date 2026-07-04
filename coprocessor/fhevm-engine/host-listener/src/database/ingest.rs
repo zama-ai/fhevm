@@ -806,7 +806,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
         {
-            Ok(orphaned_hashes) => {
+            Ok(Some(orphaned_hashes)) => {
                 if let Err(err) = db
                     .cleanup_orphaned_branch_state(&mut tx, &orphaned_hashes)
                     .await
@@ -818,6 +818,19 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                     );
                     return;
                 }
+            }
+            Ok(None) => {
+                // Finalization refused (missing row / orphaned / parent
+                // linkage contradiction). STOP the batch: the next height's
+                // linkage check would pass vacuously without a finalized
+                // predecessor, letting a stale or poisoned RPC finalize a
+                // fork block right behind the refusal. Earlier blocks of
+                // this batch stay finalized; the rest retries next pass.
+                warn!(
+                    block_number,
+                    "Stopping finalization batch at refused block"
+                );
+                break;
             }
             Err(err) => {
                 error!(

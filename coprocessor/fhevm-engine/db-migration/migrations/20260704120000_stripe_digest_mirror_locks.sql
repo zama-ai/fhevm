@@ -61,15 +61,24 @@ BEGIN
         )
     );
 
+    IF TG_OP = 'DELETE' THEN
+        -- Deliberately OUTSIDE the exception block, for two reasons: bulk
+        -- reorg cleanup fires this arm once per deleted legacy row, and an
+        -- EXCEPTION clause would open one subtransaction per row (subxid
+        -- cache overflow past 64 -> pg_subtrans SLRU contention for the whole
+        -- instance); and a swallowed DELETE failure would leave a stale
+        -- branch row behind with no later legacy write to repair it. A
+        -- failure here aborts the deleting transaction, which retries.
+        DELETE FROM ciphertext_digest_branch
+         WHERE handle = OLD.handle
+           AND host_chain_id = OLD.host_chain_id
+           AND producer_block_hash = ''::BYTEA
+           AND block_hash = ''::BYTEA;
+        RETURN OLD;
+    END IF;
+
     BEGIN
-        IF TG_OP = 'DELETE' THEN
-            DELETE FROM ciphertext_digest_branch
-             WHERE handle = OLD.handle
-               AND host_chain_id = OLD.host_chain_id
-               AND producer_block_hash = ''::BYTEA
-               AND block_hash = ''::BYTEA;
-        ELSE
-            IF TG_OP = 'UPDATE'
+        IF TG_OP = 'UPDATE'
                AND (
                     OLD.handle IS DISTINCT FROM NEW.handle
                     OR OLD.host_chain_id IS DISTINCT FROM NEW.host_chain_id
@@ -135,13 +144,14 @@ BEGIN
                        AND block_hash = ''::BYTEA;
                 END IF;
             END IF;
-        END IF;
     EXCEPTION
         WHEN OTHERS THEN
             -- Cancellation must still abort (statement_timeout self-heal),
             -- and deadlock/serialization must reach the writers' retry
             -- machinery; everything else degrades to a warning so the
-            -- authoritative legacy write commits.
+            -- authoritative legacy write commits. Applies to INSERT/UPDATE
+            -- mirroring only: those fire from the hot legacy writers and a
+            -- skipped upsert is repaired by the next legacy write.
             IF SQLSTATE IN ('57014', '40P01', '40001') THEN
                 RAISE;
             END IF;
@@ -152,7 +162,7 @@ BEGIN
                 SQLSTATE;
     END;
 
-    RETURN COALESCE(NEW, OLD);
+    RETURN NEW;
 END;
 $$;
 

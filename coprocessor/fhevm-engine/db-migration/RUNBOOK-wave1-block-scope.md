@@ -145,6 +145,13 @@ New-feature state (confidential-bridge event tables, fallback-grant observations
 not gated: those tables are keyed by observation block hash and are deterministic
 across operators regardless of upgrade timing.
 
+A reorg that straddles the activation boundary (fork block at or above it, canonical
+re-inclusion below it) is handled conservatively: orphan cleanup skips the legacy-row
+deletions for reorgs within 128 blocks of the activation height, leaving a small
+bounded residue of dead legacy rows instead of risking deletion of a canonical
+below-activation inclusion. Prefer an activation height in a historically quiet
+period anyway.
+
 ## Rollback
 
 - Reverting the binaries to the prior release is safe: the dual-write mirror triggers keep

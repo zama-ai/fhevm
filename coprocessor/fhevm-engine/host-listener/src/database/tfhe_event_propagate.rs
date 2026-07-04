@@ -94,6 +94,11 @@ const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
 /// disambiguation only matters above finality; anything deeper resolves via
 /// finalization status. Far above any real finality lag.
 const ANCESTRY_WALK_DEPTH: i64 = 1024;
+/// Reorgs orphaning blocks closer than this to the branch activation height
+/// keep their legacy rows (see the straddle guard in
+/// `cleanup_orphaned_branch_state`). Generously above any real finality lag,
+/// since reorgs cannot be deeper than finality.
+const BRANCH_ACTIVATION_STRADDLE_WINDOW: i64 = 128;
 /// Finalized `host_chain_blocks_valid` rows older than this many blocks
 /// below the finalized head are eligible for pruning (when unreferenced).
 const BLOCKS_VALID_RETENTION: i64 = 10_000;
@@ -897,12 +902,17 @@ impl Database {
         }
     }
 
+    /// Finalizes `(block_number, block_hash)` and orphans its observed
+    /// sibling forks. Returns `Ok(Some(orphaned_hashes))` on success and
+    /// `Ok(None)` when finalization was REFUSED (row missing, already
+    /// orphaned, or parent linkage contradicting the finalized predecessor);
+    /// callers must stop their ascending batch on `None`.
     pub async fn update_block_as_finalized(
         &self,
         tx: &mut Transaction<'_>,
         block_number: i64,
         block_hash: &BlockHash,
-    ) -> Result<Vec<Vec<u8>>, SqlxError> {
+    ) -> Result<Option<Vec<Vec<u8>>>, SqlxError> {
         // Finalization is destructive (orphaned siblings' state is deleted by
         // the caller), yet the hash comes from a single by-number RPC lookup.
         // Two defenses gate it: the (number, hash) row must have been
@@ -946,7 +956,12 @@ impl Database {
                 "skipping finalization: block missing, already orphaned, or parent \
                  linkage contradicts the finalized predecessor"
             );
-            return Ok(vec![]);
+            // Distinguishable from "finalized, no siblings": the caller must
+            // STOP its ascending batch here — the next height's linkage
+            // check would pass vacuously (no finalized predecessor) and a
+            // poisoned RPC could finalize a fork block right behind the
+            // refusal.
+            return Ok(None);
         }
 
         let orphaned_rows = sqlx::query!(
@@ -970,7 +985,7 @@ impl Database {
             .map(|row| row.block_hash)
             .collect::<Vec<_>>();
         if direct_orphaned_hashes.is_empty() {
-            return Ok(vec![]);
+            return Ok(Some(vec![]));
         }
 
         // Finalizing one block orphans every observed sibling branch at the
@@ -1013,7 +1028,7 @@ impl Database {
         orphaned_hashes.sort();
         orphaned_hashes.dedup();
 
-        Ok(orphaned_hashes)
+        Ok(Some(orphaned_hashes))
     }
 
     pub async fn cleanup_orphaned_branch_state(
@@ -1239,13 +1254,49 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
+        // Activation-boundary straddle guard: a transaction included on a
+        // fork block >= FHEVM_BRANCH_ACTIVATION_BLOCK writes branch rows,
+        // while its canonical re-inclusion BELOW the activation height writes
+        // legacy-only. Orphaning the fork then removes the handle's only
+        // branch context, and the NOT EXISTS guards below would delete the
+        // legacy rows the canonical below-activation inclusion depends on.
+        // For reorgs near the boundary, skip the legacy deletions entirely —
+        // a small, bounded residue of dead legacy rows (same accepted class
+        // as the retained ciphertext bytes) instead of permanent loss.
+        let near_activation_boundary = self.branch_activation_block > 0
+            && sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(
+                     SELECT 1 FROM host_chain_blocks_valid
+                     WHERE chain_id = $1
+                       AND block_hash = ANY($2::bytea[])
+                       AND block_number < $3
+                 )",
+            )
+            .bind(self.chain_id.as_i64())
+            .bind(orphaned_block_hashes)
+            .bind(
+                (self.branch_activation_block as i64)
+                    .saturating_add(BRANCH_ACTIVATION_STRADDLE_WINDOW),
+            )
+            .fetch_one(tx.deref_mut())
+            .await?;
+        if near_activation_boundary {
+            tracing::warn!(
+                chain_id = self.chain_id.as_i64(),
+                activation = self.branch_activation_block,
+                "Reorg near the branch activation boundary: keeping legacy rows"
+            );
+        }
+
         // Wave-1 dual-write: legacy readers are still live. Remove legacy
         // computation/ACL/PBS/digest rows only when no retained branch context
         // remains for the same logical work, i.e. only for handles that existed
         // solely on the now-orphaned fork (NOT EXISTS guard). Legacy ciphertext
         // bytes (`ciphertexts`/`ciphertexts128`) are intentionally NOT deleted
         // here.
-        if !orphaned_legacy_computation_handles.is_empty() {
+        if near_activation_boundary {
+            // Legacy deletions skipped (see the straddle guard above).
+        } else if !orphaned_legacy_computation_handles.is_empty() {
             sqlx::query!(
                 r#"
                 DELETE FROM computations c
@@ -1265,7 +1316,7 @@ impl Database {
             .await?;
         }
 
-        if !orphaned_legacy_pbs_handles.is_empty() {
+        if !near_activation_boundary && !orphaned_legacy_pbs_handles.is_empty() {
             // Ordering contract with sns-worker: pbs_computations rows (an
             // sns provenance witness) are deleted BEFORE ciphertext_digest
             // rows. The sns batch transaction holds FOR UPDATE locks on the
@@ -1321,7 +1372,7 @@ impl Database {
             .await?;
         }
 
-        if !orphaned_allowed_rows.is_empty() {
+        if !near_activation_boundary && !orphaned_allowed_rows.is_empty() {
             sqlx::query!(
                 r#"
                 DELETE FROM allowed_handles a
@@ -1554,17 +1605,23 @@ impl Database {
 
         // 2. Finalize this block or orphan the competing observed branch, then
         // clean branch-scoped computations/ACL/PBS/digest/bytes for that
-        // orphan branch in the same transaction.
+        // orphan branch in the same transaction. This path just recorded the
+        // block it finalizes (ingestion of a finalized block), so a linkage
+        // refusal (None) means the recorded row genuinely contradicts the
+        // finalized predecessor: skip cleanup and leave it for the
+        // finalization loop to sort out.
         if finalized {
-            let orphaned_hashes = self
+            if let Some(orphaned_hashes) = self
                 .update_block_as_finalized(
                     tx,
                     block_summary.number as i64,
                     &block_summary.hash,
                 )
-                .await?;
-            self.cleanup_orphaned_branch_state(tx, &orphaned_hashes)
-                .await?;
+                .await?
+            {
+                self.cleanup_orphaned_branch_state(tx, &orphaned_hashes)
+                    .await?;
+            }
         }
         Ok(())
     }
@@ -1697,12 +1754,15 @@ impl Database {
         last_block_max: i64,
         chain_id: ChainId,
     ) -> Result<HashSet<i64>, SqlxError> {
-        // most of the time there is only 1 block pending
+        // Most of the time there is only 1 block pending. Under a backlog,
+        // take the OLDEST pending blocks: finalization must progress
+        // oldest-first so each block's parent-linkage check anchors on a
+        // finalized predecessor instead of passing vacuously.
         let blocks_number = sqlx::query!(
             r#"
             SELECT block_number FROM host_chain_blocks_valid
             WHERE block_status = 'pending' AND block_number <= $1 AND chain_id = $2
-            ORDER BY block_number DESC
+            ORDER BY block_number ASC
             LIMIT 10
             "#,
             last_block_max,
@@ -1801,6 +1861,18 @@ impl Database {
                   AND NOT EXISTS (
                       SELECT 1 FROM fallback_granted_events r
                       WHERE r.block_hash = c.block_hash
+                  )
+                  -- KMS key/CRS activation staging joins the finalized row by
+                  -- (chain_id, block_hash) when a 'ready' event activates;
+                  -- pruning it would strand the activation forever. Small
+                  -- tables, guarded unconditionally.
+                  AND NOT EXISTS (
+                      SELECT 1 FROM kms_key_activation_events r
+                      WHERE r.chain_id = $1 AND r.block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM kms_crs_activation_events r
+                      WHERE r.chain_id = $1 AND r.block_hash = c.block_hash
                   )
                 ORDER BY c.block_number ASC
                 LIMIT $3
