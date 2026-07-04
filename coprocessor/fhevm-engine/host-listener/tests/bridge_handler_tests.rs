@@ -751,8 +751,15 @@ async fn branch_writes_gated_by_activation_height() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(branch_pbs, 0, "no branch pbs row below the activation height");
-    assert_eq!(pbs_count(&db, below).await, 1, "legacy pbs row still written");
+    assert_eq!(
+        branch_pbs, 0,
+        "no branch pbs row below the activation height"
+    );
+    assert_eq!(
+        pbs_count(&db, below).await,
+        1,
+        "legacy pbs row still written"
+    );
 
     let above = fallback_dst_handle(DST_CHAIN_ID, 4);
     ingest_fallback_block(&mut db, &[(above, U256::from(8_u64), 0x32)], 150)
@@ -773,8 +780,12 @@ async fn fallback_different_grant_across_blocks_keeps_first() {
     let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
     let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
 
-    ingest_fallback_block(&mut db, &[(dst_handle, U256::from(111_u64), 0x11)], BLOCK_NUMBER)
-        .await;
+    ingest_fallback_block(
+        &mut db,
+        &[(dst_handle, U256::from(111_u64), 0x11)],
+        BLOCK_NUMBER,
+    )
+    .await;
     ingest_fallback_block(
         &mut db,
         &[(dst_handle, U256::from(222_u64), 0x22)],
@@ -1063,7 +1074,14 @@ async fn reorg_transfers_association_to_surviving_sibling() {
 
     // The association was performed from the first fork's observation; the
     // sibling fork carries the same event, unflagged.
-    seed_bridged_observation(&db, dst_handle.as_slice(), DST_CHAIN_ID, &first_hash, true).await;
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &first_hash,
+        true,
+    )
+    .await;
     seed_bridged_observation(
         &db,
         dst_handle.as_slice(),

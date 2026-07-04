@@ -373,12 +373,11 @@ impl Database {
                 .unwrap()
                 .into(),
             )));
-        let branch_activation_block = std::env::var(
-            "FHEVM_BRANCH_ACTIVATION_BLOCK",
-        )
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+        let branch_activation_block =
+            std::env::var("FHEVM_BRANCH_ACTIVATION_BLOCK")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
         let db = Database {
             url: url.clone(),
             chain_id,
@@ -1316,7 +1315,8 @@ impl Database {
             .await?;
         }
 
-        if !near_activation_boundary && !orphaned_legacy_pbs_handles.is_empty() {
+        if !near_activation_boundary && !orphaned_legacy_pbs_handles.is_empty()
+        {
             // Ordering contract with sns-worker: pbs_computations rows (an
             // sns provenance witness) are deleted BEFORE ciphertext_digest
             // rows. The sns batch transaction holds FOR UPDATE locks on the
@@ -1792,7 +1792,8 @@ impl Database {
         &self,
         last_finalized_block: i64,
     ) -> Result<u64, SqlxError> {
-        let prune_below = last_finalized_block.saturating_sub(BLOCKS_VALID_RETENTION);
+        let prune_below =
+            last_finalized_block.saturating_sub(BLOCKS_VALID_RETENTION);
         if prune_below <= 0 {
             return Ok(0);
         }
@@ -2648,26 +2649,25 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         // Below the activation height only legacy state is written (see
         // Database::branch_activation_block).
-        let branch_inserted = if insert.acl_block_number
-            >= self.branch_activation_block
-        {
-            insert_allowed_handle_branch_row(
-                tx,
-                AllowedHandleBranchRow {
-                    chain_id: self.chain_id.as_i64(),
-                    handle: &insert.handle,
-                    account_address: &insert.account_address,
-                    event_type: insert.event_type as i16,
-                    transaction_id: insert.transaction_id.clone(),
-                    producer_block: insert.producer_block,
-                    acl_block_number: insert.acl_block_number,
-                    acl_block_hash: insert.acl_block_hash,
-                },
-            )
-            .await?
-        } else {
-            false
-        };
+        let branch_inserted =
+            if insert.acl_block_number >= self.branch_activation_block {
+                insert_allowed_handle_branch_row(
+                    tx,
+                    AllowedHandleBranchRow {
+                        chain_id: self.chain_id.as_i64(),
+                        handle: &insert.handle,
+                        account_address: &insert.account_address,
+                        event_type: insert.event_type as i16,
+                        transaction_id: insert.transaction_id.clone(),
+                        producer_block: insert.producer_block,
+                        acl_block_number: insert.acl_block_number,
+                        acl_block_hash: insert.acl_block_hash,
+                    },
+                )
+                .await?
+            } else {
+                false
+            };
         // Wave-1 dual-write: keep feeding the legacy readers until wave 2
         // switches them to the branch tables.
         let query = sqlx::query!(

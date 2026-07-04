@@ -377,11 +377,7 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
         "DELETE FROM pbs_computations WHERE handle = $1",
         "DELETE FROM ciphertext_digest WHERE handle = $1",
     ] {
-        sqlx::query(sql)
-            .bind(&handle)
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(sql).bind(&handle).execute(&pool).await.unwrap();
     }
 
     // The in-flight task must not resurrect the digest row...
