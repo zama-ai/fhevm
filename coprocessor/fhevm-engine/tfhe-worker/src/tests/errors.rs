@@ -1,6 +1,7 @@
 use crate::tests::event_helpers::{
     allow_handle, insert_event, insert_trivial_encrypt, next_handle, scalar_flag,
-    setup_event_harness, wait_for_error, zero_address, EventHarness, TEST_CHAIN_ID,
+    setup_event_harness, upsert_test_dcid, wait_for_error, zero_address, EventHarness,
+    TEST_CHAIN_ID,
 };
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
@@ -32,23 +33,30 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
             schedule_order,
             is_completed,
             host_chain_id,
+            block_number,
             producer_block_hash
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8, $9, $10, $11)
         "#,
     )
     .bind(&output_handle)
     .bind(Vec::<Vec<u8>>::new())
     .bind(127_i16) // unknown operation
     .bind(false)
-    .bind(dcid)
+    .bind(&dcid)
     .bind(tx_id.clone())
     .bind(true)
     .bind(false)
     .bind(TEST_CHAIN_ID as i64)
+    // A block-keyed producer hash requires a block number
+    // (computations_branch_producer_block_number_check).
+    .bind(0_i64)
     .bind(vec![0xE0u8; 32])
     .execute(&pool)
     .await?;
+    // The row is inserted directly (not through the listener helpers), so its
+    // dependence chain must be marked schedulable explicitly.
+    upsert_test_dcid(&pool, &dcid, 0, &[0xE0u8; 32]).await?;
 
     let (is_error, msg) = wait_for_error(&pool, &output_handle, &tx_id).await?;
     assert!(

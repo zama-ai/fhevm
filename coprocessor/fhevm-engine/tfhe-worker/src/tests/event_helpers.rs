@@ -127,6 +127,43 @@ pub fn log_with_tx(
     }
 }
 
+/// The dependence chain shared by every event inserted via `insert_event`.
+///
+/// All such events live in the helper's single implicit block (number 0,
+/// zero hash). Ingestion assigns dependence chains as same-block connected
+/// components, and the worker's batch closure requires same-block
+/// producer/consumer edges to share a chain — so the faithful mapping for
+/// one shared fake block is one shared chain. Tests that need distinct
+/// chains use the block-aware helpers with distinct blocks instead.
+pub const SHARED_BLOCK_DCID: Handle = Handle::repeat_byte(0xDC);
+
+/// Marks a dependence chain schedulable, mirroring the row the block-ingest
+/// step (`Database::update_dependence_chain`) creates in production. Tests
+/// insert events through the listener DB API directly and skip ingest, so
+/// without this row the worker (whose work query is DCID-driven) never
+/// schedules them. Runs in the same transaction as the events it schedules.
+pub async fn upsert_test_dcid<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    dependence_chain_id: &[u8],
+    block_number: u64,
+    block_hash: &[u8],
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"INSERT INTO dependence_chain (
+              dependence_chain_id, status, last_updated_at, dependency_count,
+              block_hash, block_height, schedule_priority
+           ) VALUES ($1, 'updated', NOW(), 0, $2, $3, 0)
+           ON CONFLICT (dependence_chain_id) DO UPDATE
+           SET status = 'updated'"#,
+    )
+    .bind(dependence_chain_id)
+    .bind(block_hash)
+    .bind(block_number as i64)
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
 pub async fn insert_event(
     listener_db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
@@ -142,11 +179,18 @@ pub async fn insert_event(
         block_number: 0,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
-        dependence_chain: tx_id,
+        dependence_chain: SHARED_BLOCK_DCID,
         tx_depth_size: 0,
         log_index: log.log_index,
     };
     listener_db.insert_tfhe_event(tx, &event).await?;
+    upsert_test_dcid(
+        tx.as_mut(),
+        SHARED_BLOCK_DCID.as_slice(),
+        0,
+        Handle::ZERO.as_slice(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -213,9 +257,11 @@ pub async fn wait_for_error(
     let mut last_error = None;
     for _ in 0..240 {
         tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+        // The block-scoped worker executes and error-marks the branch rows;
+        // errors are not mirrored to the legacy `computations` table.
         let row = sqlx::query_as::<_, (bool, bool, Option<String>)>(
             r#"SELECT is_error, is_completed, error_message
-               FROM computations
+               FROM computations_branch
                WHERE output_handle = $1 AND transaction_id = $2"#,
         )
         .bind(output_handle)

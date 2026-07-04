@@ -18,8 +18,8 @@ use sqlx::types::time::PrimitiveDateTime;
 
 use crate::tests::event_helpers::{
     allow_handle, as_scalar_uint, insert_event, insert_trivial_encrypt, log_with_tx, next_handle,
-    setup_event_harness, setup_event_harness_with_worker_config, tfhe_event, to_ty, zero_address,
-    EventHarness, TEST_CHAIN_ID,
+    setup_event_harness, setup_event_harness_with_worker_config, tfhe_event, to_ty,
+    upsert_test_dcid, zero_address, EventHarness, TEST_CHAIN_ID,
 };
 use crate::tests::utils::{
     decrypt_ciphertexts, reset_local_test_db_if_needed, wait_until_all_allowed_handles_computed,
@@ -58,6 +58,7 @@ pub(crate) async fn insert_event_in_block(
         tx_depth_size: 0,
         log_index: log.log_index,
     };
+    upsert_test_dcid(tx.as_mut(), tx_id.as_slice(), block_number, block_hash.as_slice()).await?;
     listener_db.insert_tfhe_event(tx, &event).await?;
     Ok(())
 }
@@ -1103,13 +1104,21 @@ async fn test_branchless_dependency_resolves() -> Result<(), Box<dyn std::error:
     tx.commit().await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
-    // Rewrite input_handle's state into the branchless shape: bytes under an
-    // empty producer hash, no computed producer row (exactly what a
-    // ZK-verified input or a backfilled pre-upgrade handle looks like).
+    // Rewrite input_handle's state into the branchless shape: bytes and allow
+    // rows under an empty producer hash, no computed producer row (exactly
+    // what a ZK-verified input or a backfilled pre-upgrade handle looks like —
+    // their allow rows are keyed branchless too, and a leftover block-keyed
+    // allow row would mask the branchless dependency fallback).
     sqlx::query("UPDATE ciphertexts_branch SET producer_block_hash = ''::BYTEA WHERE handle = $1")
         .bind(input_handle.to_vec())
         .execute(&pool)
         .await?;
+    sqlx::query(
+        "UPDATE allowed_handles_branch SET producer_block_hash = ''::BYTEA WHERE handle = $1",
+    )
+    .bind(input_handle.to_vec())
+    .execute(&pool)
+    .await?;
     sqlx::query("DELETE FROM computations_branch WHERE output_handle = $1")
         .bind(input_handle.to_vec())
         .execute(&pool)

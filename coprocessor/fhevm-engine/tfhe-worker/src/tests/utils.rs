@@ -49,7 +49,10 @@ pub fn default_dependence_cache_size() -> u16 {
 }
 
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
-    setup_test_app_with_worker_config(0, 2).await
+    // Pool of 8: the worker holds the LISTEN connection and the work
+    // transaction while the DCID lock manager issues its own pool queries, so
+    // 2 connections deadlock the cycle into PoolTimedOut.
+    setup_test_app_with_worker_config(0, 8).await
 }
 
 pub async fn setup_test_app_with_worker_config(
