@@ -381,6 +381,18 @@ async fn ingest_fallback_block(
     events: &[(FixedBytes<32>, U256, u8)],
     block_number: u64,
 ) {
+    let block_hash = FixedBytes::from([block_number as u8; 32]);
+    ingest_fallback_block_at(db, events, block_number, block_hash).await
+}
+
+/// Like `ingest_fallback_block` but with an explicit block hash, so tests can
+/// observe the same grant on sibling fork blocks at one height.
+async fn ingest_fallback_block_at(
+    db: &mut Database,
+    events: &[(FixedBytes<32>, U256, u8)],
+    block_number: u64,
+    block_hash: FixedBytes<32>,
+) {
     let logs = events
         .iter()
         .enumerate()
@@ -404,7 +416,7 @@ async fn ingest_fallback_block(
         logs,
         summary: BlockSummary {
             number: block_number,
-            hash: FixedBytes::from([block_number as u8; 32]),
+            hash: block_hash,
             parent_hash: FixedBytes::ZERO,
             timestamp: BLOCK_TIMESTAMP,
         },
@@ -447,6 +459,20 @@ async fn computation_count(db: &Database, handle: FixedBytes<32>) -> i64 {
     let pool = db.pool().await;
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM computations WHERE output_handle = $1",
+    )
+    .bind(handle.as_slice())
+    .fetch_one(&pool)
+    .await
+    .unwrap()
+}
+
+async fn branch_computation_count(
+    db: &Database,
+    handle: FixedBytes<32>,
+) -> i64 {
+    let pool = db.pool().await;
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM computations_branch WHERE output_handle = $1",
     )
     .bind(handle.as_slice())
     .fetch_one(&pool)
@@ -624,6 +650,90 @@ async fn fallback_duplicates_in_one_block_use_first_event() {
 
     assert_eq!(computation_count(&db, dst_handle).await, 1);
     assert_eq!(pbs_count(&db, dst_handle).await, 1);
+    assert_trivial_encrypt_operands(&db, dst_handle, 111, 5).await;
+}
+
+/// The same grant transaction observed on two sibling fork blocks: each
+/// observation synthesizes into its own branch context (the legacy row is
+/// shared via ON CONFLICT), so cleaning up the orphaned fork leaves the
+/// canonical fork's materialization intact. Before this fix the second
+/// observation was suppressed by the first's rows and cleanup erased the
+/// grant permanently.
+#[tokio::test]
+#[serial(db)]
+async fn fallback_same_grant_on_sibling_fork_survives_cleanup() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    let fork_hash = FixedBytes::from([0xF0u8; 32]);
+    let canonical_hash = FixedBytes::from([0xC0u8; 32]);
+
+    // Same grant tx (0x77) re-included on both forks at the same height.
+    ingest_fallback_block_at(
+        &mut db,
+        &[(dst_handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        fork_hash,
+    )
+    .await;
+    ingest_fallback_block_at(
+        &mut db,
+        &[(dst_handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        canonical_hash,
+    )
+    .await;
+
+    // One legacy row (shared), one branch row per observed context.
+    assert_eq!(computation_count(&db, dst_handle).await, 1);
+    assert_eq!(
+        branch_computation_count(&db, dst_handle).await,
+        2,
+        "each fork context must carry its own branch row"
+    );
+
+    // The fork orphans; its context-keyed state is cleaned up.
+    run_bridge_cleanup(&db, &[fork_hash.to_vec()]).await;
+
+    assert_eq!(
+        computation_count(&db, dst_handle).await,
+        1,
+        "the grant must survive on the canonical fork"
+    );
+    assert_eq!(branch_computation_count(&db, dst_handle).await, 1);
+    assert_trivial_encrypt_operands(&db, dst_handle, 123, 5).await;
+
+    // The durable observation for the canonical block survives; the
+    // orphaned one is gone.
+    let pool = db.pool().await;
+    let observations: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM fallback_granted_events WHERE dst_handle = $1",
+    )
+    .bind(dst_handle.as_slice())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(observations, 1);
+}
+
+/// A different grant (different transaction) for an already-granted handle
+/// stays suppressed across blocks: first grant wins.
+#[tokio::test]
+#[serial(db)]
+async fn fallback_different_grant_across_blocks_keeps_first() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+
+    ingest_fallback_block(&mut db, &[(dst_handle, U256::from(111_u64), 0x11)], BLOCK_NUMBER)
+        .await;
+    ingest_fallback_block(
+        &mut db,
+        &[(dst_handle, U256::from(222_u64), 0x22)],
+        BLOCK_NUMBER + 1,
+    )
+    .await;
+
+    assert_eq!(computation_count(&db, dst_handle).await, 1);
+    assert_eq!(branch_computation_count(&db, dst_handle).await, 1);
     assert_trivial_encrypt_operands(&db, dst_handle, 111, 5).await;
 }
 

@@ -336,22 +336,39 @@ pub async fn ingest_block_logs(
                     if !is_valid_fallback_dst_handle(&dst_handle.0, chain_id) {
                         continue;
                     }
+                    // Record the observation durably (keyed by block hash)
+                    // regardless of the synthesis decision below: reorg
+                    // cleanup and operators need the grant to survive even
+                    // when this particular observation is suppressed.
+                    db.record_fallback_grant_observation(
+                        &mut tx,
+                        dst_handle.as_slice(),
+                        &e.plaintext.to_be_bytes::<32>(),
+                        &log.transaction_hash,
+                        block_number,
+                        block_hash.as_ref(),
+                    )
+                    .await?;
                     // The contract specifies that if multiple fallback events
                     // are emitted for the same handle, only the first one is
-                    // the source of truth. Skip this event if the handle is
-                    // already handled: seen earlier in this block, an earlier
-                    // fallback's committed computation, or a ciphertext already
-                    // materialized for it (e.g. the bridge worker's copy of the
-                    // real ciphertext, which writes no `computations` row). The
-                    // ciphertext check keeps materialization write-once.
+                    // the source of truth: skip duplicates within this block
+                    // and grants from a different transaction. The SAME grant
+                    // re-observed in another block context (fork sibling or
+                    // canonical re-inclusion after a reorg) is synthesized
+                    // again for its own context, so cleanup of one fork never
+                    // erases the grant from the surviving fork. A handle
+                    // materialized by a bridge association (ciphertext copy
+                    // without a computations row) also stays write-once.
                     let first_in_block =
                         seen_fallback_handles.insert(dst_handle.to_vec());
                     if !first_in_block
                         || db
-                            .computation_exists(&mut tx, dst_handle.as_slice())
-                            .await?
-                        || db
-                            .ciphertext_exists(&mut tx, dst_handle.as_slice())
+                            .fallback_grant_conflicts(
+                                &mut tx,
+                                dst_handle.as_slice(),
+                                &log.transaction_hash,
+                                block_hash.as_ref(),
+                            )
                             .await?
                     {
                         warn!(

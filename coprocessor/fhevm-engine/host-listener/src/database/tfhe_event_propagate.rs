@@ -1428,6 +1428,22 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
+        // Fallback-grant observations from orphaned blocks: the grant's
+        // synthetic computation rows are context-keyed and cleaned above; a
+        // canonical re-inclusion carries (and re-synthesizes from) its own
+        // observation row.
+        sqlx::query!(
+            r#"
+            DELETE FROM fallback_granted_events
+            WHERE dst_chain_id = $1
+              AND block_hash = ANY($2::bytea[])
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
         Ok(())
     }
 
@@ -2225,6 +2241,102 @@ impl Database {
         .fetch_one(tx.deref_mut())
         .await?;
         Ok(exists)
+    }
+
+    /// Records a FallbackGrantedPlaintext observation durably, keyed by the
+    /// observing block (mirrors handle_bridged_events). Observations are
+    /// facts about what the chain emitted; whether a synthetic computation is
+    /// created for them is decided separately by
+    /// [`Self::fallback_grant_conflicts`].
+    #[allow(clippy::too_many_arguments)]
+    pub async fn record_fallback_grant_observation(
+        &self,
+        tx: &mut Transaction<'_>,
+        dst_handle: &[u8],
+        plaintext: &[u8],
+        transaction_hash: &Option<Handle>,
+        block_number: u64,
+        block_hash: &[u8],
+    ) -> Result<(), SqlxError> {
+        sqlx::query!(
+            r#"
+            INSERT INTO fallback_granted_events
+                (dst_chain_id, dst_handle, plaintext, block_number,
+                 block_hash, transaction_id)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (dst_handle, block_hash) DO NOTHING
+            "#,
+            self.chain_id.as_i64(),
+            dst_handle,
+            plaintext,
+            block_number as i64,
+            block_hash,
+            transaction_hash.as_ref().map(|h| h.to_vec()),
+        )
+        .execute(tx.deref_mut())
+        .await?;
+        Ok(())
+    }
+
+    /// Decides whether a FallbackGrantedPlaintext observation must be
+    /// suppressed instead of synthesizing its TrivialEncrypt computation.
+    ///
+    /// Suppress when:
+    /// 1. a computation exists for the handle from a DIFFERENT transaction —
+    ///    an earlier, different grant (first-wins per the contract) or a real
+    ///    computation owns the handle;
+    /// 2. this exact (handle, transaction, block) context was already
+    ///    synthesized — pure re-observation, the pipeline inserts would all
+    ///    no-op;
+    /// 3. the handle has a ciphertext but no computation at all — a bridge
+    ///    association copied the real ciphertext (which writes no
+    ///    computations row) and a real association always beats the fallback.
+    ///
+    /// Crucially, the SAME grant re-observed in a different block (fork
+    /// sibling or canonical re-inclusion after a reorg) is NOT suppressed:
+    /// it creates a branch computation row for its own context while the
+    /// legacy insert no-ops (ON CONFLICT (output_handle, transaction_id)),
+    /// so reorg cleanup of one fork can never erase the grant from the
+    /// surviving fork.
+    pub async fn fallback_grant_conflicts(
+        &self,
+        tx: &mut Transaction<'_>,
+        dst_handle: &[u8],
+        transaction_hash: &Option<Handle>,
+        block_hash: &[u8],
+    ) -> Result<bool, SqlxError> {
+        let transaction_id = transaction_hash.as_ref().map(|h| h.to_vec());
+        let conflicts = sqlx::query_scalar!(
+            r#"
+            SELECT (
+                EXISTS(
+                    SELECT 1 FROM computations
+                    WHERE output_handle = $1
+                      AND transaction_id IS DISTINCT FROM $2
+                )
+                OR EXISTS(
+                    SELECT 1 FROM computations_branch
+                    WHERE output_handle = $1
+                      AND transaction_id IS NOT DISTINCT FROM $2
+                      AND producer_block_hash = $3
+                )
+                OR (
+                    NOT EXISTS(
+                        SELECT 1 FROM computations WHERE output_handle = $1
+                    )
+                    AND EXISTS(
+                        SELECT 1 FROM ciphertexts WHERE handle = $1
+                    )
+                )
+            ) AS "conflicts!"
+            "#,
+            dst_handle,
+            transaction_id as _,
+            block_hash,
+        )
+        .fetch_one(tx.deref_mut())
+        .await?;
+        Ok(conflicts)
     }
 
     /// Add the handle to the allowed_handles table
