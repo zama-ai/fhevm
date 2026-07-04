@@ -128,7 +128,12 @@ async fn run_uploader_loop(
 
                 let item = match job {
                     UploadJob::Normal(item) => {
-                        item.enqueue_upload_task(&mut trx).await?;
+                        if !item.enqueue_upload_task(&mut trx).await? {
+                            // Provenance deleted by reorg cleanup: the
+                            // publication is cancelled, skip the upload.
+                            trx.rollback().await?;
+                            continue;
+                        }
                         create_upload_task_savepoint(&mut trx).await?;
                         item
                     }

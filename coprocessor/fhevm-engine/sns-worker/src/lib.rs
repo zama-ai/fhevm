@@ -49,7 +49,7 @@ use tokio::{
     },
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, Level};
+use tracing::{error, info, warn, Level};
 
 use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
@@ -314,10 +314,39 @@ impl HandleItem {
     ///
     /// If inserted into the `ciphertext_digest` table means that the both (ct64 and ct128)
     /// ciphertexts are ready to be uploaded to S3.
+    ///
+    /// Returns `false` (and inserts nothing) when the handle's
+    /// `pbs_computations` row no longer exists: reorg cleanup deletes it for
+    /// handles that lived solely on an orphaned fork, together with the
+    /// digest row, and an unguarded insert here would resurrect the digest
+    /// and drive a phantom `addCiphertextMaterial` publication. The witness
+    /// row is locked FOR KEY SHARE so a concurrent cleanup orders against
+    /// this transaction (cleanup deletes pbs before digest and its pbs
+    /// DELETE blocks on this lock).
     pub(crate) async fn enqueue_upload_task(
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<bool, ExecutionError> {
+        let provenance_alive = sqlx::query_scalar::<_, i32>(
+            "SELECT 1 FROM pbs_computations
+             WHERE handle = $1 AND host_chain_id = $2
+             FOR KEY SHARE",
+        )
+        .bind(&self.handle)
+        .bind(self.host_chain_id.as_i64())
+        .fetch_optional(db_txn.as_mut())
+        .await?
+        .is_some();
+
+        if !provenance_alive {
+            warn!(
+                handle = %to_hex(&self.handle),
+                host_chain_id = self.host_chain_id.as_i64(),
+                "Skipping upload enqueue: pbs_computations row is gone (reorg cleanup)"
+            );
+            return Ok(false);
+        }
+
         if self.ct128.is_empty() {
             sqlx::query(
                 "INSERT INTO ciphertext_digest
@@ -356,7 +385,7 @@ impl HandleItem {
             .await?;
         }
 
-        Ok(())
+        Ok(true)
     }
 
     pub(crate) async fn mark_ciphertexts_uploaded(
@@ -384,6 +413,17 @@ impl HandleItem {
         .execute(trx.as_mut())
         .await?;
 
+        if result.rows_affected() == 0 {
+            // The digest row was deleted by reorg cleanup while the upload
+            // was in flight: the handle lived solely on an orphaned fork and
+            // its publication is cancelled. The uploaded S3 objects are
+            // unreferenced garbage, not a correctness problem.
+            warn!(
+                handle = %to_hex(&self.handle),
+                "ciphertext_digest row gone (reorg cleanup); publication cancelled"
+            );
+            return Ok(());
+        }
         if result.rows_affected() != 1 {
             return Err(ExecutionError::InternalError(format!(
                 "expected to mark exactly one ciphertext_digest row as uploaded for handle {}, updated {}",

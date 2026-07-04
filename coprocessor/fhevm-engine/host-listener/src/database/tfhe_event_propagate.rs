@@ -1186,24 +1186,16 @@ impl Database {
         }
 
         if !orphaned_legacy_pbs_handles.is_empty() {
-            sqlx::query!(
-                r#"
-                DELETE FROM ciphertext_digest d
-                WHERE d.host_chain_id = $1
-                  AND d.handle = ANY($2::bytea[])
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM pbs_computations_branch p
-                      WHERE p.host_chain_id = d.host_chain_id
-                        AND p.handle = d.handle
-                  )
-                "#,
-                self.chain_id.as_i64(),
-                &orphaned_legacy_pbs_handles as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-
+            // Ordering contract with sns-worker: pbs_computations rows are
+            // deleted BEFORE ciphertext_digest rows. The sns batch transaction
+            // holds FOR UPDATE locks on the pbs rows it is processing (work
+            // acquisition) and enqueue_upload_task takes FOR KEY SHARE on the
+            // pbs row before inserting a digest row, so this DELETE blocks
+            // until any in-flight digest insert for the handle has committed —
+            // and the digest DELETE below then sees and removes it. With the
+            // opposite order, a digest row inserted by a concurrent sns
+            // transaction would be resurrected after this cleanup commits and
+            // drive a phantom addCiphertextMaterial publication.
             sqlx::query!(
                 r#"
                 DELETE FROM pbs_computations p
@@ -1214,6 +1206,24 @@ impl Database {
                       FROM pbs_computations_branch b
                       WHERE b.host_chain_id = p.host_chain_id
                         AND b.handle = p.handle
+                  )
+                "#,
+                self.chain_id.as_i64(),
+                &orphaned_legacy_pbs_handles as _,
+            )
+            .execute(tx.deref_mut())
+            .await?;
+
+            sqlx::query!(
+                r#"
+                DELETE FROM ciphertext_digest d
+                WHERE d.host_chain_id = $1
+                  AND d.handle = ANY($2::bytea[])
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM pbs_computations_branch p
+                      WHERE p.host_chain_id = d.host_chain_id
+                        AND p.handle = d.handle
                   )
                 "#,
                 self.chain_id.as_i64(),
