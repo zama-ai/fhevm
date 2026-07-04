@@ -715,6 +715,56 @@ async fn fallback_same_grant_on_sibling_fork_survives_cleanup() {
     assert_eq!(observations, 1);
 }
 
+/// Below FHEVM_BRANCH_ACTIVATION_BLOCK ingestion writes legacy state only —
+/// per-node dual-write start times would otherwise key branch rows
+/// divergently across operators during a rolling upgrade. At and above the
+/// activation height, branch rows appear.
+#[tokio::test]
+#[serial(db)]
+async fn branch_writes_gated_by_activation_height() {
+    std::env::set_var("FHEVM_BRANCH_ACTIVATION_BLOCK", "100");
+    // Database::new reads the env at construction.
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    std::env::remove_var("FHEVM_BRANCH_ACTIVATION_BLOCK");
+    assert_eq!(db.branch_activation_block, 100);
+
+    // The fallback synthesis drives the ordinary computation/pbs insert
+    // paths, so it exercises the gates end-to-end.
+    let below = fallback_dst_handle(DST_CHAIN_ID, 5);
+    ingest_fallback_block(&mut db, &[(below, U256::from(7_u64), 0x31)], 50)
+        .await;
+    assert_eq!(
+        computation_count(&db, below).await,
+        1,
+        "legacy write must happen below the activation height"
+    );
+    assert_eq!(
+        branch_computation_count(&db, below).await,
+        0,
+        "no branch computation row below the activation height"
+    );
+    let pool = db.pool().await;
+    let branch_pbs: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pbs_computations_branch WHERE handle = $1",
+    )
+    .bind(below.as_slice())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(branch_pbs, 0, "no branch pbs row below the activation height");
+    assert_eq!(pbs_count(&db, below).await, 1, "legacy pbs row still written");
+
+    let above = fallback_dst_handle(DST_CHAIN_ID, 4);
+    ingest_fallback_block(&mut db, &[(above, U256::from(8_u64), 0x32)], 150)
+        .await;
+    assert_eq!(computation_count(&db, above).await, 1);
+    assert_eq!(
+        branch_computation_count(&db, above).await,
+        1,
+        "branch rows resume at the activation height"
+    );
+}
+
 /// A different grant (different transaction) for an already-granted handle
 /// stays suppressed across blocks: first grant wins.
 #[tokio::test]

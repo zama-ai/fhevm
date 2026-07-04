@@ -121,6 +121,30 @@ deleted by orphan cleanup. As a result an orphan-only handle leaves its (now unr
 ciphertext bytes behind — a small, bounded storage residue, accepted in wave 1 to keep the
 authoritative pre-cutover byte store intact for the wave-2 legacy fallback.
 
+## Branch activation height (`FHEVM_BRANCH_ACTIVATION_BLOCK`)
+
+Without it, every node starts dual-writing branch rows the moment its binary upgrades.
+During a rolling upgrade that start time is node-local: handles produced in the window
+get branch rows on some operators and not others (and with different producer keying if
+a reorg lands mid-window), and the reorg cleanup's `NOT EXISTS` guards then make
+different legacy-deletion decisions per operator — a fleet-divergence hazard on live
+read paths.
+
+Set `FHEVM_BRANCH_ACTIVATION_BLOCK` (host-listener env) to a **fleet-common host-chain
+height comfortably above the expected completion of the rolling upgrade** (all
+operators must use the same value). Below it, ingestion writes legacy state only and
+producers resolve as branchless, so branch-row keying is identical on every node by
+construction, regardless of upgrade timing. The default `0` (active from genesis) is
+for fresh chains and single-operator test stacks.
+
+Wave-2 interaction: the wave-2 cutover height (`FHEVM_BRANCH_CUTOVER_BLOCK`) must be
+`>=` the activation height — blocks below activation have no branch rows to execute
+from, and wave-2's legacy fallback covers them.
+
+New-feature state (confidential-bridge event tables, fallback-grant observations) is
+not gated: those tables are keyed by observation block hash and are deterministic
+across operators regardless of upgrade timing.
+
 ## Rollback
 
 - Reverting the binaries to the prior release is safe: the dual-write mirror triggers keep

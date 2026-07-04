@@ -310,6 +310,14 @@ pub struct Database {
     /// When true, every connection in this pool sets
     /// `search_path = gcs,public` so writes resolve to the GCS schema.
     gcs_mode: bool,
+    /// Host-chain height at which wave-1 branch dual-writes activate
+    /// (`FHEVM_BRANCH_ACTIVATION_BLOCK`, default 0 = from genesis). Below
+    /// it, ingestion writes legacy state only and producers resolve as
+    /// branchless. Set to a fleet-common height above the rolling upgrade's
+    /// completion so branch-row keying is deterministic across operators
+    /// that upgrade at different times; the wave-2 cutover
+    /// (`FHEVM_BRANCH_CUTOVER_BLOCK`) must be >= this height.
+    pub branch_activation_block: u64,
 }
 
 #[derive(Debug)]
@@ -360,6 +368,12 @@ impl Database {
                 .unwrap()
                 .into(),
             )));
+        let branch_activation_block = std::env::var(
+            "FHEVM_BRANCH_ACTIVATION_BLOCK",
+        )
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
         let db = Database {
             url: url.clone(),
             chain_id,
@@ -368,6 +382,7 @@ impl Database {
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
             gcs_mode,
+            branch_activation_block,
         };
         // Wave-1 deploy safety: a binary may start before the branch-context
         // migration has applied (e.g. a rolling deploy where the db-migration
@@ -663,6 +678,21 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
+        // Below the fleet-common activation height only legacy state is
+        // written: per-node dual-write start times would otherwise key branch
+        // rows divergently across operators during a rolling upgrade.
+        if log.block_number < self.branch_activation_block {
+            return self
+                .insert_computation_legacy_row(
+                    tx,
+                    &output_handle,
+                    &dependencies,
+                    fhe_operation,
+                    is_scalar,
+                    log,
+                )
+                .await;
+        }
         // Wave-1 producer writes require the branch row so wave-2 consumers have
         // complete block-scoped state; branch write failures abort this ingest
         // transaction and are retried with the rest of the event.
@@ -690,6 +720,28 @@ impl Database {
         // Wave-1 dual-write: the legacy pipeline still executes from the
         // legacy tables, so every branch row is mirrored there until the
         // block-scoped readers take over in wave 2.
+        let legacy_inserted = self
+            .insert_computation_legacy_row(
+                tx,
+                &output_handle,
+                &dependencies,
+                fhe_operation,
+                is_scalar,
+                log,
+            )
+            .await?;
+        Ok(inserted || legacy_inserted)
+    }
+
+    async fn insert_computation_legacy_row(
+        &self,
+        tx: &mut Transaction<'_>,
+        output_handle: &[u8],
+        dependencies: &[Vec<u8>],
+        fhe_operation: FheOperation,
+        is_scalar: bool,
+        log: &LogTfhe,
+    ) -> Result<bool, SqlxError> {
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
@@ -713,7 +765,7 @@ impl Database {
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
             output_handle,
-            &dependencies,
+            dependencies,
             fhe_operation as i16,
             is_scalar,
             log.dependence_chain.to_vec(),
@@ -727,11 +779,10 @@ impl Database {
             self.chain_id.as_i64(),
             log.block_number as i64
         );
-        let legacy_inserted = query
+        query
             .execute(tx.deref_mut())
             .await
-            .map(|result| result.rows_affected() > 0)?;
-        Ok(inserted || legacy_inserted)
+            .map(|result| result.rows_affected() > 0)
     }
 
     #[rustfmt::skip]
@@ -1830,6 +1881,15 @@ impl Database {
         current_parent_hash: &[u8],
         current_block_number: u64,
     ) -> Result<ProducerBlock, SqlxError> {
+        // Pre-activation blocks carry no branch rows by construction:
+        // resolve as branchless without querying, deterministically across
+        // operators regardless of when each node started dual-writing.
+        if current_block_number < self.branch_activation_block {
+            return Ok(ProducerBlock {
+                hash: Vec::new(),
+                number: current_block_number,
+            });
+        }
         // The recursive walk disambiguates producers among live forks, so it
         // only needs to cover the un-finalized region near the head; it is
         // depth-bounded (ANCESTRY_WALK_DEPTH blocks, far above any real
@@ -2325,16 +2385,20 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let mut inserted = false;
         for (handle, producer_block) in handles {
-            inserted |= insert_pbs_computation_branch_row(
-                tx,
-                self.chain_id.as_i64(),
-                handle,
-                transaction_id.clone(),
-                acl_block_number as i64,
-                acl_block_hash,
-                &producer_block.hash,
-            )
-            .await?;
+            // Below the activation height only legacy state is written (see
+            // Database::branch_activation_block).
+            if acl_block_number >= self.branch_activation_block {
+                inserted |= insert_pbs_computation_branch_row(
+                    tx,
+                    self.chain_id.as_i64(),
+                    handle,
+                    transaction_id.clone(),
+                    acl_block_number as i64,
+                    acl_block_hash,
+                    &producer_block.hash,
+                )
+                .await?;
+            }
             // Wave-1 dual-write: keep feeding the legacy sns-worker until
             // wave 2 switches it to the branch tables.
             let query = sqlx::query!(
@@ -2510,20 +2574,28 @@ impl Database {
         tx: &mut Transaction<'_>,
         insert: AllowedHandleInsert<'_>,
     ) -> Result<bool, SqlxError> {
-        let branch_inserted = insert_allowed_handle_branch_row(
-            tx,
-            AllowedHandleBranchRow {
-                chain_id: self.chain_id.as_i64(),
-                handle: &insert.handle,
-                account_address: &insert.account_address,
-                event_type: insert.event_type as i16,
-                transaction_id: insert.transaction_id.clone(),
-                producer_block: insert.producer_block,
-                acl_block_number: insert.acl_block_number,
-                acl_block_hash: insert.acl_block_hash,
-            },
-        )
-        .await?;
+        // Below the activation height only legacy state is written (see
+        // Database::branch_activation_block).
+        let branch_inserted = if insert.acl_block_number
+            >= self.branch_activation_block
+        {
+            insert_allowed_handle_branch_row(
+                tx,
+                AllowedHandleBranchRow {
+                    chain_id: self.chain_id.as_i64(),
+                    handle: &insert.handle,
+                    account_address: &insert.account_address,
+                    event_type: insert.event_type as i16,
+                    transaction_id: insert.transaction_id.clone(),
+                    producer_block: insert.producer_block,
+                    acl_block_number: insert.acl_block_number,
+                    acl_block_hash: insert.acl_block_hash,
+                },
+            )
+            .await?
+        } else {
+            false
+        };
         // Wave-1 dual-write: keep feeding the legacy readers until wave 2
         // switches them to the branch tables.
         let query = sqlx::query!(
