@@ -18,6 +18,10 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
     let output_handle = next_handle().to_vec();
     let tx_id = next_handle().to_vec();
     let dcid = next_handle().to_vec();
+    // The chain row must describe the same block coordinates as the
+    // computation row it schedules.
+    let block_number = 0_i64;
+    let producer_block_hash = vec![0xE0u8; 32];
 
     sqlx::query(
         r#"
@@ -50,13 +54,13 @@ async fn test_coprocessor_input_errors() -> Result<(), Box<dyn std::error::Error
     .bind(TEST_CHAIN_ID as i64)
     // A block-keyed producer hash requires a block number
     // (computations_branch_producer_block_number_check).
-    .bind(0_i64)
-    .bind(vec![0xE0u8; 32])
+    .bind(block_number)
+    .bind(&producer_block_hash)
     .execute(&pool)
     .await?;
     // The row is inserted directly (not through the listener helpers), so its
     // dependence chain must be marked schedulable explicitly.
-    upsert_test_dcid(&pool, &dcid, 0, &[0xE0u8; 32]).await?;
+    upsert_test_dcid(&pool, &dcid, block_number as u64, &producer_block_hash).await?;
 
     let (is_error, msg) = wait_for_error(&pool, &output_handle, &tx_id).await?;
     assert!(

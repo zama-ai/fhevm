@@ -74,7 +74,7 @@ const LOCAL_DB_RESET_SQL: &str = "
         pbs_computations, ciphertext_digest,
         computations_branch, ciphertexts_branch, ciphertexts128_branch,
         allowed_handles_branch, pbs_computations_branch, ciphertext_digest_branch,
-        host_chain_blocks_valid
+        host_chain_blocks_valid, dependence_chain, coprocessor_settlement
     CASCADE
 ";
 

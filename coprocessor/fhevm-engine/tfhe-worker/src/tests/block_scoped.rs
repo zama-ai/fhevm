@@ -17,9 +17,9 @@ use serial_test::serial;
 use sqlx::types::time::PrimitiveDateTime;
 
 use crate::tests::event_helpers::{
-    allow_handle, as_scalar_uint, insert_event, insert_trivial_encrypt, log_with_tx, next_handle,
-    setup_event_harness, setup_event_harness_with_worker_config, tfhe_event, to_ty,
-    upsert_test_dcid, zero_address, EventHarness, TEST_CHAIN_ID,
+    allow_handle, as_scalar_uint, insert_event, insert_event_in_chain, insert_trivial_encrypt,
+    log_with_tx, next_handle, setup_event_harness, setup_event_harness_with_worker_config,
+    tfhe_event, to_ty, zero_address, EventHarness, TEST_CHAIN_ID,
 };
 use crate::tests::utils::{
     decrypt_ciphertexts, reset_local_test_db_if_needed, wait_until_all_allowed_handles_computed,
@@ -58,7 +58,11 @@ pub(crate) async fn insert_event_in_block(
         tx_depth_size: 0,
         log_index: log.log_index,
     };
-    upsert_test_dcid(tx.as_mut(), tx_id.as_slice(), block_number, block_hash.as_slice()).await?;
+    // Deliberately no dependence_chain upsert here: block-scoped tests stage
+    // rows first (some reassign component chains post-commit) and arm the
+    // chain explicitly with `mark_test_dcid_ready` — arming at commit would
+    // race that choreography, since a computations_branch trigger notifies
+    // the worker as soon as the transaction commits.
     listener_db.insert_tfhe_event(tx, &event).await?;
     Ok(())
 }
@@ -368,6 +372,7 @@ async fn test_block_scoped_boundary_handle_multi_use() -> Result<(), Box<dyn std
     .await?;
     allow_handle(&listener_db, &mut tx, &input_handle).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx1_id, 1, &block_1_hash).await?;
 
     wait_until_all_allowed_handles_computed(&app).await?;
 
@@ -408,6 +413,7 @@ async fn test_block_scoped_boundary_handle_multi_use() -> Result<(), Box<dyn std
     .await?;
     allow_handle(&listener_db, &mut tx, &add_scalar_output).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx2_id, 2, &block_2_hash).await?;
 
     wait_until_all_allowed_handles_computed(&app).await?;
 
@@ -465,12 +471,15 @@ async fn test_block_scoped_inter_tx_reuse() -> Result<(), Box<dyn std::error::Er
     allow_handle(&listener_db, &mut tx, &b_handle).await?;
     tx.commit().await?;
 
-    // Tx2: b + b = c (depends on tx1's output)
+    // Tx2: b + b = c (depends on tx1's output). Same-block producer/consumer
+    // edges must share a dependence chain (ingest assigns chains as
+    // same-block connected components), so tx2 joins tx1's chain.
     let mut tx = listener_db.new_transaction().await?;
-    insert_event(
+    insert_event_in_chain(
         &listener_db,
         &mut tx,
         tx2_id,
+        tx1_id,
         TfheContractEvents::FheAdd(TfheContract::FheAdd {
             caller: zero_address(),
             lhs: b_handle,
@@ -561,6 +570,7 @@ async fn test_cross_block_reuse_materializes() -> Result<(), Box<dyn std::error:
     .await?;
     allow_handle(&listener_db, &mut tx, &a_handle).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx1_id, 1, &block_a_hash).await?;
 
     wait_until_all_allowed_handles_computed(&app).await?;
 
@@ -582,6 +592,7 @@ async fn test_cross_block_reuse_materializes() -> Result<(), Box<dyn std::error:
     .await?;
     allow_handle(&listener_db, &mut tx, &output_handle).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx2_id, 2, &block_b_hash).await?;
 
     wait_until_all_allowed_handles_computed(&app).await?;
 
@@ -664,6 +675,7 @@ async fn test_cross_partition_boundary_reuse() -> Result<(), Box<dyn std::error:
     .await?;
     allow_handle(&listener_db, &mut tx, &input_handle).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx_setup_id, 1, &block_1_hash).await?;
 
     wait_until_all_allowed_handles_computed(&app).await?;
 
@@ -684,6 +696,7 @@ async fn test_cross_partition_boundary_reuse() -> Result<(), Box<dyn std::error:
     .await?;
     allow_handle(&listener_db, &mut tx, &out1_handle).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx1_id, 2, &block_2_hash).await?;
 
     // Block 2, Tx2: input_handle + 3(scalar) = out2 (independent)
     let mut tx = listener_db.new_transaction().await?;
@@ -707,6 +720,7 @@ async fn test_cross_partition_boundary_reuse() -> Result<(), Box<dyn std::error:
     .await?;
     allow_handle(&listener_db, &mut tx, &out2_handle).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx2_id, 2, &block_2_hash).await?;
 
     wait_until_all_allowed_handles_computed(&app).await?;
 
@@ -785,11 +799,14 @@ async fn test_multi_producer_same_handle_bit_identity() -> Result<(), Box<dyn st
         if multi_producer {
             // Second tx in the same block, same operands, same result handle.
             // This is the exact scenario flagged by the scheduler's
-            // "Handle collision for computation output" branch.
-            insert_event(
+            // "Handle collision for computation output" branch. It consumes
+            // tid_a's outputs in the same block, so it joins tid_a's chain
+            // (same-block connected component).
+            insert_event_in_chain(
                 &listener_db,
                 &mut tx,
                 tid_b,
+                tid_a,
                 TfheContractEvents::FheAdd(TfheContract::FheAdd {
                     caller: zero_address(),
                     lhs,
@@ -1102,6 +1119,7 @@ async fn test_branchless_dependency_resolves() -> Result<(), Box<dyn std::error:
     .await?;
     allow_handle_in_block(&listener_db, &mut tx, &input_handle, 1, &block_a_hash).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx1_id, 1, &block_a_hash).await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Rewrite input_handle's state into the branchless shape: bytes and allow
@@ -1141,6 +1159,7 @@ async fn test_branchless_dependency_resolves() -> Result<(), Box<dyn std::error:
     .await?;
     allow_handle_in_block(&listener_db, &mut tx, &output_handle, 2, &block_b_hash).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx2_id, 2, &block_b_hash).await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let resp = decrypt_ciphertexts(&pool, vec![output_handle.to_vec()]).await?;
@@ -1206,6 +1225,7 @@ async fn test_legacy_ciphertext_fallback_resolves() -> Result<(), Box<dyn std::e
     .await?;
     allow_handle_in_block(&listener_db, &mut tx, &input_handle, 1, &block_a_hash).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx1_id, 1, &block_a_hash).await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Rewrite input_handle's state into the pre-upgrade shape: bytes only in
@@ -1252,6 +1272,7 @@ async fn test_legacy_ciphertext_fallback_resolves() -> Result<(), Box<dyn std::e
     .await?;
     allow_handle_in_block(&listener_db, &mut tx, &output_handle, 2, &block_b_hash).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx2_id, 2, &block_b_hash).await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
     let resp = decrypt_ciphertexts(&pool, vec![output_handle.to_vec()]).await?;

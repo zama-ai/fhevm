@@ -127,21 +127,14 @@ pub fn log_with_tx(
     }
 }
 
-/// The dependence chain shared by every event inserted via `insert_event`.
-///
-/// All such events live in the helper's single implicit block (number 0,
-/// zero hash). Ingestion assigns dependence chains as same-block connected
-/// components, and the worker's batch closure requires same-block
-/// producer/consumer edges to share a chain — so the faithful mapping for
-/// one shared fake block is one shared chain. Tests that need distinct
-/// chains use the block-aware helpers with distinct blocks instead.
-pub const SHARED_BLOCK_DCID: Handle = Handle::repeat_byte(0xDC);
-
-/// Marks a dependence chain schedulable, mirroring the row the block-ingest
-/// step (`Database::update_dependence_chain`) creates in production. Tests
-/// insert events through the listener DB API directly and skip ingest, so
-/// without this row the worker (whose work query is DCID-driven) never
-/// schedules them. Runs in the same transaction as the events it schedules.
+/// Marks a dependence chain schedulable, standing in for the row the
+/// block-ingest step (`Database::update_dependence_chain`) creates in
+/// production. Tests insert events through the listener DB API directly and
+/// skip ingest, so without this row the worker (whose work query is
+/// DCID-driven) never schedules them. Unlike `mark_test_dcid_ready` in the
+/// block-scoped tests, the conflict arm does not steal a live worker's lock.
+/// Pass the event transaction as the executor to keep scheduling atomic with
+/// the inserts; standalone callers can pass the pool.
 pub async fn upsert_test_dcid<'e>(
     executor: impl sqlx::PgExecutor<'e>,
     dependence_chain_id: &[u8],
@@ -164,10 +157,22 @@ pub async fn upsert_test_dcid<'e>(
     Ok(())
 }
 
-pub async fn insert_event(
+/// Inserts an event into the helper's single implicit block (number 0, zero
+/// hash) under an explicit dependence chain, and marks that chain
+/// schedulable in the same transaction.
+///
+/// Ingestion assigns dependence chains as same-block connected components,
+/// and the worker's batch closure requires same-block producer/consumer
+/// edges to share a chain. Transactions that consume another transaction's
+/// output in this implicit block must therefore pass the producing
+/// transaction's chain; self-contained transactions use `insert_event`,
+/// which keys the chain by the transaction id. (The worker only sees block-0
+/// events when the harness runs with the default cutover block 0.)
+pub async fn insert_event_in_chain(
     listener_db: &ListenerDatabase,
     tx: &mut Transaction<'_>,
     tx_id: Handle,
+    dependence_chain: Handle,
     event: TfheContractEvents,
     is_allowed: bool,
 ) -> Result<(), sqlx::Error> {
@@ -179,19 +184,29 @@ pub async fn insert_event(
         block_number: 0,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
-        dependence_chain: SHARED_BLOCK_DCID,
+        dependence_chain,
         tx_depth_size: 0,
         log_index: log.log_index,
     };
     listener_db.insert_tfhe_event(tx, &event).await?;
     upsert_test_dcid(
         tx.as_mut(),
-        SHARED_BLOCK_DCID.as_slice(),
+        dependence_chain.as_slice(),
         0,
         Handle::ZERO.as_slice(),
     )
     .await?;
     Ok(())
+}
+
+pub async fn insert_event(
+    listener_db: &ListenerDatabase,
+    tx: &mut Transaction<'_>,
+    tx_id: Handle,
+    event: TfheContractEvents,
+    is_allowed: bool,
+) -> Result<(), sqlx::Error> {
+    insert_event_in_chain(listener_db, tx, tx_id, tx_id, event, is_allowed).await
 }
 
 pub async fn insert_trivial_encrypt(

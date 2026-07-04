@@ -74,7 +74,10 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
         key_cache_size: 4,
         coprocessor_fhe_threads: 64,
         tokio_threads: 32,
-        pg_pool_max_connections: 2,
+        // The worker holds the LISTEN connection and the work transaction
+        // while the DCID lock manager issues its own pool queries; 2
+        // connections starve the cycle into PoolTimedOut.
+        pg_pool_max_connections: 8,
         metrics_addr: None,
         database_url: Some(db_url.into()),
         service_name: std::env::var("OTEL_SERVICE_NAME").unwrap_or_default(),
@@ -224,7 +227,24 @@ pub async fn insert_tfhe_event(
         tx_depth_size: 0,
         log_index: log.log_index,
     };
-    db.insert_tfhe_event(tx, &event).await
+    let inserted = db.insert_tfhe_event(tx, &event).await?;
+    // The worker's work query is dependence-chain-driven and benches bypass
+    // the block-ingest step that creates the chain rows; mark the chain
+    // schedulable in the same transaction (mirrors tests/event_helpers.rs).
+    sqlx::query(
+        r#"INSERT INTO dependence_chain (
+              dependence_chain_id, status, last_updated_at, dependency_count,
+              block_hash, block_height, schedule_priority
+           ) VALUES ($1, 'updated', NOW(), 0, $2, $3, 0)
+           ON CONFLICT (dependence_chain_id) DO UPDATE
+           SET status = 'updated'"#,
+    )
+    .bind(event.dependence_chain.as_slice())
+    .bind(event.block_hash.as_slice())
+    .bind(event.block_number as i64)
+    .execute(tx.as_mut())
+    .await?;
+    Ok(inserted)
 }
 
 pub async fn allow_handle(
