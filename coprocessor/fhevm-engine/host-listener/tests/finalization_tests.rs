@@ -91,6 +91,65 @@ async fn finalization_refuses_hash_with_mismatched_parent() {
     );
 }
 
+/// Pruning removes only old finalized rows that nothing references: rows
+/// referenced by branch state, orphaned markers, and everything within the
+/// retention window stay.
+#[tokio::test]
+#[serial(db)]
+async fn prune_keeps_referenced_orphaned_and_recent_rows() {
+    let (db, _inst) = fresh_db(CHAIN_ID).await;
+    let (old_unref, old_ref, old_orphaned, recent) =
+        (b32(0x01), b32(0x02), b32(0x03), b32(0x04));
+
+    seed_block(&db, 100, &old_unref, &b32(0), "finalized").await;
+    seed_block(&db, 200, &old_ref, &b32(0), "finalized").await;
+    seed_block(&db, 300, &old_orphaned, &b32(0), "orphaned").await;
+    seed_block(&db, 19_000, &recent, &b32(0), "finalized").await;
+
+    // Branch state referencing block 200 as producer.
+    let pool = db.pool().await;
+    sqlx::query(
+        "INSERT INTO computations_branch
+             (output_handle, dependencies, fhe_operation, is_scalar,
+              dependence_chain_id, transaction_id, is_allowed, created_at,
+              schedule_order, is_completed, host_chain_id, block_number,
+              producer_block_hash)
+         VALUES ($1, '{}', 0, FALSE, '\\x01', '\\x02', TRUE, NOW(), NOW(),
+                 FALSE, $2, 200, $3)",
+    )
+    .bind(vec![0x55u8; 32])
+    .bind(CHAIN_ID as i64)
+    .bind(&old_ref)
+    .execute(&pool)
+    .await
+    .expect("seed computations_branch");
+
+    // Retention window is 10_000 blocks below the finalized head (20_000):
+    // rows below 10_000 are candidates.
+    let pruned = db
+        .prune_finalized_block_history(20_000)
+        .await
+        .expect("prune");
+    assert_eq!(pruned, 1, "exactly the unreferenced old row is pruned");
+
+    assert_eq!(block_status(&db, &old_unref).await, None);
+    assert_eq!(
+        block_status(&db, &old_ref).await.as_deref(),
+        Some("finalized"),
+        "rows referenced by branch state must survive"
+    );
+    assert_eq!(
+        block_status(&db, &old_orphaned).await.as_deref(),
+        Some("orphaned"),
+        "orphan markers are never pruned"
+    );
+    assert_eq!(
+        block_status(&db, &recent).await.as_deref(),
+        Some("finalized"),
+        "rows within the retention window must survive"
+    );
+}
+
 /// The honest answer links to the finalized predecessor: it finalizes and the
 /// fork sibling is orphaned. Also covers multi-block batches finalizing in
 /// ascending order (block 3's linkage check needs block 2 finalized first

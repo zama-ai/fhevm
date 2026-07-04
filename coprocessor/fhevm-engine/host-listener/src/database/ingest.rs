@@ -838,6 +838,17 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     if let Err(err) = db.block_notification().await {
         error!(error = %err, "Error notifying listener for new block");
     }
+    // Best-effort maintenance: drop old finalized block rows nothing
+    // references anymore, so ancestry probes and the table itself stop
+    // growing with chain history. Failures only delay pruning.
+    match db
+        .prune_finalized_block_history(last_finalized_block as i64)
+        .await
+    {
+        Ok(0) => {}
+        Ok(pruned) => info!(pruned, "Pruned finalized block history"),
+        Err(err) => error!(?err, "Failed to prune finalized block history"),
+    }
 }
 
 #[cfg(test)]

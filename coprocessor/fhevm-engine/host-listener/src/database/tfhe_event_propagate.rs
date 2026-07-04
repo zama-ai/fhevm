@@ -90,6 +90,15 @@ pub type ChainCache = Arc<RwLock<lru::LruCache<Handle, ChainHash>>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
+/// Depth bound for the producer-resolution ancestry walk. Fork
+/// disambiguation only matters above finality; anything deeper resolves via
+/// finalization status. Far above any real finality lag.
+const ANCESTRY_WALK_DEPTH: i64 = 1024;
+/// Finalized `host_chain_blocks_valid` rows older than this many blocks
+/// below the finalized head are eligible for pruning (when unreferenced).
+const BLOCKS_VALID_RETENTION: i64 = 10_000;
+/// Upper bound of rows removed per pruning pass; keeps each pass short.
+const BLOCKS_VALID_PRUNE_BATCH: i64 = 1_000;
 const SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE: i64 = 1_907_000_000;
 const SLOW_LANE_RESET_BATCH_SIZE: i64 = 5_000;
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
@@ -1206,16 +1215,24 @@ impl Database {
         }
 
         if !orphaned_legacy_pbs_handles.is_empty() {
-            // Ordering contract with sns-worker: pbs_computations rows are
-            // deleted BEFORE ciphertext_digest rows. The sns batch transaction
-            // holds FOR UPDATE locks on the pbs rows it is processing (work
-            // acquisition) and enqueue_upload_task takes FOR KEY SHARE on the
-            // pbs row before inserting a digest row, so this DELETE blocks
-            // until any in-flight digest insert for the handle has committed —
-            // and the digest DELETE below then sees and removes it. With the
-            // opposite order, a digest row inserted by a concurrent sns
-            // transaction would be resurrected after this cleanup commits and
-            // drive a phantom addCiphertextMaterial publication.
+            // Ordering contract with sns-worker: pbs_computations rows (an
+            // sns provenance witness) are deleted BEFORE ciphertext_digest
+            // rows. The sns batch transaction holds FOR UPDATE locks on the
+            // pbs rows it is processing (work acquisition) and
+            // enqueue_upload_task takes FOR KEY SHARE on the pbs row before
+            // inserting a digest row, so this DELETE orders against any
+            // in-flight digest insert: either it waits and the digest DELETE
+            // below removes the just-committed row, or — because the digest
+            // mirror triggers take advisory stripe locks in the opposite
+            // order on both sides — Postgres resolves the collision as a
+            // deadlock and aborts one transaction whole. Both outcomes
+            // converge: an aborted finalization pass re-runs from scratch
+            // (nothing was committed, blocks stay pending), an aborted sns
+            // batch is re-fetched, and a later witness read sees the
+            // committed deletion and skips. With the opposite delete order, a
+            // digest row inserted by a concurrent sns transaction would be
+            // silently resurrected after this cleanup commits and drive a
+            // phantom addCiphertextMaterial publication.
             sqlx::query!(
                 r#"
                 DELETE FROM pbs_computations p
@@ -1648,6 +1665,106 @@ impl Database {
             .collect())
     }
 
+    /// Prunes old, unreferenced, finalized `host_chain_blocks_valid` rows.
+    ///
+    /// The table records one row per observed block and nothing deleted it,
+    /// so it grew without bound (and with it every ancestry probe). Rows are
+    /// deleted only when they are (a) finalized, (b) older than
+    /// [`BLOCKS_VALID_RETENTION`] blocks below the finalized head, and
+    /// (c) referenced by NO branch, bridge or fallback state — so producer
+    /// resolution (which matches old producers by finalization status),
+    /// orphan guards (orphaned rows are never pruned) and bridge/fallback
+    /// readiness checks are unaffected by construction. Most blocks carry no
+    /// FHE activity, so in steady state nearly everything old is prunable.
+    /// Batched to [`BLOCKS_VALID_PRUNE_BATCH`] rows per call.
+    pub async fn prune_finalized_block_history(
+        &self,
+        last_finalized_block: i64,
+    ) -> Result<u64, SqlxError> {
+        let prune_below = last_finalized_block.saturating_sub(BLOCKS_VALID_RETENTION);
+        if prune_below <= 0 {
+            return Ok(0);
+        }
+        let pool = self.pool.read().await.clone();
+        let deleted = sqlx::query!(
+            r#"
+            DELETE FROM host_chain_blocks_valid b
+            WHERE b.ctid IN (
+                SELECT c.ctid
+                FROM host_chain_blocks_valid c
+                WHERE c.chain_id = $1
+                  AND c.block_status = 'finalized'
+                  AND c.block_number < $2
+                  AND NOT EXISTS (
+                      SELECT 1 FROM computations_branch r
+                      WHERE r.host_chain_id = $1
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM pbs_computations_branch r
+                      WHERE r.host_chain_id = $1
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM pbs_computations_branch r
+                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM allowed_handles_branch r
+                      WHERE r.host_chain_id = $1
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM allowed_handles_branch r
+                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ciphertext_digest_branch r
+                      WHERE r.host_chain_id = $1
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ciphertext_digest_branch r
+                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash
+                  )
+                  -- ciphertexts(128)_branch have no hash-leading index; probe
+                  -- through their block_number partial indexes instead.
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ciphertexts_branch r
+                      WHERE r.block_number = c.block_number
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ciphertexts128_branch r
+                      WHERE r.block_number = c.block_number
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bridge_handle_events r
+                      WHERE r.block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM handle_bridged_events r
+                      WHERE r.block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM fallback_granted_events r
+                      WHERE r.block_hash = c.block_hash
+                  )
+                ORDER BY c.block_number ASC
+                LIMIT $3
+            )
+            "#,
+            self.chain_id.as_i64(),
+            prune_below,
+            BLOCKS_VALID_PRUNE_BATCH,
+        )
+        .execute(&pool)
+        .await?
+        .rows_affected();
+        Ok(deleted)
+    }
+
     pub async fn poller_get_last_caught_up_block(
         &self,
         chain_id: ChainId,
@@ -1713,6 +1830,16 @@ impl Database {
         current_parent_hash: &[u8],
         current_block_number: u64,
     ) -> Result<ProducerBlock, SqlxError> {
+        // The recursive walk disambiguates producers among live forks, so it
+        // only needs to cover the un-finalized region near the head; it is
+        // depth-bounded (ANCESTRY_WALK_DEPTH blocks, far above any real
+        // finality lag) so its cost no longer grows with recorded chain
+        // history. Producers below that window sit on the finalized chain by
+        // construction — exactly one non-orphaned row per height — and are
+        // matched by finalization status directly. A pending block older than
+        // the window (finalization stalled for >1024 blocks) would be
+        // unresolvable here, but such a chain is already outside operating
+        // limits.
         let producer_row = sqlx::query!(
             r#"
             WITH RECURSIVE ancestry(block_number, block_hash, parent_hash) AS (
@@ -1724,16 +1851,29 @@ impl Database {
                   ON parent.chain_id = $1
                  AND parent.block_hash = child.parent_hash
                  AND parent.block_number = child.block_number - 1
-                WHERE child.block_number > 0
+                WHERE child.block_number > GREATEST($2::BIGINT - $6::BIGINT, 0)
                   AND parent.block_status <> 'orphaned'
             )
             SELECT c.producer_block_hash, c.block_number
             FROM computations_branch c
-            JOIN ancestry a
-              ON c.producer_block_hash = a.block_hash
-             AND c.block_number IS NOT DISTINCT FROM a.block_number
             WHERE c.host_chain_id = $1
               AND c.output_handle = $5
+              AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM ancestry a
+                        WHERE c.producer_block_hash = a.block_hash
+                          AND c.block_number IS NOT DISTINCT FROM a.block_number
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM host_chain_blocks_valid f
+                        WHERE f.chain_id = $1
+                          AND f.block_hash = c.producer_block_hash
+                          AND f.block_number = c.block_number
+                          AND f.block_status = 'finalized'
+                    )
+              )
             ORDER BY c.block_number DESC
             LIMIT 1
             "#,
@@ -1742,6 +1882,7 @@ impl Database {
             current_block_hash,
             current_parent_hash,
             handle,
+            ANCESTRY_WALK_DEPTH,
         )
         .fetch_optional(tx.deref_mut())
         .await?;
