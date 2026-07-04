@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE handle_bridged_events h\n                SET is_associated = TRUE\n                WHERE h.id IN (\n                    SELECT DISTINCT ON (s.dst_handle) s.id\n                    FROM handle_bridged_events s\n                    WHERE s.dst_handle = ANY($1::bytea[])\n                      AND s.dst_chain_id = $2\n                      AND (\n                            s.block_hash = ''::BYTEA\n                            OR NOT EXISTS (\n                                SELECT 1\n                                FROM host_chain_blocks_valid b\n                                WHERE b.chain_id = s.dst_chain_id\n                                  AND b.block_hash = s.block_hash\n                                  AND b.block_status = 'orphaned'\n                            )\n                      )\n                    ORDER BY s.dst_handle, s.id\n                )\n                RETURNING h.dst_handle AS \"dst_handle!\"\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dst_handle!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "894ce07b542af4d3c7fe3c3db21f7c3eeae2802bb10796ccda496ada241570ac"
+}

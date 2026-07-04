@@ -888,3 +888,97 @@ async fn reorg_keeps_unassociated_and_canonical_bridge_state() {
         "canonical source approval must survive"
     );
 }
+
+/// The same destination handle observed on two forks: retracting the fork
+/// that performed the association must not delete the copy while the sibling
+/// observation survives — the flag transfers to the sibling instead. Once the
+/// sibling's block orphans too, the copy is retracted for real.
+#[tokio::test]
+#[serial(db)]
+async fn reorg_transfers_association_to_surviving_sibling() {
+    let (db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = handle_for_chain(DST_CHAIN_ID, 0x88);
+    let first_hash = vec![0x0C; 32];
+    let second_hash = vec![0x0D; 32];
+
+    // The association was performed from the first fork's observation; the
+    // sibling fork carries the same event, unflagged.
+    seed_bridged_observation(&db, dst_handle.as_slice(), DST_CHAIN_ID, &first_hash, true).await;
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &second_hash,
+        false,
+    )
+    .await;
+    seed_materialization(&db, dst_handle.as_slice(), DST_CHAIN_ID).await;
+
+    run_bridge_cleanup(&db, &[first_hash]).await;
+
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events
+             WHERE dst_handle = $1 AND is_associated",
+            dst_handle.as_slice(),
+        )
+        .await,
+        1,
+        "association flag must transfer to the surviving sibling"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        1,
+        "copy must survive while a sibling observation remains"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        1,
+        "digest must survive while a sibling observation remains"
+    );
+
+    // The sibling's block orphans in a later round: now the copy goes.
+    run_bridge_cleanup(&db, &[second_hash]).await;
+
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events WHERE dst_handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "no observation may remain after both forks orphan"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "copy must be retracted once no observation survives"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "digest must be retracted once no observation survives"
+    );
+}

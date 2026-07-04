@@ -1288,7 +1288,8 @@ impl Database {
         // Confidential bridge: destination-side reorg retraction. The bridge
         // worker sets `is_associated` in the same transaction as the
         // ciphertext copy, so a flagged observation in an orphaned block is
-        // the provenance of a materialization that must be retracted (a
+        // the provenance of a materialization that must be retracted — or
+        // re-attributed to a surviving sibling observation, see below (a
         // fallback-materialized handle is never flagged and its state is
         // compute-pipeline state, cleaned above). Deleting the copied
         // `ciphertext_digest` row cancels a not-yet-sent
@@ -1318,21 +1319,69 @@ impl Database {
             .collect::<Vec<_>>();
 
         if !retracted_dst_handles.is_empty() {
-            sqlx::query!(
-                "DELETE FROM ciphertexts WHERE handle = ANY($1::bytea[])",
-                &retracted_dst_handles as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-
-            sqlx::query!(
-                "DELETE FROM ciphertext_digest
-                 WHERE handle = ANY($1::bytea[]) AND host_chain_id = $2",
+            // The same destination handle can be observed in several blocks
+            // (the HandleBridged event re-included on competing forks). When a
+            // surviving non-orphaned observation exists, the materialized copy
+            // is still canonically justified — deleting it would tear the
+            // ciphertext out from under destination-chain readers until
+            // re-association. Transfer the association flag to one surviving
+            // observation instead (keeping the retraction contract: the copy
+            // is always attributed to a live observation, so a later orphaning
+            // of that block retracts it properly). Only handles with no
+            // surviving observation lose their copy.
+            let transferred = sqlx::query!(
+                r#"
+                UPDATE handle_bridged_events h
+                SET is_associated = TRUE
+                WHERE h.id IN (
+                    SELECT DISTINCT ON (s.dst_handle) s.id
+                    FROM handle_bridged_events s
+                    WHERE s.dst_handle = ANY($1::bytea[])
+                      AND s.dst_chain_id = $2
+                      AND (
+                            s.block_hash = ''::BYTEA
+                            OR NOT EXISTS (
+                                SELECT 1
+                                FROM host_chain_blocks_valid b
+                                WHERE b.chain_id = s.dst_chain_id
+                                  AND b.block_hash = s.block_hash
+                                  AND b.block_status = 'orphaned'
+                            )
+                      )
+                    ORDER BY s.dst_handle, s.id
+                )
+                RETURNING h.dst_handle AS "dst_handle!"
+                "#,
                 &retracted_dst_handles as _,
                 self.chain_id.as_i64(),
             )
-            .execute(tx.deref_mut())
+            .fetch_all(tx.deref_mut())
             .await?;
+
+            let transferred: std::collections::HashSet<Vec<u8>> =
+                transferred.into_iter().map(|r| r.dst_handle).collect();
+            let orphan_only_handles: Vec<Vec<u8>> = retracted_dst_handles
+                .into_iter()
+                .filter(|h| !transferred.contains(h))
+                .collect();
+
+            if !orphan_only_handles.is_empty() {
+                sqlx::query!(
+                    "DELETE FROM ciphertexts WHERE handle = ANY($1::bytea[])",
+                    &orphan_only_handles as _,
+                )
+                .execute(tx.deref_mut())
+                .await?;
+
+                sqlx::query!(
+                    "DELETE FROM ciphertext_digest
+                     WHERE handle = ANY($1::bytea[]) AND host_chain_id = $2",
+                    &orphan_only_handles as _,
+                    self.chain_id.as_i64(),
+                )
+                .execute(tx.deref_mut())
+                .await?;
+            }
         }
 
         // Source-side approvals from orphaned blocks were never consumable
