@@ -1,4 +1,4 @@
-import type { Bytes65Hex, BytesHex, ChecksummedAddress } from '../../types/primitives.js';
+import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint256 } from '../../types/primitives.js';
 import type { Prettify } from '../../types/utils.js';
 import type { EthereumModule } from './types.js';
 
@@ -72,6 +72,32 @@ export type RecoverAddressModuleFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+// hashTypedData
+////////////////////////////////////////////////////////////////////////////////
+
+// Same EIP-712 inputs as `signTypedData`, minus the wallet signer: computes the
+// 32-byte typed-data digest so a raw KMS/coprocessor private key can sign it via
+// `sign({ hash, privateKey })`. Used by the cleartext relayer to synthesize
+// KMS signatures without standing up a `Cleartext*` on-chain verifier.
+export type HashTypedDataParameters = Readonly<{
+  domain: {
+    readonly chainId: Uint256;
+    readonly name: string;
+    readonly verifyingContract: ChecksummedAddress;
+    readonly version: string;
+  };
+  types: Readonly<Record<string, ReadonlyArray<{ name: string; type: string }>>>;
+  primaryType: string;
+  message: Readonly<Record<string, unknown>>;
+}>;
+
+export type HashTypedDataReturnType = BytesHex;
+
+export type HashTypedDataModuleFunction = {
+  hashTypedData(parameters: HashTypedDataParameters): HashTypedDataReturnType;
+};
+
+////////////////////////////////////////////////////////////////////////////////
 // cleartextEthereumModule
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -81,7 +107,8 @@ export type CleartextEthereumModule = EthereumModule &
       SignModuleFunction &
       GeneratePrivateKeyModuleFunction &
       GetPublicKeyModuleFunction &
-      RecoverAddressModuleFunction
+      RecoverAddressModuleFunction &
+      HashTypedDataModuleFunction
   >;
 
 export type CleartextEthereumModuleFactory = () => {

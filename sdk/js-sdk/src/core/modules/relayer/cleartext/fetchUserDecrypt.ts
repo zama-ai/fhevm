@@ -1,61 +1,17 @@
-import type { BytesHex, ChecksummedAddress } from '../../../types/primitives.js';
 import type { FetchUserDecryptResultItem } from '../../../types/relayer.js';
 import type { CleartextEthereumModule } from '../../ethereum/types-ct.js';
 import type { FetchUserDecryptParametersV1, FetchUserDecryptReturnType, RelayerClientWithRuntime } from '../types.js';
 import { remove0x } from '../../../base/string.js';
-import { asUint32BigInt, tryParseUintBigIntString, randomUniqueUints } from '../../../base/uint.js';
+import { randomUniqueUints } from '../../../base/uint.js';
 import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
 import { userDecryptResultToKmsSigncryptedShares } from '../utils.js';
 import { getKmsSignersPrivateKeyMap } from './signers.js';
-
-////////////////////////////////////////////////////////////////////////////////
-
-const userDecryptAbi = [
-  {
-    type: 'function',
-    name: 'userDecrypt',
-    inputs: [
-      {
-        name: 'pairs',
-        type: 'tuple[]',
-        internalType: 'struct HandleContractPair[]',
-        components: [
-          { name: 'handle', type: 'bytes32', internalType: 'bytes32' },
-          {
-            name: 'contractAddress',
-            type: 'address',
-            internalType: 'address',
-          },
-        ],
-      },
-      { name: 'userAddress', type: 'address', internalType: 'address' },
-      { name: 'publicKey', type: 'bytes', internalType: 'bytes' },
-      {
-        name: 'contractAddresses',
-        type: 'address[]',
-        internalType: 'address[]',
-      },
-      {
-        name: 'startTimestamp',
-        type: 'uint256',
-        internalType: 'uint256',
-      },
-      {
-        name: 'durationDays',
-        type: 'uint256',
-        internalType: 'uint256',
-      },
-      { name: 'userSignature', type: 'bytes', internalType: 'bytes' },
-    ],
-    outputs: [
-      { name: 'payload', type: 'bytes', internalType: 'bytes' },
-      { name: 'signers', type: 'address[]', internalType: 'address[]' },
-      { name: 'threshold', type: 'uint256', internalType: 'uint256' },
-      { name: 'extraData', type: 'bytes', internalType: 'bytes' },
-    ],
-    stateMutability: 'view',
-  },
-] as const;
+import {
+  readCleartextExecutorAddress,
+  readKmsSignersAndThreshold,
+  readPlaintexts,
+  xorMaskWithPublicKey,
+} from './plaintextSource.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -68,6 +24,8 @@ export async function fetchUserDecrypt(
   const pairs = payload.handleContractPairs;
   const contractAddresses = payload.kmsDecryptEip712Message.contractAddresses;
 
+  // Replicates CleartextKMSVerifier._requireAllPairsAuthorized: every requested
+  // pair's contract must appear in the EIP-712 authorized contractAddresses list.
   const authCount = contractAddresses.length;
   for (const { contractAddress: c } of pairs) {
     let authorized: boolean = false;
@@ -82,32 +40,33 @@ export async function fetchUserDecrypt(
     }
   }
 
-  const { kmsDecryptEip712Message, kmsDecryptEip712Signer, kmsDecryptEip712Signature } = payload;
+  const { kmsDecryptEip712Message } = payload;
+
+  // Option B: read cleartexts from CleartextFHEVMExecutor.plaintexts and rebuild
+  // the KMS payload off-chain, instead of reading the CleartextKMSVerifier view.
   const trustedClient = getTrustedClient(relayerClient);
-  const res = (await relayerClient.runtime.ethereum.readContract(trustedClient, {
-    abi: userDecryptAbi,
-    address: relayerClient.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    args: [
-      pairs.map((p) => ({
-        handle: p.handle.bytes32Hex,
-        contractAddress: p.contractAddress,
-      })),
-      kmsDecryptEip712Signer,
-      kmsDecryptEip712Message.publicKey,
-      kmsDecryptEip712Message.contractAddresses,
-      _parseUintBigIntString('kmsDecryptEip712Message.startTimestamp', kmsDecryptEip712Message.startTimestamp),
-      _parseUintBigIntString('kmsDecryptEip712Message.durationDays', kmsDecryptEip712Message.durationDays),
-      kmsDecryptEip712Signature,
-    ],
-    functionName: userDecryptAbi[0].name,
-  })) as unknown[];
+  const executorAddress = await readCleartextExecutorAddress(relayerClient, trustedClient);
+  const rawCleartexts = await readPlaintexts(
+    relayerClient,
+    trustedClient,
+    executorAddress,
+    pairs.map((p) => p.handle),
+  );
 
-  const commonKmsSigncryptedSharePayload = res[0] as BytesHex;
+  const maskedCleartexts = xorMaskWithPublicKey(kmsDecryptEip712Message.publicKey, rawCleartexts);
+
+  // extraData: the permit's message.extraData is already asserted equal to the
+  // current KmsSignersContext extraData by the caller (fetchKmsSigncryptedSharesV1
+  // step 9), so reusing it keeps the shares consistent with that context.
+  const extraData = kmsDecryptEip712Message.extraData;
+
+  const commonKmsSigncryptedSharePayload = relayerClient.runtime.ethereum.encode({
+    types: ['uint256[]', 'bytes'],
+    values: [maskedCleartexts, extraData],
+  });
   const commonKmsSigncryptedSharePayloadNo0x = remove0x(commonKmsSigncryptedSharePayload);
-  const signersAddress = res[1] as readonly ChecksummedAddress[];
-  const threshold = asUint32BigInt(res[2]);
-  const extraData = res[3] as BytesHex;
 
+  const { signers: signersAddress, threshold } = await readKmsSignersAndThreshold(relayerClient, trustedClient);
   const signers = getKmsSignersPrivateKeyMap(relayerClient);
 
   const randomSignersAddress = randomUniqueUints(signersAddress.length, Number(threshold)).map(
@@ -128,14 +87,4 @@ export async function fetchUserDecrypt(
   }
 
   return userDecryptResultToKmsSigncryptedShares(result);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-function _parseUintBigIntString(label: string, value: string): bigint {
-  const bn = tryParseUintBigIntString(value);
-  if (bn === undefined) {
-    throw new Error(`${label} is not a valid uint string, got ${JSON.stringify(value)}`);
-  }
-  return bn;
 }

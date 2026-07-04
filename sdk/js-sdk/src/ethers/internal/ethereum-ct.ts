@@ -3,6 +3,8 @@ import type {
   GeneratePrivateKeyReturnType,
   GetPublicKeyParameters,
   GetPublicKeyReturnType,
+  HashTypedDataParameters,
+  HashTypedDataReturnType,
   MnemonicToAccountParameters,
   MnemonicToAccountReturnType,
   RecoverAddressParameters,
@@ -11,6 +13,7 @@ import type {
   SignReturnType,
 } from '../../core/modules/ethereum/types-ct.js';
 import type { BytesHex, ChecksummedAddress } from '../../core/types/primitives.js';
+import type { TypedDataField } from 'ethers';
 import {
   decode,
   encode,
@@ -20,7 +23,7 @@ import {
   recoverTypedDataAddress,
   signTypedData,
 } from './ethereum.js';
-import { SigningKey, HDNodeWallet, Wallet } from 'ethers';
+import { SigningKey, HDNodeWallet, TypedDataEncoder, Wallet } from 'ethers';
 import { sign, recoverAddress } from '../../core/base/sign.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -45,6 +48,18 @@ export const cleartextEthereumModule: CleartextEthereumModuleFactory = () => {
       sign: (parameters: SignParameters): Promise<SignReturnType> => {
         const signature = sign(parameters);
         return Promise.resolve(signature);
+      },
+      hashTypedData: (parameters: HashTypedDataParameters): HashTypedDataReturnType => {
+        // ethers derives the domain separator itself and rejects an EIP712Domain
+        // entry in `types`, so pass only the primary type (mirrors signTypedData).
+        const primaryTypeFields = parameters.types[parameters.primaryType];
+        if (primaryTypeFields === undefined) {
+          throw new Error(`Primary type "${parameters.primaryType}" not found in types`);
+        }
+        const typesToHash: Record<string, TypedDataField[]> = {
+          [parameters.primaryType]: [...primaryTypeFields],
+        };
+        return TypedDataEncoder.hash(parameters.domain, typesToHash, parameters.message) as BytesHex;
       },
       generatePrivateKey: (): GeneratePrivateKeyReturnType => {
         return Wallet.createRandom().privateKey as BytesHex;
