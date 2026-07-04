@@ -18,14 +18,13 @@
 -- remain possible exactly as they were with per-handle locks — Postgres
 -- detects those and the writers' retry paths re-run.
 --
--- The branchless mirror additionally gets the exception isolation the wave1
--- pre-merge review asked for: it fires from the hot legacy ciphertext_digest
--- writers (sns-worker, transaction-sender), and an error in the best-effort
--- branch mirror must not abort the authoritative legacy write. Cancellation
--- and deadlock/serialization states are re-raised so statement_timeout and
--- the writers' retry machinery keep working. The pbs-context mirror stays
--- strict: it fires from branch-row writes, where the branch state IS the
--- payload.
+-- Deliberately NO exception isolation around the mirror bodies: wave-1
+-- branch dual-writes are require-branch-writes strict — a legacy
+-- ciphertext_digest row without its branch mirror would be invisible to the
+-- wave-2 cutover readers, so a mirror failure must abort the legacy write
+-- and surface through the writers' retry machinery (enforced by
+-- test_wave1_digest_mirror_failure_aborts_legacy_digest_write). This also
+-- keeps the bulk cleanup path free of per-row subtransactions.
 --
 -- SET LOCAL lock_timeout is not needed: CREATE OR REPLACE FUNCTION does not
 -- lock the tables the triggers are attached to.
@@ -44,9 +43,7 @@ BEGIN
     -- triggers can acquire ciphertext_digest_branch row locks in opposite
     -- order and deadlock. Striped (mod 256) so bulk transactions hold a
     -- bounded number of advisory locks. Transaction-scoped: released
-    -- automatically at commit/rollback. Kept OUTSIDE the exception block: the
-    -- lock must survive the subtransaction to keep ordering with the
-    -- pbs-context trigger.
+    -- automatically at commit/rollback.
     PERFORM pg_advisory_xact_lock(
         hashtextextended(
             COALESCE(NEW.host_chain_id, OLD.host_chain_id)::text
@@ -62,13 +59,6 @@ BEGIN
     );
 
     IF TG_OP = 'DELETE' THEN
-        -- Deliberately OUTSIDE the exception block, for two reasons: bulk
-        -- reorg cleanup fires this arm once per deleted legacy row, and an
-        -- EXCEPTION clause would open one subtransaction per row (subxid
-        -- cache overflow past 64 -> pg_subtrans SLRU contention for the whole
-        -- instance); and a swallowed DELETE failure would leave a stale
-        -- branch row behind with no later legacy write to repair it. A
-        -- failure here aborts the deleting transaction, which retries.
         DELETE FROM ciphertext_digest_branch
          WHERE handle = OLD.handle
            AND host_chain_id = OLD.host_chain_id
@@ -77,90 +67,72 @@ BEGIN
         RETURN OLD;
     END IF;
 
-    BEGIN
-        IF TG_OP = 'UPDATE'
-               AND (
-                    OLD.handle IS DISTINCT FROM NEW.handle
-                    OR OLD.host_chain_id IS DISTINCT FROM NEW.host_chain_id
-               )
-            THEN
-                DELETE FROM ciphertext_digest_branch
-                 WHERE handle = OLD.handle
-                   AND host_chain_id = OLD.host_chain_id
-                   AND producer_block_hash = ''::BYTEA
-                   AND block_hash = ''::BYTEA;
-            END IF;
+    IF TG_OP = 'UPDATE'
+       AND (
+            OLD.handle IS DISTINCT FROM NEW.handle
+            OR OLD.host_chain_id IS DISTINCT FROM NEW.host_chain_id
+       )
+    THEN
+        DELETE FROM ciphertext_digest_branch
+         WHERE handle = OLD.handle
+           AND host_chain_id = OLD.host_chain_id
+           AND producer_block_hash = ''::BYTEA
+           AND block_hash = ''::BYTEA;
+    END IF;
 
-            SELECT COUNT(*)
-              INTO _context_count
+    SELECT COUNT(*)
+      INTO _context_count
+      FROM pbs_computations_branch
+     WHERE host_chain_id = NEW.host_chain_id
+       AND handle = NEW.handle;
+
+    IF _context_count = 0 THEN
+        PERFORM upsert_ciphertext_digest_branch_from_legacy(
+            NEW,
+            ''::BYTEA,
+            NULL,
+            ''::BYTEA
+        );
+    ELSE
+        FOR _context IN
+            SELECT DISTINCT producer_block_hash, block_number, block_hash
               FROM pbs_computations_branch
              WHERE host_chain_id = NEW.host_chain_id
-               AND handle = NEW.handle;
+               AND handle = NEW.handle
+        LOOP
+            PERFORM upsert_ciphertext_digest_branch_from_legacy(
+                NEW,
+                _context.producer_block_hash,
+                _context.block_number,
+                _context.block_hash
+            );
+        END LOOP;
 
-            IF _context_count = 0 THEN
-                PERFORM upsert_ciphertext_digest_branch_from_legacy(
-                    NEW,
-                    ''::BYTEA,
-                    NULL,
-                    ''::BYTEA
-                );
-            ELSE
-                FOR _context IN
-                    SELECT DISTINCT producer_block_hash, block_number, block_hash
-                      FROM pbs_computations_branch
-                     WHERE host_chain_id = NEW.host_chain_id
-                       AND handle = NEW.handle
-                LOOP
-                    PERFORM upsert_ciphertext_digest_branch_from_legacy(
-                        NEW,
-                        _context.producer_block_hash,
-                        _context.block_number,
-                        _context.block_hash
-                    );
-                END LOOP;
-
-                IF EXISTS (
-                    SELECT 1
-                      FROM pbs_computations_branch
-                     WHERE host_chain_id = NEW.host_chain_id
-                       AND handle = NEW.handle
-                       AND (
-                            producer_block_hash <> ''::BYTEA
-                            OR block_hash <> ''::BYTEA
-                       )
-                )
-                AND NOT EXISTS (
-                    SELECT 1
-                      FROM pbs_computations_branch
-                     WHERE host_chain_id = NEW.host_chain_id
-                       AND handle = NEW.handle
-                       AND producer_block_hash = ''::BYTEA
-                       AND block_hash = ''::BYTEA
-                ) THEN
-                    DELETE FROM ciphertext_digest_branch
-                     WHERE handle = NEW.handle
-                       AND host_chain_id = NEW.host_chain_id
-                       AND producer_block_hash = ''::BYTEA
-                       AND block_hash = ''::BYTEA;
-                END IF;
-            END IF;
-    EXCEPTION
-        WHEN OTHERS THEN
-            -- Cancellation must still abort (statement_timeout self-heal),
-            -- and deadlock/serialization must reach the writers' retry
-            -- machinery; everything else degrades to a warning so the
-            -- authoritative legacy write commits. Applies to INSERT/UPDATE
-            -- mirroring only: those fire from the hot legacy writers and a
-            -- skipped upsert is repaired by the next legacy write.
-            IF SQLSTATE IN ('57014', '40P01', '40001') THEN
-                RAISE;
-            END IF;
-            RAISE WARNING
-                'ciphertext_digest branch mirror skipped for handle %: % (%)',
-                encode(COALESCE(NEW.handle, OLD.handle), 'hex'),
-                SQLERRM,
-                SQLSTATE;
-    END;
+        IF EXISTS (
+            SELECT 1
+              FROM pbs_computations_branch
+             WHERE host_chain_id = NEW.host_chain_id
+               AND handle = NEW.handle
+               AND (
+                    producer_block_hash <> ''::BYTEA
+                    OR block_hash <> ''::BYTEA
+               )
+        )
+        AND NOT EXISTS (
+            SELECT 1
+              FROM pbs_computations_branch
+             WHERE host_chain_id = NEW.host_chain_id
+               AND handle = NEW.handle
+               AND producer_block_hash = ''::BYTEA
+               AND block_hash = ''::BYTEA
+        ) THEN
+            DELETE FROM ciphertext_digest_branch
+             WHERE handle = NEW.handle
+               AND host_chain_id = NEW.host_chain_id
+               AND producer_block_hash = ''::BYTEA
+               AND block_hash = ''::BYTEA;
+        END IF;
+    END IF;
 
     RETURN NEW;
 END;
