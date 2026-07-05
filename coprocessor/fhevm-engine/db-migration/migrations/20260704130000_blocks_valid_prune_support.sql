@@ -11,6 +11,5 @@ CREATE INDEX IF NOT EXISTS idx_handle_bridged_events_block_hash
 CREATE INDEX IF NOT EXISTS idx_fallback_granted_events_block_hash
     ON fallback_granted_events (block_hash);
 -- The pruner's candidate scan walks finalized rows below the retention
--- horizon in block order.
-CREATE INDEX IF NOT EXISTS idx_host_chain_blocks_valid_chain_number
-    ON host_chain_blocks_valid (chain_id, block_number);
+-- horizon in block order; that is already served by
+-- idx_host_chain_blocks_valid_block_number (20260513120000).
