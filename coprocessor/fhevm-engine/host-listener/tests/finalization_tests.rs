@@ -104,6 +104,57 @@ async fn finalization_refuses_mismatched_parent_and_stops_batch() {
     }
 }
 
+/// An RPC fetch failure mid-batch must STOP the batch, not skip the height:
+/// behind the gap the parent-linkage check has no finalized predecessor and
+/// passes vacuously, so a poisoned RPC that errors at height 3 and serves a
+/// fork child at height 4 would finalize the fork and orphan the true chain.
+/// The prefix fetched before the gap is still safe and finalizes.
+#[tokio::test]
+#[serial(db)]
+async fn finalization_stops_batch_at_fetch_failure() {
+    let (mut db, _inst) = fresh_db(CHAIN_ID).await;
+    let (a1, b2) = (b32(0xA1), b32(0xB2));
+    let (b3, c3, b4, c4) = (b32(0xB3), b32(0xC3), b32(0xB4), b32(0xC4));
+
+    seed_block(&db, 1, &a1, &b32(0xA0), "finalized").await;
+    seed_block(&db, 2, &b2, &a1, "pending").await; // true chain
+    seed_block(&db, 3, &b3, &b2, "pending").await; // true chain
+    seed_block(&db, 3, &c3, &b32(0x0F), "pending").await; // fork sibling
+    seed_block(&db, 4, &b4, &b3, "pending").await; // true chain
+    seed_block(&db, 4, &c4, &c3, "pending").await; // fork child
+
+    // Height 2 answers honestly, height 3 errors, height 4 serves the fork.
+    let served = [(2u64, b2.clone()), (4u64, c4.clone())];
+    update_finalized_blocks_aux(&mut db, 4, 0, |n| {
+        let hash = served
+            .iter()
+            .find(|(num, _)| *num == n)
+            .map(|(_, h)| alloy::primitives::FixedBytes::<32>::from_slice(h));
+        async move {
+            hash.ok_or_else(|| anyhow::anyhow!("rpc unavailable for {n}"))
+        }
+    })
+    .await;
+
+    assert_eq!(
+        block_status(&db, &b2).await.as_deref(),
+        Some("finalized"),
+        "prefix before the gap must still finalize"
+    );
+    for (hash, what) in [
+        (&b3, "true block at the gap"),
+        (&c3, "fork sibling at the gap"),
+        (&b4, "true child behind the gap"),
+        (&c4, "fork child behind the gap"),
+    ] {
+        assert_eq!(
+            block_status(&db, hash).await.as_deref(),
+            Some("pending"),
+            "{what} must stay pending after a fetch failure"
+        );
+    }
+}
+
 /// Pruning removes only old finalized rows that nothing references: rows
 /// referenced by branch state, orphaned markers, and everything within the
 /// retention window stay.

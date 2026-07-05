@@ -777,9 +777,15 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                 error!(
                     block_number,
                     ?err,
-                    "Failed to fetch block for finalization"
+                    "Failed to fetch block for finalization, \
+                     stopping the batch at the gap"
                 );
-                continue;
+                // STOP, don't skip: a gap at this height would let the next
+                // height's parent-linkage check pass vacuously (no finalized
+                // predecessor), the same hazard the refusal branch below
+                // stops the batch for. The fetched prefix is still safe to
+                // finalize; the rest retries next pass.
+                break;
             }
         }
     }
