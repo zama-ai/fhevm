@@ -158,6 +158,7 @@ pub async fn run_fhevm_relayer(
             bouncer_throttlers,
             host_chain_id_checker,
             signature_prechecker,
+            settings.solana_proof.as_ref(),
         )
         .await;
 

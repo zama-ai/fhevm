@@ -132,16 +132,17 @@ pub async fn run(
     }
 }
 
-/// Resolve a durable `fhe_eval` step's output ACL record from the instruction's accounts.
+/// Resolve a durable `fhe_eval` step's output `EncryptedValue` PDA from the
+/// instruction's accounts.
 ///
-/// `remaining_index` (the program's `output_acl_record_index`) is relative to
+/// `remaining_index` (the program's `output_encrypted_value_index`) is relative to
 /// `remaining_accounts`, which follow the 7 named `fhe_eval` accounts — payer,
 /// compute_subject, app_account_authority, host_config, system_program, then
 /// `#[event_cpi]`'s event_authority + program (see `FheEval` in fhe_eval.rs). Returns
 /// `None` when the index is out of range; the caller treats that as a hard problem, since
 /// the durable output would otherwise never be marked allowed and never materialize.
 #[cfg(feature = "solana-reconstruct")]
-fn fhe_eval_durable_acl_record(
+fn fhe_eval_durable_encrypted_value(
     accounts: &[[u8; 32]],
     remaining_index: u16,
 ) -> Option<[u8; 32]> {
@@ -567,11 +568,10 @@ fn reconstruct_context(
 /// `remaining_accounts` entry) — matching what the program's bind emits, so
 /// `is_allowed` and the fetch row land identically.
 ///
-/// Returns `None` if the slot's derivation context is not yet cached. Direct
-/// zama-host compute/bind instructions, `allow_for_decryption`,
-/// `commit_handle_material`, and token fetches are not yet reconstructed for
-/// ingestion (follow-ups); the caller falls back to emit-decode when this yields
-/// nothing.
+/// Returns `None` if the slot's derivation context is not yet cached.
+/// `EncryptedValue` instructions and token fetches are not yet reconstructed
+/// for ingestion (follow-ups); the caller falls back to emit-decode when this
+/// yields nothing.
 #[cfg(feature = "solana-reconstruct")]
 async fn reconstruct_events_for_insert(
     config: &SolanaGrpcListenerConfig,
@@ -579,60 +579,26 @@ async fn reconstruct_events_for_insert(
     slot: u64,
     slot_bank_hash: &HashMap<u64, [u8; 32]>,
     slot_clock_ts: &HashMap<u64, i64>,
-    rpc: &RpcClient,
+    _rpc: &RpcClient,
 ) -> Option<Vec<crate::solana_adapter::SolanaHostEvent>> {
-    use crate::generated::{decode_zama_host_instruction, ZamaHostInstruction};
     use crate::solana_adapter::SolanaHostEvent;
     use crate::solana_reconstruct::{
-        decode_fhe_eval_args, parse_acl_record_handle,
-        reconstruct_acl_record_bound_fetch, reconstruct_fhe_eval_steps,
-        reconstruct_instruction_events,
+        decode_fhe_eval_args, reconstruct_acl_record_bound_fetch,
+        reconstruct_fhe_eval_steps,
     };
-    use solana_sdk::pubkey::Pubkey;
 
-    // compute_subject is the 2nd named fhe_eval account. (Durable ACL records live in
-    // remaining_accounts; resolved via fhe_eval_durable_acl_record.)
+    // compute_subject is the 2nd named fhe_eval account. (Durable EncryptedValue
+    // PDAs live in remaining_accounts; resolved via
+    // fhe_eval_durable_encrypted_value.)
     const COMPUTE_SUBJECT_INDEX: usize = 1;
-    // commit_handle_material's acl_record (account 3): its emitted handle comes from
-    // that record's account state, so it must be read on-chain.
-    const COMMIT_ACL_RECORD_INDEX: usize = 3;
 
     let ctx = reconstruct_context(config, slot, slot_bank_hash, slot_clock_ts)?;
 
-    // Pre-read acl_record.handle for any commit_handle_material in this tx: the
-    // handle is account state, not in the instruction args. Restart-safe RPC read,
-    // mirroring the HostConfig startup fetch.
-    let mut acl_handles: HashMap<[u8; 32], [u8; 32]> = HashMap::new();
-    for ix in instructions {
-        if ix.program != config.program_id {
-            continue;
-        }
-        let Some(ZamaHostInstruction::CommitHandleMaterial(_)) =
-            decode_zama_host_instruction(&ix.data)
-        else {
-            continue;
-        };
-        let Some(acl_record) =
-            ix.accounts.get(COMMIT_ACL_RECORD_INDEX).copied()
-        else {
-            continue;
-        };
-        if acl_handles.contains_key(&acl_record) {
-            continue;
-        }
-        match rpc.get_account(&Pubkey::from(acl_record)).await {
-            Ok(account) => {
-                if let Some(handle) = parse_acl_record_handle(&account.data) {
-                    acl_handles.insert(acl_record, handle);
-                }
-            }
-            Err(err) => warn!(
-                slot,
-                error = %err,
-                "reconstruct: failed to read acl_record for commit_handle_material"
-            ),
-        }
-    }
+    // Pre-instruction MMR leaf counts for durable outputs that SUPERSEDE an
+    // existing lineage (needed to recompute their bound handles). Not sourced
+    // yet — the walk returns `None` for such plans and the caller falls back
+    // to emit-decode; create-case durable outputs (sequence 0) need no entry.
+    let lineage_leaf_counts: HashMap<[u8; 32], u64> = HashMap::new();
 
     let mut events: Vec<SolanaHostEvent> = Vec::new();
     for ix in instructions {
@@ -645,22 +611,27 @@ async fn reconstruct_events_for_insert(
                 .get(COMPUTE_SUBJECT_INDEX)
                 .copied()
                 .unwrap_or([0u8; 32]);
-            let Some(steps) = reconstruct_fhe_eval_steps(&plan, subject, &ctx)
-            else {
+            let Some(steps) = reconstruct_fhe_eval_steps(
+                &plan,
+                subject,
+                &ctx,
+                &lineage_leaf_counts,
+            ) else {
                 continue;
             };
             for step in steps {
                 let handle = compute_result_handle(&step.event);
                 events.push(step.event);
                 if let (Some(index), Some(handle)) =
-                    (step.durable_acl_record_index, handle)
+                    (step.durable_encrypted_value_index, handle)
                 {
-                    if let Some(acl_record) =
-                        fhe_eval_durable_acl_record(&ix.accounts, index)
+                    if let Some(encrypted_value) =
+                        fhe_eval_durable_encrypted_value(&ix.accounts, index)
                     {
                         events.push(SolanaHostEvent::FinalizedAccountFetch(
                             reconstruct_acl_record_bound_fetch(
-                                acl_record, handle,
+                                encrypted_value,
+                                handle,
                             ),
                         ));
                     } else {
@@ -673,21 +644,11 @@ async fn reconstruct_events_for_insert(
                             remaining_index = index,
                             accounts = ix.accounts.len(),
                             handle = %bs58::encode(handle).into_string(),
-                            "reconstruct: fhe_eval durable bind acl_record out of range; \
+                            "reconstruct: fhe_eval durable bind encrypted_value out of range; \
                              output handle will not be allowed/materialized"
                         );
                     }
                 }
-            }
-        } else if let Some(instruction) = decode_zama_host_instruction(&ix.data)
-        {
-            if let Some(evs) = reconstruct_instruction_events(
-                &instruction,
-                &ix.accounts,
-                &ctx,
-                &acl_handles,
-            ) {
-                events.extend(evs);
             }
         }
     }
@@ -704,14 +665,13 @@ fn compute_result_handle(
         E::FheTernaryOp(e) => Some(e.result),
         E::TrivialEncrypt(e) => Some(e.result),
         E::FheRand(e) => Some(e.result),
-        E::FheRandBounded(e) => Some(e.result),
-        E::FinalizedAccountFetch(_) | E::AclAllowed(_) => None,
+        E::FinalizedAccountFetch(_) => None,
     }
 }
 
 #[cfg(all(test, feature = "solana-reconstruct"))]
 mod fhe_eval_acl_tests {
-    use super::fhe_eval_durable_acl_record;
+    use super::fhe_eval_durable_encrypted_value;
 
     fn acct(n: u8) -> [u8; 32] {
         [n; 32]
@@ -725,14 +685,20 @@ mod fhe_eval_acl_tests {
         // nothing, and silently dropped the allow-fetch — leaving the output handle
         // unmaterialized. This pins the base at 7.
         let accounts: Vec<[u8; 32]> = (0..8).map(acct).collect();
-        assert_eq!(fhe_eval_durable_acl_record(&accounts, 0), Some(acct(7)));
+        assert_eq!(
+            fhe_eval_durable_encrypted_value(&accounts, 0),
+            Some(acct(7))
+        );
     }
 
     #[test]
     fn output_after_input_acl_records_resolves() {
         // A durable input ACL record at 7 and the durable output at 8 (remaining_index 1).
         let accounts: Vec<[u8; 32]> = (0..9).map(acct).collect();
-        assert_eq!(fhe_eval_durable_acl_record(&accounts, 1), Some(acct(8)));
+        assert_eq!(
+            fhe_eval_durable_encrypted_value(&accounts, 1),
+            Some(acct(8))
+        );
     }
 
     #[test]
@@ -740,6 +706,6 @@ mod fhe_eval_acl_tests {
         // Only the 7 named accounts, no remaining: a durable bind here is a layout drift
         // the caller must surface, not silently drop.
         let accounts: Vec<[u8; 32]> = (0..7).map(acct).collect();
-        assert_eq!(fhe_eval_durable_acl_record(&accounts, 0), None);
+        assert_eq!(fhe_eval_durable_encrypted_value(&accounts, 0), None);
     }
 }

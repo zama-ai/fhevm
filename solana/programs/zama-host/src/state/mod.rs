@@ -1344,34 +1344,6 @@ pub fn computed_rand_handle(seed: [u8; 16], fhe_type: u8, chain_id: u64) -> [u8;
     result
 }
 
-/// Deterministically derives a bounded-random ciphertext handle from the emitted seed.
-pub fn computed_rand_bounded_handle(
-    upper_bound: [u8; 32],
-    seed: [u8; 16],
-    fhe_type: u8,
-    chain_id: u64,
-) -> [u8; 32] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let fhe_type_bytes = [fhe_type];
-    let mut result = keccak_hashv(&[
-        COMPUTATION_DOMAIN_SEPARATOR,
-        &[4],
-        &upper_bound,
-        &fhe_type_bytes,
-        &seed,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-    ])
-    .to_bytes();
-
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(&chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
-    result
-}
-
 /// Returns the latest prior bank hash.
 ///
 /// Handle derivation must fail closed when the runtime cannot provide the

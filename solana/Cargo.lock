@@ -4967,6 +4967,7 @@ dependencies = [
  "solana-sdk",
  "solana-sha256-hasher",
  "zama-host",
+ "zama-solana-acl",
 ]
 
 [[package]]

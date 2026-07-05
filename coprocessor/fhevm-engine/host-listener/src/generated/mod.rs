@@ -8,6 +8,8 @@ pub mod zama_host_events {
     include!(concat!(env!("OUT_DIR"), "/zama_host_events.rs"));
 }
 
+// Codegen shares one Cursor helper set across files; not every file uses all of it.
+#[allow(dead_code)]
 pub mod confidential_token_events {
     include!(concat!(env!("OUT_DIR"), "/confidential_token_events.rs"));
 }
@@ -16,6 +18,7 @@ pub mod solana_abi_schema_hashes {
     include!(concat!(env!("OUT_DIR"), "/solana_abi_schema_hashes.rs"));
 }
 
+#[allow(dead_code, unused_variables)]
 pub mod zama_host_instructions {
     include!(concat!(env!("OUT_DIR"), "/zama_host_instructions.rs"));
 }
@@ -30,9 +33,9 @@ pub use solana_abi_schema_hashes::{
 };
 pub use zama_host_events::{
     anchor_event_discriminator, decode_anchor_cpi_event, decode_anchor_event,
-    AclAllowedEvent, FheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent,
-    FheRandEvent, FheTernaryOpCode, FheTernaryOpEvent, TrivialEncryptEvent,
-    ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE, EVENT_VERSION,
+    FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, FheTernaryOpCode,
+    FheTernaryOpEvent, TrivialEncryptEvent, ZamaHostEvent,
+    ANCHOR_EVENT_IX_TAG_LE, EVENT_VERSION,
 };
 pub use zama_host_instructions::{
     decode_zama_host_instruction, ZamaHostInstruction,

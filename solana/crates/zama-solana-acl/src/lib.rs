@@ -224,7 +224,12 @@ pub fn authorize_public(
 ) -> Result<(), AclError> {
     let commitment =
         public_decrypt_leaf_commitment(encrypted_value_account, proof.leaf_index, handle);
-    verify_leaf(value, commitment, proof, AclError::PublicDecryptProofInvalid)
+    verify_leaf(
+        value,
+        commitment,
+        proof,
+        AclError::PublicDecryptProofInvalid,
+    )
 }
 
 fn verify_leaf(
@@ -272,7 +277,12 @@ mod tests {
         }
 
         fn append(&mut self, commitment: [u8; 32]) {
-            mmr_append(&mut self.value.peaks, &mut self.value.leaf_count, commitment).unwrap();
+            mmr_append(
+                &mut self.value.peaks,
+                &mut self.value.leaf_count,
+                commitment,
+            )
+            .unwrap();
             self.leaves.push(commitment);
         }
 

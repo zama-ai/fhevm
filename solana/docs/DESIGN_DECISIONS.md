@@ -127,7 +127,11 @@ KMS witness decoders, fixture encoders, listener expectations, and docs together
 
 ## DD-005: Public Decrypt Is A Post-Birth Release
 
-Status: adopted
+Status: **superseded** by DD-032 (`allow_for_decryption` and the `AclRecord.public_decrypt` flag are
+deleted; public release is now `make_handle_public`, an exact-handle `PublicDecryptLeaf` sealed into
+the `EncryptedValue` MMR)
+
+Status (superseded): adopted
 
 Context:
 
@@ -158,29 +162,32 @@ decryptability state:
 
 ## DD-006: Material Commitment Is Separate From ACL Authorization
 
-Status: adopted
+Status: **superseded** by DD-031 (`HandleMaterialCommitment` deleted; materiality moved to the
+gateway's `CiphertextCommits`)
 
 Context:
 
 An ACL record can prove who may use or decrypt a handle. It does not prove that ciphertext material
 is available, bound to the right key, or ready for KMS release.
 
-Decision:
+Decision (superseded):
 
 Use host-owned `HandleMaterialCommitment` accounts, committed by the configured material authority
 for supported host-chain handles. Seal the material commitment pubkey, hash, and key id onto the ACL
 record.
 
-Rationale:
+Rationale (superseded):
 
 This lets KMS verify both authorization and decryptability without trusting app-local state or
 events.
 
-Consequences:
+Consequences (superseded):
 
 Public decrypt, certified disclosure, and burn redemption must verify the ACL record and material
 commitment agree. Durable archival and compaction rules for ACL/material evidence remain
 product-open.
+
+Why superseded: see DD-031.
 
 ## DD-007: External Inputs Verify Against An On-Chain secp256k1 Coprocessor Attestation (verify, not bind)
 
@@ -1014,6 +1021,191 @@ Open for debate:
 
 Revisit `verifyProofRequestV2` as a coordinated multi-step change when a 2nd non-EVM chain or an
 EVM-migration lands.
+
+## DD-031: Materiality Moves To The Gateway's `CiphertextCommits` (DD-006 revision)
+
+Status: adopted — supersedes DD-006
+
+Context:
+
+DD-006 put materiality (does ciphertext material exist, is it bound to the right key, is it ready for
+KMS release) into host-owned `HandleMaterialCommitment` accounts sealed onto the ACL record. The
+`EncryptedValue` + MMR rewrite (DD-032) removes the per-handle ACL record this sealed onto.
+
+Decision:
+
+Delete the `HandleMaterialCommitment` subsystem (`commit_handle_material`, the material authority
+config, and the sealed-commitment fields) entirely. Ciphertext material commitments belong to the
+gateway's `CiphertextCommits`, where the coprocessor already registers Solana handles — not to host
+ACL state.
+
+Rationale (from the rewrite's commit message, verbatim intent): host ACL state answers "who may use or
+decrypt this handle"; whether the ciphertext material itself is available and bound to the right key
+is a gateway-side concern the coprocessor already tracks, so duplicating it on-chain on Solana added a
+second source of truth for no benefit.
+
+Consequences:
+
+KMS public-decrypt admission no longer checks a sealed material commitment on-chain; it relies on the
+gateway's `CiphertextCommits` for materiality and on the `EncryptedValue` MMR (DD-032) for
+authorization. `HandleMaterialCommitmentWitness` is deleted from the KMS connector SDK.
+
+## DD-032: `EncryptedValue` + MMR Replaces Keyed-Nonce `AclRecord` (RFC-024)
+
+Status: adopted — supersedes DD-005's `AclRecord.public_decrypt` model and the keyed-nonce ACL shape
+referenced throughout DD-004–DD-008
+
+Context:
+
+The original ACL model (RFC-024) minted a fresh, keyed-nonce `AclRecord` PDA per handle birth.
+Superseding a handle meant superseding its ACL record's address, which complicated stable addressing
+for indexers, apps, and historical decrypt (an old handle's authorization evidence disappeared once its
+record was superseded).
+
+Decision:
+
+One stable, `zama-host`-owned `EncryptedValue` PDA per logical encrypted value (seeds
+`["encrypted-value", value_key]`), reused across every handle update. A handle update supersedes the
+previous handle by sealing one `HistoricalAccessLeaf` per `ACL_ROLE_USE` subject into an on-account
+SHA-256 Merkle Mountain Range (peaks + leaf count only — the MMR never stores the full leaf history
+on-chain). Public decrypt is an exact-handle `PublicDecryptLeaf`, so publicness never survives a handle
+update (there is no live public flag to leak across updates — see the connector-side rationale in the
+kms-connector/sdk commit message). New instructions: `create_encrypted_value`, `allow_subjects`,
+`update_encrypted_value(new_handle, previous_handle, previous_subjects)`, `make_handle_public`. Deleted:
+`AclRecord`/`AclPermission` and their nonce-sequence machinery, the legacy single-op instructions
+(`fhe_binary_op*`, `fhe_ternary_op*`, `fhe_rand*`, `trivial_encrypt_and_bind` — `fhe_eval` is now the
+only compute path), and `allow_for_decryption`.
+
+Rationale:
+
+Stable addressing means indexers, apps, and CPI callers reference one PDA for a logical value's whole
+lifetime instead of re-deriving a new one per birth. The MMR gives historical/public decrypt a
+verifiable, compact (peaks-only) proof of past authorization state without keeping every past ACL
+record alive. The `previous_handle`/`previous_subjects` args on `update_encrypted_value` are verified
+against account state — redundant on-chain, but they make every transaction independently
+interpretable, so indexers reconstruct MMR leaves statelessly from instruction data alone (see DD-033).
+The shared `zama_solana_acl` crate (byte-identical MMR math and account codec) is the single source of
+truth used by `zama-host`, the relayer proof service (DD-035), and the KMS connector, so host↔KMS
+lockstep is type-level rather than a convention both sides have to keep in sync by hand.
+
+No "RFC-024 option F" or similarly labeled alternatives-considered note was found in the commit history
+or code comments for this specific redesign; RFC-024 itself is the ACL/EncryptedValue spec being
+implemented here (a same-numbered but unrelated `execute_frame` batching sketch is referenced
+separately in DD-017/DD-023 and is not this decision).
+
+Consequences:
+
+`fhe_eval` operand/output authorization now targets `EncryptedValue` accounts (canonical PDA +
+`current_handle` + `ACL_ROLE_USE`) instead of `AclRecord`. Confidential-token's per-rotation balance
+address prediction (nonce counters, `balance_acl_record`) disappears — `ConfidentialTokenAccount` now
+just points at one stable `balance_encrypted_value`. `EVM_PARITY.md`'s ACL/material rows need updating
+to match (tracked as part of this same change).
+
+## DD-033: No ACL-Lifecycle Events — Self-Describing Args + Instruction-Replay Indexing
+
+Status: adopted
+
+Context:
+
+The four `EncryptedValue` instructions could emit Anchor events (`emit!`/`emit_cpi!`) the way
+compute-step events do, or stay event-free and let consumers decode instruction data instead.
+
+Decision:
+
+The four `EncryptedValue` instructions (`create_encrypted_value`, `allow_subjects`,
+`update_encrypted_value`, `make_handle_public`) emit no Anchor events by design. The host-listener
+(coprocessor) and the relayer's MMR proof service both decode them directly from transaction
+instruction data — including inner/CPI instructions, since confidential-token and other app programs
+invoke them via CPI — rather than subscribing to emitted events. `update_encrypted_value`'s
+`previous_handle`/`previous_subjects` args are self-describing: verified against account state
+on-chain (redundant there) specifically so every transaction is independently interpretable off-chain,
+letting indexers reconstruct MMR leaves statelessly from instruction data alone, in replay order,
+without reading account state first. Compute-step (`fhe_eval`) events are unchanged by this decision.
+
+Rationale:
+
+`DESIGN_DECISIONS.md` (DD-004 context) already notes that plain `emit!` logs can be truncated and
+Anchor `emit_cpi!` adds nested CPI frames; avoiding events for a lifecycle that must survive CPI and be
+replayed byte-for-byte from cold RPC history (the relayer proof service ingests from
+`getSignaturesForAddress`/`getTransaction` alone, see DD-035) sidesteps both concerns for this
+particular subsystem. No further code-comment rationale beyond this was found for the CPI-depth angle
+specifically; `EVM_PARITY.md` separately notes `fhe_eval`'s own step batching is bounded partly to
+limit CPI depth (DD-008), which is a related but distinct concern from why ACL lifecycle avoids events.
+
+Consequences:
+
+New coprocessor allow reasons: `encrypted_value_created`, `handle_superseded`, `handle_made_public`,
+`subject_allowed`. `make_handle_public`'s leaf handle is derived from replay order alone (no event
+payload to read it from). The host-listener's `solana_reconstruct.rs` decode arms and the relayer's
+`solana_proof::decode` module both parse raw instruction data (Anchor discriminators + borsh args) for
+these four instructions instead of dispatching on event types.
+
+## DD-034: Eager Compute Scheduling For Solana (Q11 Option A)
+
+Status: adopted
+
+Context:
+
+Under the old model, ACL "allow" signals gated whether the coprocessor would schedule an FHE
+computation at all. With handles now living on stable, reusable `EncryptedValue` PDAs, that gate no
+longer maps cleanly onto MMR-based historical authorization.
+
+Decision:
+
+Solana computations are inserted eager/schedulable immediately. Allow signals no longer gate FHE
+computation scheduling — only decrypt availability. The finalized-account fetcher (re-reading
+`EncryptedValue` accounts) remains the sole decrypt-release finality gate.
+
+Rationale:
+
+Reorg unwind stays unimplemented on the Solana listener path (DD-025/DD-028 note the same open gap for
+block-status handling generally). Decrypt-release finality is the stated safety net for eager
+scheduling: a minority-fork computation is wasted work — it can be scheduled and even executed
+speculatively — but it is never released as a wrong decrypt, because decrypt release re-reads the
+finalized account rather than trusting the eager schedule. No further rationale beyond this
+wasted-work-not-wrong-decrypt argument was found in the commit history for why "Option A" specifically
+(vs. gating scheduling on some other signal) was chosen over alternatives.
+
+Consequences:
+
+Coprocessor scheduling and decrypt availability are decoupled for Solana; a computation can run before
+its ACL evidence is durably finalized, but nothing can be decrypted until the finalized
+`EncryptedValue` account is re-read and agrees.
+
+## DD-035: Relayer-Colocated, Untrusted Solana MMR Proof Service
+
+Status: adopted
+
+Context:
+
+Historical and public decrypts need an MMR inclusion proof against `EncryptedValue`'s on-account
+peaks. Building that proof requires replaying instruction history — work that belongs somewhere
+between the chain and the KMS connector.
+
+Decision:
+
+Colocate the proof-builder with the relayer (`relayer/src/solana_proof`) rather than making it its own
+service or putting it in the KMS connector. It ingests the four `zama-host` `EncryptedValue`
+instructions by replaying plain RPC (`getSignaturesForAddress` + `getTransaction`, inner instructions
+included) using ingestion/proof logic layered on the same `zama_solana_acl` crate `zama-host` uses
+(DD-032), and exposes an interim internal HTTP endpoint (`GET /internal/solana/mmr-proof`) until the
+Solana user-decrypt path lands and can call `build_proof` in-process instead.
+
+Rationale (verbatim from the commit message): this service is in the same trust class as the relayer
+already occupies — availability-critical, but never an authorization anchor. The KMS connector
+re-verifies every proof against live finalized on-chain peaks (DD-032), so a bad or compromised proof
+service can only cause a decrypt to fail, never to wrongly authorize one. Proof building cross-checks
+its reconstructed peaks against the live finalized account and triggers targeted catch-up ingestion on
+divergence before refusing a proof, rather than trusting its own replay blindly.
+
+Consequences:
+
+The relayer's own Solana user-decrypt flow does **not** yet call this proof service in-process — that
+integration is a known gap; today it is reachable only over the interim internal HTTP endpoint, and
+only once a deployment's `solana_proof` config section is present (`relayer/src/http/server.rs` mounts
+it conditionally). The `FileLeafStore` backing it is a rebuildable cache: safe to delete, since a full
+RPC re-replay reconstructs it from `start_signature`/`start_slot`.
+
 ## Open Product Decisions
 
 Not settled by the decisions above. Forward requirements and the finality/reorg debate are detailed
@@ -1028,8 +1220,10 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
 - Rejecting the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID = 12345`) unconditionally in production
   builds; the `poc` feature already compiles out the shims and confines the zero-entropy fallback.
-- Reclaiming rent for superseded durable `AclRecord` PDAs: no `close_acl_record` today; burn scratch
-  and old balance history need an archival/compaction policy if rent becomes a product issue.
+- Rent/archival policy for the `EncryptedValue` MMR itself (DD-032): the account no longer needs
+  per-supersession PDA closes (one stable PDA is reused for a lineage's whole life), but growth of
+  `peaks`/`subjects` over a long-lived lineage's history still needs a compaction story if rent becomes
+  a product issue.
 - Dropping the vestigial `mock_input_enabled` flag and dead callback-flow enum variants at the next
   deliberate ABI break (FUTURE_DESIGN §6).
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
@@ -1038,3 +1232,13 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - Production Yellowstone/Geyser provider finality/replay/reconnect/backfill policy (DD-003).
 - Historical handle discovery conventions for apps and indexers.
 - Production role and governance names for public-decrypt and grant authority.
+- Reorg unwind is unimplemented on the Solana listener path (DD-028/DD-034); decrypt-release finality
+  (re-reading `EncryptedValue` accounts) is the stated safety net today.
+- `fhe_eval` has no `RandBounded` step; `create_random_bounded_amount`/bounded-rand eval were removed
+  with the old model and are not yet rebuilt on `EncryptedValue` (DD-032).
+- The relayer's own Solana user-decrypt path does not yet call the MMR proof service in-process
+  (DD-035) — only the interim internal HTTP endpoint exists today.
+- Subject-list overflow beyond `MAX_ENCRYPTED_VALUE_SUBJECTS` (8 subjects per `EncryptedValue`) is
+  deferred; there is no overflow/paging account yet.
+- Listener-core integration for the new event-free `EncryptedValue` instruction decoding (DD-033) is
+  deferred; today decoding lives in the Solana-specific host-listener path.

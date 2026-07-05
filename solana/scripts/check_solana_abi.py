@@ -37,13 +37,24 @@ PROGRAMS = {
 
 PINNED_SCHEMAS = [
     ("zama_host", "account", "HostConfig", True),
-    ("zama_host", "account", "AclRecord", True),
-    ("zama_host", "account", "HandleMaterialCommitment", True),
     ("zama_host", "account", "KmsContext", True),
     ("zama_host", "type", "InitializeHostConfigArgs", True),
     ("zama_host", "type", "FheEvalArgs", True),
+    ("zama_host", "type", "EncryptedValueSubjectGrant", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
     ("zama_host", "instruction_args", "fhe_eval", True),
+    # EncryptedValue itself is intentionally not an Anchor `Account<'info, T>`
+    # (see solana/programs/zama-host/src/instructions/encrypted_value.rs) —
+    # every instruction takes it as `UncheckedAccount` and hand-rolls the
+    # discriminator+borsh codec via `zama_solana_acl`, so Anchor's IDL builder
+    # never registers it as an `account`/`type` entry. Its wire layout is
+    # instead pinned by `zama-host`'s own
+    # `state::encrypted_value::tests::discriminator_matches_shared_crate` and
+    # `zama-solana-acl`'s codec tests, not by this golden file.
+    ("zama_host", "instruction_args", "create_encrypted_value", True),
+    ("zama_host", "instruction_args", "allow_subjects", True),
+    ("zama_host", "instruction_args", "update_encrypted_value", True),
+    ("zama_host", "instruction_args", "make_handle_public", True),
     ("confidential_token", "account", "ConfidentialMint", True),
     ("confidential_token", "account", "ConfidentialTokenAccount", True),
     ("confidential_token", "account", "DisclosureRequest", True),

@@ -2,12 +2,11 @@
 //!
 //! There is no existing Solana user-decrypt HTTP path in the relayer yet (the
 //! gateway/host modules are EVM-only today), so this stands alone as an
-//! internal route rather than plugging into an existing handler. Mount
-//! `router(service)` from `http/server.rs` (e.g.
-//! `.merge(solana_proof::http::router(service))`) once a Solana request path
-//! exists; until then it is reachable but not wired into `run_http_server`.
-//! In-process callers (the future orchestrator) should call
-//! [`crate::solana_proof::build_proof`] directly instead of going through HTTP.
+//! internal route rather than plugging into an existing handler.
+//! `http/server.rs::run_http_server` mounts `router(service)` when the
+//! deployment's `solana_proof` config section is present. This is an interim
+//! internal endpoint until the Solana user-decrypt path lands and calls
+//! [`crate::solana_proof::build_proof`] in-process instead of over HTTP.
 
 use std::sync::Arc;
 

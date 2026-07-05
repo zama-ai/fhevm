@@ -11,9 +11,11 @@ It does not settle the final product shape — see [`docs/FUTURE_DESIGN.md`](doc
 ## What is here
 
 ```text
-programs/zama-host              Protocol host program. Owns canonical ACL records, verifies FHE-op
-                                authorization, verifies coprocessor input attestations and KMS certs
-                                on-chain (secp256k1), emits generic host events.
+programs/zama-host              Protocol host program. Owns canonical `EncryptedValue` ACL accounts
+                                (one stable PDA per logical encrypted value, handle updates sealed into
+                                an on-account MMR), verifies FHE-op authorization, verifies coprocessor
+                                input attestations and KMS certs on-chain (secp256k1), emits generic
+                                host events (the ACL lifecycle itself is event-free; see DD-033).
 programs/confidential-token     App program. Minimal confidential-token / cUSDC wrapper (ERC7984
                                 spirit): wrap, transfer, burn, redeem, disclose. Drives zama-host by CPI.
 programs/confidential-deposit-app  Reference app showing Solana-native composition: its `deposit`
@@ -29,8 +31,9 @@ geyser                          Yellowstone plugin build helpers for the account
 ```
 
 The account boundary is the core design: app state lives in `confidential-token`, canonical ACL
-state lives in `zama-host`, and opaque FHE handles are stored *inside* ACL records — never used as
-PDA seeds — so apps can pre-allocate output ACL accounts before the compute result is known.
+state lives in `zama-host`'s `EncryptedValue` accounts, and opaque FHE handles are stored *inside*
+those accounts — never used as PDA seeds — so apps can pre-allocate output ACL accounts before the
+compute result is known.
 
 ## Build and test
 

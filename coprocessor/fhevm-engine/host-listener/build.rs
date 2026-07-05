@@ -619,17 +619,14 @@ fn build_contracts() {
 /// off-chain to reconstruct events without relying on `emit_cpi!`/`emit!`. Curated
 /// so the generator never trips over arg types used only by unrelated instructions;
 /// a listed instruction with an unexpected arg type fails the build loudly.
-const ZAMA_HOST_INSTRUCTION_ALLOWLIST: &[&str] = &[
-    "trivial_encrypt_and_bind",
-    "fhe_binary_op",
-    "fhe_binary_op_and_bind_output",
-    "fhe_ternary_op_and_bind_output",
-    "fhe_rand_and_bind",
-    "fhe_rand_bounded_and_bind",
-    "allow_for_decryption",
-    "allow_acl_subjects",
-    "commit_handle_material",
-];
+///
+/// Empty: the MMR/EncryptedValue rewrite removed every instruction this once
+/// decoded (`trivial_encrypt_and_bind`, `fhe_binary_op*`, `fhe_ternary_op*`,
+/// `fhe_rand*`, `allow_for_decryption`, `allow_acl_subjects`,
+/// `commit_handle_material`). `fhe_eval` is decoded directly from its own
+/// program type in `solana_reconstruct.rs`, not through this allowlist;
+/// `EncryptedValue` instructions are decoded via their own discriminators.
+const ZAMA_HOST_INSTRUCTION_ALLOWLIST: &[&str] = &[];
 
 fn generate_zama_host_instructions() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));

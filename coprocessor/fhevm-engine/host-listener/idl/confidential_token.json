@@ -240,27 +240,24 @@
           }
         },
         {
-          "name": "current_compute_acl",
+          "name": "balance_value",
           "docs": [
-            "Current balance ACL record used as the left-hand operand."
-          ]
-        },
-        {
-          "name": "current_total_supply_acl",
-          "docs": [
-            "Current total-supply ACL record used as the left-hand operand."
-          ]
-        },
-        {
-          "name": "output_acl",
+            "Stable balance lineage; read for the current handle and superseded by this eval."
+          ],
           "writable": true
         },
         {
-          "name": "burned_amount_acl",
+          "name": "total_supply_value",
+          "docs": [
+            "Stable total-supply lineage; read for the current handle and superseded by this eval."
+          ],
           "writable": true
         },
         {
-          "name": "total_supply_output_acl",
+          "name": "burned_amount_value",
+          "docs": [
+            "account's first burn, superseded thereafter."
+          ],
           "writable": true
         },
         {
@@ -330,7 +327,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for output ACL records."
+            "Pays rent for the transferred-amount lineage on its first bind."
           ],
           "writable": true,
           "signer": true
@@ -380,27 +377,25 @@
           }
         },
         {
-          "name": "from_current_compute_acl",
+          "name": "from_balance_value",
           "docs": [
-            "Sender current balance ACL record."
-          ]
-        },
-        {
-          "name": "to_current_compute_acl",
-          "docs": [
-            "Recipient current balance ACL record."
-          ]
-        },
-        {
-          "name": "from_output_acl",
+            "Sender's stable balance `EncryptedValue` lineage; read for the current",
+            "handle and superseded in place by this eval's CPI."
+          ],
           "writable": true
         },
         {
-          "name": "transferred_amount_acl",
+          "name": "to_balance_value",
+          "docs": [
+            "Recipient's stable balance `EncryptedValue` lineage."
+          ],
           "writable": true
         },
         {
-          "name": "to_output_acl",
+          "name": "transferred_amount_value",
+          "docs": [
+            "the sender's first transfer, superseded thereafter."
+          ],
           "writable": true
         },
         {
@@ -468,15 +463,9 @@
           ]
         },
         {
-          "name": "amount_acl_record",
+          "name": "amount_value",
           "docs": [
-            "Token-scoped amount ACL record for the disclosed handle."
-          ]
-        },
-        {
-          "name": "amount_material_commitment",
-          "docs": [
-            "Material commitment witness for the disclosed handle."
+            "Token-scoped amount `EncryptedValue` lineage for the disclosed handle."
           ]
         },
         {
@@ -625,15 +614,9 @@
           ]
         },
         {
-          "name": "balance_acl_record",
+          "name": "balance_value",
           "docs": [
-            "Current balance ACL record for the disclosed handle."
-          ]
-        },
-        {
-          "name": "balance_material_commitment",
-          "docs": [
-            "Material commitment witness for the disclosed handle."
+            "Current balance `EncryptedValue` lineage for the disclosed handle."
           ]
         },
         {
@@ -837,7 +820,7 @@
           }
         },
         {
-          "name": "total_supply_acl_record",
+          "name": "total_supply_encrypted_value",
           "writable": true
         },
         {
@@ -964,7 +947,7 @@
           }
         },
         {
-          "name": "acl_record",
+          "name": "balance_encrypted_value",
           "writable": true
         },
         {
@@ -1093,15 +1076,9 @@
           }
         },
         {
-          "name": "burned_amount_acl",
+          "name": "burned_amount_value",
           "docs": [
-            "Burned amount ACL record whose handle is redeemed."
-          ]
-        },
-        {
-          "name": "burned_material_commitment",
-          "docs": [
-            "Material commitment witness for the burned handle."
+            "Burned amount `EncryptedValue` lineage whose handle is redeemed."
           ]
         },
         {
@@ -1322,17 +1299,13 @@
           ]
         },
         {
-          "name": "burned_amount_acl",
+          "name": "burned_amount_value",
           "docs": [
-            "Burned amount ACL record whose handle will be redeemed."
+            "Stable burned-amount lineage whose handle will be redeemed. Escalated",
+            "with `ACL_ROLE_PUBLIC_DECRYPT` for the owner and appended a",
+            "public-decrypt MMR leaf by this instruction's CPIs."
           ],
           "writable": true
-        },
-        {
-          "name": "burned_material_commitment",
-          "docs": [
-            "Material commitment witness for the burned handle."
-          ]
         },
         {
           "name": "redemption_request",
@@ -1390,20 +1363,13 @@
           }
         },
         {
-          "name": "authority_permission_record",
-          "optional": true
-        },
-        {
           "name": "deny_subject_record",
           "optional": true
         },
         {
-          "name": "zama_event_authority"
-        },
-        {
           "name": "zama_program",
           "docs": [
-            "ZamaHost program used to update the ACL record."
+            "ZamaHost program used to update the burned-amount lineage."
           ],
           "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
@@ -1416,7 +1382,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for request witness creation."
+            "System program used for request witness creation and lineage growth."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -1471,7 +1437,7 @@
         {
           "name": "requester",
           "docs": [
-            "Requester that must have `ACL_ROLE_PUBLIC_DECRYPT` on the amount ACL."
+            "Requester that must have `ACL_ROLE_GRANT` on the amount lineage."
           ],
           "writable": true,
           "signer": true
@@ -1483,17 +1449,13 @@
           ]
         },
         {
-          "name": "amount_acl_record",
+          "name": "amount_value",
           "docs": [
-            "Token-scoped amount ACL record. Updated by ZamaHost CPI."
+            "Token-scoped amount `EncryptedValue` lineage. Escalated with",
+            "`ACL_ROLE_PUBLIC_DECRYPT` for the requester and appended a",
+            "public-decrypt MMR leaf by this instruction's CPIs."
           ],
           "writable": true
-        },
-        {
-          "name": "amount_material_commitment",
-          "docs": [
-            "Material commitment witness for the disclosed handle."
-          ]
         },
         {
           "name": "disclosure_request",
@@ -1546,20 +1508,13 @@
           }
         },
         {
-          "name": "authority_permission_record",
-          "optional": true
-        },
-        {
           "name": "deny_subject_record",
           "optional": true
         },
         {
-          "name": "zama_event_authority"
-        },
-        {
           "name": "zama_program",
           "docs": [
-            "ZamaHost program used to update the ACL record."
+            "ZamaHost program used to update the amount lineage."
           ],
           "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
@@ -1572,7 +1527,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for request witness creation."
+            "System program used for request witness creation and lineage growth."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -1645,17 +1600,12 @@
           ]
         },
         {
-          "name": "balance_acl_record",
+          "name": "balance_value",
           "docs": [
-            "Current balance ACL record. Updated by ZamaHost CPI."
+            "Stable balance lineage. Escalated with `ACL_ROLE_PUBLIC_DECRYPT` for the",
+            "owner and appended a public-decrypt MMR leaf by this instruction's CPIs."
           ],
           "writable": true
-        },
-        {
-          "name": "balance_material_commitment",
-          "docs": [
-            "Material commitment witness for the disclosed handle."
-          ]
         },
         {
           "name": "disclosure_request",
@@ -1698,8 +1648,8 @@
               },
               {
                 "kind": "account",
-                "path": "token_account.balance_handle",
-                "account": "ConfidentialTokenAccount"
+                "path": "balance_value.current_handle",
+                "account": "EncryptedValue"
               },
               {
                 "kind": "arg",
@@ -1709,20 +1659,13 @@
           }
         },
         {
-          "name": "authority_permission_record",
-          "optional": true
-        },
-        {
           "name": "deny_subject_record",
           "optional": true
         },
         {
-          "name": "zama_event_authority"
-        },
-        {
           "name": "zama_program",
           "docs": [
-            "ZamaHost program used to update the ACL record."
+            "ZamaHost program used to update the balance lineage."
           ],
           "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
@@ -1735,7 +1678,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for request witness creation."
+            "System program used for request witness creation and lineage growth."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -1907,23 +1850,17 @@
           }
         },
         {
-          "name": "current_compute_acl",
+          "name": "balance_value",
           "docs": [
-            "Current balance ACL record used as the left-hand operand."
-          ]
-        },
-        {
-          "name": "current_total_supply_acl",
-          "docs": [
-            "Current total-supply ACL record used as the left-hand operand."
-          ]
-        },
-        {
-          "name": "output_acl",
+            "Stable balance lineage; read for the current handle and superseded by this eval."
+          ],
           "writable": true
         },
         {
-          "name": "total_supply_output_acl",
+          "name": "total_supply_value",
+          "docs": [
+            "Stable total-supply lineage; read for the current handle and superseded by this eval."
+          ],
           "writable": true
         },
         {
@@ -2377,169 +2314,6 @@
   ],
   "types": [
     {
-      "name": "AclRecord",
-      "docs": [
-        "Canonical ACL state for one host handle.",
-        "",
-        "The account address is independent from the opaque handle:",
-        "`PDA(\"acl-record\", nonce_key, nonce_sequence)`. The handle is stored in the",
-        "account body so computed handles can be bound after transaction accounts are",
-        "declared."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "handle",
-            "docs": [
-              "Opaque FHEVM handle controlled by this ACL record."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "nonce_key",
-            "docs": [
-              "Domain-separated nonce key derived from app account metadata."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "nonce_sequence",
-            "docs": [
-              "App-maintained sequence for this nonce key."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "acl_domain_key",
-            "docs": [
-              "App-level ACL domain, such as a confidential token mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "app_account",
-            "docs": [
-              "App-owned account whose encrypted field is represented by this handle."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "encrypted_value_label",
-            "docs": [
-              "Domain-separated encrypted field label inside `app_account`."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "subjects",
-            "docs": [
-              "Inline subjects for the common case."
-            ],
-            "type": {
-              "array": [
-                "pubkey",
-                8
-              ]
-            }
-          },
-          {
-            "name": "subject_roles",
-            "docs": [
-              "Role flags parallel to [`AclRecord::subjects`]."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                8
-              ]
-            }
-          },
-          {
-            "name": "subject_count",
-            "docs": [
-              "Number of valid entries in the inline subject arrays."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "overflow_subject_count",
-            "docs": [
-              "Number of overflow subjects represented by [`AclPermission`] PDAs."
-            ],
-            "type": "u32"
-          },
-          {
-            "name": "public_decrypt",
-            "docs": [
-              "Durable public-decrypt flag checked by KMS-style verification."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "material_commitment",
-            "docs": [
-              "Canonical material commitment PDA sealed to this ACL record."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "material_commitment_hash",
-            "docs": [
-              "Canonical material commitment hash sealed to this ACL record."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "material_key_id",
-            "docs": [
-              "Material key identifier sealed to this ACL record."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "created_slot",
-            "docs": [
-              "Slot in which this ACL record was first bound."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for this record."
-            ],
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
       "name": "AmountDisclosedEvent",
       "docs": [
         "Emitted when a KMS certificate discloses a token-scoped amount cleartext."
@@ -2644,7 +2418,7 @@
             }
           },
           {
-            "name": "acl_record",
+            "name": "encrypted_value",
             "docs": [
               "ZamaHost ACL record updated by the request."
             ],
@@ -2812,7 +2586,7 @@
             }
           },
           {
-            "name": "acl_record",
+            "name": "encrypted_value",
             "docs": [
               "ZamaHost ACL record updated by the request."
             ],
@@ -2938,7 +2712,7 @@
             }
           },
           {
-            "name": "old_acl_record",
+            "name": "old_encrypted_value",
             "docs": [
               "Previous ZamaHost ACL record."
             ],
@@ -2957,7 +2731,7 @@
             }
           },
           {
-            "name": "new_acl_record",
+            "name": "new_encrypted_value",
             "docs": [
               "New ZamaHost ACL record."
             ],
@@ -3026,7 +2800,7 @@
             }
           },
           {
-            "name": "burned_acl_record",
+            "name": "burned_encrypted_value",
             "docs": [
               "ACL record for `burned_handle`."
             ],
@@ -3110,9 +2884,9 @@
             }
           },
           {
-            "name": "burned_acl_record",
+            "name": "burned_encrypted_value",
             "docs": [
-              "ACL record for `burned_handle`."
+              "`EncryptedValue` lineage for `burned_handle`."
             ],
             "type": "pubkey"
           },
@@ -3196,42 +2970,11 @@
             }
           },
           {
-            "name": "burned_acl_record",
+            "name": "burned_encrypted_value",
             "docs": [
-              "ACL record for `burned_handle`."
+              "`EncryptedValue` lineage for `burned_handle`."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "material_commitment",
-            "docs": [
-              "Material commitment account for `burned_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "material_commitment_hash",
-            "docs": [
-              "Canonical material commitment hash."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "material_key_id",
-            "docs": [
-              "Material key identifier."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           },
           {
             "name": "host_config",
@@ -3352,7 +3095,7 @@
             }
           },
           {
-            "name": "burned_acl_record",
+            "name": "burned_encrypted_value",
             "docs": [
               "ACL record for `burned_handle`."
             ],
@@ -3474,7 +3217,7 @@
             }
           },
           {
-            "name": "burned_acl_record",
+            "name": "burned_encrypted_value",
             "docs": [
               "ZamaHost ACL record for `burned_handle`."
             ],
@@ -3486,7 +3229,10 @@
     {
       "name": "ConfidentialMint",
       "docs": [
-        "Confidential mint state for the token PoC."
+        "Confidential mint state for the token PoC.",
+        "",
+        "The total supply's current handle and access lineage live in the",
+        "`EncryptedValue` account at `total_supply_encrypted_value`."
       ],
       "type": {
         "kind": "struct",
@@ -3527,30 +3273,11 @@
             "type": "u8"
           },
           {
-            "name": "total_supply_handle",
+            "name": "total_supply_encrypted_value",
             "docs": [
-              "Current encrypted total-supply handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "total_supply_acl_record",
-            "docs": [
-              "Current ZamaHost ACL record for `total_supply_handle`."
+              "`EncryptedValue` lineage PDA holding the current total-supply handle."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "next_total_supply_nonce_sequence",
-            "docs": [
-              "Next nonce sequence to use for a total-supply ACL record."
-            ],
-            "type": "u64"
           }
         ]
       }
@@ -3558,7 +3285,11 @@
     {
       "name": "ConfidentialTokenAccount",
       "docs": [
-        "Confidential token account state."
+        "Confidential token account state.",
+        "",
+        "The balance's current handle and access lineage live in the",
+        "`EncryptedValue` account at `balance_encrypted_value`, not here — addressing",
+        "is stable per token account, so no nonce/sequence bookkeeping is needed."
       ],
       "type": {
         "kind": "struct",
@@ -3578,37 +3309,11 @@
             "type": "pubkey"
           },
           {
-            "name": "balance_handle",
+            "name": "balance_encrypted_value",
             "docs": [
-              "Current confidential balance handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "balance_acl_record",
-            "docs": [
-              "Current ZamaHost ACL record for `balance_handle`."
+              "`EncryptedValue` lineage PDA holding the current balance handle."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "next_balance_nonce_sequence",
-            "docs": [
-              "Next nonce sequence to use for a balance ACL record."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "next_amount_nonce_sequence",
-            "docs": [
-              "Next nonce sequence to use for owner-scoped random amount ACL records."
-            ],
-            "type": "u64"
           },
           {
             "name": "bump",
@@ -3683,7 +3388,7 @@
             }
           },
           {
-            "name": "transferred_acl_record",
+            "name": "transferred_encrypted_value",
             "docs": [
               "ZamaHost ACL record for `transferred_handle`."
             ],
@@ -3821,7 +3526,7 @@
           {
             "name": "app_account",
             "docs": [
-              "ACL app account stored in the host ACL record."
+              "ACL app account stored in the host `EncryptedValue` lineage."
             ],
             "type": "pubkey"
           },
@@ -3838,42 +3543,11 @@
             }
           },
           {
-            "name": "acl_record",
+            "name": "encrypted_value",
             "docs": [
-              "ACL record for the requested handle."
+              "`EncryptedValue` lineage for the requested handle."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "material_commitment",
-            "docs": [
-              "Material commitment account for the requested handle."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "material_commitment_hash",
-            "docs": [
-              "Canonical material commitment hash."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "material_key_id",
-            "docs": [
-              "Material key identifier."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           },
           {
             "name": "host_config",
@@ -3953,28 +3627,37 @@
       }
     },
     {
-      "name": "HandleMaterialCommitment",
+      "name": "EncryptedValue",
       "docs": [
-        "Host-owned commitment proving ciphertext material is available for a handle.",
+        "Canonical ACL + history state for one encrypted-value lineage.",
         "",
-        "ACL birth and material readiness are deliberately separate. KMS-style",
-        "decryption checks must verify both the canonical ACL record and this",
-        "material commitment before authorizing a decryptable handle."
+        "PDA: `[ENCRYPTED_VALUE_SEED, value_key]` where `value_key =",
+        "zama_solana_acl::derive_value_key(acl_domain_key, app_account, encrypted_value_label)`.",
+        "The account name must stay exactly `EncryptedValue` — Anchor derives the",
+        "discriminator from the type name, and it must match",
+        "`zama_solana_acl::encrypted_value_discriminator()`."
       ],
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "acl_record",
+            "name": "acl_domain_key",
             "docs": [
-              "ACL record whose handle has committed material."
+              "App-level ACL domain, such as a confidential token mint."
             ],
             "type": "pubkey"
           },
           {
-            "name": "handle",
+            "name": "app_account",
             "docs": [
-              "Handle copied from the ACL record at commitment time."
+              "App-owned account whose encrypted field this lineage represents."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "encrypted_value_label",
+            "docs": [
+              "Domain-separated encrypted field label inside `app_account`."
             ],
             "type": {
               "array": [
@@ -3984,9 +3667,9 @@
             }
           },
           {
-            "name": "key_id",
+            "name": "current_handle",
             "docs": [
-              "Release/key identifier for the ciphertext material."
+              "Current encrypted value identifier (the live handle)."
             ],
             "type": {
               "array": [
@@ -3996,71 +3679,46 @@
             }
           },
           {
-            "name": "ciphertext_digest",
+            "name": "subjects",
             "docs": [
-              "Digest of the ciphertext material."
+              "Current durable subjects."
             ],
             "type": {
-              "array": [
-                "u8",
-                32
-              ]
+              "vec": "pubkey"
             }
           },
           {
-            "name": "sns_ciphertext_digest",
+            "name": "subject_roles",
             "docs": [
-              "Digest of the SNS ciphertext material."
+              "Role flags parallel to [`EncryptedValue::subjects`]."
             ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "type": "bytes"
           },
           {
-            "name": "coprocessor_set_digest",
+            "name": "leaf_count",
             "docs": [
-              "Release-pinned coprocessor-set digest."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "material_commitment_hash",
-            "docs": [
-              "Canonical commitment hash over the material witness fields."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "created_slot",
-            "docs": [
-              "Slot in which the commitment was recorded."
+              "Number of MMR leaves appended; `0` means no history."
             ],
             "type": "u64"
           },
           {
-            "name": "state",
+            "name": "peaks",
             "docs": [
-              "Commitment state. Native-v0 decryptability requires committed."
+              "MMR peaks, oldest mountain first (`popcount(leaf_count)` entries)."
             ],
-            "type": "u8"
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
           },
           {
             "name": "bump",
             "docs": [
-              "PDA bump for this material commitment."
+              "PDA bump."
             ],
             "type": "u8"
           }
@@ -4372,25 +4030,6 @@
             }
           },
           {
-            "name": "bounded",
-            "docs": [
-              "True when the random amount was bounded."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "upper_bound",
-            "docs": [
-              "Bound supplied to ZamaHost for bounded random amounts, or zero bytes for unbounded amounts."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
             "name": "handle",
             "docs": [
               "Newly created amount handle."
@@ -4403,18 +4042,11 @@
             }
           },
           {
-            "name": "acl_record",
+            "name": "encrypted_value",
             "docs": [
               "ZamaHost ACL record initialized for the amount."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "nonce_sequence",
-            "docs": [
-              "Nonce sequence used for the amount ACL record."
-            ],
-            "type": "u64"
           }
         ]
       }
@@ -4458,7 +4090,7 @@
             }
           },
           {
-            "name": "old_acl_record",
+            "name": "old_encrypted_value",
             "docs": [
               "Previous ZamaHost ACL record."
             ],
@@ -4477,7 +4109,7 @@
             }
           },
           {
-            "name": "new_acl_record",
+            "name": "new_encrypted_value",
             "docs": [
               "New ZamaHost ACL record."
             ],

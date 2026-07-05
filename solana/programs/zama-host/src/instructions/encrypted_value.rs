@@ -110,6 +110,7 @@ pub struct AllowEncryptedValueSubjects<'info> {
     pub payer: Signer<'info>,
     /// Current subject with `ACL_ROLE_GRANT` on the lineage.
     pub authority: Signer<'info>,
+    /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
     #[account(mut)]
     pub encrypted_value: UncheckedAccount<'info>,
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
@@ -169,6 +170,7 @@ pub struct UpdateEncryptedValue<'info> {
     pub payer: Signer<'info>,
     /// App account authority; must sign and match the lineage's `app_account`.
     pub app_account_authority: Signer<'info>,
+    /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
     #[account(mut)]
     pub encrypted_value: UncheckedAccount<'info>,
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
@@ -243,6 +245,7 @@ pub struct MakeEncryptedValueHandlePublic<'info> {
     pub payer: Signer<'info>,
     /// Current subject with `ACL_ROLE_PUBLIC_DECRYPT`.
     pub authority: Signer<'info>,
+    /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
     #[account(mut)]
     pub encrypted_value: UncheckedAccount<'info>,
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]

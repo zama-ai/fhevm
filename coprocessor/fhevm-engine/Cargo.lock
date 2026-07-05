@@ -5372,6 +5372,7 @@ dependencies = [
  "url",
  "yellowstone-grpc-proto",
  "zama-host",
+ "zama-solana-acl",
 ]
 
 [[package]]

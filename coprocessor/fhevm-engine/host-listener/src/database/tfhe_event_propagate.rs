@@ -961,65 +961,6 @@ impl Database {
         Ok(inserted)
     }
 
-    /// Marks the computation that produces `handle` as allowed so the
-    /// tfhe-worker materializes its ciphertext (it only schedules
-    /// `is_completed = FALSE AND is_allowed = TRUE` rows), and re-arms its
-    /// dependence_chain so the worker re-acquires it.
-    ///
-    /// Retired as a compute-activation trigger (RFC-024 eager compute, Q11
-    /// option A): Solana computations are now inserted with `is_allowed = TRUE`
-    /// unconditionally (see `solana_adapter::normalize_solana_events_for_db`),
-    /// so there is nothing left to re-open here. Kept, unused, as the
-    /// documented historical mechanism and in case a future reorg-unwind
-    /// implementation needs to re-arm a chain by the same means; delete once
-    /// that's confirmed unnecessary.
-    ///
-    /// On Solana the allow event arrives in a LATER slot than the compute, so
-    /// the compute was inserted `is_completed = true` (the "unallowed" default)
-    /// and the worker already locked its chain, found no allowed work, and set
-    /// the chain `status = 'processed'`. Flipping the computation alone is not
-    /// enough: the chain must be reset to `'updated', worker_id = NULL` or the
-    /// worker never looks at it again. The computation flip is gated on
-    /// `completed_at IS NULL` so a genuinely materialized computation is never
-    /// reopened — only the never-run placeholder is.
-    #[allow(dead_code)]
-    pub async fn mark_solana_computation_allowed(
-        &self,
-        tx: &mut Transaction<'_>,
-        handle: &[u8],
-    ) -> Result<bool, SqlxError> {
-        let chains = sqlx::query!(
-            "UPDATE computations
-                SET is_allowed = TRUE, is_completed = FALSE
-              WHERE output_handle = $1
-                AND host_chain_id = $2
-                AND completed_at IS NULL
-                AND is_error = FALSE
-              RETURNING dependence_chain_id",
-            handle,
-            self.chain_id.as_i64(),
-        )
-        .fetch_all(tx.deref_mut())
-        .await?;
-        if chains.is_empty() {
-            return Ok(false);
-        }
-        for chain in &chains {
-            sqlx::query!(
-                "UPDATE dependence_chain
-                    SET status = 'updated', worker_id = NULL,
-                        lock_acquired_at = NULL, lock_expires_at = NULL,
-                        last_updated_at = NOW()
-                  WHERE dependence_chain_id = $1
-                    AND status = 'processed'",
-                chain.dependence_chain_id,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-        }
-        Ok(true)
-    }
-
     /// Handles confidential-bridge events (see RFC 008). Each event is recorded
     /// once; re-observation is a no-op (`ON CONFLICT DO NOTHING`).
     /// The block-number column is therefore first-seen.

@@ -5,23 +5,20 @@ use anchor_lang::{
     AccountDeserialize, AccountSerialize, InstructionData, ToAccountMetas,
 };
 use anchor_spl::token::spl_token;
-use fhevm_engine_common::{
-    tfhe_ops::current_ciphertext_version,
-    types::{AllowEvents, SupportedFheCiphertexts},
-};
+use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheCiphertexts};
 use host_listener::{
     contracts::TfheContract::TfheContractEvents,
     database::tfhe_event_propagate::Handle,
     database::tfhe_event_propagate::{tfhe_inputs_handle, tfhe_result_handle},
     generated::{
-        FheBinaryOpCode as SolanaFheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent,
+        FheBinaryOpCode as SolanaFheBinaryOpCode, FheBinaryOpEvent, FheRandEvent,
         FheTernaryOpCode as SolanaFheTernaryOpCode, FheTernaryOpEvent, TrivialEncryptEvent,
         EVENT_VERSION,
     },
     solana_adapter::{
         decode_anchor_cpi_events, decode_anchor_log_events, decode_solana_transaction_events,
         insert_solana_events, normalize_solana_events_for_db, solana_transaction_id,
-        SolanaAclAllowedEvent, SolanaBlockMeta, SolanaFinalizedAccountFetchKind, SolanaHostEvent,
+        SolanaBlockMeta, SolanaFinalizedAccountFetchKind, SolanaHostEvent,
     },
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
@@ -95,7 +92,6 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
         .current_handle;
     let host_events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&host_events), 5);
-    assert_eq!(count_acl_events(&host_events), 0);
 
     let transaction_id = solana_transaction_id(signature.as_ref());
     let block = SolanaBlockMeta {
@@ -267,11 +263,9 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
     // eval no longer emits any ACL events at all.
     let log_events = host_log_events(&meta, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&log_events), 1);
-    assert_eq!(count_acl_events(&log_events), 0);
 
     let host_events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&host_events), 1);
-    assert_eq!(count_acl_events(&host_events), 0);
 
     let transaction_id = solana_transaction_id(signature.as_ref());
     let block = SolanaBlockMeta {
@@ -345,27 +339,15 @@ fn solana_worker_replay_shape_preserves_eval_dependencies_and_ignores_same_tx_ac
             if_false: alice_balance,
             result: selected_balance,
         }),
-        SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
-            handle: Handle::from(selected_balance),
-            subject: format!("0x{}", "07".repeat(32)),
-            event_type: AllowEvents::AllowedAccount,
-        }),
-        SolanaHostEvent::FheRandBounded(FheRandBoundedEvent {
+        SolanaHostEvent::FheRand(FheRandEvent {
             version: EVENT_VERSION,
             subject: [0; 32],
-            upper_bound: amount_to_plaintext(16),
             seed: [8; 16],
             fhe_type: TOKEN_BALANCE_FHE_TYPE,
             result: random_amount,
         }),
-        SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
-            handle: Handle::from(random_amount),
-            subject: format!("0x{}", "08".repeat(32)),
-            event_type: AllowEvents::AllowedAccount,
-        }),
     ];
     assert_eq!(count_tfhe_events(&events), 4);
-    assert_eq!(count_acl_events(&events), 2);
 
     let (tfhe_logs, account_fetches) = normalize_solana_events_for_db(events, tx_id, block);
 
@@ -376,7 +358,7 @@ fn solana_worker_replay_shape_preserves_eval_dependencies_and_ignores_same_tx_ac
             .iter()
             .map(|log| log.log_index)
             .collect::<Vec<_>>(),
-        vec![Some(0), Some(1), Some(2), Some(4)]
+        vec![Some(0), Some(1), Some(2), Some(3)]
     );
     assert_eq!(
         tfhe_logs
@@ -414,7 +396,7 @@ fn solana_worker_replay_shape_preserves_eval_dependencies_and_ignores_same_tx_ac
     ));
     assert!(matches!(
         tfhe_logs[3].event.data,
-        TfheContractEvents::FheRandBounded(_)
+        TfheContractEvents::FheRand(_)
     ));
 
     assert_eq!(
@@ -491,7 +473,6 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
         send_many_with_meta(&mut fixture.svm, &fixture.alice, initial_ixs);
     let initial_events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&initial_events), 3);
-    assert_eq!(count_acl_events(&initial_events), 0);
 
     insert_host_events(&harness.listener_db, initial_events, signature, 1).await?;
     wait_until_computed(&harness.app).await?;
@@ -508,7 +489,6 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
         .current_handle;
     let transfer_events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&transfer_events), 5);
-    assert_eq!(count_acl_events(&transfer_events), 0);
 
     insert_host_events(&harness.listener_db, transfer_events, signature, 2).await?;
     wait_until_computed(&harness.app).await?;
@@ -570,7 +550,6 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
         send_many_with_meta(&mut fixture.svm, &fixture.payer, ixs);
     let events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&events), 1);
-    assert_eq!(count_acl_events(&events), 0);
 
     insert_host_events(&harness.listener_db, events, signature, 1).await?;
     wait_until_computed(&harness.app).await?;
@@ -1274,16 +1253,8 @@ fn count_tfhe_events(events: &[SolanaHostEvent]) -> usize {
                     | SolanaHostEvent::FheTernaryOp(_)
                     | SolanaHostEvent::TrivialEncrypt(_)
                     | SolanaHostEvent::FheRand(_)
-                    | SolanaHostEvent::FheRandBounded(_)
             )
         })
-        .count()
-}
-
-fn count_acl_events(events: &[SolanaHostEvent]) -> usize {
-    events
-        .iter()
-        .filter(|event| matches!(event, SolanaHostEvent::AclAllowed(_)))
         .count()
 }
 
