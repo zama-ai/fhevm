@@ -2,9 +2,12 @@
 //!
 //! Replaces the keyed-nonce `AclRecord` model: one account per encrypted-value
 //! lineage, reused across every handle update, carrying a compact MMR history
-//! instead of a fresh PDA per birth. Layout must byte-match
-//! `zama_solana_acl::EncryptedValue` (same field order) so the shared crate's
-//! discriminator, size formula, and MMR helpers apply unchanged on-chain.
+//! instead of a fresh PDA per birth. Field order follows
+//! `zama_solana_acl::EncryptedValue` with one on-chain-only addition —
+//! `subject_roles`, interleaved after `subjects` — so the shared crate's
+//! discriminator and MMR helpers apply, but its size formula does not
+//! (see [`EncryptedValue::space`]); off-chain readers decode the on-chain
+//! layout explicitly.
 
 use super::*;
 
@@ -41,7 +44,10 @@ impl EncryptedValue {
     /// Anchor account body size (excludes the 8-byte discriminator), for a
     /// lineage with `subjects_len` subjects and `peaks_len` peaks.
     pub fn space(subjects_len: usize, peaks_len: usize) -> usize {
+        // The on-chain layout adds `subject_roles: Vec<u8>` (parallel to
+        // `subjects`) on top of the shared crate's role-less struct.
         zama_solana_acl::EncryptedValue::account_size(subjects_len, peaks_len) - 8
+            + (4 + subjects_len)
     }
 
     /// The lineage's value key — its PDA seed. Derived, never stored.

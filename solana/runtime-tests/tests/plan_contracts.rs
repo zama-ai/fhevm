@@ -209,15 +209,17 @@ fn token_idl_drops_transfer_and_call_callback_surface() {
 }
 
 #[test]
-fn token_request_witnesses_bind_material_and_secp_kms_context() {
+fn token_request_witnesses_bind_handle_lineage_and_secp_kms_context() {
     let source = TOKEN_COMMON;
-    // The request witness binds the request to its accounts, material, host config, chain id,
-    // and the pinned KMS context id; the response then verifies a secp256k1 KMS cert.
+    // The request witness binds the request to its accounts, the handle and its
+    // `EncryptedValue` lineage account (which replaced the deleted
+    // `HandleMaterialCommitment` material_* fields), host config, chain id, and
+    // the pinned KMS context id; the response then verifies a secp256k1 KMS cert.
     for required in [
         "request_hash",
         "kms_context_id",
-        "material_commitment_hash",
-        "material_key_id",
+        "request.handle == handle",
+        "request.encrypted_value == encrypted_value",
         "host_config",
         "chain_id",
         "assert_kms_public_decrypt_cert_for_request",
@@ -229,11 +231,15 @@ fn token_request_witnesses_bind_material_and_secp_kms_context() {
             "token request/consume path must bind `{required}`"
         );
     }
-    // The dead Ed25519 verifier-set message helpers must be gone.
+    // The dead Ed25519 verifier-set message helpers and the removed
+    // handle-material commitment surface must be gone.
     for removed in [
         "proof_message_v2",
         "assert_threshold_verifier_signature",
         "verifier_set_version",
+        "material_commitment_hash",
+        "material_key_id",
+        "HandleMaterialCommitment",
     ] {
         assert!(
             !source.contains(removed),
@@ -343,7 +349,14 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
             "ABI golden manifest must pin `{required}`"
         );
     }
-    for removed in ["VerifierSet", "OperatorSetEvent", "OperatorClosedEvent"] {
+    for removed in [
+        "VerifierSet",
+        "OperatorSetEvent",
+        "OperatorClosedEvent",
+        // Deleted by the EncryptedValue ACL rewrite.
+        "AclRecord",
+        "HandleMaterialCommitment",
+    ] {
         assert!(
             !schemas
                 .iter()
@@ -357,8 +370,8 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         "confidential_token.json",
         "HostConfig",
         "KmsContext",
-        "AclRecord",
-        "HandleMaterialCommitment",
+        // The ACL rewrite's lineage account replaces AclRecord/HandleMaterialCommitment.
+        "EncryptedValue",
     ] {
         assert!(
             IDL_CHECK_SCRIPT.contains(required)

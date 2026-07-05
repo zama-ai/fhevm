@@ -107,6 +107,11 @@ struct EvalExecutionState<'a, 'info> {
     subject: Pubkey,
     chain_id: u64,
     verifier_params: InputVerifierParams,
+    /// Handles superseded by this frame's own output bindings, keyed by
+    /// lineage account. A later operand may still reference one (EVM parity:
+    /// a handle stays usable as a value within the transaction that rotated
+    /// it); admission already authorized it against frame-entry state.
+    superseded_in_frame: Vec<(Pubkey, [u8; 32])>,
 }
 
 impl<'a, 'info> EvalExecutionState<'a, 'info> {
@@ -126,6 +131,7 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
             subject,
             chain_id,
             verifier_params,
+            superseded_in_frame: Vec::new(),
         }
     }
 
@@ -164,6 +170,24 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         encrypted_value_index: u16,
     ) -> Result<ResolvedOperand> {
         let value_info = self.remaining_account(encrypted_value_index)?;
+        if self
+            .superseded_in_frame
+            .iter()
+            .any(|(key, superseded)| *key == value_info.key() && *superseded == handle)
+        {
+            // The frame itself rotated this lineage past `handle`; the operand
+            // was authorized by admission against frame-entry state, and
+            // supersession never edits membership, so only the current-handle
+            // equality is exempted here.
+            let value = read_canonical_encrypted_value(value_info)?;
+            require!(
+                value.subject_has_role(self.subject, ACL_ROLE_USE),
+                ZamaHostError::SubjectMissingRole
+            );
+            let public_decrypt_allowed =
+                value.subject_has_role(self.subject, ACL_ROLE_PUBLIC_DECRYPT);
+            return Ok(ResolvedOperand::encrypted(handle, public_decrypt_allowed));
+        }
         assert_encrypted_value_subject_role(
             value_info,
             handle,
@@ -251,7 +275,17 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             output,
             output_public_decrypt_allowed,
             enforce_public_decrypt_role_propagation,
-        )
+        )?;
+        if let FheEvalOutput::AllowedDurable {
+            output_encrypted_value_index,
+            previous_handle: Some(previous_handle),
+            ..
+        } = output
+        {
+            let key = self.remaining_account(*output_encrypted_value_index)?.key();
+            self.superseded_in_frame.push((key, *previous_handle));
+        }
+        Ok(())
     }
 }
 

@@ -12,6 +12,7 @@
 //! (solana 2.x) can share it. PDA derivation stays on each side; this crate
 //! provides the seed and the `value_key`.
 
+#[cfg(not(target_os = "solana"))]
 use sha2::{Digest as _, Sha256};
 
 pub mod lineage;
@@ -97,7 +98,7 @@ impl EncryptedValue {
 
 /// The Anchor-style 8-byte account discriminator, `sha256("account:EncryptedValue")[..8]`.
 pub fn encrypted_value_discriminator() -> [u8; 8] {
-    let digest = Sha256::digest(b"account:EncryptedValue");
+    let digest = sha256(&[b"account:EncryptedValue"]);
     let mut disc = [0u8; 8];
     disc.copy_from_slice(&digest[..8]);
     disc
@@ -141,12 +142,18 @@ pub fn derive_value_key(
     ])
 }
 
+#[cfg(not(target_os = "solana"))]
 pub(crate) fn sha256(parts: &[&[u8]]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     for part in parts {
         hasher.update(part);
     }
     hasher.finalize().into()
+}
+
+#[cfg(target_os = "solana")]
+pub(crate) fn sha256(parts: &[&[u8]]) -> [u8; 32] {
+    solana_sha256_hasher::hashv(parts).to_bytes()
 }
 
 /// Commitment for `HistoricalAccessLeaf { encrypted_value_account, leaf_index, handle, subject }`.
