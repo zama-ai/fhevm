@@ -6188,6 +6188,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ae3e2abcf541c8122eafe9a625d4d194b4023c20adde1e251f94e056bb1aee2"
 
 [[package]]
+name = "solana-define-syscall"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57e5b1c0bc1d4a4d10c88a4100499d954c09d3fecfae4912c1a074dff68b1738"
+
+[[package]]
 name = "solana-hash"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6199,6 +6205,12 @@ dependencies = [
  "solana-sanitize",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "solana-hash"
+version = "4.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe51db00ac3aa9f950d1e6201a126acfa26e6d81bc4a183ba64ec02effcad883"
 
 [[package]]
 name = "solana-pubkey"
@@ -6214,9 +6226,9 @@ dependencies = [
  "num-traits",
  "solana-atomic-u64",
  "solana-decode-error",
- "solana-define-syscall",
+ "solana-define-syscall 2.3.0",
  "solana-sanitize",
- "solana-sha256-hasher",
+ "solana-sha256-hasher 2.3.0",
  "wasm-bindgen",
 ]
 
@@ -6233,8 +6245,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5aa3feb32c28765f6aa1ce8f3feac30936f16c5c3f7eb73d63a5b8f6f8ecdc44"
 dependencies = [
  "sha2",
- "solana-define-syscall",
- "solana-hash",
+ "solana-define-syscall 2.3.0",
+ "solana-hash 2.3.0",
+]
+
+[[package]]
+name = "solana-sha256-hasher"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db7dc3011ea4c0334aaaa7e7128cb390ecf546b28d412e9bf2064680f57f588f"
+dependencies = [
+ "solana-define-syscall 4.0.1",
+ "solana-hash 4.4.0",
 ]
 
 [[package]]
@@ -8196,6 +8218,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "sha2",
+ "solana-sha256-hasher 3.1.0",
 ]
 
 [[package]]
