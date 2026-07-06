@@ -584,7 +584,10 @@ async fn enqueue_upload_tasks(
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks.iter() {
-        task.enqueue_upload_task(db_txn).await?;
+        // false = the handle's provenance was deleted by reorg cleanup while
+        // this batch was computing; its publication is cancelled (logged by
+        // the callee) and the computed ct128 is simply left unpublished.
+        let _enqueued = task.enqueue_upload_task(db_txn).await?;
     }
     Ok(())
 }

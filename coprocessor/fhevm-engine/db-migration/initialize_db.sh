@@ -168,6 +168,28 @@ echo "-------------- Start database initilaization --------------"
 echo "Creating database..."
 sqlx database create || { echo "Failed to create database."; exit 1; }
 
+# The wave1 squash (#2848) shipped an in-place edit of the already-applied
+# migration 20260616120000_bridge_tables.sql; this tree restores the original
+# file and carries the delta in 20260704100000 instead. A database whose FIRST
+# migration run used the edited file recorded its checksum and would now fail
+# `sqlx migrate run` with VersionMismatch before applying anything newer.
+# Rewrite exactly that known checksum (SHA-384 of the edited file) to the
+# restored file's; a strict no-op everywhere else, including fresh databases
+# and databases that applied the original #2734 file.
+repair_bridge_tables_migration_checksum() {
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+    DO \$\$
+    BEGIN
+      IF to_regclass('_sqlx_migrations') IS NOT NULL THEN
+        UPDATE _sqlx_migrations
+        SET checksum = decode('36eee489f352fbd4f2c05c3a696b2aa144a7a1c314cbaf814402c49a22b8d166fbdd7e26cb8f996691517df3fde1f6e8', 'hex')
+        WHERE version = 20260616120000
+          AND checksum = decode('7f80a69bd35610c02950bbc253ac1c34c006217d242f17cd23f23e4fb990d94009587c4fc3fbd8b5ba042f17f0d09810', 'hex');
+      END IF;
+    END
+    \$\$;" || { echo "Failed to repair bridge_tables migration checksum."; exit 1; }
+}
+
 echo "Running migrations..."
 if [ "${RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS:-}" = "true" ]; then
   # Partial migrations — the host_chains table doesn't exist yet on this path,
@@ -179,6 +201,7 @@ elif [ "${RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES:-}" = "true" ]; then
   # Does not run the remaining migrations and does not seed.
   run_block_scope_materialization_wave1_prerequisites
 else
+  repair_bridge_tables_migration_checksum
   sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }
   seed_host_chains
 fi

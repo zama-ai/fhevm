@@ -1392,7 +1392,8 @@ async fn test_update_block_as_finalized_returns_direct_and_descendant_orphans(
         .expect("new_transaction() returns Some on a live stack");
     let orphaned_hashes = db
         .update_block_as_finalized(&mut tx, block_number, &canonical_hash)
-        .await?;
+        .await?
+        .expect("finalization accepted");
 
     let orphaned_hashes = orphaned_hashes.into_iter().collect::<HashSet<_>>();
     assert!(orphaned_hashes.contains(&orphan_hash.to_vec()));
@@ -1446,8 +1447,8 @@ async fn test_update_block_as_finalized_does_not_resurrect_orphaned_block(
     tx.commit().await?;
 
     assert!(
-        orphaned_hashes.is_empty(),
-        "stale finalization should not orphan sibling branches"
+        orphaned_hashes.is_none(),
+        "stale finalization must be refused, not orphan sibling branches"
     );
 
     let statuses = sqlx::query(
