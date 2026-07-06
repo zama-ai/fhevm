@@ -5,9 +5,15 @@
 // Replaces the full-vertical's `cargo test -p kms` user-decrypt leg.
 //
 // Env: UD_RELAYER_URL, UD_CONTRACTS_CHAIN_ID (dec u64), UD_HANDLE, UD_SECRET_KEY (32-byte ed25519
-//   seed), UD_CONTEXT_ID, UD_ALLOWED_DOMAIN_KEYS (csv), UD_EXPECTED (dec u64); optional UD_NONCE,
-//   UD_START_TIMESTAMP, UD_DURATION_SECONDS.
-import { createFhevmDecryptClient, solanaSignerFromSecretKey, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
+//   seed), UD_CONTEXT_ID, UD_ALLOWED_DOMAIN_KEYS (csv), UD_ACL_VALUE_KEY, UD_EXPECTED (dec u64);
+//   optional UD_NONCE, UD_START_TIMESTAMP, UD_DURATION_SECONDS. UD_HISTORICAL=1 additionally
+//   requires UD_MMR_* fields below.
+import {
+  createFhevmDecryptClient,
+  solanaSignerFromSecretKey,
+  setFhevmRuntimeConfig,
+  type SolanaUserDecryptParameters,
+} from '@fhevm/sdk/solana';
 import { defineFhevmSolanaChain } from '@fhevm/sdk/chains';
 import type { Bytes32Hex, BytesHex } from '@fhevm/sdk/types';
 
@@ -18,6 +24,33 @@ function reqEnv(name: string): string {
 }
 function hexToBytes(hex: string): Uint8Array {
   return Uint8Array.from(Buffer.from(hex.startsWith('0x') ? hex.slice(2) : hex, 'hex'));
+}
+function hexCsvToBytes(csv: string): Uint8Array[] {
+  return csv
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map(hexToBytes);
+}
+
+type UserDecryptMmrProof = NonNullable<SolanaUserDecryptParameters['mmrProof']>;
+
+function historicalProofFromEnv(): UserDecryptMmrProof | undefined {
+  if (process.env.UD_HISTORICAL !== '1') return undefined;
+  return {
+    encryptedValueAccount: hexToBytes(reqEnv('UD_MMR_ENCRYPTED_VALUE_ACCOUNT')),
+    aclValueKey: hexToBytes(reqEnv('UD_ACL_VALUE_KEY')),
+    peaks: hexCsvToBytes(reqEnv('UD_MMR_PEAKS')),
+    leafCount: BigInt(reqEnv('UD_MMR_LEAF_COUNT')),
+    proofSlot: BigInt(reqEnv('UD_MMR_PROOF_SLOT')),
+    proof: {
+      leafIndex: BigInt(reqEnv('UD_MMR_LEAF_INDEX')),
+      siblings: hexCsvToBytes(process.env.UD_MMR_SIBLINGS ?? ''),
+    },
+    mmrProofBytes: hexToBytes(reqEnv('UD_MMR_PROOF_BYTES')),
+    mode: 'historical',
+    subject: hexToBytes(reqEnv('UD_MMR_SUBJECT')),
+  };
 }
 
 const allowedAclDomainKeys = reqEnv('UD_ALLOWED_DOMAIN_KEYS')
@@ -34,12 +67,16 @@ setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: process.env.ZAMA_FH
 
 const signer = solanaSignerFromSecretKey(hexToBytes(reqEnv('UD_SECRET_KEY')));
 const handleHex = reqEnv('UD_HANDLE');
+const aclValueKey = hexToBytes(reqEnv('UD_ACL_VALUE_KEY'));
+const mmrProof = historicalProofFromEnv();
 
 const client = createFhevmDecryptClient({ signer, chain });
-const clearValues = await client.userDecrypt({
+const parameters: SolanaUserDecryptParameters = {
   handles: [handleHex as BytesHex],
   allowedAclDomainKeys,
   contextId: hexToBytes(reqEnv('UD_CONTEXT_ID')),
+  aclValueKey,
+  ...(mmrProof ? { mmrProof } : {}),
   ...(process.env.UD_NONCE ? { nonce: hexToBytes(process.env.UD_NONCE) } : {}),
   ...(process.env.UD_START_TIMESTAMP && process.env.UD_DURATION_SECONDS
     ? {
@@ -49,7 +86,8 @@ const clearValues = await client.userDecrypt({
         },
       }
     : {}),
-});
+};
+const clearValues = await client.userDecrypt(parameters);
 if (!clearValues.length) throw new Error('no clear values returned');
 
 const value = BigInt(clearValues[0].value as bigint | number | boolean);

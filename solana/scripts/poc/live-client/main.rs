@@ -19,8 +19,27 @@ use anchor_lang::AccountDeserialize;
 use solana_keypair::{read_keypair_file, Keypair};
 
 const EVENT_AUTHORITY_SEED: &[u8] = b"__event_authority";
+const HISTORICAL_LABEL_MARKER: u8 = 3;
+const MMR_MODE_HISTORICAL: u8 = 0x01;
 
 type LineageState = ([u8; 32], Vec<Pubkey>);
+
+struct DurableEvalTarget {
+    value: u64,
+    plaintext: [u8; 32],
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    value_key: [u8; 32],
+    encrypted_value: Pubkey,
+    context_id: [u8; 32],
+}
+
+struct DurableEvalResult {
+    encrypted_value: Pubkey,
+    value_key: [u8; 32],
+    handle: [u8; 32],
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let home = std::env::var("HOME")?;
@@ -56,6 +75,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // exercising the #2755 eval path instead of the standalone trivial_encrypt_and_bind.
     if std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
         trivial_encrypt_eval(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
+    // HISTORICAL_STEP=compute creates the old handle, then the shell waits for SNS materialization.
+    // HISTORICAL_STEP=supersede rotates the same lineage and prints the historical MMR proof.
+    if let Ok(step) = std::env::var("HISTORICAL_STEP") {
+        historical_supersede_step(&host, &payer, host_config, &step)?;
         return Ok(());
     }
 
@@ -138,6 +164,25 @@ fn addr20(s: &str) -> [u8; 20] {
         .expect("expected a 20-byte EVM address")
 }
 
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn hex_csv(values: &[[u8; 32]]) -> String {
+    values
+        .iter()
+        .map(|value| format!("0x{}", hex(value)))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn te_value() -> u64 {
+    std::env::var("TE_VALUE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(42)
+}
+
 fn encrypted_value_address(
     acl_domain_key: Pubkey,
     app_account: Pubkey,
@@ -149,6 +194,40 @@ fn encrypted_value_address(
         encrypted_value_label,
     );
     zama_host::encrypted_value_address(value_key).0
+}
+
+fn durable_eval_target(payer: &Rc<Keypair>, label_marker: u8) -> DurableEvalTarget {
+    let value = te_value();
+    let mut plaintext = [0u8; 32];
+    plaintext[24..32].copy_from_slice(&value.to_be_bytes());
+
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    let mut encrypted_value_label = [label_marker; 32];
+    encrypted_value_label[24..32].copy_from_slice(&value.to_be_bytes());
+    let value_key = zama_solana_acl::derive_value_key(
+        acl_domain_key.to_bytes(),
+        app_account.to_bytes(),
+        encrypted_value_label,
+    );
+    let encrypted_value =
+        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
+
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0xc0;
+    context_id[1] = label_marker;
+    context_id[24..32].copy_from_slice(&value.to_be_bytes());
+
+    DurableEvalTarget {
+        value,
+        plaintext,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        value_key,
+        encrypted_value,
+        context_id,
+    }
 }
 
 fn fetch_encrypted_value(
@@ -339,7 +418,8 @@ fn trivial_encrypt_and_bind(
     payer: &Rc<Keypair>,
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    trivial_encrypt_eval_with_label(host, payer, host_config, 1, "trivial_encrypt_and_bind")
+    trivial_encrypt_eval_with_label(host, payer, host_config, 1, "trivial_encrypt_and_bind")?;
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -349,45 +429,29 @@ fn trivial_encrypt_eval_with_label(
     host_config: Pubkey,
     label_marker: u8,
     ok_marker: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<DurableEvalResult, Box<dyn std::error::Error>> {
     use anchor_lang::solana_program::instruction::AccountMeta;
 
-    let value: u64 = std::env::var("TE_VALUE")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(42);
-    let mut plaintext = [0u8; 32];
-    plaintext[24..32].copy_from_slice(&value.to_be_bytes());
+    let target = durable_eval_target(payer, label_marker);
     let fhe_type: u8 = 5; // euint64
 
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    let mut encrypted_value_label = [label_marker; 32];
-    encrypted_value_label[24..32].copy_from_slice(&value.to_be_bytes());
-    let output_encrypted_value =
-        encrypted_value_address(acl_domain_key, app_account, encrypted_value_label);
     let (zama_event_authority, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let subjects = vec![owner_subject(payer.pubkey())];
 
-    let mut context_id = [0u8; 32];
-    context_id[0] = 0xc0;
-    context_id[1] = label_marker;
-    context_id[24..32].copy_from_slice(&value.to_be_bytes());
-
     let output = durable_output(
         host,
-        output_encrypted_value,
+        target.encrypted_value,
         0,
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
+        target.acl_domain_key,
+        target.app_account,
+        target.encrypted_value_label,
         subjects,
     )?;
     let args = zama_host::FheEvalArgs {
-        context_id,
+        context_id: target.context_id,
         steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
-            plaintext,
+            plaintext: target.plaintext,
             fhe_type,
             output,
         }],
@@ -406,27 +470,29 @@ fn trivial_encrypt_eval_with_label(
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
-        .accounts(vec![AccountMeta::new(output_encrypted_value, false)])
+        .accounts(vec![AccountMeta::new(target.encrypted_value, false)])
         .args(zama_host::instruction::FheEval { args })
         .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
             skip_preflight: true,
             ..Default::default()
         })?;
-    println!("OK {ok_marker} ({value} as euint64): {sig}");
+    println!("OK {ok_marker} ({} as euint64): {sig}", target.value);
 
-    let value_account = fetch_encrypted_value(host, output_encrypted_value)?;
-    let handle_hex: String = value_account
-        .current_handle
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    println!("  output ACL record {output_encrypted_value}");
+    let value_account = fetch_encrypted_value(host, target.encrypted_value)?;
+    let handle = value_account.current_handle;
+    let handle_hex = hex(&handle);
+    println!("  output ACL record {}", target.encrypted_value);
+    println!("  acl value key 0x{}", hex(&target.value_key));
     println!("  result handle 0x{handle_hex}  (tfhe-worker materializes this ciphertext)");
 
     if std::env::var("TE_ALLOW").is_ok() {
-        allow_for_decryption(host, payer, host_config, output_encrypted_value)?;
+        allow_for_decryption(host, payer, host_config, target.encrypted_value)?;
     }
-    Ok(())
+    Ok(DurableEvalResult {
+        encrypted_value: target.encrypted_value,
+        value_key: target.value_key,
+        handle,
+    })
 }
 
 /// Eval-based compute leg: drives a single-step fhe_eval plan (one TrivialEncrypt step with a
@@ -440,7 +506,125 @@ fn trivial_encrypt_eval(
     payer: &Rc<Keypair>,
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    trivial_encrypt_eval_with_label(host, payer, host_config, 2, "fhe_eval trivial_encrypt")
+    trivial_encrypt_eval_with_label(host, payer, host_config, 2, "fhe_eval trivial_encrypt")?;
+    Ok(())
+}
+
+fn build_historical_access_proof(
+    encrypted_value_account: [u8; 32],
+    peaks: &[[u8; 32]],
+    leaf_count: u64,
+    old_handle: [u8; 32],
+    subject: [u8; 32],
+) -> Result<(zama_solana_acl::MmrProof, Vec<u8>), Box<dyn std::error::Error>> {
+    let leaf = zama_solana_acl::historical_access_leaf_commitment(
+        encrypted_value_account,
+        0,
+        old_handle,
+        subject,
+    );
+    let leaves = [leaf];
+    let proof = zama_solana_acl::mmr_build_proof(&leaves, 0).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "failed to build historical MMR proof for leaf 0",
+        )
+    })?;
+    if !zama_solana_acl::mmr_verify(peaks, leaf_count, leaf, &proof) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("historical MMR proof did not verify against live leaf_count={leaf_count}"),
+        )
+        .into());
+    }
+
+    let mut proof_bytes = vec![MMR_MODE_HISTORICAL];
+    proof_bytes.extend_from_slice(&borsh::to_vec(&proof)?);
+    Ok((proof, proof_bytes))
+}
+
+fn historical_supersede_step(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+    step: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match step {
+        "compute" => {
+            let target = durable_eval_target(payer, HISTORICAL_LABEL_MARKER);
+            if existing_lineage_state(host, target.encrypted_value)?.is_some() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "HISTORICAL_STEP=compute requires a fresh historical lineage",
+                )
+                .into());
+            }
+            let result = trivial_encrypt_eval_with_label(
+                host,
+                payer,
+                host_config,
+                HISTORICAL_LABEL_MARKER,
+                "historical compute",
+            )?;
+            println!("HIST H_old 0x{}", hex(&result.handle));
+            println!("HIST encryptedValueAccount {}", result.encrypted_value);
+            println!(
+                "HIST encryptedValueAccountHex 0x{}",
+                hex(&result.encrypted_value.to_bytes())
+            );
+            println!("HIST aclValueKey 0x{}", hex(&result.value_key));
+            Ok(())
+        }
+        "supersede" => {
+            let target = durable_eval_target(payer, HISTORICAL_LABEL_MARKER);
+            let Some((old_handle, _)) = existing_lineage_state(host, target.encrypted_value)?
+            else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "HISTORICAL_STEP=supersede requires HISTORICAL_STEP=compute first",
+                )
+                .into());
+            };
+
+            let result = trivial_encrypt_eval_with_label(
+                host,
+                payer,
+                host_config,
+                HISTORICAL_LABEL_MARKER,
+                "historical supersede",
+            )?;
+            let value_account = fetch_encrypted_value(host, target.encrypted_value)?;
+            let (proof, proof_bytes) = build_historical_access_proof(
+                target.encrypted_value.to_bytes(),
+                &value_account.peaks,
+                value_account.leaf_count,
+                old_handle,
+                payer.pubkey().to_bytes(),
+            )?;
+
+            println!("HIST H_old 0x{}", hex(&old_handle));
+            println!("HIST H_new 0x{}", hex(&result.handle));
+            println!("HIST encryptedValueAccount {}", target.encrypted_value);
+            println!(
+                "HIST encryptedValueAccountHex 0x{}",
+                hex(&target.encrypted_value.to_bytes())
+            );
+            println!("HIST aclValueKey 0x{}", hex(&target.value_key));
+            println!("HIST peaks {}", hex_csv(&value_account.peaks));
+            println!("HIST leafCount {}", value_account.leaf_count);
+            println!("HIST proofSlot {}", value_account.leaf_count);
+            println!("HIST leafIndex {}", proof.leaf_index);
+            println!("HIST siblings {}", hex_csv(&proof.siblings));
+            println!("HIST subject 0x{}", hex(&payer.pubkey().to_bytes()));
+            println!("HIST mmrProofBytes 0x{}", hex(&proof_bytes));
+            Ok(())
+        }
+        other => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("unknown HISTORICAL_STEP={other}; expected compute or supersede"),
+        )
+        .into()),
+    }
 }
 
 /// Input flow leg (#1539): one fhe_eval that adds a public scalar to a coprocessor-attested external
@@ -1282,4 +1466,41 @@ fn initialize_mint(
         acl.data.len()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn historical_proof_for_first_supersession_verifies() {
+        let encrypted_value_account = [0xAC; 32];
+        let old_handle = [0x10; 32];
+        let subject = [0x01; 32];
+        let leaf = zama_solana_acl::historical_access_leaf_commitment(
+            encrypted_value_account,
+            0,
+            old_handle,
+            subject,
+        );
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0;
+        zama_solana_acl::mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
+
+        let (proof, proof_bytes) = build_historical_access_proof(
+            encrypted_value_account,
+            &peaks,
+            leaf_count,
+            old_handle,
+            subject,
+        )
+        .unwrap();
+
+        assert_eq!(proof.leaf_index, 0);
+        assert!(proof.siblings.is_empty());
+        assert_eq!(proof_bytes[0], MMR_MODE_HISTORICAL);
+        assert!(zama_solana_acl::mmr_verify(
+            &peaks, leaf_count, leaf, &proof
+        ));
+    }
 }

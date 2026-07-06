@@ -22,6 +22,11 @@ CTX="${SOLANA_UD_CONTEXT_ID:-316618994008286471861326912133130998036285114320110
 # id is the low-64-bits (1), which `extract_kms_context_id` derives from this same extra_data.
 EXTRA=0x010700000000000000000000000000000000000000000000000000000000000001
 fail() { echo "FAIL: $*" >&2; exit 1; }
+hist_field() {
+  local body="$1"
+  local key="$2"
+  printf '%s\n' "$body" | awk -v key="$key" '$1=="HIST" && $2==key {print $3; exit}'
+}
 LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"
 
 # Solana host identities the input client binds to (deterministic: zama-host/confidential-token
@@ -86,6 +91,8 @@ out="$(cd "$ROOT/solana/scripts/poc/live-client" && TRIVIAL_ENCRYPT_EVAL=1 TE_VA
 echo "$out" | grep -E 'result handle|allow_for_decryption' || fail "trivial-encrypt(eval): $out"
 H="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
 [ -n "$H" ] || fail "no handle"
+VK="$(echo "$out" | grep -oE 'acl value key 0x[0-9a-f]+' | awk '{print $4}')"
+[ -n "$VK" ] || fail "no acl value key: $out"
 echo "    handle=$H"
 
 echo "==> [compute] wait for SNS commit + S3 upload (coprocessor tfhe/sns-worker)"
@@ -119,10 +126,59 @@ UD_SK="0x$(python3 -c "import json,os;print(bytes(json.load(open(os.path.expandu
 UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
 ( cd "$ROOT/test-suite/fhevm" && \
     UD_RELAYER_URL=http://127.0.0.1:3000 UD_CONTRACTS_CHAIN_ID="$SID" UD_HANDLE="$H" \
-    UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" UD_EXPECTED="$VALUE" \
+    UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" \
+    UD_ACL_VALUE_KEY="$VK" UD_EXPECTED="$VALUE" \
     bun run solana-userdecrypt-full.ts ) \
   || fail "pure-SDK user-decrypt failed"
 echo "    user-decrypt cleartext=$VALUE OK (PURE-SDK: ed25519 v3 + in-SDK de-signcryption, no kms checkout)"
+
+echo "==> [historical-user-decrypt] superseded handle via live MMR proof + /v3/user-decrypt"
+hist_compute="$(cd "$ROOT/solana/scripts/poc/live-client" && HISTORICAL_STEP=compute TE_VALUE="$VALUE" ./target/debug/poc-live-client 2>&1)"
+echo "$hist_compute" | grep -E 'HIST H_old|result handle' || fail "historical compute: $hist_compute"
+HIST_H_OLD="$(hist_field "$hist_compute" H_old)"
+HIST_ACL_VALUE_KEY_COMPUTE="$(hist_field "$hist_compute" aclValueKey)"
+[ -n "$HIST_H_OLD" ] && [ -n "$HIST_ACL_VALUE_KEY_COMPUTE" ] || fail "historical compute missing fields: $hist_compute"
+echo "    historical old handle=$HIST_H_OLD"
+
+echo "==> [historical-user-decrypt] wait for old-handle SNS commit before supersede"
+HIST_HH="${HIST_H_OLD#0x}"
+for i in $(seq 1 30); do
+  row="$(docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -tAc \
+    "SELECT ciphertext IS NOT NULL, ciphertext128 IS NOT NULL FROM ciphertext_digest WHERE handle=decode('$HIST_HH','hex')" 2>/dev/null | tr -d '[:space:]')"
+  [ "$row" = "t|t" ] && { echo "    committed"; break; }
+  [ "$i" = 30 ] && fail "historical old-handle SNS commit timed out"; sleep 6
+done
+
+hist_proof="$(cd "$ROOT/solana/scripts/poc/live-client" && HISTORICAL_STEP=supersede TE_VALUE="$VALUE" ./target/debug/poc-live-client 2>&1)"
+echo "$hist_proof" | grep -E 'HIST H_new|HIST mmrProofBytes' || fail "historical supersede/proof: $hist_proof"
+HIST_H_OLD2="$(hist_field "$hist_proof" H_old)"
+HIST_H_NEW="$(hist_field "$hist_proof" H_new)"
+HIST_ENCRYPTED_VALUE_ACCOUNT="$(hist_field "$hist_proof" encryptedValueAccountHex)"
+HIST_ACL_VALUE_KEY="$(hist_field "$hist_proof" aclValueKey)"
+HIST_PEAKS="$(hist_field "$hist_proof" peaks)"
+HIST_LEAF_COUNT="$(hist_field "$hist_proof" leafCount)"
+HIST_PROOF_SLOT="$(hist_field "$hist_proof" proofSlot)"
+HIST_LEAF_INDEX="$(hist_field "$hist_proof" leafIndex)"
+HIST_SIBLINGS="$(hist_field "$hist_proof" siblings)"
+HIST_SUBJECT="$(hist_field "$hist_proof" subject)"
+HIST_MMR_PROOF_BYTES="$(hist_field "$hist_proof" mmrProofBytes)"
+for required in HIST_H_OLD2 HIST_H_NEW HIST_ENCRYPTED_VALUE_ACCOUNT HIST_ACL_VALUE_KEY HIST_PEAKS HIST_LEAF_COUNT HIST_PROOF_SLOT HIST_LEAF_INDEX HIST_SUBJECT HIST_MMR_PROOF_BYTES; do
+  [ -n "${!required}" ] || fail "historical proof missing $required: $hist_proof"
+done
+[ "$HIST_H_OLD2" = "$HIST_H_OLD" ] || fail "historical proof old handle $HIST_H_OLD2 != compute old handle $HIST_H_OLD"
+[ "$HIST_ACL_VALUE_KEY" = "$HIST_ACL_VALUE_KEY_COMPUTE" ] || fail "historical proof aclValueKey changed"
+
+( cd "$ROOT/test-suite/fhevm" && \
+    UD_RELAYER_URL=http://127.0.0.1:3000 UD_CONTRACTS_CHAIN_ID="$SID" UD_HANDLE="$HIST_H_OLD" \
+    UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" \
+    UD_ACL_VALUE_KEY="$HIST_ACL_VALUE_KEY" UD_EXPECTED="$VALUE" UD_HISTORICAL=1 \
+    UD_MMR_ENCRYPTED_VALUE_ACCOUNT="$HIST_ENCRYPTED_VALUE_ACCOUNT" UD_MMR_PEAKS="$HIST_PEAKS" \
+    UD_MMR_LEAF_COUNT="$HIST_LEAF_COUNT" UD_MMR_PROOF_SLOT="$HIST_PROOF_SLOT" \
+    UD_MMR_LEAF_INDEX="$HIST_LEAF_INDEX" UD_MMR_SIBLINGS="$HIST_SIBLINGS" \
+    UD_MMR_PROOF_BYTES="$HIST_MMR_PROOF_BYTES" UD_MMR_SUBJECT="$HIST_SUBJECT" \
+    bun run solana-userdecrypt-full.ts ) \
+  || fail "historical pure-SDK user-decrypt failed"
+echo "OK historical-user-decrypt cleartext=$VALUE old=$HIST_H_OLD new=$HIST_H_NEW"
 
 # Input flow (#1539): compute on the VERIFIED external input itself. One fhe_eval adds $ADD to the
 # attested input in-frame (FheEvalOperand::VerifiedInput — re-verified on-chain via secp256k1, no

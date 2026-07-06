@@ -1704,6 +1704,7 @@ version = "0.0.0"
 dependencies = [
  "anchor-client",
  "anchor-lang",
+ "borsh",
  "confidential-token",
  "solana-keypair",
  "zama-host",
