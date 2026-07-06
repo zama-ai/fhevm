@@ -91,10 +91,10 @@ async fn poller_catches_up_to_safe_tip(
         .bind(chain_id.as_i64())
         .execute(&pool)
         .await?;
-    sqlx::query("DELETE FROM computations")
+    sqlx::query("DELETE FROM computations_branch")
         .execute(&pool)
         .await?;
-    sqlx::query("DELETE FROM allowed_handles")
+    sqlx::query("DELETE FROM allowed_handles_branch")
         .execute(&pool)
         .await?;
 
@@ -173,6 +173,7 @@ async fn poller_catches_up_to_safe_tip(
         acl_address: *acl_contract.address(),
         tfhe_address: *tfhe_contract.address(),
         kms_generation_address: Some(*kms_generation_contract.address()),
+        protocol_config_address: Some(alloy::primitives::Address::ZERO),
         confidential_bridge_address: None,
         database_url: db_url.clone(),
         finality_lag,
@@ -187,6 +188,8 @@ async fn poller_catches_up_to_safe_tip(
         dependence_by_connexity: false,
         dependence_cross_block: false,
         dependent_ops_max_per_chain: 0,
+        gcs_mode: false,
+        ethereum_chain_id: Some(chain_id.as_u64()),
     };
 
     let poller_handle = tokio::spawn(run_poller(config));
@@ -223,14 +226,16 @@ async fn poller_catches_up_to_safe_tip(
     poller_handle.abort();
     let _ = poller_handle.await;
 
-    let computations_count =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM computations")
-            .fetch_one(&pool)
-            .await?;
-    let allowed_count =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM allowed_handles")
-            .fetch_one(&pool)
-            .await?;
+    let computations_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM computations_branch",
+    )
+    .fetch_one(&pool)
+    .await?;
+    let allowed_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM allowed_handles_branch",
+    )
+    .fetch_one(&pool)
+    .await?;
     let last_valid_block = sqlx::query_scalar::<_, Option<i64>>(
         "SELECT MAX(block_number) FROM host_chain_blocks_valid \
          WHERE chain_id = $1",

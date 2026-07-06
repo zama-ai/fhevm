@@ -28,6 +28,9 @@ spec:
       labels:
         app: {{ $appLabel }}
         app.kubernetes.io/name: {{ $deploymentName }}
+        {{- with $.Values.commonConfig.stackVersion }}
+        app.kubernetes.io/version: {{ . | quote }}
+        {{- end }}
         {{- with $.Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -61,6 +64,13 @@ spec:
         - name: coprocessor-host-listener
           image: {{ $.Values.hostListenerShared.image.name }}:{{ $.Values.hostListenerShared.image.tag }}
           command: ["host_listener"]
+          {{- if $.Values.commonConfig.stackVersionProbe.enabled }}
+          startupProbe:
+            exec:
+              command: ["host_listener", "--stack-version"]
+            periodSeconds: {{ $.Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
+            failureThreshold: {{ $.Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
+          {{- end }}
           args:
             {{- if not (has "database-url" $disabled) }}
             - --database-url=$(DATABASE_URL)
@@ -76,6 +86,9 @@ spec:
             {{- end }}
             {{- if and (not (has "kms-generation-address" $disabled)) (or $chain.kmsGenerationContractAddress $chain.kmsGenerationContractAddressValueFrom) }}
             - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
+            {{- end }}
+            {{- if and (not (has "protocol-config-address" $disabled)) (or $chain.protocolConfigContractAddress $chain.protocolConfigContractAddressValueFrom) }}
+            - --protocol-config-address=$(PROTOCOL_CONFIG_ADDRESS)
             {{- end }}
             {{- if not (has "health-port" $disabled) }}
             - --health-port={{ $.Values.hostListenerShared.ports.healthcheck }}
@@ -188,6 +201,19 @@ spec:
               valueFrom:
                 {{- toYaml $chain.kmsGenerationContractAddressValueFrom | nindent 16 }}
               {{- end }}
+            {{- end }}
+            {{- if or $chain.protocolConfigContractAddress $chain.protocolConfigContractAddressValueFrom }}
+            - name: PROTOCOL_CONFIG_ADDRESS
+              {{- if $chain.protocolConfigContractAddress }}
+              value: {{ $chain.protocolConfigContractAddress | quote }}
+              {{- else if $chain.protocolConfigContractAddressValueFrom }}
+              valueFrom:
+                {{- toYaml $chain.protocolConfigContractAddressValueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.ethereumChainId }}
+            - name: ETHEREUM_CHAIN_ID
+              value: {{ . | quote }}
             {{- end }}
           {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerShared.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

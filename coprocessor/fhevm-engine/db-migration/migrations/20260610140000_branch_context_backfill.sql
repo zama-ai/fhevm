@@ -1,0 +1,10 @@
+-- Branch-context wave 1 no-op.
+--
+-- Earlier drafts copied all historical allowed_handles and ciphertext_digest
+-- rows into branchless branch rows here. That is unsafe as an automatic online
+-- migration on large deployments: it performs full-table reads and writes in a
+-- migrator transaction while the legacy tables are hot.
+--
+-- Wave 1 still installs row-level mirror triggers for legacy writes after the
+-- branch tables exist. Wave 2 readers explicitly fall back to the legacy tables
+-- for pre-branch historical rows that never passed through those triggers.

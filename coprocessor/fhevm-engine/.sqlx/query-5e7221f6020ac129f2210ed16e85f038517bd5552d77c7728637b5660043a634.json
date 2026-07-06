@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM allowed_handles a\n                USING (\n                    SELECT *\n                    FROM UNNEST($2::bytea[], $3::text[], $4::int2[])\n                        AS row(handle, account_address, event_type)\n                ) orphaned\n                WHERE a.host_chain_id = $1\n                  AND a.handle = orphaned.handle\n                  AND a.account_address = orphaned.account_address\n                  AND a.event_type = orphaned.event_type\n                  AND NOT EXISTS (\n                      SELECT 1\n                      FROM allowed_handles_branch b\n                      WHERE b.host_chain_id = a.host_chain_id\n                        AND b.handle = a.handle\n                        AND b.account_address = a.account_address\n                        AND b.event_type = a.event_type\n                  )\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "ByteaArray",
+        "TextArray",
+        "Int2Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5e7221f6020ac129f2210ed16e85f038517bd5552d77c7728637b5660043a634"
+}

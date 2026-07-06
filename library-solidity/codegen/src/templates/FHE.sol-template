@@ -56,6 +56,9 @@ library FHE {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
+    /// @notice Returned if the confidential bridge is not deployed.
+    error ConfidentialBridgeNotDeployed();
+
     /// @notice Returned if the deserializing of the decryption proof fails.
     error DeserializingDecryptionProofFail();
 
@@ -768,4 +771,84 @@ library FHE {
     //$$ -----------------------------------------------------------------------
     $${FHEtoBytes32}$$
     //$$ -----------------------------------------------------------------------
+
+    /**
+     * @dev Resolves the `ConfidentialBridge` address from the ACL (`getConfidentialBridgeAddress`),
+     *      reverting if the confidential bridge is not deployed on the current chain.
+     */
+    function getLZConfidentialBridgeAddress() internal view returns (address) {
+        CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
+        address cBridgeAddr = IACL($.ACLAddress).getConfidentialBridgeAddress();
+        if (cBridgeAddr == address(0)) revert ConfidentialBridgeNotDeployed();
+        return cBridgeAddr;
+    }
+
+
+    /**
+     * @notice Requests `ConfidentialBridge` to bridge an explicit list of `bytes32` handles to a `bytes32` destination app (`bytes32` instead of `address` to also support non-EVM destinations).
+     * @dev    This function forwards `nativeFee` as msg.value, so the calling contract must be funded with at least that amount. If the developer wants the end
+     *         user to pay for the bridge request, the function calling `sendLZConfidentialBridge` should be marked `payable` so the user can attach the native
+     *         fee (e.g. msg.value) when invoking it.
+     * @dev    The source app contract must already hold ACL allowance on every handle; `lzComposeGas` must be non-zero (the bridge reverts otherwise) 
+     *         and should be set to a reasonable value after estimation of the gas needed by the destination app callback `onConfidentialBridgeReceived`.
+     * @dev    If `lzComposeGas` is set to a too low value, the message will not be automatically relayed by LayerZero and will be stuck in the `lzCompose` queue. 
+     *         To unstuck the message, anyone could manually relay the message by calling the `lzCompose` function on the destination endpoint contract with the same `guid` as the stuck message.
+     * @dev    The function will revert if the `ConfidentialBridge` is not deployed on the current chain.
+     * @param dstEid        Destination LayerZero endpoint id.
+     * @param dstApp        Destination app as bytes32 (EVM address left-padded, or native id for other chains like Solana).
+     * @param payload       Opaque app payload; encoding is fully app-defined. Typically this will be abi-decoded in the destination app `onConfidentialBridgeReceived` callback.
+     * @param handleList    Raw `bytes32` handles to bridge, should be non-empty and contain a maximum of 32 handles. The source app contract calling this function must already hold ACL allowance on every handle.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @param nativeFee     LayerZero native fee to forward as msg.value to the `ConfidentialBridge` contract. This should be **exactly equal** to the value returned by {quoteLZConfidentialBridge} for
+     *                      a message with similar parameters - query it with similar parameters **right before** calling this function (to avoid race conditions in quoting, see {quoteLZConfidentialBridge} NatSpec), 
+     *                      otherwise it would revert with {MsgValueMustEqualQuotedFee(msg.value, requiredFee)} even if sending more value than the quote (i.e no refund in case of overpayment, but revert also in this case).
+     * @return guid         The LayerZero message guid.
+     * @return nonce        The LayerZero message nonce.
+     */
+    function sendLZConfidentialBridge(
+        uint32 dstEid,
+        bytes32 dstApp,
+        bytes memory payload,
+        bytes32[] memory handleList,
+        uint64 lzComposeGas,
+        uint256 nativeFee
+    ) internal returns (bytes32 guid, uint64 nonce) {
+        MessagingReceiptLZ memory receipt = IConfidentialBridge(getLZConfidentialBridgeAddress()).send{value: nativeFee}(dstEid, dstApp, payload, handleList, lzComposeGas);
+        guid = receipt.guid;
+        nonce = receipt.nonce;
+    }
+
+    /**
+     * @notice Quotes the LayerZero native fee required to bridge an explicit list of `bytes32` handles to a `bytes32` destination app via {sendLZConfidentialBridge}.
+     * @dev    Call this before {sendLZConfidentialBridge} to size the `nativeFee` (msg.value) for a message with similar parameters.
+     *         The returned fee depends on the destination endpoint, payload size, number of handles and the `lzComposeGas` budget, so pass values matching the intended send.
+     * @dev    The value returned here must be passed as the exact `nativeFee` argument to {sendLZConfidentialBridge} (not more, not less).
+     * @dev    RACE CONDITION: The quoted fee is only valid for the market conditions at the time of the call. LayerZero fees can change between the quote
+     *         and the send (e.g. gas price fluctuations leading to LZ price Oracle update). If the fee changes in between, `sendLZConfidentialBridge` may revert
+     *         so the quote should be refreshed as close as possible to the send and re-called if the send fails due to a wrong sent fee.
+     * @dev    The function will revert if the `ConfidentialBridge` is not deployed on the current chain.
+     * @param dstEid        Destination LayerZero endpoint id.
+     * @param srcApp        Source app address (the contract that will call {sendLZConfidentialBridge}).
+     * @param dstApp        Destination app as bytes32 (EVM address left-padded, or native id for other chains like Solana).
+     * @param payload       Opaque app payload used only to size the quote. Like `handleList`, it does not need to equal the payload that will ultimately be sent
+     *                      (e.g. it can be zero-filled bytes); however it must match exactly the length of the payload that will be sent to get a correct fee estimation.
+     * @param handleList    Raw `bytes32` handles used only to size the quote. It does not need to equal the list that will ultimately be sent, and its handles do not
+     *                      need to be allowed to any account (e.g. it can be a list of null handles); however it should be of equal size to the list that will
+     *                      be sent to get a correct fee estimation. Should be non-empty and contain a maximum of 32 handles.
+     * @param lzComposeGas  Gas budget for the destination app callback `onConfidentialBridgeReceived` (lzCompose leg). The amount needed is
+     *                      app-specific, apps should size it for their `onConfidentialBridgeReceived` workload.
+     * @return nativeFee    The fee to be passed as `nativeFee` to {sendLZConfidentialBridge} (i.e native fee to forward as msg.value when calling {sendLZConfidentialBridge}).
+     */
+    function quoteLZConfidentialBridge(
+        uint32 dstEid,
+        address srcApp,
+        bytes32 dstApp,
+        bytes memory payload,
+        bytes32[] memory handleList,
+        uint64 lzComposeGas
+    ) internal view returns (uint256 nativeFee) {
+        MessagingFeeLZ memory fee = IConfidentialBridge(getLZConfidentialBridgeAddress()).quote(dstEid, srcApp, dstApp, payload, handleList, lzComposeGas);
+        nativeFee = fee.nativeFee;
+    }
 }

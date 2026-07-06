@@ -2486,7 +2486,7 @@ dependencies = [
 
 [[package]]
 name = "fhevm-relayer"
-version = "0.9.0-rc.3"
+version = "0.14.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -2545,7 +2545,6 @@ dependencies = [
 [[package]]
 name = "fhevm_host_bindings"
 version = "0.10.0"
-source = "git+https://github.com/zama-ai/fhevm.git?rev=2a6cf820b#2a6cf820b8fa9b29d2ffdffdfeeef9e9a0279e06"
 dependencies = [
  "alloy",
  "serde",
@@ -4283,9 +4282,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.14"
+version = "0.11.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+checksum = "4fcb935c5bec503c2f0e306bdd3e58bb9029dcb14fa8d9ac76e3a5256ac0763e"
 dependencies = [
  "aws-lc-rs",
  "bytes",

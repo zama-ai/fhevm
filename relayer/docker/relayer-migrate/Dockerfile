@@ -35,7 +35,7 @@ RUN --mount=type=bind,source=relayer/relayer-migrate/Cargo.toml,target=Cargo.tom
 # runtime dependencies for the application. This often uses a different base
 # image from the build stage where the necessary files are copied from the build
 # stage.
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS prod
+FROM cgr.dev/zama.ai/glibc-dynamic:16-dev AS prod
 USER root
 RUN apk add --no-cache ca-certificates=20241010-r0
 

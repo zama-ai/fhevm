@@ -268,6 +268,10 @@ export const requiresMultichainAclAddress = (state: CompatState) =>
 export const requiresLegacyRelayerReadinessConfig = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.RELAYER_VERSION ?? "", [0, 10, 0]);
 
+/** Detects when relayer keyurl config must stay on the pre-host-poller static shape. */
+export const requiresLegacyRelayerKeyUrlConfig = (state: Pick<CompatState, "versions">) =>
+  versionBeforeReleaseFamily(state.versions.env.RELAYER_VERSION ?? "", [0, 14, 0], { unparsed: "modern" });
+
 /** Detects when kms-core still expects the legacy config schema. */
 export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.CORE_VERSION ?? "", [0, 13, 10]);

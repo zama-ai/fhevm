@@ -9,7 +9,11 @@ use serial_test::serial;
 async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let tx_id = next_handle();
-    let mut tx = harness.listener_db.new_transaction().await?;
+    let mut tx = harness
+        .listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
 
     let test_cases: &[(u64, i32, i16, &str)] = &[
         (0, 0, 0, "false"), // bool

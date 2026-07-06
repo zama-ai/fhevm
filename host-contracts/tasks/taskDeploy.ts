@@ -162,34 +162,7 @@ task('task:deployAllHostContracts')
     await hre.run('task:deployInputVerifier');
     await hre.run('task:deployHCULimit');
 
-    // ConfidentialBridge upgrade is opt-in via the LZ_ENDPOINT_ADDRESS env var.
-    // When unset, the bridge stays at its empty-proxy stage and can be upgraded
-    // later by running `task:deployBridge` once LZ_ENDPOINT_ADDRESS is configured.
-    //
-    // We also skip the bridge upgrade on the in-memory `hardhat` network: the
-    // canonical LZ endpoint doesn't exist there, so initializeFromEmptyProxy →
-    // __OAppCore_init → endpoint.setDelegate(...) would revert. Test fixtures
-    // that need the bridge deploy their own proxies (see test/bridge/fixture.ts
-    // and test/bridge/Bridge.t.sol::_deployBridgeProxy).
-    if (!process.env.LZ_ENDPOINT_ADDRESS) {
-      console.log(
-        '[task:deployAllHostContracts] LZ_ENDPOINT_ADDRESS not set; ' +
-          'ConfidentialBridge stays at its empty-proxy stage. Set LZ_ENDPOINT_ADDRESS and run task:deployBridge when ready.',
-      );
-    } else if (hre.network.name === 'hardhat') {
-      console.log(
-        "[task:deployAllHostContracts] Skipping bridge upgrade on the in-memory 'hardhat' network " +
-          '(no LayerZero endpoint contract exists there). Run on a real network to upgrade the bridge.',
-      );
-    } else if ((await hre.ethers.provider.getCode(process.env.LZ_ENDPOINT_ADDRESS)) === '0x') {
-      console.log(
-        `[task:deployAllHostContracts] No contract deployed at LZ_ENDPOINT_ADDRESS (${process.env.LZ_ENDPOINT_ADDRESS}) ` +
-          'on this network; ConfidentialBridge stays at its empty-proxy stage. ' +
-          'Run task:deployBridge against a network with a real LayerZero endpoint to upgrade the bridge.',
-      );
-    } else {
-      await hre.run('task:deployBridge');
-    }
+    await hre.run('task:deployBridge');
 
     console.log('Contract deployment done!');
   });
@@ -236,7 +209,10 @@ task('task:deployEmptyUUPSProxies')
     undefined,
     types.boolean,
   )
-  .setAction(async function ({ withKmsGeneration }: { withKmsGeneration: boolean }, { ethers, upgrades, run }) {
+  .setAction(async function (
+    { withKmsGeneration }: { withKmsGeneration: boolean },
+    { ethers, upgrades, run, network },
+  ) {
     // Compile the EmptyUUPS proxy contract for ACL
     await run('compile:specific', { contract: 'contracts/emptyProxyACL' });
 
@@ -279,8 +255,43 @@ task('task:deployEmptyUUPSProxies')
       await run('task:setKMSGenerationAddress', { address: kmsGenerationAddress });
     }
 
-    const confidentialBridgeAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-    await run('task:setBridgeAddress', { address: confidentialBridgeAddress });
+    // ConfidentialBridge is opt-in. We provision its empty proxy when a bridge is intended on this
+    // host — either a real LayerZero endpoint is already configured, or the caller explicitly asks
+    // via PROVISION_BRIDGE_PROXY. The flag exists because the multi-chain e2e deploys its LZ endpoint
+    // AFTER the host contracts and upgrades this proxy later (task:deployBridge): the proxy must
+    // exist here so the ACL bakes its (deterministic) address. When neither holds we deploy nothing
+    // and pin the null address, so tooling can detect the bridge's absence via
+    // ACL.getConfidentialBridgeAddress() returning address(0).
+    const lzEndpoint = process.env.LZ_ENDPOINT_ADDRESS;
+    const provisionBridgeProxy = process.env.PROVISION_BRIDGE_PROXY === 'true';
+    let endpointHasCode = false;
+    if (lzEndpoint) {
+      if (!ethers.isAddress(lzEndpoint)) {
+        throw new Error(
+          `[task:deployEmptyUUPSProxies] LZ_ENDPOINT_ADDRESS (${lzEndpoint}) is not a valid address. ` +
+            'Fix LZ_ENDPOINT_ADDRESS, or unset it to skip the bridge, and re-run.',
+        );
+      }
+      endpointHasCode = (await ethers.provider.getCode(lzEndpoint)) !== '0x';
+      // No code at a configured endpoint is a fatal misconfiguration on real networks, but expected
+      // on the in-memory 'hardhat' network (bridge tests deploy their own proxies).
+      if (!endpointHasCode && network.name !== 'hardhat') {
+        throw new Error(
+          `[task:deployEmptyUUPSProxies] No contract deployed at LZ_ENDPOINT_ADDRESS (${lzEndpoint}) on network "${network.name}". ` +
+            'Point LZ_ENDPOINT_ADDRESS at a real LayerZero endpoint, or unset it to skip the bridge, and re-run.',
+        );
+      }
+    }
+    if (endpointHasCode || provisionBridgeProxy) {
+      const confidentialBridgeAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+      await run('task:setBridgeAddress', { address: confidentialBridgeAddress });
+    } else {
+      console.log(
+        '[task:deployEmptyUUPSProxies] No LayerZero endpoint configured and PROVISION_BRIDGE_PROXY not set; ' +
+          'skipping ConfidentialBridge empty-proxy deployment. The ACL bridge address is pinned to the null address.',
+      );
+      await run('task:setBridgeAddress', { address: ethers.ZeroAddress });
+    }
   });
 
 task('task:deployEmptyProxiesProtocolConfigKMSGeneration').setAction(async function (_, { ethers, upgrades, run }) {
@@ -468,13 +479,7 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
-  if (!ethers.isAddress(lzEndpoint)) {
-    throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid address: ${lzEndpoint}`);
-  }
 
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplem = await ethers.getContractFactory('ConfidentialBridge', deployer);
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS;
   if (!proxyAddress) {
@@ -483,6 +488,34 @@ task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
         'Run task:deployEmptyUUPSProxies first.',
     );
   }
+  // A null address means no bridge proxy was provisioned on this host — nothing to upgrade.
+  if (proxyAddress === ethers.ZeroAddress) {
+    console.log(
+      '[task:deployBridge] CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS is the null address; ' +
+        'no ConfidentialBridge proxy was provisioned. Skipping bridge upgrade.',
+    );
+    return;
+  }
+
+  // The proxy is only upgraded to the real ConfidentialBridge once a LayerZero endpoint is
+  // available. The e2e provisions the empty proxy at host-deploy time (PROVISION_BRIDGE_PROXY) and
+  // deploys the endpoint later, then re-runs this task — so when the proxy exists but no endpoint is
+  // configured yet, leave the empty proxy in place for that later upgrade instead of failing.
+  const lzEndpoint = process.env.LZ_ENDPOINT_ADDRESS;
+  if (lzEndpoint && !ethers.isAddress(lzEndpoint)) {
+    throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid address: ${lzEndpoint}`);
+  }
+  const endpointHasCode = !!lzEndpoint && (await ethers.provider.getCode(lzEndpoint)) !== '0x';
+  if (!endpointHasCode) {
+    console.log(
+      '[task:deployBridge] Bridge proxy provisioned but no LayerZero endpoint with code is configured yet; ' +
+        'leaving the empty proxy for a later upgrade. Skipping.',
+    );
+    return;
+  }
+
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplem = await ethers.getContractFactory('ConfidentialBridge', deployer);
 
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
@@ -1173,7 +1206,9 @@ task('task:setLzReceiveBaseGas')
     const newBaseGas = await confidentialBridge.getLzReceiveBaseGas(taskArguments.remoteEid);
     console.log(
       `setLzReceiveBaseGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
-        `(remoteEid=${taskArguments.remoteEid}): effective base gas ${oldBaseGas.toString()} -> ${newBaseGas.toString()}`,
+        `(remoteEid=${
+          taskArguments.remoteEid
+        }): effective base gas ${oldBaseGas.toString()} -> ${newBaseGas.toString()}`,
     );
   });
 
@@ -1195,7 +1230,9 @@ task('task:setLzReceivePerHandleGas')
     const newPerHandleGas = await confidentialBridge.getLzReceivePerHandleGas(taskArguments.remoteEid);
     console.log(
       `setLzReceivePerHandleGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
-        `(remoteEid=${taskArguments.remoteEid}): effective per-handle gas ${oldPerHandleGas.toString()} -> ${newPerHandleGas.toString()}`,
+        `(remoteEid=${
+          taskArguments.remoteEid
+        }): effective per-handle gas ${oldPerHandleGas.toString()} -> ${newPerHandleGas.toString()}`,
     );
   });
 
@@ -1217,7 +1254,9 @@ task('task:setLzReceivePerPayloadByteGas')
     const newPerPayloadByteGas = await confidentialBridge.getLzReceivePerPayloadByteGas(taskArguments.remoteEid);
     console.log(
       `setLzReceivePerPayloadByteGas done on network "${network.name}" for bridge ${confidentialBridgeAddress} ` +
-        `(remoteEid=${taskArguments.remoteEid}): effective per-payload-byte gas ${oldPerPayloadByteGas.toString()} -> ${newPerPayloadByteGas.toString()}`,
+        `(remoteEid=${
+          taskArguments.remoteEid
+        }): effective per-payload-byte gas ${oldPerPayloadByteGas.toString()} -> ${newPerPayloadByteGas.toString()}`,
     );
   });
 

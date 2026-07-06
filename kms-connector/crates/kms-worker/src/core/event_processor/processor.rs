@@ -1,19 +1,18 @@
 use crate::core::event_processor::{
-    KmsClient,
+    KmsClient, ProcessingError, RequestCheckError,
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
+    protocol_config::ProtocolConfigProcessor,
 };
 use alloy::providers::Provider;
 use anyhow::anyhow;
 use connector_utils::types::{
     KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
+    u256_to_request_id,
 };
 use sqlx::{Pool, Postgres};
-use thiserror::Error;
-use tonic::Code;
-use tracing::{error, info};
-use user_decryption_signature::Erc1271Error;
+use tracing::{error, info, warn};
 
 /// Interface used to process Gateway's events.
 pub trait EventProcessor: Send {
@@ -36,6 +35,9 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
 
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor<C>,
+
+    /// The entity used to build `ProtocolConfig` event requests (context/epoch lifecycle).
+    protocol_config_processor: ProtocolConfigProcessor<HP>,
 
     /// The maximum number of decryption attempts.
     max_decryption_attempts: u16,
@@ -62,7 +64,16 @@ where
             }
             (Err(ProcessingError::Irrecoverable(e)), _) => {
                 error!("{}", ProcessingError::Irrecoverable(e));
-                event.mark_as_failed(&self.db_pool).await;
+                if let Err(e) = event.mark_as_failed(&self.db_pool).await {
+                    warn!("{e}");
+                }
+                None
+            }
+            (Err(ProcessingError::Aborted), _) => {
+                warn!("{}", ProcessingError::Aborted);
+                if let Err(e) = event.mark_as_aborted(&self.db_pool).await {
+                    warn!("{e}");
+                }
                 None
             }
             // For now, we only check the error counter for public and user decryptions as they are
@@ -81,39 +92,18 @@ where
                     ProcessingError::Irrecoverable(e),
                     event.error_counter
                 );
-                event.mark_as_failed(&self.db_pool).await;
+                if let Err(e) = event.mark_as_failed(&self.db_pool).await {
+                    warn!("{e}");
+                }
                 None
             }
             (Err(ProcessingError::Recoverable(e)), _) => {
                 error!("{}", ProcessingError::Recoverable(e));
-                event.mark_as_pending(&self.db_pool).await;
+                if let Err(e) = event.mark_as_pending(&self.db_pool).await {
+                    warn!("{e}");
+                }
                 None
             }
-        }
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum ProcessingError {
-    #[error("Processing failed with irrecoverable error : {0}")]
-    Irrecoverable(anyhow::Error),
-    #[error("Processing failed: {0}")]
-    Recoverable(anyhow::Error),
-}
-
-/// ERC-1271 (RFC-012) signature errors map onto `ProcessingError` so callers can use the `?`
-/// operator. Missing code at an EOA is terminal, but smart-account validation can depend on
-/// mutable wallet state, so negative ERC-1271 results are retried through the existing attempt
-/// and validity-window limits.
-impl From<Erc1271Error> for ProcessingError {
-    fn from(err: Erc1271Error) -> Self {
-        match err {
-            Erc1271Error::EoaMismatchNoCode(_) | Erc1271Error::EmptySigOnEoa(_) => {
-                Self::Irrecoverable(anyhow::Error::new(err))
-            }
-            Erc1271Error::Transport(_)
-            | Erc1271Error::WrongMagic(..)
-            | Erc1271Error::Rejected(..) => Self::Recoverable(anyhow::Error::new(err)),
         }
     }
 }
@@ -123,6 +113,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         kms_client: KmsClient,
         decryption_processor: DecryptionProcessor<GP, HP, C>,
         kms_generation_processor: KMSGenerationProcessor<C>,
+        protocol_config_processor: ProtocolConfigProcessor<HP>,
         max_decryption_attempts: u16,
         db_pool: Pool<Postgres>,
     ) -> Self {
@@ -130,6 +121,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             kms_client,
             decryption_processor,
             kms_generation_processor,
+            protocol_config_processor,
             max_decryption_attempts,
             db_pool,
         }
@@ -145,7 +137,8 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
                     .check_ciphertexts_allowed_for_public_decryption(&req.snsCtMaterials)
-                    .await?;
+                    .await
+                    .map_err(RequestCheckError::record)?;
 
                 self.decryption_processor
                     .prepare_decryption_request(
@@ -172,7 +165,8 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                         &req.snsCtMaterials,
                         req.userAddress,
                     )
-                    .await?;
+                    .await
+                    .map_err(RequestCheckError::record)?;
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -190,7 +184,8 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 // need to re-fetch the transaction calldata.
                 self.decryption_processor
                     .check_user_decryption_request_v2(req)
-                    .await?;
+                    .await
+                    .map_err(RequestCheckError::record)?;
                 let payload = &req.payload;
                 self.decryption_processor
                     .prepare_decryption_request(
@@ -219,6 +214,22 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .prepare_crsgen_request(req)
                     .await
             }
+            ProtocolEventKind::AbortKeygen(req) => Ok(KmsGrpcRequest::AbortKeygen(
+                u256_to_request_id(req.prepKeygenId),
+            )),
+            ProtocolEventKind::AbortCrsgen(req) => {
+                Ok(KmsGrpcRequest::AbortCrsgen(u256_to_request_id(req.crsId)))
+            }
+            ProtocolEventKind::NewKmsContext(req) => {
+                self.protocol_config_processor
+                    .prepare_new_kms_context_request(req)
+                    .await
+            }
+            ProtocolEventKind::NewKmsEpoch(req) => {
+                self.protocol_config_processor
+                    .prepare_new_kms_epoch_request(req)
+                    .await
+            }
         }
     }
 
@@ -244,25 +255,14 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         let grpc_response = grpc_result?;
 
         if let KmsGrpcResponse::NoResponseExpected = &grpc_response {
-            event.mark_as_completed(&self.db_pool).await;
+            if let Err(e) = event.mark_as_completed(&self.db_pool).await {
+                warn!("{e}");
+            }
             return Ok(None);
         }
 
         let processed_response =
             KmsResponseKind::process(grpc_response).map_err(ProcessingError::Irrecoverable)?;
         Ok(Some(processed_response))
-    }
-}
-
-impl ProcessingError {
-    /// Converts GRPC status of the polling of a KMS Response into a `ProcessingError`.
-    pub fn from_response_status(value: tonic::Status) -> Self {
-        let anyhow_error = anyhow!("KMS GRPC error: {value}");
-        match value.code() {
-            Code::DeadlineExceeded | Code::Unavailable | Code::ResourceExhausted => {
-                Self::Recoverable(anyhow_error)
-            }
-            _ => Self::Irrecoverable(anyhow_error),
-        }
     }
 }

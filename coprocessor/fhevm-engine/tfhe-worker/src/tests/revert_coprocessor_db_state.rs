@@ -1,3 +1,4 @@
+use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use serial_test::serial;
 use sqlx::PgPool;
 use test_harness::db_utils::revert_coprocessor_db_state_sql;
@@ -121,10 +122,11 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
 
     sqlx::query(
         "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
-         VALUES ($1, $2, 0, 4)",
+         VALUES ($1, $2, $3, 4)",
     )
     .bind(&handle)
     .bind([0xFFu8; 4])
+    .bind(current_ciphertext_version())
     .execute(pool)
     .await
     .expect("insert ciphertext");
@@ -677,10 +679,11 @@ async fn test_revert_preserves_shared_ciphertexts() {
     // Single ciphertext for the shared handle
     sqlx::query(
         "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
-         VALUES ($1, $2, 0, 4)",
+         VALUES ($1, $2, $3, 4)",
     )
     .bind(shared_handle)
     .bind([0xFFu8; 4])
+    .bind(current_ciphertext_version())
     .execute(&pool)
     .await
     .unwrap();
