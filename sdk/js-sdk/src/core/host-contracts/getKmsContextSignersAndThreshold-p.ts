@@ -68,6 +68,7 @@ async function _getKmsContextSignersAndThreshold(context: Context, parameters: P
   if (!isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 2 })) {
     throw new Error('getContextSignersAndThreshold requires KMSVerifier < v0.2.0');
   }
+
   ////////////////////////////////////////////////////////////////////////////
   //
   // Important remark:

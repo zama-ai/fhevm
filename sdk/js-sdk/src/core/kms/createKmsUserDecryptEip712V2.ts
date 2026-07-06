@@ -2,6 +2,7 @@ import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { KmsUserDecryptEip712V2 } from '../types/kms.js';
 import type { BytesHex } from '../types/primitives.js';
 import type { KmsUserDecryptEip712V2Message } from '../types/kms.js';
+import type { KmsExtraData } from '../types/kms-p.js';
 import {
   addressToChecksummedAddress,
   assertIsAddress,
@@ -10,13 +11,13 @@ import {
   assertRecordChecksummedAddressArrayProperty,
 } from '../base/address.js';
 import { assertIsKmsEip712Domain, createKmsEip712Domain } from './createKmsEip712Domain.js';
-import { asBytesHex, assertIsBytesHex, assertRecordBytesHexProperty, bytesToHexLarge } from '../base/bytes.js';
+import { asBytesHex, assertRecordBytesHexProperty, bytesToHexLarge } from '../base/bytes.js';
 import { isDeepEqual } from '../base/object.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
 import { assertRecordStringProperty, ensure0x } from '../base/string.js';
 import { assertIsUint256, assertIsUint64, assertIsUintString, MAX_UINT256 } from '../base/uint.js';
-import { assertIsKmsExtraData } from './kmsExtraData.js';
 import { kmsUserDecryptEip712V2Types } from './kmsUserDecryptEip712V2Types.js';
+import { assertIsKmsExtraData, assertIsKmsExtraDataBytesHex } from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -28,7 +29,7 @@ export type CreateKmsUserDecryptEip712V2Parameters = {
   readonly allowedContracts: readonly string[];
   readonly startTimestamp: number | bigint;
   readonly durationSeconds: bigint;
-  readonly extraData: string;
+  readonly extraData: KmsExtraData;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -56,7 +57,6 @@ export function createKmsUserDecryptEip712V2(
   assertIsAddressArray(allowedContracts, {});
   assertIsUint256(startTimestamp, {});
   assertIsUint256(durationSeconds, {});
-  assertIsBytesHex(extraData, {});
   assertIsKmsExtraData(extraData, {});
 
   const checksummedUserAddress = addressToChecksummedAddress(userAddress);
@@ -79,7 +79,7 @@ export function createKmsUserDecryptEip712V2(
       allowedContracts: checksummedContractAddresses,
       startTimestamp: startTimestamp.toString(),
       durationSeconds: durationSeconds.toString(),
-      extraData,
+      extraData: extraData.toBytesHex(),
     } satisfies KmsUserDecryptEip712V2Message,
   };
 
@@ -131,7 +131,7 @@ function _assertIsKmsUserDecryptEip712V2Message(
   assertRecordStringProperty(msg, 'startTimestamp' satisfies keyof MessageType, msgName, options);
   assertRecordStringProperty(msg, 'durationSeconds' satisfies keyof MessageType, msgName, options);
   assertRecordBytesHexProperty(msg, 'extraData' satisfies keyof MessageType, msgName, options);
-  assertIsKmsExtraData(msg.extraData, options);
+  assertIsKmsExtraDataBytesHex(msg.extraData, options);
   assertIsUintString(msg.startTimestamp, { max: MAX_UINT256 });
   assertIsUintString(msg.durationSeconds, { max: MAX_UINT256 });
 }

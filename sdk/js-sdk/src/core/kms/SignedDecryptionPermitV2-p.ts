@@ -1,21 +1,21 @@
 import type { SignedDecryptionPermit, SignedDecryptionPermitV2 } from '../types/signedDecryptionPermit.js';
 import type { KmsUserDecryptEip712V2 } from '../types/kms.js';
-import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint256BigInt, Uint8Number } from '../types/primitives.js';
+import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { SignDecryptionPermitContext, SignDecryptionPermitParameters } from './SignedDecryptionPermit-p.js';
+import type { KmsExtraData } from '../types/kms-p.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
 import { assertRecordBytes65HexProperty } from '../base/bytes.js';
 import { addressToChecksummedAddress, assertIsAddress, assertRecordAddressProperty } from '../base/address.js';
 import { assertRecordStringProperty } from '../base/string.js';
 import { assertIsTransportKeyPair, type TransportKeyPair } from './TransportKeyPair-p.js';
-import { readKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
+import { readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
-import { EXTRA_DATA_V2, fromKmsExtraData } from './kmsExtraData.js';
 import { assertIsKmsUserDecryptEip712V2, createKmsUserDecryptEip712V2 } from './createKmsUserDecryptEip712V2.js';
 import { verifyKmsUserDecryptEip712V2 } from '../utils-p/decrypt/verifyKmsUserDecryptEip712V2.js';
 import { assert } from '../base/errors/InternalError.js';
+import { EXTRA_DATA_V2 } from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -106,23 +106,6 @@ class SignedDecryptionPermitV2Impl implements SignedDecryptionPermitV2 {
     const { startTimestamp, durationSeconds } = this.#eip712.message;
     assertKmsEip712V2DeadlineValidity({ startTimestamp, durationSeconds });
   }
-
-  public assertMatchesKmsContext(kmsSignersContext: KmsSignersContext): void {
-    const expectedExtraData = kmsSignersContextToExtraData(kmsSignersContext);
-    if (expectedExtraData !== this.#eip712.message.extraData) {
-      throw new Error(
-        `Invalid permit: extraData "${this.#eip712.message.extraData}" does not match expected "${expectedExtraData}" from KmsSignersContext.`,
-      );
-    }
-  }
-
-  public get kmsContextId(): Uint256BigInt {
-    return fromKmsExtraData(this.#eip712.message.extraData).kmsContextId;
-  }
-
-  public get kmsEpochId(): Uint256BigInt {
-    return fromKmsExtraData(this.#eip712.message.extraData).kmsEpochId;
-  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -168,20 +151,20 @@ export async function signDecryptionPermitV2(
   context: SignDecryptionPermitContext,
   parameters: SignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
-  const kmsSignersContext = await readKmsSignersContext(context, {
+  const kmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   });
 
-  const extraData: BytesHex = kmsSignersContextToExtraData(kmsSignersContext);
+  const extraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
 
   // For debug purpose only:
   // -----------------------
   // In theory, it should not be possible to produce a unified eip712 (protocol v14+)
   // with an extraData coming from an old protocol v11/12/13
   assert(
-    fromKmsExtraData(extraData).version >= EXTRA_DATA_V2,
-    `signDecryptionPermitV2 error: Invalid extraData version extraData=${extraData}`,
+    extraData.version >= EXTRA_DATA_V2,
+    `signDecryptionPermitV2 error: Invalid extraData version extraData=${extraData.toBytesHex()}`,
   );
 
   const {

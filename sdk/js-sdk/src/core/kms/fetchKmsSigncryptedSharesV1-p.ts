@@ -9,7 +9,7 @@ import type { SignedDecryptionPermit, SignedDecryptionPermitV1 } from '../types/
 import type { Handle } from '../types/encryptedTypes-p.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
 import { createKmsSigncryptedShares } from './KmsSigncryptedShares-p.js';
-import { readKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
+import { readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { assertIsSignedDecryptionPermit } from './SignedDecryptionPermit-p.js';
 import { assertKmsDecryptionBitLimit } from './utils.js';
 import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
@@ -17,19 +17,6 @@ import { assertExtraDataMatchesKmsSingersContext } from '../host-contracts/KmsSi
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
 import { checkDelegation } from '../host-contracts/checkDelegation.js';
 import { resolveFhevmTkmsVersion } from '../runtime/resolveFhevmVersions-p.js';
-
-/*
-    See: in KMS (eip712Domain)
-    json.response[i].signature is an eip712 sig potentially on this message:
-
-    struct UserDecryptResponseVerification {
-        bytes publicKey;
-        bytes32[] ctHandles;
-        bytes userDecryptedShare;
-        bytes extraData;
-    }
-}    
-*/
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -164,7 +151,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
   // (e.g. a version change in the serialization scheme) will be rejected even
   // though the context ID matches. Consider comparing the decoded `kmsContextId`
   // instead of the raw `extraData` bytes.
-  const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContext(context, {
+  const requestedKmsSignersContext: KmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   });
@@ -214,6 +201,31 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
     handles,
     tkmsVersion,
   };
+
+  /*
+
+    ----------------------------------------------------------------------------
+    KMS response-signature verification.
+
+    Each share's signature is an EIP-712 signature over the
+    `UserDecryptResponseVerification` struct (see `verifyKmsSigncryptedShare` and
+    gateway `Decryption.sol`). This check is already performed inside the tkms WASM
+    during reconstruction (verify=true); the call below is an equivalent JS-only
+    pass, kept for testing / debugging. To fully check, loop over every share.
+    ----------------------------------------------------------------------------
+
+    for (const share of shares) {
+      await verifyKmsSigncryptedShare(
+        context, 
+        {
+          metadata: sharesMetadata,
+          share,
+          transportPublicKey: signedPermit.transportPublicKey,
+        }
+      );
+    }
+
+  */
 
   // 12. The returned KmsSigncryptedShares is guaranteed to be fully verified:
   // uniform extraData across shares, valid extraData format, and consistency
