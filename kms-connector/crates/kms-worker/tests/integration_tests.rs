@@ -208,6 +208,9 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
         ProtocolEventKind::NewKmsContext(r) => (r.contextId, "NewMpcContext", "unreachable"),
         ProtocolEventKind::NewKmsEpoch(r) => (r.epochId, "NewMpcEpoch", "GetEpochResult"),
+        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+            unreachable!("abort events do not produce KMS response rows in this test")
+        }
     };
     let request_id = Some(u256_to_request_id(request_id_u256));
 
@@ -264,6 +267,9 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 "No response expected response from kms-core",
             ),
             ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
+            ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+                unreachable!("abort events do not produce KMS response rows in this test")
+            }
         };
     });
 
@@ -285,6 +291,9 @@ async fn wait_for_response_in_db(
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
         ProtocolEventKind::NewKmsContext(_) => "SELECT * FROM new_kms_context_responses",
         ProtocolEventKind::NewKmsEpoch(_) => "SELECT * FROM epoch_result_responses",
+        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+            unreachable!("abort events do not produce KMS response rows in this test")
+        }
     };
     let response = loop {
         let result = sqlx::query(query).fetch_all(db).await?;
@@ -314,6 +323,9 @@ async fn wait_for_response_in_db(
                 }
                 ProtocolEventKind::NewKmsEpoch(_) => {
                     break kms_response::from_epoch_result_row(&result[0])?;
+                }
+                ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+                    unreachable!("abort events do not produce KMS response rows in this test")
                 }
             };
         }
@@ -374,6 +386,9 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             epoch_id: r.epochId,
             grpc_response: GrpcEpochResultResponse::default(),
         },
+        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+            unreachable!("abort events do not produce KMS response rows in this test")
+        }
     };
     assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
     info!("OK!");
