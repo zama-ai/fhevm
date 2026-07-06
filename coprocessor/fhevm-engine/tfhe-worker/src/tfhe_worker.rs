@@ -1471,6 +1471,13 @@ async fn query_work_rows_for_dcid<'a>(
         -- same-block intermediate from compressed state. The count guard below
         -- aborts the batch (yield, retry) if another worker holds part of the
         -- expanded component, so a partially locked component is never executed.
+        -- Closure is evaluated over the statement snapshot; that is sufficient
+        -- because block contexts are ingested atomically (one transaction per
+        -- block), so a real-hash context never grows after it becomes visible.
+        -- Branchless contexts ('' producer hash) are namespaces, not blocks:
+        -- they grow without bound and have no same-block edges to close over,
+        -- so they stay scoped to the seed lane (whose rows the seed CTE above
+        -- already locked in full).
         expected_rows AS (
             SELECT COUNT(*) AS count
             FROM computations_branch c
@@ -1479,6 +1486,7 @@ async fn query_work_rows_for_dcid<'a>(
              AND c.block_number IS NOT DISTINCT FROM sc.block_number
              AND c.producer_block_hash = sc.producer_block_hash
             WHERE c.is_error = FALSE
+              AND (sc.producer_block_hash <> ''::BYTEA OR c.dependence_chain_id = $1)
         ),
         locked_rows AS MATERIALIZED (
             SELECT
@@ -1499,6 +1507,7 @@ async fn query_work_rows_for_dcid<'a>(
              AND c.block_number IS NOT DISTINCT FROM sc.block_number
              AND c.producer_block_hash = sc.producer_block_hash
             WHERE c.is_error = FALSE
+              AND (sc.producer_block_hash <> ''::BYTEA OR c.dependence_chain_id = $1)
             ORDER BY c.schedule_order ASC
             FOR UPDATE OF c SKIP LOCKED
         ),

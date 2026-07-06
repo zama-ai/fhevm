@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        -- DCIDs are ingestion-time same-block connected components. A repeated\n        -- transaction can appear on sibling forks with the same DCID, so select the\n        -- earliest eligible block context in the acquired lane. Lock the full DCID\n        -- row set first so expired-lock stealing cannot skip a locked sibling context\n        -- and process another fork concurrently.\n        WITH expected_dcid_rows AS (\n            SELECT COUNT(*) AS count\n            FROM computations_branch c\n            WHERE c.dependence_chain_id = $1\n              AND c.is_error = FALSE\n        ),\n        locked_dcid_rows AS MATERIALIZED (\n            SELECT\n              c.output_handle,\n              c.dependencies,\n              c.fhe_operation,\n              c.is_scalar,\n              c.is_allowed,\n              c.dependence_chain_id,\n              c.transaction_id,\n              c.producer_block_hash,\n              c.host_chain_id,\n              c.block_number,\n              c.schedule_order,\n              c.is_completed\n            FROM computations_branch c\n            WHERE c.dependence_chain_id = $1\n              AND c.is_error = FALSE\n            ORDER BY c.schedule_order ASC\n            FOR UPDATE OF c SKIP LOCKED\n        ),\n        locked_dcid_count AS (\n            SELECT COUNT(*) AS count FROM locked_dcid_rows\n        ),\n        selected_context AS MATERIALIZED (\n            SELECT\n              c.dependence_chain_id,\n              c.host_chain_id,\n              c.block_number,\n              c.producer_block_hash\n            FROM locked_dcid_rows c\n            WHERE c.is_completed = FALSE\n              AND c.is_allowed = TRUE\n              AND (c.block_number IS NULL OR c.block_number >= $2)\n              AND (\n                c.producer_block_hash = ''::BYTEA\n                OR c.block_number IS NULL\n                OR c.block_number > COALESCE(\n                    (\n                      SELECT s.settled_height\n                      FROM coprocessor_settlement s\n                      WHERE s.chain_id = c.host_chain_id\n                    ),\n                    -1\n                )\n              )\n              AND (\n                c.producer_block_hash = ''::BYTEA\n                OR NOT EXISTS (\n                    SELECT 1\n                    FROM host_chain_blocks_valid b\n                    WHERE b.chain_id = c.host_chain_id\n                      AND b.block_hash = c.producer_block_hash\n                      AND b.block_status = 'orphaned'\n                )\n              )\n              AND (SELECT count FROM locked_dcid_count) = (SELECT count FROM expected_dcid_rows)\n            ORDER BY c.schedule_order ASC\n            LIMIT 1\n        ),\n        -- Cross-lane closure (RFC 011): once the seed lane has selected a block\n        -- context, the batch is closed over ALL dependence-chain lanes in that\n        -- context, not just the seed lane. Ingestion assigns same-block connected\n        -- components a single chain, so lanes normally never share same-block\n        -- edges — this expansion is the defense for states where they do (e.g. a\n        -- chain-assignment regression), where executing one lane alone would\n        -- either wedge on a same-block missing input or, worse, fetch a\n        -- same-block intermediate from compressed state. The count guard below\n        -- aborts the batch (yield, retry) if another worker holds part of the\n        -- expanded component, so a partially locked component is never executed.\n        -- Closure is evaluated over the statement snapshot; that is sufficient\n        -- because block contexts are ingested atomically (one transaction per\n        -- block), so a real-hash context never grows after it becomes visible.\n        -- Branchless contexts ('' producer hash) are namespaces, not blocks:\n        -- they grow without bound and have no same-block edges to close over,\n        -- so they stay scoped to the seed lane (whose rows the seed CTE above\n        -- already locked in full).\n        expected_rows AS (\n            SELECT COUNT(*) AS count\n            FROM computations_branch c\n            JOIN selected_context sc\n              ON c.host_chain_id = sc.host_chain_id\n             AND c.block_number IS NOT DISTINCT FROM sc.block_number\n             AND c.producer_block_hash = sc.producer_block_hash\n            WHERE c.is_error = FALSE\n              AND (sc.producer_block_hash <> ''::BYTEA OR c.dependence_chain_id = $1)\n        ),\n        locked_rows AS MATERIALIZED (\n            SELECT\n              c.output_handle,\n              c.dependencies,\n              c.fhe_operation,\n              c.is_scalar,\n              c.is_allowed,\n              c.dependence_chain_id,\n              c.transaction_id,\n              c.producer_block_hash,\n              c.host_chain_id,\n              c.block_number,\n              c.schedule_order\n            FROM computations_branch c\n            JOIN selected_context sc\n              ON c.host_chain_id = sc.host_chain_id\n             AND c.block_number IS NOT DISTINCT FROM sc.block_number\n             AND c.producer_block_hash = sc.producer_block_hash\n            WHERE c.is_error = FALSE\n              AND (sc.producer_block_hash <> ''::BYTEA OR c.dependence_chain_id = $1)\n            ORDER BY c.schedule_order ASC\n            FOR UPDATE OF c SKIP LOCKED\n        ),\n        locked_count AS (\n            SELECT COUNT(*) AS count FROM locked_rows\n        )\n        SELECT\n          output_handle AS \"output_handle!\",\n          dependencies AS \"dependencies!\",\n          fhe_operation AS \"fhe_operation!\",\n          is_scalar AS \"is_scalar!\",\n          is_allowed AS \"is_allowed!\",\n          transaction_id AS \"transaction_id!\",\n          producer_block_hash AS \"producer_block_hash!\",\n          host_chain_id AS \"host_chain_id!\",\n          block_number,\n          schedule_order AS \"schedule_order!\"\n        FROM locked_rows\n        WHERE (SELECT count FROM locked_count) = (SELECT count FROM expected_rows)\n        ORDER BY schedule_order ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "output_handle!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "dependencies!",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "fhe_operation!",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_scalar!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_allowed!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "transaction_id!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "producer_block_hash!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "host_chain_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "schedule_order!",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "217a2317982156d75fe61beea5b8c083658765182d489a98761fe8ca10628f45"
+}
