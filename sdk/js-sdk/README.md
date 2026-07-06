@@ -173,4 +173,4 @@ Full documentation is available in the [`docs/`](docs/) directory:
 
 This project is licensed under the [BSD 3-Clause Clear License](LICENSE).
 
-Copyright © 2025–2026 ZAMA. All rights reserved.
+Copyright © 2025 ZAMA. All rights reserved.
