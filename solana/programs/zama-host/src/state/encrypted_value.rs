@@ -1,6 +1,6 @@
 //! On-chain account data for `EncryptedValue` (RFC-024).
 //!
-//! Replaces the keyed-nonce `AclRecord` model: one account per encrypted-value
+//! Replaces the keyed-nonce ACL model: one account per encrypted-value
 //! lineage, reused across every handle update, carrying a compact MMR history
 //! instead of a fresh PDA per birth. Field order follows
 //! `zama_solana_acl::EncryptedValue` with one on-chain-only addition —

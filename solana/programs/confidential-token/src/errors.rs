@@ -47,9 +47,9 @@ pub enum ConfidentialTokenError {
     /// Compute signer PDA did not match the confidential mint metadata.
     #[msg("Compute signer does not match confidential mint")]
     ComputeSignerMismatch,
-    /// Current ACL record account did not match token account state.
-    #[msg("current ACL record does not match token account state")]
-    CurrentAclRecordMismatch,
+    /// Current EncryptedValue account did not match token account state.
+    #[msg("current encrypted value does not match token account state")]
+    CurrentEncryptedValueMismatch,
     /// Transfer amount handle does not carry the expected confidential balance type.
     #[msg("transfer amount handle type is invalid")]
     AmountHandleTypeMismatch,

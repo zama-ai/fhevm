@@ -9,6 +9,9 @@ license.workspace = true
 [lib]
 name = "zama_solana_acl"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
 [dependencies]
 # Pure-Rust, solana-version-agnostic so the on-chain programs (solana 3.x), the
 # relayer proof service, and the KMS connector (solana 2.x) can depend on this

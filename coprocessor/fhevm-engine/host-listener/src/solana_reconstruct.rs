@@ -39,10 +39,11 @@ pub struct ReconstructContext {
 
 /// The `acl_record_bound` allow-fetch a `*_and_bind` instruction produces: the
 /// bound handle (identical to the reconstructed compute event's `result`) keyed
-/// by the AclRecord PDA the instruction wrote. This allow-reason is what flips
-/// `is_allowed=true` on the same-tx compute row so the tfhe-worker materializes
-/// the ciphertext. `acl_record` is the AclRecord account address, resolved from
-/// the instruction's accounts by the caller (the transport wiring).
+/// by the EncryptedValue PDA the instruction wrote. This allow-reason is what
+/// flips `is_allowed=true` on the same-tx compute row so the tfhe-worker
+/// materializes the ciphertext. `acl_record` is the EncryptedValue account
+/// address, resolved from the instruction's accounts by the caller (the
+/// transport wiring).
 pub fn reconstruct_acl_record_bound_fetch(
     acl_record: [u8; 32],
     bound_handle: [u8; 32],
@@ -277,8 +278,8 @@ pub fn encrypted_value_instruction_fetches(
     }
 }
 
-/// An `AclRecord` fetch for a lineage's live handle; `handle` is `None` on a
-/// tracker miss, deferring resolution to the finalized account itself.
+/// An EncryptedValue-account fetch for a lineage's live handle; `handle` is
+/// `None` on a tracker miss, deferring resolution to the finalized account itself.
 fn current_handle_fetch(
     acl_record: [u8; 32],
     handle: Option<[u8; 32]>,
@@ -836,6 +837,8 @@ mod encrypted_value_decode_tests {
     const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";
     const ENCRYPTED_VALUE: [u8; 32] = [0x22; 32];
 
+    type TestInstruction<'a> = (&'a str, &'a [u8], &'a [[u8; 32]]);
+
     fn encode(discriminator: [u8; 8], args: impl AnchorSerialize) -> Vec<u8> {
         let mut bytes = discriminator.to_vec();
         args.serialize(&mut bytes).unwrap();
@@ -986,16 +989,18 @@ mod encrypted_value_decode_tests {
     }
 
     #[test]
-    fn make_handle_public_with_unknown_lineage_yields_no_fetch() {
-        // No prior create/update seen for this account: cannot resolve which
-        // handle -> no fetch (rather than guessing).
+    fn make_handle_public_with_unknown_lineage_queues_handle_less_fetch() {
+        // No prior create/update seen for this account: defer handle resolution
+        // to the finalized EncryptedValue account instead of guessing.
         let mut tracker = EncryptedValueLineageTracker::new();
         let fetches = encrypted_value_instruction_fetches(
             &EncryptedValueInstruction::MakeHandlePublic,
             ENCRYPTED_VALUE,
             &mut tracker,
         );
-        assert!(fetches.is_empty());
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].reason, "handle_made_public");
+        assert_eq!(fetches[0].handle, None);
     }
 
     #[test]
@@ -1049,7 +1054,7 @@ mod encrypted_value_decode_tests {
         );
         let accounts = accounts_with_encrypted_value_at_index_2();
         let app_program = "AppProgram111111111111111111111111111111";
-        let instructions: Vec<(&str, &[u8], &[[u8; 32]])> = vec![
+        let instructions: Vec<TestInstruction<'_>> = vec![
             (app_program, b"unrelated top-level ix data...", &accounts),
             // Inner (CPI-invoked) instruction from the app's top-level call.
             (ZAMA_HOST, &create_data, &accounts),
@@ -1090,7 +1095,7 @@ mod encrypted_value_decode_tests {
             },
         );
         let accounts = accounts_with_encrypted_value_at_index_2();
-        let instructions: Vec<(&str, &[u8], &[[u8; 32]])> = vec![(
+        let instructions: Vec<TestInstruction<'_>> = vec![(
             "SomeOtherProgram1111111111111111111111111",
             &data,
             &accounts,
@@ -1124,9 +1129,12 @@ mod tests {
         let acl_record = [8u8; 32];
         let handle = [9u8; 32];
         let f = reconstruct_acl_record_bound_fetch(acl_record, handle);
-        // Identical shape to the AclRecordBound event-decode path (acl_record_fetch).
+        // Identical shape to the event-decode path (acl_record_fetch).
         assert_eq!(f.account_key, acl_record);
-        assert_eq!(f.kind, SolanaFinalizedAccountFetchKind::AclRecord);
+        assert_eq!(
+            f.kind,
+            SolanaFinalizedAccountFetchKind::EncryptedValueAccount
+        );
         assert_eq!(f.reason, "acl_record_bound");
         assert!(f.handle.is_some());
         assert_eq!(f.related_account, None);

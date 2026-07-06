@@ -81,12 +81,12 @@ pub(crate) fn execute_transfer<'info>(
     require_keys_eq!(
         accounts.from_balance_value.key(),
         from.balance_encrypted_value,
-        ConfidentialTokenError::CurrentAclRecordMismatch
+        ConfidentialTokenError::CurrentEncryptedValueMismatch
     );
     require_keys_eq!(
         accounts.to_balance_value.key(),
         to.balance_encrypted_value,
-        ConfidentialTokenError::CurrentAclRecordMismatch
+        ConfidentialTokenError::CurrentEncryptedValueMismatch
     );
     let from_key = from.key();
     let to_key = to.key();
@@ -530,21 +530,21 @@ pub(crate) fn assert_current_balance_encrypted_value(
     require_keys_eq!(
         balance_value.key(),
         token_account.balance_encrypted_value,
-        ConfidentialTokenError::CurrentAclRecordMismatch
+        ConfidentialTokenError::CurrentEncryptedValueMismatch
     );
     require_keys_eq!(
         balance_value.acl_domain_key,
         mint,
-        ConfidentialTokenError::CurrentAclRecordMismatch
+        ConfidentialTokenError::CurrentEncryptedValueMismatch
     );
     require_keys_eq!(
         balance_value.app_account,
         token_account.key(),
-        ConfidentialTokenError::CurrentAclRecordMismatch
+        ConfidentialTokenError::CurrentEncryptedValueMismatch
     );
     require!(
         balance_value.encrypted_value_label == balance_label(),
-        ConfidentialTokenError::CurrentAclRecordMismatch
+        ConfidentialTokenError::CurrentEncryptedValueMismatch
     );
     Ok(())
 }

@@ -90,7 +90,7 @@ cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener 
   needs an explicit arm for it — even an *ignored* one — or it won't compile. Regenerate its
   vendored IDL when host events change.
 - **The connector ABI is hand-mirrored and version-pinned.** `kms-worker` re-declares the byte
-  layout of host accounts (`AclRecord`, `HandleMaterialCommitment`, …), the PDA seeds, the hash
+  layout of host accounts (`EncryptedValue`, …), the PDA seeds, the hash
   domains, and `EVENT_VERSION`/`MAX_ACL_SUBJECTS` — with **no compile-time link** to `zama-host`.
   Change a field order, a `SPACE` constant, a seed, or a hash-domain string in the host and you must
   update the connector decoders (and the coprocessor IDL) by hand, or witness decoding breaks at

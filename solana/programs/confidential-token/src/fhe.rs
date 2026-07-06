@@ -71,7 +71,7 @@ impl<'info> DurableOutput<'info> {
         require_keys_eq!(
             self.encrypted_value.key(),
             birth.encrypted_value(),
-            ConfidentialTokenError::CurrentAclRecordMismatch
+            ConfidentialTokenError::CurrentEncryptedValueMismatch
         );
         let value = read_encrypted_value(&self.encrypted_value)?;
         Ok(value.current_handle)
@@ -94,11 +94,11 @@ pub(crate) fn read_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue>
     require_keys_eq!(
         *info.owner,
         zama_host::ID,
-        ConfidentialTokenError::CurrentAclRecordMismatch
+        ConfidentialTokenError::CurrentEncryptedValueMismatch
     );
     let data = info.try_borrow_data()?;
     let mut slice: &[u8] = &data;
-    EncryptedValue::try_deserialize(&mut slice).map_err(Into::into)
+    EncryptedValue::try_deserialize(&mut slice)
 }
 
 /// Program-controlled compute signer PDA plus the ACL domain it signs for.

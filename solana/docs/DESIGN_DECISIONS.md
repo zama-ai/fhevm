@@ -782,7 +782,7 @@ Decision:
 External encrypted inputs are not a step type: they enter as the `FheEvalOperand::VerifiedInput`
 operand of a step and are verified in-frame (DD-007). Intermediate results can be `Output::transient()`
 (instruction-local, **no durable ACL record / no `AclAllowedEvent`**) and consumed by later steps; only
-`Output::durable()` results bind an `AclRecord`. The app-facing `zama-fhe` crate
+`Output::durable()` results bind an `EncryptedValue` account and its `current_handle`. The app-facing `zama-fhe` crate
 (`solana/crates/zama-fhe`) exposes a typed `EvalBuilder` DSL returning `Encrypted<T>` for transients,
 hiding raw producer/account indices, with a `cpi`-feature account resolver for plan execution.
 

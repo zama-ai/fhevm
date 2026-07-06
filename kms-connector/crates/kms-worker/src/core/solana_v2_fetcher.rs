@@ -1,6 +1,6 @@
 //! Minimal Solana account fetcher for the V2 user-decryption ACL check.
 //!
-//! Reads a single account (a ZamaHost `AclRecord`) from the configured Solana host-chain RPC at
+//! Reads a single ZamaHost `EncryptedValue` account from the configured Solana host-chain RPC at
 //! **`finalized`** commitment, via the JSON-RPC `getAccountInfo` method. It is intentionally tiny:
 //! the connector only needs to read account bytes + owner; it does not need the full Solana SDK
 //! RPC client, which is not in the connector's dependency set.
@@ -8,7 +8,7 @@
 //! Security-relevant choices:
 //! - commitment is pinned to `finalized` so the connector never authorizes against a slot that can
 //!   still be rolled back;
-//! - the caller verifies `owner == ZamaHost program id` and re-derives the canonical ACL-record
+//! - the caller verifies `owner == ZamaHost program id` and re-derives the canonical EncryptedValue
 //!   PDA before trusting the bytes (see [`crate::core::event_processor::decryption`]).
 
 use crate::core::solana_acl::SolanaPubkeyBytes;
@@ -22,8 +22,7 @@ use url::Url;
 /// weaker than `finalized` would let a rolled-back slot grant access.
 pub const SOLANA_COMMITMENT_FINALIZED: &str = "finalized";
 
-/// Length of the Anchor account discriminator that prefixes every ZamaHost account; the
-/// `AclRecord.handle` field begins immediately after it.
+/// Length of the Anchor account discriminator that prefixes every ZamaHost account.
 const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
 
 /// A fetched Solana account: its owner program and raw data bytes.
@@ -109,7 +108,7 @@ impl SolanaV2Fetcher {
         })
     }
 
-    /// Returns the account keys of every ACL record owned by `program_id` whose handle matches.
+    /// Returns the account keys of every EncryptedValue account owned by `program_id` whose handle matches.
     /// The `seed` is reserved for callers that want to assert it; the on-chain filter is by handle
     /// offset since the PDA seeds (nonce metadata) are not known from the handle alone.
     pub async fn find_acl_records_by_handle(

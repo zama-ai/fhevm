@@ -1,7 +1,7 @@
 //! Solana ACL verification helpers for the KMS connector.
 //!
-//! RFC-024 replaced the keyed-nonce `AclRecord`/`AclPermission`/`HandleMaterialCommitment`
-//! on-chain accounts with a single `EncryptedValue` lineage account (see
+//! RFC-024 replaced the old keyed-nonce ACL and material-commitment on-chain accounts
+//! with a single `EncryptedValue` lineage account (see
 //! [`super::solana_encrypted_value_acl`]): those account types no longer exist on-chain, so the
 //! byte-offset decoders that used to read them were deleted from this module along with them —
 //! decoding them would read garbage from a nonexistent layout, not merely dead code.

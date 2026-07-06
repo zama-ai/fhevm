@@ -286,7 +286,7 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
     );
     assert_eq!(
         account_fetches[0].kind,
-        SolanaFinalizedAccountFetchKind::AclRecord
+        SolanaFinalizedAccountFetchKind::EncryptedValueAccount
     );
     assert_eq!(account_fetches[0].reason, "acl_record_bound");
     assert_eq!(

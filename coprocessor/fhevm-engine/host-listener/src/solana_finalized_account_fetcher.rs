@@ -31,15 +31,15 @@ pub struct SolanaFinalizedAccountFetcherConfig {
     pub rpc_url: String,
     pub batch_size: i64,
     pub poll_interval: Duration,
-    /// base58 zama_host program id used as the trust anchor: a finalized ACL
-    /// record must be owned by this program before its handle is released for
-    /// decryption. `None` disables the owner check (e.g. local fixtures).
+    /// base58 zama_host program id used as the trust anchor: a finalized
+    /// EncryptedValue account must be owned by this program before its handle is
+    /// released for decryption. `None` disables the owner check (e.g. local fixtures).
     pub host_program_id: Option<[u8; 32]>,
     pub retry_interval: Duration,
 }
 
-/// Downstream decrypt work to enqueue once a finalized ACL record is confirmed
-/// on-chain. `AllowedForDecryption` releases a handle for public decrypt;
+/// Downstream decrypt work to enqueue once a finalized EncryptedValue account
+/// is confirmed on-chain. `AllowedForDecryption` releases a handle for public decrypt;
 /// `AllowedAccount` records a durable per-subject allow. Both also enqueue the
 /// SNS digest (`pbs_computations`) so the handle's ciphertext gets a ct128.
 #[derive(Clone, Copy, Debug)]
@@ -68,7 +68,7 @@ pub fn decrypt_enqueue_for_fetch(
     witness: &SolanaFinalizedAccountWitness,
     host_program_id: Option<[u8; 32]>,
 ) -> Option<DecryptEnqueue> {
-    if job.kind != SolanaFinalizedAccountFetchKind::AclRecord {
+    if job.kind != SolanaFinalizedAccountFetchKind::EncryptedValueAccount {
         return None;
     }
     let allow_event = match job.reason.as_str() {
@@ -80,9 +80,10 @@ pub fn decrypt_enqueue_for_fetch(
         | "encrypted_value_created"
         | "handle_superseded"
         | "subject_allowed" => AllowEvents::AllowedAccount,
-        // handle_material_sealed also emits an AclRecord fetch, but the allow it
-        // confirms already arrived via its own subject/public-decrypt event; the
-        // material-sealed fetch is only a witness for the on-chain consume path.
+        // handle_material_sealed also emits an EncryptedValue-account fetch, but
+        // the allow it confirms already arrived via its own subject/public-decrypt
+        // event; the material-sealed fetch is only a witness for the on-chain
+        // consume path.
         _ => return None,
     };
     let handle = match job.handle {
@@ -114,7 +115,7 @@ pub fn decrypt_enqueue_for_fetch(
             warn!(
                 handle = %handle,
                 reason = %job.reason,
-                "finalized ACL record not owned by zama_host program; refusing to release handle for decryption"
+                "finalized EncryptedValue account not owned by zama_host program; refusing to release handle for decryption"
             );
             return None;
         }
@@ -150,7 +151,7 @@ fn encrypted_value_claim_is_finalized(
             warn!(
                 reason = %job.reason,
                 error = %err,
-                "finalized ACL record is not a valid EncryptedValue account; refusing to release handle"
+                "finalized account is not a valid EncryptedValue account; refusing to release handle"
             );
             return false;
         }
@@ -654,7 +655,7 @@ mod tests {
     ) -> SolanaFinalizedAccountFetchJob {
         SolanaFinalizedAccountFetchJob {
             account_key: [1; 32],
-            kind: SolanaFinalizedAccountFetchKind::AclRecord,
+            kind: SolanaFinalizedAccountFetchKind::EncryptedValueAccount,
             reason: reason.to_owned(),
             handle,
             related_account: None,
@@ -768,7 +769,7 @@ mod tests {
     fn encrypted_value_instruction_reasons_release_the_expected_allow_kind() {
         // RFC-024 EncryptedValue instruction-decode reasons (create/update/
         // allow_subjects -> durable account allow; make_handle_public -> public
-        // decrypt), same trust guard as the legacy AclRecord reasons above.
+        // decrypt), same trust guard as the legacy finalized-account reasons above.
         for reason in [
             "encrypted_value_created",
             "handle_superseded",
@@ -838,9 +839,10 @@ mod tests {
     }
 
     #[test]
-    fn material_sealed_acl_record_does_not_release_a_handle() {
-        // handle_material_sealed emits an AclRecord witness fetch, but the allow
-        // it confirms already arrived through its own event; it must not enqueue.
+    fn material_sealed_encrypted_value_fetch_does_not_release_a_handle() {
+        // handle_material_sealed emits an EncryptedValue witness fetch, but the
+        // allow it confirms already arrived through its own event; it must not
+        // enqueue.
         let job = acl_record_job(
             "handle_material_sealed",
             Some(Handle::from([6; 32])),

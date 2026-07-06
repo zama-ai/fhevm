@@ -2193,8 +2193,8 @@
     },
     {
       "code": 6014,
-      "name": "CurrentAclRecordMismatch",
-      "msg": "current ACL record does not match token account state"
+      "name": "CurrentEncryptedValueMismatch",
+      "msg": "current encrypted value does not match token account state"
     },
     {
       "code": 6015,

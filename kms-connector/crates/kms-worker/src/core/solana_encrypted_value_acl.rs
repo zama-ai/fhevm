@@ -2,9 +2,9 @@
 //!
 //! The MMR, leaf commitments, and authorization rules come from the shared
 //! `zama_solana_acl` crate — the same code the on-chain program runs — so the KMS
-//! and the host cannot drift on those. The account **layout**, however, cannot be
-//! decoded with the shared crate's `decode_account`. See "WHY A LOCAL DECODE
-//! ROUTINE" below.
+//! and the host cannot drift on those. The account **layout** includes host-only
+//! role bytes, so this module decodes the real on-chain shape before projecting it
+//! to the shared type. See "WHY A LOCAL DECODE ROUTINE" below.
 //!
 //! ## WHY A LOCAL DECODE ROUTINE (read before touching this file)
 //!
@@ -18,30 +18,15 @@
 //! `acl_domain_key, app_account, encrypted_value_label, current_handle, subjects,
 //! subject_roles, leaf_count, peaks, bump`.
 //!
-//! Borsh has no field tags — it is decoded strictly positionally — so feeding the
-//! real on-chain bytes to `zama_solana_acl::decode_account` would silently misalign
-//! every field after `subjects`: `leaf_count` would read `subject_roles`'s 4-byte
-//! Vec length prefix, `peaks` would read garbage, etc. This is a genuine mismatch
-//! between the shared crate and the real bytes, not a bug in either the on-chain
-//! program (whose own test `discriminator_matches_shared_crate` only pins the
-//! 8-byte discriminator, not the body layout) or the shared crate (which is
-//! intentionally role-free — role bytes are host-program-only policy, irrelevant
-//! to the MMR/ACL invariants the shared crate exists to share).
-//!
-//! `zama-solana-acl` lives under `solana/` and this workstream is scoped to
-//! `kms-connector/` + `sdk/js-sdk/` only (parallel agents own `solana/`), so the
-//! shared crate cannot be fixed here. Instead, this module locally decodes the
-//! REAL on-chain byte layout (mirroring `zama-host`'s own `EncryptedValue::to_shared`,
+//! Borsh has no field tags — it is decoded strictly positionally — so this module
+//! locally decodes the REAL on-chain byte layout (mirroring `zama-host`'s own
+//! `EncryptedValue::to_shared`,
 //! which performs the identical projection on-chain), preserves `subject_roles`
 //! alongside the projected `zama_solana_acl::EncryptedValue`, and locally enforces
 //! the host's current-decrypt USE-role policy before/after delegating to the shared
 //! crate's role-less authorization helpers. Historical/public MMR authorization
 //! still stays entirely in the shared crate because the leaf commitments already
 //! encode the authorized subject/handle history.
-//!
-//! If the shared crate's `EncryptedValue` is ever extended with `subject_roles` in
-//! the matching position, this module's local decode becomes redundant with
-//! `zama_solana_acl::decode_account` and should be deleted in favor of it.
 
 use borsh::BorshDeserialize;
 use solana_pubkey::Pubkey;
@@ -353,8 +338,7 @@ mod tests {
     }
 
     /// Encodes a lineage using the REAL on-chain layout (with `subject_roles`), exactly as
-    /// `zama-host` would write it — NOT the shared crate's `encode_account`, which lacks the
-    /// field. Exercises the local decode routine this module exists for.
+    /// `zama-host` would write it. Exercises the local decode routine this module exists for.
     fn encode_on_chain(acl: &EncryptedValue, subject_roles: Vec<u8>) -> Vec<u8> {
         let on_chain = OnChainEncryptedValue {
             acl_domain_key: acl.acl_domain_key,
@@ -548,8 +532,7 @@ mod tests {
 
     /// The load-bearing test for this module: decoding the REAL on-chain layout (with
     /// `subject_roles` inserted between `subjects` and `leaf_count`) must recover exactly the
-    /// same ACL/MMR state as the shared crate's in-memory value — proving the local decode
-    /// routine, not `zama_solana_acl::decode_account`, is what correctly reads real bytes.
+    /// same ACL/MMR state as the shared crate's in-memory value.
     #[test]
     fn decodes_real_on_chain_layout_with_subject_roles_and_authorizes_end_to_end() {
         let mut l = lineage(h(10), &[OWNER]);
@@ -576,24 +559,5 @@ mod tests {
                 .verify_historical_user_decrypt(target, OWNER, &[DOMAIN], &proof)
                 .is_ok()
         );
-    }
-
-    /// If the shared crate's `decode_account` (which has no `subject_roles` field) were fed the
-    /// REAL on-chain bytes, every field after `subjects` would misalign. This test pins that this
-    /// module never does that: decoding real bytes with the shared decoder is provably wrong, and
-    /// `decode_encrypted_value_acl` (this module's routine) must NOT delegate to it.
-    #[test]
-    fn shared_crate_decoder_misaligns_on_real_on_chain_bytes() {
-        let mut l = lineage(h(10), &[OWNER, STRANGER]);
-        l.rotate(h(11));
-        let subject_roles = vec![0x01u8; l.acl.subjects.len()];
-        let data = encode_on_chain(&l.acl, subject_roles);
-
-        // Either it fails outright, or it "succeeds" into a wrong value — both are acceptable
-        // proof that it must not be used; only the "wrong value" branch needs the inequality
-        // assertion.
-        if let Ok(misdecoded) = zama_solana_acl::decode_account(&data) {
-            assert_ne!(misdecoded, l.acl);
-        }
     }
 }

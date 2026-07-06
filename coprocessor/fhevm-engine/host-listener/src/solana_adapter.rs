@@ -25,7 +25,7 @@ use crate::database::tfhe_event_propagate::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SolanaFinalizedAccountFetchKind {
-    AclRecord,
+    EncryptedValueAccount,
     AclPermission,
     HandleMaterialCommitment,
     DisclosureRequest,
@@ -39,7 +39,7 @@ pub enum SolanaFinalizedAccountFetchKind {
 impl SolanaFinalizedAccountFetchKind {
     fn as_i16(self) -> i16 {
         match self {
-            SolanaFinalizedAccountFetchKind::AclRecord => 1,
+            SolanaFinalizedAccountFetchKind::EncryptedValueAccount => 1,
             SolanaFinalizedAccountFetchKind::AclPermission => 2,
             SolanaFinalizedAccountFetchKind::HandleMaterialCommitment => 3,
             SolanaFinalizedAccountFetchKind::DisclosureRequest => 4,
@@ -53,7 +53,7 @@ impl SolanaFinalizedAccountFetchKind {
 
     fn from_i16(value: i16) -> Option<Self> {
         match value {
-            1 => Some(SolanaFinalizedAccountFetchKind::AclRecord),
+            1 => Some(SolanaFinalizedAccountFetchKind::EncryptedValueAccount),
             2 => Some(SolanaFinalizedAccountFetchKind::AclPermission),
             3 => {
                 Some(SolanaFinalizedAccountFetchKind::HandleMaterialCommitment)
@@ -499,7 +499,7 @@ pub(crate) fn acl_record_fetch(
 ) -> SolanaFinalizedAccountFetch {
     SolanaFinalizedAccountFetch {
         account_key: acl_record,
-        kind: SolanaFinalizedAccountFetchKind::AclRecord,
+        kind: SolanaFinalizedAccountFetchKind::EncryptedValueAccount,
         reason,
         handle: Some(Handle::from(handle)),
         related_account: None,
@@ -1473,20 +1473,6 @@ mod tests {
                 "AclAllowedEvent",
                 acl_allowed_payload([7; 32], [8; 32]),
             ),
-            anchor_event("AclRecordBoundEvent", {
-                let mut payload = vec![EVENT_VERSION];
-                payload.extend_from_slice(&[1; 32]);
-                payload.extend_from_slice(&[2; 32]);
-                payload.extend_from_slice(&[3; 32]);
-                payload.extend_from_slice(&4_u64.to_le_bytes());
-                payload.extend_from_slice(&[5; 32]);
-                payload.extend_from_slice(&[6; 32]);
-                payload.extend_from_slice(&[7; 32]);
-                payload.push(8);
-                payload.push(0);
-                payload.extend_from_slice(&9_u64.to_le_bytes());
-                payload
-            }),
             anchor_event("AclSubjectAllowedEvent", {
                 let mut payload = vec![EVENT_VERSION];
                 payload.extend_from_slice(&[1; 32]);

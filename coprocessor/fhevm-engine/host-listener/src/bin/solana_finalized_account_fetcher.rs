@@ -32,7 +32,7 @@ struct Args {
     #[arg(
         long = "program-id",
         alias = "acl-program-id",
-        help = "zama_host program id (base58); finalized ACL records must be owned by it before a handle is released for decryption. If unset, the owner check is skipped."
+        help = "zama_host program id (base58); finalized EncryptedValue accounts must be owned by it before a handle is released for decryption. If unset, the owner check is skipped."
     )]
     program_id: Option<String>,
 

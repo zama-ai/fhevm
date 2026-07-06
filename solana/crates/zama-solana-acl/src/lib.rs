@@ -133,21 +133,6 @@ pub fn encrypted_value_discriminator() -> [u8; 8] {
     disc
 }
 
-/// Decodes an `EncryptedValue` from raw account data (discriminator + borsh body).
-///
-/// Reads exactly the struct's bytes and ignores any trailing capacity: a Solana
-/// account buffer presented to a program (especially one passed through a CPI)
-/// carries realloc headroom past `data_len`, so a strict whole-slice decode would
-/// spuriously reject a valid account. The 8-byte discriminator still pins the type.
-pub fn decode_account(data: &[u8]) -> Result<EncryptedValue, AclError> {
-    if data.len() < 8 || data[..8] != encrypted_value_discriminator() {
-        return Err(AclError::BadDiscriminator);
-    }
-    let mut body = &data[8..];
-    <EncryptedValue as borsh::BorshDeserialize>::deserialize(&mut body)
-        .map_err(|_| AclError::BadAccountData)
-}
-
 /// Decodes `zama-host`'s real on-chain account layout and projects it to the
 /// shared role-less ACL/MMR type, returning the host-only role bytes separately.
 pub fn decode_on_chain_account(data: &[u8]) -> Result<(EncryptedValue, Vec<u8>), AclError> {
@@ -161,14 +146,6 @@ pub fn decode_on_chain_account(data: &[u8]) -> Result<(EncryptedValue, Vec<u8>),
         return Err(AclError::BadAccountData);
     }
     Ok((decoded.to_shared(), decoded.subject_roles))
-}
-
-/// Encodes an `EncryptedValue` to raw account data (discriminator + borsh body).
-pub fn encode_account(value: &EncryptedValue) -> Result<Vec<u8>, AclError> {
-    let mut data = encrypted_value_discriminator().to_vec();
-    let body = borsh::to_vec(value).map_err(|_| AclError::BadAccountData)?;
-    data.extend_from_slice(&body);
-    Ok(data)
 }
 
 /// The app-controlled value key for one encrypted field — the lineage's PDA seed.
@@ -421,21 +398,6 @@ mod tests {
         assert!(authorize_public(l.account, &l.value, h(10), &empty).is_err());
     }
 
-    #[test]
-    fn account_round_trips_through_shared_codec() {
-        let mut l = Lineage::new(h(10), &[h(1), h(2)]);
-        l.update(h(11));
-        let data = encode_account(&l.value).unwrap();
-        assert_eq!(
-            data.len(),
-            EncryptedValue::account_size(l.value.subjects.len(), l.value.peaks.len())
-        );
-        assert_eq!(decode_account(&data).unwrap(), l.value);
-        let mut bad = data.clone();
-        bad[0] ^= 0xff;
-        assert_eq!(decode_account(&bad), Err(AclError::BadDiscriminator));
-    }
-
     fn encode_on_chain(value: &EncryptedValue, subject_roles: Vec<u8>) -> Vec<u8> {
         let on_chain = OnChainEncryptedValue {
             acl_domain_key: value.acl_domain_key,
@@ -464,9 +426,5 @@ mod tests {
         let (decoded, decoded_roles) = decode_on_chain_account(&data).unwrap();
         assert_eq!(decoded, l.value);
         assert_eq!(decoded_roles, roles);
-
-        let old = decode_account(&data).unwrap();
-        assert_ne!(old.leaf_count, l.value.leaf_count);
-        assert_ne!(old.peaks, l.value.peaks);
     }
 }

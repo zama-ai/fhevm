@@ -608,9 +608,9 @@ fn reconstruct_context(
 /// Rebuilds the ingestable event set off-chain from a transaction's instructions,
 /// for `--reconstruct` mode (the swap that replaces emit-decoding). Covers
 /// `fhe_eval`: one compute event per step, plus an `acl_record_bound` allow-fetch
-/// for each `Durable` step (handle = the step result, ACL record = the step's
-/// `remaining_accounts` entry) — matching what the program's bind emits, so
-/// `is_allowed` and the fetch row land identically.
+/// for each `Durable` step (handle = the step result, EncryptedValue account =
+/// the step's `remaining_accounts` entry) — matching what the program's bind
+/// emits, so `is_allowed` and the fetch row land identically.
 ///
 /// `EncryptedValue` lifecycle instructions are decoded separately from the same
 /// ordered instruction list and appended to the reconstructed event set. Missing
@@ -905,7 +905,7 @@ mod fhe_eval_acl_tests {
     #[test]
     fn durable_output_as_sole_remaining_account_resolves() {
         // The trivial-encrypt-eval shape: 7 named accounts (0..=6) + exactly one
-        // remaining account, the durable output ACL record, at absolute index 7
+        // remaining account, the durable output EncryptedValue account, at absolute index 7
         // (remaining_index 0). The off-by-one (base 8) read accounts.get(8) here, found
         // nothing, and silently dropped the allow-fetch — leaving the output handle
         // unmaterialized. This pins the base at 7.
@@ -918,7 +918,7 @@ mod fhe_eval_acl_tests {
 
     #[test]
     fn output_after_input_acl_records_resolves() {
-        // A durable input ACL record at 7 and the durable output at 8 (remaining_index 1).
+        // A durable input EncryptedValue account at 7 and the durable output at 8 (remaining_index 1).
         let accounts: Vec<[u8; 32]> = (0..9).map(acct).collect();
         assert_eq!(
             fhe_eval_durable_encrypted_value(&accounts, 1),
