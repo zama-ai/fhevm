@@ -905,8 +905,8 @@ Decision:
   UserDecryptionRequestSolanaPayload)` with a `UserDecryptionRequestSolana` event. The payload carries
   `bytes32 userIdentity`, `bytes32[] allowedAclDomainKeys`, `bytes32 nonce` as TYPED fields (plus shared
   publicKey, requestValidity, signature). `extraData` now carries ONLY the KMS context
-  (`0x01 ‖ contextId(32)`). **No Solana auth data rides in `extraData` anywhere on the protocol or
-  client surface.**
+  (`0x01 ‖ contextId(32)`). **No Solana auth data rides in `extraData` on the typed protocol or
+  client path.**
 - The relayer builds the typed call (`SolanaUnifiedV1` core variant → `userDecryptionRequestSolanaCall`);
   the js-sdk `buildSolanaUserDecryptRequest` emits typed fields + context-only extraData (the signed
   ed25519 preimage is unchanged).
@@ -915,8 +915,10 @@ Decision:
   in `user_decryption_requests`; `extra_data` carries only the KMS context (`0x01 ‖ contextId`). The
   worker identifies a Solana row by `solana_identity IS NOT NULL` (never by a version byte) and
   re-derives/verifies the ed25519 signature itself, since Solana has no on-chain publicKey binding.
-  There is **no `0x03` extraData blob anywhere** — on the protocol, client, or internal connector
-  surface (see `gw-listener/src/core/publish.rs`, `utils/src/types/solana_extra_data.rs`).
+  There is **no `0x03` extraData blob** on the typed gateway event or internal connector row surface
+  (see `gw-listener/src/core/publish.rs`). Backward-compatible relayer parsing/validation still
+  recognizes the legacy Solana `0x03` blob shape while the typed Solana path sends context-only
+  `extraData`.
 - `Decryption.sol` version bumped MINOR 6→7 (reinitializer 7→8, reinitializeV6→V7).
 - KMS-cert context: `extract_kms_context_id` (DD-021) handles `extra_data` versions 0 and 1 (the
   public-decrypt cert) — a *different* extraData from either path above.
