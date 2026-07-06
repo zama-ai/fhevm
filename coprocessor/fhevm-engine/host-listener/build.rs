@@ -620,12 +620,6 @@ fn build_contracts() {
 /// so the generator never trips over arg types used only by unrelated instructions;
 /// a listed instruction with an unexpected arg type fails the build loudly.
 const ZAMA_HOST_INSTRUCTION_ALLOWLIST: &[&str] = &[
-    "trivial_encrypt_and_bind",
-    "fhe_binary_op",
-    "fhe_binary_op_and_bind_output",
-    "fhe_ternary_op_and_bind_output",
-    "fhe_rand_and_bind",
-    "fhe_rand_bounded_and_bind",
     "allow_for_decryption",
     "allow_acl_subjects",
     "commit_handle_material",
@@ -677,6 +671,20 @@ fn generate_zama_host_instructions() {
             );
         }
     }
+    let needs_bool = instructions.iter().any(|ins| {
+        ins["args"]
+            .as_array()
+            .expect("instruction args")
+            .iter()
+            .any(|arg| idl_type_uses_primitive(&types, &arg["type"], "bool"))
+    });
+    let needs_u64 = instructions.iter().any(|ins| {
+        ins["args"]
+            .as_array()
+            .expect("instruction args")
+            .iter()
+            .any(|arg| idl_type_uses_primitive(&types, &arg["type"], "u64"))
+    });
 
     let mut output = String::from(
         "// Generated from `host-listener/idl/zama_host.json` by `host-listener/build.rs`.\n// Do not edit by hand.\n\n",
@@ -834,7 +842,11 @@ impl<'a> Cursor<'a> {
         Some(byte)
     }
 
-    fn read_bool(&mut self) -> Option<bool> {
+"#,
+    );
+    if needs_bool {
+        output.push_str(
+            r#"    fn read_bool(&mut self) -> Option<bool> {
         match self.read_u8()? {
             0 => Some(false),
             1 => Some(true),
@@ -842,15 +854,27 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn read_u32(&mut self) -> Option<u32> {
+"#,
+        );
+    }
+    output.push_str(
+        r#"    fn read_u32(&mut self) -> Option<u32> {
         Some(u32::from_le_bytes(self.read_array::<4>()?))
     }
 
-    fn read_u64(&mut self) -> Option<u64> {
+"#,
+    );
+    if needs_u64 {
+        output.push_str(
+            r#"    fn read_u64(&mut self) -> Option<u64> {
         Some(u64::from_le_bytes(self.read_array::<8>()?))
     }
 
-    fn read_array<const N: usize>(&mut self) -> Option<[u8; N]> {
+"#,
+        );
+    }
+    output.push_str(
+        r#"    fn read_array<const N: usize>(&mut self) -> Option<[u8; N]> {
         let end = self.offset.checked_add(N)?;
         let bytes = self.bytes.get(self.offset..end)?;
         self.offset = end;
@@ -923,6 +947,39 @@ fn collect_defined_types<'a>(
     }
 }
 
+fn idl_type_uses_primitive(
+    types: &HashMap<&str, &Value>,
+    idl_type: &Value,
+    primitive: &str,
+) -> bool {
+    if idl_type.as_str() == Some(primitive) {
+        return true;
+    }
+    if let Some(vec_inner) = idl_type.get("vec") {
+        return idl_type_uses_primitive(types, vec_inner, primitive);
+    }
+    if let Some(array) = idl_type["array"].as_array() {
+        return array[0].as_str() == Some(primitive);
+    }
+    if let Some(defined) = idl_type["defined"]["name"].as_str() {
+        let ty = types
+            .get(defined)
+            .unwrap_or_else(|| panic!("IDL must define {defined}"));
+        return match ty["type"]["kind"].as_str() {
+            Some("struct") => {
+                fields_for_event(types, defined).iter().any(|field| {
+                    idl_type_uses_primitive(types, &field["type"], primitive)
+                })
+            }
+            Some("enum") => false,
+            other => {
+                panic!("unsupported IDL defined kind {other:?} for {defined}")
+            }
+        };
+    }
+    false
+}
+
 fn enum_variants<'a>(
     types: &'a HashMap<&str, &'a Value>,
     name: &str,
@@ -942,7 +999,7 @@ fn enum_variants<'a>(
         .collect()
 }
 
-/// `trivial_encrypt_and_bind` -> `TrivialEncryptAndBind`.
+/// `allow_for_decryption` -> `AllowForDecryption`.
 fn pascal_case(snake: &str) -> String {
     let mut out = String::new();
     let mut upper = true;

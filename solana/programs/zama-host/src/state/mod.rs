@@ -174,6 +174,15 @@ pub enum FheEvalStep {
         /// Whether this output remains instruction-local or is bound into durable ACL state.
         output: FheEvalOutput,
     },
+    /// Bounded random ciphertext step.
+    RandBounded {
+        /// Exclusive upper bound encoded as a 256-bit big-endian integer.
+        upper_bound: [u8; 32],
+        /// FHE type byte embedded in the output handle.
+        fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
 }
 
 /// A coprocessor input attestation carried inline by a [`FheEvalOperand::VerifiedInput`], re-verified

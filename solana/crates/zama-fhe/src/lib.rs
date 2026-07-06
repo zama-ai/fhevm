@@ -1476,6 +1476,32 @@ impl EvalBuilder {
         self.rand::<Uint<64>>(output)
     }
 
+    pub fn rand_bounded_u64(
+        &mut self,
+        upper_bound: BoundedU64UpperBound,
+        output: Output,
+    ) -> Result<Encrypted<Uint<64>>> {
+        let fhe_type = FheType::UINT64.byte();
+        if self.steps.len() >= MAX_FHE_EVAL_OPS {
+            return Err(EvalBuildError::TooManyOps);
+        }
+        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let mut remaining_accounts = self.remaining_accounts.clone();
+        let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
+        self.remaining_accounts = remaining_accounts;
+        self.steps.push(FheEvalStep::RandBounded {
+            upper_bound: upper_bound.bytes(),
+            fhe_type,
+            output,
+        });
+        self.produced_types.push(fhe_type);
+        Ok(Encrypted::from_operand(Operand::transient(
+            step_index,
+            self.context_id,
+            self.scope,
+        )))
+    }
+
     fn encrypted_operand_type(
         &self,
         operand: &Operand,
@@ -1574,8 +1600,10 @@ fn validate_lowered_step(
             validate_lowered_encrypted_operand(if_false, step_index, used_accounts)?;
             validate_lowered_output(output, used_accounts)?;
         }
-        FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
-            validate_lowered_output(output, used_accounts)?;
+        FheEvalStep::TrivialEncrypt { output, .. }
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::RandBounded { output, .. } => {
+            validate_lowered_output(output, used_accounts)?
         }
     }
     Ok(())
@@ -2024,18 +2052,6 @@ pub struct EvalCpiAccounts<'info> {
 }
 
 #[cfg(feature = "cpi")]
-pub struct BoundedRandU64CpiAccounts<'info> {
-    pub payer: AccountInfo<'info>,
-    pub compute_subject: AccountInfo<'info>,
-    pub app_account_authority: AccountInfo<'info>,
-    pub host_config: AccountInfo<'info>,
-    pub output_acl_record: AccountInfo<'info>,
-    pub system_program: AccountInfo<'info>,
-    pub event_authority: AccountInfo<'info>,
-    pub program: AccountInfo<'info>,
-}
-
-#[cfg(feature = "cpi")]
 trait EvalAccountResolver<'info> {
     fn resolve_eval_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>>;
 }
@@ -2201,56 +2217,6 @@ where
     };
 
     invoke_signed(&instruction, &account_infos, signer_seeds)?;
-    Ok(())
-}
-
-/// Invokes `zama-host::fhe_rand_bounded_and_bind` for a typed `euint64` output birth.
-#[cfg(feature = "cpi")]
-pub fn invoke_rand_bounded_u64_and_bind_signed<'info>(
-    output_birth: &DurableOutputBirth,
-    upper_bound: BoundedU64UpperBound,
-    accounts: BoundedRandU64CpiAccounts<'info>,
-    signer_seeds: &[&[&[u8]]],
-) -> anchor_lang::prelude::Result<()> {
-    if accounts.app_account_authority.key() != output_birth.app_account() {
-        return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
-    }
-    if accounts.output_acl_record.key() != output_birth.acl_record() {
-        return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
-    }
-
-    let fixed_accounts = zama_host::cpi::accounts::FheRandBoundedAndBind {
-        payer: accounts.payer,
-        compute_subject: accounts.compute_subject,
-        app_account_authority: accounts.app_account_authority,
-        host_config: accounts.host_config,
-        output_acl_record: accounts.output_acl_record,
-        system_program: accounts.system_program,
-        event_authority: accounts.event_authority,
-        program: accounts.program,
-    };
-    let instruction = Instruction {
-        program_id: fixed_accounts.program.key(),
-        accounts: fixed_accounts.to_account_metas(None),
-        data: zama_host::instruction::FheRandBoundedAndBind {
-            upper_bound: upper_bound.bytes(),
-            fhe_type: FheType::UINT64.byte(),
-            output_nonce_key: output_birth.nonce_key(),
-            output_nonce_sequence: output_birth.sequence(),
-            output_acl_domain_key: output_birth.acl_domain_key(),
-            output_app_account: output_birth.app_account(),
-            output_encrypted_value_label: output_birth.encrypted_value_label(),
-            output_subjects: output_birth.host_subjects(),
-            output_public_decrypt: output_birth.public_decrypt(),
-        }
-        .data(),
-    };
-
-    invoke_signed(
-        &instruction,
-        &fixed_accounts.to_account_infos(),
-        signer_seeds,
-    )?;
     Ok(())
 }
 

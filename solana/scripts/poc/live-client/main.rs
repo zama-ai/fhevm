@@ -5,7 +5,7 @@
 //!
 //! Live flow proven so far:
 //!   1. initialize_host_config  (host program executes real on-chain logic)
-//!   2. initialize_mint         (host<->token CPI: trivial-encrypt + ACL-record init)
+//!   2. initialize_mint         (host<->token CPI: fhe_eval trivial-encrypt + ACL-record init)
 //!
 //! Underlying SPL mint is passed via $UNDERLYING_MINT (create it with `spl-token
 //! create-token`). RPC is pinned to the local validator — never mainnet.
@@ -39,19 +39,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // TRIVIAL_ENCRYPT drives a real zama-host FHE op (trivial encryption): the program
-    // computes the result handle on-chain and emits a TrivialEncryptEvent the live
-    // host-listener ingests into the coprocessor DB for the tfhe-worker to materialize.
-    if std::env::var("TRIVIAL_ENCRYPT").is_ok() {
-        trivial_encrypt_and_bind(&host, &payer, host_config)?;
-        return Ok(());
-    }
-
-    // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-plan executor
-    // (fhe_eval): a single TrivialEncrypt step with a durable output ACL record. The host computes
-    // the result handle on-chain and emits the same TrivialEncryptEvent the host-listener ingests,
-    // exercising the #2755 eval path instead of the standalone trivial_encrypt_and_bind.
-    if std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
+    // TRIVIAL_ENCRYPT drives a real zama-host trivial encryption through fhe_eval. The host
+    // computes the result handle on-chain and emits a TrivialEncryptEvent the live host-listener
+    // ingests into the coprocessor DB for the tfhe-worker to materialize.
+    if std::env::var("TRIVIAL_ENCRYPT").is_ok()
+        || std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok()
+    {
         trivial_encrypt_eval(&host, &payer, host_config)?;
         return Ok(());
     }
@@ -215,109 +208,11 @@ fn bootstrap(
     Ok(())
 }
 
-/// Drives a real zama-host trivial-encrypt FHE op: the program computes the result handle
-/// on-chain (entropy-bound, no client pre-computation) and emits a TrivialEncryptEvent over
-/// emit_cpi. The live host-listener ingests it into the coprocessor DB, where the tfhe-worker
-/// materializes the trivial ciphertext. TE_VALUE selects the euint64 plaintext (default 42).
-fn trivial_encrypt_and_bind(
-    host: &Program<Rc<Keypair>>,
-    payer: &Rc<Keypair>,
-    host_config: Pubkey,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let value: u64 = std::env::var("TE_VALUE")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(42);
-    // ClearConst::from_be_slice reads the plaintext big-endian, so place the u64 in the low bytes.
-    let mut plaintext = [0u8; 32];
-    plaintext[24..32].copy_from_slice(&value.to_be_bytes());
-    let fhe_type: u8 = 5; // euint64
-
-    let app_account = payer.pubkey();
-    let acl_domain_key = payer.pubkey();
-    // Distinct per value (and from the input-bind record) so repeated runs derive distinct
-    // output ACL record PDAs rather than colliding on an already-initialized account.
-    let mut encrypted_value_label = [1u8; 32];
-    encrypted_value_label[24..32].copy_from_slice(&value.to_be_bytes());
-    let output_nonce_key =
-        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
-    let output_nonce_sequence: u64 = 0;
-    let (output_acl_record, _) =
-        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
-    let (zama_event_authority, _) =
-        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    // ACL_ROLE_ALL (user) grants USE | GRANT | PUBLIC_DECRYPT, so the subject can later mark
-    // this compute output publicly decryptable via allow_for_decryption.
-    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
-
-    // SlotHashes (read via sol_get_sysvar for the result-handle entropy) is populated in
-    // real execution but not in RPC preflight simulation, so skip preflight for this op.
-    let sig = host
-        .request()
-        .accounts(zama_host::accounts::TrivialEncryptAndBind {
-            payer: payer.pubkey(),
-            compute_subject: payer.pubkey(),
-            app_account_authority: payer.pubkey(),
-            host_config,
-            output_acl_record,
-            system_program: system_program::ID,
-            event_authority: zama_event_authority,
-            program: zama_host::ID,
-        })
-        .args(zama_host::instruction::TrivialEncryptAndBind {
-            plaintext,
-            fhe_type,
-            output_nonce_key,
-            output_nonce_sequence,
-            output_acl_domain_key: acl_domain_key,
-            output_app_account: app_account,
-            output_encrypted_value_label: encrypted_value_label,
-            output_subjects: subjects,
-            output_public_decrypt: false,
-        })
-        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
-            skip_preflight: true,
-            ..Default::default()
-        })?;
-    println!("OK trivial_encrypt_and_bind ({value} as euint64): {sig}");
-
-    // The result handle is computed on-chain; read it back from the ACL record so the
-    // decrypt step can target it.
-    let record: zama_host::AclRecord = host.account(output_acl_record)?;
-    let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
-    println!("  output ACL record {output_acl_record}");
-    println!("  result handle 0x{handle_hex}  (tfhe-worker materializes this ciphertext)");
-
-    // TE_ALLOW marks the freshly-computed handle publicly decryptable on the zama-host ACL
-    // record (the subject holds ACL_ROLE_PUBLIC_DECRYPT via the user role above), emitting a
-    // PublicDecryptAllowedEvent — the precondition for a public decrypt of this handle.
-    if std::env::var("TE_ALLOW").is_ok() {
-        let allow_sig = host
-            .request()
-            .accounts(zama_host::accounts::AllowForDecryption {
-                authority: payer.pubkey(),
-                authority_permission_record: None,
-                acl_record: output_acl_record,
-                host_config,
-                deny_subject_record: None,
-                event_authority: zama_event_authority,
-                program: zama_host::ID,
-            })
-            .args(zama_host::instruction::AllowForDecryption {
-                handle: record.handle,
-            })
-            .send()?;
-        println!("OK allow_for_decryption (public): {allow_sig}");
-    }
-    Ok(())
-}
-
 /// Eval-based compute leg: drives a single-step fhe_eval plan (one TrivialEncrypt step with a
-/// durable output ACL record) instead of the standalone trivial_encrypt_and_bind. The host runs
-/// the eval executor, computes the result handle on-chain, creates the durable output ACL record
-/// (passed as the sole remaining_account), and emits the same TrivialEncryptEvent the live
-/// host-listener ingests for the tfhe-worker to materialize. TE_VALUE selects the euint64
-/// plaintext; TE_ALLOW marks it publicly decryptable afterward.
+/// durable output ACL record). The host runs the eval executor, computes the result handle on-chain,
+/// creates the durable output ACL record (passed as the sole remaining_account), and emits the same
+/// TrivialEncryptEvent the live host-listener ingests for the tfhe-worker to materialize. TE_VALUE
+/// selects the euint64 plaintext; TE_ALLOW marks it publicly decryptable afterward.
 fn trivial_encrypt_eval(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
@@ -334,9 +229,7 @@ fn trivial_encrypt_eval(
 
     let app_account = payer.pubkey();
     let acl_domain_key = payer.pubkey();
-    // Distinct label per value so repeated runs derive distinct output ACL record PDAs. Use a
-    // marker byte distinct from trivial_encrypt_and_bind's [1u8;32] label so the two compute paths
-    // never collide on an already-initialized account.
+    // Distinct label per value so repeated runs derive distinct output ACL record PDAs.
     let mut encrypted_value_label = [2u8; 32];
     encrypted_value_label[24..32].copy_from_slice(&value.to_be_bytes());
     let output_nonce_key =

@@ -6,7 +6,8 @@ pub(super) fn assert_eval_step_birth_policy(step: &FheEvalStep) -> Result<()> {
         FheEvalStep::Binary { output, .. }
         | FheEvalStep::Ternary { output, .. }
         | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. } => output,
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::RandBounded { output, .. } => output,
     };
     if let FheEvalOutput::AllowedDurable {
         output_public_decrypt,
@@ -100,9 +101,9 @@ fn preflight_eval_step(
             preflight_encrypted_operand(if_false, step_index, preflight)?;
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
-            preflight_output(output, preflight)?;
-        }
+        FheEvalStep::TrivialEncrypt { output, .. }
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::RandBounded { output, .. } => preflight_output(output, preflight)?,
     }
     Ok(())
 }

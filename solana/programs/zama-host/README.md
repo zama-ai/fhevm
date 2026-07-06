@@ -153,5 +153,5 @@ The zero-birth-entropy fallback is the only surviving state relaxation; it is co
 PoC chain id (`HostConfig::zero_birth_entropy_allowed`, DD-014). Registered-signer threshold policy and
 real proof/transciphering validation are still external/open design items.
 Trivial and random handle birth paths include output nonce metadata in handle derivation before
-binding the result into a canonical ACL record. Random handle birth is covered by
-`fhe_rand_and_bind` and `fhe_rand_bounded_and_bind`, which derive the event seed on-chain.
+binding the result into a canonical ACL record. Random handle birth is covered by `fhe_eval` rand and
+bounded-rand steps, which derive the event seed on-chain.

@@ -3,10 +3,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{program::invoke_signed, system_instruction, system_program};
 
-// AclRecordBoundEvent / AclSubjectAllowedEvent are only used by the emit funnels,
-// which are no-ops when `emit-events` is off.
-#[cfg(feature = "emit-events")]
-use crate::events::{AclRecordBoundEvent, AclSubjectAllowedEvent};
 use crate::{
     errors::ZamaHostError,
     events::HostConfigUpdatedEvent,
@@ -107,42 +103,6 @@ pub(super) fn check_hcu_ordering(total: u64, depth: u64) -> Result<()> {
         ZamaHostError::HcuLimitOrderingInvalid
     );
     Ok(())
-}
-
-pub(super) fn write_acl_record(
-    record: &mut Account<AclRecord>,
-    nonce_key: [u8; 32],
-    nonce_sequence: u64,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-    subjects: &[AclSubjectEntry],
-    public_decrypt: bool,
-    created_slot: u64,
-    bump: u8,
-) {
-    record.handle = handle;
-    record.nonce_key = nonce_key;
-    record.nonce_sequence = nonce_sequence;
-    record.acl_domain_key = acl_domain_key;
-    record.app_account = app_account;
-    record.encrypted_value_label = encrypted_value_label;
-    record.subjects = [Pubkey::default(); MAX_ACL_SUBJECTS];
-    record.subject_roles = [0; MAX_ACL_SUBJECTS];
-    record.subject_count = subjects.len() as u8;
-    record.overflow_subject_count = 0;
-    record.public_decrypt = public_decrypt;
-    record.material_commitment = Pubkey::default();
-    record.material_commitment_hash = [0; 32];
-    record.material_key_id = [0; 32];
-    record.created_slot = created_slot;
-    record.bump = bump;
-
-    for (index, subject) in subjects.iter().enumerate() {
-        record.subjects[index] = subject.pubkey;
-        record.subject_roles[index] = subject.role_flags;
-    }
 }
 
 pub(super) struct AclSubjectUpdate {
@@ -748,60 +708,6 @@ pub(super) fn write_account<T: AccountSerialize>(info: &AccountInfo, account: &T
     let mut cursor = &mut data[..];
     account.try_serialize(&mut cursor)?;
     Ok(())
-}
-
-/// With `emit-events` disabled, off-chain reconstruction is the sole event source,
-/// so the ACL-record-bound emit is a no-op.
-#[cfg(not(feature = "emit-events"))]
-pub(super) fn emit_record_bound(_record_key: Pubkey, _record: &AclRecord) {}
-
-#[cfg(feature = "emit-events")]
-pub(super) fn emit_record_bound(record_key: Pubkey, record: &AclRecord) {
-    emit!(AclRecordBoundEvent {
-        version: EVENT_VERSION,
-        acl_record: record_key,
-        handle: record.handle,
-        nonce_key: record.nonce_key,
-        nonce_sequence: record.nonce_sequence,
-        acl_domain_key: record.acl_domain_key,
-        app_account: record.app_account,
-        encrypted_value_label: record.encrypted_value_label,
-        subject_count: record.subject_count,
-        public_decrypt: record.public_decrypt,
-        created_slot: record.created_slot,
-    });
-}
-
-/// With `emit-events` disabled, off-chain reconstruction is the sole event source,
-/// so the ACL-subject-allowed emit is a no-op.
-#[cfg(not(feature = "emit-events"))]
-pub(super) fn emit_subject_event(
-    _record_key: Pubkey,
-    _handle: [u8; 32],
-    _subject: AclSubjectEntry,
-    _overflow_permission_record: Pubkey,
-) {
-}
-
-#[cfg(feature = "emit-events")]
-pub(super) fn emit_subject_event(
-    record_key: Pubkey,
-    handle: [u8; 32],
-    subject: AclSubjectEntry,
-    overflow_permission_record: Pubkey,
-) {
-    let updated_slot = Clock::get().map_or(0, |clock| clock.slot);
-    emit!(AclSubjectAllowedEvent {
-        version: EVENT_VERSION,
-        acl_record: record_key,
-        handle,
-        authority_subject: Pubkey::default(),
-        subject: subject.pubkey.to_bytes(),
-        role_flags: subject.role_flags,
-        overflow_permission_record,
-        inline_index: u8::MAX,
-        updated_slot,
-    });
 }
 
 #[cfg(test)]
