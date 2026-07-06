@@ -1,17 +1,10 @@
 import type { SignedDecryptionPermit, SignedDecryptionPermitV1 } from '../types/signedDecryptionPermit.js';
 import type { KmsDelegatedUserDecryptEip712V1, KmsUserDecryptEip712V1 } from '../types/kms.js';
-import type {
-  Bytes65Hex,
-  BytesHex,
-  ChecksummedAddress,
-  Uint256BigInt,
-  Uint8Number,
-  UintNumber,
-} from '../types/primitives.js';
+import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint8Number, UintNumber } from '../types/primitives.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { SignDecryptionPermitContext, SignDecryptionPermitParameters } from './SignedDecryptionPermit-p.js';
+import type { KmsExtraData } from '../types/kms-p.js';
 import { verifyKmsUserDecryptEip712V1 } from '../utils-p/decrypt/verifyKmsUserDecryptEip712V1.js';
 import { verifyKmsDelegatedUserDecryptEip712V1 } from '../utils-p/decrypt/verifyKmsDelegatedUserDecryptEip712V1.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
@@ -24,9 +17,8 @@ import {
 } from './createKmsDelegatedUserDecryptEip712V1.js';
 import { assertRecordStringProperty } from '../base/string.js';
 import { assertIsTransportKeyPair, type TransportKeyPair } from './TransportKeyPair-p.js';
-import { readKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
+import { readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
-import { fromKmsExtraData } from './kmsExtraData.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -123,42 +115,8 @@ class SignedDecryptionPermitV1Impl implements SignedDecryptionPermitV1 {
     assertKmsEip712V1DeadlineValidity(this.#eip712.message, MAX_USER_DECRYPT_DURATION_DAYS);
   }
 
-  /**
-   * Asserts that this permit was signed against the given {@link KmsSignersContext}.
-   *
-   * Compares the `extraData` embedded in the permit's EIP-712 message with the
-   * `extraData` derived from the provided context. A mismatch indicates the permit
-   * was created for a different KMS context (e.g. different context ID or version)
-   * and must not be used for decryption.
-   *
-   * @todo The current check is a strict byte-level comparison. A permit signed
-   *   with the correct `kmsContextId` but a different `extraData` encoding format
-   *   (e.g. a version change in the serialization scheme) will be rejected even
-   *   though the context ID matches. Consider comparing the decoded `kmsContextId`
-   *   instead of the raw `extraData` bytes.
-   *
-   * @param kmsSignersContext - The current KMS signers context to validate against.
-   * @throws If the permit's `extraData` does not match the context's `extraData`.
-   */
-  public assertMatchesKmsContext(kmsSignersContext: KmsSignersContext): void {
-    const expectedExtraData = kmsSignersContextToExtraData(kmsSignersContext);
-    if (expectedExtraData !== this.#eip712.message.extraData) {
-      throw new Error(
-        `Invalid permit: extraData "${this.#eip712.message.extraData}" does not match expected "${expectedExtraData}" from KmsSignersContext.`,
-      );
-    }
-  }
-
   public get transportPublicKey(): BytesHex {
     return this.#eip712.message.publicKey;
-  }
-
-  public get kmsContextId(): Uint256BigInt {
-    return fromKmsExtraData(this.#eip712.message.extraData).kmsContextId;
-  }
-
-  public get kmsEpochId(): Uint256BigInt {
-    return fromKmsExtraData(this.#eip712.message.extraData).kmsEpochId;
   }
 
   public get encryptedDataOwnerAddress(): ChecksummedAddress {
@@ -235,12 +193,12 @@ export async function signDecryptionPermitV1(
   context: SignDecryptionPermitContext,
   parameters: SignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
-  const kmsSignersContext = await readKmsSignersContext(context, {
+  const kmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   });
 
-  const extraData: BytesHex = kmsSignersContextToExtraData(kmsSignersContext);
+  const extraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
 
   const {
     contractAddresses,

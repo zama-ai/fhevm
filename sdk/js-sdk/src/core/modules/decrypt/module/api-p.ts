@@ -31,10 +31,10 @@ import { uint32ToBytes32 } from '../../../base/uint.js';
 import { createClearValue } from '../../../handle/ClearValue.js';
 import { bytesToClearValueType } from '../../../handle/FheType.js';
 import { ensure0x, remove0x } from '../../../base/string.js';
-import { assertIsKmsExtraData } from '../../../kms/kmsExtraData.js';
 import { bytesToHexLarge } from '../../../base/bytes.js';
 import { initTkmsModule } from './init-p.js';
 import { getMetadata, getShares } from '../../../kms/KmsSigncryptedShares-p.js';
+import { assertIsKmsExtraDataBytesHex } from '../../../kms/kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -256,18 +256,18 @@ export async function decryptAndReconstruct(
     throw new Error('Expected at least one signcrypted share.');
   }
 
-  const firstExtraData = firstShare.extraData;
+  const firstExtraDataBytesHex = firstShare.extraData;
   for (let i = 1; i < sharesArray.length; i++) {
     const share = sharesArray[i];
-    if (share !== undefined && share.extraData !== firstExtraData) {
+    if (share !== undefined && share.extraData !== firstExtraDataBytesHex) {
       throw new Error(
-        `Mismatched extraData across shares: share[0]="${firstExtraData}" vs share[${i}]="${share.extraData}".`,
+        `Mismatched extraData across shares: share[0]="${firstExtraDataBytesHex}" vs share[${i}]="${share.extraData}".`,
       );
     }
   }
 
-  const extraData: BytesHex = ensure0x(firstExtraData);
-  assertIsKmsExtraData(extraData, {});
+  const extraDataBytesHex: BytesHex = ensure0x(firstExtraDataBytesHex);
+  assertIsKmsExtraDataBytesHex(extraDataBytesHex, {});
 
   const aggRespWasmArg: ReadonlyArray<Omit<KmsSigncryptedShare, 'extraData'> & { extra_data: BytesHexNo0x }> =
     sharesArray.map((s) => {
@@ -333,7 +333,7 @@ export async function decryptAndReconstruct(
     enc_key: remove0x(publicEncKeyMlKem512WasmBytesHex),
     ciphertext_handles: metadata.handles.map((h) => h.bytes32HexNo0x),
     eip712_verifying_contract: metadata.eip712Domain.verifyingContract,
-    extra_data: remove0x(extraData),
+    extra_data: remove0x(extraDataBytesHex),
   };
 
   //
