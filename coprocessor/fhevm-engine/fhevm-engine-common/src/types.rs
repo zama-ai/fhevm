@@ -561,10 +561,17 @@ impl SupportedFheCiphertexts {
         }
     }
 
-    /// Re-encodes the ciphertext through a value-preserving PBS (`x & x`),
-    /// clearing carry residue left by linear (no-PBS) operations such as
-    /// boolean scalar comparisons. Deterministic, so persisted bytes stay
-    /// consensus-stable across coprocessors.
+    /// Re-encodes the ciphertext through a value-preserving `x & x`, whose
+    /// default-op carry propagation clears residue left by levelled (no-PBS)
+    /// execution paths — e.g. a shift taking tfhe's trivial-operand fast
+    /// path, whose degree bookkeeping can leave value bits in the carry
+    /// space. Reachable only where working ciphertexts are forwarded raw
+    /// (block-scoped execution); decompressed operands are always
+    /// metadata-canonical. On trivial inputs tfhe evaluates the `&` as a
+    /// plaintext re-encode (the output stays trivial); on encrypted inputs
+    /// it is a classical-PBS re-encode. Both are byte-deterministic under
+    /// our parameters, so persisted bytes stay consensus-stable across
+    /// coprocessors.
     #[allow(clippy::eq_op)]
     pub fn clean_carries(&self) -> std::result::Result<Self, FhevmError> {
         Ok(match self {

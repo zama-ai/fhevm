@@ -544,11 +544,12 @@ fn try_execute_node(
 }
 
 /// Compresses an operation result; when the compression keys reject carry
-/// residue (left by linear, no-PBS operations such as boolean scalar
-/// comparisons), the ciphertext is re-encoded through a deterministic
-/// value-preserving PBS and compressed again. The cleaned ciphertext is
-/// returned so it also replaces the forwarded working value — persisted
-/// bytes and in-memory propagation must stay identical.
+/// residue (left by levelled no-PBS paths, e.g. ops taking tfhe's trivial
+/// fast path on raw-forwarded operands), the ciphertext is re-encoded
+/// through the deterministic, value-preserving `clean_carries` and
+/// compressed again. The cleaned ciphertext is returned so it also replaces
+/// the forwarded working value — persisted bytes and in-memory propagation
+/// must stay identical.
 fn compress_or_clean_carries(
     working: SupportedFheCiphertexts,
 ) -> (
@@ -559,6 +560,8 @@ fn compress_or_clean_carries(
         Err(fhevm_engine_common::types::FhevmError::CiphertextCompressionRequiresEmptyCarries) => {
             match working.clean_carries() {
                 Ok(cleaned) => {
+                    info!(target: "scheduler", { ct_type = cleaned.type_name() },
+                          "Cleaned carry residue before compressing operation result");
                     let compressed = cleaned.compress();
                     (cleaned, compressed)
                 }
