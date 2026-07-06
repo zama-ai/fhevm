@@ -336,22 +336,39 @@ pub async fn ingest_block_logs(
                     if !is_valid_fallback_dst_handle(&dst_handle.0, chain_id) {
                         continue;
                     }
+                    // Record the observation durably (keyed by block hash)
+                    // regardless of the synthesis decision below: reorg
+                    // cleanup and operators need the grant to survive even
+                    // when this particular observation is suppressed.
+                    db.record_fallback_grant_observation(
+                        &mut tx,
+                        dst_handle.as_slice(),
+                        &e.plaintext.to_be_bytes::<32>(),
+                        &log.transaction_hash,
+                        block_number,
+                        block_hash.as_ref(),
+                    )
+                    .await?;
                     // The contract specifies that if multiple fallback events
                     // are emitted for the same handle, only the first one is
-                    // the source of truth. Skip this event if the handle is
-                    // already handled: seen earlier in this block, an earlier
-                    // fallback's committed computation, or a ciphertext already
-                    // materialized for it (e.g. the bridge worker's copy of the
-                    // real ciphertext, which writes no `computations` row). The
-                    // ciphertext check keeps materialization write-once.
+                    // the source of truth: skip duplicates within this block
+                    // and grants from a different transaction. The SAME grant
+                    // re-observed in another block context (fork sibling or
+                    // canonical re-inclusion after a reorg) is synthesized
+                    // again for its own context, so cleanup of one fork never
+                    // erases the grant from the surviving fork. A handle
+                    // materialized by a bridge association (ciphertext copy
+                    // without a computations row) also stays write-once.
                     let first_in_block =
                         seen_fallback_handles.insert(dst_handle.to_vec());
                     if !first_in_block
                         || db
-                            .computation_exists(&mut tx, dst_handle.as_slice())
-                            .await?
-                        || db
-                            .ciphertext_exists(&mut tx, dst_handle.as_slice())
+                            .fallback_grant_conflicts(
+                                &mut tx,
+                                dst_handle.as_slice(),
+                                &log.transaction_hash,
+                                block_hash.as_ref(),
+                            )
                             .await?
                     {
                         warn!(
@@ -709,6 +726,79 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
 {
     info!(last_block_number, finality_lag, "Updating finalized blocks");
+    let last_finalized_block = last_block_number.saturating_sub(finality_lag);
+
+    // Read the candidate numbers in a short transaction, then resolve the
+    // canonical hashes over RPC with NO transaction open: block fetches can
+    // take seconds each, and holding the finalization transaction across the
+    // round-trips kept its row locks pinned for the whole time.
+    let blocks_number = {
+        let mut tx = match db.new_transaction().await {
+            Ok(Some(tx)) => tx,
+            Ok(None) => {
+                info!(
+                    "cutover completed — skipping finalized-blocks lookup (retired stack)"
+                );
+                return;
+            }
+            Err(err) => {
+                error!(
+                    ?err,
+                    "Failed to create transaction for finalized blocks update"
+                );
+                return;
+            }
+        };
+        match Database::get_finalized_blocks_number(
+            &mut tx,
+            last_finalized_block as i64,
+            db.chain_id,
+        )
+        .await
+        {
+            Ok(numbers) => numbers,
+            Err(err) => {
+                error!(
+                    ?err,
+                    last_finalized_block,
+                    "Failed to fetch finalized blocks number"
+                );
+                return;
+            }
+        }
+    };
+    info!(?blocks_number, "Finalizing blocks");
+
+    // Ascending: finalization verifies each block's parent linkage against
+    // its finalized predecessor, so within one batch the predecessor must be
+    // finalized first.
+    let mut blocks_number: Vec<i64> = blocks_number.into_iter().collect();
+    blocks_number.sort_unstable();
+
+    let mut canonical = Vec::with_capacity(blocks_number.len());
+    for block_number in blocks_number {
+        match get_block_hash_by_number(block_number as u64).await {
+            Ok(block_hash) => canonical.push((block_number, block_hash)),
+            Err(err) => {
+                error!(
+                    block_number,
+                    ?err,
+                    "Failed to fetch block for finalization, \
+                     stopping the batch at the gap"
+                );
+                // STOP, don't skip: a gap at this height would let the next
+                // height's parent-linkage check pass vacuously (no finalized
+                // predecessor), the same hazard the refusal branch below
+                // stops the batch for. The fetched prefix is still safe to
+                // finalize; the rest retries next pass.
+                break;
+            }
+        }
+    }
+    if canonical.is_empty() {
+        return;
+    }
+
     let mut tx = match db.new_transaction().await {
         Ok(Some(tx)) => tx,
         Ok(None) => {
@@ -723,42 +813,12 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             return;
         }
     };
-    let last_finalized_block = last_block_number.saturating_sub(finality_lag);
-    let blocks_number = match Database::get_finalized_blocks_number(
-        &mut tx,
-        last_finalized_block as i64,
-        db.chain_id,
-    )
-    .await
-    {
-        Ok(numbers) => numbers,
-        Err(err) => {
-            error!(
-                ?err,
-                last_finalized_block, "Failed to fetch finalized blocks number"
-            );
-            return;
-        }
-    };
-    info!(?blocks_number, "Finalizing blocks");
-    for block_number in blocks_number {
-        let block_hash =
-            match get_block_hash_by_number(block_number as u64).await {
-                Ok(block_hash) => block_hash,
-                Err(err) => {
-                    error!(
-                        block_number,
-                        ?err,
-                        "Failed to fetch block for finalization"
-                    );
-                    continue;
-                }
-            };
+    for (block_number, block_hash) in canonical {
         match db
             .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
         {
-            Ok(orphaned_hashes) => {
+            Ok(Some(orphaned_hashes)) => {
                 if let Err(err) = db
                     .cleanup_orphaned_branch_state(&mut tx, &orphaned_hashes)
                     .await
@@ -770,6 +830,19 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                     );
                     return;
                 }
+            }
+            Ok(None) => {
+                // Finalization refused (missing row / orphaned / parent
+                // linkage contradiction). STOP the batch: the next height's
+                // linkage check would pass vacuously without a finalized
+                // predecessor, letting a stale or poisoned RPC finalize a
+                // fork block right behind the refusal. Earlier blocks of
+                // this batch stay finalized; the rest retries next pass.
+                warn!(
+                    block_number,
+                    "Stopping finalization batch at refused block"
+                );
+                break;
             }
             Err(err) => {
                 error!(
@@ -789,6 +862,17 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     // Delayed delegation rely on this signal to reconsider ready delegation
     if let Err(err) = db.block_notification().await {
         error!(error = %err, "Error notifying listener for new block");
+    }
+    // Best-effort maintenance: drop old finalized block rows nothing
+    // references anymore, so ancestry probes and the table itself stop
+    // growing with chain history. Failures only delay pruning.
+    match db
+        .prune_finalized_block_history(last_finalized_block as i64)
+        .await
+    {
+        Ok(0) => {}
+        Ok(pruned) => info!(pruned, "Pruned finalized block history"),
+        Err(err) => error!(?err, "Failed to prune finalized block history"),
     }
 }
 

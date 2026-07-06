@@ -23,7 +23,7 @@ type CachedFetchOptions<TContext, TParams, TResult> = {
 };
 
 export const CACHE_TTL_24H = 24 * 60 * 60 * 1000; // 24 hours
-export const CACHE_TTL_15MIN = 15 * 1000; // 15 min
+export const CACHE_TTL_15MIN = 15 * 60 * 1000; // 15 min
 
 /**
  * Creates a cached, deduplicating wrapper around an async fetch function.
