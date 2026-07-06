@@ -734,7 +734,13 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     // round-trips kept its row locks pinned for the whole time.
     let blocks_number = {
         let mut tx = match db.new_transaction().await {
-            Ok(tx) => tx,
+            Ok(Some(tx)) => tx,
+            Ok(None) => {
+                info!(
+                    "cutover completed — skipping finalized-blocks lookup (retired stack)"
+                );
+                return;
+            }
             Err(err) => {
                 error!(
                     ?err,
