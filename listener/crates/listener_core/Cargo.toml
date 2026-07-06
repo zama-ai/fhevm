@@ -29,7 +29,7 @@ config             = { version = "0.14", features = ["yaml"] }
 derivative         = "2.2"
 futures.workspace = true
 metrics.workspace = true
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate", "uuid", "chrono"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "migrate", "uuid", "chrono"] }
 anyhow = "1.0"
 
 # IAM RDS auth (optional)
