@@ -165,6 +165,7 @@ pub struct UpdateEncryptedValue<'info> {
     pub encrypted_value: UncheckedAccount<'info>,
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
+    pub deny_subject_record: Option<UncheckedAccount<'info>>,
     pub system_program: Program<'info, System>,
 }
 
@@ -182,6 +183,11 @@ pub fn update_encrypted_value(
         value.app_account,
         ZamaHostError::AppAccountAuthorityMismatch
     );
+    check_grant_not_denied(
+        &ctx.accounts.host_config,
+        ctx.accounts.app_account_authority.key(),
+        ctx.accounts.deny_subject_record.as_ref(),
+    )?;
     require!(
         value.current_handle == previous_handle && value.subjects == previous_subjects,
         ZamaHostError::PreviousStateMismatch

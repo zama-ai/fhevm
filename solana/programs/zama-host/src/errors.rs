@@ -194,6 +194,9 @@ pub enum ZamaHostError {
     /// `create_encrypted_value` was called with an empty subject list.
     #[msg("encrypted value must be created with at least one subject")]
     EncryptedValueEmptySubjects,
+    /// `remove_subject` would leave the encrypted value with no current subjects.
+    #[msg("encrypted value must retain at least one subject")]
+    EncryptedValueLastSubject,
     /// The MMR peaks/leaf-count invariant was violated.
     #[msg("encrypted value MMR state is inconsistent")]
     EncryptedValueMmrInconsistent,

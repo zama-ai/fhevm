@@ -43,6 +43,8 @@ pub struct FheEval<'info> {
     /// Singleton config PDA.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
+    /// CHECK: required when grant_deny_list_enabled and a durable output is bound; may be uninitialized.
+    pub deny_subject_record: Option<UncheckedAccount<'info>>,
     /// System program used for durable output ACL creation.
     pub system_program: Program<'info, System>,
 }
@@ -350,7 +352,7 @@ fn durable_output_authority<'info>(
     authority_index: Option<u16>,
     output_app_account: Pubkey,
 ) -> Result<AccountInfo<'info>> {
-    match authority_index {
+    let authority = match authority_index {
         Some(index) => {
             let authority =
                 remaining_account(ctx.remaining_accounts, remaining_accounts_used, index)?;
@@ -360,10 +362,16 @@ fn durable_output_authority<'info>(
                 output_app_account,
                 ZamaHostError::AppAccountAuthorityMismatch
             );
-            Ok(authority.clone())
+            authority.clone()
         }
-        None => Ok(ctx.accounts.app_account_authority.to_account_info()),
-    }
+        None => ctx.accounts.app_account_authority.to_account_info(),
+    };
+    check_grant_not_denied(
+        &ctx.accounts.host_config,
+        authority.key(),
+        ctx.accounts.deny_subject_record.as_ref(),
+    )?;
+    Ok(authority)
 }
 
 #[derive(Clone)]

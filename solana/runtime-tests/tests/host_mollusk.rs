@@ -32,8 +32,8 @@ use solana_sdk::{
 };
 use std::path::PathBuf;
 use zama_host::{
-    self as host, instructions::EncryptedValueSubjectGrant, EncryptedValue, FheBinaryOpCode,
-    FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, HostConfig,
+    self as host, instructions::EncryptedValueSubjectGrant, DenySubjectRecord, EncryptedValue,
+    FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, HostConfig,
 };
 
 // ---------------------------------------------------------------------------
@@ -127,7 +127,11 @@ fn empty_system_account() -> Account {
     }
 }
 
-fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
+fn host_config_account_with_flags(
+    admin: Pubkey,
+    paused: bool,
+    grant_deny_list_enabled: bool,
+) -> (Pubkey, Account) {
     let (host_config, bump) = host::host_config_address();
     (
         host_config,
@@ -144,13 +148,43 @@ fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
                 current_kms_context_id: 0,
                 material_authority: admin,
                 test_authority: admin,
-                paused: false,
+                paused,
                 mock_input_enabled: false,
                 test_shims_enabled: true,
-                grant_deny_list_enabled: false,
+                grant_deny_list_enabled,
                 max_hcu_per_tx: 0,
                 max_hcu_depth_per_tx: 0,
                 updated_slot: 0,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
+fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
+    host_config_account_with_flags(admin, false, false)
+}
+
+fn paused_host_config_account(admin: Pubkey) -> (Pubkey, Account) {
+    host_config_account_with_flags(admin, true, false)
+}
+
+fn deny_enabled_host_config_account(admin: Pubkey) -> (Pubkey, Account) {
+    host_config_account_with_flags(admin, false, true)
+}
+
+fn deny_subject_record_account(subject: Pubkey, denied: bool) -> (Pubkey, Account) {
+    let (record, bump) = host::deny_subject_address(subject);
+    (
+        record,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(DenySubjectRecord {
+                subject,
+                denied,
                 bump,
             }),
             owner: host::id(),
@@ -233,6 +267,33 @@ fn create_encrypted_value_ix(
     handle: [u8; 32],
     subjects: Vec<EncryptedValueSubjectGrant>,
 ) -> Instruction {
+    create_encrypted_value_ix_with_deny(
+        payer,
+        app_account_authority,
+        encrypted_value,
+        host_config,
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+        handle,
+        subjects,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_encrypted_value_ix_with_deny(
+    payer: Pubkey,
+    app_account_authority: Pubkey,
+    encrypted_value: Pubkey,
+    host_config: Pubkey,
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+    handle: [u8; 32],
+    subjects: Vec<EncryptedValueSubjectGrant>,
+    deny_subject_record: Option<Pubkey>,
+) -> Instruction {
     anchor_ix(
         host::id(),
         host::accounts::CreateEncryptedValue {
@@ -240,7 +301,7 @@ fn create_encrypted_value_ix(
             app_account_authority,
             encrypted_value,
             host_config,
-            deny_subject_record: None,
+            deny_subject_record,
             system_program: system_program::ID,
         },
         host::instruction::CreateEncryptedValue {
@@ -260,6 +321,24 @@ fn allow_subjects_ix(
     host_config: Pubkey,
     subjects: Vec<EncryptedValueSubjectGrant>,
 ) -> Instruction {
+    allow_subjects_ix_with_deny(
+        payer,
+        authority,
+        encrypted_value,
+        host_config,
+        subjects,
+        None,
+    )
+}
+
+fn allow_subjects_ix_with_deny(
+    payer: Pubkey,
+    authority: Pubkey,
+    encrypted_value: Pubkey,
+    host_config: Pubkey,
+    subjects: Vec<EncryptedValueSubjectGrant>,
+    deny_subject_record: Option<Pubkey>,
+) -> Instruction {
     anchor_ix(
         host::id(),
         host::accounts::AllowEncryptedValueSubjects {
@@ -267,10 +346,38 @@ fn allow_subjects_ix(
             authority,
             encrypted_value,
             host_config,
-            deny_subject_record: None,
+            deny_subject_record,
             system_program: system_program::ID,
         },
         host::instruction::AllowSubjects { subjects },
+    )
+}
+
+fn remove_subject_ix(
+    authority: Pubkey,
+    encrypted_value: Pubkey,
+    host_config: Pubkey,
+    subject: Pubkey,
+) -> Instruction {
+    remove_subject_ix_with_deny(authority, encrypted_value, host_config, subject, None)
+}
+
+fn remove_subject_ix_with_deny(
+    authority: Pubkey,
+    encrypted_value: Pubkey,
+    host_config: Pubkey,
+    subject: Pubkey,
+    deny_subject_record: Option<Pubkey>,
+) -> Instruction {
+    anchor_ix(
+        host::id(),
+        host::accounts::RemoveEncryptedValueSubject {
+            authority,
+            encrypted_value,
+            host_config,
+            deny_subject_record,
+        },
+        host::instruction::RemoveSubject { subject },
     )
 }
 
@@ -283,6 +390,29 @@ fn update_encrypted_value_ix(
     previous_handle: [u8; 32],
     previous_subjects: Vec<Pubkey>,
 ) -> Instruction {
+    update_encrypted_value_ix_with_deny(
+        payer,
+        app_account_authority,
+        encrypted_value,
+        host_config,
+        new_handle,
+        previous_handle,
+        previous_subjects,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_encrypted_value_ix_with_deny(
+    payer: Pubkey,
+    app_account_authority: Pubkey,
+    encrypted_value: Pubkey,
+    host_config: Pubkey,
+    new_handle: [u8; 32],
+    previous_handle: [u8; 32],
+    previous_subjects: Vec<Pubkey>,
+    deny_subject_record: Option<Pubkey>,
+) -> Instruction {
     anchor_ix(
         host::id(),
         host::accounts::UpdateEncryptedValue {
@@ -290,6 +420,7 @@ fn update_encrypted_value_ix(
             app_account_authority,
             encrypted_value,
             host_config,
+            deny_subject_record,
             system_program: system_program::ID,
         },
         host::instruction::UpdateEncryptedValue {
@@ -306,6 +437,16 @@ fn make_handle_public_ix(
     encrypted_value: Pubkey,
     host_config: Pubkey,
 ) -> Instruction {
+    make_handle_public_ix_with_deny(payer, authority, encrypted_value, host_config, None)
+}
+
+fn make_handle_public_ix_with_deny(
+    payer: Pubkey,
+    authority: Pubkey,
+    encrypted_value: Pubkey,
+    host_config: Pubkey,
+    deny_subject_record: Option<Pubkey>,
+) -> Instruction {
     anchor_ix(
         host::id(),
         host::accounts::MakeEncryptedValueHandlePublic {
@@ -313,7 +454,7 @@ fn make_handle_public_ix(
             authority,
             encrypted_value,
             host_config,
-            deny_subject_record: None,
+            deny_subject_record,
             system_program: system_program::ID,
         },
         host::instruction::MakeHandlePublic {},
@@ -330,6 +471,26 @@ fn fhe_eval_ix(
     args: FheEvalArgs,
     remaining: Vec<AccountMeta>,
 ) -> Instruction {
+    fhe_eval_ix_with_deny(
+        payer,
+        compute_subject,
+        app_account_authority,
+        host_config,
+        args,
+        remaining,
+        None,
+    )
+}
+
+fn fhe_eval_ix_with_deny(
+    payer: Pubkey,
+    compute_subject: Pubkey,
+    app_account_authority: Pubkey,
+    host_config: Pubkey,
+    args: FheEvalArgs,
+    remaining: Vec<AccountMeta>,
+    deny_subject_record: Option<Pubkey>,
+) -> Instruction {
     let mut ix = anchor_ix(
         host::id(),
         host::accounts::FheEval {
@@ -337,6 +498,7 @@ fn fhe_eval_ix(
             compute_subject,
             app_account_authority,
             host_config,
+            deny_subject_record,
             system_program: system_program::ID,
             event_authority: event_authority(host::id()),
             program: host::id(),
@@ -551,6 +713,273 @@ fn mollusk_allow_subjects_rejects_unallowed_authority() {
 }
 
 // ---------------------------------------------------------------------------
+// remove_subject
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mollusk_remove_subject_removes_current_member_and_blocks_future_authority() {
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let owner = Pubkey::new_unique();
+    let removed = Pubkey::new_unique();
+    let (address, value) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        handle_for_chain(6, 5),
+        &[owner, removed],
+    );
+
+    let ix = remove_subject_ix(owner, address, host_config, removed);
+    let accounts = vec![
+        (owner, funded_system_account()),
+        (address, encrypted_value_account(&value)),
+        (host_config, host_config_account.clone()),
+    ];
+    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+    let updated = read_encrypted_value(&result, address);
+    assert_eq!(updated.subjects, vec![owner]);
+    assert!(updated.has_subject(owner));
+    assert!(!updated.has_subject(removed));
+    assert_eq!(updated.leaf_count, 0);
+    assert!(updated.peaks.is_empty());
+
+    let rejected = allow_subjects_ix(
+        authority,
+        removed,
+        address,
+        host_config,
+        vec![EncryptedValueSubjectGrant {
+            subject: Pubkey::new_unique(),
+        }],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (removed, funded_system_account()),
+        (address, encrypted_value_account(&updated)),
+        (host_config, host_config_account),
+    ];
+    mollusk().process_and_validate_instruction(
+        &rejected,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::SubjectNotAllowed)],
+    );
+}
+
+#[test]
+fn mollusk_remove_subject_rejects_absent_subject() {
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let owner = Pubkey::new_unique();
+    let other = Pubkey::new_unique();
+    let (address, value) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        handle_for_chain(6, 5),
+        &[owner],
+    );
+    let ix = remove_subject_ix(owner, address, host_config, other);
+    let accounts = vec![
+        (owner, funded_system_account()),
+        (address, encrypted_value_account(&value)),
+        (host_config, host_config_account),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::SubjectNotFound)],
+    );
+}
+
+#[test]
+fn mollusk_remove_subject_rejects_last_subject() {
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let owner = Pubkey::new_unique();
+    let (address, value) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        handle_for_chain(6, 5),
+        &[owner],
+    );
+    let ix = remove_subject_ix(owner, address, host_config, owner);
+    let accounts = vec![
+        (owner, funded_system_account()),
+        (address, encrypted_value_account(&value)),
+        (host_config, host_config_account),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::EncryptedValueLastSubject,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_removed_subject_gets_no_historical_leaf_when_later_superseded() {
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let owner = Pubkey::new_unique();
+    let removed = Pubkey::new_unique();
+    let handle0 = handle_for_chain(7, 5);
+    let handle1 = handle_for_chain(8, 5);
+    let (address, value0) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        handle0,
+        &[owner, removed],
+    );
+
+    let remove_ix = remove_subject_ix(owner, address, host_config, removed);
+    let accounts0 = vec![
+        (owner, funded_system_account()),
+        (address, encrypted_value_account(&value0)),
+        (host_config, host_config_account.clone()),
+    ];
+    let result0 =
+        mollusk().process_and_validate_instruction(&remove_ix, &accounts0, &[Check::success()]);
+    let value_after_remove = read_encrypted_value(&result0, address);
+    assert_eq!(value_after_remove.subjects, vec![owner]);
+
+    let update_ix = update_encrypted_value_ix(
+        authority,
+        authority,
+        address,
+        host_config,
+        handle1,
+        handle0,
+        value_after_remove.subjects.clone(),
+    );
+    let accounts1 = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (address, encrypted_value_account(&value_after_remove)),
+        (host_config, host_config_account),
+    ];
+    let result1 =
+        mollusk().process_and_validate_instruction(&update_ix, &accounts1, &[Check::success()]);
+    let updated = read_encrypted_value(&result1, address);
+    assert_eq!(updated.leaf_count, 1);
+
+    let expected_leaf = zama_solana_acl::historical_access_leaf_commitment(
+        address.to_bytes(),
+        0,
+        handle0,
+        owner.to_bytes(),
+    );
+    let mut expected_peaks = Vec::new();
+    let mut expected_count = 0u64;
+    zama_solana_acl::mmr_append(&mut expected_peaks, &mut expected_count, expected_leaf).unwrap();
+    assert_eq!(updated.peaks, expected_peaks);
+
+    let events = [zama_solana_acl::lineage::LineageEvent::handle_superseded(
+        handle0,
+        &[owner.to_bytes()],
+    )];
+    let proof = zama_solana_acl::lineage::build_verified_proof_from_events(
+        address.to_bytes(),
+        &events,
+        &updated.peaks,
+        updated.leaf_count,
+        0,
+    )
+    .unwrap();
+    let shared = updated.to_shared();
+    assert!(zama_solana_acl::authorize_historical(
+        address.to_bytes(),
+        &shared,
+        handle0,
+        owner.to_bytes(),
+        &proof,
+    )
+    .is_ok());
+    assert!(zama_solana_acl::authorize_historical(
+        address.to_bytes(),
+        &shared,
+        handle0,
+        removed.to_bytes(),
+        &proof,
+    )
+    .is_err());
+}
+
+#[test]
+fn mollusk_subject_retains_historical_access_sealed_before_removal() {
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let owner = Pubkey::new_unique();
+    let removed = Pubkey::new_unique();
+    let handle0 = handle_for_chain(9, 5);
+    let handle1 = handle_for_chain(10, 5);
+    let (address, value0) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        handle0,
+        &[owner, removed],
+    );
+
+    let update_ix = update_encrypted_value_ix(
+        authority,
+        authority,
+        address,
+        host_config,
+        handle1,
+        handle0,
+        value0.subjects.clone(),
+    );
+    let accounts0 = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (address, encrypted_value_account(&value0)),
+        (host_config, host_config_account.clone()),
+    ];
+    let result0 =
+        mollusk().process_and_validate_instruction(&update_ix, &accounts0, &[Check::success()]);
+    let value1 = read_encrypted_value(&result0, address);
+    assert_eq!(value1.leaf_count, 2);
+
+    let remove_ix = remove_subject_ix(owner, address, host_config, removed);
+    let accounts1 = vec![
+        (owner, funded_system_account()),
+        (address, encrypted_value_account(&value1)),
+        (host_config, host_config_account),
+    ];
+    let result1 =
+        mollusk().process_and_validate_instruction(&remove_ix, &accounts1, &[Check::success()]);
+    let final_value = read_encrypted_value(&result1, address);
+    assert_eq!(final_value.subjects, vec![owner]);
+    assert_eq!(final_value.leaf_count, 2);
+
+    let events = [zama_solana_acl::lineage::LineageEvent::handle_superseded(
+        handle0,
+        &[owner.to_bytes(), removed.to_bytes()],
+    )];
+    let proof = zama_solana_acl::lineage::build_verified_proof_from_events(
+        address.to_bytes(),
+        &events,
+        &final_value.peaks,
+        final_value.leaf_count,
+        1,
+    )
+    .unwrap();
+    assert!(zama_solana_acl::authorize_historical(
+        address.to_bytes(),
+        &final_value.to_shared(),
+        handle0,
+        removed.to_bytes(),
+        &proof,
+    )
+    .is_ok());
+}
+
+// ---------------------------------------------------------------------------
 // update_encrypted_value: supersession + previous-state mismatch (item 2c/2d)
 // ---------------------------------------------------------------------------
 
@@ -742,6 +1171,311 @@ fn mollusk_make_handle_public_rejects_unallowed_subject() {
         &ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::SubjectNotAllowed)],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Deny-list and pause gates
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
+    let caller = Pubkey::new_unique();
+    let (host_config, host_config_account) = deny_enabled_host_config_account(caller);
+    let (deny_record, deny_record_account) = deny_subject_record_account(caller, true);
+    let other = Pubkey::new_unique();
+
+    let acl_domain_key = Pubkey::new_unique();
+    let create_label = label("deny-create");
+    let create_value_key = zama_solana_acl::derive_value_key(
+        acl_domain_key.to_bytes(),
+        caller.to_bytes(),
+        create_label,
+    );
+    let (create_address, _bump) = host::encrypted_value_address(create_value_key);
+    let create_ix = create_encrypted_value_ix_with_deny(
+        caller,
+        caller,
+        create_address,
+        host_config,
+        acl_domain_key,
+        caller,
+        create_label,
+        handle_for_chain(50, 5),
+        vec![EncryptedValueSubjectGrant { subject: caller }],
+        Some(deny_record),
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (caller, funded_system_account()),
+        (create_address, empty_system_account()),
+        (host_config, host_config_account.clone()),
+        (deny_record, deny_record_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &create_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+
+    let (allow_address, allow_value) = new_lineage(
+        Pubkey::new_unique(),
+        caller,
+        label("deny-allow"),
+        handle_for_chain(51, 5),
+        &[caller],
+    );
+    let allow_ix = allow_subjects_ix_with_deny(
+        caller,
+        caller,
+        allow_address,
+        host_config,
+        vec![EncryptedValueSubjectGrant { subject: other }],
+        Some(deny_record),
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (caller, funded_system_account()),
+        (allow_address, encrypted_value_account(&allow_value)),
+        (host_config, host_config_account.clone()),
+        (deny_record, deny_record_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &allow_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+
+    let make_public_ix = make_handle_public_ix_with_deny(
+        caller,
+        caller,
+        allow_address,
+        host_config,
+        Some(deny_record),
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (caller, funded_system_account()),
+        (allow_address, encrypted_value_account(&allow_value)),
+        (host_config, host_config_account.clone()),
+        (deny_record, deny_record_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &make_public_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+
+    let (remove_address, remove_value) = new_lineage(
+        Pubkey::new_unique(),
+        caller,
+        label("deny-remove"),
+        handle_for_chain(52, 5),
+        &[caller, other],
+    );
+    let remove_ix = remove_subject_ix_with_deny(
+        caller,
+        remove_address,
+        host_config,
+        other,
+        Some(deny_record),
+    );
+    let accounts = vec![
+        (caller, funded_system_account()),
+        (remove_address, encrypted_value_account(&remove_value)),
+        (host_config, host_config_account.clone()),
+        (deny_record, deny_record_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &remove_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+
+    let old_handle = handle_for_chain(53, 5);
+    let (update_address, update_value) = new_lineage(
+        Pubkey::new_unique(),
+        caller,
+        label("deny-update"),
+        old_handle,
+        &[caller],
+    );
+    let update_ix = update_encrypted_value_ix_with_deny(
+        caller,
+        caller,
+        update_address,
+        host_config,
+        handle_for_chain(54, 5),
+        old_handle,
+        update_value.subjects.clone(),
+        Some(deny_record),
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (caller, funded_system_account()),
+        (update_address, encrypted_value_account(&update_value)),
+        (host_config, host_config_account.clone()),
+        (deny_record, deny_record_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &update_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+
+    let output_label = label("deny-eval");
+    let output_value_key =
+        zama_solana_acl::derive_value_key(caller.to_bytes(), caller.to_bytes(), output_label);
+    let (output_address, _bump) = host::encrypted_value_address(output_value_key);
+    let args = FheEvalArgs {
+        context_id: [9; 32],
+        steps: vec![FheEvalStep::TrivialEncrypt {
+            plaintext: [1; 32],
+            fhe_type: 5,
+            output: FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index: 0,
+                output_app_account_authority_index: None,
+                output_acl_domain_key: caller,
+                output_app_account: caller,
+                output_encrypted_value_label: output_label,
+                output_subjects: vec![host::AclSubjectEntry { pubkey: caller }],
+                previous_handle: None,
+                previous_subjects: None,
+            },
+        }],
+    };
+    let eval_ix = fhe_eval_ix_with_deny(
+        caller,
+        caller,
+        caller,
+        host_config,
+        args,
+        vec![writable(output_address)],
+        Some(deny_record),
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (caller, funded_system_account()),
+        (host_config, host_config_account),
+        (deny_record, deny_record_account),
+        (event_authority(host::id()), Account::default()),
+        (output_address, empty_system_account()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &eval_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+}
+
+#[test]
+fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = paused_host_config_account(authority);
+    let owner = Pubkey::new_unique();
+    let other = Pubkey::new_unique();
+
+    let (allow_address, allow_value) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("pause-allow"),
+        handle_for_chain(55, 5),
+        &[owner],
+    );
+    let allow_ix = allow_subjects_ix(
+        authority,
+        owner,
+        allow_address,
+        host_config,
+        vec![EncryptedValueSubjectGrant { subject: other }],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (owner, funded_system_account()),
+        (allow_address, encrypted_value_account(&allow_value)),
+        (host_config, host_config_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &allow_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
+    );
+
+    let remove_ix = remove_subject_ix(owner, allow_address, host_config, other);
+    let accounts = vec![
+        (owner, funded_system_account()),
+        (allow_address, encrypted_value_account(&allow_value)),
+        (host_config, host_config_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &remove_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
+    );
+
+    let update_ix = update_encrypted_value_ix(
+        authority,
+        authority,
+        allow_address,
+        host_config,
+        handle_for_chain(56, 5),
+        allow_value.current_handle,
+        allow_value.subjects.clone(),
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (allow_address, encrypted_value_account(&allow_value)),
+        (host_config, host_config_account.clone()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &update_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
+    );
+
+    let output_label = label("pause-eval");
+    let output_value_key =
+        zama_solana_acl::derive_value_key(authority.to_bytes(), authority.to_bytes(), output_label);
+    let (output_address, _bump) = host::encrypted_value_address(output_value_key);
+    let args = FheEvalArgs {
+        context_id: [10; 32],
+        steps: vec![FheEvalStep::TrivialEncrypt {
+            plaintext: [2; 32],
+            fhe_type: 5,
+            output: FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index: 0,
+                output_app_account_authority_index: None,
+                output_acl_domain_key: authority,
+                output_app_account: authority,
+                output_encrypted_value_label: output_label,
+                output_subjects: vec![host::AclSubjectEntry { pubkey: owner }],
+                previous_handle: None,
+                previous_subjects: None,
+            },
+        }],
+    };
+    let eval_ix = fhe_eval_ix(
+        authority,
+        owner,
+        authority,
+        host_config,
+        args,
+        vec![writable(output_address)],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (owner, funded_system_account()),
+        (host_config, host_config_account),
+        (event_authority(host::id()), Account::default()),
+        (output_address, empty_system_account()),
+    ];
+    mollusk().process_and_validate_instruction(
+        &eval_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
     );
 }
 

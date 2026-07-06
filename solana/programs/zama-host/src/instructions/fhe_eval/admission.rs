@@ -1,5 +1,5 @@
 use super::super::common::{
-    assert_encrypted_value_subject_allowed, assert_output_acl_metadata,
+    assert_encrypted_value_subject_allowed, assert_output_acl_metadata, check_grant_not_denied,
     read_canonical_encrypted_value,
 };
 use super::handles::EvalHandleContext;
@@ -244,7 +244,7 @@ fn admit_durable_output_authority<'info>(
     authority_index: Option<u16>,
     output_app_account: Pubkey,
 ) -> Result<AccountInfo<'info>> {
-    match authority_index {
+    let authority = match authority_index {
         Some(index) => {
             let authority = account_at(ctx.remaining_accounts, index)?;
             require!(authority.is_signer, ZamaHostError::InvalidFheEvalAccount);
@@ -253,10 +253,16 @@ fn admit_durable_output_authority<'info>(
                 output_app_account,
                 ZamaHostError::AppAccountAuthorityMismatch
             );
-            Ok(authority.clone())
+            authority.clone()
         }
-        None => Ok(ctx.accounts.app_account_authority.to_account_info()),
-    }
+        None => ctx.accounts.app_account_authority.to_account_info(),
+    };
+    check_grant_not_denied(
+        &ctx.accounts.host_config,
+        authority.key(),
+        ctx.accounts.deny_subject_record.as_ref(),
+    )?;
+    Ok(authority)
 }
 
 fn account_at<'a, 'info>(

@@ -53,6 +53,7 @@ PINNED_SCHEMAS = [
     # `zama-solana-acl`'s codec tests, not by this golden file.
     ("zama_host", "instruction_args", "create_encrypted_value", True),
     ("zama_host", "instruction_args", "allow_subjects", True),
+    ("zama_host", "instruction_args", "remove_subject", True),
     ("zama_host", "instruction_args", "update_encrypted_value", True),
     ("zama_host", "instruction_args", "make_handle_public", True),
     ("confidential_token", "account", "ConfidentialMint", True),

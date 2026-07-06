@@ -540,6 +540,10 @@
           }
         },
         {
+          "name": "deny_subject_record",
+          "optional": true
+        },
+        {
           "name": "system_program",
           "docs": [
             "System program used for durable output ACL creation."
@@ -700,6 +704,65 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "remove_subject",
+      "discriminator": [
+        66,
+        88,
+        46,
+        123,
+        6,
+        107,
+        208,
+        50
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Current allowed subject on the lineage."
+          ],
+          "signer": true
+        },
+        {
+          "name": "encrypted_value",
+          "writable": true
+        },
+        {
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "subject",
+          "type": "pubkey"
+        }
+      ]
     },
     {
       "name": "revoke_delegation_for_user_decryption",
@@ -1105,6 +1168,10 @@
               }
             ]
           }
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
         },
         {
           "name": "system_program",
@@ -1620,6 +1687,11 @@
     },
     {
       "code": 6061,
+      "name": "EncryptedValueLastSubject",
+      "msg": "encrypted value must retain at least one subject"
+    },
+    {
+      "code": 6062,
       "name": "EncryptedValueMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
     }

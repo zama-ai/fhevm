@@ -171,6 +171,13 @@ pub mod zama_host {
         instructions::allow_subjects(ctx, subjects)
     }
 
+    pub fn remove_subject(
+        ctx: Context<RemoveEncryptedValueSubject>,
+        subject: Pubkey,
+    ) -> Result<()> {
+        instructions::remove_subject(ctx, subject)
+    }
+
     pub fn update_encrypted_value(
         ctx: Context<UpdateEncryptedValue>,
         new_handle: [u8; 32],

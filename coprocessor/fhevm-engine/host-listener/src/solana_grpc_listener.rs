@@ -140,9 +140,9 @@ pub async fn run(
 /// instruction's accounts.
 ///
 /// `remaining_index` (the program's `output_encrypted_value_index`) is relative to
-/// `remaining_accounts`, which follow the 7 named `fhe_eval` accounts — payer,
-/// compute_subject, app_account_authority, host_config, system_program, then
-/// `#[event_cpi]`'s event_authority + program (see `FheEval` in fhe_eval.rs). Returns
+/// `remaining_accounts`, which follow the named `fhe_eval` accounts — payer,
+/// compute_subject, app_account_authority, host_config, optional deny_subject_record,
+/// system_program, then `#[event_cpi]`'s event_authority + program (see `FheEval` in fhe_eval.rs). Returns
 /// `None` when the index is out of range; the caller treats that as a hard problem, since
 /// the durable output would otherwise never be marked allowed and never materialize.
 #[cfg(feature = "solana-reconstruct")]
@@ -151,9 +151,21 @@ fn fhe_eval_durable_encrypted_value(
     remaining_index: u16,
 ) -> Option<[u8; 32]> {
     const FHE_EVAL_REMAINING_BASE: usize = 7;
-    accounts
-        .get(FHE_EVAL_REMAINING_BASE + remaining_index as usize)
-        .copied()
+    const FHE_EVAL_REMAINING_BASE_WITH_DENY_RECORD: usize = 8;
+    let event_authority = anchor_lang::prelude::Pubkey::find_program_address(
+        &[b"__event_authority"],
+        &zama_host::ID,
+    )
+    .0
+    .to_bytes();
+    let base = if accounts.get(6) == Some(&event_authority)
+        && accounts.get(7) == Some(&zama_host::ID.to_bytes())
+    {
+        FHE_EVAL_REMAINING_BASE_WITH_DENY_RECORD
+    } else {
+        FHE_EVAL_REMAINING_BASE
+    };
+    accounts.get(base + remaining_index as usize).copied()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -898,6 +910,22 @@ mod fhe_eval_acl_tests {
         accounts
     }
 
+    fn fhe_eval_accounts_with_deny_record() -> Vec<[u8; 32]> {
+        let mut accounts: Vec<[u8; 32]> = (0..9).map(acct).collect();
+        let event_authority =
+            anchor_lang::prelude::Pubkey::find_program_address(
+                &[b"__event_authority"],
+                &zama_host::ID,
+            )
+            .0
+            .to_bytes();
+        accounts[1] = SUBJECT;
+        accounts[6] = event_authority;
+        accounts[7] = zama_host::ID.to_bytes();
+        accounts[8] = ENCRYPTED_VALUE;
+        accounts
+    }
+
     fn slot_context() -> (HashMap<u64, [u8; 32]>, HashMap<u64, i64>) {
         (HashMap::new(), HashMap::from([(42, 1_700_000_000)]))
     }
@@ -923,6 +951,15 @@ mod fhe_eval_acl_tests {
         assert_eq!(
             fhe_eval_durable_encrypted_value(&accounts, 1),
             Some(acct(8))
+        );
+    }
+
+    #[test]
+    fn durable_output_after_optional_deny_record_resolves() {
+        let accounts = fhe_eval_accounts_with_deny_record();
+        assert_eq!(
+            fhe_eval_durable_encrypted_value(&accounts, 0),
+            Some(ENCRYPTED_VALUE)
         );
     }
 

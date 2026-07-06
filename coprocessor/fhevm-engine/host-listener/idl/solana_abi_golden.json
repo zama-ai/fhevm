@@ -392,6 +392,14 @@
     },
     {
       "category": "instruction_args",
+      "fixture_hex": "42582e7b066bd0320101010101010101010101010101010101010101010101010101010101010101",
+      "fixture_len": 40,
+      "name": "remove_subject",
+      "program": "zama_host",
+      "schema_hash": "e4de8f5c96b22d171dc5b11d60d06cb91b3ad5aeefb5d832c2ca6bfc05d2e024"
+    },
+    {
+      "category": "instruction_args",
       "fixture_hex": "86070cf7e95023d70102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2002030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021010000000303030303030303030303030303030303030303030303030303030303030303",
       "fixture_len": 108,
       "name": "update_encrypted_value",

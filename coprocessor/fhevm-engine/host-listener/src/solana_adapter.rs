@@ -573,7 +573,7 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
 // gate: every Solana
 // computation is inserted eager (`is_allowed = TRUE` unconditionally), so the
 // tfhe-worker schedules it immediately regardless of ACL/allow state. Allow
-// signals (`create_encrypted_value`, `allow_subjects`, `update_encrypted_value`,
+// signals (`create_encrypted_value`, `allow_subjects`, `remove_subject`, `update_encrypted_value`,
 // `make_handle_public`) still matter for DECRYPT availability (SNS/ct128 prep,
 // `allowed_handles`) — they are not needed to unblock computation.
 //
@@ -622,17 +622,17 @@ pub fn normalize_solana_events_for_db(
 /// compute-scheduling path (see the eager-compute note above).
 ///
 /// `encrypted_value_created` / `handle_superseded` / `handle_made_public` /
-/// `subject_allowed` name the RFC-024 `EncryptedValue` instruction-derived
+/// `subject_allowed` / `subject_removed` name the RFC-024 `EncryptedValue` instruction-derived
 /// signals (`create_encrypted_value`, `update_encrypted_value`,
-/// `make_handle_public`, `allow_subjects`); the legacy `public_decrypt_allowed`
-/// / `acl_subject_allowed` / `acl_record_bound` reasons are kept for the
+/// `make_handle_public`, `allow_subjects`, `remove_subject`); the legacy
+/// `public_decrypt_allowed` / `acl_subject_allowed` / `acl_record_bound` reasons are kept for the
 /// still-IDL-driven decode path pending its RFC-024 instruction-decode rewrite
 /// (tracked separately — see host-listener README/TODO).
 ///
 /// TODO(RFC-024 instruction decode): currently unreferenced because nothing
 /// yet emits `SolanaFinalizedAccountFetch::reason` from the new
 /// `EncryptedValue` instructions (`create_encrypted_value`/`allow_subjects`/
-/// `update_encrypted_value`/`make_handle_public`) — see the host-listener
+/// `update_encrypted_value`/`make_handle_public`/`remove_subject`) — see the host-listener
 /// section of the RFC-024 rollout notes. Once that decode lands, this becomes
 /// the finalized-fetcher's filter again.
 #[allow(dead_code)]
@@ -646,6 +646,7 @@ pub(crate) fn is_solana_allow_reason(reason: &str) -> bool {
             | "handle_superseded"
             | "handle_made_public"
             | "subject_allowed"
+            | "subject_removed"
     )
 }
 

@@ -420,6 +420,7 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
             compute_subject: request.context.compute_authority.account_info(),
             app_account_authority: app_authority.account.clone(),
             host_config: request.context.host_config.to_account_info(),
+            deny_subject_record: None,
             system_program: request.context.system_program.to_account_info(),
             event_authority: request.context.event_authority.to_account_info(),
             program: request.context.zama_program.to_account_info(),

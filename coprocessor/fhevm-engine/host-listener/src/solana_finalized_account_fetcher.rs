@@ -79,7 +79,8 @@ pub fn decrypt_enqueue_for_fetch(
         | "acl_record_bound"
         | "encrypted_value_created"
         | "handle_superseded"
-        | "subject_allowed" => AllowEvents::AllowedAccount,
+        | "subject_allowed"
+        | "subject_removed" => AllowEvents::AllowedAccount,
         // handle_material_sealed also emits an EncryptedValue-account fetch, but
         // the allow it confirms already arrived via its own subject/public-decrypt
         // event; the material-sealed fetch is only a witness for the on-chain
@@ -94,7 +95,7 @@ pub fn decrypt_enqueue_for_fetch(
         // refers to. Resolved below after the account is decoded.
         None if matches!(
             job.reason.as_str(),
-            "subject_allowed" | "handle_made_public"
+            "subject_allowed" | "subject_removed" | "handle_made_public"
         ) =>
         {
             match finalized_current_handle(&witness.data) {
@@ -163,7 +164,8 @@ fn encrypted_value_claim_is_finalized(
         | "acl_record_bound"
         | "encrypted_value_created"
         | "handle_made_public"
-        | "subject_allowed" => {
+        | "subject_allowed"
+        | "subject_removed" => {
             if account.current_handle == handle {
                 true
             } else {
@@ -728,10 +730,11 @@ mod tests {
 
     #[test]
     fn handle_less_current_handle_fetch_resolves_from_finalized_account() {
-        // Decode-time tracker miss: allow_subjects/make_handle_public queue
-        // without a handle; the finalized account's current_handle is released.
+        // Decode-time tracker miss: allow_subjects/remove_subject/make_handle_public
+        // queue without a handle; the finalized account's current_handle is released.
         for (reason, allow_event) in [
             ("subject_allowed", AllowEvents::AllowedAccount),
+            ("subject_removed", AllowEvents::AllowedAccount),
             ("handle_made_public", AllowEvents::AllowedForDecryption),
         ] {
             let job = acl_record_job(reason, None);
@@ -757,12 +760,13 @@ mod tests {
     #[test]
     fn encrypted_value_instruction_reasons_release_the_expected_allow_kind() {
         // RFC-024 EncryptedValue instruction-decode reasons (create/update/
-        // allow_subjects -> durable account allow; make_handle_public -> public
-        // decrypt), same trust guard as the legacy finalized-account reasons above.
+        // allow_subjects/remove_subject -> durable account allow; make_handle_public
+        // -> public decrypt), same trust guard as the legacy finalized-account reasons above.
         for reason in [
             "encrypted_value_created",
             "handle_superseded",
             "subject_allowed",
+            "subject_removed",
         ] {
             let handle = Handle::from([6; 32]);
             let job = acl_record_job(reason, Some(handle));

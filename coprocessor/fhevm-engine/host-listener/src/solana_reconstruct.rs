@@ -69,8 +69,8 @@ pub fn decode_fhe_eval_args(instruction_data: &[u8]) -> Option<FheEvalArgs> {
 // `EncryptedValue` is event-free by design (see zama-host's
 // `instructions/encrypted_value.rs` module doc): the program does not
 // `emit!`/`emit_cpi!` for `create_encrypted_value` / `update_encrypted_value` /
-// `make_handle_public` / `allow_subjects`. There is therefore no event to
-// decode — the four instructions themselves ARE the allow signal, and must be
+// `make_handle_public` / `allow_subjects` / `remove_subject`. There is therefore no event to
+// decode — the instructions themselves ARE the allow signal, and must be
 // decoded directly from instruction data (top-level AND inner/CPI, since an
 // app program may invoke these via CPI) by their Anchor discriminator
 // (`sha256("global:<name>")[..8]`).
@@ -105,9 +105,13 @@ pub struct AllowSubjectsArgs {
     pub subjects: Vec<EncryptedValueSubjectGrant>,
 }
 
+#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
+pub struct RemoveSubjectArgs {
+    pub subject: [u8; 32],
+}
+
 /// A decoded `EncryptedValue` instruction, args-only (accounts are resolved by
-/// the caller from the instruction's account list — see
-/// [`ENCRYPTED_VALUE_ACCOUNT_INDEX`]).
+/// the caller from the instruction's account list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EncryptedValueInstruction {
     Create(CreateEncryptedValueArgs),
@@ -116,6 +120,7 @@ pub enum EncryptedValueInstruction {
     /// [`EncryptedValueLineageTracker`], not from the instruction.
     MakeHandlePublic,
     AllowSubjects(AllowSubjectsArgs),
+    RemoveSubject(RemoveSubjectArgs),
 }
 
 /// `sha256("global:create_encrypted_value")[..8]`.
@@ -130,9 +135,12 @@ const MAKE_HANDLE_PUBLIC_DISCRIMINATOR: [u8; 8] =
 /// `sha256("global:allow_subjects")[..8]`.
 const ALLOW_SUBJECTS_DISCRIMINATOR: [u8; 8] =
     [186, 205, 31, 20, 183, 17, 5, 26];
+/// `sha256("global:remove_subject")[..8]`.
+const REMOVE_SUBJECT_DISCRIMINATOR: [u8; 8] =
+    [66, 88, 46, 123, 6, 107, 208, 50];
 
-/// Every `EncryptedValue` instruction accounts struct places `encrypted_value`
-/// at this index (`payer`, `app_account_authority`/`authority`,
+/// Every pre-`remove_subject` `EncryptedValue` instruction accounts struct places
+/// `encrypted_value` at this index (`payer`, `app_account_authority`/`authority`,
 /// `encrypted_value`, ...) — see `CreateEncryptedValue`,
 /// `AllowEncryptedValueSubjects`, `UpdateEncryptedValue`,
 /// `MakeEncryptedValueHandlePublic` in zama-host's `encrypted_value.rs`.
@@ -140,7 +148,7 @@ pub const ENCRYPTED_VALUE_ACCOUNT_INDEX: usize = 2;
 
 /// Decodes one `EncryptedValue` instruction from raw instruction data
 /// (discriminator + borsh args), or `None` if the discriminator doesn't match
-/// any of the four (i.e. it is not an `EncryptedValue` instruction at all —
+/// any known lifecycle discriminator (i.e. it is not an `EncryptedValue` instruction at all —
 /// the caller tries this decoder against every top-level and inner
 /// instruction of the zama-host program).
 pub fn decode_encrypted_value_instruction(
@@ -169,13 +177,32 @@ pub fn decode_encrypted_value_instruction(
                 .ok()
                 .map(EncryptedValueInstruction::AllowSubjects)
         }
+        d if d == REMOVE_SUBJECT_DISCRIMINATOR => {
+            RemoveSubjectArgs::try_from_slice(payload)
+                .ok()
+                .map(EncryptedValueInstruction::RemoveSubject)
+        }
         _ => None,
+    }
+}
+
+fn encrypted_value_account_index(
+    instruction: &EncryptedValueInstruction,
+) -> usize {
+    match instruction {
+        EncryptedValueInstruction::RemoveSubject(_) => 1,
+        EncryptedValueInstruction::Create(_)
+        | EncryptedValueInstruction::Update(_)
+        | EncryptedValueInstruction::MakeHandlePublic
+        | EncryptedValueInstruction::AllowSubjects(_) => {
+            ENCRYPTED_VALUE_ACCOUNT_INDEX
+        }
     }
 }
 
 /// Tracks each `EncryptedValue` lineage's current handle across the
 /// instructions the listener has decoded so far (in on-chain order), so
-/// `make_handle_public` and `allow_subjects` — which carry no handle
+/// `make_handle_public`, `allow_subjects`, and `remove_subject` — which carry no handle
 /// themselves — resolve to the right handle without an extra account fetch.
 ///
 /// Chosen over finalized-account-fetcher resolution: at decode time the
@@ -216,7 +243,7 @@ impl EncryptedValueLineageTracker {
 
 /// The allow-fetch(es) one decoded `EncryptedValue` instruction produces,
 /// updating `tracker` as a side effect for `create`/`update` (so later
-/// `make_handle_public`/`allow_subjects` in this or a later transaction
+/// `make_handle_public`/`allow_subjects`/`remove_subject` in this or a later transaction
 /// resolve correctly). `encrypted_value_account` is
 /// `accounts[ENCRYPTED_VALUE_ACCOUNT_INDEX]`, resolved by the caller.
 ///
@@ -274,6 +301,13 @@ pub fn encrypted_value_instruction_fetches(
                 "subject_allowed",
             )]
         }
+        EncryptedValueInstruction::RemoveSubject(_) => {
+            vec![current_handle_fetch(
+                encrypted_value_account,
+                tracker.current_handle(encrypted_value_account),
+                "subject_removed",
+            )]
+        }
     }
 }
 
@@ -292,7 +326,7 @@ fn current_handle_fetch(
 /// Decodes the `EncryptedValue` allow-fetches for one transaction's
 /// instructions, given in on-chain execution order and MUST include inner
 /// (CPI-invoked) instructions interleaved in that same order — an app program
-/// may invoke `allow_subjects`/`make_handle_public`/etc. via CPI, and the
+/// may invoke `allow_subjects`/`remove_subject`/`make_handle_public`/etc. via CPI, and the
 /// lineage tracker's ordering guarantee only holds if CPI instructions are not
 /// dropped. Non-`EncryptedValue`/non-matching-program instructions are
 /// skipped. `tracker` persists across transactions (own one per listener run).
@@ -306,8 +340,10 @@ pub fn decode_encrypted_value_instructions<'a>(
         .filter(|(program_id, _, _)| *program_id == zama_host_program_id)
         .filter_map(|(_, data, accounts)| {
             let instruction = decode_encrypted_value_instruction(data)?;
+            let encrypted_value_index =
+                encrypted_value_account_index(&instruction);
             let encrypted_value_account =
-                accounts.get(ENCRYPTED_VALUE_ACCOUNT_INDEX).copied()?;
+                accounts.get(encrypted_value_index).copied()?;
             Some(encrypted_value_instruction_fetches(
                 &instruction,
                 encrypted_value_account,
@@ -336,7 +372,8 @@ pub fn encrypted_value_bound_handle(
         EncryptedValueInstruction::Create(args) => Some(args.handle),
         EncryptedValueInstruction::Update(args) => Some(args.new_handle),
         EncryptedValueInstruction::MakeHandlePublic
-        | EncryptedValueInstruction::AllowSubjects(_) => None,
+        | EncryptedValueInstruction::AllowSubjects(_)
+        | EncryptedValueInstruction::RemoveSubject(_) => None,
     }
 }
 
@@ -850,6 +887,12 @@ mod encrypted_value_decode_tests {
         accounts
     }
 
+    fn remove_subject_accounts() -> [[u8; 32]; 4] {
+        let mut accounts = [[0u8; 32]; 4];
+        accounts[1] = ENCRYPTED_VALUE;
+        accounts
+    }
+
     #[test]
     fn decodes_create_encrypted_value() {
         let args = CreateEncryptedValueArgs {
@@ -896,6 +939,15 @@ mod encrypted_value_decode_tests {
         let decoded = decode_encrypted_value_instruction(&data)
             .expect("must decode allow_subjects");
         assert_eq!(decoded, EncryptedValueInstruction::AllowSubjects(args));
+    }
+
+    #[test]
+    fn decodes_remove_subject() {
+        let args = RemoveSubjectArgs { subject: [7; 32] };
+        let data = encode(REMOVE_SUBJECT_DISCRIMINATOR, args.clone());
+        let decoded = decode_encrypted_value_instruction(&data)
+            .expect("must decode remove_subject");
+        assert_eq!(decoded, EncryptedValueInstruction::RemoveSubject(args));
     }
 
     #[test]
@@ -1017,6 +1069,24 @@ mod encrypted_value_decode_tests {
     }
 
     #[test]
+    fn remove_subject_resolves_current_handle_from_lineage_tracker() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [4; 32]);
+        let args = RemoveSubjectArgs { subject: [6; 32] };
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::RemoveSubject(args),
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].reason, "subject_removed");
+        assert_eq!(
+            fetches[0].handle,
+            Some(crate::database::tfhe_event_propagate::Handle::from([4; 32]))
+        );
+    }
+
+    #[test]
     fn transaction_decode_includes_inner_cpi_instructions() {
         // A top-level instruction from a different (app) program CPIs into
         // zama_host's create_encrypted_value, then allow_subjects; both must be
@@ -1066,6 +1136,27 @@ mod encrypted_value_decode_tests {
             )),
             "allow_subjects (CPI) must resolve the handle create_encrypted_value (also CPI) just bound"
         );
+    }
+
+    #[test]
+    fn transaction_decode_uses_remove_subject_account_index() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [4; 32]);
+        let remove_data = encode(
+            REMOVE_SUBJECT_DISCRIMINATOR,
+            RemoveSubjectArgs { subject: [6; 32] },
+        );
+        let accounts = remove_subject_accounts();
+        let instructions: Vec<TestInstruction<'_>> =
+            vec![(ZAMA_HOST, &remove_data, &accounts)];
+        let fetches = decode_encrypted_value_instructions(
+            instructions,
+            ZAMA_HOST,
+            &mut tracker,
+        );
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].account_key, ENCRYPTED_VALUE);
+        assert_eq!(fetches[0].reason, "subject_removed");
     }
 
     #[test]
