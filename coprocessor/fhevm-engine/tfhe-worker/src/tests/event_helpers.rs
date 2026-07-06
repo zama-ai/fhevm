@@ -162,12 +162,14 @@ pub async fn upsert_test_dcid<'e>(
 /// schedulable in the same transaction.
 ///
 /// Ingestion assigns dependence chains as same-block connected components,
-/// and the worker's batch closure requires same-block producer/consumer
-/// edges to share a chain. Transactions that consume another transaction's
-/// output in this implicit block must therefore pass the producing
-/// transaction's chain; self-contained transactions use `insert_event`,
-/// which keys the chain by the transaction id. (The worker only sees block-0
-/// events when the harness runs with the default cutover block 0.)
+/// so transactions that consume another transaction's output in this
+/// implicit block should pass the producing transaction's chain to mirror
+/// production state; self-contained transactions use `insert_event`, which
+/// keys the chain by the transaction id. (The worker's cross-lane batch
+/// closure also tolerates split lanes as a defense — covered by
+/// `test_cross_chain_same_block_closure` — but shared chains are the shape
+/// ingestion actually produces.) The worker only sees block-0 events when
+/// the harness runs with the default cutover block 0.
 pub async fn insert_event_in_chain(
     listener_db: &ListenerDatabase,
     tx: &mut Transaction<'_>,

@@ -319,6 +319,14 @@ async fn ensure_cutover_safe(
     Ok(())
 }
 
+/// The worker cycle structurally requires this many concurrent Postgres
+/// connections: the persistent LISTEN connection, the open work transaction,
+/// and the DCID lock manager's own pool queries issued while that transaction
+/// is held. A smaller pool does not fail — it livelocks: every cycle dies in
+/// `PoolTimedOut`, is retried, and the service keeps passing health checks
+/// while never draining computations. Refuse to start instead.
+const MIN_PG_POOL_CONNECTIONS: u32 = 3;
+
 pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
@@ -326,6 +334,18 @@ pub async fn run_tfhe_worker(
     // Determine worker ID to use for the lifetime of this process
     // In case of a failure in tfhe_worker_cycle, the same id must be reused to quickly unlock any held locks
     let worker_id = args.worker_id.unwrap_or(Uuid::new_v4());
+    if args.pg_pool_max_connections < MIN_PG_POOL_CONNECTIONS {
+        let guard_error: Box<dyn std::error::Error + Send + Sync> = format!(
+            "Refusing to start: pg_pool_max_connections is {} but the worker cycle needs at \
+             least {} concurrent connections (LISTEN + work transaction + lock-manager \
+             queries). A smaller pool livelocks the cycle in PoolTimedOut retries while \
+             health checks keep passing.",
+            args.pg_pool_max_connections, MIN_PG_POOL_CONNECTIONS,
+        )
+        .into();
+        error!(target: "tfhe_worker", { error = %guard_error }, "Pool size check failed; not starting worker");
+        return Err(guard_error);
+    }
 
     // GCS mode is auto-detected at startup by comparing this binary's
     // compiled-in `STACK_VERSION` against the live `versioning.stack_version`
@@ -1441,14 +1461,24 @@ async fn query_work_rows_for_dcid<'a>(
             ORDER BY c.schedule_order ASC
             LIMIT 1
         ),
+        -- Cross-lane closure (RFC 011): once the seed lane has selected a block
+        -- context, the batch is closed over ALL dependence-chain lanes in that
+        -- context, not just the seed lane. Ingestion assigns same-block connected
+        -- components a single chain, so lanes normally never share same-block
+        -- edges — this expansion is the defense for states where they do (e.g. a
+        -- chain-assignment regression), where executing one lane alone would
+        -- either wedge on a same-block missing input or, worse, fetch a
+        -- same-block intermediate from compressed state. The count guard below
+        -- aborts the batch (yield, retry) if another worker holds part of the
+        -- expanded component, so a partially locked component is never executed.
         expected_rows AS (
             SELECT COUNT(*) AS count
-            FROM locked_dcid_rows c
+            FROM computations_branch c
             JOIN selected_context sc
-              ON c.dependence_chain_id = sc.dependence_chain_id
-             AND c.host_chain_id = sc.host_chain_id
+              ON c.host_chain_id = sc.host_chain_id
              AND c.block_number IS NOT DISTINCT FROM sc.block_number
              AND c.producer_block_hash = sc.producer_block_hash
+            WHERE c.is_error = FALSE
         ),
         locked_rows AS MATERIALIZED (
             SELECT
@@ -1463,13 +1493,14 @@ async fn query_work_rows_for_dcid<'a>(
               c.host_chain_id,
               c.block_number,
               c.schedule_order
-            FROM locked_dcid_rows c
+            FROM computations_branch c
             JOIN selected_context sc
-              ON c.dependence_chain_id = sc.dependence_chain_id
-             AND c.host_chain_id = sc.host_chain_id
+              ON c.host_chain_id = sc.host_chain_id
              AND c.block_number IS NOT DISTINCT FROM sc.block_number
              AND c.producer_block_hash = sc.producer_block_hash
+            WHERE c.is_error = FALSE
             ORDER BY c.schedule_order ASC
+            FOR UPDATE OF c SKIP LOCKED
         ),
         locked_count AS (
             SELECT COUNT(*) AS count FROM locked_rows
@@ -2517,7 +2548,7 @@ mod tests {
 
         let mut tx = pool.begin().await.expect("begin tx");
         let metadata = query_dependency_metadata(
-            &[handle.clone()],
+            std::slice::from_ref(&handle),
             &BatchExecutionContext {
                 host_chain_id,
                 block_number: Some(12),
@@ -2612,7 +2643,7 @@ mod tests {
 
         let mut tx = pool.begin().await.expect("begin tx");
         let metadata = query_dependency_metadata(
-            &[handle.clone()],
+            std::slice::from_ref(&handle),
             &BatchExecutionContext {
                 host_chain_id,
                 block_number: Some(30),

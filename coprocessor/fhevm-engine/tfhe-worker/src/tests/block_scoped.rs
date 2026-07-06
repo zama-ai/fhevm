@@ -502,6 +502,76 @@ async fn test_block_scoped_inter_tx_reuse() -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
+/// Cross-lane batch closure (RFC 011): a same-block producer/consumer edge
+/// that spans two dependence chains must be executed as one batch. Ingestion
+/// never produces this state (connected components share a chain), so this
+/// exercises the worker's defensive closure: tx1 produces `b` on its own
+/// chain, tx2 consumes `b` on a different chain in the same implicit block.
+/// Without cross-lane expansion the consumer's lane would wedge on a
+/// same-block missing input (or, regressed further, fetch the intermediate
+/// from compressed state — the RFC 020 forbidden shortcut).
+#[tokio::test]
+#[serial(db)]
+async fn test_cross_chain_same_block_closure() -> Result<(), Box<dyn std::error::Error>> {
+    reset_local_test_db_if_needed().await?;
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness().await?;
+
+    let a_handle = next_handle();
+    let b_handle = next_handle();
+    let c_handle = next_handle();
+    let tx1_id = next_handle();
+    let tx2_id = next_handle();
+
+    // Tx1 (chain = tx1_id): TrivialEncrypt(6) -> a, a + a = b
+    let mut tx = listener_db.new_transaction().await?;
+    insert_trivial_encrypt(&listener_db, &mut tx, tx1_id, 6, 4, a_handle, true).await?;
+    allow_handle(&listener_db, &mut tx, &a_handle).await?;
+    insert_event(
+        &listener_db,
+        &mut tx,
+        tx1_id,
+        TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            caller: zero_address(),
+            lhs: a_handle,
+            rhs: a_handle,
+            scalarByte: FixedBytes::from([0_u8]),
+            result: b_handle,
+        }),
+        true,
+    )
+    .await?;
+    allow_handle(&listener_db, &mut tx, &b_handle).await?;
+    // Tx2 (chain = tx2_id — deliberately NOT tx1's chain): b + b = c.
+    insert_event(
+        &listener_db,
+        &mut tx,
+        tx2_id,
+        TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            caller: zero_address(),
+            lhs: b_handle,
+            rhs: b_handle,
+            scalarByte: FixedBytes::from([0_u8]),
+            result: c_handle,
+        }),
+        true,
+    )
+    .await?;
+    allow_handle(&listener_db, &mut tx, &c_handle).await?;
+    tx.commit().await?;
+
+    wait_until_all_allowed_handles_computed(&app).await?;
+
+    let resp = decrypt_ciphertexts(&pool, vec![b_handle.to_vec(), c_handle.to_vec()]).await?;
+    assert_eq!(resp[0].value, "12", "b = a+a = 6+6 = 12");
+    assert_eq!(resp[1].value, "24", "c = b+b = 12+12 = 24");
+
+    Ok(())
+}
+
 /// Test cross-block boundary materialization with distinct block hashes.
 ///
 /// Block 1 (hash=0xAA..): TrivialEncrypt(6) -> a_handle

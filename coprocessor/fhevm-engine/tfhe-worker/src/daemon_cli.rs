@@ -42,8 +42,10 @@ pub struct Args {
     #[arg(long, default_value_t = 4)]
     pub tokio_threads: usize,
 
-    /// Postgres pool max connections
-    #[arg(long, default_value_t = 10)]
+    /// Postgres pool max connections. The worker cycle needs at least 3
+    /// concurrent connections (LISTEN + work transaction + lock-manager
+    /// queries); smaller pools livelock the cycle in PoolTimedOut retries.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(3..), default_value_t = 10)]
     pub pg_pool_max_connections: u32,
 
     /// Prometheus metrics server address
