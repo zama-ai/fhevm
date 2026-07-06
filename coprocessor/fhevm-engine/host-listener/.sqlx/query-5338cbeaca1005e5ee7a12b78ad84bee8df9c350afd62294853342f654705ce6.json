@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE host_chain_blocks_valid\n            SET block_status = 'finalized'\n            WHERE chain_id = $1\n              AND block_hash = $2\n              AND block_number = $3\n              AND block_status <> 'orphaned'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5338cbeaca1005e5ee7a12b78ad84bee8df9c350afd62294853342f654705ce6"
+}

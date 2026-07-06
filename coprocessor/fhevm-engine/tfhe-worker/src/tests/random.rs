@@ -73,7 +73,11 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
 
     for &rand_type in random_test_supported_types() {
         let tx_id = next_handle();
-        let mut tx = harness.listener_db.new_transaction().await?;
+        let mut tx = harness
+            .listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
 
         let output1 = next_handle();
         insert_event(
@@ -205,7 +209,11 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
         let bound = BigInt::from_str(bound_str)?;
 
         let tx_id = next_handle();
-        let mut tx = harness.listener_db.new_transaction().await?;
+        let mut tx = harness
+            .listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
 
         // First sample
         let output1 = next_handle();

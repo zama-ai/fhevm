@@ -586,7 +586,10 @@ async fn generate_transaction(
     new_ctx.inputs_pool = inputs.clone();
     let ctx = &new_ctx;
 
-    let mut tx: sqlx::Transaction<'_, Postgres> = listener_event_to_db.new_transaction().await?;
+    let mut tx: sqlx::Transaction<'_, Postgres> = listener_event_to_db
+        .new_transaction()
+        .await?
+        .ok_or("stack retired by cutover: cannot open write transaction")?;
 
     match scenario.transaction {
         Transaction::BatchInputProofs => {
