@@ -2275,7 +2275,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             realImpl,
-            abi.encodeCall(ProtocolConfig.reinitializeV2, (nodes, thresholds, softwareVersion, pcrValues))
+            abi.encodeCall(ProtocolConfig.reinitializeV2, (nodes, softwareVersion, pcrValues))
         );
         protocolConfig = ProtocolConfig(protocolConfigAdd);
 
