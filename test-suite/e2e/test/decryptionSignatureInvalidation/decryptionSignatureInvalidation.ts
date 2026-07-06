@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { Contract, EventLog } from 'ethers';
+import { Contract, ContractTransactionReceipt, EventLog } from 'ethers';
 import { ethers } from 'hardhat';
 
 import { ERC1271ApproveHashWallet, UserDecrypt } from '../../types';
@@ -27,7 +27,14 @@ const ACL_ABI = [
 const DURATION_SECONDS = 7 * 24 * 60 * 60;
 const POSITIVE_TIMEOUT_MS = 4 * 60 * 1000;
 const TIMEOUT_MARGIN_MS = 60 * 1000;
-const NEGATIVE_WINDOW_MS = 60 * 1000;
+// Observation window for the stuck-at-KMS negatives. Unlike the unified suite
+// this is a fixed floor rather than a runtime 3x-latency calibration: this
+// suite's only positive control runs AFTER the negatives, so there's no earlier
+// latency sample to calibrate from. 90s is comfortably above the positive
+// latencies observed on this stack (KMS round trips ~2-30s), so a request that
+// WOULD succeed has ample time to do so — a still-`pending` job at the window
+// end is a genuine rejection, not a slow success.
+const NEGATIVE_WINDOW_MS = 90 * 1000;
 // The KMS Connector reads `decryptionSignatureInvalidatedBefore` from the host
 // ACL at a lagging block tag (same reason delegation needs propagation). After
 // an invalidation tx, mine/await this many blocks before submitting a request
@@ -96,19 +103,39 @@ describe('Decryption signature invalidation', function () {
   let daveContract: UserDecrypt;
   let daveContractAddress: string;
 
+  // True whenever eve's on-chain threshold has been written since the KMS last
+  // observed it. Set by every eve invalidation in this suite; cleared by
+  // `awaitEvePropagation()`. Lets the KMS-dependent test wait for exactly one
+  // propagation regardless of WHICH earlier test wrote the threshold (in suite
+  // order it's `invalidate(0)` / the explicit-timestamp test; in a grep-isolated
+  // run it's `ensureEveInvalidated` itself). On-chain reads/asserts don't need
+  // it — the host ACL reflects the write immediately; only the KMS's lagging
+  // read does.
+  let eveWriteUnpropagated = false;
+
+  /** Send an eve invalidation tx and flag it as not-yet-visible to the KMS. */
+  async function invalidateEve(timestamp: number | bigint): Promise<ContractTransactionReceipt> {
+    const receipt = await (await acl.invalidateDecryptionSignaturesBefore(timestamp)).wait();
+    eveWriteUnpropagated = true;
+    return receipt;
+  }
+
   /** Read eve's current threshold, invalidating once if she never has. */
   async function ensureEveInvalidated(): Promise<bigint> {
     let threshold: bigint = await acl.decryptionSignatureInvalidatedBefore(signers.eve.address);
     if (threshold === 0n) {
-      await (await acl.invalidateDecryptionSignaturesBefore(0)).wait();
+      await invalidateEve(0);
       threshold = await acl.decryptionSignatureInvalidatedBefore(signers.eve.address);
-      // Fresh write (a test running in isolation): let the KMS's lagging
-      // host-ACL read observe the new threshold before any request depends on
-      // it. In suite order the threshold was written tests ago, this branch is
-      // skipped, and no blocks are waited.
-      await awaitPropagation();
     }
     return threshold;
+  }
+
+  /** Wait for the KMS's lagging host-ACL read to observe eve's latest threshold. */
+  async function awaitEvePropagation(): Promise<void> {
+    if (eveWriteUnpropagated) {
+      await awaitPropagation();
+      eveWriteUnpropagated = false;
+    }
   }
 
   before(async function () {
@@ -139,8 +166,7 @@ describe('Decryption signature invalidation', function () {
 
   it('test decryption signature invalidation invalidate(0) resolves to block.timestamp and emits the event', async function () {
     const before = await acl.decryptionSignatureInvalidatedBefore(signers.eve.address);
-    const tx = await acl.invalidateDecryptionSignaturesBefore(0);
-    const receipt = await tx.wait();
+    const receipt = await invalidateEve(0);
     const block = await ethers.provider.getBlock(receipt.blockNumber);
 
     const threshold: bigint = await acl.decryptionSignatureInvalidatedBefore(signers.eve.address);
@@ -180,13 +206,16 @@ describe('Decryption signature invalidation', function () {
     }
     expect(target > prior, 'chain time did not advance past the current threshold').to.equal(true);
 
-    await (await acl.invalidateDecryptionSignaturesBefore(target)).wait();
+    await invalidateEve(target);
     expect(await acl.decryptionSignatureInvalidatedBefore(signers.eve.address)).to.equal(target);
   });
 
   it('test decryption signature invalidation rejects a request signed before the invalidation timestamp', async function () {
     this.timeout(NEGATIVE_WINDOW_MS + TIMEOUT_MARGIN_MS);
     const threshold = await ensureEveInvalidated();
+    // Ensure the KMS observes eve's threshold before this KMS-dependent request,
+    // whichever earlier test wrote it (or this test, in a grep-isolated run).
+    await awaitEvePropagation();
     const handle = await eveContract.xUint64();
     const req: UnifiedDecryptRequest = {
       handles: [directHandle(handle, eveContractAddress, signers.eve.address)],
@@ -319,6 +348,7 @@ describe('Decryption signature invalidation', function () {
     // Control: a pre-approved empty-signature request works before rotation.
     const { post: postA } = await submitUnifiedRequest(cfg, reqA, { kind: 'empty' });
     expect(postA.httpStatus, JSON.stringify(postA.raw)).to.equal(202);
+    expect(postA.jobId, JSON.stringify(postA.raw)).to.be.a('string');
     const pollA = await pollJob(cfg, postA.jobId!, { timeoutMs: POSITIVE_TIMEOUT_MS });
     expect(pollA.status, JSON.stringify(pollA.raw)).to.equal('succeeded');
 
@@ -334,6 +364,9 @@ describe('Decryption signature invalidation', function () {
     // startTimestamp t0 < the wallet's new threshold.
     const { post: postB } = await submitUnifiedRequest(cfg, reqB, { kind: 'empty' });
     expect(postB.httpStatus, JSON.stringify(postB.raw)).to.equal(202);
+    // Guard against a malformed 202-without-jobId making the stuck-at-KMS
+    // assertion below pass vacuously (pollJob on an absent id never succeeds).
+    expect(postB.jobId, JSON.stringify(postB.raw)).to.be.a('string');
     const pollB = await pollJob(cfg, postB.jobId!, { timeoutMs: NEGATIVE_WINDOW_MS });
     expectStuckAtKms(pollB);
   });
