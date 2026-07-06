@@ -40,6 +40,10 @@ contract KMSGenerationMock {
 
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType, bytes extraData);
 
+    event AbortKeygen(uint256 prepKeygenId);
+
+    event AbortCrsgen(uint256 crsId);
+
     event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address kmsTxSender);
 
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
@@ -51,14 +55,15 @@ contract KMSGenerationMock {
     function keygen(ParamsType paramsType, KeygenMode mode, uint256 existingKeyId) external {
         prepKeygenCounter++;
         uint256 prepKeygenId = prepKeygenCounter;
+        keyCounter++;
+        uint256 keyId = keyCounter;
 
         emit PrepKeygenRequest(prepKeygenId, paramsType, mode, existingKeyId, "");
 
         // Mock convenience: FromExisting emits the keygen request in the same
         // tx so listener tests exercise the mode-carrying event directly.
         if (mode == KeygenMode.FromExisting) {
-            keyCounter++;
-            emit KeygenRequest(prepKeygenId, keyCounter, mode, existingKeyId, "");
+            emit KeygenRequest(prepKeygenId, keyId, mode, existingKeyId, "");
         }
     }
 
@@ -87,6 +92,22 @@ contract KMSGenerationMock {
         uint256 crsId = crsCounter;
 
         emit CrsgenRequest(crsId, maxBitLength, paramsType, "");
+    }
+
+    function abortKeygen(uint256 prepKeygenId) external {
+        emit AbortKeygen(prepKeygenId);
+    }
+
+    function abortCrsgen(uint256 crsId) external {
+        emit AbortCrsgen(crsId);
+    }
+
+    function getKeyCounter() external view returns (uint256) {
+        return keyCounter;
+    }
+
+    function getCrsCounter() external view returns (uint256) {
+        return crsCounter;
     }
 
     function crsgenResponse(uint256 crsId, bytes calldata crsDigest, bytes calldata signature) external {
