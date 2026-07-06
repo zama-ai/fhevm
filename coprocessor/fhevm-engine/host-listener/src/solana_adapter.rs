@@ -27,7 +27,8 @@ use crate::database::tfhe_event_propagate::{
 pub enum SolanaFinalizedAccountFetchKind {
     EncryptedValueAccount,
     AclPermission,
-    HandleMaterialCommitment,
+    // Kind 3 is reserved for the deleted material-commitment fetch kind.
+    // Remaining values are persisted in solana_finalized_account_fetches.kind.
     DisclosureRequest,
     BurnRedemptionRequest,
     TokenMint,
@@ -41,7 +42,6 @@ impl SolanaFinalizedAccountFetchKind {
         match self {
             SolanaFinalizedAccountFetchKind::EncryptedValueAccount => 1,
             SolanaFinalizedAccountFetchKind::AclPermission => 2,
-            SolanaFinalizedAccountFetchKind::HandleMaterialCommitment => 3,
             SolanaFinalizedAccountFetchKind::DisclosureRequest => 4,
             SolanaFinalizedAccountFetchKind::BurnRedemptionRequest => 5,
             SolanaFinalizedAccountFetchKind::TokenMint => 6,
@@ -55,9 +55,6 @@ impl SolanaFinalizedAccountFetchKind {
         match value {
             1 => Some(SolanaFinalizedAccountFetchKind::EncryptedValueAccount),
             2 => Some(SolanaFinalizedAccountFetchKind::AclPermission),
-            3 => {
-                Some(SolanaFinalizedAccountFetchKind::HandleMaterialCommitment)
-            }
             4 => Some(SolanaFinalizedAccountFetchKind::DisclosureRequest),
             5 => Some(SolanaFinalizedAccountFetchKind::BurnRedemptionRequest),
             6 => Some(SolanaFinalizedAccountFetchKind::TokenMint),
@@ -966,7 +963,7 @@ fn finalized_account_fetch_job_from_row(
     let account_key = bytes32_from_vec(row.get::<Vec<u8>, _>("account_key"));
     let kind_value = row.get::<i16, _>("kind");
     let kind = SolanaFinalizedAccountFetchKind::from_i16(kind_value).expect(
-        "solana_finalized_account_fetches.kind is constrained to known values",
+        "solana_finalized_account_fetches.kind has no live fetch-kind variant",
     );
     let handle = row
         .get::<Option<Vec<u8>>, _>("handle")

@@ -11,6 +11,15 @@ use crate::{sha256, AclError};
 const LEAF_PREFIX: &[u8] = b"ZAMA_MMR_LEAF_V1";
 const NODE_PREFIX: &[u8] = b"ZAMA_MMR_NODE_V1";
 
+/// Maximum peak entries representable by this MMR.
+///
+/// `leaf_count` is a `u64`, and an MMR has one peak per set bit in
+/// `leaf_count`, so a valid state can never exceed 64 peaks. Reaching 64 peaks
+/// requires `u64::MAX` leaves, which normal on-chain operation cannot
+/// realistically reach; the explicit cap exists to fail before mutating state
+/// at the representation boundary.
+pub const MAX_MMR_PEAKS: usize = u64::BITS as usize;
+
 /// An inclusion proof: the authentication path from a leaf up to its mountain's
 /// peak. Rides in on a decrypt request. `siblings.len()` equals the mountain height.
 #[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Clone, Debug, PartialEq, Eq, Default)]
@@ -36,9 +45,15 @@ pub fn mmr_append(
     leaf_count: &mut u64,
     commitment: [u8; 32],
 ) -> Result<(), AclError> {
+    if peaks.len() > MAX_MMR_PEAKS {
+        return Err(AclError::MmrPeakCapacityExceeded);
+    }
     if peaks.len() != leaf_count.count_ones() as usize {
         return Err(AclError::MmrInconsistent);
     }
+    let next_leaf_count = leaf_count
+        .checked_add(1)
+        .ok_or(AclError::MmrPeakCapacityExceeded)?;
     let mut node = mmr_leaf_node(&commitment);
     let mut carry = *leaf_count;
     while carry & 1 == 1 {
@@ -47,7 +62,7 @@ pub fn mmr_append(
         carry >>= 1;
     }
     peaks.push(node);
-    *leaf_count = leaf_count.checked_add(1).ok_or(AclError::MmrInconsistent)?;
+    *leaf_count = next_leaf_count;
     Ok(())
 }
 
@@ -60,7 +75,11 @@ pub fn mmr_verify(
     commitment: [u8; 32],
     proof: &MmrProof,
 ) -> bool {
-    if proof.leaf_index >= leaf_count || peaks.len() != leaf_count.count_ones() as usize {
+    if peaks.len() > MAX_MMR_PEAKS
+        || proof.siblings.len() > MAX_MMR_PEAKS
+        || proof.leaf_index >= leaf_count
+        || peaks.len() != leaf_count.count_ones() as usize
+    {
         return false;
     }
     let mut offset: u64 = 0;
@@ -228,5 +247,53 @@ mod tests {
         let mut proof = mmr_build_proof(&leaves, 0).unwrap();
         proof.siblings.pop();
         assert!(!mmr_verify(&peaks, count, leaves[0], &proof));
+    }
+
+    #[test]
+    fn append_at_peak_cap_fails_without_mutating() {
+        let mut peaks: Vec<_> = (0..MAX_MMR_PEAKS)
+            .map(|i| {
+                let mut peak = [0u8; 32];
+                peak[0] = i as u8;
+                peak
+            })
+            .collect();
+        let original_peaks = peaks.clone();
+        let mut count = u64::MAX;
+
+        let err = mmr_append(&mut peaks, &mut count, leaf(99)).unwrap_err();
+
+        assert_eq!(err, AclError::MmrPeakCapacityExceeded);
+        assert_eq!(peaks, original_peaks);
+        assert_eq!(count, u64::MAX);
+    }
+
+    #[test]
+    fn below_peak_cap_append_and_verify_are_unaffected() {
+        let mut peaks: Vec<_> = (0..MAX_MMR_PEAKS - 1)
+            .map(|i| {
+                let mut peak = [0u8; 32];
+                peak[0] = i as u8;
+                peak
+            })
+            .collect();
+        let mut count = u64::MAX - 1;
+
+        mmr_append(&mut peaks, &mut count, leaf(100)).unwrap();
+
+        assert_eq!(count, u64::MAX);
+        assert_eq!(peaks.len(), MAX_MMR_PEAKS);
+
+        let (mut over_cap_peaks, over_cap_count) = append_all(1);
+        over_cap_peaks.resize(MAX_MMR_PEAKS + 1, [0u8; 32]);
+        assert!(!mmr_verify(
+            &over_cap_peaks,
+            over_cap_count,
+            leaf(0),
+            &MmrProof {
+                leaf_index: 0,
+                siblings: vec![],
+            }
+        ));
     }
 }

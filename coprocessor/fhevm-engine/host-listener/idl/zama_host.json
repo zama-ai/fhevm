@@ -1694,6 +1694,11 @@
       "code": 6062,
       "name": "EncryptedValueMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
+    },
+    {
+      "code": 6063,
+      "name": "EncryptedValueMmrPeakCapacityExceeded",
+      "msg": "encrypted value MMR peak capacity exceeded"
     }
   ],
   "types": [

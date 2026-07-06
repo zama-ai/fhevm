@@ -225,7 +225,7 @@ pub(super) fn supersede_current_handle(
             subject.to_bytes(),
         );
         zama_solana_acl::mmr_append(&mut value.peaks, &mut value.leaf_count, commitment)
-            .map_err(|_| error!(ZamaHostError::EncryptedValueMmrInconsistent))?;
+            .map_err(map_mmr_append_error)?;
     }
     value.current_handle = new_handle;
     Ok(())
@@ -270,7 +270,7 @@ pub fn make_handle_public(ctx: Context<MakeEncryptedValueHandlePublic>) -> Resul
         value.current_handle,
     );
     zama_solana_acl::mmr_append(&mut value.peaks, &mut value.leaf_count, commitment)
-        .map_err(|_| error!(ZamaHostError::EncryptedValueMmrInconsistent))?;
+        .map_err(map_mmr_append_error)?;
 
     let space = 8 + EncryptedValue::space(value.subjects.len(), value.peaks.len());
     grow_account_if_needed(
@@ -285,8 +285,12 @@ pub fn make_handle_public(ctx: Context<MakeEncryptedValueHandlePublic>) -> Resul
 
 fn assert_valid_new_subjects(subjects: &[EncryptedValueSubjectGrant]) -> Result<()> {
     require!(
-        !subjects.is_empty() && subjects.len() <= zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,
+        !subjects.is_empty(),
         ZamaHostError::EncryptedValueEmptySubjects
+    );
+    require!(
+        subjects.len() <= zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS,
+        ZamaHostError::EncryptedValueSubjectCapacityExceeded
     );
     require!(
         subjects.iter().all(|s| s.subject != Pubkey::default()),
@@ -301,6 +305,15 @@ fn assert_valid_new_subjects(subjects: &[EncryptedValueSubjectGrant]) -> Result<
         );
     }
     Ok(())
+}
+
+fn map_mmr_append_error(error: zama_solana_acl::AclError) -> anchor_lang::error::Error {
+    match error {
+        zama_solana_acl::AclError::MmrPeakCapacityExceeded => {
+            error!(ZamaHostError::EncryptedValueMmrPeakCapacityExceeded)
+        }
+        _ => error!(ZamaHostError::EncryptedValueMmrInconsistent),
+    }
 }
 
 /// Reallocs the account and tops up rent when `target_space` grows past the

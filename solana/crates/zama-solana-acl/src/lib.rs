@@ -24,7 +24,7 @@ pub use lineage::{
 pub mod mmr;
 pub use mmr::{
     mmr_append, mmr_build_proof, mmr_leaf_node, mmr_node, mmr_peaks_from_leaves, mmr_verify,
-    MmrProof,
+    MmrProof, MAX_MMR_PEAKS,
 };
 
 /// PDA seed for an encrypted-value lineage: `[ENCRYPTED_VALUE_SEED, value_key]`.
@@ -41,6 +41,7 @@ pub enum AclError {
     BadDiscriminator,
     BadAccountData,
     MmrInconsistent,
+    MmrPeakCapacityExceeded,
     SubjectCapacityExceeded,
     HandleMismatch,
     SubjectMissing,

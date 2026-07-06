@@ -856,7 +856,6 @@ mod tests {
         );
         for kind in [
             SolanaFinalizedAccountFetchKind::AclPermission,
-            SolanaFinalizedAccountFetchKind::HandleMaterialCommitment,
             SolanaFinalizedAccountFetchKind::DisclosureRequest,
             SolanaFinalizedAccountFetchKind::BurnRedemptionRequest,
             SolanaFinalizedAccountFetchKind::TokenMint,

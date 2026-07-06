@@ -200,4 +200,7 @@ pub enum ZamaHostError {
     /// The MMR peaks/leaf-count invariant was violated.
     #[msg("encrypted value MMR state is inconsistent")]
     EncryptedValueMmrInconsistent,
+    /// The MMR peak count reached the representational cap.
+    #[msg("encrypted value MMR peak capacity exceeded")]
+    EncryptedValueMmrPeakCapacityExceeded,
 }

@@ -683,7 +683,7 @@ fn mollusk_create_encrypted_value_rejects_over_cap_subjects_at_birth() {
         &ix,
         &accounts,
         &[custom_error(
-            host::errors::ZamaHostError::EncryptedValueEmptySubjects,
+            host::errors::ZamaHostError::EncryptedValueSubjectCapacityExceeded,
         )],
     );
 }
