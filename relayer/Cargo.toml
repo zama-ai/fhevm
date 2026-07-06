@@ -62,6 +62,7 @@ user-decryption-signature = { path = "../shared/user-decryption-signature" }
 # Shared MMR/lineage proof math for the Solana ACL (RFC-024); source of truth
 # also used by the zama-host program and the KMS connector.
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
+zama-host = { path = "../solana/programs/zama-host", features = ["no-entrypoint"] }
 borsh = { version = "1", features = ["derive"] }
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_path_order"] }
 utoipa-redoc = { version = "6.0.0", features = ["axum"] }
@@ -99,3 +100,4 @@ rstest = "0.26.1"
 serde_yaml = "0.9.34"
 serial_test = "3.4.0"
 ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock" }
+anchor-lang = "1.0.2"

@@ -334,7 +334,7 @@ mod tests {
             .set_replay_state(
                 lineage,
                 LineageReplayState {
-                    current_handle: pk(0x10),
+                    current_handle: Some(pk(0x10)),
                     subjects: vec![owner],
                 },
             )
@@ -392,7 +392,7 @@ mod tests {
             .set_replay_state(
                 lineage,
                 LineageReplayState {
-                    current_handle: pk(0x10),
+                    current_handle: Some(pk(0x10)),
                     subjects: vec![],
                 },
             )

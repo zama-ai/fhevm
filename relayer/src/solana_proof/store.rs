@@ -135,7 +135,7 @@ struct FileContents {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct LineageReplayStateDto {
-    current_handle: [u8; 32],
+    current_handle: Option<[u8; 32]>,
     subjects: Vec<[u8; 32]>,
 }
 
@@ -412,7 +412,7 @@ mod tests {
         let lineage = pk(2);
         assert_eq!(store.get_replay_state(lineage).await.unwrap(), None);
         let state = LineageReplayState {
-            current_handle: pk(0x10),
+            current_handle: Some(pk(0x10)),
             subjects: vec![pk(0x30)],
         };
         store
