@@ -28,7 +28,7 @@ pub struct ConfidentialTransfer<'info> {
     #[account(mut, address = from_account.balance_encrypted_value)]
     pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Recipient's stable balance `EncryptedValue` lineage.
-    #[account(mut, address = to_account.balance_encrypted_value)]
+    #[account(mut, dup, address = to_account.balance_encrypted_value)]
     pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `transferred_amount` lineage for `from_account`; created on
     /// the sender's first transfer, superseded thereafter.

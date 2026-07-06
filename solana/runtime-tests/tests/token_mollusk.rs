@@ -32,12 +32,15 @@
 //! longer wired in (see `tests/support/mod.rs`).
 
 use anchor_lang::{
-    prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
-    Discriminator, InstructionData, ToAccountMetas,
+    AccountDeserialize, AccountSerialize, AnchorDeserialize, Discriminator, InstructionData,
+    ToAccountMetas, prelude::system_program,
 };
 use confidential_token as token;
-use mollusk_svm::{result::Check, Mollusk};
-use solana_sdk::{account::Account, instruction::Instruction, program_pack::Pack, pubkey::Pubkey};
+use mollusk_svm::{Mollusk, result::Check};
+use solana_sdk::{
+    account::Account, instruction::Instruction, program_error::ProgramError, program_pack::Pack,
+    pubkey::Pubkey,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use zama_host as host;
@@ -243,6 +246,36 @@ fn read_confidential_mint(
         .clone();
     token::ConfidentialMint::try_deserialize(&mut account.data.as_slice())
         .expect("mint account should deserialize")
+}
+
+fn expected_historical_peaks(
+    encrypted_value: Pubkey,
+    old_handle: [u8; 32],
+    subjects: &[Pubkey],
+) -> Vec<[u8; 32]> {
+    let leaves: Vec<[u8; 32]> = subjects
+        .iter()
+        .enumerate()
+        .map(|(index, subject)| {
+            zama_solana_acl::historical_access_leaf_commitment(
+                encrypted_value.to_bytes(),
+                index as u64,
+                old_handle,
+                subject.to_bytes(),
+            )
+        })
+        .collect();
+    zama_solana_acl::mmr_peaks_from_leaves(&leaves)
+}
+
+fn token_error(error: token::ConfidentialTokenError) -> Check<'static> {
+    Check::err(ProgramError::Custom(
+        anchor_lang::error::ERROR_CODE_OFFSET + error as u32,
+    ))
+}
+
+fn anchor_error(error: anchor_lang::error::ErrorCode) -> Check<'static> {
+    Check::err(ProgramError::Custom(error as u32))
 }
 
 // ---------------------------------------------------------------------------
@@ -695,16 +728,6 @@ fn mollusk_initialize_token_account_rejects_nonzero_initial_balance() {
 
 #[test]
 fn mollusk_confidential_transfer_self_transfer_is_no_op() {
-    // KNOWN PROGRAM GAP (found during this migration, distinct from the `EncryptedValue::space()`
-    // undercount): `ConfidentialTransfer` marks only `to_account` with `#[account(mut, dup)]` to
-    // support `from_account == to_account`. It does not mark `from_balance_value`/
-    // `to_balance_value` the same way, but those addresses are *derived* from
-    // `from_account`/`to_account` and are therefore also equal on a self-transfer. Anchor's
-    // `DuplicateMutableAccountKeys` check still collects both as distinct mutable fields and
-    // rejects the instruction with `ConstraintDuplicateMutableAccount` (2040) before the business
-    // logic's own `from_key == to_key` no-op short-circuit ever runs. This test pins that actual
-    // (unintended) behavior; the fix is a program-side `dup` annotation on
-    // `from_balance_value`/`to_balance_value`, out of scope for this test-only migration.
     let fixture = TokenFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
     let amount_handle = handle_for_chain(9, BALANCE_FHE_TYPE);
@@ -720,7 +743,8 @@ fn mollusk_confidential_transfer_self_transfer_is_no_op() {
 
     let result = context.process_instruction(&ix);
 
-    assert!(result.raw_result.is_err());
+    assert!(result.raw_result.is_ok());
+    assert!(result.inner_instructions.is_empty());
     let balance_value = read_encrypted_value(&context, fixture.alice_balance_value);
     assert_eq!(balance_value.current_handle, fixture.alice_initial);
     assert_eq!(balance_value.leaf_count, 0);
@@ -731,8 +755,7 @@ fn mollusk_confidential_transfer_self_transfer_is_no_op() {
 }
 
 #[test]
-fn mollusk_confidential_transfer_supersedes_balances_in_place_and_creates_transferred_amount_lineage(
-) {
+fn mollusk_confidential_transfer_updates_balance_lineages_and_transferred_amount() {
     let fixture = TokenFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
     let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
@@ -765,10 +788,42 @@ fn mollusk_confidential_transfer_supersedes_balances_in_place_and_creates_transf
     let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
     assert_ne!(alice_balance.current_handle, fixture.alice_initial);
     assert_ne!(bob_balance.current_handle, fixture.bob_initial);
-    // Supersession appended exactly one historical leaf per lineage (one USE subject each: the
-    // owner and the compute signer both hold USE, so two leaves per supersession).
+    // Supersession appended exactly one historical leaf per USE subject; the owner and compute
+    // signer both hold USE, so each balance lineage gets two leaves.
     assert_eq!(alice_balance.leaf_count, 2);
     assert_eq!(bob_balance.leaf_count, 2);
+    assert_eq!(
+        alice_balance.subjects,
+        vec![fixture.owner, fixture.compute_signer]
+    );
+    assert_eq!(
+        alice_balance.subject_roles,
+        vec![host::ACL_ROLE_USE, host::ACL_ROLE_USE]
+    );
+    assert_eq!(
+        alice_balance.peaks,
+        expected_historical_peaks(
+            fixture.alice_balance_value,
+            fixture.alice_initial,
+            &[fixture.owner, fixture.compute_signer],
+        )
+    );
+    assert_eq!(
+        bob_balance.subjects,
+        vec![fixture.bob_owner, fixture.compute_signer]
+    );
+    assert_eq!(
+        bob_balance.subject_roles,
+        vec![host::ACL_ROLE_USE, host::ACL_ROLE_USE]
+    );
+    assert_eq!(
+        bob_balance.peaks,
+        expected_historical_peaks(
+            fixture.bob_balance_value,
+            fixture.bob_initial,
+            &[fixture.bob_owner, fixture.compute_signer],
+        )
+    );
 
     // A lineage entry for the transferred amount was created (first bind) at the canonical PDA.
     let transferred = read_encrypted_value(&context, transferred_value_address);
@@ -847,9 +902,11 @@ fn mollusk_confidential_transfer_rejects_owner_mismatch() {
         }
     }
 
-    let result = context.process_instruction(&ix);
+    context.process_and_validate_instruction(
+        &ix,
+        &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
+    );
 
-    assert!(result.raw_result.is_err());
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     assert_eq!(alice_balance.current_handle, fixture.alice_initial);
 }
@@ -872,9 +929,13 @@ fn mollusk_confidential_transfer_rejects_attestation_user_mismatch() {
         attestation,
     );
 
-    let result = context.process_instruction(&ix);
+    context.process_and_validate_instruction(
+        &ix,
+        &[token_error(
+            token::ConfidentialTokenError::AttestationUserMismatch,
+        )],
+    );
 
-    assert!(result.raw_result.is_err());
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
     assert_eq!(alice_balance.current_handle, fixture.alice_initial);
@@ -902,9 +963,13 @@ fn mollusk_confidential_transfer_rejects_attestation_contract_mismatch() {
         attestation,
     );
 
-    let result = context.process_instruction(&ix);
+    context.process_and_validate_instruction(
+        &ix,
+        &[token_error(
+            token::ConfidentialTokenError::AttestationContractMismatch,
+        )],
+    );
 
-    assert!(result.raw_result.is_err());
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
     assert_eq!(alice_balance.current_handle, fixture.alice_initial);
@@ -939,9 +1004,13 @@ fn mollusk_confidential_transfer_rejects_stale_balance_encrypted_value() {
         attestation,
     );
 
-    let result = context.process_instruction(&ix);
+    context.process_and_validate_instruction(
+        &ix,
+        &[anchor_error(
+            anchor_lang::error::ErrorCode::ConstraintAddress,
+        )],
+    );
 
-    assert!(result.raw_result.is_err());
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     assert_eq!(alice_balance.current_handle, fixture.alice_initial);
 }

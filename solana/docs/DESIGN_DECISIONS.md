@@ -1101,6 +1101,12 @@ address prediction (nonce counters, `balance_acl_record`) disappears — `Confid
 just points at one stable `balance_encrypted_value`. `EVM_PARITY.md`'s ACL/material rows need updating
 to match (tracked as part of this same change).
 
+`ACL_ROLE_USE` gates every decrypt-relevant surface consistently: `fhe_eval` operands, the
+`HistoricalAccessLeaf`s sealed on supersession (USE-only subjects), and the KMS connector's
+current-handle user-decrypt authorization. Without the last leg a GRANT-only subject could decrypt
+the live handle yet lose that access the moment the handle is superseded — an incoherence caught in
+review and closed by enforcing USE in the KMS current path.
+
 ## DD-033: No ACL-Lifecycle Events — Self-Describing Args + Instruction-Replay Indexing
 
 Status: adopted
@@ -1237,7 +1243,13 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - `fhe_eval` has no `RandBounded` step; `create_random_bounded_amount`/bounded-rand eval were removed
   with the old model and are not yet rebuilt on `EncryptedValue` (DD-032).
 - The relayer's own Solana user-decrypt path does not yet call the MMR proof service in-process
-  (DD-035) — only the interim internal HTTP endpoint exists today.
+  (DD-035) — only the interim internal HTTP endpoint exists today. When it lands, the user-decrypt
+  dedup hash must also cover the proof fields (`acl_value_key`, `proof_slot`, proof bytes).
+- Proof-service high availability (DD-035): a single relayer-colocated instance with a file-backed
+  rebuildable cache is the whole story today; replication/failover is unaddressed.
+- The old 4-leg receiver-callback flow was deleted with the legacy model, but a Solana-native
+  composition pattern for contract-to-contract confidential calls has not been designed to replace
+  it.
 - Subject-list overflow beyond `MAX_ENCRYPTED_VALUE_SUBJECTS` (8 subjects per `EncryptedValue`) is
   deferred; there is no overflow/paging account yet.
 - Listener-core integration for the new event-free `EncryptedValue` instruction decoding (DD-033) is

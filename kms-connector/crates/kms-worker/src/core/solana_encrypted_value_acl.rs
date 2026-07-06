@@ -32,12 +32,12 @@
 //! `kms-connector/` + `sdk/js-sdk/` only (parallel agents own `solana/`), so the
 //! shared crate cannot be fixed here. Instead, this module locally decodes the
 //! REAL on-chain byte layout (mirroring `zama-host`'s own `EncryptedValue::to_shared`,
-//! which performs the identical projection on-chain) and then **projects** into
-//! `zama_solana_acl::EncryptedValue`, dropping `subject_roles`: the ACL semantics
-//! this crate cares about — MMR peaks, leaf_count, subjects membership,
-//! current_handle — are unaffected by role bytes. This keeps the KMS on the
-//! shared crate's `authorize_current` / `authorize_historical` / `authorize_public`
-//! for every actual authorization decision; only the raw byte decode is local.
+//! which performs the identical projection on-chain), preserves `subject_roles`
+//! alongside the projected `zama_solana_acl::EncryptedValue`, and locally enforces
+//! the host's current-decrypt USE-role policy before/after delegating to the shared
+//! crate's role-less authorization helpers. Historical/public MMR authorization
+//! still stays entirely in the shared crate because the leaf commitments already
+//! encode the authorized subject/handle history.
 //!
 //! If the shared crate's `EncryptedValue` is ever extended with `subject_roles` in
 //! the matching position, this module's local decode becomes redundant with
@@ -55,6 +55,9 @@ use super::solana_acl::{
     HandleBytes, SolanaAclVerificationError, SolanaAclVerifier, SolanaPubkeyBytes,
 };
 
+/// Mirrors `ACL_ROLE_USE` from `solana/programs/zama-host/src/constants.rs`.
+const ACL_ROLE_USE: u8 = 0x01;
+
 /// Byte-exact mirror of `zama-host`'s on-chain `EncryptedValue` account body (i.e. its Borsh
 /// layout, discriminator excluded) — see the module doc for why this must NOT be
 /// `zama_solana_acl::EncryptedValue`. Kept `pub(crate)` — only [`decode_encrypted_value_acl`]
@@ -66,28 +69,55 @@ struct OnChainEncryptedValue {
     encrypted_value_label: [u8; 32],
     current_handle: [u8; 32],
     subjects: Vec<[u8; 32]>,
-    /// Role flags parallel to `subjects`. Host-program-only policy — dropped when projecting to
-    /// the shared crate's ACL/MMR type; see the module doc.
+    /// Role flags parallel to `subjects`. Host-program-only policy, preserved next to the
+    /// projected shared ACL/MMR type; see the module doc.
     subject_roles: Vec<u8>,
     leaf_count: u64,
     peaks: Vec<[u8; 32]>,
     bump: u8,
 }
 
+/// KMS-local decoded lineage: the shared ACL/MMR state plus host-only role bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DecodedEncryptedValueAcl {
+    pub acl: EncryptedValue,
+    pub subject_roles: Vec<u8>,
+}
+
 impl OnChainEncryptedValue {
-    /// Projects to the shared crate's wire type, dropping `subject_roles`. Mirrors
-    /// `zama-host`'s own `EncryptedValue::to_shared`.
-    fn to_shared(&self) -> EncryptedValue {
-        EncryptedValue {
-            acl_domain_key: self.acl_domain_key,
-            app_account: self.app_account,
-            encrypted_value_label: self.encrypted_value_label,
-            current_handle: self.current_handle,
-            subjects: self.subjects.clone(),
-            leaf_count: self.leaf_count,
-            peaks: self.peaks.clone(),
-            bump: self.bump,
+    /// Projects to the shared crate's wire type while preserving host-only roles next to it.
+    fn to_decoded(&self) -> Result<DecodedEncryptedValueAcl, SolanaAclVerificationError> {
+        if self.subject_roles.len() != self.subjects.len() {
+            return Err(SolanaAclVerificationError::InvalidAccountData);
         }
+        Ok(DecodedEncryptedValueAcl {
+            acl: EncryptedValue {
+                acl_domain_key: self.acl_domain_key,
+                app_account: self.app_account,
+                encrypted_value_label: self.encrypted_value_label,
+                current_handle: self.current_handle,
+                subjects: self.subjects.clone(),
+                leaf_count: self.leaf_count,
+                peaks: self.peaks.clone(),
+                bump: self.bump,
+            },
+            subject_roles: self.subject_roles.clone(),
+        })
+    }
+}
+
+impl DecodedEncryptedValueAcl {
+    #[cfg(test)]
+    fn from_parts(acl: EncryptedValue, subject_roles: Vec<u8>) -> Self {
+        Self { acl, subject_roles }
+    }
+
+    fn subject_role(&self, subject: SolanaPubkeyBytes) -> Option<u8> {
+        self.acl
+            .subjects
+            .iter()
+            .position(|candidate| *candidate == subject)
+            .and_then(|index| self.subject_roles.get(index).copied())
     }
 }
 
@@ -106,14 +136,14 @@ pub fn encrypted_value_acl_address(
 /// module doc), then projects to the shared crate's `EncryptedValue` for authorization.
 pub fn decode_encrypted_value_acl(
     data: &[u8],
-) -> Result<EncryptedValue, SolanaAclVerificationError> {
+) -> Result<DecodedEncryptedValueAcl, SolanaAclVerificationError> {
     if data.len() < 8 || data[..8] != encrypted_value_discriminator() {
         return Err(map_acl_error(AclError::BadDiscriminator));
     }
     let mut body = &data[8..];
     let decoded = OnChainEncryptedValue::deserialize(&mut body)
         .map_err(|_| map_acl_error(AclError::BadAccountData))?;
-    Ok(decoded.to_shared())
+    decoded.to_decoded()
 }
 
 fn map_acl_error(error: AclError) -> SolanaAclVerificationError {
@@ -171,16 +201,24 @@ impl SolanaAclVerifier {
         &self,
         account_key: SolanaPubkeyBytes,
         owner: SolanaPubkeyBytes,
-        acl: &EncryptedValue,
+        decoded: &DecodedEncryptedValueAcl,
         handle: HandleBytes,
         subject: SolanaPubkeyBytes,
         allowed_acl_domain_keys: &[SolanaPubkeyBytes],
     ) -> Result<(), SolanaAclVerificationError> {
+        let acl = &decoded.acl;
         self.verify_canonical(account_key, owner, acl)?;
         if !allowed_acl_domain_keys.contains(&acl.acl_domain_key) {
             return Err(SolanaAclVerificationError::DomainNotAllowed);
         }
-        authorize_current(acl, handle, subject).map_err(map_acl_error)
+        authorize_current(acl, handle, subject).map_err(map_acl_error)?;
+        let role = decoded
+            .subject_role(subject)
+            .ok_or(SolanaAclVerificationError::EncryptedValueSubjectMissing)?;
+        if role & ACL_ROLE_USE != ACL_ROLE_USE {
+            return Err(SolanaAclVerificationError::EncryptedValueSubjectUseRoleMissing);
+        }
+        Ok(())
     }
 
     /// Historical decrypt: a valid historical-access MMR proof against the LIVE finalized peaks
@@ -238,6 +276,7 @@ mod tests {
     const APP: SolanaPubkeyBytes = [2; 32];
     const OWNER: SolanaPubkeyBytes = [3; 32];
     const STRANGER: SolanaPubkeyBytes = [4; 32];
+    const ACL_ROLE_GRANT: u8 = 0x02;
     const LABEL: [u8; 32] = *b"balance_________________________";
 
     fn h(tag: u8) -> HandleBytes {
@@ -305,6 +344,14 @@ mod tests {
         SolanaAclVerifier::new(HOST)
     }
 
+    fn with_roles(l: &Lineage, subject_roles: Vec<u8>) -> DecodedEncryptedValueAcl {
+        DecodedEncryptedValueAcl::from_parts(l.acl.clone(), subject_roles)
+    }
+
+    fn use_roles(l: &Lineage) -> DecodedEncryptedValueAcl {
+        with_roles(l, vec![ACL_ROLE_USE; l.acl.subjects.len()])
+    }
+
     /// Encodes a lineage using the REAL on-chain layout (with `subject_roles`), exactly as
     /// `zama-host` would write it — NOT the shared crate's `encode_account`, which lacks the
     /// field. Exercises the local decode routine this module exists for.
@@ -328,36 +375,55 @@ mod tests {
     #[test]
     fn current_and_rejections() {
         let l = lineage(h(10), &[OWNER]);
+        let decoded = use_roles(&l);
         let v = verifier();
         assert!(
-            v.verify_current_user_decrypt(l.account, HOST, &l.acl, h(10), OWNER, &[DOMAIN])
+            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
                 .is_ok()
         );
         assert_eq!(
-            v.verify_current_user_decrypt(l.account, HOST, &l.acl, h(10), STRANGER, &[DOMAIN])
+            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), STRANGER, &[DOMAIN])
                 .unwrap_err(),
             SolanaAclVerificationError::EncryptedValueSubjectMissing
         );
         assert_eq!(
-            v.verify_current_user_decrypt(l.account, HOST, &l.acl, h(10), OWNER, &[[9; 32]])
+            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[[9; 32]])
                 .unwrap_err(),
             SolanaAclVerificationError::DomainNotAllowed
         );
         assert_eq!(
-            v.verify_current_user_decrypt(l.account, [7; 32], &l.acl, h(10), OWNER, &[DOMAIN])
+            v.verify_current_user_decrypt(l.account, [7; 32], &decoded, h(10), OWNER, &[DOMAIN])
                 .unwrap_err(),
             SolanaAclVerificationError::InvalidAccountOwner
         );
     }
 
     #[test]
+    fn current_requires_use_role() {
+        let l = lineage(h(10), &[OWNER]);
+        let grant_only = with_roles(&l, vec![ACL_ROLE_GRANT]);
+        assert_eq!(
+            verifier()
+                .verify_current_user_decrypt(l.account, HOST, &grant_only, h(10), OWNER, &[DOMAIN])
+                .unwrap_err(),
+            SolanaAclVerificationError::EncryptedValueSubjectUseRoleMissing
+        );
+
+        let use_subject = use_roles(&l);
+        verifier()
+            .verify_current_user_decrypt(l.account, HOST, &use_subject, h(10), OWNER, &[DOMAIN])
+            .expect("USE-role subject must decrypt the current handle");
+    }
+
+    #[test]
     fn rejects_non_canonical_acl_account() {
         let l = lineage(h(10), &[OWNER]);
+        let decoded = use_roles(&l);
         let wrong_account: SolanaPubkeyBytes = [0xab; 32];
         assert_ne!(wrong_account, l.account);
         assert_eq!(
             verifier()
-                .verify_current_user_decrypt(wrong_account, HOST, &l.acl, h(10), OWNER, &[DOMAIN])
+                .verify_current_user_decrypt(wrong_account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
                 .unwrap_err(),
             SolanaAclVerificationError::NonCanonicalEncryptedValueAcl
         );
@@ -367,9 +433,10 @@ mod tests {
     fn rejects_bump_mismatch() {
         let mut l = lineage(h(10), &[OWNER]);
         l.acl.bump ^= 1;
+        let decoded = use_roles(&l);
         assert_eq!(
             verifier()
-                .verify_current_user_decrypt(l.account, HOST, &l.acl, h(10), OWNER, &[DOMAIN])
+                .verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
                 .unwrap_err(),
             SolanaAclVerificationError::EncryptedValueAclBumpMismatch
         );
@@ -406,8 +473,9 @@ mod tests {
         let mut l = lineage(h(10), &[OWNER]);
         l.rotate(h(11));
         let v = verifier();
+        let decoded = use_roles(&l);
         assert_eq!(
-            v.verify_current_user_decrypt(l.account, HOST, &l.acl, h(10), OWNER, &[DOMAIN])
+            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
                 .unwrap_err(),
             SolanaAclVerificationError::EncryptedValueHandleMismatch
         );
@@ -430,6 +498,31 @@ mod tests {
             v.verify_historical_user_decrypt(target(h(99)), OWNER, &[DOMAIN], &proof)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn historical_proof_path_stays_roleless() {
+        let mut l = lineage(h(10), &[OWNER]);
+        l.rotate(h(11));
+        let data = encode_on_chain(&l.acl, vec![ACL_ROLE_GRANT]);
+        let decoded = decode_encrypted_value_acl(&data).unwrap();
+
+        assert_eq!(
+            verifier()
+                .verify_current_user_decrypt(l.account, HOST, &decoded, h(11), OWNER, &[DOMAIN])
+                .unwrap_err(),
+            SolanaAclVerificationError::EncryptedValueSubjectUseRoleMissing
+        );
+
+        let target = EncryptedValueTarget {
+            account_key: l.account,
+            owner: HOST,
+            acl: &decoded.acl,
+            encrypted_value: h(10),
+        };
+        verifier()
+            .verify_historical_user_decrypt(target, OWNER, &[DOMAIN], &l.proof(0))
+            .expect("historical proof verification must stay unchanged");
     }
 
     #[test]
@@ -466,15 +559,16 @@ mod tests {
 
         let decoded = decode_encrypted_value_acl(&data).unwrap();
         assert_eq!(
-            decoded, l.acl,
+            decoded.acl, l.acl,
             "decoded ACL/MMR state must match the shared in-memory value"
         );
+        assert_eq!(decoded.subject_roles, vec![ACL_ROLE_USE]);
 
         let proof = l.proof(0);
         let target = EncryptedValueTarget {
             account_key: l.account,
             owner: HOST,
-            acl: &decoded,
+            acl: &decoded.acl,
             encrypted_value: h(10),
         };
         assert!(

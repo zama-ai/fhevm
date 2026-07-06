@@ -51,11 +51,8 @@
 //! to the account's live `leaf_count`:
 //! - **mismatch** → `ProcessingError::RecoverableBudgetExempt`: the lineage advanced since the
 //!   proof was built and the proof's mountain may have merged, so the client can rebuild and
-//!   resubmit a fresh proof. This variant is retried by `DbEventProcessor` exactly like
-//!   `Recoverable` (marks the event pending) but is EXEMPT from the attempt budget — the
-//!   processor never increments `event.error_counter` for it, and `max_decryption_attempts` is
-//!   never consulted for it — because this is a legitimate client retry, not a failure to charge
-//!   against.
+//!   resubmit a fresh proof. This budget-exempt path is only for MMR proof verification failures;
+//!   domain/owner/canonical-account failures are request errors even if the count changed.
 //! - **match** (proof_slot == live leaf_count but still fails to verify) → `Irrecoverable`: the
 //!   proof is simply wrong for the account's actual state, not stale.
 //!
@@ -67,7 +64,8 @@ use crate::core::{
     event_processor::ProcessingError,
     solana_acl::{HandleBytes, SolanaAclVerifier, SolanaPubkeyBytes},
     solana_encrypted_value_acl::{
-        EncryptedValueTarget, decode_encrypted_value_acl, encrypted_value_acl_address,
+        DecodedEncryptedValueAcl, EncryptedValueTarget, decode_encrypted_value_acl,
+        encrypted_value_acl_address,
     },
     solana_v2_fetcher::SolanaV2Fetcher,
 };
@@ -189,7 +187,7 @@ pub fn require_single_handle(handles: &[HandleBytes]) -> Result<HandleBytes, Pro
 async fn fetch_encrypted_value_acl(
     host: &SolanaHost,
     value_key: [u8; 32],
-) -> Result<(SolanaPubkeyBytes, EncryptedValue), ProcessingError> {
+) -> Result<(SolanaPubkeyBytes, DecodedEncryptedValueAcl), ProcessingError> {
     let (account_key, _bump) = encrypted_value_acl_address(host.program_id, value_key);
 
     let account = host
@@ -225,7 +223,7 @@ pub fn dispatch_solana_current(
     verifier: &SolanaAclVerifier,
     account_key: SolanaPubkeyBytes,
     owner: SolanaPubkeyBytes,
-    acl: &EncryptedValue,
+    decoded: &DecodedEncryptedValueAcl,
     handle: HandleBytes,
     auth: &VerifiedSolanaAuth,
 ) -> Result<(), ProcessingError> {
@@ -233,7 +231,7 @@ pub fn dispatch_solana_current(
         .verify_current_user_decrypt(
             account_key,
             owner,
-            acl,
+            decoded,
             handle,
             auth.identity,
             &auth.allowed_acl_domain_keys,
@@ -307,13 +305,18 @@ fn classify_mmr_verification_failure(
     proof_slot: u64,
     live_leaf_count: u64,
 ) -> ProcessingError {
-    if proof_slot != live_leaf_count {
+    let is_freshness_shaped = matches!(
+        error,
+        crate::core::solana_acl::SolanaAclVerificationError::HistoricalAccessProofInvalid
+            | crate::core::solana_acl::SolanaAclVerificationError::PublicDecryptProofInvalid
+    );
+    if is_freshness_shaped && proof_slot != live_leaf_count {
         ProcessingError::RecoverableBudgetExempt(anyhow!(
             "Solana MMR proof stale: built at leaf_count={proof_slot}, live leaf_count={live_leaf_count} ({error})"
         ))
     } else {
         ProcessingError::Irrecoverable(anyhow!(
-            "Solana MMR proof invalid at matching leaf_count={live_leaf_count}: {error}"
+            "Solana MMR proof invalid or non-freshness failure at live leaf_count={live_leaf_count}: {error}"
         ))
     }
 }
@@ -327,12 +330,26 @@ pub async fn check_solana_handles_acl(
 ) -> Result<(), ProcessingError> {
     let handle = require_single_handle(handles)?;
     let verifier = SolanaAclVerifier::new(host.program_id);
-    let (account_key, acl) = fetch_encrypted_value_acl(host, auth.acl_value_key).await?;
+    let (account_key, decoded) = fetch_encrypted_value_acl(host, auth.acl_value_key).await?;
 
     if auth.mmr_proof_bytes.is_empty() {
-        dispatch_solana_current(&verifier, account_key, host.program_id, &acl, handle, auth)
+        dispatch_solana_current(
+            &verifier,
+            account_key,
+            host.program_id,
+            &decoded,
+            handle,
+            auth,
+        )
     } else {
-        dispatch_solana_mmr_proof(&verifier, account_key, host.program_id, &acl, handle, auth)
+        dispatch_solana_mmr_proof(
+            &verifier,
+            account_key,
+            host.program_id,
+            &decoded.acl,
+            handle,
+            auth,
+        )
     }
 }
 
@@ -389,6 +406,7 @@ mod tests {
     const DOMAIN: SolanaPubkeyBytes = [1u8; 32];
     const APP: SolanaPubkeyBytes = [2u8; 32];
     const LABEL: [u8; 32] = *b"balance_________________________";
+    const ACL_ROLE_USE: u8 = 0x01;
 
     /// Wraps a raw ed25519 seed in a minimal PKCS#8 v1 document.
     fn pkcs8_from_seed(seed: &[u8; 32]) -> Vec<u8> {
@@ -487,6 +505,13 @@ mod tests {
         blob
     }
 
+    fn decoded(l: &Lineage) -> DecodedEncryptedValueAcl {
+        DecodedEncryptedValueAcl {
+            acl: l.acl.clone(),
+            subject_roles: vec![ACL_ROLE_USE; l.acl.subjects.len()],
+        }
+    }
+
     /// Builds a v2-signed single-handle request. `proof_blob`/`value_key`/`proof_slot` (when
     /// non-empty/non-zero) are packed into `extraData` and bound into the signature exactly as
     /// production does.
@@ -551,6 +576,51 @@ mod tests {
             }],
             payload,
         }
+    }
+
+    #[test]
+    fn signing_preimage_with_mmr_tail_matches_shared_vector() {
+        let identity = [0x07u8; 32];
+        let nonce = [0x09u8; 32];
+        let mut context_id = [0u8; 32];
+        context_id[30] = 0x12;
+        context_id[31] = 0x34;
+        let domain_keys = [[0x01u8; 32], [0x02u8; 32]];
+        let public_key = b"public-key-bytes";
+        let handles = [[0x03u8; 32], [0xaau8; 32]];
+        let acl_value_key = [0x55u8; 32];
+        let mmr_proof_bytes = [0x01u8, 0x02, 0x03];
+        let proof_slot = 42;
+
+        let preimage = solana_user_decrypt_signing_preimage(&SolanaUserDecryptSigningInput {
+            contracts_chain_id: 0xcafe,
+            public_key,
+            handles: &handles,
+            identity: &identity,
+            context_id: &context_id,
+            nonce: &nonce,
+            allowed_acl_domain_keys: &domain_keys,
+            start_timestamp: 1000,
+            duration_seconds: 3600,
+            acl_value_key: &acl_value_key,
+            mmr_proof_bytes: &mmr_proof_bytes,
+            proof_slot,
+        });
+        assert_eq!(
+            format!("0x{}", alloy::hex::encode(preimage)),
+            "0x7a616d612d736f6c616e612d757365722d646563727970742d7632000000000000cafe000000107075626c69632d6b65792d6279746573000000020303030303030303030303030303030303030303030303030303030303030303aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa070707070707070707070707070707070707070707070707070707070707070700000000000000000000000000000000000000000000000000000000000012340909090909090909090909090909090909090909090909090909090909090909000000020101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020200000000000003e80000000000000e105555555555555555555555555555555555555555555555555555555555555555000000000000002a00000003010203"
+        );
+
+        let extra_data = encode_solana_extra_data_mmr_proof(
+            context_id,
+            acl_value_key,
+            proof_slot,
+            &mmr_proof_bytes,
+        );
+        assert_eq!(
+            format!("0x{}", alloy::hex::encode(extra_data)),
+            "0x0200000000000000000000000000000000000000000000000000000000000012345555555555555555555555555555555555555555555555555555555555555555000000000000002a00000003010203"
+        );
     }
 
     #[test]
@@ -681,6 +751,27 @@ mod tests {
             .expect("a proof that still verifies against live peaks must be accepted");
     }
 
+    #[test]
+    fn domain_not_allowed_with_stale_slot_is_not_budget_exempt() {
+        let kp = identity_kp(14);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut l = lineage(h(70), &[owner]);
+        l.rotate(h(71));
+        let proof_slot = l.acl.leaf_count;
+        let blob = proof_blob(MMR_MODE_HISTORICAL, &l.proof(0));
+        l.rotate(h(72));
+        assert_ne!(proof_slot, l.acl.leaf_count);
+
+        let request = signed_mmr_request(&kp, h(70), l.value_key(), blob, proof_slot);
+        let mut auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
+        auth.allowed_acl_domain_keys = vec![[0x99u8; 32]];
+
+        let verifier = SolanaAclVerifier::new(HOST);
+        let err = dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(70), &auth)
+            .expect_err("domain failures must not get budget-exempt stale retries");
+        assert!(matches!(err, ProcessingError::Irrecoverable(_)));
+    }
+
     // (3c) CURRENT ACCEPT
     #[test]
     fn current_lineage_accept() {
@@ -694,7 +785,7 @@ mod tests {
         assert_ne!(auth.acl_value_key, [0u8; 32]);
 
         let verifier = SolanaAclVerifier::new(HOST);
-        dispatch_solana_current(&verifier, l.account, HOST, &l.acl, h(40), &auth)
+        dispatch_solana_current(&verifier, l.account, HOST, &decoded(&l), h(40), &auth)
             .expect("current-lineage decrypt of the live handle by a subject must authorize");
     }
 
@@ -709,7 +800,7 @@ mod tests {
         let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
 
         let verifier = SolanaAclVerifier::new(HOST);
-        let err = dispatch_solana_current(&verifier, l.account, HOST, &l.acl, h(50), &auth)
+        let err = dispatch_solana_current(&verifier, l.account, HOST, &decoded(&l), h(50), &auth)
             .expect_err("a non-subject must not be authorized for the current handle");
         assert!(matches!(err, ProcessingError::Recoverable(_)));
     }
@@ -726,7 +817,7 @@ mod tests {
         let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
 
         let verifier = SolanaAclVerifier::new(HOST);
-        let err = dispatch_solana_current(&verifier, l.account, HOST, &l.acl, h(60), &auth)
+        let err = dispatch_solana_current(&verifier, l.account, HOST, &decoded(&l), h(60), &auth)
             .expect_err("a rotated-away handle must not authorize via the no-proof current path");
         assert!(matches!(err, ProcessingError::Recoverable(_)));
     }

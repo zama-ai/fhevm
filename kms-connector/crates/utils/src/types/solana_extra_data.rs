@@ -25,8 +25,8 @@
 //! ‖ domain_key_count ‖ key[0] ‖ ... ‖ key[N-1]   (4 bytes BE count, then 32 bytes each)
 //! ‖ start_timestamp                              (8 bytes BE)
 //! ‖ duration_seconds                             (8 bytes BE)
-//! ‖ acl_value_key                                (32 bytes; zero when no MMR proof)
-//! ‖ proof_slot                                   (8 bytes BE; 0 when no MMR proof)
+//! ‖ acl_value_key                                (32 bytes; zero only when no lineage is named)
+//! ‖ proof_slot                                   (8 bytes BE; 0 for current/no-proof requests)
 //! ‖ mmr_proof_len ‖ mmr_proof_bytes              (4 bytes BE length, then the verbatim proof blob)
 //! ```
 //!
@@ -80,8 +80,8 @@ pub struct SolanaUserDecryptSigningInput<'a> {
     pub start_timestamp: u64,
     /// Validity window duration (seconds).
     pub duration_seconds: u64,
-    /// The lineage value key for a historical/public MMR-proof decrypt; all-zero for a
-    /// current-ACL request. Flat `&[u8; 32]` (not a typed key) because this crate has no
+    /// The lineage value key for a current/historical/public decrypt; all-zero only when no
+    /// lineage is named. Flat `&[u8; 32]` (not a typed key) because this crate has no
     /// `zama-solana-acl` dependency — the kms-worker owns the proof decode.
     pub acl_value_key: &'a [u8; 32],
     /// The full MMR-proof transport blob (1-byte mode prefix ‖ Borsh proof) committed verbatim;
@@ -173,7 +173,7 @@ pub const SOLANA_EXTRA_DATA_VERSION_MMR_PROOF: u8 = 0x02;
 pub struct SolanaUserDecryptExtraData {
     /// The 32-byte KMS context id (zero when absent).
     pub context_id: [u8; 32],
-    /// The lineage value key for an MMR-proof decrypt; all-zero for a current-ACL request.
+    /// The lineage value key for a current or MMR-proof decrypt; all-zero only when omitted.
     pub acl_value_key: [u8; 32],
     /// The lineage leaf_count the proof was built against; 0 for a current-ACL request.
     pub proof_slot: u64,

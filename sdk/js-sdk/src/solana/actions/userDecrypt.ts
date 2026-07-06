@@ -6,7 +6,6 @@ import type { EncryptedValueLike } from '../../core/types/encryptedTypes.js';
 import type { ClearValue, Handle } from '../../core/types/encryptedTypes-p.js';
 import type { Bytes32Hex } from '../../core/types/primitives.js';
 import {
-  buildSolanaUserDecryptContextExtraData,
   buildSolanaUserDecryptMmrProofExtraData,
   solanaUserDecryptClientId,
   solanaUserDecryptSigningPreimage,
@@ -59,6 +58,11 @@ export type SolanaUserDecryptParameters = {
     | undefined;
   readonly options?: RelayerUserDecryptOptions | undefined;
   /**
+   * The lineage value key naming the live `EncryptedValue` account for current-handle decrypts.
+   * Required when `mmrProof` is omitted; proof requests use `mmrProof.aclValueKey`.
+   */
+  readonly aclValueKey?: Uint8Array | undefined;
+  /**
    * A historical/public MMR inclusion proof (RFC-024) authorizing this decrypt against the
    * `EncryptedValue` lineage, instead of the live current-handle ACL. Single-handle only (a
    * proof authorizes exactly one handle), so `handles` must have length 1 when this is set.
@@ -67,9 +71,10 @@ export type SolanaUserDecryptParameters = {
    * existing notion of a historical/current distinction (no `isHistorical`/`blockNumber`-style
    * flag anywhere in the request-building path). Rather than invent one, presence of this field
    * IS the signal: callers who supply `mmrProof` get the proof-gated path (verified client-side
-   * below, then attached to the request); callers who omit it get the plain current-ACL path,
-   * unchanged. If a first-class historical/current signal is added to the SDK later, this should
-   * be reconciled with it rather than kept as a second, parallel signal.
+   * below, then attached to the request); callers who omit it get the current-ACL path and must
+   * still provide `aclValueKey` so the connector fetches the intended lineage. If a first-class
+   * historical/current signal is added to the SDK later, this should be reconciled with it rather
+   * than kept as a second, parallel signal.
    */
   readonly mmrProof?: SolanaUserDecryptMmrProofParameter | undefined;
 };
@@ -130,6 +135,14 @@ function randomNonce(): Uint8Array {
   return nonce;
 }
 
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -178,6 +191,15 @@ export async function userDecrypt(
     // `require_single_handle`); a multi-handle request has no single handle for the proof to
     // name, so refuse rather than silently ignoring the proof.
     throw new Error('an MMR proof (`mmrProof`) can only be attached to a single-handle request');
+  }
+  if (mmrProof !== undefined && parameters.aclValueKey !== undefined) {
+    if (!bytesEqual(parameters.aclValueKey, mmrProof.aclValueKey)) {
+      throw new Error('`aclValueKey` must match `mmrProof.aclValueKey` when both are provided');
+    }
+  }
+  const aclValueKey = mmrProof?.aclValueKey ?? parameters.aclValueKey;
+  if (aclValueKey === undefined) {
+    throw new Error('`aclValueKey` is required for current-handle Solana user decrypt requests');
   }
   if (mmrProof !== undefined) {
     // Refuse to sign over a proof that would fail on-chain/in-connector verification: verifying
@@ -230,7 +252,7 @@ export async function userDecrypt(
     allowedAclDomainKeys,
     startTimestamp,
     durationSeconds,
-    aclValueKey: mmrProof?.aclValueKey,
+    aclValueKey,
     mmrProofBytes: mmrProof?.mmrProofBytes,
     proofSlot: mmrProof?.proofSlot,
   };
@@ -276,14 +298,12 @@ export async function userDecrypt(
       },
       publicKey: bytesToHex(publicKey),
       extraData: bytesToHex(
-        mmrProof
-          ? buildSolanaUserDecryptMmrProofExtraData(
-              contextId,
-              mmrProof.aclValueKey,
-              mmrProof.proofSlot,
-              mmrProof.mmrProofBytes,
-            )
-          : buildSolanaUserDecryptContextExtraData(contextId),
+        buildSolanaUserDecryptMmrProofExtraData(
+          contextId,
+          aclValueKey,
+          mmrProof?.proofSlot ?? 0n,
+          mmrProof?.mmrProofBytes ?? new Uint8Array(0),
+        ),
       ),
       solanaUserIdentity: bytesToHex(identity),
       solanaNonce: bytesToHex(nonce),
