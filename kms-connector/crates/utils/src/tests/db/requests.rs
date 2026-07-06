@@ -25,9 +25,7 @@ use fhevm_gateway_bindings::decryption::{
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
 use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::{
-        AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
-    },
+    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
     protocol_config::{
         IProtocolConfig::KmsThresholds,
         ProtocolConfig::{KmsNodeParams, NewKmsContext, NewKmsEpoch, PcrValues},
@@ -48,9 +46,8 @@ pub enum TestEventType {
     UserDecryptionV2,
     PrepKeygen,
     Keygen,
+    CompressedKeyMigrationKeygen,
     Crsgen,
-    AbortKeygen,
-    AbortCrsgen,
     NewKmsContext,
     NewKmsEpoch,
 }
@@ -61,10 +58,8 @@ impl TestEventType {
             Self::PublicDecryption => EventType::PublicDecryptionRequest,
             Self::UserDecryption | Self::UserDecryptionV2 => EventType::UserDecryptionRequest,
             Self::PrepKeygen => EventType::PrepKeygenRequest,
-            Self::Keygen => EventType::KeygenRequest,
+            Self::Keygen | Self::CompressedKeyMigrationKeygen => EventType::KeygenRequest,
             Self::Crsgen => EventType::CrsgenRequest,
-            Self::AbortKeygen => EventType::AbortKeygenRequest,
-            Self::AbortCrsgen => EventType::AbortCrsgenRequest,
             Self::NewKmsContext => EventType::NewKmsContext,
             Self::NewKmsEpoch => EventType::NewKmsEpoch,
         }
@@ -97,9 +92,12 @@ pub async fn insert_rand_request(
             .into(),
         TestEventType::PrepKeygen => insert_rand_prep_keygen_request(db, options).await?.into(),
         TestEventType::Keygen => insert_rand_keygen_request(db, options).await?.into(),
+        TestEventType::CompressedKeyMigrationKeygen => {
+            insert_rand_compressed_key_migration_request(db, options)
+                .await?
+                .into()
+        }
         TestEventType::Crsgen => insert_rand_crsgen_request(db, options).await?.into(),
-        TestEventType::AbortKeygen => insert_rand_abort_keygen_request(db, options).await?.into(),
-        TestEventType::AbortCrsgen => insert_rand_abort_crsgen_request(db, options).await?.into(),
         TestEventType::NewKmsContext => insert_rand_new_kms_context(db, options).await?.into(),
         TestEventType::NewKmsEpoch => insert_rand_new_kms_epoch(db, options).await?.into(),
     };
@@ -334,6 +332,8 @@ pub async fn insert_rand_prep_keygen_request(
     .await?;
 
     Ok(PrepKeygenRequest {
+        mode: 0,
+        existingKeyId: alloy::primitives::U256::ZERO,
         prepKeygenId: prep_keygen_request_id,
         paramsType: params_type as u8,
         extraData: extra_data.into(),
@@ -368,6 +368,45 @@ pub async fn insert_rand_keygen_request(
     Ok(KeygenRequest {
         prepKeygenId: prep_key_id,
         keyId: key_id,
+        mode: 0,
+        existingKeyId: alloy::primitives::U256::ZERO,
+        extraData: extra_data.into(),
+    })
+}
+
+pub async fn insert_rand_compressed_key_migration_request(
+    db: &Pool<Postgres>,
+    options: InsertRequestOptions,
+) -> anyhow::Result<KeygenRequest> {
+    let migration_request_id = options.id.unwrap_or_else(rand_u256);
+    let migrated_key_id = rand_u256();
+    let prep_key_id = rand_u256();
+    let status = options.status.unwrap_or(OperationStatus::Pending);
+    let extra_data = options.build_extra_data();
+
+    sqlx::query!(
+        "INSERT INTO keygen_requests(
+            prep_keygen_id, key_id, migrated_key_id, extra_data, created_at, otlp_context,
+            already_sent, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+        prep_key_id.as_le_slice(),
+        migration_request_id.as_le_slice(),
+        migrated_key_id.as_le_slice(),
+        extra_data.to_vec() as Vec<u8>,
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        options.already_sent,
+        status as OperationStatus,
+    )
+    .execute(db)
+    .await?;
+
+    Ok(KeygenRequest {
+        prepKeygenId: prep_key_id,
+        keyId: migration_request_id,
+        mode: 1,
+        existingKeyId: migrated_key_id,
         extraData: extra_data.into(),
     })
 }
@@ -406,56 +445,6 @@ pub async fn insert_rand_crsgen_request(
         paramsType: params_type as u8,
         extraData: extra_data.into(),
     })
-}
-
-pub async fn insert_rand_abort_keygen_request(
-    db: &Pool<Postgres>,
-    options: InsertRequestOptions,
-) -> anyhow::Result<AbortKeygen> {
-    let prep_keygen_id = options.id.unwrap_or_else(rand_u256);
-    let status = options.status.unwrap_or(OperationStatus::Pending);
-
-    sqlx::query!(
-        "INSERT INTO abort_keygen_requests(
-            prep_keygen_id, otlp_context, created_at, already_sent, status
-        )
-        VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
-        prep_keygen_id.as_le_slice(),
-        bc2wrap::serialize(&PropagationContext::empty())?,
-        Utc::now(),
-        options.already_sent,
-        status as OperationStatus,
-    )
-    .execute(db)
-    .await?;
-
-    Ok(AbortKeygen {
-        prepKeygenId: prep_keygen_id,
-    })
-}
-
-pub async fn insert_rand_abort_crsgen_request(
-    db: &Pool<Postgres>,
-    options: InsertRequestOptions,
-) -> anyhow::Result<AbortCrsgen> {
-    let crs_id = options.id.unwrap_or_else(rand_u256);
-    let status = options.status.unwrap_or(OperationStatus::Pending);
-
-    sqlx::query!(
-        "INSERT INTO abort_crsgen_requests(
-            crs_id, otlp_context, created_at, already_sent, status
-        )
-        VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
-        crs_id.as_le_slice(),
-        bc2wrap::serialize(&PropagationContext::empty())?,
-        Utc::now(),
-        options.already_sent,
-        status as OperationStatus,
-    )
-    .execute(db)
-    .await?;
-
-    Ok(AbortCrsgen { crsId: crs_id })
 }
 
 pub async fn insert_rand_new_kms_context(
@@ -570,20 +559,10 @@ pub async fn check_no_uncompleted_request_in_db(
             WHERE status NOT IN ('completed', 'failed')"
         }
         EventType::KeygenRequest => {
-            "SELECT COUNT(key_id) FROM keygen_requests
-            WHERE status NOT IN ('aborted', 'completed', 'failed')"
+            "SELECT COUNT(key_id) FROM keygen_requests WHERE status NOT IN ('completed', 'failed')"
         }
         EventType::CrsgenRequest => {
-            "SELECT COUNT(crs_id) FROM crsgen_requests
-            WHERE status NOT IN ('aborted', 'completed', 'failed')"
-        }
-        EventType::AbortKeygenRequest => {
-            "SELECT COUNT(prep_keygen_id) FROM abort_keygen_requests
-            WHERE status NOT IN ('completed', 'failed')"
-        }
-        EventType::AbortCrsgenRequest => {
-            "SELECT COUNT(crs_id) FROM abort_crsgen_requests
-            WHERE status NOT IN ('completed', 'failed')"
+            "SELECT COUNT(crs_id) FROM crsgen_requests WHERE status NOT IN ('completed', 'failed')"
         }
         EventType::NewKmsContext => {
             "SELECT COUNT(context_id) FROM new_kms_context
@@ -622,12 +601,6 @@ pub async fn check_request_failed_in_db(
         }
         EventType::CrsgenRequest => {
             "SELECT COUNT(crs_id) FROM crsgen_requests WHERE status = 'failed'"
-        }
-        EventType::AbortKeygenRequest => {
-            "SELECT COUNT(prep_keygen_id) FROM abort_keygen_requests WHERE status = 'failed'"
-        }
-        EventType::AbortCrsgenRequest => {
-            "SELECT COUNT(crs_id) FROM abort_crsgen_requests WHERE status = 'failed'"
         }
         EventType::NewKmsContext => {
             "SELECT COUNT(context_id) FROM new_kms_context WHERE status = 'failed'"

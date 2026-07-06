@@ -100,14 +100,14 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     string private constant CONTRACT_NAME = "KMSGeneration";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
      * @dev Constant used for making sure the version number used in the `reinitializer` modifier
-     * is identical between `initializeFromEmptyProxy` and `reinitializeV2`.
+     * is identical between `initializeFromEmptyProxy` and `reinitializeV3`.
      */
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     // ----------------------------------------------------------------------------------------------
     // Contract storage:
@@ -167,6 +167,17 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         uint256[] completedKeyIds;
         /// @notice CRS IDs that reached consensus.
         uint256[] completedCrsIds;
+        // ----------------------------------------------------------------------------------------------
+        // Compressed key material production variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The existing key a migration keygen request re-materializes. Non-zero iff the
+        /// request ID is a migration request; this is what keeps the migration and normal keygen
+        /// response endpoints mutually exclusive.
+        mapping(uint256 migrationRequestId => uint256 keyId) migrationRequests;
+        /// @notice The migration request whose consensus published the compressed materials of a key.
+        mapping(uint256 keyId => uint256 migrationRequestId) compressedMaterialRequests;
+        /// @notice The published compressed key material digests, per existing key.
+        mapping(uint256 keyId => KeyDigest[] keyDigests) compressedKeyDigests;
     }
 
     /**
@@ -219,7 +230,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV2() public virtual reinitializer(3) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Backfill completed key/CRS IDs from pre-V2 state. These arrays were added in V2: existing
@@ -239,9 +250,17 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
+     * @notice Re-initializes the contract from V2.
+     */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    // solhint-disable-next-line no-empty-blocks
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+
+    /**
      * @notice See {IKMSGeneration-keygen}.
      */
-    function keygen(ParamsType paramsType) external virtual onlyACLOwner {
+    function keygen(ParamsType paramsType, KeygenMode mode, uint256 existingKeyId) external virtual onlyACLOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Check that the previous keygen request has reached consensus
@@ -249,6 +268,32 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         uint256 previousKeyId = $.keyCounter;
         if (previousKeyId != KEY_COUNTER_BASE && !$.isRequestDone[previousKeyId]) {
             revert KeygenOngoing(previousKeyId);
+        }
+
+        if (mode == KeygenMode.Fresh) {
+            // A fresh keygen mints a new key: an existing key reference is a caller bug.
+            if (existingKeyId != 0) {
+                revert InvalidExistingKeyId(existingKeyId);
+            }
+        } else {
+            // RFC-029: FromExisting re-materializes the ACTIVE key's material as a
+            // CompressedXofKeySet. Same key, same ID; consensus on when to use the new
+            // bytes is handled by the blue-green upgrade path, never by this request.
+            if (!$.isRequestDone[existingKeyId] || existingKeyId > $.keyCounter || existingKeyId <= KEY_COUNTER_BASE) {
+                revert KeyNotGenerated(existingKeyId);
+            }
+            if ($.consensusDigest[existingKeyId] == bytes32(0)) {
+                revert KeyAborted(existingKeyId);
+            }
+            if (existingKeyId != $.activeKeyId) {
+                revert NotActiveKey(existingKeyId);
+            }
+            // One-time per key: once compressed materials exist, they are immutable.
+            if ($.compressedMaterialRequests[existingKeyId] != 0) {
+                revert CompressedKeyMaterialsAlreadyAdded(existingKeyId);
+            }
+            // FromExisting inherits the migrated key's parameters.
+            paramsType = $.requestParamsType[$.keygenIdPairs[existingKeyId]];
         }
 
         // Generate a globally unique prepKeygenId for the key generation preprocessing
@@ -276,12 +321,18 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // has been generated
         $.requestParamsType[prepKeygenId] = paramsType;
 
+        // The mode is part of the request's identity from birth: a FromExisting request ID
+        // is a correlation handle bound to the migrated key, never a key identity.
+        if (mode == KeygenMode.FromExisting) {
+            $.migrationRequests[keyId] = existingKeyId;
+        }
+
         (uint256 contextId, uint256 epochId) = PROTOCOL_CONFIG.getCurrentKmsContextAndEpoch();
         bytes memory extraData = _encodeRequestExtraDataV2(contextId, epochId);
         $.requestExtraData[prepKeygenId] = extraData;
         $.requestExtraData[keyId] = extraData;
 
-        emit PrepKeygenRequest(prepKeygenId, paramsType, extraData);
+        emit PrepKeygenRequest(prepKeygenId, paramsType, mode, existingKeyId, extraData);
     }
 
     /**
@@ -330,7 +381,11 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
             // Get the keyId associated to the prepKeygenId
             uint256 keyId = $.keygenIdPairs[prepKeygenId];
 
-            emit KeygenRequest(prepKeygenId, keyId, extraData);
+            // The mode travels in the event, so consumers never need contract
+            // state to interpret it.
+            uint256 migratedKeyId = $.migrationRequests[keyId];
+            KeygenMode mode = migratedKeyId != 0 ? KeygenMode.FromExisting : KeygenMode.Fresh;
+            emit KeygenRequest(prepKeygenId, keyId, mode, migratedKeyId, extraData);
         }
     }
 
@@ -349,6 +404,14 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         // generate at least one key
         if (keyDigests.length == 0) {
             revert EmptyKeyDigests(keyId);
+        }
+
+        // RFC-029: a FromExisting publication is only useful if it carries the digest
+        // coprocessors verify the downloaded blob against; without it, ingestion could
+        // only retry forever.
+        uint256 migratedKeyId = $.migrationRequests[keyId];
+        if (migratedKeyId != 0) {
+            _checkHasCompressedKeysetDigest(keyId, keyDigests);
         }
 
         (bytes memory extraData, uint256 contextId) = _loadExtraDataAndAuthorizeResponse(keyId);
@@ -384,25 +447,69 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         if (!$.isRequestDone[keyId] && _isKmsConsensusReachedForContext(contextId, consensusTxSenders.length)) {
             $.isRequestDone[keyId] = true;
 
-            // Store the digests of the generated keys in order to retrieve them later
-            // Copy each calldata struct to storage, as copying calldata array of structs to storage
-            // is not yet supported
-            // We do not need to clean `$.keyDigests[keyId]` first as this should only happen once
-            // per keyId
-            for (uint256 i = 0; i < keyDigests.length; i++) {
-                $.keyDigests[keyId].push(keyDigests[i]);
-            }
-
             // Store the digest on which consensus was reached for the keygen request
             $.consensusDigest[keyId] = digest;
 
-            // Set the active keyId
+            _recordKeygenConsensus(
+                keyId,
+                migratedKeyId,
+                keyDigests,
+                _buildConsensusStorageUrls(contextId, consensusTxSenders)
+            );
+        }
+    }
+
+    /**
+     * @notice Records the outcome of a keygen consensus. Fresh keygens activate the new
+     * key; FromExisting keygens only publish the compressed digests under the
+     * migrated key. Publication is not activation; worker activation belongs to
+     * the blue-green upgrade path.
+     */
+    function _recordKeygenConsensus(
+        uint256 keyId,
+        uint256 migratedKeyId,
+        KeyDigest[] calldata keyDigests,
+        string[] memory consensusUrls
+    ) internal virtual {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        if (migratedKeyId != 0) {
+            for (uint256 i = 0; i < keyDigests.length; i++) {
+                $.compressedKeyDigests[migratedKeyId].push(keyDigests[i]);
+            }
+            $.compressedMaterialRequests[migratedKeyId] = keyId;
+            emit CompressedKeyMaterialAdded(migratedKeyId, consensusUrls, keyDigests);
+        } else {
+            // Copy each calldata struct to storage, as copying calldata array of structs
+            // to storage is not yet supported. We do not need to clean
+            // `$.keyDigests[keyId]` first as this should only happen once per keyId.
+            for (uint256 i = 0; i < keyDigests.length; i++) {
+                $.keyDigests[keyId].push(keyDigests[i]);
+            }
             $.activeKeyId = keyId;
             $.completedKeyIds.push(keyId);
-            string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
-
             emit ActivateKey(keyId, consensusUrls, keyDigests);
         }
+    }
+
+    /**
+     * @notice See {IKMSGeneration-getCompressedKeyMaterials}.
+     */
+    function getCompressedKeyMaterials(
+        uint256 keyId
+    ) external view virtual returns (string[] memory, KeyDigest[] memory) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        uint256 migrationRequestId = $.compressedMaterialRequests[keyId];
+        if (migrationRequestId == 0) {
+            revert CompressedKeyMaterialsNotAdded(keyId);
+        }
+
+        bytes32 digest = $.consensusDigest[migrationRequestId];
+        address[] memory consensusTxSenders = $.consensusTxSenderAddresses[migrationRequestId][digest];
+        uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[migrationRequestId]);
+        string[] memory consensusUrls = _buildConsensusStorageUrls(contextId, consensusTxSenders);
+
+        return (consensusUrls, $.compressedKeyDigests[keyId]);
     }
 
     /**
@@ -543,6 +650,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function getKeyParamsType(uint256 keyId) external view virtual returns (ParamsType) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
+        // A migration request ID is a request handle, not a key: the
+        // generic key getters must not return plausible-looking empty
+        // records for it (its digests live under the migrated keyId).
+        if ($.migrationRequests[keyId] != 0) {
+            revert KeyNotGenerated(keyId);
+        }
+
         if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
         }
@@ -649,6 +763,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     function getKeyMaterials(uint256 keyId) external view virtual returns (string[] memory, KeyDigest[] memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        // A migration request ID is a request handle, not a key: the
+        // generic key getters must not return plausible-looking empty
+        // records for it (its digests live under the migrated keyId).
+        if ($.migrationRequests[keyId] != 0) {
+            revert KeyNotGenerated(keyId);
+        }
+
         if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
         }
@@ -669,6 +790,13 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     function getKeyInfo(uint256 keyId) external view virtual returns (KeyInfo memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        // A migration request ID is a request handle, not a key: the
+        // generic key getters must not return plausible-looking empty
+        // records for it (its digests live under the migrated keyId).
+        if ($.migrationRequests[keyId] != 0) {
+            revert KeyNotGenerated(keyId);
+        }
+
         if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
         }
@@ -721,6 +849,21 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
                     Strings.toString(PATCH_VERSION)
                 )
             );
+    }
+
+    /**
+     * @notice Reverts unless the digest set carries a CompressedKeyset-typed entry.
+     */
+    function _checkHasCompressedKeysetDigest(
+        uint256 migrationRequestId,
+        KeyDigest[] calldata keyDigests
+    ) internal pure virtual {
+        for (uint256 i = 0; i < keyDigests.length; i++) {
+            if (keyDigests[i].keyType == KeyType.CompressedKeyset) {
+                return;
+            }
+        }
+        revert MissingCompressedKeysetDigest(migrationRequestId);
     }
 
     /**

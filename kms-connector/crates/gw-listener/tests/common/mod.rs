@@ -26,9 +26,7 @@ use fhevm_gateway_bindings::decryption::{
     },
 };
 use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::{
-        AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
-    },
+    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
 };
 
@@ -161,7 +159,7 @@ pub async fn mock_event_on_gw(
             };
             let tx = test_instance
                 .kms_generation_contract()
-                .keygen(ParamsTypeDb::Test as u8)
+                .keygen(ParamsTypeDb::Test as u8, 0, U256::ZERO)
                 .send()
                 .await?;
             (tx, event.into())
@@ -179,6 +177,20 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
+        TestEventType::CompressedKeyMigrationKeygen => {
+            let rand_migrated_key_id = rand_u256();
+            let event = KeygenRequest {
+                mode: 1,
+                existingKeyId: rand_migrated_key_id,
+                ..Default::default()
+            };
+            let tx = test_instance
+                .kms_generation_contract()
+                .keygen(ParamsTypeDb::Test as u8, 1, rand_migrated_key_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
         TestEventType::Crsgen => {
             let rand_max_bit_length = rand_u256();
             let event = CrsgenRequest {
@@ -188,28 +200,6 @@ pub async fn mock_event_on_gw(
             let tx = test_instance
                 .kms_generation_contract()
                 .crsgenRequest(rand_max_bit_length, ParamsTypeDb::Test as u8)
-                .send()
-                .await?;
-            (tx, event.into())
-        }
-        TestEventType::AbortKeygen => {
-            let rand_prep_id = rand_u256();
-            let event = AbortKeygen {
-                prepKeygenId: rand_prep_id,
-            };
-            let tx = test_instance
-                .kms_generation_contract()
-                .abortKeygen(rand_prep_id)
-                .send()
-                .await?;
-            (tx, event.into())
-        }
-        TestEventType::AbortCrsgen => {
-            let rand_crs_id = rand_u256();
-            let event = AbortCrsgen { crsId: rand_crs_id };
-            let tx = test_instance
-                .kms_generation_contract()
-                .abortCrsgen(rand_crs_id)
                 .send()
                 .await?;
             (tx, event.into())
@@ -281,10 +271,10 @@ pub async fn fetch_from_db(
             "SELECT * FROM user_decryption_requests"
         }
         TestEventType::PrepKeygen => "SELECT * FROM prep_keygen_requests",
-        TestEventType::Keygen => "SELECT * FROM keygen_requests",
+        TestEventType::Keygen | TestEventType::CompressedKeyMigrationKeygen => {
+            "SELECT * FROM keygen_requests"
+        }
         TestEventType::Crsgen => "SELECT * FROM crsgen_requests",
-        TestEventType::AbortKeygen => "SELECT * FROM abort_keygen_requests",
-        TestEventType::AbortCrsgen => "SELECT * FROM abort_crsgen_requests",
         TestEventType::NewKmsContext => "SELECT * FROM new_kms_context",
         TestEventType::NewKmsEpoch => "SELECT * FROM new_kms_epoch",
     };
@@ -346,6 +336,16 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
+        ProtocolEventKind::Keygen(e) if e.mode == 1 => {
+            for r in rows {
+                if Some(e.existingKeyId)
+                    == r.try_get::<Option<[u8; 32]>, _>("migrated_key_id")?
+                        .map(U256::from_le_bytes)
+                {
+                    return Ok(());
+                }
+            }
+        }
         ProtocolEventKind::Keygen(e) => {
             for r in rows {
                 if e.prepKeygenId
@@ -360,22 +360,6 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 if e.maxBitLength
                     == U256::from_le_bytes(r.try_get::<[u8; 32], _>("max_bit_length")?)
                 {
-                    return Ok(());
-                }
-            }
-        }
-        ProtocolEventKind::AbortKeygen(e) => {
-            for r in rows {
-                if e.prepKeygenId
-                    == U256::from_le_bytes(r.try_get::<[u8; 32], _>("prep_keygen_id")?)
-                {
-                    return Ok(());
-                }
-            }
-        }
-        ProtocolEventKind::AbortCrsgen(e) => {
-            for r in rows {
-                if e.crsId == U256::from_le_bytes(r.try_get::<[u8; 32], _>("crs_id")?) {
                     return Ok(());
                 }
             }

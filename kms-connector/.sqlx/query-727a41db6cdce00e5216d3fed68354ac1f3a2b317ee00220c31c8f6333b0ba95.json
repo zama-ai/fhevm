@@ -23,7 +23,9 @@
                             "kind": {
                               "Enum": [
                                 "Server",
-                                "Public"
+                                "Public",
+                                "CompressedPublic",
+                                "CompressedKeyset"
                               ]
                             }
                           }
@@ -51,8 +53,7 @@
                 "pending",
                 "under_process",
                 "completed",
-                "failed",
-                "aborted"
+                "failed"
               ]
             }
           }

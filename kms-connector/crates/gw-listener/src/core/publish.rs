@@ -286,11 +286,16 @@ async fn publish_keygen_request<'e>(
     created_at: DateTime<Utc>,
     otlp_ctx: PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
+    // RFC-029: a FromExisting keygen persists the migrated key so the
+    // kms-worker builds a keygen-from-existing gRPC request.
+    let migrated_key_id =
+        (request.mode == 1).then(|| request.existingKeyId.to_le_bytes::<32>().to_vec());
     sqlx::query!(
-        "INSERT INTO keygen_requests(prep_keygen_id, key_id, extra_data, tx_hash, created_at, otlp_context)
-            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        "INSERT INTO keygen_requests(prep_keygen_id, key_id, migrated_key_id, extra_data, tx_hash, created_at, otlp_context)
+            VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
         request.prepKeygenId.as_le_slice(),
         request.keyId.as_le_slice(),
+        migrated_key_id.as_deref(),
         request.extraData.as_ref(),
         tx_hash.map(|h| h.to_vec()),
         created_at,

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context)\n            VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+  "query": "INSERT INTO keygen_responses(key_id, key_digests, signature, created_at, otlp_context, is_migration)\n            VALUES ($1, $2, $3, $4, $5,\n                EXISTS(SELECT 1 FROM keygen_requests WHERE key_id = $1 AND migrated_key_id IS NOT NULL)\n            ) ON CONFLICT DO NOTHING",
   "describe": {
     "columns": [],
     "parameters": {
@@ -49,5 +49,5 @@
     },
     "nullable": []
   },
-  "hash": "03df1e35723090684088e1462adb47c2f37729495ab255654564e515feb18abe"
+  "hash": "c7f4f391251d41b9e60461bd1cf472ca937bfbed367e6de4b7a7b4b989c21093"
 }
