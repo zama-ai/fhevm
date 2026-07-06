@@ -117,6 +117,10 @@ pub async fn insert_ciphertext64(
     handle: &Vec<u8>,
     ciphertext: &Vec<u8>,
 ) -> anyhow::Result<()> {
+    // Mirror the wave-1 production dual-write: readers on the branch tables
+    // (wave-2 sns paths) and readers on the legacy table (the S3 migration's
+    // rebuild-from-DB fallback, which by definition serves legacy-era bytes)
+    // both see the seeded ciphertext.
     let producer_block_hash = vec![1_u8; 32];
     let _ = sqlx::query(
         "INSERT INTO ciphertexts_branch(handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type)
@@ -132,6 +136,19 @@ pub async fn insert_ciphertext64(
     .execute(pool)
     .await
     .expect("insert into ciphertexts_branch");
+
+    let _ = sqlx::query(
+        "INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT DO NOTHING;",
+    )
+    .bind(handle)
+    .bind(ciphertext)
+    .bind(current_ciphertext_version())
+    .bind(0_i16)
+    .execute(pool)
+    .await
+    .expect("insert into ciphertexts");
 
     Ok(())
 }

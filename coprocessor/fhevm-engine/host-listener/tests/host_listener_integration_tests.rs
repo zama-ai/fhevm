@@ -939,9 +939,27 @@ async fn test_slow_lane_priority_is_monotonic_across_blocks_locally(
     .await?;
     let second_dep_chain_id =
         dep_chain_id_for_output_handle(&setup, second_output).await?;
-    assert_eq!(
+    // Dependence chains are same-block connected components (they are the
+    // worker's batch acquisition unit), so a cross-block continuation forms a
+    // NEW chain linked to its parent via split_dependencies rather than
+    // extending the parent chain.
+    assert_ne!(
         second_dep_chain_id, slow_dep_chain_id,
-        "continuation should stay on the same dependence chain"
+        "cross-block continuation must form its own same-block chain"
+    );
+
+    // Monotonicity is what this test protects: slowness propagates across
+    // the cross-block link to the continuation chain, and the parent chain
+    // never downgrades back to fast.
+    let continuation_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&second_dep_chain_id)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(
+        continuation_priority, 1,
+        "continuation of a slow chain must inherit slow priority"
     );
 
     let final_priority = sqlx::query_scalar::<_, i16>(
