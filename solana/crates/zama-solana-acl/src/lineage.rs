@@ -18,11 +18,8 @@ use crate::{
 /// Why a reconstruction or proof-build could not be trusted against chain state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LineageError {
-    /// A [`LineageEvent::HandleSuperseded`] carried an empty `previous_subjects`.
-    /// On-chain, `update_encrypted_value` always runs over a nonempty
-    /// `subjects` set (create/allow enforce it), so a zero-subject supersession
-    /// can only come from a corrupt or wrongly-sourced record — never from a
-    /// valid chain instruction.
+    /// No longer emitted by reconstruction; kept so older callers that matched
+    /// this public error variant continue to compile.
     EmptySupersededSubjects,
     /// The reconstructed `(peaks, leaf_count)` diverge from the on-chain account's.
     /// The record is incomplete, reordered, or carries wrong subject snapshots;
@@ -96,8 +93,6 @@ pub struct ReconstructedLineage {
 /// authoritative source, exactly as the on-chain handler uses `leaf_count`
 /// before each append — so indices can never desynchronize from event order.
 ///
-/// Returns [`LineageError::EmptySupersededSubjects`] if any supersession has no
-/// subjects: the chain can never produce one, so it signals a corrupt source.
 pub fn reconstruct(
     encrypted_value_account: [u8; 32],
     events: &[LineageEvent],
@@ -110,9 +105,6 @@ pub fn reconstruct(
                 previous_handle,
                 previous_subjects,
             } => {
-                if previous_subjects.is_empty() {
-                    return Err(LineageError::EmptySupersededSubjects);
-                }
                 for subject in previous_subjects {
                     leaves.push(historical_access_leaf_commitment(
                         encrypted_value_account,
@@ -403,32 +395,22 @@ mod tests {
         assert!(!stale.peaks_match(&peaks, count));
     }
 
-    /// A supersession with no subjects can never come from the chain
-    /// (`update_encrypted_value` always runs over a nonempty subject set), so
-    /// reconstruction rejects it outright rather than silently swallowing it and
-    /// shifting every later leaf index.
     #[test]
-    fn empty_superseded_subjects_is_rejected() {
+    fn empty_superseded_subjects_append_no_leaves() {
         let acct = h(0xAC);
-        assert_eq!(
-            reconstruct(acct, &[superseded(h(10), &[])]),
-            Err(LineageError::EmptySupersededSubjects)
-        );
-        // Rejected even when surrounded by valid events.
-        assert_eq!(
-            reconstruct(
-                acct,
-                &[
-                    LineageEvent::MarkedPublic { handle: h(9) },
-                    superseded(h(10), &[]),
-                ],
-            ),
-            Err(LineageError::EmptySupersededSubjects)
-        );
-        assert_eq!(
-            build_proof_from_events(acct, &[superseded(h(10), &[])], 0),
-            Err(LineageError::EmptySupersededSubjects)
-        );
+        let events = [
+            LineageEvent::MarkedPublic { handle: h(9) },
+            superseded(h(10), &[]),
+            LineageEvent::MarkedPublic { handle: h(11) },
+        ];
+        let lineage = reconstruct(acct, &events).unwrap();
+        let expected = vec![
+            public_decrypt_leaf_commitment(acct, 0, h(9)),
+            public_decrypt_leaf_commitment(acct, 1, h(11)),
+        ];
+        assert_eq!(lineage.leaves, expected);
+        let (peaks, count) = peaks_via_append(&lineage.leaves);
+        assert!(lineage.peaks_match(&peaks, count));
     }
 
     #[test]

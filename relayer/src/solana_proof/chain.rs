@@ -41,15 +41,18 @@ pub struct ChainTransaction {
 pub struct OnChainLineageState {
     pub peaks: Vec<[u8; 32]>,
     pub leaf_count: u64,
+    pub proof_slot: u64,
 }
 
 #[async_trait]
 pub trait ChainFetcher: Send + Sync {
     /// Signatures touching `address`, newest-first (as Solana's RPC returns
-    /// them). `until` bounds the oldest signature already processed (exclusive).
+    /// them). `before` pages backward from a previous result; `until` bounds
+    /// the oldest signature already processed.
     async fn get_signatures_for_address(
         &self,
         address: [u8; 32],
+        before: Option<&str>,
         until: Option<&str>,
         limit: usize,
     ) -> Result<Vec<String>, ChainError>;
@@ -253,11 +256,15 @@ impl ChainFetcher for RpcChainFetcher {
     async fn get_signatures_for_address(
         &self,
         address: [u8; 32],
+        before: Option<&str>,
         until: Option<&str>,
         limit: usize,
     ) -> Result<Vec<String>, ChainError> {
         let mut opts = serde_json::Map::new();
         opts.insert("limit".to_string(), json!(limit));
+        if let Some(before) = before {
+            opts.insert("before".to_string(), json!(before));
+        }
         if let Some(until) = until {
             opts.insert("until".to_string(), json!(until));
         }
@@ -345,15 +352,19 @@ impl ChainFetcher for RpcChainFetcher {
         if result.is_null() || result.get("value").map(|v| v.is_null()).unwrap_or(true) {
             return Ok(None);
         }
+        let proof_slot = result["context"]["slot"]
+            .as_u64()
+            .ok_or_else(|| ChainError::Rpc("missing account context slot".to_string()))?;
         let data_field = result["value"]["data"][0]
             .as_str()
             .ok_or_else(|| ChainError::Rpc("missing base64 account data".to_string()))?;
         let raw = base64_decode(data_field).map_err(ChainError::Base58)?;
-        let decoded =
-            zama_solana_acl::decode_account(&raw).map_err(|e| ChainError::Rpc(format!("{e:?}")))?;
+        let (decoded, _) = zama_solana_acl::decode_on_chain_account(&raw)
+            .map_err(|e| ChainError::Rpc(format!("{e:?}")))?;
         Ok(Some(OnChainLineageState {
             peaks: decoded.peaks,
             leaf_count: decoded.leaf_count,
+            proof_slot,
         }))
     }
 }

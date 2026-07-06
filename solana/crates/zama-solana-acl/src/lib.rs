@@ -96,6 +96,35 @@ impl EncryptedValue {
     }
 }
 
+/// Byte-exact body layout of `zama-host`'s on-chain `EncryptedValue` account.
+#[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Clone, Debug, PartialEq, Eq)]
+struct OnChainEncryptedValue {
+    acl_domain_key: [u8; 32],
+    app_account: [u8; 32],
+    encrypted_value_label: [u8; 32],
+    current_handle: [u8; 32],
+    subjects: Vec<[u8; 32]>,
+    subject_roles: Vec<u8>,
+    leaf_count: u64,
+    peaks: Vec<[u8; 32]>,
+    bump: u8,
+}
+
+impl OnChainEncryptedValue {
+    fn to_shared(&self) -> EncryptedValue {
+        EncryptedValue {
+            acl_domain_key: self.acl_domain_key,
+            app_account: self.app_account,
+            encrypted_value_label: self.encrypted_value_label,
+            current_handle: self.current_handle,
+            subjects: self.subjects.clone(),
+            leaf_count: self.leaf_count,
+            peaks: self.peaks.clone(),
+            bump: self.bump,
+        }
+    }
+}
+
 /// The Anchor-style 8-byte account discriminator, `sha256("account:EncryptedValue")[..8]`.
 pub fn encrypted_value_discriminator() -> [u8; 8] {
     let digest = sha256(&[b"account:EncryptedValue"]);
@@ -117,6 +146,21 @@ pub fn decode_account(data: &[u8]) -> Result<EncryptedValue, AclError> {
     let mut body = &data[8..];
     <EncryptedValue as borsh::BorshDeserialize>::deserialize(&mut body)
         .map_err(|_| AclError::BadAccountData)
+}
+
+/// Decodes `zama-host`'s real on-chain account layout and projects it to the
+/// shared role-less ACL/MMR type, returning the host-only role bytes separately.
+pub fn decode_on_chain_account(data: &[u8]) -> Result<(EncryptedValue, Vec<u8>), AclError> {
+    if data.len() < 8 || data[..8] != encrypted_value_discriminator() {
+        return Err(AclError::BadDiscriminator);
+    }
+    let mut body = &data[8..];
+    let decoded = <OnChainEncryptedValue as borsh::BorshDeserialize>::deserialize(&mut body)
+        .map_err(|_| AclError::BadAccountData)?;
+    if decoded.subject_roles.len() != decoded.subjects.len() {
+        return Err(AclError::BadAccountData);
+    }
+    Ok((decoded.to_shared(), decoded.subject_roles))
 }
 
 /// Encodes an `EncryptedValue` to raw account data (discriminator + borsh body).
@@ -390,5 +434,39 @@ mod tests {
         let mut bad = data.clone();
         bad[0] ^= 0xff;
         assert_eq!(decode_account(&bad), Err(AclError::BadDiscriminator));
+    }
+
+    fn encode_on_chain(value: &EncryptedValue, subject_roles: Vec<u8>) -> Vec<u8> {
+        let on_chain = OnChainEncryptedValue {
+            acl_domain_key: value.acl_domain_key,
+            app_account: value.app_account,
+            encrypted_value_label: value.encrypted_value_label,
+            current_handle: value.current_handle,
+            subjects: value.subjects.clone(),
+            subject_roles,
+            leaf_count: value.leaf_count,
+            peaks: value.peaks.clone(),
+            bump: value.bump,
+        };
+        let mut data = encrypted_value_discriminator().to_vec();
+        data.extend_from_slice(&borsh::to_vec(&on_chain).unwrap());
+        data
+    }
+
+    #[test]
+    fn on_chain_account_decoder_reads_roleful_layout() {
+        let subjects = [h(1), h(2), h(3), h(4)];
+        let mut l = Lineage::new(h(10), &subjects);
+        l.make_public();
+        let roles = vec![0; subjects.len()];
+        let data = encode_on_chain(&l.value, roles.clone());
+
+        let (decoded, decoded_roles) = decode_on_chain_account(&data).unwrap();
+        assert_eq!(decoded, l.value);
+        assert_eq!(decoded_roles, roles);
+
+        let old = decode_account(&data).unwrap();
+        assert_ne!(old.leaf_count, l.value.leaf_count);
+        assert_ne!(old.peaks, l.value.peaks);
     }
 }

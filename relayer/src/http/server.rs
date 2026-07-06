@@ -16,10 +16,7 @@ use crate::http::openapi_middleware;
 use crate::http::retry_after::RetryAfterState;
 use crate::http::utils::BounceChecker;
 use crate::orchestrator::Orchestrator;
-use crate::solana_proof::chain::RpcChainFetcher;
-use crate::solana_proof::http::{DefaultSolanaProofService, SolanaProofService};
-use crate::solana_proof::store::FileLeafStore;
-use crate::solana_proof::SolanaProofConfig;
+use crate::solana_proof::http::DefaultSolanaProofService;
 use crate::store::sql::repositories::Repositories;
 use axum::{
     routing::{get, post},
@@ -54,7 +51,7 @@ pub async fn run_http_server(
     bouncer_throttlers: BouncerThrottlers,
     host_chain_id_checker: Arc<HostChainIdChecker>,
     signature_prechecker: Arc<UserDecryptSignaturePreChecker>,
-    solana_proof_config: Option<&SolanaProofConfig>,
+    solana_proof_service: Option<Arc<DefaultSolanaProofService>>,
 ) -> SocketAddr {
     let http_endpoint: SocketAddr = config
         .endpoint
@@ -183,18 +180,7 @@ pub async fn run_http_server(
     // Solana MMR proof service: only mounted when a deployment configures it
     // (interim internal endpoint until the Solana user-decrypt path calls it
     // in-process; see relayer/src/solana_proof/http.rs).
-    if let Some(solana_proof_config) = solana_proof_config {
-        let program_id = solana_proof_config
-            .program_id_bytes()
-            .expect("Invalid Solana program_id in solana_proof config");
-        let store = FileLeafStore::open(&solana_proof_config.leaf_store_path)
-            .await
-            .expect("Failed to open Solana proof leaf store");
-        let service: Arc<DefaultSolanaProofService> = Arc::new(SolanaProofService {
-            fetcher: RpcChainFetcher::new(solana_proof_config.rpc_url.clone()),
-            store,
-            program_id,
-        });
+    if let Some(service) = solana_proof_service {
         info!("Solana MMR proof service enabled at /internal/solana/mmr-proof");
         app = app.merge(crate::solana_proof::http::router(service));
     }

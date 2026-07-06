@@ -23,9 +23,10 @@ use crate::solana_proof::store::{FileLeafStore, LeafStore};
 /// Bundles the fetcher/store/program-id a running deployment needs to answer
 /// proof requests, generic over both so tests can inject fakes.
 pub struct SolanaProofService<C: ChainFetcher, S: LeafStore> {
-    pub fetcher: C,
-    pub store: S,
+    pub fetcher: Arc<C>,
+    pub store: Arc<S>,
     pub program_id: [u8; 32],
+    pub catch_up_signature_budget: usize,
 }
 
 pub type DefaultSolanaProofService = SolanaProofService<RpcChainFetcher, FileLeafStore>;
@@ -58,7 +59,9 @@ impl From<&zama_solana_acl::mmr::MmrProof> for MmrProofDto {
 pub struct MmrProofResponse {
     pub mmr_proof: Option<MmrProofDto>,
     pub leaf_count: u64,
+    pub proof_slot: u64,
     pub verified: bool,
+    pub status: &'static str,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -71,12 +74,35 @@ pub enum HttpError {
 
 impl IntoResponse for HttpError {
     fn into_response(self) -> Response {
-        let status = match &self {
-            HttpError::InvalidAddress(_) => axum::http::StatusCode::BAD_REQUEST,
-            HttpError::Proof(ProofError::LineageNotFound) => axum::http::StatusCode::NOT_FOUND,
-            HttpError::Proof(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-        };
-        (status, self.to_string()).into_response()
+        match self {
+            HttpError::Proof(ProofError::Lagging {
+                leaf_count,
+                proof_slot,
+            }) => (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                Json(MmrProofResponse {
+                    mmr_proof: None,
+                    leaf_count,
+                    proof_slot,
+                    verified: false,
+                    status: "lagging",
+                }),
+            )
+                .into_response(),
+            other => {
+                let status = match &other {
+                    HttpError::InvalidAddress(_) => axum::http::StatusCode::BAD_REQUEST,
+                    HttpError::Proof(ProofError::Lineage(
+                        zama_solana_acl::lineage::LineageError::LeafIndexOutOfRange,
+                    )) => axum::http::StatusCode::BAD_REQUEST,
+                    HttpError::Proof(ProofError::LineageNotFound) => {
+                        axum::http::StatusCode::NOT_FOUND
+                    }
+                    HttpError::Proof(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                };
+                (status, other.to_string()).into_response()
+            }
+        }
     }
 }
 
@@ -87,17 +113,20 @@ pub async fn mmr_proof_handler<C: ChainFetcher, S: LeafStore>(
     let lineage = crate::http::utils::decode_solana_address(&query.encrypted_value)
         .map_err(|e| HttpError::InvalidAddress(e.to_string()))?;
     let result = build_proof(
-        &service.fetcher,
-        &service.store,
+        service.fetcher.as_ref(),
+        service.store.as_ref(),
         service.program_id,
         lineage,
         query.leaf_index,
+        service.catch_up_signature_budget,
     )
     .await?;
     Ok(Json(MmrProofResponse {
         mmr_proof: result.mmr_proof.as_ref().map(MmrProofDto::from),
         leaf_count: result.leaf_count,
+        proof_slot: result.proof_slot,
         verified: result.verified,
+        status: "verified",
     }))
 }
 

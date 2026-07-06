@@ -32,16 +32,26 @@ pub async fn run_poll_loop<C: ChainFetcher, S: LeafStore>(
     // scan from the program's genesis signature every time.
     if store.get_cursor().await.ok().flatten().is_none() {
         if let Some(start_signature) = &config.start_signature {
-            let _ = store
+            if let Err(e) = store
                 .set_cursor(Cursor {
                     last_signature: Some(start_signature.clone()),
                     last_slot: 0,
                 })
-                .await;
+                .await
+            {
+                error!("solana_proof: failed to seed poll cursor: {e}");
+                return;
+            }
         }
     }
 
     let interval = Duration::from_secs(config.poll_interval_secs);
+    info!(
+        poll_interval_secs = config.poll_interval_secs,
+        poll_signature_limit = config.poll_signature_limit,
+        "solana_proof: poll loop started"
+    );
+
     loop {
         match poll_once(
             fetcher.as_ref(),

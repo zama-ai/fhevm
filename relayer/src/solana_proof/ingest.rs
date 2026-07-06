@@ -3,6 +3,8 @@
 //! `LeafStore`. Also provides a targeted single-lineage catch-up path used when
 //! a proof build finds the store behind the live chain account.
 
+use std::collections::HashSet;
+
 use zama_solana_acl::lineage::LineageEvent;
 
 use crate::solana_proof::chain::ChainFetcher;
@@ -22,6 +24,94 @@ pub enum IngestError {
     Replay(#[from] crate::solana_proof::replay::ReplayError),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CatchUpOutcome {
+    pub processed: usize,
+    pub budget_exhausted: bool,
+}
+
+struct SignatureWindow {
+    signatures: Vec<String>,
+    budget_exhausted: bool,
+}
+
+async fn fetch_signature_window<C, F>(
+    fetcher: &C,
+    address: [u8; 32],
+    until: Option<&str>,
+    page_limit: usize,
+    budget: Option<usize>,
+    mut stop_at: F,
+) -> Result<SignatureWindow, IngestError>
+where
+    C: ChainFetcher,
+    F: FnMut(&str) -> bool,
+{
+    if page_limit == 0 {
+        return Ok(SignatureWindow {
+            signatures: Vec::new(),
+            budget_exhausted: budget == Some(0),
+        });
+    }
+    if budget == Some(0) {
+        return Ok(SignatureWindow {
+            signatures: Vec::new(),
+            budget_exhausted: true,
+        });
+    }
+
+    let mut before: Option<String> = None;
+    let mut newest_first = Vec::new();
+    loop {
+        let limit = match budget {
+            Some(max) => page_limit.min(max.saturating_sub(newest_first.len()).saturating_add(1)),
+            None => page_limit,
+        };
+        if limit == 0 {
+            return Ok(SignatureWindow {
+                signatures: Vec::new(),
+                budget_exhausted: true,
+            });
+        }
+
+        let page = fetcher
+            .get_signatures_for_address(address, before.as_deref(), until, limit)
+            .await?;
+        if page.is_empty() {
+            break;
+        }
+
+        let next_before = page.last().cloned();
+        let mut stopped = false;
+        for signature in &page {
+            if stop_at(signature) {
+                stopped = true;
+                break;
+            }
+            newest_first.push(signature.clone());
+            if let Some(max) = budget {
+                if newest_first.len() > max {
+                    return Ok(SignatureWindow {
+                        signatures: Vec::new(),
+                        budget_exhausted: true,
+                    });
+                }
+            }
+        }
+
+        if stopped || page.len() < limit {
+            break;
+        }
+        before = next_before;
+    }
+
+    newest_first.reverse();
+    Ok(SignatureWindow {
+        signatures: newest_first,
+        budget_exhausted: false,
+    })
+}
+
 /// One program-wide poll cycle: fetches signatures newer than the stored
 /// cursor, decodes+replays each transaction's instructions oldest-to-newest,
 /// and persists the new cursor. `program_id` and `signature_source_address`
@@ -35,11 +125,11 @@ pub async fn poll_once<C: ChainFetcher, S: LeafStore>(
 ) -> Result<usize, IngestError> {
     let cursor = store.get_cursor().await?;
     let until = cursor.as_ref().and_then(|c| c.last_signature.as_deref());
-    let mut signatures = fetcher
-        .get_signatures_for_address(program_id, until, poll_limit)
-        .await?;
-    // RPC returns newest-first; replay must run oldest-to-newest.
-    signatures.reverse();
+    let signatures = fetch_signature_window(fetcher, program_id, until, poll_limit, None, |sig| {
+        until == Some(sig)
+    })
+    .await?
+    .signatures;
 
     let mut last_slot = cursor.as_ref().map(|c| c.last_slot).unwrap_or(0);
     let mut last_signature = cursor.and_then(|c| c.last_signature);
@@ -88,18 +178,35 @@ pub async fn catch_up_lineage<C: ChainFetcher, S: LeafStore>(
     store: &S,
     program_id: [u8; 32],
     lineage: [u8; 32],
-) -> Result<usize, IngestError> {
-    let seen = store.get_seen_signatures(lineage).await?;
-    let mut signatures = fetcher
-        .get_signatures_for_address(lineage, None, 1000)
-        .await?;
-    signatures.reverse(); // oldest-to-newest for replay
+    signature_budget: usize,
+) -> Result<CatchUpOutcome, IngestError> {
+    let seen: HashSet<String> = store
+        .get_seen_signatures(lineage)
+        .await?
+        .into_iter()
+        .collect();
+    let window = fetch_signature_window(
+        fetcher,
+        lineage,
+        None,
+        1000,
+        Some(signature_budget),
+        |sig| seen.contains(sig),
+    )
+    .await?;
+    if window.budget_exhausted {
+        return Ok(CatchUpOutcome {
+            processed: 0,
+            budget_exhausted: true,
+        });
+    }
 
     let mut state: Option<LineageReplayState> = store.get_replay_state(lineage).await?;
     let mut new_events: Vec<LineageEvent> = Vec::new();
+    let mut processed_signatures = Vec::new();
     let mut processed = 0usize;
 
-    for signature in signatures {
+    for signature in window.signatures {
         if seen.contains(&signature) {
             continue;
         }
@@ -112,7 +219,7 @@ pub async fn catch_up_lineage<C: ChainFetcher, S: LeafStore>(
                 new_events.push(event);
             }
         }
-        store.mark_signature_seen(lineage, &signature).await?;
+        processed_signatures.push(signature);
         processed += 1;
     }
 
@@ -122,7 +229,13 @@ pub async fn catch_up_lineage<C: ChainFetcher, S: LeafStore>(
     if let Some(state) = state {
         store.set_replay_state(lineage, state).await?;
     }
-    Ok(processed)
+    for signature in processed_signatures {
+        store.mark_signature_seen(lineage, &signature).await?;
+    }
+    Ok(CatchUpOutcome {
+        processed,
+        budget_exhausted: false,
+    })
 }
 
 #[cfg(test)]
@@ -214,14 +327,18 @@ mod tests {
         async fn get_signatures_for_address(
             &self,
             address: [u8; 32],
+            before: Option<&str>,
             until: Option<&str>,
             limit: usize,
         ) -> Result<Vec<String>, ChainError> {
             let sigs = self.signatures_by_address.lock().unwrap();
             let all = sigs.get(&address).cloned().unwrap_or_default();
-            let bounded = match until {
-                Some(u) => all.into_iter().take_while(|s| s != u).collect(),
-                None => all,
+            let start = before
+                .and_then(|b| all.iter().position(|s| s == b).map(|idx| idx + 1))
+                .unwrap_or(0);
+            let bounded: Vec<String> = match until {
+                Some(u) => all.into_iter().skip(start).take_while(|s| s != u).collect(),
+                None => all.into_iter().skip(start).collect(),
             };
             Ok(bounded.into_iter().take(limit).collect())
         }
@@ -368,6 +485,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn poll_once_paginates_backlog_larger_than_limit() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x04);
+        let chain = FakeChain::new(program_id);
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        store
+            .set_replay_state(
+                lineage,
+                LineageReplayState {
+                    current_handle: pk(0x20),
+                    subjects: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .set_cursor(Cursor {
+                last_signature: Some("sig0".to_string()),
+                last_slot: 0,
+            })
+            .await
+            .unwrap();
+
+        chain.push_tx("sig0", 0, &[lineage], vec![]);
+        for (sig, slot) in [("sig1", 1), ("sig2", 2), ("sig3", 3)] {
+            let make_public_ix = make_ix(
+                program_id,
+                vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
+                "make_handle_public",
+                (),
+            );
+            chain.push_tx(sig, slot, &[lineage], vec![make_public_ix]);
+        }
+
+        let processed = poll_once(&chain, &store, program_id, 2).await.unwrap();
+        assert_eq!(processed, 3);
+        assert_eq!(
+            store.get_events(lineage).await.unwrap(),
+            vec![
+                LineageEvent::MarkedPublic { handle: pk(0x20) },
+                LineageEvent::MarkedPublic { handle: pk(0x20) },
+                LineageEvent::MarkedPublic { handle: pk(0x20) },
+            ]
+        );
+        let cursor = store.get_cursor().await.unwrap().unwrap();
+        assert_eq!(cursor.last_signature, Some("sig3".to_string()));
+        assert_eq!(cursor.last_slot, 3);
+    }
+
+    #[tokio::test]
     async fn catch_up_lineage_ingests_only_new_signatures_for_that_lineage() {
         let program_id = pk(0x99);
         let lineage = pk(0x03);
@@ -398,10 +569,16 @@ mod tests {
         );
         chain.push_tx("sig_new", 2, &[lineage], vec![make_public_ix]);
 
-        let processed = catch_up_lineage(&chain, &store, program_id, lineage)
+        let outcome = catch_up_lineage(&chain, &store, program_id, lineage, 1000)
             .await
             .unwrap();
-        assert_eq!(processed, 1);
+        assert_eq!(
+            outcome,
+            CatchUpOutcome {
+                processed: 1,
+                budget_exhausted: false
+            }
+        );
         let events = store.get_events(lineage).await.unwrap();
         assert_eq!(
             events,

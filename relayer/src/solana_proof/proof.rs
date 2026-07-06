@@ -13,6 +13,7 @@ use crate::solana_proof::store::LeafStore;
 pub struct MmrProofResult {
     pub mmr_proof: Option<MmrProof>,
     pub leaf_count: u64,
+    pub proof_slot: u64,
     pub verified: bool,
 }
 
@@ -28,24 +29,32 @@ pub enum ProofError {
     Lineage(LineageError),
     #[error("no on-chain account found for lineage")]
     LineageNotFound,
+    #[error(
+        "lineage proof data is lagging chain state at slot {proof_slot} (leaf_count {leaf_count})"
+    )]
+    Lagging { leaf_count: u64, proof_slot: u64 },
 }
 
 /// Builds a proof for `(lineage, leaf_index)`. On `PeaksDiverged` (the local
 /// event log is behind the live chain account) triggers one targeted catch-up
-/// ingestion for that lineage and retries once; a second divergence gives up
-/// and returns `verified: false` rather than erroring, since a caller may
-/// still want the raw leaf_count/attempted proof for diagnostics.
+/// ingestion for that lineage and retries once; a budget exhaustion or second
+/// divergence is returned as retryable lag.
 pub async fn build_proof<C: ChainFetcher, S: LeafStore>(
     fetcher: &C,
     store: &S,
     program_id: [u8; 32],
     lineage: [u8; 32],
     leaf_index: u64,
+    catch_up_signature_budget: usize,
 ) -> Result<MmrProofResult, ProofError> {
     let on_chain = fetcher
         .get_lineage_state(lineage)
         .await?
         .ok_or(ProofError::LineageNotFound)?;
+    let lagging = || ProofError::Lagging {
+        leaf_count: on_chain.leaf_count,
+        proof_slot: on_chain.proof_slot,
+    };
 
     match try_build(
         store,
@@ -59,10 +68,21 @@ pub async fn build_proof<C: ChainFetcher, S: LeafStore>(
         Ok(proof) => Ok(MmrProofResult {
             mmr_proof: Some(proof),
             leaf_count: on_chain.leaf_count,
+            proof_slot: on_chain.proof_slot,
             verified: true,
         }),
         Err(LineageError::PeaksDiverged) => {
-            catch_up_lineage(fetcher, store, program_id, lineage).await?;
+            let outcome = catch_up_lineage(
+                fetcher,
+                store,
+                program_id,
+                lineage,
+                catch_up_signature_budget,
+            )
+            .await?;
+            if outcome.budget_exhausted {
+                return Err(lagging());
+            }
             match try_build(
                 store,
                 lineage,
@@ -75,13 +95,11 @@ pub async fn build_proof<C: ChainFetcher, S: LeafStore>(
                 Ok(proof) => Ok(MmrProofResult {
                     mmr_proof: Some(proof),
                     leaf_count: on_chain.leaf_count,
+                    proof_slot: on_chain.proof_slot,
                     verified: true,
                 }),
-                Err(_) => Ok(MmrProofResult {
-                    mmr_proof: None,
-                    leaf_count: on_chain.leaf_count,
-                    verified: false,
-                }),
+                Err(LineageError::PeaksDiverged) => Err(lagging()),
+                Err(other) => Err(ProofError::Lineage(other)),
             }
         }
         Err(other) => Err(ProofError::Lineage(other)),
@@ -194,14 +212,18 @@ mod tests {
         async fn get_signatures_for_address(
             &self,
             address: [u8; 32],
+            before: Option<&str>,
             until: Option<&str>,
             limit: usize,
         ) -> Result<Vec<String>, ChainError> {
             let sigs = self.signatures_by_address.lock().unwrap();
             let all = sigs.get(&address).cloned().unwrap_or_default();
-            let bounded = match until {
-                Some(u) => all.into_iter().take_while(|s| s != u).collect(),
-                None => all,
+            let start = before
+                .and_then(|b| all.iter().position(|s| s == b).map(|idx| idx + 1))
+                .unwrap_or(0);
+            let bounded: Vec<String> = match until {
+                Some(u) => all.into_iter().skip(start).take_while(|s| s != u).collect(),
+                None => all.into_iter().skip(start).collect(),
             };
             Ok(bounded.into_iter().take(limit).collect())
         }
@@ -232,7 +254,14 @@ mod tests {
 
         let program_id = pk(0x99);
         let chain = FakeChain::new(program_id);
-        chain.set_lineage_state(lineage, OnChainLineageState { peaks, leaf_count });
+        chain.set_lineage_state(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                proof_slot: 77,
+            },
+        );
 
         let dir = tempfile::tempdir().unwrap();
         let store = FileLeafStore::open(dir.path().join("leaves.json"))
@@ -246,11 +275,12 @@ mod tests {
             .await
             .unwrap();
 
-        let result = build_proof(&chain, &store, program_id, lineage, 0)
+        let result = build_proof(&chain, &store, program_id, lineage, 0, 1000)
             .await
             .unwrap();
         assert!(result.verified);
         assert_eq!(result.leaf_count, 1);
+        assert_eq!(result.proof_slot, 77);
         assert!(result.mmr_proof.is_some());
     }
 
@@ -266,7 +296,14 @@ mod tests {
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
-        chain.set_lineage_state(lineage, OnChainLineageState { peaks, leaf_count });
+        chain.set_lineage_state(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                proof_slot: 88,
+            },
+        );
 
         let update_ix = {
             #[derive(BorshSerialize)]
@@ -305,14 +342,74 @@ mod tests {
             .unwrap();
 
         // Store is empty (PeaksDiverged expected) until catch-up ingests sig1.
-        let result = build_proof(&chain, &store, program_id, lineage, 0)
+        let result = build_proof(&chain, &store, program_id, lineage, 0, 1000)
             .await
             .unwrap();
         assert!(
             result.verified,
             "catch-up should have ingested the missing event and verified"
         );
+        assert_eq!(result.proof_slot, 88);
         assert!(result.mmr_proof.is_some());
+    }
+
+    #[tokio::test]
+    async fn returns_lagging_when_catch_up_budget_is_exhausted() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x04);
+        let chain = FakeChain::new(program_id);
+
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        for index in 0..2 {
+            let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, index, pk(0x10));
+            mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
+        }
+        chain.set_lineage_state(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                proof_slot: 111,
+            },
+        );
+
+        for (sig, slot) in [("sig1", 1), ("sig2", 2)] {
+            let make_public_ix = make_ix(
+                program_id,
+                vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
+                "make_handle_public",
+                (),
+            );
+            chain.push_tx(sig, slot, &[lineage], vec![make_public_ix]);
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+        store
+            .set_replay_state(
+                lineage,
+                LineageReplayState {
+                    current_handle: pk(0x10),
+                    subjects: vec![],
+                },
+            )
+            .await
+            .unwrap();
+
+        let error = build_proof(&chain, &store, program_id, lineage, 0, 1)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ProofError::Lagging {
+                leaf_count: 2,
+                proof_slot: 111
+            }
+        ));
+        assert!(store.get_events(lineage).await.unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -325,18 +422,29 @@ mod tests {
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
-        chain.set_lineage_state(lineage, OnChainLineageState { peaks, leaf_count });
+        chain.set_lineage_state(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                proof_slot: 99,
+            },
+        );
 
         let dir = tempfile::tempdir().unwrap();
         let store = FileLeafStore::open(dir.path().join("leaves.json"))
             .await
             .unwrap();
 
-        let result = build_proof(&chain, &store, program_id, lineage, 0)
+        let error = build_proof(&chain, &store, program_id, lineage, 0, 1000)
             .await
-            .unwrap();
-        assert!(!result.verified);
-        assert!(result.mmr_proof.is_none());
-        assert_eq!(result.leaf_count, 1);
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            ProofError::Lagging {
+                leaf_count: 1,
+                proof_slot: 99
+            }
+        ));
     }
 }

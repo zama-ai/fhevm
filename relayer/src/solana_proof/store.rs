@@ -13,12 +13,14 @@
 //! non-rebuildable state.
 
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+use tracing::warn;
 use zama_solana_acl::lineage::LineageEvent;
 
 use crate::solana_proof::replay::LineageReplayState;
@@ -159,6 +161,12 @@ fn key(lineage: [u8; 32]) -> String {
     hex::encode(lineage)
 }
 
+fn path_with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut raw = path.as_os_str().to_os_string();
+    raw.push(suffix);
+    PathBuf::from(raw)
+}
+
 /// File-backed `LeafStore`. Rebuildable cache: safe to delete and re-ingest
 /// from `start_slot`/`start_signature` in config.
 pub struct FileLeafStore {
@@ -170,8 +178,28 @@ impl FileLeafStore {
     pub async fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         let path = path.as_ref().to_path_buf();
         let contents = match tokio::fs::read(&path).await {
-            Ok(bytes) if !bytes.is_empty() => serde_json::from_slice(&bytes)?,
-            _ => FileContents::default(),
+            Ok(bytes) if bytes.is_empty() => FileContents::default(),
+            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                Ok(contents) => contents,
+                Err(error) => {
+                    let corrupt_path = path_with_suffix(&path, ".corrupt");
+                    warn!(
+                        path = %path.display(),
+                        corrupt_path = %corrupt_path.display(),
+                        "Solana proof leaf store is corrupt; quarantining and starting empty: {error}"
+                    );
+                    if let Err(rename_error) = tokio::fs::rename(&path, &corrupt_path).await {
+                        warn!(
+                            path = %path.display(),
+                            corrupt_path = %corrupt_path.display(),
+                            "Failed to quarantine corrupt Solana proof leaf store: {rename_error}"
+                        );
+                    }
+                    FileContents::default()
+                }
+            },
+            Err(error) if error.kind() == ErrorKind::NotFound => FileContents::default(),
+            Err(error) => return Err(StoreError::Io(error)),
         };
         Ok(Self {
             path,
@@ -184,7 +212,18 @@ impl FileLeafStore {
         if let Some(parent) = self.path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
-        tokio::fs::write(&self.path, bytes).await?;
+        let temp_path = path_with_suffix(&self.path, ".tmp");
+        tokio::fs::write(&temp_path, bytes).await?;
+        tokio::fs::rename(&temp_path, &self.path).await?;
+        Ok(())
+    }
+
+    async fn update_state(&self, update: impl FnOnce(&mut FileContents)) -> Result<(), StoreError> {
+        let mut guard = self.state.write().await;
+        let mut snapshot = guard.clone();
+        update(&mut snapshot);
+        self.flush(&snapshot).await?;
+        *guard = snapshot;
         Ok(())
     }
 }
@@ -196,15 +235,15 @@ impl LeafStore for FileLeafStore {
         lineage: [u8; 32],
         events: &[LineageEvent],
     ) -> Result<(), StoreError> {
-        let mut guard = self.state.write().await;
-        guard
-            .events
-            .entry(key(lineage))
-            .or_default()
-            .extend(events.iter().map(LineageEventDto::from));
-        let snapshot = guard.clone();
-        drop(guard);
-        self.flush(&snapshot).await
+        let lineage_key = key(lineage);
+        self.update_state(|contents| {
+            contents
+                .events
+                .entry(lineage_key)
+                .or_default()
+                .extend(events.iter().map(LineageEventDto::from));
+        })
+        .await
     }
 
     async fn get_events(&self, lineage: [u8; 32]) -> Result<Vec<LineageEvent>, StoreError> {
@@ -221,11 +260,10 @@ impl LeafStore for FileLeafStore {
     }
 
     async fn set_cursor(&self, cursor: Cursor) -> Result<(), StoreError> {
-        let mut guard = self.state.write().await;
-        guard.cursor = Some(cursor);
-        let snapshot = guard.clone();
-        drop(guard);
-        self.flush(&snapshot).await
+        self.update_state(|contents| {
+            contents.cursor = Some(cursor);
+        })
+        .await
     }
 
     async fn get_replay_state(
@@ -247,13 +285,13 @@ impl LeafStore for FileLeafStore {
         lineage: [u8; 32],
         state: LineageReplayState,
     ) -> Result<(), StoreError> {
-        let mut guard = self.state.write().await;
-        guard
-            .replay_states
-            .insert(key(lineage), LineageReplayStateDto::from(&state));
-        let snapshot = guard.clone();
-        drop(guard);
-        self.flush(&snapshot).await
+        let lineage_key = key(lineage);
+        self.update_state(|contents| {
+            contents
+                .replay_states
+                .insert(lineage_key, LineageReplayStateDto::from(&state));
+        })
+        .await
     }
 
     async fn get_seen_signatures(&self, lineage: [u8; 32]) -> Result<Vec<String>, StoreError> {
@@ -272,15 +310,15 @@ impl LeafStore for FileLeafStore {
         lineage: [u8; 32],
         signature: &str,
     ) -> Result<(), StoreError> {
-        let mut guard = self.state.write().await;
-        guard
-            .seen_signatures
-            .entry(key(lineage))
-            .or_default()
-            .push(signature.to_string());
-        let snapshot = guard.clone();
-        drop(guard);
-        self.flush(&snapshot).await
+        let lineage_key = key(lineage);
+        self.update_state(|contents| {
+            contents
+                .seen_signatures
+                .entry(lineage_key)
+                .or_default()
+                .push(signature.to_string());
+        })
+        .await
     }
 }
 
@@ -331,6 +369,38 @@ mod tests {
                 last_slot: 42,
             })
         );
+    }
+
+    #[tokio::test]
+    async fn corrupt_store_is_quarantined_and_reopened_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("leaves.json");
+        tokio::fs::write(&path, b"{not-json").await.unwrap();
+
+        let store = FileLeafStore::open(&path).await.unwrap();
+        assert_eq!(store.get_cursor().await.unwrap(), None);
+        assert!(!path.exists());
+        assert!(path_with_suffix(&path, ".corrupt").exists());
+    }
+
+    #[tokio::test]
+    async fn flush_failure_does_not_advance_cursor_in_memory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("leaves.json");
+        let store = FileLeafStore::open(&path).await.unwrap();
+        tokio::fs::create_dir(path_with_suffix(&path, ".tmp"))
+            .await
+            .unwrap();
+
+        let error = store
+            .set_cursor(Cursor {
+                last_signature: Some("sig123".to_string()),
+                last_slot: 42,
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(error, StoreError::Io(_)));
+        assert_eq!(store.get_cursor().await.unwrap(), None);
     }
 
     #[tokio::test]
