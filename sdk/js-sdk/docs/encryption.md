@@ -1,108 +1,196 @@
 # Encryption
 
-Encryption is how you get data into an FHEVM smart contract. You take plaintext values (like a number or a boolean), encrypt them client-side, and send the encrypted inputs + a proof to your contract. The contract can then operate on these values while they stay encrypted.
+Encryption turns plaintext values into opaque encrypted values plus a proof that
+your contract can verify. Everything happens client-side — the plaintext never
+leaves the browser.
 
-## What happens when you encrypt
+Encryption is available on `createFhevmClient` and `createFhevmEncryptClient`.
 
-1. The SDK downloads the network's **public encryption key** (~50MB, cached after first fetch)
-2. Your values are encrypted using **TFHE** (a homomorphic encryption scheme) inside a WASM module
-3. A **zero-knowledge proof** is generated proving the encryption was done correctly
-4. The proof is sent to the **Relayer**, which returns coprocessor signatures
-5. You get back encrypted handles and the proof bytes to pass to your contract
+## The two methods
 
-## Supported types
-
-You specify types using Solidity-style names (`"uint32"`, `"bool"`, `"address"`):
-
-| Type | Accepts | Value range | Encrypted bits |
-| --- | --- | --- | --- |
-| `"bool"` | `boolean`, `number`, `bigint` | `true`/`false` | 2 |
-| `"uint8"` | `number`, `bigint` | 0-255 | 8 |
-| `"uint16"` | `number`, `bigint` | 0-65,535 | 16 |
-| `"uint32"` | `number`, `bigint` | 0-4,294,967,295 | 32 |
-| `"uint64"` | `number`, `bigint` | 0-2^64-1 | 64 |
-| `"uint128"` | `number`, `bigint` | 0-2^128-1 | 128 |
-| `"uint256"` | `number`, `bigint` | 0-2^256-1 | 256 |
-| `"address"` | `string` | Ethereum address | 160 |
-
-**Capacity limit:** A single `encrypt()` call can hold at most **2048 encrypted bits** total. For example, you could encrypt 32 `uint64` values (32 x 64 = 2048), or 64 `uint32` values (64 x 32 = 2048). The SDK validates this before making any network calls.
-
-## Basic usage
-
-Call `encrypt()` with the values you want to encrypt. The SDK automatically fetches and caches the network's public encryption key (~50MB) on first use. Protocol context data (`extraData`) is fetched automatically — you don't need to provide it.
+- **`encryptValues`** — encrypt a batch of values under one shared proof. Use
+  this whenever a contract call takes more than one encrypted argument; a single
+  proof covers the whole batch.
+- **`encryptValue`** — encrypt exactly one value. A convenience wrapper for the
+  single-argument case.
 
 ```ts
-const encrypted = await client.encrypt({
-  contractAddress: "0xYourContract...",
-  userAddress: "0xYourWallet...",
+const encrypted = await client.encryptValues({
+  contractAddress: '0xYourContract…',
+  userAddress: '0xYourWallet…',
   values: [
-    { type: "uint32", value: 100 },
-    { type: "bool", value: true },
-    { type: "address", value: "0xAbCdEf0123456789AbCdEf0123456789AbCdEf01" },
-    { type: "uint256", value: 12345678901234567890n },
+    { type: 'uint32', value: 42 },
+    { type: 'bool', value: true },
   ],
 });
+
+encrypted.encryptedValues; // readonly EncryptedValue[] — one per input, same order
+encrypted.inputProof; // BytesHex — one proof for the whole batch
 ```
 
-The first `encrypt()` call downloads the public key and initializes the TFHE WASM module. Subsequent calls reuse the cached key. If you want to control when this download happens (for example, behind a loading spinner), call `await client.init()` at app startup.
-
-## Using the encrypted result
-
-The `encrypt()` call returns the encrypted handles and proof bytes you need to pass to your smart contract:
-
 ```ts
-encrypted.inputProof                // The encoded proof — pass this to your contract
-encrypted.externalEncryptedValues   // One encrypted value per input, in the same order
-```
-
-Each value in `externalEncryptedValues` corresponds to one of your input values, in order:
-
-```ts
-const encryptedValue0 = encrypted.externalEncryptedValues[0]; // corresponds to { type: "uint32", value: 100 }
-encryptedValue0.fheType;     // "euint32"
-encryptedValue0.bytes32Hex;  // the 32-byte encrypted value as a hex string
-encryptedValue0.index;       // 0 (position in the proof)
-```
-
-When encrypting a single value (passing `values` as a single `TypedValueLike` instead of an array), the return type has `externalEncryptedValue` (singular) instead:
-
-```ts
-const encrypted = await client.encrypt({
-  contractAddress: "0xYourContract...",
-  userAddress: "0xYourWallet...",
-  values: { type: "uint32", value: 42 },
+const encrypted = await client.encryptValue({
+  contractAddress: '0xYourContract…',
+  userAddress: '0xYourWallet…',
+  value: { type: 'uint64', value: 1000n },
 });
 
-encrypted.externalEncryptedValue;  // single ExternalEncryptedValue
-encrypted.inputProof;              // proof bytes
+encrypted.encryptedValue; // a single EncryptedValue
+encrypted.inputProof; // BytesHex
 ```
 
-## Step-by-step encryption
+## Binding: contract and user
 
-The `encrypt()` method is a convenience wrapper that combines two lower-level steps. If you need more control (for example, to separate ZK proof generation from Relayer submission), you can use them individually:
+Both parameters are mandatory and both are cryptographically bound into the
+proof:
 
-### 1. Generate ZK proof
+- **`contractAddress`** — the contract that will consume the encrypted values.
+  The proof is only valid for this address.
+- **`userAddress`** — the address that will submit the transaction. The proof is
+  only valid when this user sends it.
 
-This step runs TFHE WASM to encrypt your values and generate a zero-knowledge proof. It's CPU-intensive and triggers WASM initialization on first call.
+If either differs at submission time, on-chain verification fails. Encrypt with
+the same values, contract, and sender that you will actually transact with.
+
+{% hint style="warning" %}
+Both `contractAddress` and `userAddress` are cryptographically bound into the proof. Re-encrypt if either changes — a proof generated for one sender or contract is worthless for another.
+{% endhint %}
+
+## Supported input types
+
+The `type` field uses **Solidity value-type names**, not Fully Homomorphic
+Encryption (FHE) names. Each maps to
+an on-chain `externalEuintXX` / `externalEbool` / `externalEaddress`.
+
+| `type`      | Accepted JS value      | Maps to on-chain    |
+| ----------- | ---------------------- | ------------------- |
+| `'bool'`    | `boolean` / `number` / `bigint` | `externalEbool`     |
+| `'uint8'`   | `number` / `bigint`    | `externalEuint8`    |
+| `'uint16'`  | `number` / `bigint`    | `externalEuint16`   |
+| `'uint32'`  | `number` / `bigint`    | `externalEuint32`   |
+| `'uint64'`  | `number` / `bigint`    | `externalEuint64`   |
+| `'uint128'` | `number` / `bigint`    | `externalEuint128`  |
+| `'uint256'` | `number` / `bigint`    | `externalEuint256`  |
+| `'address'` | `string` (hex address) | `externalEaddress`  |
+
+There is no `uint160` type — an encrypted Ethereum address is `'address'`. There
+is no encrypted `bytes` type. `euint4` has been removed.
+
+For large integers (`uint64` and above) prefer `bigint` to avoid JavaScript's
+`Number.MAX_SAFE_INTEGER` limit:
 
 ```ts
-import { generateZkProof } from "@fhevm/sdk/actions/encrypt";
+values: [
+  { type: 'uint256', value: 123456789012345678901234567890n },
+  { type: 'address', value: '0xAbC0000000000000000000000000000000000001' },
+];
+```
 
-const zkProof = await generateZkProof(client, {
-  contractAddress: "0xYourContract...",
-  userAddress: "0xYourWallet...",
-  values: [{ type: "uint32", value: 42 }],
+## Using the result in a contract call
+
+Each entry in `encryptedValues` is passed to its matching `externalEuintXX`
+argument, in order. The shared `inputProof` is the trailing `bytes` argument your
+FHEVM contract expects.
+
+{% tabs %}
+{% tab title="ethers.js" %}
+
+```ts
+const encrypted = await client.encryptValues({
+  contractAddress,
+  userAddress,
+  values: [{ type: 'uint32', value: 42 }],
+});
+
+await contract.increment(
+  encrypted.encryptedValues[0], // externalEuint32
+  encrypted.inputProof, // bytes
+);
+```
+
+{% endtab %}
+{% tab title="viem" %}
+
+```ts
+const encrypted = await client.encryptValues({
+  contractAddress,
+  userAddress,
+  values: [{ type: 'uint32', value: 42 }],
+});
+
+await walletClient.writeContract({
+  address: contractAddress,
+  abi,
+  functionName: 'increment',
+  args: [encrypted.encryptedValues[0], encrypted.inputProof],
 });
 ```
 
-### 2. Fetch verified input proof
+{% endtab %}
+{% endtabs %}
 
-This step sends the ZK proof to the Relayer, which verifies it and returns coprocessor signatures and the final encrypted values. Protocol context data (`extraData`) is fetched automatically.
+On-chain, the contract calls `FHE.fromExternal(externalValue, inputProof)` to
+verify each input and convert it to a usable `euintXX` before computing on it.
+
+## Batching
+
+There are two reasons to encrypt as a batch rather than one value at a time:
+
+1. **One proof.** A batch produces a single `inputProof`, which is cheaper to
+   verify than several independent proofs.
+2. **Atomicity.** All values in a batch share the same binding to contract and
+   user.
+
+A single input ciphertext can pack up to 256 encrypted variables. Exceeding that
+throws a `TooManyHandlesError`.
+
+{% hint style="info" %}
+A single input ciphertext packs at most 256 encrypted variables. Split larger batches across multiple `encryptValues` calls.
+{% endhint %}
+
+## Request options and progress
+
+Every encrypt call accepts an optional `options` object to control the Relayer
+request that fetches the verified proof:
 
 ```ts
-import { fetchVerifiedInputProof } from "@fhevm/sdk/actions/base";
-
-const proof = await fetchVerifiedInputProof(client, {
-  zkProof,
+const encrypted = await client.encryptValues({
+  contractAddress,
+  userAddress,
+  values,
+  options: {
+    timeout: 60_000,
+    signal: abortController.signal,
+    onProgress: (args) => console.log(args.state), // 'queued' | 'throttled' | 'succeeded' | …
+  },
 });
 ```
+
+Common fields: `timeout`, `signal` (an `AbortSignal`), `headers`, `fetchRetries`,
+`fetchRetryDelayInMilliseconds`, and `onProgress`. See
+[API reference](api-reference.md#relayer-options) for the full set.
+
+## What happens under the hood
+
+`encryptValues` runs a two-step pipeline you normally never see:
+
+1. **Generate a ZK proof** locally in WASM (TFHE) — a zero-knowledge proof that
+   you encrypted your plaintext correctly under the FHE public key, without
+   revealing it. The FHE public key is fetched from the Relayer and cached on
+   first use.
+2. **Exchange it for a verified input proof** — the Relayer's coprocessors verify
+   the proof and sign it, producing the `inputProof` your contract trusts.
+
+If you need to run these steps separately (for example, to generate a proof
+offline and submit it later), the standalone actions `generateZkProof` and
+`fetchEncryptedValues` from [`@fhevm/sdk/actions/encrypt`](actions.md) expose
+them.
+
+## Related
+
+- [Decryption](decryption.md) — read encrypted values back to plaintext.
+- [Types](types.md) — the encrypted-value and typed-value type system.
+- [Actions](actions.md) — the standalone `generateZkProof` / `fetchEncryptedValues` functions.
+- [Error handling](error-handling.md) — `EncryptionError`, `ZkProofError`, `TooManyHandlesError`.
+```
+

@@ -1,26 +1,29 @@
+# Table of contents
+
 - [Overview](README.md)
 
 ## Getting started
 
-- [Quick start](getting-started.md)
-- [Migration from `@zama-fhe/relayer-sdk`](migration.md)
+- [Getting started](getting-started.md)
 
-## Development guide
+## Guides
 
 - [Clients](clients.md)
 - [Encryption](encryption.md)
 - [Decryption](decryption.md)
 - [Chains](chains.md)
 - [Runtime configuration](runtime-configuration.md)
-- [Performance](performance.md)
-- [Security model](security.md)
+- [Runtime compatibility](runtime-compatibility.md)
+- [Error handling](error-handling.md)
 
 ## Reference
 
-- [API reference](api-reference.md)
 - [Types](types.md)
-- [Errors](errors.md)
+- [Actions](actions.md)
+- [API reference](api-reference.md)
 
-## Internals
+## Advanced
 
+- [Security model](security.md)
+- [Migration from the Relayer SDK](migration.md)
 - [Architecture](architecture.md)

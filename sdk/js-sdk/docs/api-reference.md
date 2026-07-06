@@ -1,371 +1,424 @@
 # API reference
 
-This is the complete reference for every function the SDK exports. For guided usage, see [Getting started](getting-started.md), [Encryption](encryption.md), or [Decryption](decryption.md) instead.
+Complete reference for the public surface of `@fhevm/sdk`. Signatures are written
+in TypeScript. Guides for each area are linked at the point of use.
 
-Client factories and runtime config are importable from `@fhevm/sdk/ethers` or `@fhevm/sdk/viem` (identical APIs). Standalone action functions are available from their respective entry points under `@fhevm/sdk/actions/*`.
+## Entry points
 
----
+| Import path                  | Provides                                                        |
+| ---------------------------- | -------------------------------------------------------------- |
+| `@fhevm/sdk/ethers`          | Client factories + runtime config, ethers v6 adapter           |
+| `@fhevm/sdk/viem`            | Client factories + runtime config, viem adapter                |
+| `@fhevm/sdk/chains`          | Built-in chains and `defineFhevmChain`                         |
+| `@fhevm/sdk/types`           | Public type exports and encrypted-value helpers                |
+| `@fhevm/sdk/actions/base`    | Public-decrypt and proof-fetch actions                         |
+| `@fhevm/sdk/actions/encrypt` | Encrypt actions                                                |
+| `@fhevm/sdk/actions/decrypt` | Private-decrypt actions                                        |
+| `@fhevm/sdk/actions/chain`   | Permit / key / serialization actions                           |
+| `@fhevm/sdk/actions/host`    | Host-contract read actions                                     |
+
+The ethers and viem entry points export the same symbols; only the native
+connection object differs (`provider` vs `publicClient`).
+
+## Runtime config
+
+Exported from both `@fhevm/sdk/ethers` and `@fhevm/sdk/viem`.
+
+```ts
+function setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void;
+function hasFhevmRuntimeConfig(): boolean;
+```
+
+`setFhevmRuntimeConfig` is idempotent with identical config and throws if re-set
+with a different config. See [Runtime configuration](runtime-configuration.md).
+
+```ts
+type FhevmRuntimeConfig = {
+  readonly numberOfThreads?: number | undefined;
+  readonly singleThread?: boolean | undefined;
+  readonly wasmAssetLoadMode?: WasmAssetLoadMode | undefined;
+  readonly locateFile?: ((file: string) => URL) | undefined;
+  readonly moduleVersions?: FhevmModuleVersions | undefined;
+  readonly logger?: Logger | undefined;
+  readonly auth?: Auth | undefined;
+};
+
+type WasmAssetLoadMode =
+  | 'embedded-base64'
+  | 'verified-blob'
+  | 'precheck-direct-url'
+  | 'trusted-direct-url'
+  | 'auto';
+
+type FhevmModuleVersions =
+  | 'auto'
+  | {
+      readonly tfhe?: '1.5.3' | '1.6.2' | undefined;
+      readonly kms?: '0.13.10' | '0.13.20-0' | undefined;
+      readonly checkCompatibility?: 'throw' | 'warn' | 'off' | undefined;
+    };
+```
+
+### Runtime init helpers
+
+```ts
+function initFhevmRuntime(): Promise<void>;
+function initFhevmEncryptRuntime(): Promise<void>;
+function initFhevmDecryptRuntime(): Promise<void>;
+```
 
 ## Client factories
 
-### `setFhevmRuntimeConfig(config)`
-
-Configures the global runtime. Must be called before creating any clients.
-
-```ts
-setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void
-```
-
-| Parameter                | Type                    | Description                        |
-| ------------------------ | ----------------------- | ---------------------------------- |
-| `config.locateFile`      | `(file: string) => URL` | Custom WASM file locator           |
-| `config.logger`          | `Logger`                | Logger instance `{ debug, error }` |
-| `config.singleThread`    | `boolean`               | Force single-threaded WASM         |
-| `config.numberOfThreads` | `number`                | Number of WASM worker threads      |
-
-### `createFhevmClient(parameters)`
-
-Full client with encrypt, decrypt, and base modules.
+Exported from both adapter entry points. The ethers variants take `provider`
+(`ethers.ContractRunner`); the viem variants take `publicClient`
+(`viem.PublicClient`). Shapes otherwise match.
 
 ```ts
-createFhevmClient<chain, provider>(parameters: {
-  readonly provider: provider;
-  readonly chain: chain;
-  readonly options?: FhevmOptions;
-}): FhevmClient<chain, WithAll, provider>
+// ethers
+function createFhevmClient(parameters: {
+  readonly provider: ContractRunner;
+  readonly chain: FhevmChain;
+  readonly options?: FhevmOptions | undefined;
+}): FhevmClient;
+
+function createFhevmEncryptClient(parameters: {
+  readonly provider: ContractRunner;
+  readonly chain: FhevmChain;
+  readonly options?: FhevmEncryptOptions | undefined;
+}): FhevmEncryptClient;
+
+function createFhevmDecryptClient(parameters: {
+  readonly provider: ContractRunner;
+  readonly chain: FhevmChain;
+  readonly options?: FhevmDecryptOptions | undefined;
+}): FhevmDecryptClient;
+
+function createFhevmBaseClient(parameters: {
+  readonly provider: ContractRunner;
+  readonly chain: FhevmChain;
+  readonly options?: FhevmOptions | undefined;
+}): FhevmBaseClient;
 ```
 
-### `createFhevmEncryptClient(parameters)`
+The viem forms replace `provider: ContractRunner` with
+`publicClient: PublicClient`. See [Clients](clients.md).
 
-Encrypt-only client (no TKMS WASM loaded).
+### Factory options
 
 ```ts
-createFhevmEncryptClient<chain, provider>(parameters: {
-  readonly provider: provider;
-  readonly chain: chain;
-  readonly options?: FhevmOptions;
-}): FhevmEncryptClient<chain, WithEncrypt, provider>
+type FhevmBaseOptions = {
+  readonly batchRpcCalls?: boolean | undefined;
+};
+
+type FhevmOptions = FhevmBaseOptions & {
+  readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
+  readonly moduleVersions?: FhevmModuleVersions | undefined;
+};
+
+type FhevmEncryptOptions = FhevmBaseOptions & {
+  readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
+  readonly moduleVersions?: FhevmEncryptModuleVersions | undefined;
+};
+
+type FhevmDecryptOptions = FhevmBaseOptions & {
+  readonly moduleVersions?: FhevmDecryptModuleVersions | undefined;
+};
 ```
 
-### `createFhevmDecryptClient(parameters)`
+### Client lifecycle members
 
-Decrypt-only client (no TFHE WASM loaded).
+Present on every client:
 
 ```ts
-createFhevmDecryptClient<chain, provider>(parameters: {
-  readonly provider: provider;
-  readonly chain: chain;
-  readonly options?: FhevmOptions;
-}): FhevmDecryptClient<chain, WithDecrypt, provider>
+init(): Promise<void>;         // preload + compile WASM
+readonly ready: Promise<void>; // resolves when usable
+readonly uid: string;
+readonly chain: FhevmChain;
+readonly protocolVersion: ProtocolVersionResolution;
 ```
 
-### `createFhevmBaseClient(parameters)`
+### Method availability
 
-Empty base client — extend with `encryptActions`, `decryptActions`, or both.
+| Method                              | Base | Encrypt | Decrypt | Full |
+| ----------------------------------- | :--: | :-----: | :-----: | :--: |
+| `encryptValue` / `encryptValues`    |      |   ✅    |         |  ✅  |
+| `decryptValue` / `decryptValues` / `decryptValuesFromPairs` |  |  |  ✅  | ✅ |
+| `generateTransportKeyPair`          |      |         |   ✅    |  ✅  |
+| `canDecryptValue(s)` / `…FromPairs` |      |         |   ✅    |  ✅  |
+| `decryptPublicValue(s)`             |  ✅  |   ✅    |   ✅    |  ✅  |
+| `decryptPublicValuesWithSignatures` |  ✅  |   ✅    |   ✅    |  ✅  |
+| `canDecryptPublicValue(s)`          |  ✅  |   ✅    |   ✅    |  ✅  |
+| `signDecryptionPermit`              |  ✅  |   ✅    |   ✅    |  ✅  |
+| `serialize`/`parse` permit + key    |  ✅  |   ✅    |   ✅    |  ✅  |
+| `fetchFheEncryptionKeyBytes`        |  ✅  |   ✅    |   ✅    |  ✅  |
+
+## Encryption methods
+
+See [Encryption](encryption.md).
 
 ```ts
-createFhevmBaseClient<chain, provider>(parameters: {
-  readonly provider: provider;
-  readonly chain: chain;
-  readonly options?: FhevmOptions;
-}): FhevmBaseClient<chain, FhevmRuntime, provider>
+encryptValues(parameters: {
+  readonly values: ReadonlyArray<{ readonly type: string; readonly value: boolean | bigint | number | string }>;
+  readonly contractAddress: string;
+  readonly userAddress: string;
+  readonly options?: RelayerInputProofOptions | undefined;
+}): Promise<{ readonly encryptedValues: readonly EncryptedValue[]; readonly inputProof: BytesHex }>;
+
+encryptValue(parameters: {
+  readonly value: { readonly type: string; readonly value: boolean | bigint | number | string };
+  readonly contractAddress: string;
+  readonly userAddress: string;
+  readonly options?: RelayerInputProofOptions | undefined;
+}): Promise<{ readonly encryptedValue: EncryptedValue; readonly inputProof: BytesHex }>;
 ```
 
----
+Valid `type` strings: `'bool' | 'uint8' | 'uint16' | 'uint32' | 'uint64' | 'uint128' | 'uint256' | 'address'`.
 
-## Encryption actions
+## Private decryption methods
 
-Import from `@fhevm/sdk/actions/encrypt`.
-
-### `encrypt(fhevm, parameters)`
-
-Encrypts values and returns encrypted handles with a verified input proof. The FHE public encryption key is automatically fetched and cached on first use.
+See [Decryption](decryption.md).
 
 ```ts
-// Single value
-encrypt(fhevm, parameters: EncryptSingleParameters): Promise<EncryptSingleReturnType>
+generateTransportKeyPair(): Promise<TransportKeyPair>;
 
-// Multiple values
-encrypt(fhevm, parameters: EncryptMultipleParameters): Promise<EncryptMultipleReturnType>
+decryptValue(parameters: {
+  readonly encryptedValue: EncryptedValueLike;
+  readonly contractAddress: string;
+  readonly transportKeyPair: TransportKeyPair;
+  readonly signedPermit: SignedDecryptionPermit;
+  readonly options?: RelayerUserDecryptOptions | RelayerDelegatedUserDecryptOptions | undefined;
+}): Promise<TypedValue>;
+
+decryptValues(parameters: {
+  readonly encryptedValues: readonly EncryptedValueLike[];
+  readonly contractAddress: string;
+  readonly transportKeyPair: TransportKeyPair;
+  readonly signedPermit: SignedDecryptionPermit;
+  readonly options?: RelayerUserDecryptOptions | RelayerDelegatedUserDecryptOptions | undefined;
+}): Promise<readonly TypedValue[]>;
+
+decryptValuesFromPairs(parameters: {
+  readonly pairs: ReadonlyArray<{ readonly encryptedValue: EncryptedValueLike; readonly contractAddress: string }>;
+  readonly transportKeyPair: TransportKeyPair;
+  readonly signedPermit: SignedDecryptionPermit;
+  readonly options?: RelayerUserDecryptOptions | RelayerDelegatedUserDecryptOptions | undefined;
+}): Promise<readonly TypedValue[]>;
 ```
 
-| Parameter         | Type                                          | Description                         |
-| ----------------- | --------------------------------------------- | ----------------------------------- |
-| `contractAddress` | `string`                                      | Target contract address             |
-| `userAddress`     | `string`                                      | User's Ethereum address             |
-| `values`          | `TypedValueLike \| readonly TypedValueLike[]` | Values to encrypt (single or array) |
-| `options?`        | `RelayerInputProofOptions`                    | Optional relayer options            |
-
-**Single value return** (`EncryptSingleReturnType`):
-
-| Field                    | Type                     | Description                     |
-| ------------------------ | ------------------------ | ------------------------------- |
-| `externalEncryptedValue` | `ExternalEncryptedValue` | The encrypted handle            |
-| `inputProof`             | `BytesHex`               | Proof bytes to pass to contract |
-
-**Multiple values return** (`EncryptMultipleReturnType`):
-
-| Field                     | Type                                | Description                       |
-| ------------------------- | ----------------------------------- | --------------------------------- |
-| `externalEncryptedValues` | `readonly ExternalEncryptedValue[]` | Encrypted handles in input order  |
-| `inputProof`              | `BytesHex`                          | Shared proof bytes for all values |
-
-### `generateZkProof(fhevm, parameters)`
-
-Generates a ZK proof of correct encryption (CPU-intensive TFHE WASM).
+### Permission checks
 
 ```ts
-generateZkProof(fhevm, parameters: GenerateZkProofParameters): Promise<ZkProof>
+canDecryptValue(parameters:
+  | { readonly encryptedValue: EncryptedValueLike; readonly contractAddress: string; readonly userAddress: string }
+  | { readonly encryptedValue: EncryptedValueLike; readonly contractAddress: string; readonly signedPermit: SignedDecryptionPermit; readonly transportKeyPair?: TransportKeyPair }
+): Promise<{ readonly allowed: boolean; readonly details: { readonly contractAllowed: boolean; readonly userAllowed: boolean } }>;
 ```
 
----
+`canDecryptValues` and `canDecryptValuesFromPairs` mirror the plural / pairs
+forms and return an `allowed` flag with a `details` array.
 
-## Base actions
+## Public decryption methods
 
-Import from `@fhevm/sdk/actions/base`. Also available as client methods on all client types.
-
-### `publicDecrypt(fhevm, parameters)` / `client.publicDecrypt(parameters)`
-
-Decrypts encrypted values that are publicly decryptable on-chain.
+See [Decryption → Public decryption](decryption.md#public-decryption).
 
 ```ts
-publicDecrypt(fhevm, parameters: PublicDecryptParameters): Promise<PublicDecryptionProof>
+decryptPublicValue(parameters: {
+  readonly encryptedValue: EncryptedValueLike;
+  readonly options?: RelayerPublicDecryptOptions | undefined;
+}): Promise<TypedValue>;
+
+decryptPublicValues(parameters: {
+  readonly encryptedValues: readonly EncryptedValueLike[];
+  readonly options?: RelayerPublicDecryptOptions | undefined;
+}): Promise<TypedValue[]>;
+
+decryptPublicValuesWithSignatures(parameters: {
+  readonly encryptedValues: readonly EncryptedValueLike[];
+  readonly options?: RelayerPublicDecryptOptions | undefined;
+}): Promise<{
+  readonly clearValues: readonly TypedValue[];
+  readonly checkSignaturesArgs: {
+    readonly handlesList: readonly string[];
+    readonly abiEncodedCleartexts: BytesHex;
+    readonly decryptionProof: BytesHex;
+  };
+}>;
+
+canDecryptPublicValue(parameters: { readonly encryptedValue: EncryptedValueLike }): Promise<boolean>;
+canDecryptPublicValues(parameters: { readonly encryptedValues: readonly EncryptedValueLike[] }): Promise<readonly boolean[]>;
 ```
 
-| Parameter         | Type                            | Description                                        |
-| ----------------- | ------------------------------- | -------------------------------------------------- |
-| `encryptedValues` | `readonly EncryptedValueLike[]` | Encrypted values to decrypt (min 1, max 2048 bits) |
-| `options?`        | `RelayerPublicDecryptOptions`   | Optional relayer options                           |
+## Permit and key methods
 
-### `fetchVerifiedInputProof(fhevm, parameters)`
-
-Sends a ZK proof to the relayer, returns a verified input proof with coprocessor signatures.
+See [Decryption](decryption.md).
 
 ```ts
-fetchVerifiedInputProof(fhevm, parameters: FetchVerifiedInputProofParameters): Promise<VerifiedInputProof>
+signDecryptionPermit(parameters: {
+  readonly contractAddresses: readonly string[];
+  readonly startTimestamp: number;
+  readonly durationSeconds: number;
+  readonly signerAddress: string;
+  readonly signer: NativeSigner; // ethers Signer / viem Account | WalletClient
+  readonly delegatorAddress?: string | undefined;
+  readonly transportKeyPair: TransportKeyPair;
+}): Promise<SignedDecryptionPermit>;
+
+// synchronous:
+serializeTransportKeyPair(parameters: { readonly transportKeyPair: TransportKeyPair }): {
+  publicKey: BytesHex;
+  privateKey: BytesHex;
+};
+serializeSignedDecryptionPermit(parameters: { readonly signedPermit: SignedDecryptionPermit }): {
+  readonly version: number;
+  readonly eip712: Eip712Like;
+  readonly signature: string;
+  readonly signerAddress: string;
+};
+
+parseTransportKeyPair(parameters: { readonly publicKey: string; readonly privateKey: string }): Promise<TransportKeyPair>;
+parseSignedDecryptionPermit(parameters: {
+  readonly serializedPermit: { readonly version: number; readonly eip712: Eip712Like; readonly signature: string; readonly signerAddress: string };
+  readonly transportKeyPair: TransportKeyPair;
+}): Promise<SignedDecryptionPermit>;
+
+fetchFheEncryptionKeyBytes(parameters?: {
+  readonly options?: RelayerKeyUrlOptions | undefined;
+  readonly ignoreCache?: boolean | undefined;
+}): Promise<FheEncryptionKeyBytes>;
 ```
 
-### `fetchKmsSigncryptedShares(fhevm, parameters)`
+## Actions
 
-Fetches KMS signcrypted shares for decryption.
+Each action is the corresponding method with the client as its first argument.
+See [Actions](actions.md) for import paths and examples.
 
 ```ts
-fetchKmsSigncryptedShares(fhevm, parameters: FetchKmsSigncryptedSharesParameters): Promise<KmsSigncryptedShares>
+// @fhevm/sdk/actions/encrypt
+encryptValue(fhevm, parameters);
+encryptValues(fhevm, parameters);
+generateZkProof(fhevm, parameters);
+
+// @fhevm/sdk/actions/decrypt
+generateTransportKeyPair(fhevm);
+decryptValue(fhevm, parameters);
+decryptValues(fhevm, parameters);
+decryptValuesFromPairs(fhevm, parameters);
+canDecryptValue(fhevm, parameters);
+canDecryptValues(fhevm, parameters);
+canDecryptValuesFromPairs(fhevm, parameters);
+
+// @fhevm/sdk/actions/base
+decryptPublicValue(fhevm, parameters);
+decryptPublicValues(fhevm, parameters);
+decryptPublicValuesWithSignatures(fhevm, parameters);
+canDecryptPublicValue(fhevm, parameters);
+canDecryptPublicValues(fhevm, parameters);
+fetchEncryptedValues(fhevm, parameters);
+
+// @fhevm/sdk/actions/chain
+signDecryptionPermit(fhevm, parameters);
+serializeSignedDecryptionPermit(fhevm, parameters);
+parseSignedDecryptionPermit(fhevm, parameters);
+serializeTransportKeyPair(fhevm, parameters);
+parseTransportKeyPair(fhevm, parameters);
+fetchFheEncryptionKeyBytes(fhevm, parameters?);
+
+// @fhevm/sdk/actions/host
+resolveFhevmConfig(fhevm, parameters);
+isAllowedForDecryption(fhevm, parameters);
+persistAllowed(fhevm, parameters);
 ```
 
-### `isAllowedForDecryption(fhevm, parameters)`
+## Chains
 
-Checks if encrypted values are allowed for decryption on the ACL contract.
+Exported from `@fhevm/sdk/chains`. See [Chains](chains.md).
 
 ```ts
-isAllowedForDecryption(fhevm, parameters): Promise<boolean | boolean[]>
+const mainnet: FhevmChain; // id 1
+const sepolia: FhevmChain; // id 11155111
+
+function defineFhevmChain<const chain extends FhevmChain>(chain: chain): chain;
+
+type FhevmChain = {
+  readonly id: number;
+  readonly fhevm: {
+    readonly contracts: {
+      readonly acl: ChainContract;
+      readonly inputVerifier: ChainContract;
+      readonly kmsVerifier: ChainContract;
+      readonly protocolConfig: ChainContract | undefined;
+    };
+    readonly relayerUrl: string;
+    readonly gateway: {
+      readonly id: number;
+      readonly contracts: { readonly decryption: ChainContract; readonly inputVerification: ChainContract };
+    };
+  };
+};
+
+type ChainContract = { readonly address: `0x${string}`; readonly blockCreated?: number | undefined };
 ```
 
-### `checkAllowedForDecryption(fhevm, parameters)`
+## Types
 
-Same as `isAllowedForDecryption`, but throws if any value is not allowed.
+Exported from `@fhevm/sdk/types`. See [Types](types.md).
 
 ```ts
-checkAllowedForDecryption(fhevm, parameters: CheckAllowedForDecryptionParameters): Promise<void>
+// value exports:
+function asEncryptedValue(value: unknown): EncryptedValue;
+function isEncryptedValue(value: unknown): value is EncryptedValue;
+
+// type exports:
+type TypedValue = /* discriminated union { type, value } */;
+type EncryptedValue = /* branded bytes32 */;
+type EncryptedValueLike = Uint8Array | string | { readonly bytes32Hex: string };
+type Eip712Like = {
+  readonly domain: Record<string, unknown>;
+  readonly primaryType?: string | undefined;
+  readonly types: Record<string, ReadonlyArray<{ readonly name: string; readonly type: string }>>;
+  readonly message: Record<string, unknown>;
+};
+type FhevmEncryptClient; // client type alias
+type FhevmDecryptClient; // client type alias
 ```
 
----
+Core types referenced throughout (imported from the core package):
+`FheType`, `TransportKeyPair`, `SignedDecryptionPermit`, `FheEncryptionKeyBytes`,
+and the branded handle aliases `Ebool`/`Euint8`/…/`Eaddress` plus their
+`External*` counterparts.
 
-## Decrypt actions
+## Relayer options
 
-Import from `@fhevm/sdk/actions/decrypt`.
-
-### `decrypt(fhevm, parameters)` / `client.decrypt(parameters)`
-
-Decrypts encrypted values using a transport key pair and signed permit.
+Accepted as the `options` field on every network method. All fields optional.
 
 ```ts
-decrypt(fhevm, parameters: DecryptParameters): Promise<readonly ClearValue[]>
+type RelayerCommonOptions = {
+  readonly auth?: Auth | undefined;
+  readonly headers?: Record<string, string> | undefined;
+  readonly debug?: boolean | undefined;
+  readonly fetchRetries?: number | undefined;
+  readonly fetchRetryDelayInMilliseconds?: number | undefined;
+  readonly signal?: AbortSignal | undefined;
+  readonly timeout?: number | undefined;
+};
 ```
 
-| Parameter          | Type                                                              | Description                                              |
-| ------------------ | ----------------------------------------------------------------- | -------------------------------------------------------- |
-| `encryptedValues`  | `EncryptedValueEntry \| readonly EncryptedValueEntry[]`           | Encrypted values with their contract addresses           |
-| `signedPermit`     | `SignedSelfDecryptionPermit \| SignedDelegatedDecryptionPermit`   | Signed permit from `signDecryptionPermit()`              |
-| `transportKeyPair` | `TransportKeyPair`                                                | E2E transport key pair from `generateTransportKeyPair()` |
-| `options?`         | `RelayerUserDecryptOptions \| RelayerDelegatedUserDecryptOptions` | Optional relayer options                                 |
+Per-operation option types add an `onProgress?` callback:
+`RelayerInputProofOptions` (encrypt), `RelayerUserDecryptOptions` /
+`RelayerDelegatedUserDecryptOptions` (private decrypt),
+`RelayerPublicDecryptOptions` (public decrypt), `RelayerKeyUrlOptions` (key
+fetch). `onProgress` receives a `{ state, operation }` argument where `state` is
+one of `'queued' | 'throttled' | 'succeeded' | 'failed' | 'timeout' | 'abort'`.
 
-Each `EncryptedValueEntry` has `{ encryptedValue: EncryptedValueLike, contractAddress: ChecksummedAddress }`.
+## Errors
 
-### `generateTransportKeyPair(fhevm)` / `client.generateTransportKeyPair()`
+Identified by their `name` string. See [Error handling](error-handling.md) for
+the full catalog and handling patterns.
 
-Generates a new E2E transport key pair for decryption.
+## Related
 
-```ts
-generateTransportKeyPair(fhevm): Promise<TransportKeyPair>
+- [Getting started](getting-started.md)
+- [Clients](clients.md) · [Encryption](encryption.md) · [Decryption](decryption.md)
+- [Chains](chains.md) · [Runtime configuration](runtime-configuration.md) · [Types](types.md)
 ```
 
-### `decryptKmsSigncryptedShares(fhevm, parameters)`
-
-Lower-level: decrypts KMS signcrypted shares locally using TKMS WASM.
-
-```ts
-decryptKmsSigncryptedShares(fhevm, parameters: DecryptKmsSigncryptedSharesParameters): Promise<ClearValue[]>
-```
-
----
-
-## Chain actions
-
-Import from `@fhevm/sdk/actions/chain`. These act on the chain definition alone — no provider needed.
-
-### `signDecryptionPermit(fhevm, parameters)` / `client.signDecryptionPermit(parameters)`
-
-Creates and signs a decryption permit in a single step. Constructs the EIP-712 typed data internally and signs it with the provided signer.
-
-```ts
-// Self decryption
-signDecryptionPermit(fhevm, parameters: SignSelfDecryptionPermitParameters): Promise<SignedSelfDecryptionPermit>
-
-// Delegated decryption (onBehalfOf)
-signDecryptionPermit(fhevm, parameters: SignDelegatedDecryptionPermitParameters): Promise<SignedDelegatedDecryptionPermit>
-```
-
-| Parameter           | Type                | Description                                |
-| ------------------- | ------------------- | ------------------------------------------ |
-| `contractAddresses` | `readonly string[]` | Allowed contracts (max 10)                 |
-| `startTimestamp`    | `number`            | Unix timestamp (seconds)                   |
-| `durationDays`      | `number`            | Validity period (max 365)                  |
-| `signerAddress`     | `string`            | Address of the signer                      |
-| `signer`            | `NativeSigner`      | Ethers Signer or viem WalletClient         |
-| `transportKeyPair`  | `TransportKeyPair`  | Transport key pair                         |
-| `onBehalfOf?`       | `string`            | Optional — address to decrypt on behalf of |
-
-### `createKmsUserDecryptEIP712(fhevm, parameters)` / `client.createUserDecryptEIP712(parameters)`
-
-Lower-level: constructs EIP-712 typed data for a decrypt permit without signing. Use `signDecryptionPermit` for the common case.
-
-```ts
-createKmsUserDecryptEIP712(fhevm, parameters: CreateKmsUserDecryptEIP712Parameters): Promise<CreateKmsUserDecryptEIP712ReturnType>
-```
-
-### `createKmsDelegatedUserDecryptEIP712(fhevm, parameters)` / `client.createDelegatedUserDecryptEIP712(parameters)`
-
-Lower-level: constructs EIP-712 typed data for a delegated decrypt permit without signing.
-
-```ts
-createKmsDelegatedUserDecryptEIP712(fhevm, parameters: CreateKmsDelegatedUserDecryptEIP712Parameters): Promise<CreateKmsDelegatedUserDecryptEIP712ReturnType>
-```
-
-### `verifyKmsUserDecryptEIP712(fhevm, parameters)`
-
-Verifies a decrypt permit EIP-712 signature. Throws on invalid signature.
-
-```ts
-verifyKmsUserDecryptEIP712(fhevm, parameters: VerifyKmsUserDecryptEIP712Parameters): Promise<void>
-```
-
-### `parseTransportKeyPair(fhevm, parameters)` / `client.parseTransportKeyPair(parameters)`
-
-Restores a key pair from serialized bytes.
-
-```ts
-parseTransportKeyPair(fhevm, parameters: ParseTransportKeyPairParameters): Promise<TransportKeyPair>
-```
-
-### `serializeTransportKeyPair(fhevm, parameters)` / `client.serializeTransportKeyPair(parameters)`
-
-Serializes a key pair for storage/persistence.
-
-```ts
-serializeTransportKeyPair(fhevm, parameters: SerializeTransportKeyPairParameters): SerializeTransportKeyPairReturnType
-```
-
-### `fetchFheEncryptionKeyBytes(fhevm, parameters?)` / `client.fetchFheEncryptionKeyBytes(parameters?)`
-
-Fetches the ~50MB FHE public encryption key from the relayer and caches it.
-
-```ts
-fetchFheEncryptionKeyBytes(fhevm, parameters?: FetchFheEncryptionKeyBytesParameters): Promise<FetchFheEncryptionKeyBytesReturnType>
-```
-
-### `createKmsEIP712Domain(fhevm)`
-
-Creates the EIP-712 domain for KMS operations.
-
-```ts
-createKmsEIP712Domain(fhevm): Promise<CreateKmsEIP712DomainReturnType>
-```
-
-### `createCoprocessorEIP712Domain(fhevm)`
-
-Creates the EIP-712 domain for coprocessor operations.
-
-```ts
-createCoprocessorEIP712Domain(fhevm): Promise<CreateCoprocessorEIP712DomainReturnType>
-```
-
----
-
-## Host contract actions
-
-Import from `@fhevm/sdk/actions/host`. These read on-chain contract data. They take any `Fhevm` instance — no `FhevmChain` required.
-
-### `resolveFhevmConfig(fhevm, parameters)`
-
-Resolves complete FHEVM configuration by reading multiple host contracts.
-
-```ts
-resolveFhevmConfig(fhevm, parameters: ResolveFhevmConfigParameters): Promise<ResolveFhevmConfigReturnType>
-```
-
-### `readFhevmExecutorContractData(fhevm, parameters)`
-
-```ts
-readFhevmExecutorContractData(fhevm, parameters: ReadFhevmExecutorContractDataParameters): Promise<ReadFhevmExecutorContractDataReturnType>
-```
-
-### `readInputVerifierContractData(fhevm, parameters)`
-
-```ts
-readInputVerifierContractData(fhevm, parameters: ReadInputVerifierContractDataParameters): Promise<ReadInputVerifierContractDataReturnType>
-```
-
-### `readKmsVerifierContractData(fhevm, parameters)`
-
-```ts
-readKmsVerifierContractData(fhevm, parameters: ReadKmsVerifierContractDataParameters): Promise<ReadKmsVerifierContractDataReturnType>
-```
-
-### Other host actions
-
-| Function                                 | Description                             |
-| ---------------------------------------- | --------------------------------------- |
-| `getACLAddress(fhevm, params)`           | Gets the ACL contract address           |
-| `getFHEVMExecutorAddress(fhevm, params)` | Gets the FhevmExecutor contract address |
-| `getInputVerifierAddress(fhevm, params)` | Gets the InputVerifier contract address |
-| `getKmsSigners(fhevm, params)`           | Gets KMS signer addresses               |
-| `getCoprocessorSigners(fhevm, params)`   | Gets coprocessor signer addresses       |
-| `getThreshold(fhevm, params)`            | Gets the signature threshold            |
-| `getHandleVersion(fhevm, params)`        | Gets the handle version                 |
-| `resolveChainId(fhevm, params)`          | Resolves the chain ID                   |
-| `isAllowedForDecryption(fhevm, params)`  | Checks ACL decryption permission        |
-| `persistAllowed(fhevm, params)`          | Checks persisted ACL permissions        |
-| `eip712Domain(fhevm, params)`            | Reads EIP-712 domain from contract      |
-
----
-
-## Type exports
-
-**Client:** `FhevmClient`, `FhevmEncryptClient`, `FhevmDecryptClient`, `FhevmBaseClient`, `Fhevm`, `FhevmRuntime`, `FhevmRuntimeConfig`, `FhevmOptions`, `WithEncrypt`, `WithDecrypt`, `WithAll`
-
-**Encrypted values:** `EncryptedValue`, `ComputedEncryptedValue`, `ExternalEncryptedValue`, `EncryptedValueLike`, `Handle` (alias), `InputHandle` (alias), `Ebool`, `Euint8`, `Euint16`, `Euint32`, `Euint64`, `Euint128`, `Euint256`, `Eaddress`, `ExternalEbool`, `ExternalEuint8`, ... `ExternalEaddress`
-
-**Clear values:** `ClearValue`, `ClearValueOfType`, `ClearBool`, `ClearUint8`, `ClearUint16`, `ClearUint32`, `ClearUint64`, `ClearUint128`, `ClearUint256`, `ClearAddress`
-
-**FHE:** `FheType`, `FheTypeId`
-
-**Primitives:** `ChecksummedAddress`, `Address`, `BytesHex`, `Bytes32Hex`, `Bytes65Hex`, `Uint8Number`, `Uint16Number`, `Uint32Number`, `Uint64BigInt`, `Uint128BigInt`, `Uint256BigInt`, `TypedValue`, `TypedValueLike`
-
-**Proofs:** `VerifiedInputProof`, `InputProof`, `ZkProof`, `PublicDecryptionProof`
-
-**Permits:** `SignedSelfDecryptionPermit`, `SignedDelegatedDecryptionPermit`, `SignedDecryptionPermit`, `KmsUserDecryptEIP712`, `KmsDelegatedUserDecryptEIP712`, `KmsEIP712Domain`, `TransportKeyPair`
-
-**Chains:** `FhevmChain`
-
-**Convention:** Every action exports `FunctionNameParameters` and `FunctionNameReturnType` (e.g., `EncryptParameters`, `EncryptReturnType`).
