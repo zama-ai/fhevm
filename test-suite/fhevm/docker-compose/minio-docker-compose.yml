@@ -37,6 +37,12 @@ services:
         mc mb --with-lock --ignore-existing myminio/kms-public
         mc mb --with-lock --ignore-existing myminio/ct64
         mc mb --with-lock --ignore-existing myminio/ct128
+        # Per-coprocessor ct128 buckets
+        # See test-suite/fhevm/src/generate/env.ts:buildInstanceEnvs.
+        for i in 0 1 2 3 4; do
+          mc mb --with-lock --ignore-existing myminio/coproc-$$i-ct128
+          mc anonymous set public myminio/coproc-$$i-ct128
+        done
         mc anonymous set public myminio/kms-public
         mc anonymous set public myminio/ct64
         mc anonymous set public myminio/ct128
