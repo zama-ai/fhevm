@@ -27,6 +27,9 @@ RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=gateway-contracts/rust_bindings,target=/gateway-contracts/rust_bindings \
     --mount=type=bind,source=host-contracts/rust_bindings,target=/host-contracts/rust_bindings \
     --mount=type=bind,source=shared/user-decryption-signature,target=/shared/user-decryption-signature \
+    # zama-solana-acl (Solana MMR proof service) — standalone crate, resolves
+    # the `../solana/crates/zama-solana-acl` path dep in relayer/Cargo.toml.
+    --mount=type=bind,source=solana/crates/zama-solana-acl,target=/solana/crates/zama-solana-acl \
 #    --mount=type=bind,source=.git/HEAD,target=.git/HEAD \
 #    --mount=type=bind,source=.git/index,target=.git/index \
 #    --mount=type=bind,source=.git/objects,target=.git/objects \

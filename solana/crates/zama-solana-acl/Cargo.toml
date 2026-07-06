@@ -2,9 +2,12 @@
 name = "zama-solana-acl"
 version = "0.1.0"
 description = "Shared encrypted-value ACL layout, MMR history, and authorization for the Zama Solana port"
-authors.workspace = true
-edition.workspace = true
-license.workspace = true
+# Standalone (no workspace inheritance): this crate is consumed as a `path`
+# dependency by the relayer and kms-connector Docker builds, whose contexts do
+# not include the solana workspace root — so it must resolve without it.
+authors = ["Zama"]
+edition = "2021"
+license = "BSD-3-Clause-Clear"
 
 [lib]
 name = "zama_solana_acl"

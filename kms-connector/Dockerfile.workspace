@@ -40,6 +40,10 @@ COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared ./shared
 COPY kms-connector ./kms-connector
+# kms-worker depends on zama-solana-acl via `../solana/crates/zama-solana-acl`
+# (see kms-connector/Cargo.toml). The crate is standalone (no workspace
+# inheritance), so copying just it satisfies the path dependency.
+COPY solana/crates/zama-solana-acl ./solana/crates/zama-solana-acl
 
 WORKDIR /app/kms-connector
 
