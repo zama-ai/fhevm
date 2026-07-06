@@ -126,12 +126,13 @@ async fn run_uploader_loop(
 
                 let mut trx = fhevm_engine_common::versioning::begin_guarded_pool(&pool).await?;
 
-                let item = match job {
-                    UploadJob::Normal(item) => {
-                        item.enqueue_upload_task(&mut trx).await?;
-                        create_upload_task_savepoint(&mut trx).await?;
-                        item
-                    }
+                // Normal jobs defer their enqueue into the spawned task: the
+                // provenance witness takes FOR KEY SHARE on the pbs row,
+                // which blocks while the originating batch transaction still
+                // holds its FOR UPDATE work locks — the dispatch loop must
+                // never park head-of-line on that.
+                let (item, needs_enqueue) = match job {
+                    UploadJob::Normal(item) => (item, true),
                     UploadJob::DatabaseLock(mut item) => {
                         create_upload_task_savepoint(&mut trx).await?;
                         let row = match sqlx::query!(
@@ -194,7 +195,7 @@ async fn run_uploader_loop(
                             item.ct128 = Arc::new(BigCiphertext::new(Vec::new(), ct128_format));
                         }
 
-                        item
+                        (item, false)
                     }
                 };
                 debug!(handle = hex::encode(&item.handle), "Received task, handle");
@@ -228,9 +229,35 @@ async fn run_uploader_loop(
                     // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3");
                     upload_span.set_parent(item.span.context());
-                    let result = upload_ciphertexts(&mut trx, item, &client, &conf, signer)
-                        .instrument(upload_span.clone())
-                        .await;
+                    // Enqueue deferred from the dispatch loop (see above). A
+                    // dead witness means reorg cleanup cancelled the
+                    // publication while this job was queued: drop it.
+                    let prep: anyhow::Result<bool> = async {
+                        if needs_enqueue {
+                            if !item.enqueue_upload_task(&mut trx).await? {
+                                return Ok(false);
+                            }
+                            create_upload_task_savepoint(&mut trx).await?;
+                        }
+                        Ok(true)
+                    }
+                    .await;
+                    let result = match prep {
+                        Ok(false) => {
+                            if let Err(err) = trx.rollback().await {
+                                warn!(error = %err, "Failed to roll back cancelled upload");
+                            }
+                            drop(upload_span);
+                            drop(permit);
+                            return Ok(());
+                        }
+                        Ok(true) => {
+                            upload_ciphertexts(&mut trx, item, &client, &conf, signer)
+                                .instrument(upload_span.clone())
+                                .await
+                        }
+                        Err(err) => Err(err),
+                    };
                     let outcome = match result {
                         Ok(()) => {
                             if let Err(err) = trx.commit().await {
@@ -416,10 +443,30 @@ fn build_attestation_payload(
     ))
 }
 
+/// How strictly an existing object's attestation is validated.
+///
+/// The attestation signature binds the ciphertext handle (RFC 023), which only
+/// the canonical handle-keyed object can satisfy. Digest-keyed
+/// backward-compatibility copies are content-addressed: every handle whose
+/// ciphertext bytes are identical shares one copy, whose attestation is bound
+/// to whichever handle last wrote it. Recovering the signature there against
+/// another handle's payload yields a garbage address, so the check would flag
+/// a perfectly good copy as stale and re-upload it on every task that shares
+/// the content. Content-bound validation therefore checks every attested
+/// field (digests, key id, format, signer) but skips signature recovery;
+/// content identity is already pinned by the digest key, and the canonical
+/// object still gets the handle-bound check.
+#[derive(Clone, Copy, PartialEq)]
+enum AttestationBinding {
+    HandleBound,
+    ContentBound,
+}
+
 fn validate_existing_attestation(
     expected: &CiphertextAttestationPayload,
     expected_signer: Address,
     actual: &CiphertextAttestation,
+    binding: AttestationBinding,
 ) -> Result<(), String> {
     if actual.version != expected.version {
         return Err(format!(
@@ -458,9 +505,11 @@ fn validate_existing_attestation(
         ));
     }
 
-    actual
-        .verify(expected.handle, expected.coprocessor_context_id)
-        .map_err(|err| format!("handle/context/signature mismatch: {err}"))?;
+    if binding == AttestationBinding::HandleBound {
+        actual
+            .verify(expected.handle, expected.coprocessor_context_id)
+            .map_err(|err| format!("handle/context/signature mismatch: {err}"))?;
+    }
 
     Ok(())
 }
@@ -800,6 +849,7 @@ async fn upload_ciphertexts(
                 &expected_attestation,
                 expected_signer,
                 ct64_checksum_sha256.as_deref(),
+                AttestationBinding::HandleBound,
             )
             .instrument(ct64_check_span.clone())
             .await,
@@ -1219,6 +1269,7 @@ async fn check_attested_object_exists(
     expected: &CiphertextAttestationPayload,
     expected_signer: Address,
     expected_checksum_sha256: Option<&str>,
+    binding: AttestationBinding,
 ) -> Result<bool, ExecutionError> {
     let mut head_object = client.head_object().bucket(bucket).key(key);
     if expected_checksum_sha256.is_some() {
@@ -1253,7 +1304,7 @@ async fn check_attested_object_exists(
             };
 
             if let Err(reason) =
-                validate_existing_attestation(expected, expected_signer, &attestation)
+                validate_existing_attestation(expected, expected_signer, &attestation, binding)
             {
                 warn!(
                     bucket,
@@ -1331,6 +1382,7 @@ async fn check_ct128_objects_exist(
         expected,
         expected_signer,
         expected_checksum_sha256,
+        AttestationBinding::HandleBound,
     )
     .await?;
     let digest_key_exists = check_attested_object_exists(
@@ -1340,6 +1392,7 @@ async fn check_ct128_objects_exist(
         expected,
         expected_signer,
         expected_checksum_sha256,
+        AttestationBinding::ContentBound,
     )
     .await?;
 
@@ -1446,7 +1499,13 @@ mod tests {
     async fn expected_attestation_accepts_current_metadata() {
         let (expected, expected_signer, attestation) = sample_attestation().await;
 
-        validate_existing_attestation(&expected, expected_signer, &attestation).unwrap();
+        validate_existing_attestation(
+            &expected,
+            expected_signer,
+            &attestation,
+            AttestationBinding::HandleBound,
+        )
+        .unwrap();
     }
 
     #[tokio::test]
@@ -1454,9 +1513,15 @@ mod tests {
         let (expected, expected_signer, mut attestation) = sample_attestation().await;
         attestation.sns_ciphertext_digest = B256::ZERO;
 
-        let err =
-            validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
-        assert!(err.contains("sns ciphertext digest mismatch"));
+        for binding in [
+            AttestationBinding::HandleBound,
+            AttestationBinding::ContentBound,
+        ] {
+            let err =
+                validate_existing_attestation(&expected, expected_signer, &attestation, binding)
+                    .unwrap_err();
+            assert!(err.contains("sns ciphertext digest mismatch"));
+        }
     }
 
     #[tokio::test]
@@ -1464,8 +1529,13 @@ mod tests {
         let (mut expected, expected_signer, attestation) = sample_attestation().await;
         expected.coprocessor_context_id = U256::ZERO;
 
-        let err =
-            validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
+        let err = validate_existing_attestation(
+            &expected,
+            expected_signer,
+            &attestation,
+            AttestationBinding::HandleBound,
+        )
+        .unwrap_err();
         assert!(err.contains("handle/context/signature mismatch"));
     }
 
@@ -1475,9 +1545,58 @@ mod tests {
         let other_signer: CoproSigner = Arc::new(PrivateKeySigner::random());
         let attestation = build_attestation(&expected, &other_signer).await.unwrap();
 
-        let err =
-            validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
-        assert!(err.contains("signer mismatch"));
+        for binding in [
+            AttestationBinding::HandleBound,
+            AttestationBinding::ContentBound,
+        ] {
+            let err =
+                validate_existing_attestation(&expected, expected_signer, &attestation, binding)
+                    .unwrap_err();
+            assert!(err.contains("signer mismatch"));
+        }
+    }
+
+    /// A digest-keyed compatibility copy is shared by every handle whose
+    /// ciphertext bytes are identical, so its attestation is signed for
+    /// whichever handle wrote it. Content-bound validation must accept it;
+    /// handle-bound validation must keep rejecting it (canonical objects are
+    /// never shared).
+    #[tokio::test]
+    async fn cross_handle_attestation_passes_content_bound_only() {
+        let (expected, _, _) = sample_attestation().await;
+        let signer: CoproSigner = Arc::new(PrivateKeySigner::random());
+        let expected_signer = signer.address();
+
+        let mut other_task = sample_handle_item();
+        other_task.handle = vec![9; 32];
+        let upload_material = upload_material(&other_task).unwrap();
+        let format = attestation_format(other_task.ct128.format()).unwrap();
+        let other_payload = build_attestation_payload(
+            &other_task,
+            COPROCESSOR_CONTEXT_ID_1,
+            &upload_material.ct64_digest,
+            &upload_material.ct128_digest,
+            format,
+        )
+        .unwrap();
+        let attestation = build_attestation(&other_payload, &signer).await.unwrap();
+
+        validate_existing_attestation(
+            &expected,
+            expected_signer,
+            &attestation,
+            AttestationBinding::ContentBound,
+        )
+        .unwrap();
+
+        let err = validate_existing_attestation(
+            &expected,
+            expected_signer,
+            &attestation,
+            AttestationBinding::HandleBound,
+        )
+        .unwrap_err();
+        assert!(err.contains("handle/context/signature mismatch"));
     }
 
     #[test]

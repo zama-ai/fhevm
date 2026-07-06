@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO fallback_granted_events\n                (dst_chain_id, dst_handle, plaintext, block_number,\n                 block_hash, transaction_id)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            ON CONFLICT (dst_handle, block_hash) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7af997d6363bbfa34ecbf095a0e45de9fa76335137aae643747d79720a46fe12"
+}
