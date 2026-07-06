@@ -524,7 +524,9 @@ fn request_witness_fetch(
 
 fn dedup_account_fetches(fetches: &mut Vec<SolanaFinalizedAccountFetch>) {
     let mut seen = HashSet::new();
-    fetches.retain(|fetch| seen.insert((fetch.account_key, fetch.kind)));
+    fetches.retain(|fetch| {
+        seen.insert((fetch.account_key, fetch.kind, fetch.reason, fetch.handle))
+    });
 }
 
 fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
@@ -724,6 +726,7 @@ async fn insert_finalized_account_fetch(
     block_number: u64,
 ) -> Result<bool, SqlxError> {
     let handle = fetch.handle.map(|handle| handle.to_vec());
+    let handle_key = finalized_fetch_handle_key(fetch.handle);
     let related_account = fetch.related_account.map(|account| account.to_vec());
     let subject = fetch.subject.map(|subject| subject.to_vec());
     sqlx::query(
@@ -733,15 +736,14 @@ async fn insert_finalized_account_fetch(
             kind,
             reason,
             handle,
+            handle_key,
             related_account,
             subject,
             transaction_id,
             block_number
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (account_key, kind) DO UPDATE SET
-            reason = EXCLUDED.reason,
-            handle = COALESCE(EXCLUDED.handle, solana_finalized_account_fetches.handle),
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (account_key, kind, reason, handle_key) DO UPDATE SET
             related_account = COALESCE(
                 EXCLUDED.related_account,
                 solana_finalized_account_fetches.related_account
@@ -757,6 +759,7 @@ async fn insert_finalized_account_fetch(
     .bind(fetch.kind.as_i16())
     .bind(fetch.reason)
     .bind(handle)
+    .bind(handle_key)
     .bind(related_account)
     .bind(subject)
     .bind(transaction_id.to_vec())
@@ -766,6 +769,21 @@ async fn insert_finalized_account_fetch(
     .map(|result| result.rows_affected() > 0)
 }
 
+fn finalized_fetch_handle_key(handle: Option<Handle>) -> Vec<u8> {
+    let mut key = Vec::with_capacity(33);
+    match handle {
+        Some(handle) => {
+            key.push(1);
+            key.extend_from_slice(handle.as_slice());
+        }
+        None => {
+            key.push(0);
+            key.extend_from_slice(&[0u8; 32]);
+        }
+    }
+    key
+}
+
 pub async fn claim_pending_finalized_account_fetches(
     tx: &mut Transaction<'_>,
     limit: i64,
@@ -773,7 +791,7 @@ pub async fn claim_pending_finalized_account_fetches(
     let rows = sqlx::query(
         r#"
         WITH candidate AS (
-            SELECT account_key, kind
+            SELECT account_key, kind, reason, handle_key
             FROM solana_finalized_account_fetches
             WHERE status = 'pending'
                OR (
@@ -792,6 +810,8 @@ pub async fn claim_pending_finalized_account_fetches(
         FROM candidate
         WHERE claimed.account_key = candidate.account_key
           AND claimed.kind = candidate.kind
+          AND claimed.reason = candidate.reason
+          AND claimed.handle_key = candidate.handle_key
         RETURNING
             claimed.account_key,
             claimed.kind,
@@ -867,15 +887,21 @@ pub async fn complete_finalized_account_fetch(
     tx: &mut Transaction<'_>,
     job: &SolanaFinalizedAccountFetchJob,
 ) -> Result<(), SqlxError> {
+    let handle_key = finalized_fetch_handle_key(job.handle);
     sqlx::query(
         r#"
         UPDATE solana_finalized_account_fetches
         SET status = 'done', last_error = NULL, last_seen_at = NOW()
-        WHERE account_key = $1 AND kind = $2
+        WHERE account_key = $1
+          AND kind = $2
+          AND reason = $3
+          AND handle_key = $4
         "#,
     )
     .bind(job.account_key.to_vec())
     .bind(job.kind.as_i16())
+    .bind(&job.reason)
+    .bind(handle_key)
     .execute(tx.deref_mut())
     .await?;
     Ok(())
@@ -886,15 +912,21 @@ pub async fn fail_finalized_account_fetch(
     job: &SolanaFinalizedAccountFetchJob,
     error: &str,
 ) -> Result<(), SqlxError> {
+    let handle_key = finalized_fetch_handle_key(job.handle);
     sqlx::query(
         r#"
         UPDATE solana_finalized_account_fetches
-        SET status = 'error', last_error = $3, last_seen_at = NOW()
-        WHERE account_key = $1 AND kind = $2
+        SET status = 'error', last_error = $5, last_seen_at = NOW()
+        WHERE account_key = $1
+          AND kind = $2
+          AND reason = $3
+          AND handle_key = $4
         "#,
     )
     .bind(job.account_key.to_vec())
     .bind(job.kind.as_i16())
+    .bind(&job.reason)
+    .bind(handle_key)
     .bind(error)
     .execute(tx.deref_mut())
     .await?;
@@ -906,15 +938,21 @@ pub async fn retry_finalized_account_fetch(
     job: &SolanaFinalizedAccountFetchJob,
     error: &str,
 ) -> Result<(), SqlxError> {
+    let handle_key = finalized_fetch_handle_key(job.handle);
     sqlx::query(
         r#"
         UPDATE solana_finalized_account_fetches
-        SET status = 'pending', last_error = $3, last_seen_at = NOW()
-        WHERE account_key = $1 AND kind = $2
+        SET status = 'pending', last_error = $5, last_seen_at = NOW()
+        WHERE account_key = $1
+          AND kind = $2
+          AND reason = $3
+          AND handle_key = $4
         "#,
     )
     .bind(job.account_key.to_vec())
     .bind(job.kind.as_i16())
+    .bind(&job.reason)
+    .bind(handle_key)
     .bind(error)
     .execute(tx.deref_mut())
     .await?;
@@ -1839,6 +1877,43 @@ mod tests {
         // The allow is still queued for the finalized decrypt-release check.
         assert_eq!(acl_events.len(), 1);
         assert_eq!(acl_events[0].reason, "public_decrypt_allowed");
+    }
+
+    #[test]
+    fn same_account_update_fetches_keep_distinct_handles_in_one_batch() {
+        let tx_id = solana_transaction_id(&[9_u8; 64]);
+        let block_timestamp = PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
+            Time::MIDNIGHT,
+        );
+
+        let (_, acl_events) = normalize_solana_events_for_db(
+            [
+                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                    [9; 32],
+                    [1; 32],
+                    "handle_superseded",
+                )),
+                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                    [9; 32],
+                    [2; 32],
+                    "handle_superseded",
+                )),
+            ],
+            tx_id,
+            SolanaBlockMeta {
+                block_number: 42,
+                block_timestamp,
+            },
+        );
+
+        assert_eq!(acl_events.len(), 2);
+        assert!(acl_events
+            .iter()
+            .any(|fetch| fetch.handle == Some(handle(1))));
+        assert!(acl_events
+            .iter()
+            .any(|fetch| fetch.handle == Some(handle(2))));
     }
 
     #[test]

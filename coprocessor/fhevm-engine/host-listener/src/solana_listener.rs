@@ -9,6 +9,8 @@
 //! in-process integration path via [`crate::solana_adapter`]; only the transport
 //! (real RPC vs. LiteSVM) differs, so the two stay behaviorally identical.
 
+#[cfg(feature = "solana-reconstruct")]
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -70,6 +72,9 @@ pub async fn run(
     );
 
     let mut cursor: Option<Signature> = None;
+    #[cfg(feature = "solana-reconstruct")]
+    let mut encrypted_value_tracker =
+        crate::solana_reconstruct::EncryptedValueLineageTracker::new();
     let mut ticker = tokio::time::interval(config.poll_interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -91,7 +96,16 @@ pub async fn run(
         };
 
         for signature in signatures {
-            match ingest_signature(db, rpc, config, &signature).await {
+            match ingest_signature(
+                db,
+                rpc,
+                config,
+                &signature,
+                #[cfg(feature = "solana-reconstruct")]
+                &mut encrypted_value_tracker,
+            )
+            .await
+            {
                 Ok(()) => cursor = Some(signature),
                 Err(err) => {
                     // Stop advancing the cursor on the first failure so the next
@@ -166,6 +180,8 @@ async fn ingest_signature(
     rpc: &RpcClient,
     config: &SolanaListenerConfig,
     signature: &Signature,
+    #[cfg(feature = "solana-reconstruct")]
+    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
 ) -> Result<()> {
     let confirmed = rpc
         .get_transaction_with_config(
@@ -179,8 +195,13 @@ async fn ingest_signature(
         .await
         .with_context(|| format!("get_transaction {signature}"))?;
 
-    let (events, block) = extract_host_events(&confirmed, &config.program_id)
-        .with_context(|| {
+    let (events, block) = extract_host_events_with_tracker(
+        &confirmed,
+        &config.program_id,
+        #[cfg(feature = "solana-reconstruct")]
+        encrypted_value_tracker,
+    )
+    .with_context(|| {
         format!("decode CPI events for transaction {signature}")
     })?;
 
@@ -226,6 +247,24 @@ pub fn extract_host_events(
     confirmed: &EncodedConfirmedTransactionWithStatusMeta,
     program_id: &Pubkey,
 ) -> Result<(Vec<SolanaHostEvent>, SolanaBlockMeta)> {
+    #[cfg(feature = "solana-reconstruct")]
+    {
+        let mut tracker =
+            crate::solana_reconstruct::EncryptedValueLineageTracker::new();
+        extract_host_events_with_tracker(confirmed, program_id, &mut tracker)
+    }
+    #[cfg(not(feature = "solana-reconstruct"))]
+    {
+        extract_host_events_with_tracker(confirmed, program_id)
+    }
+}
+
+fn extract_host_events_with_tracker(
+    confirmed: &EncodedConfirmedTransactionWithStatusMeta,
+    program_id: &Pubkey,
+    #[cfg(feature = "solana-reconstruct")]
+    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
+) -> Result<(Vec<SolanaHostEvent>, SolanaBlockMeta)> {
     let block = block_meta(confirmed)?;
     let meta = confirmed
         .transaction
@@ -261,6 +300,10 @@ pub fn extract_host_events(
         }
     }
 
+    #[cfg(feature = "solana-reconstruct")]
+    let all_instructions =
+        decoded_transaction_instructions(confirmed, &account_keys)?;
+
     // Log transport: `emit!` events arrive as `Program data:` log lines. Do not
     // early-return when there are no inner instructions — a log-only transaction
     // (every large eval frame) carries all its events here.
@@ -278,7 +321,142 @@ pub fn extract_host_events(
     )
     .context("decode host events")?;
 
+    #[cfg(feature = "solana-reconstruct")]
+    let events = {
+        let mut events = events;
+        events.extend(
+            crate::solana_reconstruct::decode_encrypted_value_fetch_events(
+                &all_instructions,
+                &program_id,
+                encrypted_value_tracker,
+            ),
+        );
+        events
+    };
+
     Ok((events, block))
+}
+
+#[cfg(feature = "solana-reconstruct")]
+fn decoded_transaction_instructions(
+    confirmed: &EncodedConfirmedTransactionWithStatusMeta,
+    account_keys: &[String],
+) -> Result<Vec<crate::solana_reconstruct::DecodedInstruction>> {
+    let account_key_bytes = account_keys
+        .iter()
+        .map(|key| {
+            Pubkey::from_str(key)
+                .map(|pubkey| pubkey.to_bytes())
+                .with_context(|| format!("parse account key {key}"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let resolve_accounts = |idxs: &[u8]| -> Vec<[u8; 32]> {
+        idxs.iter()
+            .filter_map(|&index| account_key_bytes.get(index as usize).copied())
+            .collect()
+    };
+
+    let decode_compiled =
+        |top_level_index: u32,
+         is_inner: bool,
+         program_id_index: u8,
+         data: &str,
+         accounts: &[u8]|
+         -> Result<crate::solana_reconstruct::DecodedInstruction> {
+            let program = account_keys
+                .get(program_id_index as usize)
+                .cloned()
+                .unwrap_or_default();
+            let data = bs58::decode(data)
+                .into_vec()
+                .context("base58-decode instruction data")?;
+            Ok(crate::solana_reconstruct::DecodedInstruction {
+                program,
+                data,
+                accounts: resolve_accounts(accounts),
+                top_level_index,
+                is_inner,
+            })
+        };
+
+    let mut top_level_by_index = HashMap::new();
+    let top_level_len = match &confirmed.transaction.transaction {
+        EncodedTransaction::Json(ui_tx) => match &ui_tx.message {
+            UiMessage::Raw(raw) => {
+                for (index, instruction) in raw.instructions.iter().enumerate()
+                {
+                    top_level_by_index.insert(
+                        index as u32,
+                        decode_compiled(
+                            index as u32,
+                            false,
+                            instruction.program_id_index,
+                            &instruction.data,
+                            &instruction.accounts,
+                        )?,
+                    );
+                }
+                raw.instructions.len()
+            }
+            UiMessage::Parsed(parsed) => {
+                for (index, instruction) in
+                    parsed.instructions.iter().enumerate()
+                {
+                    let UiInstruction::Compiled(compiled) = instruction else {
+                        continue;
+                    };
+                    top_level_by_index.insert(
+                        index as u32,
+                        decode_compiled(
+                            index as u32,
+                            false,
+                            compiled.program_id_index,
+                            &compiled.data,
+                            &compiled.accounts,
+                        )?,
+                    );
+                }
+                parsed.instructions.len()
+            }
+        },
+        _ => bail!("expected a JSON-encoded transaction"),
+    };
+
+    let mut inner_by_index: HashMap<u32, Vec<_>> = HashMap::new();
+    if let Some(meta) = &confirmed.transaction.meta {
+        if let OptionSerializer::Some(inner) = &meta.inner_instructions {
+            for group in inner {
+                let mut decoded = Vec::new();
+                for instruction in &group.instructions {
+                    let UiInstruction::Compiled(compiled) = instruction else {
+                        continue;
+                    };
+                    decoded.push(decode_compiled(
+                        group.index as u32,
+                        true,
+                        compiled.program_id_index,
+                        &compiled.data,
+                        &compiled.accounts,
+                    )?);
+                }
+                inner_by_index.insert(group.index as u32, decoded);
+            }
+        }
+    }
+
+    let mut ordered = Vec::new();
+    for index in 0..top_level_len as u32 {
+        if let Some(instruction) = top_level_by_index.remove(&index) {
+            ordered.push(instruction);
+        }
+        if let Some(inner) = inner_by_index.remove(&index) {
+            ordered.extend(inner);
+        }
+    }
+    ordered.extend(top_level_by_index.into_values());
+    ordered.extend(inner_by_index.into_values().flatten());
+    Ok(ordered)
 }
 
 /// Full ordered account-key list for a JSON-encoded transaction: static keys from

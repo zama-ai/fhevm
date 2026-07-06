@@ -4,7 +4,6 @@
 //! Covers the `fhe_eval` step-plan walk (recomputing each step's handle via the
 //! program's own `computed_*` functions, byte-identical to on-chain emission)
 //! and the event-free `EncryptedValue` instruction decode (RFC-024).
-#![cfg(feature = "solana-reconstruct")]
 
 use anchor_lang::{AnchorDeserialize, AnchorSerialize};
 use zama_host::state::{
@@ -21,8 +20,9 @@ use crate::generated::{
     FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, FheTernaryOpCode,
     FheTernaryOpEvent, TrivialEncryptEvent, EVENT_VERSION,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
+use crate::database::tfhe_event_propagate::Handle;
 use crate::solana_adapter::{
     acl_record_fetch, SolanaFinalizedAccountFetch, SolanaHostEvent,
 };
@@ -257,27 +257,36 @@ pub fn encrypted_value_instruction_fetches(
                 ),
             ]
         }
-        EncryptedValueInstruction::MakeHandlePublic => tracker
-            .current_handle(encrypted_value_account)
-            .map(|handle| {
-                vec![acl_record_fetch(
-                    encrypted_value_account,
-                    handle,
-                    "handle_made_public",
-                )]
-            })
-            .unwrap_or_default(),
-        EncryptedValueInstruction::AllowSubjects(_) => tracker
-            .current_handle(encrypted_value_account)
-            .map(|handle| {
-                vec![acl_record_fetch(
-                    encrypted_value_account,
-                    handle,
-                    "subject_allowed",
-                )]
-            })
-            .unwrap_or_default(),
+        // Tracker misses (lineage created before this listener started) queue
+        // the fetch WITHOUT a handle instead of dropping it; the finalized
+        // fetcher resolves the account's own `current_handle` at release time.
+        EncryptedValueInstruction::MakeHandlePublic => {
+            vec![current_handle_fetch(
+                encrypted_value_account,
+                tracker.current_handle(encrypted_value_account),
+                "handle_made_public",
+            )]
+        }
+        EncryptedValueInstruction::AllowSubjects(_) => {
+            vec![current_handle_fetch(
+                encrypted_value_account,
+                tracker.current_handle(encrypted_value_account),
+                "subject_allowed",
+            )]
+        }
     }
+}
+
+/// An `AclRecord` fetch for a lineage's live handle; `handle` is `None` on a
+/// tracker miss, deferring resolution to the finalized account itself.
+fn current_handle_fetch(
+    acl_record: [u8; 32],
+    handle: Option<[u8; 32]>,
+    reason: &'static str,
+) -> SolanaFinalizedAccountFetch {
+    let mut fetch = acl_record_fetch(acl_record, [0u8; 32], reason);
+    fetch.handle = handle.map(Handle::from);
+    fetch
 }
 
 /// Decodes the `EncryptedValue` allow-fetches for one transaction's
@@ -307,6 +316,76 @@ pub fn decode_encrypted_value_instructions<'a>(
         })
         .flatten()
         .collect()
+}
+
+/// A decoded instruction invocation: program id, instruction data, resolved
+/// account addresses, and the top-level instruction frame it belongs to.
+#[derive(Clone, Debug)]
+pub struct DecodedInstruction {
+    pub program: String,
+    pub data: Vec<u8>,
+    pub accounts: Vec<[u8; 32]>,
+    pub top_level_index: u32,
+    pub is_inner: bool,
+}
+
+pub fn encrypted_value_bound_handle(
+    instruction: &EncryptedValueInstruction,
+) -> Option<[u8; 32]> {
+    match instruction {
+        EncryptedValueInstruction::Create(args) => Some(args.handle),
+        EncryptedValueInstruction::Update(args) => Some(args.new_handle),
+        EncryptedValueInstruction::MakeHandlePublic
+        | EncryptedValueInstruction::AllowSubjects(_) => None,
+    }
+}
+
+pub fn decode_encrypted_value_fetch_events(
+    instructions: &[DecodedInstruction],
+    zama_host_program_id: &str,
+    tracker: &mut EncryptedValueLineageTracker,
+) -> Vec<SolanaHostEvent> {
+    decode_encrypted_value_instructions(
+        instructions.iter().map(|ix| {
+            (
+                ix.program.as_str(),
+                ix.data.as_slice(),
+                ix.accounts.as_slice(),
+            )
+        }),
+        zama_host_program_id,
+        tracker,
+    )
+    .into_iter()
+    .map(SolanaHostEvent::FinalizedAccountFetch)
+    .collect()
+}
+
+/// Explicit durable output handles recovered from lifecycle instructions in the
+/// same Solana execution frame. These are used only when the eval output
+/// supersedes an existing lineage and no pre-instruction leaf count was supplied.
+#[derive(Default, Debug)]
+pub struct DurableOutputHandleHints {
+    by_output_index: HashMap<u16, VecDeque<[u8; 32]>>,
+}
+
+impl DurableOutputHandleHints {
+    pub fn push(
+        &mut self,
+        output_encrypted_value_index: u16,
+        handle: [u8; 32],
+    ) {
+        self.by_output_index
+            .entry(output_encrypted_value_index)
+            .or_default()
+            .push_back(handle);
+    }
+
+    fn pop(&mut self, output_encrypted_value_index: u16) -> Option<[u8; 32]> {
+        self.by_output_index
+            .get_mut(&output_encrypted_value_index)?
+            .pop_front()
+    }
 }
 
 // `previous_bank_hash` sourcing lives in `solana_slot_hashes` (feature-independent
@@ -387,8 +466,8 @@ fn map_pgm_ternary_op(op: PgmTernaryOpCode) -> FheTernaryOpCode {
     }
 }
 
-/// Resolves the `(value_key, sequence)` nonce pair a durable eval output binds
-/// its handle with, mirroring the program's `output_binding_from_account`:
+/// Resolves how a durable eval output binds its handle, mirroring the program's
+/// `output_binding_from_account` where the pre-instruction leaf count is known:
 /// `value_key` is fully determined by the variant's lineage coordinates
 /// (`derive_value_key(acl_domain_key, app_account, label)`); `sequence` is the
 /// output lineage's MMR `leaf_count` BEFORE this instruction ran — 0 on create
@@ -396,16 +475,28 @@ fn map_pgm_ternary_op(op: PgmTernaryOpCode) -> FheTernaryOpCode {
 /// pre-instruction leaf count on update (`lineage_leaf_counts`, keyed by
 /// value_key).
 ///
-/// Returns `Some(None)` for `AllowedLocal` (unbound), and `None` when an
-/// update's pre-instruction leaf count is unknown — the handle cannot be
-/// recomputed, so the caller must fall back to another source.
+/// For supersede-case outputs, a listener may instead supply the explicit
+/// handle recovered from the matching inner `update_encrypted_value`
+/// instruction. This avoids adding listener-side lineage state or RPC reads.
+///
+/// Returns `None` only when neither a leaf count nor an explicit handle is
+/// available for a superseding durable output.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DurableBinding {
+    Unbound,
+    Derived { value_key: [u8; 32], sequence: u64 },
+    ExplicitHandle([u8; 32]),
+}
+
 fn resolve_durable_binding(
     output: &FheEvalOutput,
     lineage_leaf_counts: &HashMap<[u8; 32], u64>,
-) -> Option<Option<([u8; 32], u64)>> {
+    handle_hints: &mut DurableOutputHandleHints,
+) -> Option<DurableBinding> {
     match output {
-        FheEvalOutput::AllowedLocal => Some(None),
+        FheEvalOutput::AllowedLocal => Some(DurableBinding::Unbound),
         FheEvalOutput::AllowedDurable {
+            output_encrypted_value_index,
             output_acl_domain_key,
             output_app_account,
             output_encrypted_value_label,
@@ -419,9 +510,19 @@ fn resolve_durable_binding(
             );
             let sequence = match previous_handle {
                 None => 0,
-                Some(_) => lineage_leaf_counts.get(&value_key).copied()?,
+                Some(_) => match lineage_leaf_counts.get(&value_key).copied() {
+                    Some(sequence) => sequence,
+                    None => {
+                        return handle_hints
+                            .pop(*output_encrypted_value_index)
+                            .map(DurableBinding::ExplicitHandle);
+                    }
+                },
             };
-            Some(Some((value_key, sequence)))
+            Some(DurableBinding::Derived {
+                value_key,
+                sequence,
+            })
         }
     }
 }
@@ -434,9 +535,8 @@ fn resolve_durable_binding(
 ///
 /// Returns `None` on a malformed plan (operand referencing a not-yet-produced
 /// step, or a `Scalar` where only an encrypted operand is valid), or when a
-/// durable output supersedes an existing lineage whose pre-instruction MMR
-/// leaf count is missing from `lineage_leaf_counts` (see
-/// [`resolve_durable_binding`]). `context_id` comes from the plan; `ctx`
+/// superseding durable output has neither a pre-instruction MMR leaf count nor a
+/// same-frame explicit handle hint. `context_id` comes from the plan; `ctx`
 /// supplies chain_id / previous_bank_hash / unix_timestamp; `subject` is the
 /// compute subject.
 pub fn reconstruct_fhe_eval_steps(
@@ -444,6 +544,27 @@ pub fn reconstruct_fhe_eval_steps(
     subject: [u8; 32],
     ctx: &ReconstructContext,
     lineage_leaf_counts: &HashMap<[u8; 32], u64>,
+) -> Option<Vec<ReconstructedEvalStep>> {
+    let mut handle_hints = DurableOutputHandleHints::default();
+    reconstruct_fhe_eval_steps_with_hints(
+        plan,
+        subject,
+        ctx,
+        lineage_leaf_counts,
+        &mut handle_hints,
+    )
+}
+
+/// Same as [`reconstruct_fhe_eval_steps`], but can consume explicit durable
+/// output handles decoded from matching inner EncryptedValue update
+/// instructions. The hint is only a handle repair path for supersede-case
+/// binary/ternary/trivial outputs; durable rand still needs a derivable seed.
+pub fn reconstruct_fhe_eval_steps_with_hints(
+    plan: &FheEvalArgs,
+    subject: [u8; 32],
+    ctx: &ReconstructContext,
+    lineage_leaf_counts: &HashMap<[u8; 32], u64>,
+    handle_hints: &mut DurableOutputHandleHints,
 ) -> Option<Vec<ReconstructedEvalStep>> {
     let context_id = plan.context_id;
     let mut produced: Vec<[u8; 32]> = Vec::with_capacity(plan.steps.len());
@@ -462,38 +583,42 @@ pub fn reconstruct_fhe_eval_steps(
             } => {
                 let lhs_handle = resolve_operand(lhs, &produced)?;
                 let (rhs_handle, scalar) = resolve_rhs(rhs, &produced)?;
-                let result =
-                    match resolve_durable_binding(output, lineage_leaf_counts)?
-                    {
-                        Some((value_key, sequence)) => {
-                            computed_bound_eval_handle(
-                                *op,
-                                lhs_handle,
-                                rhs_handle,
-                                scalar,
-                                *output_fhe_type,
-                                ctx.chain_id,
-                                ctx.previous_bank_hash,
-                                ctx.unix_timestamp,
-                                context_id,
-                                op_index,
-                                value_key,
-                                sequence,
-                            )
-                        }
-                        None => computed_eval_handle(
-                            *op,
-                            lhs_handle,
-                            rhs_handle,
-                            scalar,
-                            *output_fhe_type,
-                            ctx.chain_id,
-                            ctx.previous_bank_hash,
-                            ctx.unix_timestamp,
-                            context_id,
-                            op_index,
-                        ),
-                    };
+                let result = match resolve_durable_binding(
+                    output,
+                    lineage_leaf_counts,
+                    handle_hints,
+                )? {
+                    DurableBinding::Derived {
+                        value_key,
+                        sequence,
+                    } => computed_bound_eval_handle(
+                        *op,
+                        lhs_handle,
+                        rhs_handle,
+                        scalar,
+                        *output_fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                        value_key,
+                        sequence,
+                    ),
+                    DurableBinding::ExplicitHandle(handle) => handle,
+                    DurableBinding::Unbound => computed_eval_handle(
+                        *op,
+                        lhs_handle,
+                        rhs_handle,
+                        scalar,
+                        *output_fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                    ),
+                };
                 produced.push(result);
                 SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
                     version: EVENT_VERSION,
@@ -516,38 +641,42 @@ pub fn reconstruct_fhe_eval_steps(
                 let c = resolve_operand(control, &produced)?;
                 let t = resolve_operand(if_true, &produced)?;
                 let f = resolve_operand(if_false, &produced)?;
-                let result =
-                    match resolve_durable_binding(output, lineage_leaf_counts)?
-                    {
-                        Some((value_key, sequence)) => {
-                            computed_bound_eval_ternary_handle(
-                                *op,
-                                c,
-                                t,
-                                f,
-                                *output_fhe_type,
-                                ctx.chain_id,
-                                ctx.previous_bank_hash,
-                                ctx.unix_timestamp,
-                                context_id,
-                                op_index,
-                                value_key,
-                                sequence,
-                            )
-                        }
-                        None => computed_eval_ternary_handle(
-                            *op,
-                            c,
-                            t,
-                            f,
-                            *output_fhe_type,
-                            ctx.chain_id,
-                            ctx.previous_bank_hash,
-                            ctx.unix_timestamp,
-                            context_id,
-                            op_index,
-                        ),
-                    };
+                let result = match resolve_durable_binding(
+                    output,
+                    lineage_leaf_counts,
+                    handle_hints,
+                )? {
+                    DurableBinding::Derived {
+                        value_key,
+                        sequence,
+                    } => computed_bound_eval_ternary_handle(
+                        *op,
+                        c,
+                        t,
+                        f,
+                        *output_fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                        value_key,
+                        sequence,
+                    ),
+                    DurableBinding::ExplicitHandle(handle) => handle,
+                    DurableBinding::Unbound => computed_eval_ternary_handle(
+                        *op,
+                        c,
+                        t,
+                        f,
+                        *output_fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                    ),
+                };
                 produced.push(result);
                 SolanaHostEvent::FheTernaryOp(FheTernaryOpEvent {
                     version: EVENT_VERSION,
@@ -564,32 +693,36 @@ pub fn reconstruct_fhe_eval_steps(
                 fhe_type,
                 output,
             } => {
-                let result =
-                    match resolve_durable_binding(output, lineage_leaf_counts)?
-                    {
-                        Some((value_key, sequence)) => {
-                            computed_bound_eval_trivial_handle(
-                                *plaintext,
-                                *fhe_type,
-                                ctx.chain_id,
-                                ctx.previous_bank_hash,
-                                ctx.unix_timestamp,
-                                context_id,
-                                op_index,
-                                value_key,
-                                sequence,
-                            )
-                        }
-                        None => computed_eval_trivial_handle(
-                            *plaintext,
-                            *fhe_type,
-                            ctx.chain_id,
-                            ctx.previous_bank_hash,
-                            ctx.unix_timestamp,
-                            context_id,
-                            op_index,
-                        ),
-                    };
+                let result = match resolve_durable_binding(
+                    output,
+                    lineage_leaf_counts,
+                    handle_hints,
+                )? {
+                    DurableBinding::Derived {
+                        value_key,
+                        sequence,
+                    } => computed_bound_eval_trivial_handle(
+                        *plaintext,
+                        *fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                        value_key,
+                        sequence,
+                    ),
+                    DurableBinding::ExplicitHandle(handle) => handle,
+                    DurableBinding::Unbound => computed_eval_trivial_handle(
+                        *plaintext,
+                        *fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                    ),
+                };
                 produced.push(result);
                 SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
                     version: EVENT_VERSION,
@@ -600,28 +733,32 @@ pub fn reconstruct_fhe_eval_steps(
                 })
             }
             FheEvalStep::Rand { fhe_type, output } => {
-                let seed =
-                    match resolve_durable_binding(output, lineage_leaf_counts)?
-                    {
-                        Some((value_key, sequence)) => {
-                            computed_bound_eval_rand_seed(
-                                ctx.chain_id,
-                                ctx.previous_bank_hash,
-                                ctx.unix_timestamp,
-                                context_id,
-                                op_index,
-                                value_key,
-                                sequence,
-                            )
-                        }
-                        None => computed_eval_rand_seed(
-                            ctx.chain_id,
-                            ctx.previous_bank_hash,
-                            ctx.unix_timestamp,
-                            context_id,
-                            op_index,
-                        ),
-                    };
+                let seed = match resolve_durable_binding(
+                    output,
+                    lineage_leaf_counts,
+                    handle_hints,
+                )? {
+                    DurableBinding::Derived {
+                        value_key,
+                        sequence,
+                    } => computed_bound_eval_rand_seed(
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                        value_key,
+                        sequence,
+                    ),
+                    DurableBinding::ExplicitHandle(_) => return None,
+                    DurableBinding::Unbound => computed_eval_rand_seed(
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                    ),
+                };
                 let result =
                     computed_rand_handle(seed, *fhe_type, ctx.chain_id);
                 produced.push(result);
@@ -634,16 +771,11 @@ pub fn reconstruct_fhe_eval_steps(
                 })
             }
         };
-        let durable_encrypted_value_index = match fhe_eval_step_output(step) {
-            FheEvalOutput::AllowedDurable {
-                output_encrypted_value_index,
-                ..
-            } => Some(*output_encrypted_value_index),
-            FheEvalOutput::AllowedLocal => None,
-        };
         steps_out.push(ReconstructedEvalStep {
             event,
-            durable_encrypted_value_index,
+            durable_encrypted_value_index: fhe_eval_step_durable_output_index(
+                step,
+            ),
         });
     }
     Some(steps_out)
@@ -657,6 +789,16 @@ pub fn reconstruct_fhe_eval_steps(
 pub struct ReconstructedEvalStep {
     pub event: SolanaHostEvent,
     pub durable_encrypted_value_index: Option<u16>,
+}
+
+pub fn fhe_eval_step_durable_output_index(step: &FheEvalStep) -> Option<u16> {
+    match fhe_eval_step_output(step) {
+        FheEvalOutput::AllowedDurable {
+            output_encrypted_value_index,
+            ..
+        } => Some(*output_encrypted_value_index),
+        FheEvalOutput::AllowedLocal => None,
+    }
 }
 
 /// The output policy of an eval step, independent of step kind.

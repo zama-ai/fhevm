@@ -7,6 +7,7 @@ use base64::Engine;
 use fhevm_engine_common::types::AllowEvents;
 use serde::Deserialize;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
 use crate::database::tfhe_event_propagate::Database;
@@ -47,20 +48,21 @@ pub struct DecryptEnqueue {
     pub allow_event: AllowEvents,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FinalizedEncryptedValueAccount {
+    current_handle: [u8; 32],
+    leaf_count: u64,
+}
+
 /// Decide, for a finalized-account fetch whose account was FOUND on-chain,
 /// whether to release the carried handle for decryption — and as which allow
 /// kind. Returns `None` when nothing should be enqueued.
 ///
 /// Trust guard (WHY): the whole finalized-fetch model exists so we re-read
 /// authoritative on-chain state at `finalized` commitment before releasing
-/// decrypt work, instead of trusting an unfinalized event log. The minimum
-/// proof we require here is (1) the fetch is an `AclRecord` allow whose reason
-/// we recognize, (2) the job actually carries the handle it claims to allow,
-/// and (3) when a host program id is configured, the finalized account is owned
-/// by that program — i.e. it is a real zama_host-owned ACL PDA, not an
-/// attacker-funded look-alike at the same address. Full ACL-record
-/// deserialization is intentionally NOT done: the on-chain layout is the host
-/// program's concern, and owner + finalized-presence is a sound, cheap minimum.
+/// decrypt work, instead of trusting an unfinalized event log. We require a
+/// recognized allow reason, a carried handle, host ownership when configured,
+/// and an `EncryptedValue` account state that supports the claim.
 pub fn decrypt_enqueue_for_fetch(
     job: &SolanaFinalizedAccountFetchJob,
     witness: &SolanaFinalizedAccountWitness,
@@ -83,7 +85,30 @@ pub fn decrypt_enqueue_for_fetch(
         // material-sealed fetch is only a witness for the on-chain consume path.
         _ => return None,
     };
-    let handle = job.handle?;
+    let handle = match job.handle {
+        Some(handle) => handle,
+        // Queued without a handle on a decode-time tracker miss (lineage
+        // created before the listener started): for current-handle reasons the
+        // finalized account itself is the authority for which handle the allow
+        // refers to. Resolved below after the account is decoded.
+        None if matches!(
+            job.reason.as_str(),
+            "subject_allowed" | "handle_made_public"
+        ) =>
+        {
+            match finalized_current_handle(&witness.data) {
+                Some(handle) => handle,
+                None => {
+                    warn!(
+                        reason = %job.reason,
+                        "handle-less finalized fetch on an invalid EncryptedValue account; refusing to release"
+                    );
+                    return None;
+                }
+            }
+        }
+        None => return None,
+    };
     if let Some(program_id) = host_program_id {
         if witness.owner != program_id {
             warn!(
@@ -94,10 +119,173 @@ pub fn decrypt_enqueue_for_fetch(
             return None;
         }
     }
+    if !encrypted_value_claim_is_finalized(job, witness, handle) {
+        return None;
+    }
     Some(DecryptEnqueue {
         handle,
         allow_event,
     })
+}
+
+/// The finalized account's `current_handle`, or `None` when the data does not
+/// decode as an `EncryptedValue` account.
+fn finalized_current_handle(
+    data: &[u8],
+) -> Option<crate::database::tfhe_event_propagate::Handle> {
+    decode_finalized_encrypted_value_account(data)
+        .ok()
+        .map(|account| account.current_handle.into())
+}
+
+fn encrypted_value_claim_is_finalized(
+    job: &SolanaFinalizedAccountFetchJob,
+    witness: &SolanaFinalizedAccountWitness,
+    handle: crate::database::tfhe_event_propagate::Handle,
+) -> bool {
+    let account = match decode_finalized_encrypted_value_account(&witness.data)
+    {
+        Ok(account) => account,
+        Err(err) => {
+            warn!(
+                reason = %job.reason,
+                error = %err,
+                "finalized ACL record is not a valid EncryptedValue account; refusing to release handle"
+            );
+            return false;
+        }
+    };
+    let handle = handle_to_bytes(handle);
+    match job.reason.as_str() {
+        "public_decrypt_allowed"
+        | "acl_subject_allowed"
+        | "acl_record_bound"
+        | "encrypted_value_created"
+        | "handle_made_public"
+        | "subject_allowed" => {
+            if account.current_handle == handle {
+                true
+            } else {
+                warn!(
+                    reason = %job.reason,
+                    "finalized EncryptedValue current_handle does not match queued handle; refusing to release handle"
+                );
+                false
+            }
+        }
+        "handle_superseded" => {
+            if account.current_handle == handle {
+                return true;
+            }
+            // DD-034 reorg safety net: superseded handles are only represented
+            // inside the MMR, so proving membership needs the historical proof
+            // service. The fetcher can cheaply reject non-advanced lineages.
+            if account.leaf_count > 0 {
+                true
+            } else {
+                warn!(
+                    "finalized EncryptedValue has no historical leaves for superseded handle; refusing to release handle"
+                );
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+fn decode_finalized_encrypted_value_account(
+    data: &[u8],
+) -> Result<FinalizedEncryptedValueAccount> {
+    let mut reader = AccountDataReader::new(data);
+    if reader.read_array::<8>()? != encrypted_value_discriminator() {
+        bail!("EncryptedValue account discriminator mismatch");
+    }
+    reader.skip(32)?; // acl_domain_key
+    reader.skip(32)?; // app_account
+    reader.skip(32)?; // encrypted_value_label
+    let current_handle = reader.read_array::<32>()?;
+    let subjects_len = reader.read_u32()? as usize;
+    reader.skip(checked_vec_bytes(subjects_len, 32)?)?;
+    let subject_roles_len = reader.read_u32()? as usize;
+    if subject_roles_len != subjects_len {
+        bail!(
+            "EncryptedValue subject_roles length {} does not match subjects length {}",
+            subject_roles_len,
+            subjects_len
+        );
+    }
+    reader.skip(subject_roles_len)?;
+    let leaf_count = reader.read_u64()?;
+    let peaks_len = reader.read_u32()? as usize;
+    reader.skip(checked_vec_bytes(peaks_len, 32)?)?;
+    reader.read_array::<1>()?; // bump
+    Ok(FinalizedEncryptedValueAccount {
+        current_handle,
+        leaf_count,
+    })
+}
+
+fn checked_vec_bytes(len: usize, item_size: usize) -> Result<usize> {
+    len.checked_mul(item_size)
+        .ok_or_else(|| anyhow!("EncryptedValue vector length overflow"))
+}
+
+fn encrypted_value_discriminator() -> [u8; 8] {
+    let digest = Sha256::digest(b"account:EncryptedValue");
+    let mut discriminator = [0u8; 8];
+    discriminator.copy_from_slice(&digest[..8]);
+    discriminator
+}
+
+struct AccountDataReader<'a> {
+    data: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> AccountDataReader<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, offset: 0 }
+    }
+
+    fn read_array<const N: usize>(&mut self) -> Result<[u8; N]> {
+        let bytes = self.take(N)?;
+        let mut out = [0u8; N];
+        out.copy_from_slice(bytes);
+        Ok(out)
+    }
+
+    fn read_u32(&mut self) -> Result<u32> {
+        Ok(u32::from_le_bytes(self.read_array::<4>()?))
+    }
+
+    fn read_u64(&mut self) -> Result<u64> {
+        Ok(u64::from_le_bytes(self.read_array::<8>()?))
+    }
+
+    fn skip(&mut self, len: usize) -> Result<()> {
+        self.take(len).map(|_| ())
+    }
+
+    fn take(&mut self, len: usize) -> Result<&'a [u8]> {
+        let end = self
+            .offset
+            .checked_add(len)
+            .ok_or_else(|| anyhow!("EncryptedValue account offset overflow"))?;
+        let bytes = self
+            .data
+            .get(self.offset..end)
+            .ok_or_else(|| anyhow!("EncryptedValue account data too short"))?;
+        self.offset = end;
+        Ok(bytes)
+    }
+}
+
+fn handle_to_bytes(
+    handle: crate::database::tfhe_event_propagate::Handle,
+) -> [u8; 32] {
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(handle.as_slice());
+    bytes
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -477,15 +665,39 @@ mod tests {
         }
     }
 
-    fn witness_owned_by(owner: [u8; 32]) -> SolanaFinalizedAccountWitness {
+    fn witness_owned_by(
+        owner: [u8; 32],
+        current_handle: [u8; 32],
+        leaf_count: u64,
+    ) -> SolanaFinalizedAccountWitness {
         SolanaFinalizedAccountWitness {
             account_key: [1; 32],
             owner,
             lamports: 1,
             executable: false,
-            data: vec![0xAA; 8],
+            data: encrypted_value_account_data(current_handle, leaf_count),
             observed_slot: 42,
         }
+    }
+
+    fn encrypted_value_account_data(
+        current_handle: [u8; 32],
+        leaf_count: u64,
+    ) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&encrypted_value_discriminator());
+        data.extend_from_slice(&[3; 32]); // acl_domain_key
+        data.extend_from_slice(&[4; 32]); // app_account
+        data.extend_from_slice(&[5; 32]); // encrypted_value_label
+        data.extend_from_slice(&current_handle);
+        data.extend_from_slice(&1_u32.to_le_bytes());
+        data.extend_from_slice(&[6; 32]); // subjects[0]
+        data.extend_from_slice(&1_u32.to_le_bytes());
+        data.push(1); // subject_roles[0]
+        data.extend_from_slice(&leaf_count.to_le_bytes());
+        data.extend_from_slice(&0_u32.to_le_bytes()); // peaks
+        data.push(255); // bump
+        data
     }
 
     #[test]
@@ -494,7 +706,7 @@ mod tests {
         let job = acl_record_job("public_decrypt_allowed", Some(handle));
         let enqueue = decrypt_enqueue_for_fetch(
             &job,
-            &witness_owned_by(HOST_PROGRAM),
+            &witness_owned_by(HOST_PROGRAM, [5; 32], 0),
             Some(HOST_PROGRAM),
         )
         .expect("public decrypt allow must enqueue");
@@ -512,7 +724,7 @@ mod tests {
             let job = acl_record_job(reason, Some(handle));
             let enqueue = decrypt_enqueue_for_fetch(
                 &job,
-                &witness_owned_by(HOST_PROGRAM),
+                &witness_owned_by(HOST_PROGRAM, [6; 32], 0),
                 Some(HOST_PROGRAM),
             )
             .unwrap_or_else(|| panic!("{reason} must enqueue"));
@@ -522,6 +734,34 @@ mod tests {
                 AllowEvents::AllowedAccount as i16
             );
         }
+    }
+
+    #[test]
+    fn handle_less_current_handle_fetch_resolves_from_finalized_account() {
+        // Decode-time tracker miss: allow_subjects/make_handle_public queue
+        // without a handle; the finalized account's current_handle is released.
+        for (reason, allow_event) in [
+            ("subject_allowed", AllowEvents::AllowedAccount),
+            ("handle_made_public", AllowEvents::AllowedForDecryption),
+        ] {
+            let job = acl_record_job(reason, None);
+            let enqueue = decrypt_enqueue_for_fetch(
+                &job,
+                &witness_owned_by(HOST_PROGRAM, [9; 32], 0),
+                Some(HOST_PROGRAM),
+            )
+            .unwrap_or_else(|| panic!("handle-less {reason} must enqueue"));
+            assert_eq!(enqueue.handle, Handle::from([9; 32]));
+            assert_eq!(enqueue.allow_event as i16, allow_event as i16);
+        }
+        // Reasons whose handle is always carried in the instruction args stay
+        // rejected without one.
+        assert!(decrypt_enqueue_for_fetch(
+            &acl_record_job("handle_superseded", None),
+            &witness_owned_by(HOST_PROGRAM, [9; 32], 1),
+            Some(HOST_PROGRAM),
+        )
+        .is_none());
     }
 
     #[test]
@@ -538,7 +778,7 @@ mod tests {
             let job = acl_record_job(reason, Some(handle));
             let enqueue = decrypt_enqueue_for_fetch(
                 &job,
-                &witness_owned_by(HOST_PROGRAM),
+                &witness_owned_by(HOST_PROGRAM, [6; 32], 1),
                 Some(HOST_PROGRAM),
             )
             .unwrap_or_else(|| panic!("{reason} must enqueue"));
@@ -553,7 +793,7 @@ mod tests {
         let job = acl_record_job("handle_made_public", Some(handle));
         let enqueue = decrypt_enqueue_for_fetch(
             &job,
-            &witness_owned_by(HOST_PROGRAM),
+            &witness_owned_by(HOST_PROGRAM, [7; 32], 0),
             Some(HOST_PROGRAM),
         )
         .expect("handle_made_public must enqueue");
@@ -562,6 +802,39 @@ mod tests {
             enqueue.allow_event as i16,
             AllowEvents::AllowedForDecryption as i16
         );
+    }
+
+    #[test]
+    fn current_handle_claim_with_mismatched_account_handle_is_refused() {
+        let job = acl_record_job(
+            "encrypted_value_created",
+            Some(Handle::from([6; 32])),
+        );
+        assert!(decrypt_enqueue_for_fetch(
+            &job,
+            &witness_owned_by(HOST_PROGRAM, [9; 32], 1),
+            Some(HOST_PROGRAM),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn historical_superseded_claim_requires_advanced_leaf_count() {
+        let job =
+            acl_record_job("handle_superseded", Some(Handle::from([6; 32])));
+
+        assert!(decrypt_enqueue_for_fetch(
+            &job,
+            &witness_owned_by(HOST_PROGRAM, [9; 32], 1),
+            Some(HOST_PROGRAM),
+        )
+        .is_some());
+        assert!(decrypt_enqueue_for_fetch(
+            &job,
+            &witness_owned_by(HOST_PROGRAM, [9; 32], 0),
+            Some(HOST_PROGRAM),
+        )
+        .is_none());
     }
 
     #[test]
@@ -574,7 +847,7 @@ mod tests {
         );
         assert!(decrypt_enqueue_for_fetch(
             &job,
-            &witness_owned_by(HOST_PROGRAM),
+            &witness_owned_by(HOST_PROGRAM, [6; 32], 0),
             Some(HOST_PROGRAM),
         )
         .is_none());
@@ -600,7 +873,7 @@ mod tests {
             assert!(
                 decrypt_enqueue_for_fetch(
                     &job,
-                    &witness_owned_by(HOST_PROGRAM),
+                    &witness_owned_by(HOST_PROGRAM, [6; 32], 0),
                     Some(HOST_PROGRAM),
                 )
                 .is_none(),
@@ -614,7 +887,7 @@ mod tests {
         let job = acl_record_job("public_decrypt_allowed", None);
         assert!(decrypt_enqueue_for_fetch(
             &job,
-            &witness_owned_by(HOST_PROGRAM),
+            &witness_owned_by(HOST_PROGRAM, [5; 32], 0),
             Some(HOST_PROGRAM),
         )
         .is_none());
@@ -630,7 +903,7 @@ mod tests {
         );
         assert!(decrypt_enqueue_for_fetch(
             &job,
-            &witness_owned_by([9; 32]),
+            &witness_owned_by([9; 32], [5; 32], 0),
             Some(HOST_PROGRAM),
         )
         .is_none());
@@ -644,7 +917,7 @@ mod tests {
         );
         assert!(decrypt_enqueue_for_fetch(
             &job,
-            &witness_owned_by([9; 32]),
+            &witness_owned_by([9; 32], [5; 32], 0),
             None,
         )
         .is_some());

@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS solana_finalized_account_fetches (
     kind SMALLINT NOT NULL CHECK (kind BETWEEN 1 AND 9),
     reason TEXT NOT NULL,
     handle BYTEA NULL CHECK (handle IS NULL OR octet_length(handle) = 32),
+    handle_key BYTEA NOT NULL CHECK (octet_length(handle_key) = 33),
     related_account BYTEA NULL CHECK (related_account IS NULL OR octet_length(related_account) = 32),
     subject BYTEA NULL CHECK (subject IS NULL OR octet_length(subject) = 32),
     transaction_id BYTEA NOT NULL CHECK (octet_length(transaction_id) = 32),
@@ -12,7 +13,7 @@ CREATE TABLE IF NOT EXISTS solana_finalized_account_fetches (
     last_error TEXT NULL,
     first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (account_key, kind)
+    PRIMARY KEY (account_key, kind, reason, handle_key)
 );
 
 CREATE INDEX IF NOT EXISTS idx_solana_finalized_account_fetches_pending
