@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { ClearValue, Handle } from '../types/encryptedTypes-p.js';
+import { describe, it, expect, vi } from 'vitest';
 import {
   isClearValue,
   assertIsClearValue,
@@ -110,9 +110,7 @@ describe('ClearValue', () => {
     expect(String(clearValue)).toBe('ClearValue<euint8>');
     expect(String(clearValue)).not.toContain('42');
     expect(clearValue.toString()).not.toContain('42');
-    expect(JSON.stringify(clearValue)).toBe(
-      JSON.stringify({ handle: EUINT8_HANDLE.bytes32Hex, fheType: 'euint8' }),
-    );
+    expect(JSON.stringify(clearValue)).toBe(JSON.stringify({ handle: EUINT8_HANDLE.bytes32Hex, fheType: 'euint8' }));
   });
 
   //////////////////////////////////////////////////////////////////////////////
