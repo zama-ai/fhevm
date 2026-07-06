@@ -140,6 +140,28 @@ producers resolve as branchless, so branch-row keying is identical on every node
 construction, regardless of upgrade timing. The default `0` (active from genesis) is
 for fresh chains and single-operator test stacks.
 
+In Helm values, set it through the shared env block so every host-listener pod
+variant receives the same value:
+
+```yaml
+commonConfig:
+  env:
+    - name: FHEVM_BRANCH_ACTIVATION_BLOCK
+      value: "12345678"
+```
+
+If the deployment intentionally sets host-listener-specific env instead, apply
+the same value consistently to every enabled host-listener variant
+(`hostListenerShared.env`, `hostListenerPollerShared.env`,
+`hostListenerCatchupOnlyShared.env`, `hostListenerConsumerShared.env`, and any
+per-chain `chains[].hostListener*.env` overrides). Do not leave one variant or
+operator on a different value.
+
+The value must parse as an unsigned integer. A malformed value is a hard
+configuration error: the host-listener logs the invalid setting and exits rather
+than silently defaulting to `0`, because falling back to genesis activation could
+make operators start branch tracking at different heights.
+
 Wave-2 interaction: the wave-2 cutover height (`FHEVM_BRANCH_CUTOVER_BLOCK`) must be
 `>=` the activation height — blocks below activation have no branch rows to execute
 from, and wave-2's legacy fallback covers them.
