@@ -1583,6 +1583,10 @@ async fn clean_up(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             "ciphertexts_branch",
             "ciphertexts128_branch",
             "ciphertext_digest_branch",
+            // insert_ciphertext64 dual-writes the legacy table; without
+            // truncating it, persistent-DB runs pin first-writer bytes there
+            // (ON CONFLICT DO NOTHING) and legacy/branch state diverges.
+            "ciphertexts",
             "host_chain_blocks_valid",
             "coprocessor_settlement",
             "s3_canonical_repair_queue",
@@ -1814,9 +1818,12 @@ async fn wait_for_ciphertext_digest_upload_state(
     retries: u64,
 ) -> anyhow::Result<(Vec<u8>, Vec<u8>, i16)> {
     for retry in 0..retries {
+        // The upload path marks ciphertext_digest_branch (legacy
+        // ciphertext_digest is no longer written by sns-worker); the tests
+        // create one branch row per handle.
         let row = sqlx::query(
             "SELECT ciphertext, ciphertext128, s3_format_version
-            FROM ciphertext_digest
+            FROM ciphertext_digest_branch
             WHERE handle = $1",
         )
         .bind(handle)
