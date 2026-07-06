@@ -681,7 +681,10 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view virtual returns (bool) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.epochState[epochId] == EpochState.Active && $.contextForEpoch[epochId] == kmsContextId;
+        return
+            $.epochState[epochId] == EpochState.Active &&
+            $.contextForEpoch[epochId] == kmsContextId &&
+            _isValidKmsContext(kmsContextId);
     }
 
     /// @inheritdoc IProtocolConfig
