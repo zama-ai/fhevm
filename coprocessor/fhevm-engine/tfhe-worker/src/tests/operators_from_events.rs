@@ -260,7 +260,10 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         );
         let caller = zero_address();
 
-        let mut tx = listener_db.new_transaction().await?;
+        let mut tx = listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
         insert_event(
             &listener_db,
             &mut tx,
@@ -358,7 +361,10 @@ async fn test_fhe_binary_operands_events_panic() -> Result<(), Box<dyn std::erro
         );
         let caller = zero_address();
 
-        let mut tx = listener_db.new_transaction().await?;
+        let mut tx = listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
         insert_event(
             &listener_db,
             &mut tx,
@@ -473,7 +479,10 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
 
         let caller = zero_address();
 
-        let mut tx = listener_db.new_transaction().await?;
+        let mut tx = listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
         insert_event(
             &listener_db,
             &mut tx,
@@ -539,7 +548,10 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
     let true_handle = next_handle();
     let caller = zero_address();
 
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_event(
         &listener_db,
         &mut tx,
@@ -584,7 +596,10 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
             let left_handle = next_handle();
             let right_handle = next_handle();
             let transaction_id = next_handle();
-            let mut tx = listener_db.new_transaction().await?;
+            let mut tx = listener_db
+                .new_transaction()
+                .await?
+                .expect("new_transaction() returns Some on a live stack");
             insert_event(
                 &listener_db,
                 &mut tx,
@@ -701,7 +716,10 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
                 "Encrypting inputs for cast test type from:{type_from} type to:{type_to} input:{input} output:{output}",
             );
 
-            let mut tx = listener_db.new_transaction().await?;
+            let mut tx = listener_db
+                .new_transaction()
+                .await?
+                .expect("new_transaction() returns Some on a live stack");
             insert_event(
                 &listener_db,
                 &mut tx,
@@ -794,7 +812,10 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut cases: Vec<(Handle, i32, BigInt)> = vec![];
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let tx_id = next_handle();
     for &fhe_type in supported_types() {
         let bits = bits_for_type(fhe_type);
@@ -877,7 +898,10 @@ async fn test_fhe_sum_events() -> Result<(), Box<dyn std::error::Error>> {
         let handle_b = next_handle_with_type(fhe_type);
         let output = next_handle();
 
-        let mut tx = listener_db.new_transaction().await?;
+        let mut tx = listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
         insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 5, fhe_type, handle_a, true).await?;
         allow_handle(&listener_db, &mut tx, &handle_a).await?;
         insert_trivial_encrypt(&listener_db, &mut tx, tx_id, 7, fhe_type, handle_b, true).await?;
@@ -948,7 +972,10 @@ async fn test_fhe_is_in_events() -> Result<(), Box<dyn std::error::Error>> {
             let value_handle = next_handle_with_type(fhe_type);
             let output = next_handle();
 
-            let mut tx = listener_db.new_transaction().await?;
+            let mut tx = listener_db
+                .new_transaction()
+                .await?
+                .expect("new_transaction() returns Some on a live stack");
             insert_trivial_encrypt(
                 &listener_db,
                 &mut tx,
@@ -1044,7 +1071,10 @@ async fn test_fhe_mul_div_events() -> Result<(), Box<dyn std::error::Error>> {
             out[16..].copy_from_slice(&(divisor_val as u128).to_be_bytes());
             let divisor_handle = Handle::from(out);
 
-            let mut tx = listener_db.new_transaction().await?;
+            let mut tx = listener_db
+                .new_transaction()
+                .await?
+                .expect("new_transaction() returns Some on a live stack");
             insert_trivial_encrypt(
                 &listener_db,
                 &mut tx,

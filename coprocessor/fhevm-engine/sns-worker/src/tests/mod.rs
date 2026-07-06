@@ -354,7 +354,7 @@ async fn test_garbage_collect() {
         .expect("insert into ciphertexts");
 
         let _ = sqlx::query!(
-            "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext, ciphertext128 )
+            "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext, ciphertext128)
                 VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT DO NOTHING;",
             host_chain_id,
@@ -1090,6 +1090,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         schedule_policy,
         pg_auto_explain_with_min_duration: Some(Duration::from_secs(1)),
         metrics: Default::default(),
+        gcs_mode: false,
         private_key: None,
         signer_type: fhevm_engine_common::types::SignerType::PrivateKey,
         s3_migration: S3MigrationMode::No,
