@@ -11,7 +11,7 @@ import { loadHostAddresses } from './utils/loadVariables';
 
 // Coprocessor-upgrade DAO tasks on the host ProtocolConfig, mirroring kmsContext.ts: `prepare*` prints
 // the Aragon calldata (DAO path), `propose*` broadcasts it with the deployer key (no-DAO devnet path).
-// Logic lives in utils/coprocessorUpgradeProposal.ts; see scripts/RUNBOOK.md.
+// Logic lives in utils/coprocessorUpgradeProposal.ts; see COPROCESSOR_UPGRADE_RUNBOOK.md.
 
 const PROTOCOL_CONFIG_ADDRESS_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
 

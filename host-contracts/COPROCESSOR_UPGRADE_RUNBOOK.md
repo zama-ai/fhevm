@@ -95,4 +95,4 @@ DEPLOYER_PRIVATE_KEY=0x... npx hardhat --network sepolia task:proposeCoprocessor
 
 ## Chain set reference
 
-Chain IDs, block times, and RPC env-var names per environment live in [`tasks/utils/environments.ts`](../tasks/utils/environments.ts). New chains are added by appending to the relevant environment's `chains` array. The task logic lives in [`tasks/prepareCoprocessorUpgrade.ts`](../tasks/prepareCoprocessorUpgrade.ts) and [`tasks/utils/coprocessorUpgradeProposal.ts`](../tasks/utils/coprocessorUpgradeProposal.ts).
+Chain IDs, block times, and RPC env-var names per environment live in [`tasks/utils/environments.ts`](tasks/utils/environments.ts). New chains are added by appending to the relevant environment's `chains` array. The task logic lives in [`tasks/prepareCoprocessorUpgrade.ts`](tasks/prepareCoprocessorUpgrade.ts) and [`tasks/utils/coprocessorUpgradeProposal.ts`](tasks/utils/coprocessorUpgradeProposal.ts).
