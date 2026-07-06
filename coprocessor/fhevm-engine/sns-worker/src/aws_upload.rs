@@ -13,7 +13,7 @@ use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::head_bucket::HeadBucketError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::types::{ChecksumAlgorithm, ChecksumMode};
+use aws_sdk_s3::types::{ChecksumAlgorithm, ChecksumMode, MetadataDirective};
 use aws_sdk_s3::Client;
 use base64::Engine;
 use bytesize::ByteSize;
@@ -498,12 +498,11 @@ fn build_attestation_payload(
 /// backward-compatibility copies are content-addressed: every handle whose
 /// ciphertext bytes are identical shares one copy, whose attestation is bound
 /// to whichever handle last wrote it. Recovering the signature there against
-/// another handle's payload yields a garbage address, so the check would flag
-/// a perfectly good copy as stale and re-upload it on every task that shares
-/// the content. Content-bound validation therefore checks every attested
-/// field (digests, key id, format, signer) but skips signature recovery;
-/// content identity is already pinned by the digest key, and the canonical
-/// object still gets the handle-bound check.
+/// another handle's payload yields a garbage address and the upload loop
+/// re-uploads forever. Content-bound validation therefore checks every
+/// attested field (digests, key id, format, signer) but skips signature
+/// recovery; content identity is already pinned by the digest key, and the
+/// canonical object still gets the handle-bound check.
 #[derive(Clone, Copy, PartialEq)]
 enum AttestationBinding {
     HandleBound,
@@ -933,6 +932,8 @@ async fn upload_ciphertexts(
                         expected_signer,
                         ct128_checksum_sha256.as_deref(),
                         conf.verify_sha256_checksum,
+                        &s3_metadata,
+                        &task.ct128.format().to_string(),
                     )
                     .instrument(ct128_check_span.clone())
                     .await,
@@ -2202,6 +2203,7 @@ async fn check_ct128_objects_exist(
     Ok(key_exists && digest_key_exists)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn repair_ct128_object_pair_from_existing_copy(
     client: &Client,
     bucket: &str,
@@ -2211,6 +2213,8 @@ async fn repair_ct128_object_pair_from_existing_copy(
     expected_signer: Address,
     expected_checksum_sha256: Option<&str>,
     verify_sha256_checksum: bool,
+    canonical_metadata: &S3ObjectMetadata,
+    canonical_ct_format: &str,
 ) -> Result<bool, ExecutionError> {
     let key_exists = check_attested_object_exists(
         client,
@@ -2236,6 +2240,10 @@ async fn repair_ct128_object_pair_from_existing_copy(
     match (key_exists, digest_key_exists) {
         (true, true) => Ok(true),
         (false, true) => {
+            // The digest copy's attestation may be bound to another handle
+            // sharing the same ciphertext bytes; the canonical key must carry
+            // an attestation for THIS handle or it fails every handle-bound
+            // check after the copy. Rebind the metadata while copying.
             copy_s3_object(
                 client,
                 bucket,
@@ -2243,6 +2251,7 @@ async fn repair_ct128_object_pair_from_existing_copy(
                 key,
                 verify_sha256_checksum,
                 "canonical ct128 key",
+                Some((canonical_metadata, canonical_ct_format)),
             )
             .await?;
             Ok(true)
@@ -2255,6 +2264,7 @@ async fn repair_ct128_object_pair_from_existing_copy(
                 digest_key,
                 verify_sha256_checksum,
                 "ct128 digest compatibility key",
+                None,
             )
             .await?;
             Ok(true)
@@ -2270,16 +2280,26 @@ async fn copy_s3_object(
     destination_key: &str,
     verify_sha256_checksum: bool,
     destination_description: &'static str,
+    replace_metadata: Option<(&S3ObjectMetadata, &str)>,
 ) -> Result<(), ExecutionError> {
     let copy_source = format!("{}/{}", bucket, source_key);
-    let copy_result = client
+    let mut copy = client
         .copy_object()
         .copy_source(copy_source)
         .bucket(bucket)
         .key(destination_key)
-        .set_checksum_algorithm(verify_sha256_checksum.then_some(ChecksumAlgorithm::Sha256))
-        .send()
-        .await;
+        .set_checksum_algorithm(verify_sha256_checksum.then_some(ChecksumAlgorithm::Sha256));
+    if let Some((metadata, ct_format)) = replace_metadata {
+        copy = copy
+            .metadata_directive(MetadataDirective::Replace)
+            .metadata("Ct-Format", ct_format)
+            .metadata("Uploaded-By", "sns-worker")
+            .metadata(S3_METADATA_ATTESTATION_KEY, &metadata.attestation_json)
+            .metadata("Key-Id", &metadata.key_id)
+            .metadata("Transaction-Id", &metadata.transaction_id)
+            .metadata("Signer", &metadata.signer);
+    }
+    let copy_result = copy.send().await;
 
     match copy_result {
         Ok(_) => {
@@ -2826,6 +2846,14 @@ mod tests {
             .send()
             .await?;
 
+        let canonical_metadata = S3ObjectMetadata {
+            attestation_json: attestation_json.clone(),
+            key_id: hex::encode(vec![7_u8; 32]),
+            transaction_id: String::new(),
+            signer: expected_signer.to_string(),
+        };
+        let canonical_ct_format = Ciphertext128Format::CompressedOnCpu.to_string();
+
         let repaired = repair_ct128_object_pair_from_existing_copy(
             &client,
             bucket,
@@ -2835,10 +2863,20 @@ mod tests {
             expected_signer,
             None,
             false,
+            &canonical_metadata,
+            &canonical_ct_format,
         )
         .await?;
         assert!(repaired);
 
+        let copied_head = client.head_object().bucket(bucket).key(key).send().await?;
+        assert_eq!(
+            copied_head
+                .metadata()
+                .and_then(|m| m.get(S3_METADATA_ATTESTATION_KEY)),
+            Some(&attestation_json),
+            "repaired canonical object must carry the rebound attestation"
+        );
         let copied = client
             .get_object()
             .bucket(bucket)
@@ -2876,6 +2914,8 @@ mod tests {
             expected_signer,
             None,
             false,
+            &canonical_metadata,
+            &canonical_ct_format,
         )
         .await?;
         assert!(
