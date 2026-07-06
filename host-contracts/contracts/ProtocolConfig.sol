@@ -244,7 +244,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
      * @notice Re-initializes the contract from V1.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      * @param kmsNodeParams The existing context's KMS node set, used to recompute the anchor hash.
-     * @param thresholds The existing context's thresholds, used to recompute the anchor hash.
      * @param softwareVersion The KMS software version expected for the context.
      * @param pcrValues Accepted enclave PCR values for the context.
      */
@@ -252,7 +251,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2(
         KmsNodeParams[] calldata kmsNodeParams,
-        KmsThresholds calldata thresholds,
         string calldata softwareVersion,
         PcrValues[] calldata pcrValues
     ) public virtual reinitializer(REINITIALIZER_VERSION) {
@@ -261,6 +259,13 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // Bring the existing context into the epoch-lifecycle shape: active context + first epoch.
         $.epochCounter = EPOCH_COUNTER_BASE;
         uint256 contextId = $.currentKmsContextId;
+
+        KmsThresholds memory thresholds = KmsThresholds({
+            publicDecryption: $.publicDecryptionThresholdForContext[contextId],
+            userDecryption: $.userDecryptionThresholdForContext[contextId],
+            kmsGen: $.kmsGenThresholdForContext[contextId],
+            mpc: $.mpcThresholdForContext[contextId]
+        });
         $.latestActiveKmsContextId = contextId;
         $.contextState[contextId] = ContextState.Active;
         uint256 epochId = ++$.epochCounter;
