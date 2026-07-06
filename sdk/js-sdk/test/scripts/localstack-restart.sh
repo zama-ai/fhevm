@@ -33,6 +33,8 @@ Options:
   --chain, -c <name>    Chain to pass to fhetest-deploy.sh. One of:
                         ${VALID_CHAINS[*]}.
                         Default: ${CHAIN}.
+  --fhevm-dir <path>    Directory containing the fhevm-cli / test-suite/fhevm
+                        checkout to use. Default: ${FHEVM_DIR}.
   --force, -f           Force a full down/up restart and redeploy FHETest.
   --dry-run, -n         Print the resolved configuration and the commands that
                         would be executed, then exit without doing anything.
@@ -79,6 +81,15 @@ while [[ $# -gt 0 ]]; do
             CHAIN="$2"
             shift 2
             ;;
+        --fhevm-dir)
+            require_arg_value "$1" "${2:-}"
+            FHEVM_DIR="$2"
+            shift 2
+            ;;
+        --fhevm-dir=*)
+            FHEVM_DIR="${1#--fhevm-dir=}"
+            shift
+            ;;
         --force|-f)
             FORCE=true
             shift
@@ -102,6 +113,13 @@ if ! is_valid_chain "$CHAIN"; then
     echo "Error: invalid --chain '$CHAIN'. Expected one of: ${VALID_CHAINS[*]}." >&2
     exit 1
 fi
+
+if [[ ! -d "$FHEVM_DIR" ]]; then
+    echo "Error: --fhevm-dir '$FHEVM_DIR' is not a directory." >&2
+    exit 1
+fi
+FHEVM_DIR="$(cd "$FHEVM_DIR" && pwd)"
+PROFILES_DIR="$FHEVM_DIR/profiles"
 
 if [[ -n "$PROFILE" ]]; then
     PROFILE_PATH="$PROFILES_DIR/$PROFILE"
