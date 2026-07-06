@@ -31,7 +31,8 @@ Scope boundaries         DD-028
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
 
-Status: adopted
+Status: adopted — pending rewrite (Superseded-by: PR #3002 `elias/mmr-acl-rewrite`, draft, not merged;
+replaces the keyed-nonce `AclRecord` model with a single `EncryptedValue` account + on-chain MMR)
 
 Context:
 
@@ -141,7 +142,8 @@ KMS witness decoders, fixture encoders, listener expectations, and docs together
 
 ## DD-005: Public Decrypt Is A Post-Birth Release
 
-Status: adopted
+Status: adopted — pending rewrite (the per-record `public_decrypt` flag is re-expressed on
+`EncryptedValue`/MMR by PR #3002, draft, not merged; see DD-001)
 
 Context:
 
@@ -172,7 +174,8 @@ decryptability state:
 
 ## DD-006: Material Commitment Is Separate From ACL Authorization
 
-Status: adopted
+Status: adopted — the durable archival/compaction sub-question flagged below is exactly what PR #3002
+(draft, not merged) resolves via the `EncryptedValue`/MMR model; see DD-001
 
 Context:
 
@@ -313,7 +316,7 @@ app account, allowed roles) and is born with `public_decrypt = false`.
 
 ## DD-009: Operator Transfer Model Removed
 
-Status: superseded
+Status: adopted (delegated-spend replacement is product-open — see Consequences)
 
 Context:
 
@@ -343,15 +346,15 @@ Status: adopted
 
 Context:
 
-Balances, total supply, transfer amounts, burn amounts, callback success flags, and refund amounts
-have different app semantics even when they are all encrypted handles.
+Balances, total supply, transfer amounts, and burn amounts have different app semantics even when
+they are all encrypted handles.
 
 Decision:
 
-`request_disclose_amount` and `disclose_amount` accept only token amount labels such as wrap,
-transfer, burn, burned, transferred, and callback refund amounts. Current balances use the balance
-disclosure path. Total-supply and callback-success handles are not accepted as generic token
-amounts.
+`request_disclose_amount` and `disclose_amount` accept only token amount labels: wrap, burn,
+transfer, burned, and transferred amounts (the exact set enforced by `is_token_amount_label`).
+Current balances use the balance disclosure path. Total-supply handles are not accepted as generic
+token amounts.
 
 Rationale:
 
@@ -364,7 +367,7 @@ disclosure. Balance disclosure remains a separate path.
 
 ## DD-011: Transfer-And-Call Removed In Favor Of App-Driven CPI Composition
 
-Status: superseded (issue #1593; supersedes DD-018)
+Status: adopted (supersedes DD-018; issue #1593)
 
 Was: a ported multi-leg transfer-and-call callback flow (`confidential_transfer` →
 `confidential_call_transfer_receiver` → `confidential_prepare_transfer_callback` →
@@ -568,7 +571,8 @@ inbound-write surface is bounded.
 
 ## DD-017: Role-Aware `fhe_eval` And Per-Op Bind Instructions Supersede The RFC-024 execute_frame Frame
 
-Status: adopted
+Status: adopted — note: RFC-024 (tech-spec #448) is still OPEN/unmerged, so this DD documents a
+deliberate divergence from a *draft* execute_frame sketch, not a supersession of an accepted spec
 
 Context:
 
@@ -633,7 +637,8 @@ now compose deposits by CPI (DD-011), so there is no refund leg.
 
 ## DD-019: Confidential Transfer Persists Only Final Balance And Transferred-Amount ACL Records
 
-Status: adopted
+Status: adopted — pending rewrite (under PR #3002, draft, not merged, these durable "ACL records"
+become MMR leaves on `EncryptedValue` rather than standalone `AclRecord` PDAs; see DD-001)
 
 Context:
 
@@ -905,10 +910,13 @@ Decision:
 - The relayer builds the typed call (`SolanaUnifiedV1` core variant → `userDecryptionRequestSolanaCall`);
   the js-sdk `buildSolanaUserDecryptRequest` emits typed fields + context-only extraData (the signed
   ed25519 preimage is unchanged).
-- INTERNAL connector transport detail: the KMS connector's gw-listener normalizes the typed event back
-  into its existing internal `UserDecryptionV2` + `0x03` extraData representation at the decode boundary
-  (the worker still routes to its Solana path on `extraData[0]==0x03`). This is internal to the
-  connector; the gateway/protocol interface is typed.
+- INTERNAL connector transport detail: the KMS connector's gw-listener persists the typed event's
+  ed25519 auth as **TYPED columns** (`solana_identity`, `solana_nonce`, `solana_allowed_acl_domain_keys`)
+  in `user_decryption_requests`; `extra_data` carries only the KMS context (`0x01 ‖ contextId`). The
+  worker identifies a Solana row by `solana_identity IS NOT NULL` (never by a version byte) and
+  re-derives/verifies the ed25519 signature itself, since Solana has no on-chain publicKey binding.
+  There is **no `0x03` extraData blob anywhere** — on the protocol, client, or internal connector
+  surface (see `gw-listener/src/core/publish.rs`, `utils/src/types/solana_extra_data.rs`).
 - `Decryption.sol` version bumped MINOR 6→7 (reinitializer 7→8, reinitializeV6→V7).
 - KMS-cert context: `extract_kms_context_id` (DD-021) handles `extra_data` versions 0 and 1 (the
   public-decrypt cert) — a *different* extraData from either path above.
