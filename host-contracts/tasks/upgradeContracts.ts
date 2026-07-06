@@ -43,8 +43,6 @@ function shellQuote(arg: string): string {
 }
 
 // Parses a comma-separated integer list task arg (e.g. --dst-eids "30101,30109") into its entries.
-// Empty/undefined yields an empty array; values stay as strings so ethers coerces them to the
-// solidity integer type at encode time.
 function parseCsvIntegers(raw: string | undefined): string[] {
   if (!raw) {
     return [];
@@ -358,6 +356,9 @@ task('task:prepareUpgradeACL')
     await prepareUpgradeContract('ACL', 'ACL_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
+// Governance prepare for the first bridge upgrade: EmptyUUPSProxy -> ConfidentialBridge via
+// initializeFromEmptyProxy. New chains get the bridge from task:deployAllHostContracts. 
+// Any subsequent ConfidentialBridge-to-ConfidentialBridge upgrade should go through prepareUpgradeContract, not this task.
 task('task:prepareUpgradeConfidentialBridge')
   .addOptionalParam(
     'useInternalProxyAddress',
