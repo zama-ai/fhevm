@@ -14,8 +14,8 @@ pub struct RequestDiscloseBalance<'info> {
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Confidential token account whose current balance is disclosed.
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// Stable balance lineage. Escalated with `ACL_ROLE_PUBLIC_DECRYPT` for the
-    /// owner and appended a public-decrypt MMR leaf by this instruction's CPIs.
+    /// Stable balance lineage. The owner must be allowed so this instruction
+    /// can append a public-decrypt MMR leaf.
     #[account(mut, address = token_account.balance_encrypted_value)]
     pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Account-backed request witness consumed by the KMS response path.
@@ -104,8 +104,8 @@ pub fn request_disclose_balance(
         DISCLOSURE_REQUEST_MODE_BALANCE,
     );
 
-    // Roles cannot be granted at birth, so escalate the owner to public-decrypt here, then
-    // append the public-decrypt MMR leaf for the current handle.
+    // Re-add the owner idempotently, then append the public-decrypt MMR leaf for
+    // the current handle.
     fhe::allow_subjects(
         fhe::AllowSubjects {
             payer: &ctx.accounts.owner,
@@ -122,7 +122,6 @@ pub fn request_disclose_balance(
         },
         vec![zama_host::instructions::EncryptedValueSubjectGrant {
             subject: ctx.accounts.owner.key(),
-            role_flags: zama_host::ACL_ROLE_PUBLIC_DECRYPT,
         }],
     )?;
     fhe::allow_public_decrypt(fhe::AllowPublicDecrypt {

@@ -337,7 +337,7 @@ COPROC_SET_DIGEST="$(cast keccak "$(cast abi-encode 'f(address[])' "[$COPROCESSO
 
 # Create the disclosure request witness: commit the burned handle's material, pin the host's
 # current KMS context id + expires_slot + request_hash into a DisclosureRequest PDA, and release
-# the handle for public decrypt (owner is inline ACL_ROLE_ALL in the burned ACL).
+# the handle for public decrypt (owner is an allowed subject in the burned ACL).
 relout="$(lc CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" \
    KEY_ID="$KEY_ID" CT64_DIGEST="$CT64" CT128_DIGEST="$CT128" COPROC_SET_DIGEST="$COPROC_SET_DIGEST")" || true
 echo "$relout" | grep -q 'OK request_disclose_amount' || fail "request_disclose_amount witness: $(echo "$relout" | tail -3)"

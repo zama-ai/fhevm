@@ -104,7 +104,6 @@ struct OnChainEncryptedValue {
     encrypted_value_label: [u8; 32],
     current_handle: [u8; 32],
     subjects: Vec<[u8; 32]>,
-    subject_roles: Vec<u8>,
     leaf_count: u64,
     peaks: Vec<[u8; 32]>,
     bump: u8,
@@ -134,18 +133,15 @@ pub fn encrypted_value_discriminator() -> [u8; 8] {
 }
 
 /// Decodes `zama-host`'s real on-chain account layout and projects it to the
-/// shared role-less ACL/MMR type, returning the host-only role bytes separately.
-pub fn decode_on_chain_account(data: &[u8]) -> Result<(EncryptedValue, Vec<u8>), AclError> {
+/// shared ACL/MMR type.
+pub fn decode_on_chain_account(data: &[u8]) -> Result<EncryptedValue, AclError> {
     if data.len() < 8 || data[..8] != encrypted_value_discriminator() {
         return Err(AclError::BadDiscriminator);
     }
     let mut body = &data[8..];
     let decoded = <OnChainEncryptedValue as borsh::BorshDeserialize>::deserialize(&mut body)
         .map_err(|_| AclError::BadAccountData)?;
-    if decoded.subject_roles.len() != decoded.subjects.len() {
-        return Err(AclError::BadAccountData);
-    }
-    Ok((decoded.to_shared(), decoded.subject_roles))
+    Ok(decoded.to_shared())
 }
 
 /// The app-controlled value key for one encrypted field — the lineage's PDA seed.
@@ -398,14 +394,13 @@ mod tests {
         assert!(authorize_public(l.account, &l.value, h(10), &empty).is_err());
     }
 
-    fn encode_on_chain(value: &EncryptedValue, subject_roles: Vec<u8>) -> Vec<u8> {
+    fn encode_on_chain(value: &EncryptedValue) -> Vec<u8> {
         let on_chain = OnChainEncryptedValue {
             acl_domain_key: value.acl_domain_key,
             app_account: value.app_account,
             encrypted_value_label: value.encrypted_value_label,
             current_handle: value.current_handle,
             subjects: value.subjects.clone(),
-            subject_roles,
             leaf_count: value.leaf_count,
             peaks: value.peaks.clone(),
             bump: value.bump,
@@ -416,15 +411,13 @@ mod tests {
     }
 
     #[test]
-    fn on_chain_account_decoder_reads_roleful_layout() {
+    fn on_chain_account_decoder_reads_layout() {
         let subjects = [h(1), h(2), h(3), h(4)];
         let mut l = Lineage::new(h(10), &subjects);
         l.make_public();
-        let roles = vec![0; subjects.len()];
-        let data = encode_on_chain(&l.value, roles.clone());
+        let data = encode_on_chain(&l.value);
 
-        let (decoded, decoded_roles) = decode_on_chain_account(&data).unwrap();
+        let decoded = decode_on_chain_account(&data).unwrap();
         assert_eq!(decoded, l.value);
-        assert_eq!(decoded_roles, roles);
     }
 }

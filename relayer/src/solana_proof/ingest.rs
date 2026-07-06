@@ -242,7 +242,7 @@ pub async fn catch_up_lineage<C: ChainFetcher, S: LeafStore>(
 mod tests {
     use super::*;
     use crate::solana_proof::chain::{ChainError, ChainTransaction, OnChainLineageState};
-    use crate::solana_proof::decode::{RawInstruction, SubjectGrant, ACL_ROLE_USE};
+    use crate::solana_proof::decode::{RawInstruction, SubjectGrant};
     use crate::solana_proof::store::FileLeafStore;
     use async_trait::async_trait;
     use borsh::BorshSerialize;
@@ -386,10 +386,7 @@ mod tests {
                 app_account: pk(0x11),
                 label: pk(0x12),
                 handle: pk(0x20),
-                subjects: vec![SubjectGrant {
-                    subject: owner,
-                    role_flags: ACL_ROLE_USE,
-                }],
+                subjects: vec![SubjectGrant { subject: owner }],
             },
         );
         chain.push_tx("sig1", 1, &[lineage], vec![create_ix]);

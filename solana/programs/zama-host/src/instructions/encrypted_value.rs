@@ -9,11 +9,10 @@ use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
 use super::common::*;
 use crate::{errors::ZamaHostError, state::*};
 
-/// One subject grant: identity plus role bitset (`ACL_ROLE_*`).
+/// One subject grant: identity to add to the allowed set.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EncryptedValueSubjectGrant {
     pub subject: Pubkey,
-    pub role_flags: u8,
 }
 
 /// Accounts shared by every `EncryptedValue` instruction that pays for growth.
@@ -50,12 +49,6 @@ pub fn create_encrypted_value(
         ZamaHostError::AppAccountAuthorityMismatch
     );
     assert_valid_new_subjects(&subjects)?;
-    require!(
-        subjects
-            .iter()
-            .all(|s| !subject_has_role(s.role_flags, ACL_ROLE_PUBLIC_DECRYPT)),
-        ZamaHostError::PublicDecryptAtBirthUnsupported
-    );
     check_grant_not_denied(
         &ctx.accounts.host_config,
         app_account,
@@ -93,7 +86,6 @@ pub fn create_encrypted_value(
         encrypted_value_label,
         current_handle: handle,
         subjects: subjects.iter().map(|s| s.subject).collect(),
-        subject_roles: subjects.iter().map(|s| s.role_flags).collect(),
         leaf_count: 0,
         peaks: Vec::new(),
         bump,
@@ -108,7 +100,7 @@ pub struct AllowEncryptedValueSubjects<'info> {
     /// Pays for the account's growth, if any.
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Current subject with `ACL_ROLE_GRANT` on the lineage.
+    /// Current allowed subject on the lineage.
     pub authority: Signer<'info>,
     /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
     #[account(mut)]
@@ -130,8 +122,8 @@ pub fn allow_subjects(
     let mut value = read_canonical_encrypted_value(&info)?;
     let authority = ctx.accounts.authority.key();
     require!(
-        value.subject_has_role(authority, ACL_ROLE_GRANT),
-        ZamaHostError::SubjectMissingRole
+        value.has_subject(authority),
+        ZamaHostError::SubjectNotAllowed
     );
     check_grant_not_denied(
         &ctx.accounts.host_config,
@@ -140,8 +132,7 @@ pub fn allow_subjects(
     )?;
 
     for grant in &subjects {
-        if let Some(index) = value.subject_index(grant.subject) {
-            value.subject_roles[index] |= grant.role_flags;
+        if value.has_subject(grant.subject) {
             continue;
         }
         require!(
@@ -149,7 +140,6 @@ pub fn allow_subjects(
             ZamaHostError::EncryptedValueSubjectCapacityExceeded
         );
         value.subjects.push(grant.subject);
-        value.subject_roles.push(grant.role_flags);
     }
 
     let space = 8 + EncryptedValue::space(value.subjects.len(), value.peaks.len());
@@ -210,7 +200,7 @@ pub fn update_encrypted_value(
     Ok(())
 }
 
-/// Appends one historical-access leaf per USE-role subject for the outgoing
+/// Appends one historical-access leaf per allowed subject for the outgoing
 /// handle, then overwrites `current_handle`. Shared by `update_encrypted_value`
 /// and by `fhe_eval`'s output-binding path.
 pub(super) fn supersede_current_handle(
@@ -220,16 +210,13 @@ pub(super) fn supersede_current_handle(
 ) -> Result<()> {
     let previous_handle = value.current_handle;
     let account_key = info.key().to_bytes();
-    for index in 0..value.subjects.len() {
-        if !subject_has_role(value.subject_roles[index], ACL_ROLE_USE) {
-            continue;
-        }
+    for subject in &value.subjects {
         let leaf_index = value.leaf_count;
         let commitment = zama_solana_acl::historical_access_leaf_commitment(
             account_key,
             leaf_index,
             previous_handle,
-            value.subjects[index].to_bytes(),
+            subject.to_bytes(),
         );
         zama_solana_acl::mmr_append(&mut value.peaks, &mut value.leaf_count, commitment)
             .map_err(|_| error!(ZamaHostError::EncryptedValueMmrInconsistent))?;
@@ -243,7 +230,7 @@ pub(super) fn supersede_current_handle(
 pub struct MakeEncryptedValueHandlePublic<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Current subject with `ACL_ROLE_PUBLIC_DECRYPT`.
+    /// Current allowed subject.
     pub authority: Signer<'info>,
     /// CHECK: layout and ownership are validated inside the handler via `read_canonical_encrypted_value`.
     #[account(mut)]
@@ -260,8 +247,8 @@ pub fn make_handle_public(ctx: Context<MakeEncryptedValueHandlePublic>) -> Resul
     let mut value = read_canonical_encrypted_value(&info)?;
     let authority = ctx.accounts.authority.key();
     require!(
-        value.subject_has_role(authority, ACL_ROLE_PUBLIC_DECRYPT),
-        ZamaHostError::SubjectMissingRole
+        value.has_subject(authority),
+        ZamaHostError::SubjectNotAllowed
     );
     check_grant_not_denied(
         &ctx.accounts.host_config,
@@ -296,17 +283,15 @@ fn assert_valid_new_subjects(subjects: &[EncryptedValueSubjectGrant]) -> Result<
         ZamaHostError::EncryptedValueEmptySubjects
     );
     require!(
-        subjects
-            .iter()
-            .all(|s| s.subject != Pubkey::default() && role_flags_are_known(s.role_flags)),
-        ZamaHostError::SubjectMissingRole
+        subjects.iter().all(|s| s.subject != Pubkey::default()),
+        ZamaHostError::SubjectNotAllowed
     );
     for (index, s) in subjects.iter().enumerate() {
         require!(
             !subjects[index + 1..]
                 .iter()
                 .any(|later| later.subject == s.subject),
-            ZamaHostError::SubjectMissingRole
+            ZamaHostError::SubjectNotAllowed
         );
     }
     Ok(())
@@ -340,14 +325,13 @@ pub(super) fn grow_account_if_needed<'info>(
 mod tests {
     use super::*;
 
-    fn value(handle: [u8; 32], subjects: &[(Pubkey, u8)]) -> EncryptedValue {
+    fn value(handle: [u8; 32], subjects: &[Pubkey]) -> EncryptedValue {
         EncryptedValue {
             acl_domain_key: Pubkey::default(),
             app_account: Pubkey::default(),
             encrypted_value_label: [0; 32],
             current_handle: handle,
-            subjects: subjects.iter().map(|(p, _)| *p).collect(),
-            subject_roles: subjects.iter().map(|(_, r)| *r).collect(),
+            subjects: subjects.to_vec(),
             leaf_count: 0,
             peaks: Vec::new(),
             bump: 0,
@@ -376,18 +360,11 @@ mod tests {
     }
 
     #[test]
-    fn update_appends_one_leaf_per_use_role_subject_matching_mmr_append() {
+    fn update_appends_one_leaf_per_allowed_subject_matching_mmr_append() {
         let owner = Pubkey::new_unique();
-        let use_only = Pubkey::new_unique();
-        let grant_only = Pubkey::new_unique(); // no USE role: must not get a leaf
-        let mut v = value(
-            [10; 32],
-            &[
-                (owner, ACL_ROLE_USE | ACL_ROLE_GRANT),
-                (use_only, ACL_ROLE_USE),
-                (grant_only, ACL_ROLE_GRANT),
-            ],
-        );
+        let other = Pubkey::new_unique();
+        let third = Pubkey::new_unique();
+        let mut v = value([10; 32], &[owner, other, third]);
         let key = account_key();
         let info = dummy_info(&key);
         let previous_handle = v.current_handle;
@@ -395,13 +372,13 @@ mod tests {
         supersede_current_handle(&info, &mut v, [11; 32]).unwrap();
 
         assert_eq!(v.current_handle, [11; 32]);
-        assert_eq!(v.leaf_count, 2); // only the two USE-role subjects
+        assert_eq!(v.leaf_count, 3);
 
         // Independently reproduce the expected peaks via the shared crate's
-        // mmr_append, over the same two commitments in the same order.
+        // mmr_append, over the same commitments in the same order.
         let mut expected_peaks = Vec::new();
         let mut expected_count = 0u64;
-        for (index, subject) in [owner, use_only].iter().enumerate() {
+        for (index, subject) in [owner, other, third].iter().enumerate() {
             let commitment = zama_solana_acl::historical_access_leaf_commitment(
                 key.to_bytes(),
                 index as u64,
@@ -418,7 +395,7 @@ mod tests {
     #[test]
     fn make_public_leaf_matches_shared_commitment() {
         let key = account_key();
-        let mut v = value([7; 32], &[(Pubkey::new_unique(), ACL_ROLE_USE)]);
+        let mut v = value([7; 32], &[Pubkey::new_unique()]);
         let commitment =
             zama_solana_acl::public_decrypt_leaf_commitment(key.to_bytes(), 0, v.current_handle);
         zama_solana_acl::mmr_append(&mut v.peaks, &mut v.leaf_count, commitment).unwrap();
@@ -433,7 +410,7 @@ mod tests {
     #[test]
     fn previous_state_equality_check_rejects_handle_or_subject_mismatch() {
         let subjects = vec![Pubkey::new_unique()];
-        let v = value([1; 32], &[(subjects[0], ACL_ROLE_USE)]);
+        let v = value([1; 32], &subjects);
 
         // Mirrors update_encrypted_value's inline require!: exact equality on
         // both the handle and the full subject vector (order-sensitive).
@@ -445,7 +422,7 @@ mod tests {
 
     #[test]
     fn supersede_then_make_public_matches_shared_lineage_reconstruction() {
-        // Two on-chain appends (one supersede over two USE subjects, one
+        // Two on-chain appends (one supersede over two allowed subjects, one
         // make-public) must reproduce byte-for-byte the peaks an off-chain
         // indexer would derive from `zama_solana_acl::lineage::reconstruct`
         // over the equivalent `HandleSuperseded`/`MarkedPublic` event log.
@@ -453,7 +430,7 @@ mod tests {
         let other = Pubkey::new_unique();
         let key = account_key();
         let info = dummy_info(&key);
-        let mut v = value([1; 32], &[(owner, ACL_ROLE_USE), (other, ACL_ROLE_USE)]);
+        let mut v = value([1; 32], &[owner, other]);
         let previous_handle = v.current_handle;
         let previous_subjects = v.subjects.clone();
 
@@ -484,20 +461,10 @@ mod tests {
         assert!(assert_valid_new_subjects(&[]).is_err());
         let dup = Pubkey::new_unique();
         assert!(assert_valid_new_subjects(&[
-            EncryptedValueSubjectGrant {
-                subject: dup,
-                role_flags: ACL_ROLE_USE
-            },
-            EncryptedValueSubjectGrant {
-                subject: dup,
-                role_flags: ACL_ROLE_GRANT
-            },
+            EncryptedValueSubjectGrant { subject: dup },
+            EncryptedValueSubjectGrant { subject: dup },
         ])
         .is_err());
-        assert!(assert_valid_new_subjects(&[EncryptedValueSubjectGrant {
-            subject: dup,
-            role_flags: ACL_ROLE_USE
-        }])
-        .is_ok());
+        assert!(assert_valid_new_subjects(&[EncryptedValueSubjectGrant { subject: dup }]).is_ok());
     }
 }

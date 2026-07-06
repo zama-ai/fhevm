@@ -207,15 +207,6 @@ fn decode_finalized_encrypted_value_account(
     let current_handle = reader.read_array::<32>()?;
     let subjects_len = reader.read_u32()? as usize;
     reader.skip(checked_vec_bytes(subjects_len, 32)?)?;
-    let subject_roles_len = reader.read_u32()? as usize;
-    if subject_roles_len != subjects_len {
-        bail!(
-            "EncryptedValue subject_roles length {} does not match subjects length {}",
-            subject_roles_len,
-            subjects_len
-        );
-    }
-    reader.skip(subject_roles_len)?;
     let leaf_count = reader.read_u64()?;
     let peaks_len = reader.read_u32()? as usize;
     reader.skip(checked_vec_bytes(peaks_len, 32)?)?;
@@ -693,8 +684,6 @@ mod tests {
         data.extend_from_slice(&current_handle);
         data.extend_from_slice(&1_u32.to_le_bytes());
         data.extend_from_slice(&[6; 32]); // subjects[0]
-        data.extend_from_slice(&1_u32.to_le_bytes());
-        data.push(1); // subject_roles[0]
         data.extend_from_slice(&leaf_count.to_le_bytes());
         data.extend_from_slice(&0_u32.to_le_bytes()); // peaks
         data.push(255); // bump

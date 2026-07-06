@@ -34,7 +34,7 @@
         {
           "name": "authority",
           "docs": [
-            "Current subject with `ACL_ROLE_GRANT` on the lineage."
+            "Current allowed subject on the lineage."
           ],
           "signer": true
         },
@@ -659,7 +659,7 @@
         {
           "name": "authority",
           "docs": [
-            "Current subject with `ACL_ROLE_PUBLIC_DECRYPT`."
+            "Current allowed subject."
           ],
           "signer": true
         },
@@ -1605,8 +1605,8 @@
     },
     {
       "code": 6058,
-      "name": "SubjectMissingRole",
-      "msg": "encrypted value subject lacks the required role"
+      "name": "SubjectNotAllowed",
+      "msg": "encrypted value subject is not allowed"
     },
     {
       "code": 6059,
@@ -1628,7 +1628,7 @@
     {
       "name": "AclSubjectEntry",
       "docs": [
-        "Pubkey plus role flags stored inline or in an overflow permission PDA."
+        "Pubkey stored inline as an allowed subject."
       ],
       "type": {
         "kind": "struct",
@@ -1640,13 +1640,6 @@
               "app programs this can be a program-controlled compute signer PDA."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "role_flags",
-            "docs": [
-              "Bitset of `ACL_ROLE_*` flags."
-            ],
-            "type": "u8"
           }
         ]
       }
@@ -1797,7 +1790,7 @@
     {
       "name": "EncryptedValueSubjectGrant",
       "docs": [
-        "One subject grant: identity plus role bitset (`ACL_ROLE_*`)."
+        "One subject grant: identity to add to the allowed set."
       ],
       "type": {
         "kind": "struct",
@@ -1805,10 +1798,6 @@
           {
             "name": "subject",
             "type": "pubkey"
-          },
-          {
-            "name": "role_flags",
-            "type": "u8"
           }
         ]
       }

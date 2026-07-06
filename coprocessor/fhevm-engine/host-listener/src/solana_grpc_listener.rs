@@ -939,10 +939,7 @@ mod fhe_eval_acl_tests {
         let allow_data = encode_instruction(
             "allow_subjects",
             AllowSubjectsArgs {
-                subjects: vec![EncryptedValueSubjectGrant {
-                    subject: [7; 32],
-                    role_flags: 1,
-                }],
+                subjects: vec![EncryptedValueSubjectGrant { subject: [7; 32] }],
             },
         );
         let instructions =

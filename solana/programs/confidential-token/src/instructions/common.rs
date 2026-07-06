@@ -321,8 +321,9 @@ pub(crate) fn assert_amount_attestation_binding(
     Ok(())
 }
 
-/// Verifies a token-scoped amount `EncryptedValue` lineage: canonical address, correct domain,
-/// a recognized amount label, and `ACL_ROLE_USE` for the mint's compute signer.
+/// Verifies a token-scoped amount `EncryptedValue` lineage: canonical address,
+/// correct domain, a recognized amount label, and membership for the mint's
+/// compute signer.
 pub(crate) fn assert_token_amount_encrypted_value(
     amount_value: &Account<zama_host::EncryptedValue>,
     amount_handle: [u8; 32],
@@ -357,7 +358,7 @@ pub(crate) fn assert_token_amount_encrypted_value(
         ConfidentialTokenError::AmountAclMismatch
     );
     require!(
-        amount_value.subject_has_role(compute_signer, zama_host::ACL_ROLE_USE),
+        amount_value.has_subject(compute_signer),
         ConfidentialTokenError::AmountAclMismatch
     );
     Ok(())
@@ -371,8 +372,9 @@ pub(crate) fn is_token_amount_label(encrypted_value_label: [u8; 32]) -> bool {
         || encrypted_value_label == transferred_amount_label()
 }
 
-/// Verifies a token account's burned-amount `EncryptedValue` lineage: canonical address, correct
-/// domain/app account, the burned-amount label, and `ACL_ROLE_PUBLIC_DECRYPT`/`ACL_ROLE_USE` grants.
+/// Verifies a token account's burned-amount `EncryptedValue` lineage: canonical
+/// address, correct domain/app account, the burned-amount label, and membership
+/// for the owner and mint compute signer.
 pub(crate) fn assert_burned_amount_encrypted_value(
     amount_value: &Account<zama_host::EncryptedValue>,
     burned_handle: [u8; 32],
@@ -409,11 +411,11 @@ pub(crate) fn assert_burned_amount_encrypted_value(
         ConfidentialTokenError::AmountAclMismatch
     );
     require!(
-        amount_value.subject_has_role(owner, zama_host::ACL_ROLE_PUBLIC_DECRYPT),
+        amount_value.has_subject(owner),
         ConfidentialTokenError::AmountAclMismatch
     );
     require!(
-        amount_value.subject_has_role(compute_signer, zama_host::ACL_ROLE_USE),
+        amount_value.has_subject(compute_signer),
         ConfidentialTokenError::AmountAclMismatch
     );
     Ok(())

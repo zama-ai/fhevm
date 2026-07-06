@@ -19,12 +19,7 @@ pub struct RawInstruction {
 #[derive(BorshDeserialize, BorshSerialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SubjectGrant {
     pub subject: [u8; 32],
-    pub role_flags: u8,
 }
-
-/// `ACL_ROLE_USE` from zama-host's `constants.rs` — the role that causes a
-/// subject to receive a historical-access leaf on supersession.
-pub const ACL_ROLE_USE: u8 = 0x01;
 
 /// The zama-host `EncryptedValue` instruction, decoded from one compiled instruction.
 ///
@@ -213,10 +208,7 @@ mod tests {
             app_account: pk(0x11),
             label: pk(0x12),
             handle: pk(0x20),
-            subjects: vec![SubjectGrant {
-                subject: pk(0x30),
-                role_flags: ACL_ROLE_USE,
-            }],
+            subjects: vec![SubjectGrant { subject: pk(0x30) }],
         };
         let ix = ix_with_data(accounts, "create_encrypted_value", args);
         let decoded = decode_instruction(&ix).unwrap().unwrap();
@@ -225,10 +217,7 @@ mod tests {
             DecodedInstruction::CreateEncryptedValue {
                 encrypted_value: ev,
                 handle: pk(0x20),
-                subjects: vec![SubjectGrant {
-                    subject: pk(0x30),
-                    role_flags: ACL_ROLE_USE
-                }],
+                subjects: vec![SubjectGrant { subject: pk(0x30) }],
             }
         );
     }

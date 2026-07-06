@@ -14,7 +14,7 @@
 #![allow(unexpected_cfgs)]
 #![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
 
-/// Shared constants, seed bytes, role flags, and fixed protocol sizes.
+/// Shared constants, seed bytes, and fixed protocol sizes.
 pub mod constants;
 /// EIP-712 v4 verification of EVM-signed KMS / coprocessor certificates.
 pub mod eip712;
@@ -24,7 +24,7 @@ pub mod errors;
 pub mod events;
 /// Instruction account contexts and handlers.
 pub mod instructions;
-/// Account layouts, PDA helpers, roles, and handle derivation helpers.
+/// Account layouts, PDA helpers, and handle derivation helpers.
 pub mod state;
 
 use anchor_lang::prelude::*;

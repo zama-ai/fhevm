@@ -359,7 +359,7 @@ impl ChainFetcher for RpcChainFetcher {
             .as_str()
             .ok_or_else(|| ChainError::Rpc("missing base64 account data".to_string()))?;
         let raw = base64_decode(data_field).map_err(ChainError::Base58)?;
-        let (decoded, _) = zama_solana_acl::decode_on_chain_account(&raw)
+        let decoded = zama_solana_acl::decode_on_chain_account(&raw)
             .map_err(|e| ChainError::Rpc(format!("{e:?}")))?;
         Ok(Some(OnChainLineageState {
             peaks: decoded.peaks,

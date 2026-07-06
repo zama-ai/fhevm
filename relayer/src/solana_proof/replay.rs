@@ -1,18 +1,16 @@
-//! Tracks per-lineage current state (`current_handle`, subjects+roles) across a
+//! Tracks per-lineage current state (`current_handle`, subjects) across a
 //! chronological instruction replay, turning `DecodedInstruction`s into the
 //! `zama_solana_acl::lineage::LineageEvent`s the shared crate's MMR math consumes.
 //!
 //! `create_encrypted_value` and `allow_subjects` mutate state but append no MMR
 //! leaf (mirrors the host program). `update_encrypted_value` supersedes the
-//! current handle and appends one historical-access leaf per subject holding
-//! `ACL_ROLE_USE` — the *filtered* subset, not the raw `previous_subjects` arg,
-//! since `allow_subjects` can grant roles other than `USE`. `make_handle_public`
-//! carries no args on-chain; its leaf's handle is this replayer's tracked
-//! `current_handle` at the time it executes.
+//! current handle and appends one historical-access leaf per allowed subject.
+//! `make_handle_public` carries no args on-chain; its leaf's handle is this
+//! replayer's tracked `current_handle` at the time it executes.
 
 use zama_solana_acl::lineage::LineageEvent;
 
-use crate::solana_proof::decode::{DecodedInstruction, ACL_ROLE_USE};
+use crate::solana_proof::decode::DecodedInstruction;
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum ReplayError {
@@ -23,34 +21,23 @@ pub enum ReplayError {
 }
 
 /// Per-lineage state tracked across a replay: the live handle and the full
-/// subject list with role bitflags (parallel to the on-chain `EncryptedValue`).
+/// allowed subject list.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LineageReplayState {
     pub current_handle: [u8; 32],
-    /// (subject, role_flags), insertion order preserved — mirrors the on-chain
-    /// `subjects`/`subject_roles` parallel vectors.
-    pub subjects: Vec<([u8; 32], u8)>,
+    /// Subject insertion order preserved — mirrors the on-chain `subjects` vector.
+    pub subjects: Vec<[u8; 32]>,
 }
 
 impl LineageReplayState {
     fn subject_pubkeys(&self) -> Vec<[u8; 32]> {
-        self.subjects.iter().map(|(s, _)| *s).collect()
-    }
-
-    fn use_role_subjects(&self) -> Vec<[u8; 32]> {
-        self.subjects
-            .iter()
-            .filter(|(_, roles)| roles & ACL_ROLE_USE != 0)
-            .map(|(s, _)| *s)
-            .collect()
+        self.subjects.clone()
     }
 
     fn upsert(&mut self, grants: &[crate::solana_proof::decode::SubjectGrant]) {
         for grant in grants {
-            if let Some(existing) = self.subjects.iter_mut().find(|(s, _)| *s == grant.subject) {
-                existing.1 |= grant.role_flags;
-            } else {
-                self.subjects.push((grant.subject, grant.role_flags));
+            if !self.subjects.contains(&grant.subject) {
+                self.subjects.push(grant.subject);
             }
         }
     }
@@ -100,8 +87,7 @@ pub fn apply_instruction(
             {
                 return Err(ReplayError::PreviousStateMismatch(*encrypted_value));
             }
-            let event =
-                LineageEvent::handle_superseded(*previous_handle, &state.use_role_subjects());
+            let event = LineageEvent::handle_superseded(*previous_handle, &state.subjects);
             state.current_handle = *new_handle;
             Ok(Some(event))
         }
@@ -134,10 +120,7 @@ mod tests {
         let create = DecodedInstruction::CreateEncryptedValue {
             encrypted_value: ev,
             handle: pk(0x10),
-            subjects: vec![SubjectGrant {
-                subject: owner,
-                role_flags: ACL_ROLE_USE,
-            }],
+            subjects: vec![SubjectGrant { subject: owner }],
         };
         assert_eq!(apply_instruction(&mut state, &create).unwrap(), None);
         assert_eq!(state.as_ref().unwrap().current_handle, pk(0x10));
@@ -162,22 +145,19 @@ mod tests {
     }
 
     #[test]
-    fn allow_subjects_grows_next_update_snapshot_to_use_role_only() {
+    fn allow_subjects_grows_next_update_snapshot_to_all_allowed_subjects() {
         let ev = pk(2);
         let s1 = pk(0x30);
         let s2 = pk(0x31);
         let mut state = Some(LineageReplayState::default());
         // Bootstrap directly (skip create) to isolate allow_subjects behavior.
         state.as_mut().unwrap().current_handle = pk(0x10);
-        state.as_mut().unwrap().subjects.push((s1, ACL_ROLE_USE));
+        state.as_mut().unwrap().subjects.push(s1);
 
-        // s2 granted GRANT-only (not USE): must not appear in the next update's leaf set.
+        // s2 becomes allowed and must appear in the next update's leaf set.
         let allow = DecodedInstruction::AllowSubjects {
             encrypted_value: ev,
-            subjects: vec![SubjectGrant {
-                subject: s2,
-                role_flags: 0x02, // ACL_ROLE_GRANT
-            }],
+            subjects: vec![SubjectGrant { subject: s2 }],
         };
         assert_eq!(apply_instruction(&mut state, &allow).unwrap(), None);
 
@@ -188,8 +168,7 @@ mod tests {
             previous_subjects: vec![s1, s2],
         };
         let event = apply_instruction(&mut state, &update).unwrap().unwrap();
-        // Only s1 (USE role) gets a leaf, even though both s1 and s2 are subjects.
-        assert_eq!(event, LineageEvent::handle_superseded(pk(0x10), &[s1]));
+        assert_eq!(event, LineageEvent::handle_superseded(pk(0x10), &[s1, s2]));
     }
 
     #[test]
@@ -197,7 +176,7 @@ mod tests {
         let ev = pk(3);
         let mut state = Some(LineageReplayState {
             current_handle: pk(0x10),
-            subjects: vec![(pk(0x30), ACL_ROLE_USE)],
+            subjects: vec![pk(0x30)],
         });
         let update = DecodedInstruction::UpdateEncryptedValue {
             encrypted_value: ev,

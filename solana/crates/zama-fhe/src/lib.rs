@@ -31,9 +31,8 @@ use anchor_lang::{
 };
 
 use zama_host::{
-    encrypted_value_address, role_flags_are_known, subject_has_role, AclSubjectEntry,
-    CoprocessorInputAttestation, FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput,
-    FheEvalStep, FheTernaryOpCode, ACL_ROLE_GRANT, ACL_ROLE_USE, MAX_ACL_SUBJECTS,
+    encrypted_value_address, AclSubjectEntry, CoprocessorInputAttestation, FheBinaryOpCode,
+    FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode, MAX_ACL_SUBJECTS,
     MAX_FHE_EVAL_OPS,
 };
 
@@ -527,18 +526,12 @@ impl DurableSlot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AccessSubject {
     pubkey: Pubkey,
-    role_flags: u8,
 }
 
 impl AccessSubject {
-    /// Owner subject with use+grant roles. Never includes public-decrypt: the
-    /// host rejects that role at birth (`PublicDecryptAtBirthUnsupported`), so
-    /// disclosure flows escalate it explicitly via `allow_subjects` instead.
+    /// Owner subject allowed on the durable value.
     pub fn owner(pubkey: Pubkey) -> Self {
-        Self {
-            pubkey,
-            role_flags: ACL_ROLE_USE | ACL_ROLE_GRANT,
-        }
+        Self { pubkey }
     }
 
     pub fn compute(pubkey: Pubkey) -> Self {
@@ -553,21 +546,19 @@ impl AccessSubject {
         self.pubkey
     }
 
-    pub fn matches_record_entry(self, pubkey: Pubkey, role_flags: u8) -> bool {
-        self.pubkey == pubkey && self.role_flags == role_flags
+    pub fn matches_record_entry(self, pubkey: Pubkey) -> bool {
+        self.pubkey == pubkey
     }
 
     fn from_host(subject: AclSubjectEntry) -> Self {
         Self {
             pubkey: subject.pubkey,
-            role_flags: subject.role_flags,
         }
     }
 
     fn host_entry(self) -> AclSubjectEntry {
         AclSubjectEntry {
             pubkey: self.pubkey,
-            role_flags: self.role_flags,
         }
     }
 }
@@ -1761,10 +1752,7 @@ fn validate_access_policy(subjects: &[AccessSubject]) -> Result<()> {
         return Err(EvalBuildError::InvalidAccessPolicy);
     }
     for (index, subject) in subjects.iter().enumerate() {
-        if subject.pubkey == Pubkey::default()
-            || !role_flags_are_known(subject.role_flags)
-            || !subject_has_role(subject.role_flags, ACL_ROLE_USE)
-        {
+        if subject.pubkey == Pubkey::default() {
             return Err(EvalBuildError::InvalidAccessPolicy);
         }
         if subjects[..index]
@@ -3143,24 +3131,13 @@ mod tests {
         );
 
         #[cfg(feature = "raw-host-api")]
-        {
-            assert_eq!(
-                advanced::access_policy_from_subjects(vec![AclSubjectEntry {
-                    pubkey: Pubkey::new_unique(),
-                    role_flags: 0,
-                }])
-                .unwrap_err(),
-                EvalBuildError::InvalidAccessPolicy
-            );
-            assert_eq!(
-                advanced::access_policy_from_subjects(vec![AclSubjectEntry {
-                    pubkey: Pubkey::new_unique(),
-                    role_flags: ACL_ROLE_USE | 0x80,
-                }])
-                .unwrap_err(),
-                EvalBuildError::InvalidAccessPolicy
-            );
-        }
+        assert_eq!(
+            advanced::access_policy_from_subjects(vec![AclSubjectEntry {
+                pubkey: Pubkey::default(),
+            }])
+            .unwrap_err(),
+            EvalBuildError::InvalidAccessPolicy
+        );
     }
 
     #[test]

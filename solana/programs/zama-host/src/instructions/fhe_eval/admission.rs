@@ -1,6 +1,6 @@
 use super::super::common::{
-    assert_encrypted_value_subject_role, assert_output_acl_metadata,
-    encrypted_value_subject_has_role, read_canonical_encrypted_value,
+    assert_encrypted_value_subject_allowed, assert_output_acl_metadata,
+    read_canonical_encrypted_value,
 };
 use super::handles::EvalHandleContext;
 use super::walk::{walk_eval_frame, EvalStepVisitor};
@@ -55,20 +55,8 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
         encrypted_value_index: u16,
     ) -> Result<ResolvedOperand> {
         let value_info = account_at(self.remaining_accounts, encrypted_value_index)?;
-        assert_encrypted_value_subject_role(
-            value_info,
-            handle,
-            self.chain_id,
-            self.subject,
-            ACL_ROLE_USE,
-        )?;
-        let public_decrypt_allowed = encrypted_value_subject_has_role(
-            value_info,
-            handle,
-            self.subject,
-            ACL_ROLE_PUBLIC_DECRYPT,
-        )?;
-        Ok(ResolvedOperand::encrypted(handle, public_decrypt_allowed))
+        assert_encrypted_value_subject_allowed(value_info, handle, self.chain_id, self.subject)?;
+        Ok(ResolvedOperand::encrypted(handle, false))
     }
 
     /// Admits one durable output lineage account: canonical PDA, writable,
@@ -121,12 +109,6 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
             require!(
                 previous_handle.is_none() && previous_subjects.is_none(),
                 ZamaHostError::PreviousStateMismatch
-            );
-            require!(
-                output_subjects
-                    .iter()
-                    .all(|s| !subject_has_role(s.role_flags, ACL_ROLE_PUBLIC_DECRYPT)),
-                ZamaHostError::PublicDecryptAtBirthUnsupported
             );
             require_keys_eq!(
                 *output_info.owner,
@@ -208,7 +190,6 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         result: [u8; 32],
         output: &FheEvalOutput,
         output_public_decrypt_allowed: bool,
-        enforce_public_decrypt_role_propagation: bool,
     ) -> Result<()> {
         require!(
             !self.produced.iter().any(|value| value.handle == result),
@@ -232,13 +213,6 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
                     *output_app_account_authority_index,
                     *output_app_account,
                 )?;
-                if enforce_public_decrypt_role_propagation {
-                    assert_derived_public_decrypt_roles_allowed(
-                        output_subjects,
-                        output_public_decrypt_allowed,
-                        &app_account_authority,
-                    )?;
-                }
                 assert_output_acl_metadata(
                     app_account_authority.key(),
                     *output_app_account,

@@ -22,9 +22,8 @@ pub struct RequestBurnRedemption<'info> {
         constraint = destination_usdc.owner == owner.key() @ ConfidentialTokenError::OwnerMismatch
     )]
     pub destination_usdc: Box<Account<'info, TokenAccount>>,
-    /// Stable burned-amount lineage whose handle will be redeemed. Escalated
-    /// with `ACL_ROLE_PUBLIC_DECRYPT` for the owner and appended a
-    /// public-decrypt MMR leaf by this instruction's CPIs.
+    /// Stable burned-amount lineage whose handle will be redeemed. The owner
+    /// must be allowed so this instruction can append a public-decrypt MMR leaf.
     #[account(mut)]
     pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Account-backed request witness consumed by the redemption path.
@@ -124,8 +123,8 @@ pub fn request_burn_redemption(
         expires_slot,
     );
 
-    // Roles cannot be granted at birth, so escalate the owner to public-decrypt here, then
-    // append the public-decrypt MMR leaf for the current handle.
+    // Re-add the owner idempotently, then append the public-decrypt MMR leaf for
+    // the current handle.
     fhe::allow_subjects(
         fhe::AllowSubjects {
             payer: &ctx.accounts.owner,
@@ -142,7 +141,6 @@ pub fn request_burn_redemption(
         },
         vec![zama_host::instructions::EncryptedValueSubjectGrant {
             subject: ctx.accounts.owner.key(),
-            role_flags: zama_host::ACL_ROLE_PUBLIC_DECRYPT,
         }],
     )?;
     fhe::allow_public_decrypt(fhe::AllowPublicDecrypt {

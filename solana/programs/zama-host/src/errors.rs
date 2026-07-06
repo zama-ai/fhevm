@@ -185,9 +185,9 @@ pub enum ZamaHostError {
     /// `previous_handle`/`previous_subjects` did not match the account's current state.
     #[msg("encrypted value previous state does not match the account")]
     PreviousStateMismatch,
-    /// The caller subject is missing the role required by the instruction.
-    #[msg("encrypted value subject lacks the required role")]
-    SubjectMissingRole,
+    /// The caller subject is not allowed by the encrypted value.
+    #[msg("encrypted value subject is not allowed")]
+    SubjectNotAllowed,
     /// The caller subject is not a current member of the encrypted value.
     #[msg("encrypted value subject is not a current member")]
     SubjectNotFound,

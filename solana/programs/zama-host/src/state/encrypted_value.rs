@@ -3,11 +3,8 @@
 //! Replaces the keyed-nonce ACL model: one account per encrypted-value
 //! lineage, reused across every handle update, carrying a compact MMR history
 //! instead of a fresh PDA per birth. Field order follows
-//! `zama_solana_acl::EncryptedValue` with one on-chain-only addition —
-//! `subject_roles`, interleaved after `subjects` — so the shared crate's
-//! discriminator and MMR helpers apply, but its size formula does not
-//! (see [`EncryptedValue::space`]); off-chain readers decode the on-chain
-//! layout explicitly.
+//! `zama_solana_acl::EncryptedValue`, so the shared crate's discriminator,
+//! size formula, and MMR helpers apply directly.
 
 use super::*;
 
@@ -28,10 +25,8 @@ pub struct EncryptedValue {
     pub encrypted_value_label: [u8; 32],
     /// Current encrypted value identifier (the live handle).
     pub current_handle: [u8; 32],
-    /// Current durable subjects.
+    /// Current durable subjects. Membership in this set is the whole ACL.
     pub subjects: Vec<Pubkey>,
-    /// Role flags parallel to [`EncryptedValue::subjects`].
-    pub subject_roles: Vec<u8>,
     /// Number of MMR leaves appended; `0` means no history.
     pub leaf_count: u64,
     /// MMR peaks, oldest mountain first (`popcount(leaf_count)` entries).
@@ -44,10 +39,7 @@ impl EncryptedValue {
     /// Anchor account body size (excludes the 8-byte discriminator), for a
     /// lineage with `subjects_len` subjects and `peaks_len` peaks.
     pub fn space(subjects_len: usize, peaks_len: usize) -> usize {
-        // The on-chain layout adds `subject_roles: Vec<u8>` (parallel to
-        // `subjects`) on top of the shared crate's role-less struct.
         zama_solana_acl::EncryptedValue::account_size(subjects_len, peaks_len) - 8
-            + (4 + subjects_len)
     }
 
     /// The lineage's value key — its PDA seed. Derived, never stored.
@@ -66,11 +58,9 @@ impl EncryptedValue {
             .position(|candidate| *candidate == subject)
     }
 
-    /// Returns true when `subject` is a current member holding every flag in `role`.
-    pub fn subject_has_role(&self, subject: Pubkey, role: u8) -> bool {
-        self.subject_index(subject)
-            .map(|index| subject_has_role(self.subject_roles[index], role))
-            .unwrap_or(false)
+    /// Returns true when `subject` is a current allowed member.
+    pub fn has_subject(&self, subject: Pubkey) -> bool {
+        self.subject_index(subject).is_some()
     }
 
     /// Converts to the shared crate's wire type for MMR/authorization helpers.

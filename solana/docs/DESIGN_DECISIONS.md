@@ -1066,12 +1066,16 @@ Decision:
 
 One stable, `zama-host`-owned `EncryptedValue` PDA per logical encrypted value (seeds
 `["encrypted-value", value_key]`), reused across every handle update. A handle update supersedes the
-previous handle by sealing one `HistoricalAccessLeaf` per `ACL_ROLE_USE` subject into an on-account
-SHA-256 Merkle Mountain Range (peaks + leaf count only — the MMR never stores the full leaf history
-on-chain). Public decrypt is an exact-handle `PublicDecryptLeaf`, so publicness never survives a handle
-update (there is no live public flag to leak across updates — see the connector-side rationale in the
-kms-connector/sdk commit message). New instructions: `create_encrypted_value`, `allow_subjects`,
-`update_encrypted_value(new_handle, previous_handle, previous_subjects)`, `make_handle_public`. Deleted:
+previous handle by sealing one `HistoricalAccessLeaf` per allowed subject into an on-account SHA-256
+Merkle Mountain Range (peaks + leaf count only — the MMR never stores the full leaf history
+on-chain). The MVP ACL is a single allowed-subject set: `EncryptedValue.subjects` is the complete
+authorization set, and the former parallel role byte vector is not part of the account layout. Any
+allowed subject can use the current handle in compute, add another subject, request user decrypt, and
+mark the exact current handle public. Public decrypt is an exact-handle `PublicDecryptLeaf`, so
+publicness never survives a handle update (there is no live public flag to leak across updates — see
+the connector-side rationale in the kms-connector/sdk commit message). New instructions:
+`create_encrypted_value`, `allow_subjects`, `update_encrypted_value(new_handle, previous_handle,
+previous_subjects)`, `make_handle_public`. Deleted:
 `AclRecord`/`AclPermission` and their nonce-sequence machinery, the legacy single-op instructions
 (`fhe_binary_op*`, `fhe_ternary_op*`, `fhe_rand*`, `trivial_encrypt_and_bind` — `fhe_eval` is now the
 only compute path), and `allow_for_decryption`.
@@ -1096,16 +1100,14 @@ separately in DD-017/DD-023 and is not this decision).
 Consequences:
 
 `fhe_eval` operand/output authorization now targets `EncryptedValue` accounts (canonical PDA +
-`current_handle` + `ACL_ROLE_USE`) instead of `AclRecord`. Confidential-token's per-rotation balance
-address prediction (nonce counters, `balance_acl_record`) disappears — `ConfidentialTokenAccount` now
-just points at one stable `balance_encrypted_value`. `EVM_PARITY.md`'s ACL/material rows need updating
-to match (tracked as part of this same change).
+`current_handle` + membership in `subjects`) instead of `AclRecord`. Confidential-token's per-rotation
+balance address prediction (nonce counters, `balance_acl_record`) disappears —
+`ConfidentialTokenAccount` now just points at one stable `balance_encrypted_value`.
 
-`ACL_ROLE_USE` gates every decrypt-relevant surface consistently: `fhe_eval` operands, the
-`HistoricalAccessLeaf`s sealed on supersession (USE-only subjects), and the KMS connector's
-current-handle user-decrypt authorization. Without the last leg a GRANT-only subject could decrypt
-the live handle yet lose that access the moment the handle is superseded — an incoherence caught in
-review and closed by enforcing USE in the KMS current path.
+Membership gates every decrypt-relevant surface consistently: `fhe_eval` operands, current-handle
+user-decrypt authorization in the KMS connector, delegation-mediated user decrypt, subject grants,
+and public leaf creation. Historical authorization is the sealed `HistoricalAccessLeaf` for the
+subject at the time of supersession, not a later live-role lookup.
 
 ## DD-033: No ACL-Lifecycle Events — Self-Describing Args + Instruction-Replay Indexing
 

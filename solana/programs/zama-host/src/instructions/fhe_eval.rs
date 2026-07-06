@@ -181,27 +181,13 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             // equality is exempted here.
             let value = read_canonical_encrypted_value(value_info)?;
             require!(
-                value.subject_has_role(self.subject, ACL_ROLE_USE),
-                ZamaHostError::SubjectMissingRole
+                value.has_subject(self.subject),
+                ZamaHostError::SubjectNotAllowed
             );
-            let public_decrypt_allowed =
-                value.subject_has_role(self.subject, ACL_ROLE_PUBLIC_DECRYPT);
-            return Ok(ResolvedOperand::encrypted(handle, public_decrypt_allowed));
+            return Ok(ResolvedOperand::encrypted(handle, false));
         }
-        assert_encrypted_value_subject_role(
-            value_info,
-            handle,
-            self.chain_id,
-            self.subject,
-            ACL_ROLE_USE,
-        )?;
-        let public_decrypt_allowed = encrypted_value_subject_has_role(
-            value_info,
-            handle,
-            self.subject,
-            ACL_ROLE_PUBLIC_DECRYPT,
-        )?;
-        Ok(ResolvedOperand::encrypted(handle, public_decrypt_allowed))
+        assert_encrypted_value_subject_allowed(value_info, handle, self.chain_id, self.subject)?;
+        Ok(ResolvedOperand::encrypted(handle, false))
     }
 
     fn resolve_output_binding<'info>(
@@ -265,7 +251,6 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         result: [u8; 32],
         output: &FheEvalOutput,
         output_public_decrypt_allowed: bool,
-        enforce_public_decrypt_role_propagation: bool,
     ) -> Result<()> {
         accept_eval_output(
             ctx,
@@ -274,7 +259,6 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
             result,
             output,
             output_public_decrypt_allowed,
-            enforce_public_decrypt_role_propagation,
         )?;
         if let FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
@@ -313,7 +297,6 @@ fn accept_eval_output<'info>(
     result: [u8; 32],
     output: &FheEvalOutput,
     output_public_decrypt_allowed: bool,
-    enforce_public_decrypt_role_propagation: bool,
 ) -> Result<()> {
     require!(
         !produced.iter().any(|value| value.handle == result),
@@ -338,13 +321,6 @@ fn accept_eval_output<'info>(
                 *output_app_account_authority_index,
                 *output_app_account,
             )?;
-            if enforce_public_decrypt_role_propagation {
-                assert_derived_public_decrypt_roles_allowed(
-                    output_subjects,
-                    output_public_decrypt_allowed,
-                    &app_account_authority,
-                )?;
-            }
             bind_eval_output(
                 ctx,
                 remaining_accounts_used,
@@ -502,12 +478,6 @@ fn bind_eval_output<'info>(
             previous_handle.is_none() && previous_subjects.is_none(),
             ZamaHostError::PreviousStateMismatch
         );
-        require!(
-            output_subjects
-                .iter()
-                .all(|s| !subject_has_role(s.role_flags, ACL_ROLE_PUBLIC_DECRYPT)),
-            ZamaHostError::PublicDecryptAtBirthUnsupported
-        );
         create_pda_strict(
             &ctx.accounts.payer.to_account_info(),
             output_info,
@@ -525,7 +495,6 @@ fn bind_eval_output<'info>(
             encrypted_value_label: output_encrypted_value_label,
             current_handle: result,
             subjects: output_subjects.iter().map(|s| s.pubkey).collect(),
-            subject_roles: output_subjects.iter().map(|s| s.role_flags).collect(),
             leaf_count: 0,
             peaks: Vec::new(),
             bump,
@@ -537,7 +506,7 @@ fn bind_eval_output<'info>(
 
 /// Shared create-or-supersede plan validation against an existing lineage.
 /// Membership is immutable through eval binding: the plan's subject pubkeys
-/// must equal the stored subjects (roles are set at create, changed only via
+/// must equal the stored subjects (membership is extended only via
 /// `allow_subjects`).
 pub(super) fn validate_durable_output_previous_state(
     value: &EncryptedValue,
@@ -624,7 +593,6 @@ mod tests {
             encrypted_value_label: [0; 32],
             current_handle: handle,
             subjects: subjects.to_vec(),
-            subject_roles: vec![ACL_ROLE_USE; subjects.len()],
             leaf_count: 0,
             peaks: Vec::new(),
             bump: 0,
@@ -634,10 +602,7 @@ mod tests {
     fn grants(subjects: &[Pubkey]) -> Vec<AclSubjectEntry> {
         subjects
             .iter()
-            .map(|subject| AclSubjectEntry {
-                pubkey: *subject,
-                role_flags: ACL_ROLE_USE,
-            })
+            .map(|subject| AclSubjectEntry { pubkey: *subject })
             .collect()
     }
 

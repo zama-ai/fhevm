@@ -122,7 +122,7 @@ async fn try_build<S: LeafStore>(
 mod tests {
     use super::*;
     use crate::solana_proof::chain::{ChainError, ChainTransaction, OnChainLineageState};
-    use crate::solana_proof::decode::{RawInstruction, ACL_ROLE_USE};
+    use crate::solana_proof::decode::RawInstruction;
     use crate::solana_proof::replay::LineageReplayState;
     use crate::solana_proof::store::FileLeafStore;
     use async_trait::async_trait;
@@ -335,7 +335,7 @@ mod tests {
                 lineage,
                 LineageReplayState {
                     current_handle: pk(0x10),
-                    subjects: vec![(owner, ACL_ROLE_USE)],
+                    subjects: vec![owner],
                 },
             )
             .await

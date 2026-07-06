@@ -1301,9 +1301,8 @@
         {
           "name": "burned_amount_value",
           "docs": [
-            "Stable burned-amount lineage whose handle will be redeemed. Escalated",
-            "with `ACL_ROLE_PUBLIC_DECRYPT` for the owner and appended a",
-            "public-decrypt MMR leaf by this instruction's CPIs."
+            "Stable burned-amount lineage whose handle will be redeemed. The owner",
+            "must be allowed so this instruction can append a public-decrypt MMR leaf."
           ],
           "writable": true
         },
@@ -1437,7 +1436,7 @@
         {
           "name": "requester",
           "docs": [
-            "Requester that must have `ACL_ROLE_GRANT` on the amount lineage."
+            "Requester that must be allowed on the amount lineage."
           ],
           "writable": true,
           "signer": true
@@ -1451,9 +1450,8 @@
         {
           "name": "amount_value",
           "docs": [
-            "Token-scoped amount `EncryptedValue` lineage. Escalated with",
-            "`ACL_ROLE_PUBLIC_DECRYPT` for the requester and appended a",
-            "public-decrypt MMR leaf by this instruction's CPIs."
+            "Token-scoped amount `EncryptedValue` lineage. The requester must be",
+            "allowed so this instruction can append a public-decrypt MMR leaf."
           ],
           "writable": true
         },
@@ -1602,8 +1600,8 @@
         {
           "name": "balance_value",
           "docs": [
-            "Stable balance lineage. Escalated with `ACL_ROLE_PUBLIC_DECRYPT` for the",
-            "owner and appended a public-decrypt MMR leaf by this instruction's CPIs."
+            "Stable balance lineage. The owner must be allowed so this instruction",
+            "can append a public-decrypt MMR leaf."
           ],
           "writable": true
         },
@@ -3681,18 +3679,11 @@
           {
             "name": "subjects",
             "docs": [
-              "Current durable subjects."
+              "Current durable subjects. Membership in this set is the whole ACL."
             ],
             "type": {
               "vec": "pubkey"
             }
-          },
-          {
-            "name": "subject_roles",
-            "docs": [
-              "Role flags parallel to [`EncryptedValue::subjects`]."
-            ],
-            "type": "bytes"
           },
           {
             "name": "leaf_count",

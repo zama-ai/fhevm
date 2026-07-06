@@ -432,7 +432,7 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
 
 /// Inputs required to mark a host handle publicly decryptable.
 pub struct AllowPublicDecrypt<'a, 'info> {
-    /// Subject that already has `ACL_ROLE_PUBLIC_DECRYPT` on the lineage.
+    /// Subject that is allowed on the lineage.
     pub authority: &'a Signer<'info>,
     /// Rent payer for the account's growth, if any.
     pub payer: &'a Signer<'info>,
@@ -463,13 +463,13 @@ pub fn allow_public_decrypt<'info>(request: AllowPublicDecrypt<'_, 'info>) -> Re
     ))
 }
 
-/// Inputs required to escalate a subject's roles on an existing lineage.
+/// Inputs required to add subjects to an existing lineage.
 pub struct AllowSubjects<'a, 'info> {
     /// Rent payer for the account's growth, if any.
     pub payer: &'a Signer<'info>,
-    /// Current subject with `ACL_ROLE_GRANT` on the lineage.
+    /// Current allowed subject on the lineage.
     pub authority: &'a Signer<'info>,
-    /// `EncryptedValue` lineage receiving the new role grants.
+    /// `EncryptedValue` lineage receiving the new allowed subjects.
     pub encrypted_value: AccountInfo<'info>,
     /// ZamaHost config account.
     pub host_config: &'a Account<'info, HostConfig>,
@@ -481,10 +481,8 @@ pub struct AllowSubjects<'a, 'info> {
     pub system_program: &'a Program<'info, System>,
 }
 
-/// Escalates a subject's role bitset on an existing `EncryptedValue` lineage,
-/// e.g. adding `ACL_ROLE_PUBLIC_DECRYPT` before a disclosure request. Roles
-/// cannot be granted at birth (the host rejects public-decrypt-at-creation),
-/// so disclosure flows always go through this before `make_handle_public`.
+/// Adds subjects to an existing `EncryptedValue` lineage. Re-adding an existing
+/// subject is idempotent and still proves the authority is currently allowed.
 pub(crate) fn allow_subjects<'info>(
     request: AllowSubjects<'_, 'info>,
     subjects: Vec<zama_host::instructions::EncryptedValueSubjectGrant>,

@@ -1,7 +1,7 @@
 //! State and deterministic helper functions for the ZamaHost program.
 //!
 //! This module is intentionally reusable from app programs and tests. It
-//! exposes the PDA seeds, role flags, account layouts, and handle formulas
+//! exposes the PDA seeds, account layouts, and handle formulas
 //! needed to prepare CPI accounts and to verify host-owned ACL state off-chain.
 
 use anchor_lang::prelude::*;
@@ -57,39 +57,28 @@ pub struct InitializeHostConfigArgs {
     pub grant_deny_list_enabled: bool,
 }
 
-/// Pubkey plus role flags stored inline or in an overflow permission PDA.
+/// Pubkey stored inline as an allowed subject.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AclSubjectEntry {
     /// Subject identity. For app users this is usually the owner pubkey; for
     /// app programs this can be a program-controlled compute signer PDA.
     pub pubkey: Pubkey,
-    /// Bitset of `ACL_ROLE_*` flags.
-    pub role_flags: u8,
 }
 
 impl AclSubjectEntry {
-    /// Builds an owner/user subject with use, grant, and public-decrypt roles.
+    /// Builds an owner/user subject.
     pub fn user(pubkey: Pubkey) -> Self {
-        Self {
-            pubkey,
-            role_flags: ACL_ROLE_USER,
-        }
+        Self { pubkey }
     }
 
-    /// Builds a compute subject without public-decrypt authority.
+    /// Builds a compute subject.
     pub fn compute(pubkey: Pubkey) -> Self {
-        Self {
-            pubkey,
-            role_flags: ACL_ROLE_COMPUTE_SUBJECT,
-        }
+        Self { pubkey }
     }
 
-    /// Builds a subject that may use the handle but may not grant or publish it.
+    /// Builds an allowed subject.
     pub fn use_only(pubkey: Pubkey) -> Self {
-        Self {
-            pubkey,
-            role_flags: ACL_ROLE_USE,
-        }
+        Self { pubkey }
     }
 }
 
@@ -276,16 +265,6 @@ impl FheTernaryOpCode {
             Self::IfThenElse => 25,
         }
     }
-}
-
-/// Returns true when `role_flags` contains every flag in `role`.
-pub fn subject_has_role(role_flags: u8, role: u8) -> bool {
-    role_flags & role == role
-}
-
-/// Returns true when a role bitset is nonempty and uses only known role bits.
-pub fn role_flags_are_known(role_flags: u8) -> bool {
-    role_flags != 0 && role_flags & !ACL_ROLE_KNOWN == 0
 }
 
 /// Returns the chain id embedded in a handle.

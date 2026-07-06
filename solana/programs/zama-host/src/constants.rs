@@ -1,4 +1,4 @@
-//! Shared constants, PDA seeds, role flags, and protocol domain separators.
+//! Shared constants, PDA seeds, and protocol domain separators.
 
 /// Version byte written to host protocol events.
 pub const EVENT_VERSION: u8 = 1;
@@ -25,23 +25,6 @@ pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 /// Reserved app-context sentinel for wildcard user-decryption delegation rows.
 pub const WILDCARD_APP_CONTEXT_BYTES: [u8; 32] = [0xff; 32];
 
-/// Subject may use a handle in host operations and decrypt checks.
-pub const ACL_ROLE_USE: u8 = 0x01;
-/// Subject may extend persistent ACL membership for a handle.
-pub const ACL_ROLE_GRANT: u8 = 0x02;
-/// Subject may mark a handle as publicly decryptable.
-pub const ACL_ROLE_PUBLIC_DECRYPT: u8 = 0x04;
-/// Subject is intended for FHE compute execution.
-pub const ACL_ROLE_COMPUTE: u8 = 0x08;
-/// All role bits currently understood by the host and KMS verifier.
-pub const ACL_ROLE_KNOWN: u8 =
-    ACL_ROLE_USE | ACL_ROLE_GRANT | ACL_ROLE_PUBLIC_DECRYPT | ACL_ROLE_COMPUTE;
-/// Convenience role set for a full user/owner subject.
-pub const ACL_ROLE_ALL: u8 = ACL_ROLE_USE | ACL_ROLE_GRANT | ACL_ROLE_PUBLIC_DECRYPT;
-/// Convenience role set used for compute signer subjects.
-pub const ACL_ROLE_COMPUTE_SUBJECT: u8 = ACL_ROLE_USE | ACL_ROLE_COMPUTE;
-/// Convenience role set used for owner/user subjects in the token PoC.
-pub const ACL_ROLE_USER: u8 = ACL_ROLE_ALL;
 /// Maximum number of FHE operations accepted by one composed eval.
 pub const MAX_FHE_EVAL_OPS: usize = 16;
 /// Maximum number of external encrypted-input handles in one signed proof.

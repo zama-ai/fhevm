@@ -286,10 +286,7 @@ fn existing_lineage_state(
 }
 
 fn owner_subject(pubkey: Pubkey) -> zama_host::AclSubjectEntry {
-    zama_host::AclSubjectEntry {
-        pubkey,
-        role_flags: zama_host::ACL_ROLE_USE | zama_host::ACL_ROLE_GRANT,
-    }
+    zama_host::AclSubjectEntry { pubkey }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -338,11 +335,10 @@ fn allow_for_decryption(
         .args(zama_host::instruction::AllowSubjects {
             subjects: vec![zama_host::instructions::EncryptedValueSubjectGrant {
                 subject: payer.pubkey(),
-                role_flags: zama_host::ACL_ROLE_PUBLIC_DECRYPT,
             }],
         })
         .send()?;
-    println!("OK allow_subjects (public-decrypt role): {grant_sig}");
+    println!("OK allow_subjects (idempotent membership): {grant_sig}");
 
     let public_sig = host
         .request()
@@ -1650,7 +1646,6 @@ mod tests {
                 .copied()
                 .map(Pubkey::new_from_array)
                 .collect(),
-            subject_roles: vec![zama_host::ACL_ROLE_USE],
             leaf_count: value.leaf_count,
             peaks: value.peaks.clone(),
             bump: value.bump,

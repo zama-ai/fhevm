@@ -64,8 +64,8 @@ use crate::core::{
     event_processor::ProcessingError,
     solana_acl::{HandleBytes, SolanaAclVerifier, SolanaPubkeyBytes},
     solana_encrypted_value_acl::{
-        decode_encrypted_value_acl, encrypted_value_acl_address, DecodedEncryptedValueAcl,
-        EncryptedValueTarget,
+        DecodedEncryptedValueAcl, EncryptedValueTarget, decode_encrypted_value_acl,
+        encrypted_value_acl_address,
     },
     solana_v2_fetcher::SolanaV2Fetcher,
 };
@@ -73,11 +73,11 @@ use alloy::primitives::U256;
 use anyhow::anyhow;
 use borsh::BorshDeserialize;
 use connector_utils::types::solana_extra_data::{
-    parse_solana_mmr_proof_extra_data, parse_solana_user_decrypt_extra_data,
-    solana_user_decrypt_signing_preimage, SolanaUserDecryptSigningInput,
+    SolanaUserDecryptSigningInput, parse_solana_mmr_proof_extra_data,
+    parse_solana_user_decrypt_extra_data, solana_user_decrypt_signing_preimage,
 };
 use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequestSolana;
-use ring::signature::{UnparsedPublicKey, ED25519};
+use ring::signature::{ED25519, UnparsedPublicKey};
 use solana_pubkey::Pubkey;
 use zama_solana_acl::{EncryptedValue, MmrProof};
 
@@ -435,8 +435,8 @@ mod tests {
     use super::*;
     use alloy::primitives::{Address, Bytes, FixedBytes};
     use connector_utils::types::solana_extra_data::{
-        encode_solana_extra_data_context_only, encode_solana_extra_data_mmr_proof,
-        SOLANA_USER_DECRYPT_DOMAIN_TAG,
+        SOLANA_USER_DECRYPT_DOMAIN_TAG, encode_solana_extra_data_context_only,
+        encode_solana_extra_data_mmr_proof,
     };
     use fhevm_gateway_bindings::decryption::{
         Decryption::{HandleEntry, SnsCiphertextMaterial, UserDecryptionRequestSolana},
@@ -453,8 +453,6 @@ mod tests {
     const DOMAIN: SolanaPubkeyBytes = [1u8; 32];
     const APP: SolanaPubkeyBytes = [2u8; 32];
     const LABEL: [u8; 32] = *b"balance_________________________";
-    const ACL_ROLE_USE: u8 = 0x01;
-
     /// Wraps a raw ed25519 seed in a minimal PKCS#8 v1 document.
     fn pkcs8_from_seed(seed: &[u8; 32]) -> Vec<u8> {
         let prefix: [u8; 16] = [
@@ -553,10 +551,7 @@ mod tests {
     }
 
     fn decoded(l: &Lineage) -> DecodedEncryptedValueAcl {
-        DecodedEncryptedValueAcl {
-            acl: l.acl.clone(),
-            subject_roles: vec![ACL_ROLE_USE; l.acl.subjects.len()],
-        }
+        DecodedEncryptedValueAcl { acl: l.acl.clone() }
     }
 
     /// Builds a v2-signed single-handle request. `proof_blob`/`value_key`/`proof_slot` (when

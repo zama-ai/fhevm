@@ -1,15 +1,14 @@
 //! Shared account contexts and validation helpers for instruction modules.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{program::invoke_signed, system_instruction, system_program};
+use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
 
 use crate::{
     errors::ZamaHostError,
     events::HostConfigUpdatedEvent,
     state::{
         assert_handle_for_chain, deny_subject_address, encrypted_value_address,
-        host_config_address, role_flags_are_known, subject_has_role, AclSubjectEntry,
-        DenySubjectRecord, EncryptedValue, HostConfig, ACL_ROLE_PUBLIC_DECRYPT, ACL_ROLE_USE,
+        host_config_address, AclSubjectEntry, DenySubjectRecord, EncryptedValue, HostConfig,
         EVENT_VERSION, MAX_ACL_SUBJECTS,
     },
 };
@@ -120,10 +119,8 @@ pub(super) fn assert_output_acl_metadata(
     require!(
         subjects
             .iter()
-            .all(|subject| subject.pubkey != Pubkey::default()
-                && role_flags_are_known(subject.role_flags)
-                && subject_has_role(subject.role_flags, ACL_ROLE_USE)),
-        ZamaHostError::SubjectMissingRole
+            .all(|subject| subject.pubkey != Pubkey::default()),
+        ZamaHostError::SubjectNotAllowed
     );
     for (index, subject) in subjects.iter().enumerate() {
         require!(
@@ -131,7 +128,7 @@ pub(super) fn assert_output_acl_metadata(
                 .iter()
                 .skip(index + 1)
                 .any(|later| later.pubkey == subject.pubkey),
-            ZamaHostError::SubjectMissingRole
+            ZamaHostError::SubjectNotAllowed
         );
     }
     Ok(())
@@ -163,13 +160,12 @@ pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<Encry
 
 /// Durable input authorization: the account must be a canonical program-owned
 /// `EncryptedValue`, `handle` must be its *current* handle (for this chain),
-/// and `subject` must be a current member holding `role`.
-pub(super) fn assert_encrypted_value_subject_role(
+/// and `subject` must be a current allowed member.
+pub(super) fn assert_encrypted_value_subject_allowed(
     info: &AccountInfo,
     handle: [u8; 32],
     chain_id: u64,
     subject: Pubkey,
-    role: u8,
 ) -> Result<()> {
     let value = read_canonical_encrypted_value(info)?;
     assert_handle_for_chain(value.current_handle, chain_id)?;
@@ -180,46 +176,6 @@ pub(super) fn assert_encrypted_value_subject_role(
     require!(
         value.subject_index(subject).is_some(),
         ZamaHostError::SubjectNotFound
-    );
-    require!(
-        value.subject_has_role(subject, role),
-        ZamaHostError::SubjectMissingRole
-    );
-    Ok(())
-}
-
-/// Non-asserting role query on a canonical `EncryptedValue` whose current
-/// handle must match; used for public-decrypt capability propagation.
-pub(super) fn encrypted_value_subject_has_role(
-    info: &AccountInfo,
-    handle: [u8; 32],
-    subject: Pubkey,
-    role: u8,
-) -> Result<bool> {
-    let value = read_canonical_encrypted_value(info)?;
-    require!(
-        value.current_handle == handle,
-        ZamaHostError::PreviousStateMismatch
-    );
-    Ok(value.subject_has_role(subject, role))
-}
-
-pub(super) fn assert_derived_public_decrypt_roles_allowed(
-    subjects: &[AclSubjectEntry],
-    propagated_public_decrypt_allowed: bool,
-    app_account_authority: &AccountInfo,
-) -> Result<()> {
-    let grants_public_decrypt = subjects
-        .iter()
-        .any(|subject| subject_has_role(subject.role_flags, ACL_ROLE_PUBLIC_DECRYPT));
-    if !grants_public_decrypt || propagated_public_decrypt_allowed {
-        return Ok(());
-    }
-    require!(
-        *app_account_authority.owner != system_program::ID
-            && !app_account_authority.executable
-            && !app_account_authority.data_is_empty(),
-        ZamaHostError::DerivedOutputPublicDecryptDenied
     );
     Ok(())
 }

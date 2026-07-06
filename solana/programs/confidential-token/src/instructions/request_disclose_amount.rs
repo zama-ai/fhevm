@@ -7,14 +7,13 @@ use super::*;
 #[instruction(amount_handle: [u8; 32], request_nonce: [u8; 32], expires_slot: u64)]
 #[event_cpi]
 pub struct RequestDiscloseAmount<'info> {
-    /// Requester that must have `ACL_ROLE_GRANT` on the amount lineage.
+    /// Requester that must be allowed on the amount lineage.
     #[account(mut)]
     pub requester: Signer<'info>,
     /// Confidential mint that scopes the encrypted amount.
     pub mint: Box<Account<'info, ConfidentialMint>>,
-    /// Token-scoped amount `EncryptedValue` lineage. Escalated with
-    /// `ACL_ROLE_PUBLIC_DECRYPT` for the requester and appended a
-    /// public-decrypt MMR leaf by this instruction's CPIs.
+    /// Token-scoped amount `EncryptedValue` lineage. The requester must be
+    /// allowed so this instruction can append a public-decrypt MMR leaf.
     #[account(mut)]
     pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Account-backed request witness consumed by the KMS response path.
@@ -90,8 +89,8 @@ pub fn request_disclose_amount(
         DISCLOSURE_REQUEST_MODE_AMOUNT,
     );
 
-    // Roles cannot be granted at birth, so escalate the requester to public-decrypt here, then
-    // append the public-decrypt MMR leaf for the current handle.
+    // Re-add the requester idempotently, then append the public-decrypt MMR leaf
+    // for the current handle.
     fhe::allow_subjects(
         fhe::AllowSubjects {
             payer: &ctx.accounts.requester,
@@ -108,7 +107,6 @@ pub fn request_disclose_amount(
         },
         vec![zama_host::instructions::EncryptedValueSubjectGrant {
             subject: ctx.accounts.requester.key(),
-            role_flags: zama_host::ACL_ROLE_PUBLIC_DECRYPT,
         }],
     )?;
     fhe::allow_public_decrypt(fhe::AllowPublicDecrypt {

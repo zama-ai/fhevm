@@ -13,11 +13,11 @@ use super::handles::{
 };
 use super::*;
 
-/// Operands resolved identically by both phases (durable input role checks and
+/// Operands resolved identically by both phases (durable input membership checks and
 /// transient producer lookups), parameterized by the phase-specific account
 /// access and transient-session handling.
 pub(super) trait EvalStepVisitor {
-    /// Subject required to hold the input role on durable `EncryptedValue` accounts.
+    /// Subject required to be allowed on durable `EncryptedValue` accounts.
     fn subject(&self) -> Pubkey;
     /// Transient values produced by earlier steps in this frame.
     fn produced(&self) -> &[ProducedValue];
@@ -61,7 +61,6 @@ pub(super) trait EvalStepVisitor {
         result: [u8; 32],
         output: &FheEvalOutput,
         output_public_decrypt_allowed: bool,
-        enforce_public_decrypt_role_propagation: bool,
     ) -> Result<()>;
 
     /// Resolves an operand that must be encrypted (rejects scalars).
@@ -173,7 +172,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     result,
                     output,
                     inputs_allow_public_decrypt(&lhs, &rhs),
-                    true,
                 )?;
             }
             FheEvalStep::Ternary {
@@ -218,7 +216,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     result,
                     output,
                     inputs3_allow_public_decrypt(&control, &if_true, &if_false),
-                    true,
                 )?;
             }
             FheEvalStep::TrivialEncrypt {
@@ -242,7 +239,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     fhe_type: *fhe_type,
                     result,
                 }));
-                visitor.accept_output(ctx, result, output, false, false)?;
+                visitor.accept_output(ctx, result, output, false)?;
             }
             FheEvalStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
@@ -256,7 +253,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     fhe_type: *fhe_type,
                     result,
                 }));
-                visitor.accept_output(ctx, result, output, false, false)?;
+                visitor.accept_output(ctx, result, output, false)?;
             }
         }
     }

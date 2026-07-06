@@ -16,9 +16,9 @@ EncryptedValue
   PDA("encrypted-value", value_key)
   value_key = derive_value_key(acl_domain_key, app_account, encrypted_value_label)
   one stable PDA per logical encrypted value, reused across every handle update; stores
-  current_handle, inline subjects, subject role flags (up to MAX_ENCRYPTED_VALUE_SUBJECTS=8),
+  current_handle, inline allowed subjects (up to MAX_ENCRYPTED_VALUE_SUBJECTS=8),
   and an on-account SHA-256 Merkle Mountain Range (peaks + leaf_count) sealing one
-  HistoricalAccessLeaf per USE-role subject on every handle supersession, and a
+  HistoricalAccessLeaf per allowed subject on every handle supersession, and a
   PublicDecryptLeaf on every make_handle_public call. See
   `solana/crates/zama-solana-acl/src/lib.rs` for the shared MMR/leaf-commitment math and
   `docs/DESIGN_DECISIONS.md` DD-032 for the rationale (replaces the earlier keyed-nonce
@@ -58,8 +58,9 @@ attestation as `update_encrypted_value` so every transaction stays independently
 
 This is the supported replacement for the older `execute_frame` prototype, not a port of that ABI.
 Keeping durable output authority on a signer witness (`app_account_authority` or an explicit
-per-output authority account in `remaining_accounts`) preserves the role-aware ACL and public-decrypt
-rules enforced by the current host without reviving unsigned `authorized_app_accounts`.
+per-output authority account in `remaining_accounts`) preserves the membership-based ACL and
+public-decrypt rules enforced by the current host without reviving unsigned
+`authorized_app_accounts`.
 
 For small frames, worker-replay (compute-step) events are emitted through Anchor event CPI. Larger
 frames emit the same replay payloads through Anchor `Program data` logs to avoid self-CPI heap
@@ -83,13 +84,9 @@ Admission invariants for `fhe_eval`:
   (the EVM `fromExternal` / `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is
   checked at input consumption (`attestation.contract_address == compute_subject`); derived outputs are
   unconstrained. The redundant standalone `verify_coprocessor_input` instruction was removed (DD-007).
-- Durable outputs must be born with `public_decrypt = false`; public decrypt is granted later through
-  the dedicated role-aware instruction path. `ACL_ROLE_PUBLIC_DECRYPT` in output subjects authorizes
-  that later explicit path; it does not set the durable record's `public_decrypt` flag at birth.
-- When a derived durable output grants `ACL_ROLE_PUBLIC_DECRYPT` without any input carrying that role,
-  the output authority must be an initialized non-system app account. This blocks direct/system-owned
-  callers from laundering compute/use permission into future disclosure authority while preserving
-  app-owned token output policies.
+- Durable outputs are born with an allowed-subject set only. Public decrypt is never a live flag or
+  subject attribute; it is granted later by `make_handle_public`, which appends an exact-handle
+  `PublicDecryptLeaf` to the lineage MMR.
 
 ## External Inputs
 
@@ -121,22 +118,17 @@ the earlier standalone `verify_coprocessor_input`/`verify_input_and_bind`/`mock_
 instructions and the `InputVerifiedEvent` receipt were removed. The former Ed25519 verifier-set path
 is retained only as the superseded-design stub in DD-007.
 
-## Roles
+## ACL Model
 
-Inline and overflow subjects carry role flags:
+`EncryptedValue.subjects` is the complete MVP ACL: if a subject is in the set, it can use the
+current handle in `fhe_eval`, request user decrypt, add another subject through `allow_subjects`,
+and call `make_handle_public` for the exact current handle. If a subject is not in the set, it cannot
+do any of those actions.
 
-```text
-ACL_ROLE_USE
-ACL_ROLE_COMPUTE
-ACL_ROLE_GRANT
-ACL_ROLE_PUBLIC_DECRYPT
-ACL_ROLE_USER
-```
-
-Compute signers should be granted `ACL_ROLE_USE | ACL_ROLE_COMPUTE`, while owner/user subjects
-remain full ACL subjects. Persistent grants require `ACL_ROLE_GRANT`. Public decrypt requires
-`ACL_ROLE_PUBLIC_DECRYPT`; compute-only subjects cannot extend ACL membership or flip
-`public_decrypt`.
+`allow_subjects` is append-only and idempotent for existing subjects. Its authority must already be
+in the allowed set, and deny-list/pause checks still apply. Superseding a handle seals one
+`HistoricalAccessLeaf` per allowed subject in current order. Public decryptability is represented
+only by `PublicDecryptLeaf`; it never rolls forward to later handles.
 
 ## Test-Only Entrypoints
 

@@ -7,7 +7,7 @@
 //!
 //! Layout:
 //! - [`decode`]: instruction decoding (Anchor discriminators + borsh args).
-//! - [`replay`]: per-lineage state tracking (`current_handle`, subjects/roles)
+//! - [`replay`]: per-lineage state tracking (`current_handle`, subjects)
 //!   that turns decoded instructions into `LineageEvent`s.
 //! - [`chain`]: `ChainFetcher` trait + a plain-`reqwest` JSON-RPC implementation.
 //! - [`store`]: `LeafStore` trait (append-only event log + cursor) + a

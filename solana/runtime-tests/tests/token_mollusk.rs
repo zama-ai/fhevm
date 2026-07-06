@@ -32,11 +32,11 @@
 //! longer wired in (see `tests/support/mod.rs`).
 
 use anchor_lang::{
-    AccountDeserialize, AccountSerialize, AnchorDeserialize, Discriminator, InstructionData,
-    ToAccountMetas, prelude::system_program,
+    prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
+    Discriminator, InstructionData, ToAccountMetas,
 };
 use confidential_token as token;
-use mollusk_svm::{Mollusk, result::Check};
+use mollusk_svm::{result::Check, Mollusk};
 use solana_sdk::{
     account::Account, instruction::Instruction, program_error::ProgramError, program_pack::Pack,
     pubkey::Pubkey,
@@ -164,7 +164,7 @@ fn new_encrypted_value(
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
     handle: [u8; 32],
-    subjects: &[(Pubkey, u8)],
+    subjects: &[Pubkey],
 ) -> (Pubkey, host::EncryptedValue) {
     let value_key = zama_solana_acl::derive_value_key(
         acl_domain_key.to_bytes(),
@@ -177,8 +177,7 @@ fn new_encrypted_value(
         app_account,
         encrypted_value_label,
         current_handle: handle,
-        subjects: subjects.iter().map(|(p, _)| *p).collect(),
-        subject_roles: subjects.iter().map(|(_, r)| *r).collect(),
+        subjects: subjects.to_vec(),
         leaf_count: 0,
         peaks: Vec::new(),
         bump,
@@ -431,10 +430,7 @@ impl TokenFixture {
             self.alice_token,
             token::balance_label(),
             self.alice_initial,
-            &[
-                (self.owner, host::ACL_ROLE_USE),
-                (self.compute_signer, host::ACL_ROLE_USE),
-            ],
+            &[self.owner, self.compute_signer],
         );
         assert_eq!(alice_balance_address, self.alice_balance_value);
         let (bob_balance_address, bob_balance_value) = new_encrypted_value(
@@ -442,10 +438,7 @@ impl TokenFixture {
             self.bob_token,
             token::balance_label(),
             self.bob_initial,
-            &[
-                (self.bob_owner, host::ACL_ROLE_USE),
-                (self.compute_signer, host::ACL_ROLE_USE),
-            ],
+            &[self.bob_owner, self.compute_signer],
         );
         assert_eq!(bob_balance_address, self.bob_balance_value);
 
@@ -644,7 +637,7 @@ fn mollusk_initialize_mint_creates_total_supply_encrypted_value() {
         supply_value.encrypted_value_label,
         token::total_supply_label()
     );
-    assert!(supply_value.subject_has_role(compute_signer, host::ACL_ROLE_USE));
+    assert!(supply_value.has_subject(compute_signer));
 }
 
 #[test]
@@ -673,8 +666,8 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_value() {
     assert_eq!(balance_value.acl_domain_key, fixture.mint);
     assert_eq!(balance_value.app_account, token_account);
     assert_eq!(balance_value.encrypted_value_label, token::balance_label());
-    assert!(balance_value.subject_has_role(owner, host::ACL_ROLE_USE));
-    assert!(balance_value.subject_has_role(fixture.compute_signer, host::ACL_ROLE_USE));
+    assert!(balance_value.has_subject(owner));
+    assert!(balance_value.has_subject(fixture.compute_signer));
 
     let balance_events: Vec<token::BalanceHandleUpdatedEvent> = result
         .inner_instructions
@@ -788,17 +781,12 @@ fn mollusk_confidential_transfer_updates_balance_lineages_and_transferred_amount
     let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
     assert_ne!(alice_balance.current_handle, fixture.alice_initial);
     assert_ne!(bob_balance.current_handle, fixture.bob_initial);
-    // Supersession appended exactly one historical leaf per USE subject; the owner and compute
-    // signer both hold USE, so each balance lineage gets two leaves.
+    // Supersession appended exactly one historical leaf per allowed subject.
     assert_eq!(alice_balance.leaf_count, 2);
     assert_eq!(bob_balance.leaf_count, 2);
     assert_eq!(
         alice_balance.subjects,
         vec![fixture.owner, fixture.compute_signer]
-    );
-    assert_eq!(
-        alice_balance.subject_roles,
-        vec![host::ACL_ROLE_USE, host::ACL_ROLE_USE]
     );
     assert_eq!(
         alice_balance.peaks,
@@ -811,10 +799,6 @@ fn mollusk_confidential_transfer_updates_balance_lineages_and_transferred_amount
     assert_eq!(
         bob_balance.subjects,
         vec![fixture.bob_owner, fixture.compute_signer]
-    );
-    assert_eq!(
-        bob_balance.subject_roles,
-        vec![host::ACL_ROLE_USE, host::ACL_ROLE_USE]
     );
     assert_eq!(
         bob_balance.peaks,
@@ -833,9 +817,9 @@ fn mollusk_confidential_transfer_updates_balance_lineages_and_transferred_amount
         transferred.encrypted_value_label,
         token::transferred_amount_label()
     );
-    assert!(transferred.subject_has_role(fixture.owner, host::ACL_ROLE_USE));
-    assert!(transferred.subject_has_role(fixture.bob_owner, host::ACL_ROLE_USE));
-    assert!(transferred.subject_has_role(fixture.compute_signer, host::ACL_ROLE_USE));
+    assert!(transferred.has_subject(fixture.owner));
+    assert!(transferred.has_subject(fixture.bob_owner));
+    assert!(transferred.has_subject(fixture.compute_signer));
     assert_eq!(transferred.leaf_count, 0); // birth: no supersession yet.
 
     let transfer_events: Vec<token::ConfidentialTransferEvent> = result
@@ -989,7 +973,7 @@ fn mollusk_confidential_transfer_rejects_stale_balance_encrypted_value() {
         fixture.alice_token,
         token::wrap_amount_label(),
         fixture.alice_initial,
-        &[(fixture.owner, host::ACL_ROLE_USE)],
+        &[fixture.owner],
     );
     context
         .account_store

@@ -76,13 +76,12 @@ pub fn decode_fhe_eval_args(instruction_data: &[u8]) -> Option<FheEvalArgs> {
 // (`sha256("global:<name>")[..8]`).
 
 /// One subject grant, matching `zama_host::instructions::encrypted_value::
-/// EncryptedValueSubjectGrant`'s wire layout (`Pubkey` + `u8`, borsh).
+/// EncryptedValueSubjectGrant`'s wire layout (`Pubkey`, borsh).
 #[derive(
     AnchorDeserialize, AnchorSerialize, Clone, Copy, Debug, PartialEq, Eq,
 )]
 pub struct EncryptedValueSubjectGrant {
     pub subject: [u8; 32],
-    pub role_flags: u8,
 }
 
 #[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
@@ -858,10 +857,7 @@ mod encrypted_value_decode_tests {
             app_account: [2; 32],
             encrypted_value_label: [3; 32],
             handle: [4; 32],
-            subjects: vec![EncryptedValueSubjectGrant {
-                subject: [5; 32],
-                role_flags: 1,
-            }],
+            subjects: vec![EncryptedValueSubjectGrant { subject: [5; 32] }],
         };
         let data = encode(CREATE_ENCRYPTED_VALUE_DISCRIMINATOR, args.clone());
         let decoded = decode_encrypted_value_instruction(&data)
@@ -894,10 +890,7 @@ mod encrypted_value_decode_tests {
     #[test]
     fn decodes_allow_subjects() {
         let args = AllowSubjectsArgs {
-            subjects: vec![EncryptedValueSubjectGrant {
-                subject: [6; 32],
-                role_flags: 2,
-            }],
+            subjects: vec![EncryptedValueSubjectGrant { subject: [6; 32] }],
         };
         let data = encode(ALLOW_SUBJECTS_DISCRIMINATOR, args.clone());
         let decoded = decode_encrypted_value_instruction(&data)
@@ -1008,10 +1001,7 @@ mod encrypted_value_decode_tests {
         let mut tracker = EncryptedValueLineageTracker::new();
         tracker.record(ENCRYPTED_VALUE, [4; 32]);
         let args = AllowSubjectsArgs {
-            subjects: vec![EncryptedValueSubjectGrant {
-                subject: [6; 32],
-                role_flags: 1,
-            }],
+            subjects: vec![EncryptedValueSubjectGrant { subject: [6; 32] }],
         };
         let fetches = encrypted_value_instruction_fetches(
             &EncryptedValueInstruction::AllowSubjects(args),
@@ -1046,10 +1036,7 @@ mod encrypted_value_decode_tests {
         let allow_data = encode(
             ALLOW_SUBJECTS_DISCRIMINATOR,
             AllowSubjectsArgs {
-                subjects: vec![EncryptedValueSubjectGrant {
-                    subject: [6; 32],
-                    role_flags: 1,
-                }],
+                subjects: vec![EncryptedValueSubjectGrant { subject: [6; 32] }],
             },
         );
         let accounts = accounts_with_encrypted_value_at_index_2();

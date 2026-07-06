@@ -169,7 +169,6 @@ mod tests {
             output_subjects: (0..subject_count)
                 .map(|_| AclSubjectEntry {
                     pubkey: Pubkey::new_unique(),
-                    role_flags: ACL_ROLE_USE,
                 })
                 .collect(),
             previous_handle: None,

@@ -1,5 +1,5 @@
 //! Append-only per-lineage leaf-event log, plus the ingestion cursor and each
-//! lineage's replay state (handle + subjects/roles), persisted so a poll cycle
+//! lineage's replay state (handle + subjects), persisted so a poll cycle
 //! can resume without replaying the whole chain history.
 //!
 //! Backend: a single JSON file behind an async `RwLock`, written through on
@@ -55,7 +55,7 @@ pub trait LeafStore: Send + Sync {
 
     async fn set_cursor(&self, cursor: Cursor) -> Result<(), StoreError>;
 
-    /// The replayer's tracked (current_handle, subjects+roles) for a lineage,
+    /// The replayer's tracked (current_handle, subjects) for a lineage,
     /// needed to correctly interpret the *next* instruction without replaying
     /// history from genesis on every poll.
     async fn get_replay_state(
@@ -136,7 +136,7 @@ struct FileContents {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct LineageReplayStateDto {
     current_handle: [u8; 32],
-    subjects: Vec<([u8; 32], u8)>,
+    subjects: Vec<[u8; 32]>,
 }
 
 impl From<&LineageReplayState> for LineageReplayStateDto {
@@ -413,7 +413,7 @@ mod tests {
         assert_eq!(store.get_replay_state(lineage).await.unwrap(), None);
         let state = LineageReplayState {
             current_handle: pk(0x10),
-            subjects: vec![(pk(0x30), 1)],
+            subjects: vec![pk(0x30)],
         };
         store
             .set_replay_state(lineage, state.clone())

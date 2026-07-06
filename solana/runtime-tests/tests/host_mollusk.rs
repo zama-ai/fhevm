@@ -176,7 +176,7 @@ fn new_lineage(
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
     handle: [u8; 32],
-    subjects: &[(Pubkey, u8)],
+    subjects: &[Pubkey],
 ) -> (Pubkey, EncryptedValue) {
     let value_key = zama_solana_acl::derive_value_key(
         acl_domain_key.to_bytes(),
@@ -189,8 +189,7 @@ fn new_lineage(
         app_account,
         encrypted_value_label,
         current_handle: handle,
-        subjects: subjects.iter().map(|(p, _)| *p).collect(),
-        subject_roles: subjects.iter().map(|(_, r)| *r).collect(),
+        subjects: subjects.to_vec(),
         leaf_count: 0,
         peaks: Vec::new(),
         bump,
@@ -378,10 +377,7 @@ fn mollusk_create_encrypted_value_succeeds_and_stores_subjects() {
         authority,
         lbl,
         handle,
-        vec![EncryptedValueSubjectGrant {
-            subject,
-            role_flags: host::ACL_ROLE_USE | host::ACL_ROLE_GRANT,
-        }],
+        vec![EncryptedValueSubjectGrant { subject }],
     );
 
     let accounts = vec![
@@ -436,45 +432,6 @@ fn mollusk_create_encrypted_value_rejects_empty_subjects() {
 }
 
 #[test]
-fn mollusk_create_encrypted_value_rejects_public_decrypt_at_birth() {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
-    let acl_domain_key = Pubkey::new_unique();
-    let lbl = label("balance");
-    let value_key =
-        zama_solana_acl::derive_value_key(acl_domain_key.to_bytes(), authority.to_bytes(), lbl);
-    let (encrypted_value, _bump) = host::encrypted_value_address(value_key);
-
-    let ix = create_encrypted_value_ix(
-        authority,
-        authority,
-        encrypted_value,
-        host_config,
-        acl_domain_key,
-        authority,
-        lbl,
-        handle_for_chain(1, 5),
-        vec![EncryptedValueSubjectGrant {
-            subject: Pubkey::new_unique(),
-            role_flags: host::ACL_ROLE_USE | host::ACL_ROLE_PUBLIC_DECRYPT,
-        }],
-    );
-    let accounts = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (encrypted_value, empty_system_account()),
-        (host_config, host_config_account),
-    ];
-    mollusk().process_and_validate_instruction(
-        &ix,
-        &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::PublicDecryptAtBirthUnsupported,
-        )],
-    );
-}
-
-#[test]
 fn mollusk_create_encrypted_value_rejects_duplicate_subjects() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
@@ -495,14 +452,8 @@ fn mollusk_create_encrypted_value_rejects_duplicate_subjects() {
         lbl,
         handle_for_chain(1, 5),
         vec![
-            EncryptedValueSubjectGrant {
-                subject: dup,
-                role_flags: host::ACL_ROLE_USE,
-            },
-            EncryptedValueSubjectGrant {
-                subject: dup,
-                role_flags: host::ACL_ROLE_GRANT,
-            },
+            EncryptedValueSubjectGrant { subject: dup },
+            EncryptedValueSubjectGrant { subject: dup },
         ],
     );
     let accounts = vec![
@@ -514,9 +465,7 @@ fn mollusk_create_encrypted_value_rejects_duplicate_subjects() {
     mollusk().process_and_validate_instruction(
         &ix,
         &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::SubjectMissingRole,
-        )],
+        &[custom_error(host::errors::ZamaHostError::SubjectNotAllowed)],
     );
 }
 
@@ -525,7 +474,7 @@ fn mollusk_create_encrypted_value_rejects_duplicate_subjects() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_allow_subjects_adds_new_subject_and_extends_roles() {
+fn mollusk_allow_subjects_adds_new_subject_and_is_idempotent() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let owner = Pubkey::new_unique();
@@ -535,7 +484,7 @@ fn mollusk_allow_subjects_adds_new_subject_and_extends_roles() {
         authority,
         label("balance"),
         handle_for_chain(2, 5),
-        &[(owner, host::ACL_ROLE_USE | host::ACL_ROLE_GRANT)],
+        &[owner],
     );
 
     let ix = allow_subjects_ix(
@@ -546,13 +495,8 @@ fn mollusk_allow_subjects_adds_new_subject_and_extends_roles() {
         vec![
             EncryptedValueSubjectGrant {
                 subject: new_subject,
-                role_flags: host::ACL_ROLE_USE,
             },
-            // Idempotent role extension for an existing subject.
-            EncryptedValueSubjectGrant {
-                subject: owner,
-                role_flags: host::ACL_ROLE_PUBLIC_DECRYPT,
-            },
+            EncryptedValueSubjectGrant { subject: owner },
         ],
     );
     let accounts = vec![
@@ -565,46 +509,44 @@ fn mollusk_allow_subjects_adds_new_subject_and_extends_roles() {
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
     let updated = read_encrypted_value(&result, address);
     assert_eq!(updated.subjects, vec![owner, new_subject]);
-    assert!(updated.subject_has_role(owner, host::ACL_ROLE_PUBLIC_DECRYPT));
-    assert!(updated.subject_has_role(new_subject, host::ACL_ROLE_USE));
+    assert!(updated.has_subject(owner));
+    assert!(updated.has_subject(new_subject));
     assert_eq!(updated.leaf_count, 0); // allow_subjects never appends leaves
 }
 
 #[test]
-fn mollusk_allow_subjects_rejects_authority_without_grant_role() {
+fn mollusk_allow_subjects_rejects_unallowed_authority() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
-    let use_only = Pubkey::new_unique();
+    let outsider = Pubkey::new_unique();
+    let allowed = Pubkey::new_unique();
     let (address, value) = new_lineage(
         Pubkey::new_unique(),
         authority,
         label("balance"),
         handle_for_chain(2, 5),
-        &[(use_only, host::ACL_ROLE_USE)],
+        &[allowed],
     );
     let ix = allow_subjects_ix(
         authority,
-        use_only,
+        outsider,
         address,
         host_config,
         vec![EncryptedValueSubjectGrant {
             subject: Pubkey::new_unique(),
-            role_flags: host::ACL_ROLE_USE,
         }],
     );
     let accounts = vec![
         (system_program::ID, system_program_account()),
         (authority, funded_system_account()),
-        (use_only, funded_system_account()),
+        (outsider, funded_system_account()),
         (address, encrypted_value_account(&value)),
         (host_config, host_config_account),
     ];
     mollusk().process_and_validate_instruction(
         &ix,
         &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::SubjectMissingRole,
-        )],
+        &[custom_error(host::errors::ZamaHostError::SubjectNotAllowed)],
     );
 }
 
@@ -613,12 +555,11 @@ fn mollusk_allow_subjects_rejects_authority_without_grant_role() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_update_encrypted_value_supersedes_and_appends_use_role_leaves_only() {
-    // Item 2d: a GRANT-only subject (no USE) must get no historical leaf.
+fn mollusk_update_encrypted_value_supersedes_and_appends_allowed_subject_leaves() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
-    let use_subject = Pubkey::new_unique();
-    let grant_only_subject = Pubkey::new_unique();
+    let subject_a = Pubkey::new_unique();
+    let subject_b = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
     let new_handle = handle_for_chain(4, 5);
     let (address, value) = new_lineage(
@@ -626,10 +567,7 @@ fn mollusk_update_encrypted_value_supersedes_and_appends_use_role_leaves_only() 
         authority,
         label("balance"),
         old_handle,
-        &[
-            (use_subject, host::ACL_ROLE_USE),
-            (grant_only_subject, host::ACL_ROLE_GRANT),
-        ],
+        &[subject_a, subject_b],
     );
     let previous_subjects = value.subjects.clone();
 
@@ -651,17 +589,20 @@ fn mollusk_update_encrypted_value_supersedes_and_appends_use_role_leaves_only() 
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
     let updated = read_encrypted_value(&result, address);
     assert_eq!(updated.current_handle, new_handle);
-    assert_eq!(updated.leaf_count, 1); // only use_subject gets a leaf
+    assert_eq!(updated.leaf_count, 2);
 
-    let expected_leaf = zama_solana_acl::historical_access_leaf_commitment(
-        address.to_bytes(),
-        0,
-        old_handle,
-        use_subject.to_bytes(),
-    );
     let mut expected_peaks = Vec::new();
     let mut expected_count = 0u64;
-    zama_solana_acl::mmr_append(&mut expected_peaks, &mut expected_count, expected_leaf).unwrap();
+    for (index, subject) in [subject_a, subject_b].iter().enumerate() {
+        let expected_leaf = zama_solana_acl::historical_access_leaf_commitment(
+            address.to_bytes(),
+            index as u64,
+            old_handle,
+            subject.to_bytes(),
+        );
+        zama_solana_acl::mmr_append(&mut expected_peaks, &mut expected_count, expected_leaf)
+            .unwrap();
+    }
     assert_eq!(updated.peaks, expected_peaks);
 }
 
@@ -677,7 +618,7 @@ fn mollusk_update_encrypted_value_rejects_stale_previous_subjects() {
         authority,
         label("balance"),
         old_handle,
-        &[(subject, host::ACL_ROLE_USE)],
+        &[subject],
     );
 
     let ix = update_encrypted_value_ix(
@@ -715,7 +656,7 @@ fn mollusk_update_encrypted_value_rejects_stale_previous_handle() {
         authority,
         label("balance"),
         old_handle,
-        &[(subject, host::ACL_ROLE_USE)],
+        &[subject],
     );
     let ix = update_encrypted_value_ix(
         authority,
@@ -756,7 +697,7 @@ fn mollusk_make_handle_public_appends_public_decrypt_leaf() {
         authority,
         label("balance"),
         handle,
-        &[(subject, host::ACL_ROLE_USE | host::ACL_ROLE_PUBLIC_DECRYPT)],
+        &[subject],
     );
     let ix = make_handle_public_ix(authority, subject, address, host_config);
     let accounts = vec![
@@ -777,16 +718,17 @@ fn mollusk_make_handle_public_appends_public_decrypt_leaf() {
 }
 
 #[test]
-fn mollusk_make_handle_public_rejects_subject_without_role() {
+fn mollusk_make_handle_public_rejects_unallowed_subject() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
+    let allowed = Pubkey::new_unique();
     let subject = Pubkey::new_unique();
     let (address, value) = new_lineage(
         Pubkey::new_unique(),
         authority,
         label("balance"),
         handle_for_chain(5, 5),
-        &[(subject, host::ACL_ROLE_USE)], // no PUBLIC_DECRYPT
+        &[allowed],
     );
     let ix = make_handle_public_ix(authority, subject, address, host_config);
     let accounts = vec![
@@ -799,9 +741,7 @@ fn mollusk_make_handle_public_rejects_subject_without_role() {
     mollusk().process_and_validate_instruction(
         &ix,
         &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::SubjectMissingRole,
-        )],
+        &[custom_error(host::errors::ZamaHostError::SubjectNotAllowed)],
     );
 }
 
@@ -823,10 +763,7 @@ fn mollusk_supersession_lineage_matches_offchain_reconstruction() {
         authority,
         label("balance"),
         handle0,
-        &[
-            (subject_a, host::ACL_ROLE_USE),
-            (subject_b, host::ACL_ROLE_USE),
-        ],
+        &[subject_a, subject_b],
     );
 
     let ix1 = update_encrypted_value_ix(
@@ -908,7 +845,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
         authority,
         label("balance"),
         handle0,
-        &[(subject, host::ACL_ROLE_USE)],
+        &[subject],
     );
 
     let ix1 = update_encrypted_value_ix(
@@ -1016,7 +953,7 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
         authority,
         label("balance"),
         handle0,
-        &[(subject, host::ACL_ROLE_USE | host::ACL_ROLE_PUBLIC_DECRYPT)],
+        &[subject],
     );
 
     let make_public_ix = make_handle_public_ix(authority, subject, address, host_config);
@@ -1094,20 +1031,10 @@ fn mollusk_fhe_eval_creates_durable_output_from_local_binary_add() {
     let (host_config, host_config_account) = host_config_account(authority);
     let lhs = handle_for_chain(40, 5);
     let rhs = handle_for_chain(41, 5);
-    let (lhs_address, lhs_value) = new_lineage(
-        authority,
-        authority,
-        label("lhs"),
-        lhs,
-        &[(authority, host::ACL_ROLE_USE)],
-    );
-    let (rhs_address, rhs_value) = new_lineage(
-        authority,
-        authority,
-        label("rhs"),
-        rhs,
-        &[(authority, host::ACL_ROLE_USE)],
-    );
+    let (lhs_address, lhs_value) =
+        new_lineage(authority, authority, label("lhs"), lhs, &[authority]);
+    let (rhs_address, rhs_value) =
+        new_lineage(authority, authority, label("rhs"), rhs, &[authority]);
     let output_acl_domain_key = authority;
     let output_app_account = authority;
     let output_label = label("sum");
@@ -1137,10 +1064,7 @@ fn mollusk_fhe_eval_creates_durable_output_from_local_binary_add() {
                 output_acl_domain_key,
                 output_app_account,
                 output_encrypted_value_label: output_label,
-                output_subjects: vec![host::AclSubjectEntry {
-                    pubkey: authority,
-                    role_flags: host::ACL_ROLE_USE,
-                }],
+                output_subjects: vec![host::AclSubjectEntry { pubkey: authority }],
                 previous_handle: None,
                 previous_subjects: None,
             },
@@ -1184,7 +1108,7 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
         authority,
         label("in"),
         input_handle,
-        &[(authority, host::ACL_ROLE_USE)],
+        &[authority],
     );
     let output_handle = handle_for_chain(43, 5);
     let (output_address, output_value) = new_lineage(
@@ -1192,7 +1116,7 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
         authority,
         label("out"),
         output_handle,
-        &[(authority, host::ACL_ROLE_USE)],
+        &[authority],
     );
     let previous_subjects = output_value.subjects.clone();
 
@@ -1212,10 +1136,7 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
                 output_acl_domain_key: authority,
                 output_app_account: authority,
                 output_encrypted_value_label: label("out"),
-                output_subjects: vec![host::AclSubjectEntry {
-                    pubkey: authority,
-                    role_flags: host::ACL_ROLE_USE,
-                }],
+                output_subjects: vec![host::AclSubjectEntry { pubkey: authority }],
                 previous_handle: Some(output_handle),
                 previous_subjects: Some(previous_subjects),
             },
