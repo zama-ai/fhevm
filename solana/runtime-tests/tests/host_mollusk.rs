@@ -3407,6 +3407,71 @@ fn mollusk_set_max_hcu_per_tx_rejects_below_depth() {
 }
 
 #[test]
+fn mollusk_set_max_hcu_per_tx_rejects_above_block_cap_band() {
+    // The block-cap ordering guard from the other side: with the cap in the metering band
+    // (500k), raising max_hcu_per_tx above it would make a single legal max-per-tx frame
+    // structurally unable to pass the block cap -> rejected, no mutation.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_block_cap(admin, 500_000);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_max_hcu_per_tx_ix(
+        program_id,
+        admin,
+        host_config,
+        600_000,
+    ));
+    assert_instruction_custom_error(
+        &result,
+        host::errors::ZamaHostError::HcuBlockCapBelowMaxPerTx,
+    );
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.max_hcu_per_tx, 0);
+    assert_eq!(config.hcu_block_cap_per_app, 500_000);
+
+    // At the boundary (== cap) and under the sentinels the guard is silent: a total equal to
+    // the band cap is accepted.
+    let boundary = context.process_instruction(&set_max_hcu_per_tx_ix(
+        program_id,
+        admin,
+        host_config,
+        500_000,
+    ));
+    assert!(boundary.raw_result.is_ok(), "{:?}", boundary.raw_result);
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .max_hcu_per_tx,
+        500_000
+    );
+}
+
+#[test]
+fn mollusk_set_max_hcu_per_tx_unrestricted_block_cap_accepts_any_total() {
+    // With the cap at the unrestricted sentinel (the ship default), the block-cap ordering
+    // guard is vacuous and any total is accepted.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let result = context.process_instruction(&set_max_hcu_per_tx_ix(
+        program_id,
+        admin,
+        host_config,
+        20_000_000,
+    ));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    assert_eq!(
+        read_host_config(&context, host_config)
+            .expect("config")
+            .max_hcu_per_tx,
+        20_000_000
+    );
+}
+
+#[test]
 fn mollusk_set_max_hcu_depth_per_tx_rejects_above_total() {
     // With total=20M set, a depth of 21M would exceed it -> rejected.
     let program_id = host::id();

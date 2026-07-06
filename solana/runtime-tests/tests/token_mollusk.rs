@@ -1998,13 +1998,31 @@ fn direct_transfer_ix_with_attestation(
     output: DirectTransferOutputAccounts,
     amount_attestation: host::CoprocessorInputAttestation,
 ) -> Instruction {
+    // Block-cap optional accounts threaded through the transfer CPI; the default
+    // unrestricted cap means None/None here.
+    direct_transfer_ix_with_block_cap_accounts(
+        fixture,
+        payer,
+        output,
+        amount_attestation,
+        None,
+        None,
+    )
+}
+
+fn direct_transfer_ix_with_block_cap_accounts(
+    fixture: &TokenMolluskFixture,
+    payer: Pubkey,
+    output: DirectTransferOutputAccounts,
+    amount_attestation: host::CoprocessorInputAttestation,
+    hcu_block_meter: Option<Pubkey>,
+    hcu_trusted_app_record: Option<Pubkey>,
+) -> Instruction {
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
-            // Block-cap optional accounts threaded through the transfer CPI; the default
-            // unrestricted cap means None/None here.
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
+            hcu_block_meter,
+            hcu_trusted_app_record,
             owner: fixture.owner,
             payer,
             mint: fixture.mint,
@@ -4143,4 +4161,67 @@ fn mollusk_confidential_transfer_block_cap_ban_is_enforced_through_cpi() {
         read_token_account(&context, fixture.alice_token).balance_handle,
         fixture.alice_initial
     );
+}
+
+/// Exact HCU cost of the combined transfer eval frame (`execute_transfer_eval`), from the frame
+/// cost model: `Ge` at ebool (21_000) + debit `Sub` at euint64 (38_000) + `IfThenElse` at euint64
+/// (45_000) + transferred `Sub` at euint64 (38_000) + credit `Add` at euint64 (38_000). The
+/// `VerifiedInput` amount is an operand, not a step, so it adds no HCU.
+const TRANSFER_FRAME_HCU: u64 = 21_000 + 38_000 + 45_000 + 38_000 + 38_000; // 180_000
+
+fn read_hcu_block_meter(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) -> Option<host::HcuBlockMeter> {
+    let store = context.account_store.borrow();
+    let account = store.get(&address)?;
+    if account.owner != host::id() {
+        return None;
+    }
+    let mut data = account.data.as_slice();
+    host::HcuBlockMeter::try_deserialize(&mut data).ok()
+}
+
+#[test]
+fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
+    // The Some(meter) CPI shape — the production account set once the cap drops below
+    // u64::MAX. With a metering-band cap and the untrusted app's meter threaded through
+    // ConfidentialTransfer, the transfer must succeed and the meter must be lazy-created
+    // charged with exactly the frame's HCU, proving the two optional accounts survive the
+    // token -> zama-fhe -> fhe_eval CPI encoding (None placeholder vs real meta, ordering,
+    // writability) end to end. The frame's `app_account_authority` is the sender token
+    // account (`EvalAppAuthority::new(from.key())`), which keys the meter PDA.
+    let fixture = TokenMolluskFixture::new();
+    let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
+    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
+    let meter_pda = host::hcu_block_meter_address(fixture.alice_token).0;
+    let ix = direct_transfer_ix_with_block_cap_accounts(
+        &fixture,
+        fixture.owner,
+        output,
+        amount_attestation(&fixture, amount_handle),
+        Some(meter_pda),
+        None,
+    );
+    let context = fixture.context_with_input_amount(amount_handle);
+    // A metering-band cap (above the frame cost) instead of the unrestricted default.
+    seed_account(
+        &context,
+        fixture.host_config,
+        host_config_account_with_block_cap(fixture.owner, 500_000),
+    );
+
+    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
+
+    assert!(!result.inner_instructions.is_empty());
+    // The transfer completed: balances rotated onto the new output ACL records.
+    let alice_token = read_token_account(&context, fixture.alice_token);
+    assert_eq!(alice_token.balance_acl_record, output.from_output);
+    assert_ne!(alice_token.balance_handle, fixture.alice_initial);
+    // The meter was lazy-created through the CPI, keyed on the sender token account, and
+    // charged exactly the transfer frame's HCU at the current slot.
+    let meter = read_hcu_block_meter(&context, meter_pda).expect("meter created through CPI");
+    assert_eq!(meter.app, fixture.alice_token);
+    assert_eq!(meter.used_hcu, TRANSFER_FRAME_HCU);
+    assert_eq!(meter.last_seen_slot, context.mollusk.sysvars.clock.slot);
 }
