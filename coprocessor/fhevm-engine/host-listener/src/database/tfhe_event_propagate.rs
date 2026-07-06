@@ -341,6 +341,34 @@ pub struct LogTfhe {
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
 
+fn parse_branch_activation_block() -> u64 {
+    const ENV_VAR: &str = "FHEVM_BRANCH_ACTIVATION_BLOCK";
+
+    match std::env::var(ENV_VAR) {
+        Ok(value) => match value.parse::<u64>() {
+            Ok(block) => block,
+            Err(err) => {
+                error!(
+                    env_var = ENV_VAR,
+                    value = %value,
+                    error = %err,
+                    "Invalid branch activation block configuration"
+                );
+                std::process::exit(1);
+            }
+        },
+        Err(std::env::VarError::NotPresent) => 0,
+        Err(err) => {
+            error!(
+                env_var = ENV_VAR,
+                error = %err,
+                "Invalid branch activation block configuration"
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StatsForConsumer {
     pub number_of_new_gaps: i64,
@@ -373,11 +401,7 @@ impl Database {
                 .unwrap()
                 .into(),
             )));
-        let branch_activation_block =
-            std::env::var("FHEVM_BRANCH_ACTIVATION_BLOCK")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0);
+        let branch_activation_block = parse_branch_activation_block();
         let db = Database {
             url: url.clone(),
             chain_id,
