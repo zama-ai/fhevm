@@ -20,6 +20,9 @@ migration Job racing the service Deployments. This runbook closes both.
 3. Run `helm upgrade` only after the migration has completed.
 4. Verify the index is `valid`, the migration completed, and watch DB
    write load.
+5. Ensure `FHEVM_BRANCH_ACTIVATION_BLOCK` is set to an appropriate
+   value (see section below) if this deployment is in a
+   multi-coprocessor environment.
 
 > The host-listener also applies an **in-code schema guard**
 > (`Database::wait_for_branch_schema`): if a binary starts before the migration
