@@ -17,6 +17,7 @@ anchor-lang = "1.0.2"
 anchor-client = "1.0.2"
 solana-keypair = "3.1.2"
 zama-host = { path = "../../../programs/zama-host", features = ["no-entrypoint"] }
+zama-solana-acl = { path = "../../../crates/zama-solana-acl" }
 confidential-token = { path = "../../../programs/confidential-token", features = ["no-entrypoint", "poc"] }
 
 [workspace]
