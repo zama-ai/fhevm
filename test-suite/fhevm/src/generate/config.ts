@@ -8,9 +8,10 @@ import {
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
-import { hostChainRuntimes } from "../layout";
+import { hostChainRuntimes, MINIO_INTERNAL_URL } from "../layout";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
+import { hostReachableMaterialUrl, predictedCrsId, predictedKeyId } from "../utils/fs";
 
 /** Rewrites relayer readiness config into the legacy shape when required. */
 const rewriteRelayerConfig = (
@@ -46,19 +47,27 @@ const rewriteRelayerConfig = (
 /** Rewrites keyurl config into the static schema expected by released relayers. */
 const rewriteRelayerKeyUrlConfig = (
   config: Record<string, unknown>,
-  state: Pick<State, "versions">,
+  state: Pick<State, "versions"> & Partial<Pick<State, "discovery">>,
 ) => {
   if (!requiresLegacyRelayerKeyUrlConfig(state)) {
     return config;
   }
+  const keyPrefix = state.discovery?.minioKeyPrefix ?? "PUB";
+  const materialBase = `${(
+    state.discovery?.endpoints?.minioExternal ??
+    state.discovery?.endpoints?.minioInternal ??
+    MINIO_INTERNAL_URL
+  ).replace(/\/$/, "")}/kms-public/${keyPrefix}`;
+  const fheKeyId = state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId();
+  const crsKeyId = state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId();
   config.keyurl = {
     fhe_public_key: {
-      data_id: "fhe-public-key-data-id",
-      url: "http://0.0.0.0:3001/publicKey.bin",
+      data_id: fheKeyId,
+      url: hostReachableMaterialUrl(`${materialBase}/PublicKey/${fheKeyId}`),
     },
     crs: {
-      data_id: "crs-data-id",
-      url: "http://0.0.0.0:3001/crs2048.bin",
+      data_id: crsKeyId,
+      url: hostReachableMaterialUrl(`${materialBase}/CRS/${crsKeyId}`),
     },
   };
   return config;
