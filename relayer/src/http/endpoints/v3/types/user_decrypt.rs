@@ -96,10 +96,10 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
     /// Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`,
     /// version `0x01` (`0x01` + 32-byte contextId), version `0x02`
     /// (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x03`
-    /// (Solana ed25519 blob: minimum 101 bytes, variable length). For the
+    /// (Solana MMR-proof blob, variable length). For the
     /// Solana ed25519 attestation type the ed25519 auth fields travel as the
     /// typed `solana*` fields below rather than packed here, so `extraData`
-    /// is context-only on that path. Opaque to the relayer; forwarded verbatim.
+    /// is context-only on no-proof requests. Opaque to the relayer; forwarded verbatim.
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     #[schema(example = "0x00")]
     pub extra_data: String,

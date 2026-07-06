@@ -13,7 +13,7 @@ import { bytesToHex, concatBytes } from '../base/bytes.js';
  * re-derives this preimage and verifies the ed25519 signature over it, so the bytes produced
  * by {@link solanaUserDecryptSigningPreimage} MUST match the Rust byte-for-byte. The cross-impl
  * parity is locked by `SolanaUserDecrypt-p.test.ts`. The ed25519 auth fields travel as typed
- * gateway fields (RFC-021), so `extraData` carries only the KMS context (v0x01).
+ * gateway fields (RFC-021), so `extraData` carries only the KMS context or the MMR-proof tail.
  *
  * On EVM the Gateway verifies the EIP-712 publicKey-to-userAddress binding on-chain. The Solana
  * host has no such on-chain binding, so the signature here is what closes the publicKey
@@ -27,7 +27,7 @@ export const SOLANA_CONTEXT_EXTRA_DATA_VERSION = 0x01;
 /** `extraData` version byte carrying the context id PLUS the MMR-proof tail (RFC-024): version ‖
  * contextId(32) ‖ aclValueKey(32) ‖ proofSlot(8 BE) ‖ mmrProofLen(4 BE) ‖ mmrProofBytes. Mirrors
  * `SOLANA_EXTRA_DATA_VERSION_MMR_PROOF` in `solana_extra_data.rs`. */
-export const SOLANA_MMR_PROOF_EXTRA_DATA_VERSION = 0x02;
+export const SOLANA_MMR_PROOF_EXTRA_DATA_VERSION = 0x03;
 
 /**
  * Domain-separation tag for the signing preimage (`SOLANA_USER_DECRYPT_DOMAIN_TAG` in Rust).
@@ -143,8 +143,8 @@ export function buildSolanaUserDecryptContextExtraData(contextId: Uint8Array): U
 }
 
 /**
- * Builds the MMR-proof-tail `extraData` placed on the wire (RFC-024 v0x02):
- * `0x02 ‖ contextId(32) ‖ aclValueKey(32) ‖ proofSlot(8 BE) ‖ mmrProofLen(4 BE) ‖ mmrProofBytes`.
+ * Builds the MMR-proof-tail `extraData` placed on the wire (RFC-024 v0x03):
+ * `0x03 ‖ contextId(32) ‖ aclValueKey(32) ‖ proofSlot(8 BE) ‖ mmrProofLen(4 BE) ‖ mmrProofBytes`.
  * Mirrors `encode_solana_extra_data_mmr_proof` in `solana_extra_data.rs`.
  */
 export function buildSolanaUserDecryptMmrProofExtraData(
@@ -218,8 +218,7 @@ export interface SolanaUserDecryptRequest {
   readonly attestationType: typeof SOLANA_USER_DECRYPT_ATTESTATION_TYPE;
   /** The 64-byte ed25519 signature over the signing preimage, 0x-hex. */
   readonly signature: BytesHex;
-  /** Context-only `extraData` (v0x01: version ‖ contextId), 0x-hex. The Solana auth data is no
-   * longer packed here — it travels as the typed `solana*` fields below. */
+  /** `extraData`, 0x-hex: v0x01 context-only when no proof is present, or v0x03 with the MMR-proof tail. */
   readonly extraData: BytesHex;
   /** The ML-KEM re-encryption public key, 0x-hex. */
   readonly publicKey: BytesHex;
@@ -261,7 +260,7 @@ export function buildSolanaUserDecryptRequest(
   }
 
   // The signed preimage always commits to the MMR-proof tail (all-zero/empty when absent); only
-  // the `extraData` wire shape is conditional: a proof-bearing request needs the v0x02 tail on
+  // the `extraData` wire shape is conditional: a proof-bearing request needs the v0x03 tail on
   // the wire for the connector to decode it, while a plain current-ACL request keeps the smaller
   // v0x01 context-only blob. Presence of `mmrProofBytes` is the signal for which to emit.
   const { aclValueKey, mmrProofBytes, proofSlot } = withProofDefaults(input);

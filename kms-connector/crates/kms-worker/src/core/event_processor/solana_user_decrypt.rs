@@ -25,7 +25,7 @@
 //! `gateway-contracts` change outside this workstream's scope (`kms-connector/` +
 //! `sdk/js-sdk/` only). Instead, they are packed into the existing `extraData` blob, versioned
 //! (see `connector_utils::types::solana_extra_data`): `v0x01` = context-only (no MMR tail, as
-//! before), `v0x02` = context + MMR tail. This is transport-only: the signed preimage bytes and
+//! before), `v0x03` = context + MMR tail. This is transport-only: the signed preimage bytes and
 //! the signature-binding property are unchanged from the reference design.
 //!
 //! ## Dual-path ACL check
@@ -666,7 +666,7 @@ mod tests {
         );
         assert_eq!(
             format!("0x{}", alloy::hex::encode(extra_data)),
-            "0x0200000000000000000000000000000000000000000000000000000000000012345555555555555555555555555555555555555555555555555555555555555555000000000000002a00000003010203"
+            "0x0300000000000000000000000000000000000000000000000000000000000012345555555555555555555555555555555555555555555555555555555555555555000000000000002a00000003010203"
         );
     }
 

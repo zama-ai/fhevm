@@ -6,7 +6,7 @@ const EXTRA_DATA_V1_LENGTH: usize = 33; // 1 (version) + 32 (context_id)
 const EXTRA_DATA_V2_VERSION: u8 = 0x02; // RFC 005: context_id + epoch_id
 const EXTRA_DATA_V2_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (epoch_id)
 
-const EXTRA_DATA_SOLANA_VERSION: u8 = 0x03; // RFC 021: Solana ed25519 user-decrypt blob
+const EXTRA_DATA_SOLANA_VERSION: u8 = 0x03; // Solana MMR-proof blob
 const EXTRA_DATA_SOLANA_MIN_LENGTH: usize = 33; // 1 (version) + 32 (context_id); tail not parsed here
 
 /// Parse context ID from extra_data bytes.
@@ -15,7 +15,7 @@ const EXTRA_DATA_SOLANA_MIN_LENGTH: usize = 33; // 1 (version) + 32 (context_id)
 /// - v2: `[0x02 | context_id(32) | epoch_id(32)]`
 /// - v3 (Solana): `[0x03 | context_id(32) | …]` — only the shared
 ///   `version ‖ context_id` prefix is read; the Solana-specific tail
-///   (identity, nonce, domain keys) is opaque to the relayer.
+///   (acl_value_key, proof_slot, MMR proof) is opaque to the relayer.
 /// - empty or `0x00`: returns `U256::ZERO` (use static default)
 /// - unknown version or truncated: returns `Err`
 pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, ExtraDataError> {
@@ -132,14 +132,15 @@ mod tests {
 
     #[test]
     fn valid_solana_v3_returns_context_id() {
-        // Solana 0x03 blob: [0x03 | context_id(32) | identity(32) | nonce(32) | count(4) | keys].
+        // Solana 0x03 blob: [0x03 | context_id(32) | acl_value_key(32) | proof_slot(8) | len(4) | proof].
         // Only the shared version+context_id prefix is read; the tail is opaque.
         let context_id = U256::from(0x1234u64);
         let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
         data.extend_from_slice(&context_id.to_be_bytes::<32>());
-        data.extend_from_slice(&[7u8; 32]); // identity
-        data.extend_from_slice(&[9u8; 32]); // nonce
-        data.extend_from_slice(&0u32.to_be_bytes()); // zero domain keys
+        data.extend_from_slice(&[7u8; 32]); // acl_value_key
+        data.extend_from_slice(&42u64.to_be_bytes()); // proof_slot
+        data.extend_from_slice(&3u32.to_be_bytes()); // proof len
+        data.extend_from_slice(&[0x01, 0x02, 0x03]); // proof
 
         assert_eq!(parse_context_id_from_extra_data(&data).unwrap(), context_id);
     }

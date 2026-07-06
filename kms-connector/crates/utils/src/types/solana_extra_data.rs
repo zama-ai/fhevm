@@ -158,7 +158,7 @@ pub const SOLANA_EXTRA_DATA_VERSION_CONTEXT_ONLY: u8 = 0x01;
 /// fields is a `gateway-contracts` Solidity + codegen change, and this workstream is scoped to
 /// `kms-connector/` + `sdk/js-sdk/` only (gateway-contracts is owned by a different, in-flight
 /// workstream and is not even read-only-listed here). Packing the MMR tail into the existing
-/// `extraData` blob — versioned so a `v0x01` (context-only) request is unambiguous from a `v0x02`
+/// `extraData` blob — versioned so a `v0x01` (context-only) request is unambiguous from a `v0x03`
 /// (MMR-proof) request — reuses the one Solana-specific "escape hatch" field the gateway interface
 /// already has, at zero gateway-contracts cost. `mmr_proof_bytes` is still committed **verbatim**
 /// into the [`SOLANA_USER_DECRYPT_DOMAIN_TAG`] preimage, so the signature-binding property is
@@ -166,7 +166,7 @@ pub const SOLANA_EXTRA_DATA_VERSION_CONTEXT_ONLY: u8 = 0x01;
 /// `mmr_proof_bytes` on the decode side differs from the reference (extraData here, typed fields
 /// there). If/when `gateway-contracts` grows the typed fields, this module's preimage builder is
 /// unchanged and only [`parse_solana_user_decrypt_extra_data`] (and its call site) should move.
-pub const SOLANA_EXTRA_DATA_VERSION_MMR_PROOF: u8 = 0x02;
+pub const SOLANA_EXTRA_DATA_VERSION_MMR_PROOF: u8 = 0x03;
 
 /// The Solana user-decrypt auth fields carried in `extraData`, beyond the typed gateway fields.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -183,7 +183,7 @@ pub struct SolanaUserDecryptExtraData {
 }
 
 /// Parses the MMR-proof-tail `extraData` format strictly:
-/// `0x02 ‖ context_id(32) ‖ acl_value_key(32) ‖ proof_slot(8 BE) ‖ proof_len(4 BE) ‖ proof`.
+/// `0x03 ‖ context_id(32) ‖ acl_value_key(32) ‖ proof_slot(8 BE) ‖ proof_len(4 BE) ‖ proof`.
 ///
 /// Returns `None` unless the blob is exactly the proof-tail version and its length prefix matches
 /// the full body. Public decrypt uses this strict form because a missing or malformed proof must
@@ -216,7 +216,7 @@ pub fn parse_solana_mmr_proof_extra_data(extra_data: &[u8]) -> Option<SolanaUser
 }
 
 /// Parses a Solana `extraData` blob per [`SOLANA_EXTRA_DATA_VERSION_CONTEXT_ONLY`] /
-/// [`SOLANA_EXTRA_DATA_VERSION_MMR_PROOF`]. Unknown versions, and malformed `v0x02` bodies, decode
+/// [`SOLANA_EXTRA_DATA_VERSION_MMR_PROOF`]. Unknown versions, and malformed `v0x03` bodies, decode
 /// as the all-zero/empty default (context-only, no proof) — the caller's dispatch on
 /// `acl_value_key == [0; 32]` then naturally routes to the current-ACL (no-proof) path, matching
 /// the "absent tail" behavior of a `v0x01` blob. This function is intentionally infallible: a
@@ -242,7 +242,7 @@ pub fn encode_solana_extra_data_context_only(context_id: [u8; 32]) -> Vec<u8> {
     data
 }
 
-/// Encodes an MMR-proof-tail (`v0x02`) `extraData` blob.
+/// Encodes an MMR-proof-tail (`v0x03`) `extraData` blob.
 pub fn encode_solana_extra_data_mmr_proof(
     context_id: [u8; 32],
     acl_value_key: [u8; 32],
@@ -429,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_mmr_proof_extra_data_requires_v2_and_exact_length() {
+    fn strict_mmr_proof_extra_data_requires_v3_and_exact_length() {
         let ctx = [7u8; 32];
         let value_key = [9u8; 32];
         let proof = vec![0x01u8, 0x02, 0x03];
@@ -466,7 +466,7 @@ mod tests {
         let parsed = parse_solana_user_decrypt_extra_data(&unknown);
         assert_eq!(parsed.context_id, [1u8; 32]);
         assert!(parsed.mmr_proof_bytes.is_empty());
-        // v0x02 with a truncated tail: falls back to all-default (not even context_id), fail-closed.
+        // v0x03 with a truncated tail: falls back to all-default (not even context_id), fail-closed.
         let mut truncated = vec![SOLANA_EXTRA_DATA_VERSION_MMR_PROOF];
         truncated.extend_from_slice(&[2u8; 32]);
         truncated.extend_from_slice(&[0u8; 4]); // way short of value_key+slot+len
@@ -474,7 +474,7 @@ mod tests {
             parse_solana_user_decrypt_extra_data(&truncated),
             SolanaUserDecryptExtraData::default()
         );
-        // v0x02 with a proof-length lie: rejected, not truncated-read.
+        // v0x03 with a proof-length lie: rejected, not truncated-read.
         let mut lied = vec![SOLANA_EXTRA_DATA_VERSION_MMR_PROOF];
         lied.extend_from_slice(&[3u8; 32]); // context_id
         lied.extend_from_slice(&[4u8; 32]); // acl_value_key

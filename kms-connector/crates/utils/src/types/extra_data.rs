@@ -16,6 +16,9 @@ pub const EXTRA_DATA_V2_VERSION: u8 = 0x02;
 /// The expected length of v2 `extra_data` (version + context_id + epoch_id).
 pub const EXTRA_DATA_V2_LENGTH: usize = 65;
 
+/// Version `0x03`: Solana MMR-proof blob, context_id only for generic context validation.
+pub const EXTRA_DATA_V3_VERSION: u8 = 0x03;
+
 /// Parsed extra_data contents.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtraData {
@@ -27,7 +30,7 @@ pub struct ExtraData {
 
 /// Parses the `extra_data` bytes to extract a context ID and an optional epoch ID.
 ///
-/// Versions `0x00`, `0x01` and `0x02` are accepted (rolling compatibility window).
+/// Versions `0x00`, `0x01`, `0x02`, and `0x03` are accepted (rolling compatibility window).
 ///
 /// Format (v1, RFC 003):
 /// - Byte 0: version (`0x01`)
@@ -40,8 +43,14 @@ pub struct ExtraData {
 /// - Bytes 33..65: epoch ID (32 bytes, big-endian U256)
 /// - Bytes 65..: optional additional data (ignored)
 ///
+/// Format (v3, Solana MMR proof):
+/// - Byte 0: version (`0x03`)
+/// - Bytes 1..33: context ID (32 bytes, big-endian U256)
+/// - Bytes 33..: Solana MMR-proof blob (ignored)
+///
 /// Empty or `0x00` → both context_id and epoch_id are `None`.
 /// Version `0x01` → epoch_id is `None`.
+/// Version `0x03` → epoch_id is `None`.
 pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
     match extra_data.first().copied() {
         None | Some(EXTRA_DATA_V0_VERSION) => Ok(ExtraData {
@@ -88,12 +97,31 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
                 epoch_id: Some(U256::from_be_bytes(epoch_id_bytes)),
             })
         }
+        Some(EXTRA_DATA_V3_VERSION) => {
+            if extra_data.len() < EXTRA_DATA_V1_LENGTH {
+                return Err(anyhow!(
+                    "extra_data too short for v3: {} bytes, expected at least {} bytes",
+                    extra_data.len(),
+                    EXTRA_DATA_V1_LENGTH
+                ));
+            }
+
+            let context_id_bytes: [u8; 32] = extra_data[1..33]
+                .try_into()
+                .map_err(|e| anyhow!("Failed to extract context_id from extra_data: {e}"))?;
+
+            Ok(ExtraData {
+                context_id: Some(U256::from_be_bytes(context_id_bytes)),
+                epoch_id: None,
+            })
+        }
         _ => Err(anyhow!(
-            "Unsupported extra_data version: 0x{:02x}, expected 0x{:02x}, 0x{:02x}, or 0x{:02x}",
+            "Unsupported extra_data version: 0x{:02x}, expected 0x{:02x}, 0x{:02x}, 0x{:02x}, or 0x{:02x}",
             extra_data[0],
             EXTRA_DATA_V0_VERSION,
             EXTRA_DATA_V1_VERSION,
-            EXTRA_DATA_V2_VERSION
+            EXTRA_DATA_V2_VERSION,
+            EXTRA_DATA_V3_VERSION
         )),
     }
 }
@@ -191,6 +219,27 @@ mod tests {
             ExtraData {
                 context_id: Some(U256::from(1u64)),
                 epoch_id: Some(U256::from(2u64))
+            }
+        );
+    }
+
+    #[test]
+    fn solana_v3_mmr_proof_blob_returns_context_only() {
+        let context_id = U256::from(42u64);
+        let acl_value_key = U256::from(7u64);
+        let proof = [0x01u8, 0x02, 0x03];
+        let mut data = vec![EXTRA_DATA_V3_VERSION];
+        data.extend_from_slice(&context_id.to_be_bytes::<32>());
+        data.extend_from_slice(&acl_value_key.to_be_bytes::<32>());
+        data.extend_from_slice(&69u64.to_be_bytes());
+        data.extend_from_slice(&(proof.len() as u32).to_be_bytes());
+        data.extend_from_slice(&proof);
+
+        assert_eq!(
+            parse_extra_data(&data).unwrap(),
+            ExtraData {
+                context_id: Some(context_id),
+                epoch_id: None
             }
         );
     }
