@@ -22,6 +22,7 @@
 - [Actions](actions.md)
 - [API reference](api-reference.md)
 - [Version compatibility](compatibility.md)
+- [Glossary](GLOSSARY.md)
 
 ## Advanced
 

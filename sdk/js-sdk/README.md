@@ -166,11 +166,12 @@ Full documentation is available in the [`docs/`](docs/) directory:
 - [Security model](docs/security.md) — encryption, ACL, permits, and what the SDK protects
 - [Migration](docs/migration.md) — migrating from `@zama-fhe/relayer-sdk`
 - [Architecture](docs/architecture.md) — internal design for contributors
+- [Glossary](docs/GLOSSARY.md) — canonical naming across the SDK, docs, and Zama Protocol
 - [Release notes](docs/release-notes.md) — changelog and breaking changes
 
 ## Glossary
 
-See [GLOSSARY.md](GLOSSARY.md) for canonical naming conventions across the SDK, docs, and Zama Protocol — including encrypted values, clear values, key pairs, permits, and FHE types.
+See [docs/GLOSSARY.md](docs/GLOSSARY.md) for canonical naming conventions across the SDK, docs, and Zama Protocol — including encrypted values, clear values, key pairs, permits, and FHE types.
 
 ## License
 

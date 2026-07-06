@@ -157,6 +157,6 @@ type SignedDecryptionPermit = {
 - [Encryption](encryption.md) — how the value types are used as input.
 - [Decryption](decryption.md) — where `TypedValue`, `TransportKeyPair`, and permits come together.
 - [API reference](api-reference.md) — the complete exported type list.
-- [Glossary](../GLOSSARY.md) — canonical naming across the SDK and protocol.
+- [Glossary](GLOSSARY.md) — canonical naming across the SDK and protocol.
 ```
 

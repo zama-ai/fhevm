@@ -179,7 +179,7 @@ replacements:
 | `FhevmHandle` / `fheHandle` (the value)       | `EncryptedValue`                 |
 | `inputHandle` / `ExternalFhevmHandle`         | `ExternalEncryptedValue`         |
 
-See the [Glossary](../GLOSSARY.md) for the complete list of deprecated terms and
+See the [Glossary](GLOSSARY.md) for the complete list of deprecated terms and
 their replacements.
 
 ## Related

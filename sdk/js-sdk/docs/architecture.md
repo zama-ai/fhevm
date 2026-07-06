@@ -144,6 +144,6 @@ The internals follow a consistent set of rules:
 - [Clients](clients.md) — how the four factories map to module composition.
 - [Runtime configuration](runtime-configuration.md) — the lazy-init and WASM-loading surface.
 - [Actions](actions.md) — the standalone functional layer.
-- [Glossary](../GLOSSARY.md) — the vocabulary used across these layers.
+- [Glossary](GLOSSARY.md) — the vocabulary used across these layers.
 ```
 
