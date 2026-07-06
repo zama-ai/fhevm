@@ -4,6 +4,7 @@ import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
 import { buildProtocolConfigReinitializeArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+import { buildUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
 
@@ -404,49 +405,24 @@ task('task:prepareUpgradeConfidentialBridge')
 
     await hre.run('compile:specific', { contract: 'contracts' });
 
-    const deployer = new Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(hre.ethers.provider);
+    const preparedUpgrade = await buildUpgradeProposal(hre, {
+      proxyAddress,
+      contractName: 'ConfidentialBridge',
+      innerFunctionName: 'initializeFromEmptyProxy',
+      decodedArgs: [dstEids, dstChainIds],
+      constructorArgs: [lzEndpoint],
+      unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
+    });
 
-    const emptyProxyFactory = await hre.ethers.getContractFactory('EmptyUUPSProxy', deployer);
-    await hre.upgrades.forceImport(proxyAddress, emptyProxyFactory);
-
-    const bridgeFactory = await hre.ethers.getContractFactory('ConfidentialBridge', deployer);
-    console.log(`Deploying "ConfidentialBridge" for prepared upgrade on proxy ${proxyAddress}...`);
-    const implementationAddress = String(
-      await hre.upgrades.prepareUpgrade(proxyAddress, bridgeFactory, {
-        kind: 'uups',
-        constructorArgs: [lzEndpoint],
-        unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
-      }),
-    );
-    console.log('New implementation deployed at:', implementationAddress);
-
-    const initSignature = 'initializeFromEmptyProxy(uint32[],uint64[])';
-    const initArgs: unknown[] = [dstEids, dstChainIds];
-    const initCalldata = bridgeFactory.interface.encodeFunctionData('initializeFromEmptyProxy', initArgs);
-    const outerCalldata = new Interface([
-      'function upgradeToAndCall(address newImplementation, bytes data) payable',
-    ]).encodeFunctionData('upgradeToAndCall', [implementationAddress, initCalldata]);
-
-    console.log('proxyAddress:', proxyAddress);
-    console.log('newImplementationAddress:', implementationAddress);
-    console.log('innerFunctionSignature:', initSignature);
-    console.log('initializeFromEmptyProxy calldata:', initCalldata);
-    console.log('upgradeToAndCall(address,bytes) calldata:', outerCalldata);
-    console.log(
-      `To double check, run: cast calldata ${shellQuote(initSignature)} ${initArgs
-        .map((arg) => shellQuote(formatCastArg(arg)))
-        .join(' ')}`.trim(),
-    );
-
+    printUpgradeProposal(preparedUpgrade);
     if (taskArgs.verifyContract) {
-      console.log('Waiting 2 minutes before contract verification... Please wait...');
-      await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
-      await hre.run('verify:verify', {
-        address: implementationAddress,
-        contract: 'contracts/bridge/ConfidentialBridge.sol:ConfidentialBridge',
-        constructorArguments: [lzEndpoint],
-      });
+      await verifyProposalImplementation(
+        hre,
+        preparedUpgrade,
+        'contracts/bridge/ConfidentialBridge.sol:ConfidentialBridge',
+      );
     }
+    return preparedUpgrade;
   });
 
 task('task:upgradeKMSVerifier')
