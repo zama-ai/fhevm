@@ -16,21 +16,20 @@ A hex string (calldata) intended for submission as the action of an Aragon DAO p
 
 Navigate to **Actions** → **host-contracts-prepare-coprocessor-upgrade** → **Run workflow** and provide:
 
-| Input                  | Value                                        |
-| ---------------------- | -------------------------------------------- |
-| **Environment**        | `devnet`, `testnet`, or `mainnet`.           |
-| **Start time**         | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`.   |
-| **Duration**           | Window length, e.g. `30m`.                   |
-| **Buffer**             | DAO lead time, e.g. `2h`.                    |
-| **Proposal id**        | Any positive integer (operator-chosen).      |
-| **Software version**   | The coprocessor release tag, e.g. `v0.14.0`. |
-| **Ciphertext version** | An integer between 0 and 32767.              |
+| Input                | Value                                        |
+| -------------------- | -------------------------------------------- |
+| **Environment**      | `devnet`, `testnet`, or `mainnet`.           |
+| **Start time**       | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`.   |
+| **Duration**         | Window length, e.g. `30m`.                   |
+| **Buffer**           | DAO lead time, e.g. `2h`.                    |
+| **Proposal id**      | Any positive integer (operator-chosen).      |
+| **Software version** | The coprocessor release tag, e.g. `v0.14.0`. |
 
 Click **Run workflow** and wait for completion.
 
 ## Step 2 — Copy the calldata
 
-Open the logs of the **"Prepare upgrade proposal"** step. Scroll to the end. The last block under `## Calldata` is a hex string starting with `0x49213995…`.
+Open the logs of the **"Prepare upgrade proposal"** step. Scroll to the end. The last block under `## Calldata` is a hex string starting with `0xccbf8199…`.
 Copy the entire string.
 
 ## Step 3 — Submit to the DAO
