@@ -1145,8 +1145,11 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getKmsGenThresholdForContext(KMS_CONTEXT_COUNTER_BASE + 2), 1);
     }
 
+    /// @dev Previous-side quorum boundary, both sides: with n = 4 previous nodes and t = 2, the
+    ///      target is n - t = 2. All-new + n - t - 1 previous confirmations stay Pending, the
+    ///      (n - t)-th completes creation (NewKmsEpoch), and any later one hits the Created state.
     function test_confirmKmsContextCreationUsesNewSignersAndOldQuorum() public {
-        _setupDefaultWithMpcThreshold(3);
+        _setupDefaultWithMpcThreshold(2);
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
         nodes[0].txSenderAddress = address(0xC1);
         nodes[0].signerAddress = address(0xB2);
@@ -1175,6 +1178,11 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             block.number - 1
         );
         vm.prank(kmsTxSender1);
+        protocolConfig.confirmKmsContextCreation(newContextId);
+
+        // The context left Pending on the (n - t)-th previous confirmation; a further one is rejected.
+        vm.prank(kmsTxSender2);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, newContextId));
         protocolConfig.confirmKmsContextCreation(newContextId);
     }
 

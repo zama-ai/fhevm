@@ -192,7 +192,7 @@ describe('KMS context tasks', function () {
   // ---------------------------------------------------------------------------
 
   describe('context-switch status', function () {
-    // Old context: 3 nodes, mpc=2 -> previous-side creation target (n - t + 1) = 2.
+    // Old context: 3 nodes, mpc=2 -> previous-side creation target (n - t) = 1.
     // New context: 2 nodes, mpc=1. Old/new committees are disjoint so confirmations partition cleanly.
     let proxyAddress: string;
     let protocolConfig: ProtocolConfig;
@@ -282,7 +282,7 @@ describe('KMS context tasks', function () {
         publicDecryption: 1,
         userDecryption: 1,
         kmsGen: 1,
-        mpc: 2, // -> previousTxSenderThreshold = 3 - 2 + 1 = 2
+        mpc: 2, // -> previousTxSenderThreshold = 3 - 2 = 1
       });
       protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
     });
@@ -306,22 +306,22 @@ describe('KMS context tasks', function () {
       expect(result.contextCreationQuorumReached).to.equal(false);
     });
 
-    it('surfaces the (n - t + 1) old-side target and flags being stuck below it', async function () {
+    it('surfaces the (n - t) old-side target and flags being stuck below it', async function () {
       const contextId = await defineSwitch();
-      await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
+      await confirmCreation(contextId, [...newTxSenders]);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.contextState).to.equal('PENDING');
       expect(result.newTxSendersOutstanding).to.have.lengthOf(0);
-      expect(result.previousTxSenderThreshold).to.equal(2);
-      expect(result.previousConfirmationCount).to.equal(1);
+      expect(result.previousTxSenderThreshold).to.equal(1);
+      expect(result.previousConfirmationCount).to.equal(0);
       expect(result.stuckBelowPreviousThreshold).to.equal(true);
       expect(result.contextCreationQuorumReached).to.equal(false);
     });
 
     it('reports CREATED once the creation quorum is reached, with the epoch still PENDING', async function () {
       const contextId = await defineSwitch();
-      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0], oldTxSenders[1]]);
+      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
       expect(epochId, 'creation quorum should emit NewKmsEpoch').to.not.be.undefined;
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
@@ -335,7 +335,7 @@ describe('KMS context tasks', function () {
 
     it('reports fully live once the epoch is activated', async function () {
       const contextId = await defineSwitch();
-      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0], oldTxSenders[1]]);
+      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
       await confirmActivation(epochId!, newTxSenders);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);

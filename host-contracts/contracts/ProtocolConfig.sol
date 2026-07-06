@@ -300,12 +300,17 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         $.contextState[contextId] = ContextState.Pending;
         _createPendingEpoch(contextId);
 
-        // Cache the previous-context confirmation quorum needed by confirmKmsContextCreation.
-        // `n - t + 1` (n = previous committee size, t = previous MPC fault threshold) so no t-subset ratifies alone.
-        $.contextCreationPreviousTxSenderThreshold[contextId] =
-            $.kmsNodesForContext[previousContextId].length -
-            $.mpcThresholdForContext[previousContextId] +
-            1;
+        // Cache the number of previous-committee confirmations confirmKmsContextCreation requires.
+        // The previous committee has `n` nodes, of which at most `t` (its MPC threshold) are assumed
+        // faulty — crashed, offline, or malicious. The quorum must be:
+        //   - more than `t`, so faulty nodes can never approve a switch on their own;
+        //   - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
+        //     arrive — anything higher lets a dead node block the switch forever.
+        // `n - t` satisfies both (`n - t >= t + 1` under the enforced `n = 3t + 1` topology).
+        // Floored at 1 so the degenerate `t = n` config cannot make the quorum zero.
+        uint256 previousQuorum = $.kmsNodesForContext[previousContextId].length -
+            $.mpcThresholdForContext[previousContextId];
+        $.contextCreationPreviousTxSenderThreshold[contextId] = previousQuorum > 0 ? previousQuorum : 1;
 
         // Store context anchor and emit NewKmsContext event.
         $.contextAnchors[contextId] = KmsContextAnchor({
@@ -368,7 +373,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         emit KmsContextCreationConfirmation(kmsContextId, msg.sender, isPreviousTxSender, isNewTxSender);
 
-        // All new nodes + (n - t + 1) previous nodes confirm to tell Connectors the epoch transition may start.
+        // All new nodes + (n - t) previous nodes confirm to tell Connectors the epoch transition may start.
         if (_hasContextCreationQuorum(kmsContextId)) {
             $.contextState[kmsContextId] = ContextState.Created;
             // The context-switch created this context and its epoch as a paired (Pending, Pending). The DAO
