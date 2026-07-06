@@ -169,12 +169,8 @@ Full documentation is available in the [`docs/`](docs/) directory:
 - [Glossary](docs/GLOSSARY.md) — canonical naming across the SDK, docs, and Zama Protocol
 - [Release notes](docs/release-notes.md) — changelog and breaking changes
 
-## Glossary
-
-See [docs/GLOSSARY.md](docs/GLOSSARY.md) for canonical naming conventions across the SDK, docs, and Zama Protocol — including encrypted values, clear values, key pairs, permits, and FHE types.
-
 ## License
 
 This project is licensed under the [BSD 3-Clause Clear License](LICENSE).
 
-Copyright © 2025 ZAMA. All rights reserved.
+Copyright © 2025–2026 ZAMA. All rights reserved.
