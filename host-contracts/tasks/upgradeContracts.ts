@@ -357,7 +357,7 @@ task('task:prepareUpgradeACL')
   });
 
 // Governance prepare for the first bridge upgrade: EmptyUUPSProxy -> ConfidentialBridge via
-// initializeFromEmptyProxy. New chains get the bridge from task:deployAllHostContracts. 
+// initializeFromEmptyProxy. New chains get the bridge from task:deployAllHostContracts.
 // Any subsequent ConfidentialBridge-to-ConfidentialBridge upgrade should go through prepareUpgradeContract, not this task.
 task('task:prepareUpgradeConfidentialBridge')
   .addOptionalParam(
