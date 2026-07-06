@@ -15,6 +15,8 @@ use tracing::info;
 #[case::keygen(TestEventType::Keygen)]
 #[case::compressed_key_migration(TestEventType::CompressedKeyMigrationKeygen)]
 #[case::crsgen(TestEventType::Crsgen)]
+#[case::abort_keygen(TestEventType::AbortKeygen)]
+#[case::abort_crsgen(TestEventType::AbortCrsgen)]
 #[case::new_kms_context(TestEventType::NewKmsContext)]
 #[case::new_kms_epoch(TestEventType::NewKmsEpoch)]
 #[timeout(Duration::from_secs(60))]

@@ -26,7 +26,9 @@ use fhevm_gateway_bindings::decryption::{
     },
 };
 use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    kms_generation::KMSGeneration::{
+        AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
+    },
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
 };
 
@@ -204,6 +206,51 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
+        TestEventType::AbortKeygen => {
+            test_instance
+                .kms_generation_contract()
+                .keygen(ParamsTypeDb::Test as u8, 0, U256::ZERO)
+                .send()
+                .await?
+                .get_receipt()
+                .await?;
+            let key_id = test_instance
+                .kms_generation_contract()
+                .getKeyCounter()
+                .call()
+                .await?;
+            let prep_keygen_id = PREP_KEY_COUNTER + (key_id - KEY_COUNTER);
+            let event = AbortKeygen {
+                prepKeygenId: prep_keygen_id,
+            };
+            let tx = test_instance
+                .kms_generation_contract()
+                .abortKeygen(prep_keygen_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
+        TestEventType::AbortCrsgen => {
+            test_instance
+                .kms_generation_contract()
+                .crsgenRequest(U256::from(4096), ParamsTypeDb::Test as u8)
+                .send()
+                .await?
+                .get_receipt()
+                .await?;
+            let crs_id = test_instance
+                .kms_generation_contract()
+                .getCrsCounter()
+                .call()
+                .await?;
+            let event = AbortCrsgen { crsId: crs_id };
+            let tx = test_instance
+                .kms_generation_contract()
+                .abortCrsgen(crs_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
         TestEventType::NewKmsContext => {
             let thresholds = rand_kms_thresholds();
             let kms_node_params = vec![rand_kms_node_params()];
@@ -275,6 +322,8 @@ pub async fn fetch_from_db(
             "SELECT * FROM keygen_requests"
         }
         TestEventType::Crsgen => "SELECT * FROM crsgen_requests",
+        TestEventType::AbortKeygen => "SELECT * FROM abort_keygen_requests",
+        TestEventType::AbortCrsgen => "SELECT * FROM abort_crsgen_requests",
         TestEventType::NewKmsContext => "SELECT * FROM new_kms_context",
         TestEventType::NewKmsEpoch => "SELECT * FROM new_kms_epoch",
     };
@@ -360,6 +409,22 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 if e.maxBitLength
                     == U256::from_le_bytes(r.try_get::<[u8; 32], _>("max_bit_length")?)
                 {
+                    return Ok(());
+                }
+            }
+        }
+        ProtocolEventKind::AbortKeygen(e) => {
+            for r in rows {
+                if e.prepKeygenId
+                    == U256::from_le_bytes(r.try_get::<[u8; 32], _>("prep_keygen_id")?)
+                {
+                    return Ok(());
+                }
+            }
+        }
+        ProtocolEventKind::AbortCrsgen(e) => {
+            for r in rows {
+                if e.crsId == U256::from_le_bytes(r.try_get::<[u8; 32], _>("crs_id")?) {
                     return Ok(());
                 }
             }
