@@ -4,6 +4,7 @@ import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
 import { buildProtocolConfigReinitializeArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+import { buildUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
 
@@ -40,6 +41,17 @@ function formatCastArg(arg: unknown): string {
 
 function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+// Parses a comma-separated integer list task arg (e.g. --dst-eids "30101,30109") into its entries.
+function parseCsvIntegers(raw: string | undefined): string[] {
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
 async function upgradeCurrentToNew(
@@ -343,6 +355,74 @@ task('task:prepareUpgradeACL')
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
     await prepareUpgradeContract('ACL', 'ACL_CONTRACT_ADDRESS', taskArgs, hre);
+  });
+
+// Governance prepare for the first bridge upgrade: EmptyUUPSProxy -> ConfidentialBridge via
+// initializeFromEmptyProxy. New chains get the bridge from task:deployAllHostContracts.
+// Any subsequent ConfidentialBridge-to-ConfidentialBridge upgrade should go through prepareUpgradeContract, not this task.
+task('task:prepareUpgradeConfidentialBridge')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'dstEids',
+    'Comma-separated LayerZero endpoint ids to seed the dstEid → dstChainId map (paired index-by-index with --dst-chain-ids). Empty by default; pairs can also be wired later via task:setDstChainId.',
+    '',
+    types.string,
+  )
+  .addOptionalParam(
+    'dstChainIds',
+    'Comma-separated destination chain ids paired index-by-index with --dst-eids.',
+    '',
+    types.string,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    if (taskArgs.useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS');
+    const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
+    if (!hre.ethers.isAddress(lzEndpoint)) {
+      throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid address: ${lzEndpoint}`);
+    }
+
+    const dstEids = parseCsvIntegers(taskArgs.dstEids);
+    const dstChainIds = parseCsvIntegers(taskArgs.dstChainIds);
+    if (dstEids.length !== dstChainIds.length) {
+      throw new Error(
+        `--dst-eids and --dst-chain-ids must have the same length: got ${dstEids.length} eid(s) and ${dstChainIds.length} chain id(s). initializeFromEmptyProxy would revert with DstChainIdArrayLengthMismatch.`,
+      );
+    }
+
+    await hre.run('compile:specific', { contract: 'contracts' });
+
+    const preparedUpgrade = await buildUpgradeProposal(hre, {
+      proxyAddress,
+      contractName: 'ConfidentialBridge',
+      innerFunctionName: 'initializeFromEmptyProxy',
+      decodedArgs: [dstEids, dstChainIds],
+      constructorArgs: [lzEndpoint],
+      unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
+    });
+
+    printUpgradeProposal(preparedUpgrade);
+    if (taskArgs.verifyContract) {
+      await verifyProposalImplementation(
+        hre,
+        preparedUpgrade,
+        'contracts/bridge/ConfidentialBridge.sol:ConfidentialBridge',
+      );
+    }
+    return preparedUpgrade;
   });
 
 task('task:upgradeKMSVerifier')
