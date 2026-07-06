@@ -273,6 +273,12 @@ fn token_error(error: token::ConfidentialTokenError) -> Check<'static> {
     ))
 }
 
+fn host_error(error: host::errors::ZamaHostError) -> Check<'static> {
+    Check::err(ProgramError::Custom(
+        anchor_lang::error::ERROR_CODE_OFFSET + error as u32,
+    ))
+}
+
 fn anchor_error(error: anchor_lang::error::ErrorCode) -> Check<'static> {
     Check::err(ProgramError::Custom(error as u32))
 }
@@ -997,4 +1003,98 @@ fn mollusk_confidential_transfer_rejects_stale_balance_encrypted_value() {
 
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     assert_eq!(alice_balance.current_handle, fixture.alice_initial);
+}
+
+#[test]
+fn mollusk_confidential_transfer_rejects_balance_wrong_mint_acl_domain() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    let wrong_mint = Pubkey::new_unique();
+    let (_, mut wrong_domain_value) = new_encrypted_value(
+        fixture.mint,
+        fixture.alice_token,
+        token::balance_label(),
+        fixture.alice_initial,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    wrong_domain_value.acl_domain_key = wrong_mint;
+    accounts.insert(
+        fixture.alice_balance_value,
+        encrypted_value_account(&wrong_domain_value),
+    );
+    let context = mollusk().with_context(accounts);
+    let amount_handle = handle_for_chain(34, BALANCE_FHE_TYPE);
+    let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+    let ix = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        attestation,
+    );
+
+    context.process_and_validate_instruction(
+        &ix,
+        &[host_error(
+            host::errors::ZamaHostError::EncryptedValuePdaMismatch,
+        )],
+    );
+
+    let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
+    let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
+    assert_eq!(alice_balance.acl_domain_key, wrong_mint);
+    assert_eq!(alice_balance.current_handle, fixture.alice_initial);
+    assert_eq!(bob_balance.current_handle, fixture.bob_initial);
+    assert!(account_is_system_owned_and_empty(
+        &context,
+        fixture.transferred_amount_value_address(fixture.alice_token)
+    ));
+}
+
+#[test]
+fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    let wrong_token_account = Pubkey::new_unique();
+    let (_, mut wrong_app_account_value) = new_encrypted_value(
+        fixture.mint,
+        fixture.alice_token,
+        token::balance_label(),
+        fixture.alice_initial,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    wrong_app_account_value.app_account = wrong_token_account;
+    accounts.insert(
+        fixture.alice_balance_value,
+        encrypted_value_account(&wrong_app_account_value),
+    );
+    let context = mollusk().with_context(accounts);
+    let amount_handle = handle_for_chain(35, BALANCE_FHE_TYPE);
+    let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+    let ix = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        attestation,
+    );
+
+    context.process_and_validate_instruction(
+        &ix,
+        &[host_error(
+            host::errors::ZamaHostError::EncryptedValuePdaMismatch,
+        )],
+    );
+
+    let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
+    let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
+    assert_eq!(alice_balance.app_account, wrong_token_account);
+    assert_eq!(alice_balance.current_handle, fixture.alice_initial);
+    assert_eq!(bob_balance.current_handle, fixture.bob_initial);
+    assert!(account_is_system_owned_and_empty(
+        &context,
+        fixture.transferred_amount_value_address(fixture.alice_token)
+    ));
 }

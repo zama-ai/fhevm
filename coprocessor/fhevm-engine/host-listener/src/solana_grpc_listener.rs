@@ -841,12 +841,18 @@ mod fhe_eval_acl_tests {
     };
 
     use crate::database::tfhe_event_propagate::Handle;
-    use crate::solana_adapter::SolanaHostEvent;
+    use crate::generated::{
+        anchor_event_discriminator, ANCHOR_EVENT_IX_TAG_LE,
+    };
+    use crate::solana_adapter::{
+        decode_solana_transaction_events, SolanaHostEvent,
+    };
     use crate::solana_reconstruct::{
         AllowSubjectsArgs, DecodedInstruction, EncryptedValueLineageTracker,
         EncryptedValueSubjectGrant, UpdateEncryptedValueArgs,
         ENCRYPTED_VALUE_ACCOUNT_INDEX,
     };
+    use zama_host::state::AclSubjectEntry;
 
     fn acct(n: u8) -> [u8; 32] {
         [n; 32]
@@ -879,6 +885,17 @@ mod fhe_eval_acl_tests {
     fn encode_instruction(name: &str, args: impl AnchorSerialize) -> Vec<u8> {
         let mut data = discriminator(name).to_vec();
         args.serialize(&mut data).expect("serialize instruction");
+        data
+    }
+
+    fn encode_instruction_no_args(name: &str) -> Vec<u8> {
+        discriminator(name).to_vec()
+    }
+
+    fn encode_cpi_event(name: &str, event: impl AnchorSerialize) -> Vec<u8> {
+        let mut data = ANCHOR_EVENT_IX_TAG_LE.to_vec();
+        data.extend_from_slice(&anchor_event_discriminator(name));
+        event.serialize(&mut data).expect("serialize event");
         data
     }
 
@@ -928,6 +945,164 @@ mod fhe_eval_acl_tests {
 
     fn slot_context() -> (HashMap<u64, [u8; 32]>, HashMap<u64, i64>) {
         (HashMap::new(), HashMap::from([(42, 1_700_000_000)]))
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+    enum SemanticFact {
+        Binary {
+            op: String,
+            subject: [u8; 32],
+            lhs: [u8; 32],
+            rhs: [u8; 32],
+            scalar: bool,
+            result: [u8; 32],
+        },
+        Fetch {
+            account_key: [u8; 32],
+            kind: String,
+            reason: &'static str,
+            handle: Option<[u8; 32]>,
+            related_account: Option<[u8; 32]>,
+            subject: Option<[u8; 32]>,
+        },
+    }
+
+    fn handle_bytes(handle: Option<Handle>) -> Option<[u8; 32]> {
+        handle.map(|handle| {
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(handle.as_slice());
+            bytes
+        })
+    }
+
+    fn semantic_facts(events: &[SolanaHostEvent]) -> Vec<SemanticFact> {
+        let mut facts = events
+            .iter()
+            .map(|event| match event {
+                SolanaHostEvent::FheBinaryOp(event) => SemanticFact::Binary {
+                    op: format!("{:?}", event.op),
+                    subject: event.subject,
+                    lhs: event.lhs,
+                    rhs: event.rhs,
+                    scalar: event.scalar,
+                    result: event.result,
+                },
+                SolanaHostEvent::FinalizedAccountFetch(fetch) => {
+                    SemanticFact::Fetch {
+                        account_key: fetch.account_key,
+                        kind: format!("{:?}", fetch.kind),
+                        reason: fetch.reason,
+                        handle: handle_bytes(fetch.handle),
+                        related_account: fetch.related_account,
+                        subject: fetch.subject,
+                    }
+                }
+                other => panic!("unexpected event in test fact set: {other:?}"),
+            })
+            .collect::<Vec<_>>();
+        facts.sort();
+        facts
+    }
+
+    fn multi_instruction_fhe_eval_allow_public_tx() -> Vec<DecodedInstruction> {
+        let output_subject =
+            anchor_lang::prelude::Pubkey::new_from_array(SUBJECT);
+        let plan = FheEvalArgs {
+            context_id: [1; 32],
+            steps: vec![FheEvalStep::Binary {
+                op: PgmBinaryOpCode::Add,
+                lhs: FheEvalOperand::AllowedDurable {
+                    handle: [3; 32],
+                    encrypted_value_index: 0,
+                },
+                rhs: FheEvalOperand::Scalar([1; 32]),
+                output_fhe_type: 5,
+                output: FheEvalOutput::AllowedDurable {
+                    output_encrypted_value_index: 0,
+                    output_app_account_authority_index: None,
+                    output_acl_domain_key:
+                        anchor_lang::prelude::Pubkey::new_from_array([8; 32]),
+                    output_app_account:
+                        anchor_lang::prelude::Pubkey::new_from_array([9; 32]),
+                    output_encrypted_value_label: [10; 32],
+                    output_subjects: vec![AclSubjectEntry::user(
+                        output_subject,
+                    )],
+                    previous_handle: Some([8; 32]),
+                    previous_subjects: Some(vec![output_subject]),
+                },
+            }],
+        };
+        let update_data = encode_instruction(
+            "update_encrypted_value",
+            UpdateEncryptedValueArgs {
+                new_handle: [9; 32],
+                previous_handle: [8; 32],
+                previous_subjects: vec![SUBJECT],
+            },
+        );
+        let allow_data = encode_instruction(
+            "allow_subjects",
+            AllowSubjectsArgs {
+                subjects: vec![EncryptedValueSubjectGrant { subject: [7; 32] }],
+            },
+        );
+
+        vec![
+            decoded_ix(
+                encode_instruction("fhe_eval", plan),
+                fhe_eval_accounts(),
+                0,
+                false,
+            ),
+            decoded_ix(update_data, encrypted_value_accounts(), 0, true),
+            decoded_ix(allow_data, encrypted_value_accounts(), 1, false),
+            decoded_ix(
+                encode_instruction_no_args("make_handle_public"),
+                encrypted_value_accounts(),
+                2,
+                false,
+            ),
+        ]
+    }
+
+    fn emit_mode_events_for_multi_instruction_tx(
+        instructions: &[DecodedInstruction],
+    ) -> Vec<SolanaHostEvent> {
+        let cpi_event = encode_cpi_event(
+            "FheBinaryOpEvent",
+            zama_host::FheBinaryOpEvent {
+                version: zama_host::EVENT_VERSION,
+                op: PgmBinaryOpCode::Add,
+                subject: SUBJECT,
+                lhs: [3; 32],
+                rhs: [1; 32],
+                scalar: true,
+                result: [9; 32],
+            },
+        );
+        let mut events = decode_solana_transaction_events(
+            &[],
+            [(ZAMA_HOST, cpi_event.as_slice())],
+            ZAMA_HOST,
+        )
+        .expect("emit event should decode");
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [8; 32]);
+        events.extend(
+            crate::solana_reconstruct::decode_encrypted_value_fetch_events(
+                instructions,
+                ZAMA_HOST,
+                &mut tracker,
+            ),
+        );
+        events.push(SolanaHostEvent::FinalizedAccountFetch(
+            crate::solana_reconstruct::reconstruct_acl_record_bound_fetch(
+                ENCRYPTED_VALUE,
+                [9; 32],
+            ),
+        ));
+        events
     }
 
     #[test]
@@ -1088,5 +1263,94 @@ mod fhe_eval_acl_tests {
                         && fetch.handle == Some(Handle::from([8; 32]))
             )
         }));
+    }
+
+    #[tokio::test]
+    async fn emit_and_reconstruct_multi_instruction_fact_sets_match() {
+        let instructions = multi_instruction_fhe_eval_allow_public_tx();
+        let emit_facts = semantic_facts(
+            &emit_mode_events_for_multi_instruction_tx(&instructions),
+        );
+        let (slot_bank_hash, slot_clock_ts) = slot_context();
+        let rpc = RpcClient::new("http://127.0.0.1:1".to_owned());
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [8; 32]);
+
+        let reconstructed = reconstruct_events_for_insert(
+            &config(),
+            &instructions,
+            42,
+            &slot_bank_hash,
+            &slot_clock_ts,
+            &rpc,
+            &mut tracker,
+        )
+        .await
+        .expect(
+            "reconstruction should produce the full multi-instruction fact set",
+        );
+        let reconstruct_facts = semantic_facts(&reconstructed);
+
+        let required_facts = [
+            SemanticFact::Binary {
+                op: "Add".to_owned(),
+                subject: SUBJECT,
+                lhs: [3; 32],
+                rhs: [1; 32],
+                scalar: true,
+                result: [9; 32],
+            },
+            SemanticFact::Fetch {
+                account_key: ENCRYPTED_VALUE,
+                kind: "EncryptedValueAccount".to_owned(),
+                reason: "acl_record_bound",
+                handle: Some([9; 32]),
+                related_account: None,
+                subject: None,
+            },
+            SemanticFact::Fetch {
+                account_key: ENCRYPTED_VALUE,
+                kind: "EncryptedValueAccount".to_owned(),
+                reason: "handle_superseded",
+                handle: Some([8; 32]),
+                related_account: None,
+                subject: None,
+            },
+            SemanticFact::Fetch {
+                account_key: ENCRYPTED_VALUE,
+                kind: "EncryptedValueAccount".to_owned(),
+                reason: "handle_superseded",
+                handle: Some([9; 32]),
+                related_account: None,
+                subject: None,
+            },
+            SemanticFact::Fetch {
+                account_key: ENCRYPTED_VALUE,
+                kind: "EncryptedValueAccount".to_owned(),
+                reason: "subject_allowed",
+                handle: Some([9; 32]),
+                related_account: None,
+                subject: None,
+            },
+            SemanticFact::Fetch {
+                account_key: ENCRYPTED_VALUE,
+                kind: "EncryptedValueAccount".to_owned(),
+                reason: "handle_made_public",
+                handle: Some([9; 32]),
+                related_account: None,
+                subject: None,
+            },
+        ];
+        for fact in required_facts {
+            assert!(
+                emit_facts.contains(&fact),
+                "emit path missing semantic fact: {fact:?}"
+            );
+            assert!(
+                reconstruct_facts.contains(&fact),
+                "reconstruct path missing semantic fact: {fact:?}"
+            );
+        }
+        assert_eq!(emit_facts, reconstruct_facts);
     }
 }

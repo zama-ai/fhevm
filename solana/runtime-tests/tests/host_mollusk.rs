@@ -30,7 +30,7 @@ use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
 };
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 use zama_host::{
     self as host, instructions::EncryptedValueSubjectGrant, DenySubjectRecord, EncryptedValue,
     FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, HostConfig,
@@ -241,6 +241,20 @@ fn read_encrypted_value(
         .find(|(key, _)| *key == address)
         .map(|(_, account)| account)
         .expect("encrypted value account present in result");
+    let mut data: &[u8] = &account.data;
+    EncryptedValue::try_deserialize(&mut data).expect("valid EncryptedValue account")
+}
+
+fn read_encrypted_value_from_context(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) -> EncryptedValue {
+    let account = context
+        .account_store
+        .borrow()
+        .get(&address)
+        .expect("encrypted value account present")
+        .clone();
     let mut data: &[u8] = &account.data;
     EncryptedValue::try_deserialize(&mut data).expect("valid EncryptedValue account")
 }
@@ -631,6 +645,49 @@ fn mollusk_create_encrypted_value_rejects_duplicate_subjects() {
     );
 }
 
+#[test]
+fn mollusk_create_encrypted_value_rejects_over_cap_subjects_at_birth() {
+    let payer = Pubkey::new_unique();
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let acl_domain_key = Pubkey::new_unique();
+    let lbl = label("balance");
+    let value_key =
+        zama_solana_acl::derive_value_key(acl_domain_key.to_bytes(), authority.to_bytes(), lbl);
+    let (encrypted_value, _bump) = host::encrypted_value_address(value_key);
+    let subjects = (0..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
+        .map(|_| EncryptedValueSubjectGrant {
+            subject: Pubkey::new_unique(),
+        })
+        .collect();
+
+    let ix = create_encrypted_value_ix(
+        payer,
+        authority,
+        encrypted_value,
+        host_config,
+        acl_domain_key,
+        authority,
+        lbl,
+        handle_for_chain(1, 5),
+        subjects,
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (payer, funded_system_account()),
+        (authority, funded_system_account()),
+        (encrypted_value, empty_system_account()),
+        (host_config, host_config_account),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::EncryptedValueEmptySubjects,
+        )],
+    );
+}
+
 // ---------------------------------------------------------------------------
 // allow_subjects
 // ---------------------------------------------------------------------------
@@ -710,6 +767,92 @@ fn mollusk_allow_subjects_rejects_unallowed_authority() {
         &accounts,
         &[custom_error(host::errors::ZamaHostError::SubjectNotAllowed)],
     );
+}
+
+#[test]
+fn mollusk_allow_subjects_rejects_ninth_distinct_subject() {
+    let payer = Pubkey::new_unique();
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let acl_domain_key = Pubkey::new_unique();
+    let lbl = label("balance");
+    let handle = handle_for_chain(2, 5);
+    let value_key =
+        zama_solana_acl::derive_value_key(acl_domain_key.to_bytes(), authority.to_bytes(), lbl);
+    let (encrypted_value, _bump) = host::encrypted_value_address(value_key);
+    let context = mollusk().with_context(HashMap::from([
+        (system_program::ID, system_program_account()),
+        (payer, funded_system_account()),
+        (authority, funded_system_account()),
+        (encrypted_value, empty_system_account()),
+        (host_config, host_config_account),
+    ]));
+
+    let create_ix = create_encrypted_value_ix(
+        payer,
+        authority,
+        encrypted_value,
+        host_config,
+        acl_domain_key,
+        authority,
+        lbl,
+        handle,
+        vec![EncryptedValueSubjectGrant { subject: authority }],
+    );
+    context.process_and_validate_instruction(&create_ix, &[Check::success()]);
+
+    let new_subjects = (0..zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
+        .map(|_| Pubkey::new_unique())
+        .collect::<Vec<_>>();
+    for subject in new_subjects
+        .iter()
+        .take(zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS - 1)
+    {
+        let allow_ix = allow_subjects_ix(
+            payer,
+            authority,
+            encrypted_value,
+            host_config,
+            vec![EncryptedValueSubjectGrant { subject: *subject }],
+        );
+        context.process_and_validate_instruction(&allow_ix, &[Check::success()]);
+    }
+
+    let capped = read_encrypted_value_from_context(&context, encrypted_value);
+    assert_eq!(
+        capped.subjects.len(),
+        zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS
+    );
+    assert_eq!(capped.subjects[0], authority);
+    assert_eq!(
+        &capped.subjects[1..],
+        &new_subjects[..zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS - 1]
+    );
+    assert_eq!(capped.current_handle, handle);
+    assert_eq!(capped.leaf_count, 0);
+    assert!(capped.peaks.is_empty());
+
+    let rejected = allow_subjects_ix(
+        payer,
+        authority,
+        encrypted_value,
+        host_config,
+        vec![EncryptedValueSubjectGrant {
+            subject: new_subjects[zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS - 1],
+        }],
+    );
+    context.process_and_validate_instruction(
+        &rejected,
+        &[custom_error(
+            host::errors::ZamaHostError::EncryptedValueSubjectCapacityExceeded,
+        )],
+    );
+
+    let after_reject = read_encrypted_value_from_context(&context, encrypted_value);
+    assert_eq!(after_reject.subjects, capped.subjects);
+    assert_eq!(after_reject.current_handle, capped.current_handle);
+    assert_eq!(after_reject.leaf_count, capped.leaf_count);
+    assert_eq!(after_reject.peaks, capped.peaks);
 }
 
 // ---------------------------------------------------------------------------
