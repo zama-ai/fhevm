@@ -1,6 +1,7 @@
 import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
+import { canDecryptValue, canDecryptValues, canDecryptValuesFromPairs } from '@fhevm/sdk/actions/decrypt';
 import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, createLogger } from '../setupCommon.js';
@@ -234,6 +235,181 @@ export function defineClientDecryptDecryptTests(parameters: {
         } else {
           expect(BigInt(decrypted.value as number | bigint)).toBe(expectedRaw);
         }
+      }
+    });
+
+    // ┌─────────────────────────────────────────────────────────────────────┐
+    // │  Pairs decrypt test                                                 │
+    // │  Read all handles, decrypt via decryptValuesFromPairs, compare each │
+    // └─────────────────────────────────────────────────────────────────────┘
+
+    it('should decrypt all types via decryptValuesFromPairs', async () => {
+      // Read all handles and their expected clear values from FHETest
+      const entries: {
+        fheType: string;
+        handle: EncryptedValue;
+        expectedRaw: bigint;
+      }[] = [];
+
+      for (const fheType of decryptTestCases) {
+        const fheTypeId = fheTypeIdFromName(fheType);
+        const encryptedValue: EncryptedValue = asEncryptedValue(
+          await config.publicClient.readContract({
+            address: config.fheTestAddress as Hex,
+            abi: FHETestABI,
+            functionName: 'getHandleOf',
+            args: [config.account.address, fheTypeId],
+          }),
+        );
+        expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+
+        const expectedRaw = await config.publicClient.readContract({
+          address: config.fheTestAddress as Hex,
+          abi: FHETestABI,
+          functionName: 'getClearText',
+          args: [encryptedValue],
+        });
+        entries.push({ fheType, handle: encryptedValue, expectedRaw });
+        console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}... expected=${expectedRaw}`);
+      }
+
+      // Decrypt all via decryptValuesFromPairs, each pair carrying its own contract address
+      const client = parameters.createFhevmDecryptClient({
+        chain: config.fhevmChain,
+        publicClient: config.publicClient,
+      });
+      await client.ready;
+
+      const transportKeyPair = await client.generateTransportKeyPair();
+      const signedPermit = await client.signDecryptionPermit({
+        transportKeyPair: transportKeyPair,
+        contractAddresses: [config.fheTestAddress],
+        durationSeconds: 24 * 3600,
+        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        signerAddress: config.account.address,
+        signer: config.account,
+      });
+
+      const pairs = entries.map((e) => ({
+        encryptedValue: asEncryptedValue(e.handle),
+        contractAddress: config.fheTestAddress,
+      }));
+
+      const typedValues: readonly TypedValue[] = await client.decryptValuesFromPairs({
+        pairs,
+        signedPermit,
+        transportKeyPair: transportKeyPair,
+      });
+
+      expect(typedValues).toHaveLength(entries.length);
+
+      // Compare each result
+      for (let i = 0; i < entries.length; i++) {
+        const { fheType, expectedRaw } = entries[i]!;
+        const decrypted = typedValues[i]!;
+        console.log(`  ${fheType}: decrypted=${decrypted.value} expected=${expectedRaw}`);
+
+        if (fheType === 'ebool') {
+          expect(decrypted.value).toBe(expectedRaw !== 0n);
+        } else if (fheType === 'eaddress') {
+          const expectedAddr = '0x' + expectedRaw.toString(16).padStart(40, '0');
+          expect(String(decrypted.value).toLowerCase()).toBe(expectedAddr.toLowerCase());
+        } else {
+          expect(BigInt(decrypted.value as number | bigint)).toBe(expectedRaw);
+        }
+      }
+    });
+
+    // ┌─────────────────────────────────────────────────────────────────────┐
+    // │  canDecryptValue / canDecryptValues / canDecryptValuesFromPairs     │
+    // │  ACL preflight checks — no actual decryption is performed           │
+    // └─────────────────────────────────────────────────────────────────────┘
+
+    it('should report canDecryptValue, canDecryptValues and canDecryptValuesFromPairs as allowed', async () => {
+      // Read all handles from FHETest
+      const encryptedValues: EncryptedValue[] = [];
+
+      for (const fheType of decryptTestCases) {
+        const fheTypeId = fheTypeIdFromName(fheType);
+        const encryptedValue: EncryptedValue = asEncryptedValue(
+          await config.publicClient.readContract({
+            address: config.fheTestAddress as Hex,
+            abi: FHETestABI,
+            functionName: 'getHandleOf',
+            args: [config.account.address, fheTypeId],
+          }),
+        );
+        expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+        encryptedValues.push(encryptedValue);
+      }
+
+      const client = parameters.createFhevmDecryptClient({
+        chain: config.fhevmChain,
+        publicClient: config.publicClient,
+      });
+      await client.ready;
+
+      const transportKeyPair = await client.generateTransportKeyPair();
+      const signedPermit = await client.signDecryptionPermit({
+        transportKeyPair,
+        contractAddresses: [config.fheTestAddress],
+        durationSeconds: 24 * 3600,
+        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        signerAddress: config.account.address,
+        signer: config.account,
+      });
+
+      // canDecryptValue — identifying the target user by a plain address
+      const singleByUserAddress = await canDecryptValue(client, {
+        encryptedValue: encryptedValues[0]!,
+        contractAddress: config.fheTestAddress,
+        userAddress: config.account.address,
+      });
+      expect(singleByUserAddress.allowed).toBe(true);
+      expect(singleByUserAddress.details.contractAllowed).toBe(true);
+      expect(singleByUserAddress.details.userAllowed).toBe(true);
+
+      // canDecryptValue — identifying the target user by a signed decryption permit
+      const singleByPermit = await canDecryptValue(client, {
+        encryptedValue: encryptedValues[0]!,
+        contractAddress: config.fheTestAddress,
+        signedPermit,
+        transportKeyPair,
+      });
+      expect(singleByPermit.allowed).toBe(true);
+      expect(singleByPermit.details.contractAllowed).toBe(true);
+      expect(singleByPermit.details.userAllowed).toBe(true);
+
+      // canDecryptValues — batch of handles on a single contract
+      const batchResult = await canDecryptValues(client, {
+        encryptedValues,
+        contractAddress: config.fheTestAddress,
+        signedPermit,
+        transportKeyPair,
+      });
+      expect(batchResult.allowed).toBe(true);
+      expect(batchResult.details).toHaveLength(encryptedValues.length);
+      for (const detail of batchResult.details) {
+        expect(detail.contractAllowed).toBe(true);
+        expect(detail.userAllowed).toBe(true);
+      }
+
+      // canDecryptValuesFromPairs — same batch, expressed as handle/contract-address pairs
+      const pairs = encryptedValues.map((encryptedValue) => ({
+        encryptedValue,
+        contractAddress: config.fheTestAddress,
+      }));
+
+      const pairsResult = await canDecryptValuesFromPairs(client, {
+        pairs,
+        signedPermit,
+        transportKeyPair,
+      });
+      expect(pairsResult.allowed).toBe(true);
+      expect(pairsResult.details).toHaveLength(pairs.length);
+      for (const detail of pairsResult.details) {
+        expect(detail.contractAllowed).toBe(true);
+        expect(detail.userAllowed).toBe(true);
       }
     });
   });
