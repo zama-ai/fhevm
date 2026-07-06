@@ -49,6 +49,12 @@ export class KmsExtraDataImpl implements KmsExtraData {
   #validate(): void {
     switch (this.#version) {
       case EXTRA_DATA_V0: {
+        if (this.#kmsContextId !== 0n) {
+          throw new Error('kmsContextId must be 0 for v0 kms extraData');
+        }
+        if (this.#kmsEpochId !== 0n) {
+          throw new Error('kmsEpochId must be 0 for v0 kms extraData');
+        }
         return;
       }
       case EXTRA_DATA_V1: {
