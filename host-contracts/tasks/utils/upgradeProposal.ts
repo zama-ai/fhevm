@@ -47,14 +47,13 @@ export async function buildUpgradeProposal(
   const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const constructorArgs = params.constructorArgs ?? [];
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplementation = await ethers.getContractFactory(params.contractName, deployer);
   await upgrades.forceImport(params.proxyAddress, currentImplementation);
   const newImplementationAddress = String(
     await upgrades.prepareUpgrade(params.proxyAddress, newImplementation, {
       kind: 'uups',
-      constructorArgs,
+      constructorArgs: params.constructorArgs,
       unsafeAllow: params.unsafeAllow,
     }),
   );
@@ -74,7 +73,7 @@ export async function buildUpgradeProposal(
     decodedArgs: params.decodedArgs,
     innerCalldata,
     outerCalldata,
-    constructorArgs,
+    constructorArgs: params.constructorArgs ?? [],
   };
 }
 
