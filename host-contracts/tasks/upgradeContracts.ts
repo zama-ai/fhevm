@@ -42,6 +42,19 @@ function shellQuote(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
+// Parses a comma-separated integer list task arg (e.g. --dst-eids "30101,30109") into its entries.
+// Empty/undefined yields an empty array; values stay as strings so ethers coerces them to the
+// solidity integer type at encode time.
+function parseCsvIntegers(raw: string | undefined): string[] {
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
 async function upgradeCurrentToNew(
   proxyAddress: string,
   currentImplementation: string,
@@ -353,6 +366,18 @@ task('task:prepareUpgradeConfidentialBridge')
     types.boolean,
   )
   .addOptionalParam(
+    'dstEids',
+    'Comma-separated LayerZero endpoint ids to seed the dstEid → dstChainId map (paired index-by-index with --dst-chain-ids). Empty by default; pairs can also be wired later via task:setDstChainId.',
+    '',
+    types.string,
+  )
+  .addOptionalParam(
+    'dstChainIds',
+    'Comma-separated destination chain ids paired index-by-index with --dst-eids.',
+    '',
+    types.string,
+  )
+  .addOptionalParam(
     'verifyContract',
     'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
     true,
@@ -366,6 +391,14 @@ task('task:prepareUpgradeConfidentialBridge')
     const lzEndpoint = getRequiredEnvVar('LZ_ENDPOINT_ADDRESS');
     if (!hre.ethers.isAddress(lzEndpoint)) {
       throw new Error(`LZ_ENDPOINT_ADDRESS is not a valid address: ${lzEndpoint}`);
+    }
+
+    const dstEids = parseCsvIntegers(taskArgs.dstEids);
+    const dstChainIds = parseCsvIntegers(taskArgs.dstChainIds);
+    if (dstEids.length !== dstChainIds.length) {
+      throw new Error(
+        `--dst-eids and --dst-chain-ids must have the same length: got ${dstEids.length} eid(s) and ${dstChainIds.length} chain id(s). initializeFromEmptyProxy would revert with DstChainIdArrayLengthMismatch.`,
+      );
     }
 
     await hre.run('compile:specific', { contract: 'contracts' });
@@ -387,7 +420,7 @@ task('task:prepareUpgradeConfidentialBridge')
     console.log('New implementation deployed at:', implementationAddress);
 
     const initSignature = 'initializeFromEmptyProxy(uint32[],uint64[])';
-    const initArgs: unknown[] = [[], []];
+    const initArgs: unknown[] = [dstEids, dstChainIds];
     const initCalldata = bridgeFactory.interface.encodeFunctionData('initializeFromEmptyProxy', initArgs);
     const outerCalldata = new Interface([
       'function upgradeToAndCall(address newImplementation, bytes data) payable',
