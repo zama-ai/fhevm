@@ -152,11 +152,15 @@ const decrypted = await client.decryptValue({
 ## Checking permission before decrypting
 
 A decrypt call fails if the Access Control List (ACL) doesn't allow it. To check first — for example to
-grey out a "reveal" button — use the `canDecrypt*` methods. They return a boolean
-plus a breakdown, and never throw on a permission miss:
+grey out a "reveal" button — use the `canDecrypt*` **actions**. They return a boolean
+plus a breakdown, and never throw on a permission miss. These are standalone
+actions rather than client methods, so import them and pass the client as the first
+argument:
 
 ```ts
-const { allowed, details } = await client.canDecryptValue({
+import { canDecryptValue } from '@fhevm/sdk/actions/decrypt';
+
+const { allowed, details } = await canDecryptValue(client, {
   encryptedValue,
   contractAddress,
   signedPermit, // or: userAddress: '0x…'
@@ -167,8 +171,8 @@ details.contractAllowed; // is the contract allowed to hold this value?
 details.userAllowed; // is the user allowed to decrypt it?
 ```
 
-Plural forms `canDecryptValues` and `canDecryptValuesFromPairs` mirror the batch
-decrypt methods.
+Plural forms `canDecryptValues` and `canDecryptValuesFromPairs` (also from
+[`@fhevm/sdk/actions/decrypt`](actions.md)) mirror the batch decrypt methods.
 
 ## Delegated decryption
 

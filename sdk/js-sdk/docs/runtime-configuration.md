@@ -2,14 +2,21 @@
 
 The runtime config controls _how_ the SDK loads and runs its WebAssembly
 cryptography — thread count, where WASM assets come from, and which module
-versions to use. It is global and set once, before any client is created.
+versions to use. Set it once, before any client is created.
 
 ```ts
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-// or: from '@fhevm/sdk/viem' — same function
+// or: from '@fhevm/sdk/viem'
 
 setFhevmRuntimeConfig({});
 ```
+
+{% hint style="warning" %}
+`setFhevmRuntimeConfig` is **per adapter** — the `@fhevm/sdk/ethers` and
+`@fhevm/sdk/viem` entry points each hold their own config. Import and call it from
+the **same** adapter you create your client with. If your app uses both adapters,
+configure each one.
+{% endhint %}
 
 An empty object accepts every default and is the correct starting point for most
 apps. Reach for the options below only when you hit a specific need — multi-thread
@@ -17,7 +24,7 @@ performance, a strict CSP, a bundler that relocates assets, or version pinning.
 
 ## Set it once
 
-`setFhevmRuntimeConfig` writes a frozen, process-global singleton:
+`setFhevmRuntimeConfig` writes a frozen, per-adapter singleton:
 
 - Call it **before** creating any client or runtime.
 - Calling it again with an **identical** config is a no-op (safe).

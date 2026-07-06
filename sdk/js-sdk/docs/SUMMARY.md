@@ -21,9 +21,14 @@
 - [Types](types.md)
 - [Actions](actions.md)
 - [API reference](api-reference.md)
+- [Version compatibility](compatibility.md)
 
 ## Advanced
 
 - [Security model](security.md)
 - [Migration from the Relayer SDK](migration.md)
 - [Architecture](architecture.md)
+
+## Releases
+
+- [Release notes](release-notes.md)

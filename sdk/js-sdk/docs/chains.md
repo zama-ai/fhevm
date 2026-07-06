@@ -132,7 +132,7 @@ const client = createFhevmClient({ chain: myDevnet, provider });
 ```
 
 Set `protocolConfig` to `undefined` if your deployment doesn't have one — the
-built-in `mainnet` and `sepolia` definitions currently do.
+built-in `mainnet` and `sepolia` definitions currently leave it `undefined`.
 
 ## Related
 

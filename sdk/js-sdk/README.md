@@ -162,9 +162,11 @@ Full documentation is available in the [`docs/`](docs/) directory:
 - [Types](docs/types.md) — the TypeScript type system
 - [Actions](docs/actions.md) — the tree-shakable functional API
 - [API reference](docs/api-reference.md) — complete function and type reference
+- [Version compatibility](docs/compatibility.md) — protocol, TFHE, KMS, and contract version matrices
 - [Security model](docs/security.md) — encryption, ACL, permits, and what the SDK protects
 - [Migration](docs/migration.md) — migrating from `@zama-fhe/relayer-sdk`
 - [Architecture](docs/architecture.md) — internal design for contributors
+- [Release notes](docs/release-notes.md) — changelog and breaking changes
 
 ## Glossary
 

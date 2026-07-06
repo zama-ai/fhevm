@@ -87,9 +87,10 @@ code.
 ### The provider is sealed
 
 The ethers or viem connection you pass to `createFhevmClient()` is sealed inside an
-opaque wrapper. The core SDK can use it for RPC calls (reading contracts, checking
-ACL permissions) but cannot extract the underlying object — which also keeps the
-core layer from depending on ethers- or viem-specific APIs.
+opaque wrapper. The SDK unwraps it internally (through symbol-guarded access) for
+RPC calls — reading contracts and checking ACL permissions — but application code
+cannot reach the underlying object off the client. This also keeps the core layer
+from depending on ethers- or viem-specific APIs.
 
 ### Chain definitions are frozen
 

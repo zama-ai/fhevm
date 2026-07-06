@@ -81,7 +81,9 @@ The SDK follows a strict initialization contract:
   resolved and throw otherwise.
 - **`init()` is idempotent.** Calling it again returns the same cached promise.
   `decryptPublicValues` is the exception that needs no prior `init()`: it resolves
-  the protocol version itself from the Relayer as part of the read.
+  what it needs on demand (the protocol version comes from the on-chain ACL
+  contract version, read over RPC) rather than requiring the versions to be
+  pre-resolved.
 - **A WASM version is owned by one runtime.** Module init is globally unique per
   version, preventing two clients from double-loading the same heavy library.
 

@@ -161,7 +161,7 @@ const encrypted = await client.encryptValues({
   options: {
     timeout: 60_000,
     signal: abortController.signal,
-    onProgress: (args) => console.log(args.state), // 'queued' | 'throttled' | 'succeeded' | …
+    onProgress: (args) => console.log(args.type), // 'queued' | 'throttled' | 'succeeded' | 'timeout' | 'abort' | 'failed'
   },
 });
 ```
@@ -182,15 +182,15 @@ Common fields: `timeout`, `signal` (an `AbortSignal`), `headers`, `fetchRetries`
    the proof and sign it, producing the `inputProof` your contract trusts.
 
 If you need to run these steps separately (for example, to generate a proof
-offline and submit it later), the standalone actions `generateZkProof` and
-`fetchEncryptedValues` from [`@fhevm/sdk/actions/encrypt`](actions.md) expose
-them.
+offline and submit it later), use the standalone actions `generateZkProof` (from
+[`@fhevm/sdk/actions/encrypt`](actions.md)) and `fetchEncryptedValues` (from
+[`@fhevm/sdk/actions/base`](actions.md)).
 
 ## Related
 
 - [Decryption](decryption.md) — read encrypted values back to plaintext.
 - [Types](types.md) — the encrypted-value and typed-value type system.
-- [Actions](actions.md) — the standalone `generateZkProof` / `fetchEncryptedValues` functions.
+- [Actions](actions.md) — the standalone `generateZkProof` (encrypt) / `fetchEncryptedValues` (base) functions.
 - [Error handling](error-handling.md) — `EncryptionError`, `ZkProofError`, `TooManyHandlesError`.
 ```
 

@@ -55,8 +55,8 @@ Thrown by encrypt, decrypt, and configuration operations.
 | `EncryptionError`         | An encryption operation failed.                                    |
 | `ZkProofError`            | The zero-knowledge proof is invalid.                               |
 | `InputProofError`         | The input proof is invalid.                                        |
-| `FhevmHandleError`        | A handle (encrypted value) couldn't be parsed. Exposes `handle`.   |
-| `TooManyHandlesError`     | More than 256 variables packed into one input ciphertext. Exposes `numberOfHandles`. |
+| `FhevmHandleError`        | A handle (encrypted value) couldn't be parsed.                     |
+| `TooManyHandlesError`     | More than 256 variables packed into one input ciphertext.          |
 | `FhevmConfigError`        | The FHEVM configuration is invalid.                                |
 | `UnknownSignerError`      | A signer address isn't in the coprocessor/KMS signer set.          |
 | `ThresholdSignerError`    | The signer quorum threshold wasn't reached.                        |
