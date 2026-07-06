@@ -211,6 +211,10 @@ async function _readKmsSignersContext_Protocol_14_or_higher(
 
 ////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
+
+export type ReconcileMode = 'exact' | 'strict' | 'loose';
+
 /**
  * Reconciles the KMS signers context used by the SDK with the one the relayer
  * actually used when forwarding the decryption request to KMS nodes.
@@ -225,8 +229,10 @@ async function _readKmsSignersContext_Protocol_14_or_higher(
  *
  * ### Nomenclature
  *
- * - `requestedExtraData` — `kmsSignersContextToExtraData(requestedKmsSignersContext)`.
- * - `relayerKmsContextId` — `fromKmsExtraData(relayerExtraData).kmsContextId`.
+ * - `requestedKmsExtraData` — `createKmsExtraData({ kmsContextId, kmsEpochId })`
+ *   derived from `requestedKmsSignersContext`.
+ * - `relayerKmsExtraData` — `fromKmsExtraDataBytesHex(relayerKmsExtraDataBytesHex)`
+ *   (its `.kmsContextId` / `.kmsEpochId`).
  *
  * ### Host-Contract Compatibility
  *
@@ -237,36 +243,36 @@ async function _readKmsSignersContext_Protocol_14_or_higher(
  * - host-contracts v12 and v13 support `extraData` v0 and v1.
  * - host-contracts v14 support `extraData` v0, v1, and v2.
  *
- * ### Resolution (checked in order)
+ * ### Resolution (checked in order, then by `mode`)
  *
- * 1. `relayerExtraData === requestedExtraData` → exact byte match, return
- *    `requestedKmsSignersContext`. This is the **only** path that trusts cached data.
- * 2. In `'exact'` mode, any byte mismatch → **always throw**. This mode does
- *    not parse, refresh, or reconcile different `extraData`.
- * 3. Serialization version mismatch → **always throw**. The SDK and relayer must
- *    agree on the `extraData` encoding format, even if the context ID is the same.
- * 4. Context IDs differ → **full on-chain refetch**. The cached context is never
- *    reused, because any mismatch means on-chain state may have diverged
- *    (rotation, destruction, signer changes, etc.).
- *    - Context is **valid** on-chain (current or non-destroyed) → return it.
- *    - Context is **destroyed or out of range** → throw.
+ * 1. `relayerKmsExtraData` equals `requestedKmsExtraData` → return
+ *    `requestedKmsSignersContext`. This is the **only** path that trusts cached
+ *    data, and it applies in every mode.
+ * 2. Otherwise, in `'exact'` mode → **throw**. This mode never parses, refreshes,
+ *    or reconciles differing `extraData`.
+ * 3. `extraData` serialization version mismatch → **throw** (`'strict'`/`'loose'`).
+ *    The SDK and relayer must agree on the encoding format, even for the same context ID.
+ * 4. Versions match but context/epoch differ → force a **full on-chain refetch**
+ *    (cached data is never reused, since a mismatch means on-chain state may have
+ *    diverged: rotation, destruction, signer/epoch changes). The accept criterion
+ *    then depends on `mode`:
+ *    - `'strict'` → accept **only** if the relayer's context equals the *current*
+ *      on-chain context (both `kmsContextId` and `kmsEpochId`); otherwise throw.
+ *    - `'loose'` → accept **any** on-chain-valid context (non-destroyed, in range),
+ *      current or not; throw only if destroyed / out of range.
  *
  * ### Modes
  *
- * - `'exact'` — Accept only step 1 (byte-for-byte `extraData` equality).
- *   Rejects any relayer/context drift without parsing or on-chain recovery.
- * - `'strict'` — Accept step 1 (exact match) or both `relayerKmsContextId === currentKmsContextId`
- *   and `relayerKmsEpochId === currentKmsEpochId`. Rejects valid-but-not-current contexts.
- *   The epoch check is required because RFC 005 introduces same-context epoch rotations
- *   (new shares, same party set) — a stale epoch must be rejected even if the context matches.
+ * - `'exact'` — Accept only step 1 (`extraData` equality). Rejects any
+ *   relayer/context drift without parsing or on-chain recovery.
+ * - `'strict'` — Accept step 1, or a relayer context whose `kmsContextId` **and**
+ *   `kmsEpochId` equal the current on-chain values. Rejects valid-but-not-current
+ *   contexts. The epoch check is required because RFC 005 introduces same-context
+ *   epoch rotations (new shares, same party set) — a stale epoch must be rejected
+ *   even when the context ID matches.
  * - `'loose'` — Accept any on-chain valid context (non-destroyed, in range),
  *   regardless of whether it is current. Covers context rotations in either direction.
  */
-
-////////////////////////////////////////////////////////////////////////////////
-
-export type ReconcileMode = 'exact' | 'strict' | 'loose';
-
 export async function reconcileKmsSignersContext(
   context: Context,
   parameters: {
