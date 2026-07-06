@@ -106,7 +106,7 @@ const ZERO_ACL_VALUE_KEY = new Uint8Array(32);
 /** Fills in the MMR-proof tail defaults (all-zero/empty, i.e. "no proof") for fields left unset. */
 function withProofDefaults(
   input: SolanaUserDecryptInput,
-): Required<Pick<SolanaUserDecryptInput, 'aclValueKey' | 'mmrProofBytes' | 'proofSlot'>> {
+): { aclValueKey: Uint8Array; mmrProofBytes: Uint8Array; proofSlot: bigint } {
   return {
     aclValueKey: input.aclValueKey ?? ZERO_ACL_VALUE_KEY,
     mmrProofBytes: input.mmrProofBytes ?? new Uint8Array(0),
