@@ -4,6 +4,7 @@
 import YAML from "yaml";
 
 import {
+  requiresLegacyRelayerKeyUrlConfig,
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
@@ -39,6 +40,27 @@ const rewriteRelayerConfig = (
       delegated_user_decrypt: current.delegated_user_decrypt,
     }).filter(([, value]) => value !== undefined),
   );
+  return config;
+};
+
+/** Rewrites keyurl config into the static schema expected by released relayers. */
+const rewriteRelayerKeyUrlConfig = (
+  config: Record<string, unknown>,
+  state: Pick<State, "versions">,
+) => {
+  if (!requiresLegacyRelayerKeyUrlConfig(state)) {
+    return config;
+  }
+  config.keyurl = {
+    fhe_public_key: {
+      data_id: "fhe-public-key-data-id",
+      url: "http://0.0.0.0:3001/publicKey.bin",
+    },
+    crs: {
+      data_id: "crs-data-id",
+      url: "http://0.0.0.0:3001/crs2048.bin",
+    },
+  };
   return config;
 };
 
@@ -88,6 +110,7 @@ export const renderRelayerConfig = (
   plan?: Pick<StackSpec, "hostChains">,
 ) => {
   let config = rewriteRelayerConfig(YAML.parse(templateText) as Record<string, unknown>, state);
+  config = rewriteRelayerKeyUrlConfig(config, state);
   const chains = plan?.hostChains ?? [];
   if (chains.length) {
     config = rewriteHostChains(config, state, chains);
