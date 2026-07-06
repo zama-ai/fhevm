@@ -28,7 +28,7 @@ pub mod validation_messages {
     pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
 
     pub const INVALID_EXTRA_DATA_FORMAT: &str =
-        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (33 bytes), or 0x02 + 32-byte contextId + 32-byte epochId (65 bytes)";
+        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (33 bytes), 0x02 + 32-byte contextId + 32-byte epochId (65 bytes), Solana 0x02 MMR proof extraData, or Solana 0x03 user-decrypt extraData";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
 }
 
@@ -162,6 +162,11 @@ const EXTRA_DATA_SOLANA_VERSION_BYTE: &str = "03";
 /// count) = 101 bytes = 202 hex chars + 2 for `0x` = 204. A blob shorter than
 /// this header cannot be a well-formed Solana request.
 const EXTRA_DATA_SOLANA_MIN_HEX_LEN: usize = 2 + 101 * 2;
+/// Minimum byte length of a Solana `0x02` MMR-proof blob:
+/// version(1) + context_id(32) + acl_value_key(32) + proof_slot(8) + proof_len(4).
+const EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES: usize = 1 + 32 + 32 + 8 + 4;
+const EXTRA_DATA_SOLANA_MMR_PROOF_MIN_HEX_LEN: usize =
+    2 + EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES * 2;
 
 /// Validates the extraData field format for decryption requests.
 ///
@@ -171,6 +176,8 @@ const EXTRA_DATA_SOLANA_MIN_HEX_LEN: usize = 2 + 101 * 2;
 ///   (66 hex chars + `"0x"` prefix = 68 chars).
 /// - `"0x02"` + 128 hex chars: Version 2 — `[version(1B) | contextId(32B) | epochId(32B)]`
 ///   = 65 bytes (130 hex chars + `"0x"` prefix = 132 chars).
+/// - `"0x02"` + variable: Solana MMR-proof blob
+///   `[version(1B) | contextId(32B) | aclValueKey(32B) | proofSlot(8B) | proofLen(4B) | proof]`.
 /// - `"0x03"` + variable: Solana ed25519 user-decrypt blob (version 3). Minimum 101 bytes.
 ///   Forwarded opaquely; only the version byte, minimum header length, and hex
 ///   well-formedness are checked here — the relayer never parses the tail.
@@ -184,10 +191,14 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
             // Version 1: [0x01 | contextId(32B)] = 33 bytes = 66 hex chars + "0x" prefix = 68 chars
             decode_versioned_extra_data(s)
         }
-        s if s.len() == 132 && s.starts_with("0x02") => {
-            // Version 2: [0x02 | contextId(32B) | epochId(32B)] = 65 bytes
-            // = 130 hex chars + "0x" prefix = 132 chars.
-            decode_versioned_extra_data(s)
+        s if s.starts_with("0x02") => {
+            if s.len() == 132 {
+                // Version 2: [0x02 | contextId(32B) | epochId(32B)] = 65 bytes
+                // = 130 hex chars + "0x" prefix = 132 chars.
+                decode_versioned_extra_data(s)
+            } else {
+                validate_solana_mmr_proof_extra_data(s)
+            }
         }
         s if s.len() >= EXTRA_DATA_SOLANA_MIN_HEX_LEN
             && s.starts_with("0x")
@@ -210,6 +221,28 @@ fn decode_versioned_extra_data(extra_data: &str) -> Result<(), ValidationError> 
         ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
     })?;
+    Ok(())
+}
+
+fn validate_solana_mmr_proof_extra_data(extra_data: &str) -> Result<(), ValidationError> {
+    if extra_data.len() < EXTRA_DATA_SOLANA_MMR_PROOF_MIN_HEX_LEN {
+        return Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
+    }
+    let bytes = hex::decode(&extra_data[2..]).map_err(|_| {
+        ValidationError::new("validation_error")
+            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
+    })?;
+    let proof_len_offset = 1 + 32 + 32 + 8;
+    let proof_len = u32::from_be_bytes(
+        bytes[proof_len_offset..proof_len_offset + 4]
+            .try_into()
+            .expect("validated Solana MMR proof header length"),
+    ) as usize;
+    if bytes.len() != EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES + proof_len {
+        return Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
+    }
     Ok(())
 }
 
@@ -502,6 +535,16 @@ mod tests {
         format!("0x{}", hex::encode(bytes))
     }
 
+    fn solana_mmr_proof_extra_data_hex(proof_len: u32) -> String {
+        let mut bytes = vec![0x02u8];
+        bytes.extend_from_slice(&[0u8; 32]); // context_id
+        bytes.extend_from_slice(&[7u8; 32]); // acl_value_key
+        bytes.extend_from_slice(&42u64.to_be_bytes()); // proof_slot
+        bytes.extend_from_slice(&proof_len.to_be_bytes());
+        bytes.extend(std::iter::repeat_n(0xabu8, proof_len as usize));
+        format!("0x{}", hex::encode(bytes))
+    }
+
     #[test]
     fn extra_data_accepts_solana_v3_blob() {
         // Header-only (zero domain keys) and with domain keys both pass.
@@ -521,6 +564,21 @@ mod tests {
         // Right length, 0x03 version, but non-hex payload.
         let bad = format!("0x03{}", "zz".repeat(101));
         assert!(validate_extra_data_field_decryption(&bad).is_err());
+    }
+
+    #[test]
+    fn extra_data_accepts_solana_v2_mmr_proof_blob() {
+        assert!(validate_extra_data_field_decryption(&solana_mmr_proof_extra_data_hex(0)).is_ok());
+        assert!(validate_extra_data_field_decryption(&solana_mmr_proof_extra_data_hex(3)).is_ok());
+    }
+
+    #[test]
+    fn extra_data_rejects_solana_v2_mmr_proof_length_mismatch() {
+        let mut bytes = hex::decode(&solana_mmr_proof_extra_data_hex(3)[2..]).unwrap();
+        bytes.pop();
+        assert!(
+            validate_extra_data_field_decryption(&format!("0x{}", hex::encode(bytes))).is_err()
+        );
     }
 
     #[test]
@@ -570,7 +628,7 @@ mod tests {
 
     #[test]
     fn rejects_version_0x02_with_trailing_bytes() {
-        // v0x02 is exactly 65 bytes; any extra bytes past the epochId are rejected.
+        // Too short for Solana MMR-proof extraData and not exactly the fixed EVM v0x02 size.
         let extra_data = format!("0x02{CONTEXT_ID_HEX}{EPOCH_ID_HEX}ff");
         assert_eq!(extra_data.len(), 134);
         assert!(validate_extra_data_field_decryption(&extra_data).is_err());

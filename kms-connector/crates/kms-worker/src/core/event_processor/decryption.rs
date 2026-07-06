@@ -1,12 +1,12 @@
 use crate::core::{
     config::{Config, HostChainKind},
     event_processor::{
-        CiphertextManager, ProcessingError, RequestCheckError, RequestCheckKind,
         context::ContextManager,
         solana_user_decrypt::{
-            SolanaHost, check_solana_handles_acl, check_solana_handles_public_decrypt,
-            verify_solana_user_decrypt_signature,
+            check_solana_handles_acl, check_solana_handles_public_decrypt,
+            verify_solana_user_decrypt_signature, SolanaHost,
         },
+        CiphertextManager, ProcessingError, RequestCheckError, RequestCheckKind,
     },
     solana_acl::HandleBytes,
     solana_v2_fetcher::SolanaV2Fetcher,
@@ -14,19 +14,20 @@ use crate::core::{
 use alloy::{
     consensus::Transaction,
     hex,
-    primitives::{Address, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
+    primitives::{map::DefaultHashBuilder, Address, Bytes, FixedBytes, U256},
     providers::Provider,
     sol_types::{Eip712Domain, SolCall},
 };
 use anyhow::anyhow;
 use connector_utils::types::{
-    KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
-    u256_to_request_id,
+    extra_data::parse_extra_data, handle::extract_chain_id_from_handle, u256_to_request_id,
+    KmsGrpcRequest,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, HandleEntry, SnsCiphertextMaterial,
-    UserDecryptionRequest_1 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
-    delegatedUserDecryptionRequestCall, userDecryptionRequest_1Call as userDecryptionRequestCall,
+    self, delegatedUserDecryptionRequestCall,
+    userDecryptionRequest_1Call as userDecryptionRequestCall, DecryptionInstance, HandleEntry,
+    SnsCiphertextMaterial, UserDecryptionRequestSolana,
+    UserDecryptionRequest_1 as UserDecryptionRequestV2,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use futures::future::{join_all, try_join_all};
@@ -102,6 +103,7 @@ where
     pub async fn check_ciphertexts_allowed_for_public_decryption(
         &self,
         sns_ciphertexts: &[SnsCiphertextMaterial],
+        extra_data: &[u8],
     ) -> Result<(), RequestCheckError> {
         info!(
             "Starting ACL check for {} handles...",
@@ -112,11 +114,11 @@ where
             let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
                 .map_err(|e| RequestCheckError::irrecoverable(RequestCheckKind::Acl, e))?;
 
-            // Solana host: the EVM ACL contract does not exist on this chain. Defer to the on-chain
-            // ACL record's `public_decrypt` flag read at `finalized` (released via the host
-            // `allow_for_decryption`), mirroring the Solana user-decrypt ACL phase.
+            // Solana host: the EVM ACL contract does not exist on this chain. Public access is
+            // proven by a `PublicDecryptLeaf` MMR proof in `extraData`, verified against the live
+            // finalized lineage account.
             if let Some(host) = self.solana_hosts.get(&ct_chain_id) {
-                check_solana_handles_public_decrypt(host, &[ct.ctHandle.0])
+                check_solana_handles_public_decrypt(host, &[ct.ctHandle.0], extra_data)
                     .await
                     .map_err(|e| RequestCheckError::from_processing(RequestCheckKind::Acl, e))?;
                 continue;
@@ -855,8 +857,8 @@ impl UserDecryptionExtraData {
 mod tests {
     use super::*;
     use alloy::{
-        providers::{ProviderBuilder, mock::Asserter},
-        signers::{SignerSync, local::PrivateKeySigner},
+        providers::{mock::Asserter, ProviderBuilder},
+        signers::{local::PrivateKeySigner, SignerSync},
         sol_types::SolValue,
         transports::http::reqwest,
     };
@@ -871,7 +873,7 @@ mod tests {
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
     use user_decryption_signature::{
-        ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
+        compute_user_decrypt_digest, default_user_decrypt_domain, ERC1271_MAGIC_VALUE,
     };
 
     enum ExpectedOutcome {
@@ -958,7 +960,7 @@ mod tests {
         }
 
         let result = decryption_processor
-            .check_ciphertexts_allowed_for_public_decryption(&sns_ciphertexts)
+            .check_ciphertexts_allowed_for_public_decryption(&sns_ciphertexts, &[0u8])
             .await
             .map_err(RequestCheckError::record);
 

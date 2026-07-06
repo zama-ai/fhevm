@@ -64,8 +64,8 @@ use crate::core::{
     event_processor::ProcessingError,
     solana_acl::{HandleBytes, SolanaAclVerifier, SolanaPubkeyBytes},
     solana_encrypted_value_acl::{
-        DecodedEncryptedValueAcl, EncryptedValueTarget, decode_encrypted_value_acl,
-        encrypted_value_acl_address,
+        decode_encrypted_value_acl, encrypted_value_acl_address, DecodedEncryptedValueAcl,
+        EncryptedValueTarget,
     },
     solana_v2_fetcher::SolanaV2Fetcher,
 };
@@ -73,11 +73,11 @@ use alloy::primitives::U256;
 use anyhow::anyhow;
 use borsh::BorshDeserialize;
 use connector_utils::types::solana_extra_data::{
-    SolanaUserDecryptSigningInput, parse_solana_user_decrypt_extra_data,
-    solana_user_decrypt_signing_preimage,
+    parse_solana_mmr_proof_extra_data, parse_solana_user_decrypt_extra_data,
+    solana_user_decrypt_signing_preimage, SolanaUserDecryptSigningInput,
 };
 use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequestSolana;
-use ring::signature::{ED25519, UnparsedPublicKey};
+use ring::signature::{UnparsedPublicKey, ED25519};
 use solana_pubkey::Pubkey;
 use zama_solana_acl::{EncryptedValue, MmrProof};
 
@@ -255,21 +255,7 @@ pub fn dispatch_solana_mmr_proof(
     handle: HandleBytes,
     auth: &VerifiedSolanaAuth,
 ) -> Result<(), ProcessingError> {
-    let [mode, proof_body @ ..] = auth.mmr_proof_bytes.as_slice() else {
-        return Err(ProcessingError::Irrecoverable(anyhow!(
-            "Solana MMR-proof blob is empty (missing mode byte)"
-        )));
-    };
-    let mut cursor = proof_body;
-    let proof = MmrProof::deserialize(&mut cursor).map_err(|e| {
-        ProcessingError::Irrecoverable(anyhow!("failed to decode Solana MMR proof: {e}"))
-    })?;
-    if proof.siblings.len() > MAX_MMR_SIBLINGS {
-        return Err(ProcessingError::Irrecoverable(anyhow!(
-            "Solana MMR proof carries {} siblings, exceeding the cap of {MAX_MMR_SIBLINGS}",
-            proof.siblings.len()
-        )));
-    }
+    let (mode, proof) = decode_solana_mmr_proof_blob(&auth.mmr_proof_bytes)?;
 
     let target = EncryptedValueTarget {
         account_key,
@@ -278,7 +264,7 @@ pub fn dispatch_solana_mmr_proof(
         encrypted_value: handle,
     };
 
-    let result = match *mode {
+    let result = match mode {
         MMR_MODE_HISTORICAL => verifier.verify_historical_user_decrypt(
             target,
             auth.identity,
@@ -294,6 +280,52 @@ pub fn dispatch_solana_mmr_proof(
     };
 
     result.map_err(|e| classify_mmr_verification_failure(e, auth.proof_slot, acl.leaf_count))
+}
+
+fn decode_solana_mmr_proof_blob(mmr_proof_bytes: &[u8]) -> Result<(u8, MmrProof), ProcessingError> {
+    let [mode, proof_body @ ..] = mmr_proof_bytes else {
+        return Err(ProcessingError::Irrecoverable(anyhow!(
+            "Solana MMR-proof blob is empty (missing mode byte)"
+        )));
+    };
+    let mut cursor = proof_body;
+    let proof = MmrProof::deserialize(&mut cursor).map_err(|e| {
+        ProcessingError::Irrecoverable(anyhow!("failed to decode Solana MMR proof: {e}"))
+    })?;
+    if proof.siblings.len() > MAX_MMR_SIBLINGS {
+        return Err(ProcessingError::Irrecoverable(anyhow!(
+            "Solana MMR proof carries {} siblings, exceeding the cap of {MAX_MMR_SIBLINGS}",
+            proof.siblings.len()
+        )));
+    }
+    Ok((*mode, proof))
+}
+
+fn dispatch_solana_public_mmr_proof(
+    verifier: &SolanaAclVerifier,
+    account_key: SolanaPubkeyBytes,
+    owner: SolanaPubkeyBytes,
+    acl: &EncryptedValue,
+    handle: HandleBytes,
+    proof_slot: u64,
+    mmr_proof_bytes: &[u8],
+) -> Result<(), ProcessingError> {
+    let (mode, proof) = decode_solana_mmr_proof_blob(mmr_proof_bytes)?;
+    if mode != MMR_MODE_PUBLIC {
+        return Err(ProcessingError::Irrecoverable(anyhow!(
+            "Solana public decryption requires MMR proof mode {MMR_MODE_PUBLIC:#04x}, got {mode:#04x}"
+        )));
+    }
+
+    let target = EncryptedValueTarget {
+        account_key,
+        owner,
+        acl,
+        encrypted_value: handle,
+    };
+    verifier
+        .verify_public_decrypt_exact(target, &proof)
+        .map_err(|e| classify_mmr_verification_failure(e, proof_slot, acl.leaf_count))
 }
 
 /// Verify-FIRST staleness classification: only reached after `verify_*` has already rejected the
@@ -353,26 +385,41 @@ pub async fn check_solana_handles_acl(
     }
 }
 
-/// Solana public-decryption ACL check. Unlike the pre-RFC-024 flag-based check, there is no live
-/// "is public" flag any more: public-ness is only provable via a `PublicDecryptLeaf` MMR leaf, so
-/// this requires the caller to supply that proof exactly like a historical decrypt.
-///
-/// KNOWN GAP: the gateway's public-decryption request event does not currently carry a
-/// `value_key`/MMR-proof tail at all (unlike user-decrypt, which at least has `extraData` to
-/// repurpose) — extending it is a `gateway-contracts` change outside this workstream's scope.
-/// Until that lands, this fails closed with an explanatory `Irrecoverable` error rather than
-/// silently granting (or silently denying via a wrong flag read of a deleted account).
+/// Solana public-decryption ACL check. There is no live "is public" flag: public-ness is only
+/// provable via a `PublicDecryptLeaf` MMR leaf carried in `extraData`.
 pub async fn check_solana_handles_public_decrypt(
-    _host: &SolanaHost,
+    host: &SolanaHost,
     handles: &[HandleBytes],
+    extra_data: &[u8],
 ) -> Result<(), ProcessingError> {
-    Err(ProcessingError::Irrecoverable(anyhow!(
+    let handle = require_single_handle(handles)?;
+    let Some(extra) = parse_solana_mmr_proof_extra_data(extra_data) else {
+        return Err(public_decrypt_requires_proof(handles.len()));
+    };
+    if extra.mmr_proof_bytes.is_empty() {
+        return Err(public_decrypt_requires_proof(handles.len()));
+    }
+
+    let verifier = SolanaAclVerifier::new(host.program_id);
+    let (account_key, decoded) = fetch_encrypted_value_acl(host, extra.acl_value_key).await?;
+    dispatch_solana_public_mmr_proof(
+        &verifier,
+        account_key,
+        host.program_id,
+        &decoded.acl,
+        handle,
+        extra.proof_slot,
+        &extra.mmr_proof_bytes,
+    )
+}
+
+fn public_decrypt_requires_proof(handle_count: usize) -> ProcessingError {
+    ProcessingError::Irrecoverable(anyhow!(
         "Solana public decryption for {} handle(s) requires a PublicDecryptLeaf MMR proof, which \
-         the gateway public-decryption request does not yet carry (pending a gateway-contracts \
-         payload extension outside this workstream's scope); refusing rather than granting or \
+         the gateway public-decryption request did not carry; refusing rather than granting or \
          reading a deleted on-chain flag",
-        handles.len()
-    )))
+        handle_count
+    ))
 }
 
 fn saturating_u256_to_u64(value: U256) -> u64 {
@@ -388,8 +435,8 @@ mod tests {
     use super::*;
     use alloy::primitives::{Address, Bytes, FixedBytes};
     use connector_utils::types::solana_extra_data::{
-        SOLANA_USER_DECRYPT_DOMAIN_TAG, encode_solana_extra_data_context_only,
-        encode_solana_extra_data_mmr_proof,
+        encode_solana_extra_data_context_only, encode_solana_extra_data_mmr_proof,
+        SOLANA_USER_DECRYPT_DOMAIN_TAG,
     };
     use fhevm_gateway_bindings::decryption::{
         Decryption::{HandleEntry, SnsCiphertextMaterial, UserDecryptionRequestSolana},
@@ -694,6 +741,79 @@ mod tests {
         let verifier = SolanaAclVerifier::new(HOST);
         dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(20), &auth)
             .expect("public decrypt must authorize");
+    }
+
+    #[test]
+    fn public_decrypt_path_accepts_only_public_mode() {
+        let kp = identity_kp(12);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut l = lineage(h(20), &[owner]);
+        l.mark_public();
+        l.rotate(h(21));
+        let public_blob = proof_blob(MMR_MODE_PUBLIC, &l.proof(0));
+        let historical_blob = proof_blob(MMR_MODE_HISTORICAL, &l.proof(0));
+
+        let verifier = SolanaAclVerifier::new(HOST);
+        dispatch_solana_public_mmr_proof(
+            &verifier,
+            l.account,
+            HOST,
+            &l.acl,
+            h(20),
+            l.acl.leaf_count,
+            &public_blob,
+        )
+        .expect("public decrypt must authorize with a mode-0x02 PublicDecryptLeaf proof");
+
+        let err = dispatch_solana_public_mmr_proof(
+            &verifier,
+            l.account,
+            HOST,
+            &l.acl,
+            h(20),
+            l.acl.leaf_count,
+            &historical_blob,
+        )
+        .expect_err("public decrypt must reject mode-0x01 proof blobs");
+        assert!(matches!(err, ProcessingError::Irrecoverable(_)));
+    }
+
+    #[test]
+    fn public_decrypt_path_rejects_rotated_or_non_public_handle() {
+        let kp = identity_kp(12);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut public_lineage = lineage(h(20), &[owner]);
+        public_lineage.mark_public();
+        public_lineage.rotate(h(21));
+        let public_blob = proof_blob(MMR_MODE_PUBLIC, &public_lineage.proof(0));
+        let verifier = SolanaAclVerifier::new(HOST);
+
+        let err = dispatch_solana_public_mmr_proof(
+            &verifier,
+            public_lineage.account,
+            HOST,
+            &public_lineage.acl,
+            h(21),
+            public_lineage.acl.leaf_count,
+            &public_blob,
+        )
+        .expect_err("a PublicDecryptLeaf for the old handle must not authorize the rotated handle");
+        assert!(matches!(err, ProcessingError::Irrecoverable(_)));
+
+        let mut non_public_lineage = lineage(h(30), &[owner]);
+        non_public_lineage.rotate(h(31));
+        let historical_leaf_blob = proof_blob(MMR_MODE_PUBLIC, &non_public_lineage.proof(0));
+        let err = dispatch_solana_public_mmr_proof(
+            &verifier,
+            non_public_lineage.account,
+            HOST,
+            &non_public_lineage.acl,
+            h(30),
+            non_public_lineage.acl.leaf_count,
+            &historical_leaf_blob,
+        )
+        .expect_err("a historical-access leaf must not authorize public decrypt");
+        assert!(matches!(err, ProcessingError::Irrecoverable(_)));
     }
 
     // (3) STALE RETRYABLE

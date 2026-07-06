@@ -21,13 +21,68 @@ CTX="${SOLANA_UD_CONTEXT_ID:-316618994008286471861326912133130998036285114320110
 # only knows THIS context, so the cert must be requested under it. The Solana host's u64 kms_context
 # id is the low-64-bits (1), which `extract_kms_context_id` derives from this same extra_data.
 EXTRA=0x010700000000000000000000000000000000000000000000000000000000000001
+PUBLIC_CONTEXT_ID="0x${EXTRA#0x01}"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 hist_field() {
   local body="$1"
   local key="$2"
   printf '%s\n' "$body" | awk -v key="$key" '$1=="HIST" && $2==key {print $3; exit}'
 }
+pub_field() {
+  local body="$1"
+  local key="$2"
+  printf '%s\n' "$body" | awk -v key="$key" '$1=="PUB" && $2==key {print $3; exit}'
+}
 LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"
+PUBLIC_DECRYPT_JSON=""
+
+run_public_decrypt_with_proof() {
+  local label="$1"
+  local handle="$2"
+  local acl="$3"
+  local expected="${4:-}"
+  local proof
+  proof="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+    PUBLIC_DECRYPT_PROOF=1 PUB_HANDLE="$handle" PUB_ACL="$acl" ./target/debug/poc-live-client 2>&1)" \
+    || fail "$label public proof: $proof"
+  echo "$proof" | grep -E 'PUB H|PUB mmrProofBytes' >/dev/null || fail "$label public proof missing fields: $proof"
+
+  local pub_h pub_encrypted_value_account pub_acl_value_key pub_peaks pub_leaf_count
+  local pub_proof_slot pub_leaf_index pub_siblings pub_mmr_proof_bytes
+  pub_h="$(pub_field "$proof" H)"
+  pub_encrypted_value_account="$(pub_field "$proof" encryptedValueAccountHex)"
+  pub_acl_value_key="$(pub_field "$proof" aclValueKey)"
+  pub_peaks="$(pub_field "$proof" peaks)"
+  pub_leaf_count="$(pub_field "$proof" leafCount)"
+  pub_proof_slot="$(pub_field "$proof" proofSlot)"
+  pub_leaf_index="$(pub_field "$proof" leafIndex)"
+  pub_siblings="$(pub_field "$proof" siblings)"
+  pub_mmr_proof_bytes="$(pub_field "$proof" mmrProofBytes)"
+  for required in pub_h pub_encrypted_value_account pub_acl_value_key pub_leaf_count pub_proof_slot pub_leaf_index pub_mmr_proof_bytes; do
+    [ -n "${!required}" ] || fail "$label public proof missing $required: $proof"
+  done
+  [ "$pub_h" = "$handle" ] || fail "$label public proof handle $pub_h != $handle"
+
+  local result
+  if [ -n "$expected" ]; then
+    result="$(cd "$ROOT/test-suite/fhevm" && \
+      PD_RELAYER_URL=http://127.0.0.1:3000 PD_HANDLE="$handle" PD_CONTEXT_ID="$PUBLIC_CONTEXT_ID" \
+      PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
+      PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
+      PD_MMR_LEAF_INDEX="$pub_leaf_index" PD_MMR_SIBLINGS="$pub_siblings" \
+      PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" PD_EXPECTED="$expected" node solana-publicdecrypt.ts 2>&1)" \
+      || fail "$label public-decrypt failed: $result"
+  else
+    result="$(cd "$ROOT/test-suite/fhevm" && \
+      PD_RELAYER_URL=http://127.0.0.1:3000 PD_HANDLE="$handle" PD_CONTEXT_ID="$PUBLIC_CONTEXT_ID" \
+      PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
+      PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
+      PD_MMR_LEAF_INDEX="$pub_leaf_index" PD_MMR_SIBLINGS="$pub_siblings" \
+      PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" node solana-publicdecrypt.ts 2>&1)" \
+      || fail "$label public-decrypt failed: $result"
+  fi
+  PUBLIC_DECRYPT_JSON="$result"
+}
 
 # Solana host identities the input client binds to (deterministic: zama-host/confidential-token
 # program ids + deployer pubkey, as bytes32). SID = RFC-021 Solana host chain id.
@@ -91,6 +146,8 @@ out="$(cd "$ROOT/solana/scripts/poc/live-client" && TRIVIAL_ENCRYPT_EVAL=1 TE_VA
 echo "$out" | grep -E 'result handle|allow_for_decryption' || fail "trivial-encrypt(eval): $out"
 H="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
 [ -n "$H" ] || fail "no handle"
+H_ACL="$(echo "$out" | grep -oE 'output ACL record [A-Za-z0-9]+' | awk '{print $4}')"
+[ -n "$H_ACL" ] || fail "no output ACL record: $out"
 VK="$(echo "$out" | grep -oE 'acl value key 0x[0-9a-f]+' | awk '{print $4}')"
 [ -n "$VK" ] || fail "no acl value key: $out"
 echo "    handle=$H"
@@ -105,15 +162,8 @@ for i in $(seq 1 30); do
 done
 
 echo "==> [public-decrypt] relayer /v2/public-decrypt"
-job="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
-  -d "{\"ciphertextHandles\":[\"$H\"],\"extraData\":\"$EXTRA\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
-for i in $(seq 1 40); do
-  r="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$job")"
-  st="$(echo "$r" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
-  [ "$st" = succeeded ] && break
-  [ "$st" = failed ] && fail "public-decrypt failed: $r"
-  [ "$i" = 40 ] && fail "public-decrypt timed out"; sleep 3
-done
+run_public_decrypt_with_proof "compute" "$H" "$H_ACL" "$VALUE"
+r="$PUBLIC_DECRYPT_JSON"
 dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 [ "$dv" = "$VALUE" ] && echo "    public-decrypt cleartext=$dv OK" || fail "public-decrypt $dv != $VALUE"
 
@@ -194,6 +244,8 @@ eout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
 echo "$eout" | grep -E 'result handle|allow_for_decryption' || fail "fhe_eval verified-input: $eout"
 RH="$(echo "$eout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
 [ -n "$RH" ] || fail "no input-flow result handle"
+RACL="$(echo "$eout" | grep -oE 'output ACL record [A-Za-z0-9]+' | awk '{print $4}')"
+[ -n "$RACL" ] || fail "no input-flow output ACL record: $eout"
 echo "    result handle=$RH"
 
 echo "==> [input-flow] wait for SNS commit (tfhe/sns-worker computes input + $ADD)"
@@ -206,15 +258,8 @@ for i in $(seq 1 30); do
 done
 
 echo "==> [input-flow] public-decrypt result"
-ejob="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
-  -d "{\"ciphertextHandles\":[\"$RH\"],\"extraData\":\"$EXTRA\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
-for i in $(seq 1 40); do
-  er="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$ejob")"
-  est="$(echo "$er" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
-  [ "$est" = succeeded ] && break
-  [ "$est" = failed ] && fail "input-flow public-decrypt failed: $er"
-  [ "$i" = 40 ] && fail "input-flow public-decrypt timed out"; sleep 3
-done
+run_public_decrypt_with_proof "input-flow" "$RH" "$RACL" "$EXPECT"
+er="$PUBLIC_DECRYPT_JSON"
 edv="$(echo "$er" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 [ "$edv" = "$EXPECT" ] && echo "    input-flow public-decrypt cleartext=$edv == $IV+$ADD OK" \
   || fail "input-flow $edv != $EXPECT"
@@ -299,16 +344,8 @@ echo "$relout" | grep -q 'OK request_disclose_amount' || fail "request_disclose_
 echo "    disclosure request witness created (KMS context pinned); handle released for public decrypt"
 
 # Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert.
-cjob="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
-  -d "{\"ciphertextHandles\":[\"$BURNED_HANDLE\"],\"extraData\":\"$EXTRA\"}" \
-  | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
-for i in $(seq 1 50); do
-  cr="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$cjob")"
-  cst="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
-  [ "$cst" = succeeded ] && break
-  [ "$cst" = failed ] && fail "burned public-decrypt failed: $cr"
-  [ "$i" = 50 ] && fail "burned public-decrypt timed out"; sleep 3
-done
+run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL"
+cr="$PUBLIC_DECRYPT_JSON"
 CLEARTEXT="$(echo "$cr" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 KMS_SIG="0x$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
 CEXTRA="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','$EXTRA'))")"

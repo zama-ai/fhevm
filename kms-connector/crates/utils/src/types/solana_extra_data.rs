@@ -182,6 +182,39 @@ pub struct SolanaUserDecryptExtraData {
     pub mmr_proof_bytes: Vec<u8>,
 }
 
+/// Parses the MMR-proof-tail `extraData` format strictly:
+/// `0x02 ‖ context_id(32) ‖ acl_value_key(32) ‖ proof_slot(8 BE) ‖ proof_len(4 BE) ‖ proof`.
+///
+/// Returns `None` unless the blob is exactly the proof-tail version and its length prefix matches
+/// the full body. Public decrypt uses this strict form because a missing or malformed proof must
+/// fail closed instead of silently routing to a no-proof path.
+pub fn parse_solana_mmr_proof_extra_data(extra_data: &[u8]) -> Option<SolanaUserDecryptExtraData> {
+    if extra_data.len() < 33 || extra_data[0] != SOLANA_EXTRA_DATA_VERSION_MMR_PROOF {
+        return None;
+    }
+    // version(1) ‖ context_id(32) ‖ acl_value_key(32) ‖ proof_slot(8 BE) ‖ len(4 BE) ‖ proof
+    if extra_data.len() < 33 + 32 + 8 + 4 {
+        return None;
+    }
+
+    let mut out = SolanaUserDecryptExtraData::default();
+    out.context_id.copy_from_slice(&extra_data[1..33]);
+
+    let mut offset = 33;
+    out.acl_value_key
+        .copy_from_slice(&extra_data[offset..offset + 32]);
+    offset += 32;
+    out.proof_slot = u64::from_be_bytes(extra_data[offset..offset + 8].try_into().ok()?);
+    offset += 8;
+    let proof_len = u32::from_be_bytes(extra_data[offset..offset + 4].try_into().ok()?) as usize;
+    offset += 4;
+    if extra_data.len() != offset + proof_len {
+        return None;
+    }
+    out.mmr_proof_bytes = extra_data[offset..].to_vec();
+    Some(out)
+}
+
 /// Parses a Solana `extraData` blob per [`SOLANA_EXTRA_DATA_VERSION_CONTEXT_ONLY`] /
 /// [`SOLANA_EXTRA_DATA_VERSION_MMR_PROOF`]. Unknown versions, and malformed `v0x02` bodies, decode
 /// as the all-zero/empty default (context-only, no proof) — the caller's dispatch on
@@ -199,31 +232,7 @@ pub fn parse_solana_user_decrypt_extra_data(extra_data: &[u8]) -> SolanaUserDecr
     if extra_data[0] != SOLANA_EXTRA_DATA_VERSION_MMR_PROOF {
         return out;
     }
-    // version(1) ‖ context_id(32) ‖ acl_value_key(32) ‖ proof_slot(8 BE) ‖ len(4 BE) ‖ proof
-    if extra_data.len() < 33 + 32 + 8 + 4 {
-        return SolanaUserDecryptExtraData {
-            context_id: out.context_id,
-            ..Default::default()
-        };
-    }
-    let mut offset = 33;
-    let mut acl_value_key = [0u8; 32];
-    acl_value_key.copy_from_slice(&extra_data[offset..offset + 32]);
-    offset += 32;
-    let proof_slot = u64::from_be_bytes(extra_data[offset..offset + 8].try_into().unwrap());
-    offset += 8;
-    let proof_len = u32::from_be_bytes(extra_data[offset..offset + 4].try_into().unwrap()) as usize;
-    offset += 4;
-    if extra_data.len() != offset + proof_len {
-        return SolanaUserDecryptExtraData {
-            context_id: out.context_id,
-            ..Default::default()
-        };
-    }
-    out.acl_value_key = acl_value_key;
-    out.proof_slot = proof_slot;
-    out.mmr_proof_bytes = extra_data[offset..].to_vec();
-    out
+    parse_solana_mmr_proof_extra_data(extra_data).unwrap_or_default()
 }
 
 /// Encodes a context-only (`v0x01`) `extraData` blob.
@@ -417,6 +426,32 @@ mod tests {
         assert_eq!(parsed.acl_value_key, value_key);
         assert_eq!(parsed.proof_slot, 42);
         assert_eq!(parsed.mmr_proof_bytes, proof);
+    }
+
+    #[test]
+    fn strict_mmr_proof_extra_data_requires_v2_and_exact_length() {
+        let ctx = [7u8; 32];
+        let value_key = [9u8; 32];
+        let proof = vec![0x01u8, 0x02, 0x03];
+        let blob = encode_solana_extra_data_mmr_proof(ctx, value_key, 42, &proof);
+
+        let parsed = parse_solana_mmr_proof_extra_data(&blob).unwrap();
+        assert_eq!(parsed.context_id, ctx);
+        assert_eq!(parsed.acl_value_key, value_key);
+        assert_eq!(parsed.proof_slot, 42);
+        assert_eq!(parsed.mmr_proof_bytes, proof);
+
+        assert!(parse_solana_mmr_proof_extra_data(&[]).is_none());
+        assert!(
+            parse_solana_mmr_proof_extra_data(&encode_solana_extra_data_context_only(ctx))
+                .is_none()
+        );
+
+        let mut trailing = blob.clone();
+        trailing.push(0);
+        assert!(parse_solana_mmr_proof_extra_data(&trailing).is_none());
+
+        assert!(parse_solana_mmr_proof_extra_data(&blob[..blob.len() - 1]).is_none());
     }
 
     #[test]

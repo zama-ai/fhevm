@@ -110,7 +110,8 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 
 /// Resolve the KMS context id a public-decrypt certificate is bound to, mirroring the EVM
 /// gateway `_extractContextId`: empty or version-0 `extra_data` selects the current context;
-/// version 1 carries a big-endian context id in `extra_data[1..33]`. Because the KMS signs over
+/// versions 1 and 2 carry a big-endian context id in `extra_data[1..33]` (v2 appends a Solana
+/// MMR-proof tail that is ignored here). Because the KMS signs over
 /// `extra_data`, the returned id is authenticated by the certificate, so a cert minted under
 /// context N cannot be verified against a different context after a rotation. Returns `None` for
 /// an unsupported version or a short version-1 payload.
@@ -124,7 +125,10 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: u64) -> Option<u64> {
     match extra_data.first() {
         None | Some(0) => Some(current_context_id),
-        Some(1) => {
+        // Version 1 (context tail) and version 2 (context + Solana MMR-proof tail) both carry the
+        // context id in `extra_data[1..33]`; v2 just appends proof bytes a public-decrypt cert is
+        // signed over. Read the id at the shared offset and ignore any trailing proof bytes.
+        Some(1) | Some(2) => {
             let id_bytes = extra_data.get(1..33)?;
             // On-chain kms_context is keyed by the low-64-bit id; the high bytes carry the
             // protocol context's chain-type tag (e.g. 0x07 for the Solana host) and are not
@@ -338,8 +342,17 @@ mod tests {
         assert_eq!(extract_kms_context_id(&tagged, 7), Some(1));
         // Version 1 with a short payload -> rejected.
         assert_eq!(extract_kms_context_id(&[1u8, 0, 0], 7), None);
-        // Unsupported version -> rejected.
+        // Version 2 (context + MMR-proof tail) reads the id at the same [1..33] offset and ignores
+        // the trailing proof bytes. A public-decrypt cert signed over a v2 blob still binds context.
+        let mut v2 = vec![2u8];
+        v2.extend_from_slice(&[0u8; 24]);
+        v2.extend_from_slice(&42u64.to_be_bytes());
+        v2.extend_from_slice(&[0xABu8; 40]); // trailing acl_value_key/proof_slot/mmr bytes, ignored
+        assert_eq!(extract_kms_context_id(&v2, 7), Some(42));
+        // A bare version-2 byte (no context id) is still a short payload -> rejected.
         assert_eq!(extract_kms_context_id(&[2u8], 7), None);
+        // Unsupported version -> rejected.
+        assert_eq!(extract_kms_context_id(&[3u8], 7), None);
     }
 
     #[test]

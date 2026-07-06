@@ -21,6 +21,7 @@ use solana_keypair::{read_keypair_file, Keypair};
 const EVENT_AUTHORITY_SEED: &[u8] = b"__event_authority";
 const HISTORICAL_LABEL_MARKER: u8 = 3;
 const MMR_MODE_HISTORICAL: u8 = 0x01;
+const MMR_MODE_PUBLIC: u8 = 0x02;
 
 type LineageState = ([u8; 32], Vec<Pubkey>);
 
@@ -82,6 +83,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // HISTORICAL_STEP=supersede rotates the same lineage and prints the historical MMR proof.
     if let Ok(step) = std::env::var("HISTORICAL_STEP") {
         historical_supersede_step(&host, &payer, host_config, &step)?;
+        return Ok(());
+    }
+
+    // PUBLIC_DECRYPT_PROOF emits a mode-0x02 PublicDecryptLeaf MMR proof for a handle already
+    // released by make_handle_public. Inputs: PUB_HANDLE and either PUB_ACL or PUB_ACL_VALUE_KEY.
+    if std::env::var("PUBLIC_DECRYPT_PROOF").is_ok() {
+        public_decrypt_proof_step(&host)?;
         return Ok(());
     }
 
@@ -237,6 +245,29 @@ fn fetch_encrypted_value(
     let account = program.rpc().get_account(&encrypted_value)?;
     let mut data: &[u8] = &account.data;
     Ok(zama_host::EncryptedValue::try_deserialize(&mut data)?)
+}
+
+fn bytes32_env(name: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+    Ok(hexdec(&std::env::var(name)?).try_into().map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{name} must be 32 bytes"),
+        )
+    })?)
+}
+
+fn public_proof_encrypted_value_from_env() -> Result<Pubkey, Box<dyn std::error::Error>> {
+    if let Ok(account) = std::env::var("PUB_ACL") {
+        return Ok(Pubkey::from_str(&account)?);
+    }
+    if std::env::var("PUB_ACL_VALUE_KEY").is_ok() {
+        return Ok(zama_host::encrypted_value_address(bytes32_env("PUB_ACL_VALUE_KEY")?).0);
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "PUBLIC_DECRYPT_PROOF requires PUB_ACL or PUB_ACL_VALUE_KEY",
+    )
+    .into())
 }
 
 fn existing_lineage_state(
@@ -538,9 +569,98 @@ fn build_historical_access_proof(
         .into());
     }
 
-    let mut proof_bytes = vec![MMR_MODE_HISTORICAL];
-    proof_bytes.extend_from_slice(&borsh::to_vec(&proof)?);
+    let proof_bytes = proof_blob(MMR_MODE_HISTORICAL, &proof)?;
     Ok((proof, proof_bytes))
+}
+
+fn proof_blob(
+    mode: u8,
+    proof: &zama_solana_acl::MmrProof,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut proof_bytes = vec![mode];
+    proof_bytes.extend_from_slice(&borsh::to_vec(proof)?);
+    Ok(proof_bytes)
+}
+
+fn locate_public_decrypt_leaf_index(
+    encrypted_value_account: [u8; 32],
+    leaves: &[[u8; 32]],
+    handle: [u8; 32],
+) -> Option<u64> {
+    leaves.iter().enumerate().find_map(|(index, leaf)| {
+        let index = index as u64;
+        let public_leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, index, handle);
+        (*leaf == public_leaf).then_some(index)
+    })
+}
+
+fn build_public_decrypt_proof(
+    encrypted_value_account: [u8; 32],
+    value_account: &zama_host::EncryptedValue,
+    handle: [u8; 32],
+) -> Result<(zama_solana_acl::MmrProof, Vec<u8>), Box<dyn std::error::Error>> {
+    let events = [zama_solana_acl::LineageEvent::MarkedPublic { handle }];
+    let reconstructed =
+        zama_solana_acl::reconstruct(encrypted_value_account, &events).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("failed to reconstruct public-decrypt lineage: {e:?}"),
+            )
+        })?;
+    let leaf_index =
+        locate_public_decrypt_leaf_index(encrypted_value_account, &reconstructed.leaves, handle)
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "failed to locate PublicDecryptLeaf in reconstructed lineage",
+                )
+            })?;
+    let proof = reconstructed
+        .build_verified_proof(&value_account.peaks, value_account.leaf_count, leaf_index)
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("public-decrypt lineage reconstruction diverged from live account: {e:?}"),
+            )
+        })?;
+    let shared = value_account.to_shared();
+    zama_solana_acl::authorize_public(encrypted_value_account, &shared, handle, &proof).map_err(
+        |e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("public-decrypt MMR proof did not verify against live lineage: {e:?}"),
+            )
+        },
+    )?;
+    let proof_bytes = proof_blob(MMR_MODE_PUBLIC, &proof)?;
+    Ok((proof, proof_bytes))
+}
+
+fn public_decrypt_proof_step(
+    host: &Program<Rc<Keypair>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let handle = bytes32_env("PUB_HANDLE")?;
+    let encrypted_value = public_proof_encrypted_value_from_env()?;
+    let value_account = fetch_encrypted_value(host, encrypted_value)?;
+    let value_key = value_account.value_key();
+    let (proof, proof_bytes) =
+        build_public_decrypt_proof(encrypted_value.to_bytes(), &value_account, handle)?;
+
+    println!("PUB H 0x{}", hex(&handle));
+    println!("PUB encryptedValueAccount {encrypted_value}");
+    println!(
+        "PUB encryptedValueAccountHex 0x{}",
+        hex(&encrypted_value.to_bytes())
+    );
+    println!("PUB aclValueKey 0x{}", hex(&value_key));
+    println!("PUB peaks {}", hex_csv(&value_account.peaks));
+    println!("PUB leafCount {}", value_account.leaf_count);
+    println!("PUB proofSlot {}", value_account.leaf_count);
+    println!("PUB leafIndex {}", proof.leaf_index);
+    println!("PUB siblings {}", hex_csv(&proof.siblings));
+    println!("PUB mmrProofBytes 0x{}", hex(&proof_bytes));
+    Ok(())
 }
 
 fn historical_supersede_step(
@@ -747,6 +867,7 @@ fn fhe_eval_verified_input_add(
         .map(|b| format!("{b:02x}"))
         .collect();
     println!("  output ACL record {output_encrypted_value}");
+    println!("  acl value key 0x{}", hex(&value_account.value_key()));
     println!("  result handle 0x{handle_hex}  (tfhe-worker materializes input + {addend})");
 
     if std::env::var("TE_ALLOW").is_ok() {
@@ -1502,5 +1623,79 @@ mod tests {
         assert!(zama_solana_acl::mmr_verify(
             &peaks, leaf_count, leaf, &proof
         ));
+    }
+
+    #[test]
+    fn public_decrypt_proof_for_made_public_handle_verifies() {
+        let encrypted_value_account = [0xAC; 32];
+        let handle = [0x20; 32];
+        let events = [zama_solana_acl::LineageEvent::MarkedPublic { handle }];
+        let reconstructed = zama_solana_acl::reconstruct(encrypted_value_account, &events).unwrap();
+        let proof = reconstructed.build_proof(0).unwrap();
+        let mut value = zama_solana_acl::EncryptedValue {
+            current_handle: handle,
+            leaf_count: reconstructed.leaf_count,
+            peaks: reconstructed.peaks.clone(),
+            ..Default::default()
+        };
+        value.subjects = vec![[0x01; 32]];
+        let host_value = zama_host::EncryptedValue {
+            acl_domain_key: Pubkey::new_from_array(value.acl_domain_key),
+            app_account: Pubkey::new_from_array(value.app_account),
+            encrypted_value_label: value.encrypted_value_label,
+            current_handle: value.current_handle,
+            subjects: value
+                .subjects
+                .iter()
+                .copied()
+                .map(Pubkey::new_from_array)
+                .collect(),
+            subject_roles: vec![zama_host::ACL_ROLE_USE],
+            leaf_count: value.leaf_count,
+            peaks: value.peaks.clone(),
+            bump: value.bump,
+        };
+
+        let (built, proof_bytes) =
+            build_public_decrypt_proof(encrypted_value_account, &host_value, handle).unwrap();
+        assert_eq!(built, proof);
+        assert_eq!(proof_bytes[0], MMR_MODE_PUBLIC);
+        assert!(
+            zama_solana_acl::authorize_public(encrypted_value_account, &value, handle, &built)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn historical_leaf_is_rejected_by_public_verify() {
+        let encrypted_value_account = [0xAC; 32];
+        let old_handle = [0x10; 32];
+        let subject = [0x01; 32];
+        let historical_leaf = zama_solana_acl::historical_access_leaf_commitment(
+            encrypted_value_account,
+            0,
+            old_handle,
+            subject,
+        );
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0;
+        zama_solana_acl::mmr_append(&mut peaks, &mut leaf_count, historical_leaf).unwrap();
+        let proof = zama_solana_acl::mmr_build_proof(&[historical_leaf], 0).unwrap();
+        let proof_bytes = proof_blob(MMR_MODE_HISTORICAL, &proof).unwrap();
+        let value = zama_solana_acl::EncryptedValue {
+            current_handle: [0x11; 32],
+            leaf_count,
+            peaks,
+            ..Default::default()
+        };
+
+        assert_eq!(proof_bytes[0], MMR_MODE_HISTORICAL);
+        assert!(zama_solana_acl::authorize_public(
+            encrypted_value_account,
+            &value,
+            old_handle,
+            &proof
+        )
+        .is_err());
     }
 }

@@ -1,9 +1,9 @@
 use crate::core::event_processor::{
-    KmsClient, ProcessingError, RequestCheckError,
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
     protocol_config::ProtocolConfigProcessor,
+    KmsClient, ProcessingError, RequestCheckError,
 };
 use alloy::providers::Provider;
 use anyhow::anyhow;
@@ -130,7 +130,10 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         match &event.kind {
             ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
-                    .check_ciphertexts_allowed_for_public_decryption(&req.snsCtMaterials)
+                    .check_ciphertexts_allowed_for_public_decryption(
+                        &req.snsCtMaterials,
+                        &req.extraData,
+                    )
                     .await
                     .map_err(RequestCheckError::record)?;
 
