@@ -58,11 +58,11 @@ Once the DAO vote passes and the proposal executes, the on-chain `proposeCoproce
 
 ## Local rehearsal
 
-For dry runs or development:
+For dry runs or development, run the `task:prepareCoprocessorUpgrade` hardhat task directly:
 
 ```sh
 cd host-contracts
-npm run prepare-coprocessor-upgrade -- \
+npx hardhat task:prepareCoprocessorUpgrade \
   --environment testnet \
   --start-time "$(date -u -v+2H '+%Y-%m-%dT%H:%M:%SZ')" \
   --duration 30m \
@@ -71,8 +71,28 @@ npm run prepare-coprocessor-upgrade -- \
   --software-version v0.14.0
 ```
 
-Output and calldata are identical to the workflow run. `--help` prints the full flag reference.
+Output and calldata are identical to the workflow run. The task exits non-zero (and prints the
+calldata for inspection) if any chain's `startBlock` is closer to its tip than `--buffer`.
+`npx hardhat help task:prepareCoprocessorUpgrade` prints the full flag reference.
+
+## Direct (no-DAO) path — devnet / test-suite
+
+On devnet or the test-suite the deployer key owns the host `ProtocolConfig`, so the proposal can be
+broadcast directly instead of going through the DAO. `task:proposeCoprocessorUpgrade` runs the same
+build step and then sends the byte-identical calldata with `DEPLOYER_PRIVATE_KEY` — the sibling of the
+KMS-context `task:defineNewKmsContextAndEpoch` broadcast. It sends to the host `ProtocolConfig` on the
+network passed via `--network`; resolve the address from `PROTOCOL_CONFIG_CONTRACT_ADDRESS` or pass
+`--use-internal-proxy-address` to read it from the `addresses/` directory.
+
+```sh
+cd host-contracts
+DEPLOYER_PRIVATE_KEY=0x... npx hardhat --network sepolia task:proposeCoprocessorUpgrade \
+  --environment devnet \
+  --start-time "$(date -u -v+2H '+%Y-%m-%dT%H:%M:%SZ')" \
+  --duration 30m --buffer 1h --proposal-id 1 --software-version v0.14.0 \
+  --use-internal-proxy-address
+```
 
 ## Chain set reference
 
-Chain IDs, block times, and RPC env-var names per environment live in [`scripts/utils/environments.ts`](./utils/environments.ts). New chains are added by appending to the relevant environment's `chains` array.
+Chain IDs, block times, and RPC env-var names per environment live in [`tasks/utils/environments.ts`](../tasks/utils/environments.ts). New chains are added by appending to the relevant environment's `chains` array. The task logic lives in [`tasks/prepareCoprocessorUpgrade.ts`](../tasks/prepareCoprocessorUpgrade.ts) and [`tasks/utils/coprocessorUpgradeProposal.ts`](../tasks/utils/coprocessorUpgradeProposal.ts).

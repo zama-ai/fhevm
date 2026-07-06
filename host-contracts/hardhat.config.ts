@@ -20,6 +20,7 @@ import './tasks/generateKmsMaterials';
 import './tasks/kmsContext';
 import './tasks/ownership';
 import './tasks/pauseContracts';
+import './tasks/prepareCoprocessorUpgrade';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
 import './tasks/upgradeContracts';

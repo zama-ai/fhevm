@@ -1,12 +1,5 @@
-#!/usr/bin/env -S node --enable-source-maps --no-warnings
-
-/* eslint-disable no-console */
-//
-// Computes calldata for `proposeCoprocessorUpgrade(...)`. Run with `--help`
-// for the full flag reference; see scripts/RUNBOOK.md for the workflow path.
-// To add a new chain or environment, edit scripts/utils/environments.ts.
 import { JsonRpcProvider, ethers } from 'ethers';
-import { parseArgs } from 'node:util';
+import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import {
   type BlockWindowResult,
@@ -17,22 +10,21 @@ import {
   computeBlockWindow,
   parseDurationToSeconds,
   parseIsoTimestampToEpochSeconds,
-} from './utils/blockWindow';
-import { ENVIRONMENTS, SUPPORTED_ENVIRONMENTS } from './utils/environments';
+} from './blockWindow';
+import { ENVIRONMENTS, SUPPORTED_ENVIRONMENTS } from './environments';
+import { getRequiredEnvVar } from './loadVariables';
 
-// Pinned ABI fragment for proposeCoprocessorUpgrade — kept inline so the script
-// has no compile-time dependency on the typechain bindings (which require a
-// prior `hardhat compile`). Keep this in sync with IProtocolConfig.sol.
-const PROPOSE_UPGRADE_ABI = [
+// Pinned inline so the util needs no typechain compile and encodes from tests without hre. Keep in sync with IProtocolConfig.sol.
+export const PROPOSE_UPGRADE_ABI = [
   'function proposeCoprocessorUpgrade(uint256 proposalId, string softwareVersion, tuple(uint64 chainId, uint64 startBlock, uint64 endBlock)[] chainUpgradeWindows, uint64 gwStartBlock)',
 ];
 
-interface GatewayConfig {
+export interface GatewayConfig {
   rpcUrl: string;
   fallbackBlockTimeSeconds: number;
 }
 
-interface ScriptInputs {
+export interface CoprocessorUpgradeInputs {
   environment: string;
   startEpochSeconds: number;
   durationSeconds: number;
@@ -43,7 +35,7 @@ interface ScriptInputs {
   softwareVersion: string;
 }
 
-interface HostReport {
+export interface HostReport {
   chainId: number;
   rpcUrl: string;
   result: BlockWindowResult;
@@ -51,29 +43,41 @@ interface HostReport {
   driftWarn: boolean;
 }
 
-interface GatewayReport {
+export interface GatewayReport {
   rpcUrl: string;
   result: BlockWindowResult;
   bufferOk: boolean;
   driftWarn: boolean;
 }
 
-function fail(message: string): never {
-  console.error(`error: ${message}`);
-  process.exit(1);
+export interface CoprocessorUpgradeProposal {
+  inputs: CoprocessorUpgradeInputs;
+  host: HostReport[];
+  gateway: GatewayReport;
+  calldata: string;
+}
+
+// Raw string params from the task/workflow, before validation.
+export interface RawCoprocessorUpgradeParams {
+  environment: string;
+  startTime: string;
+  duration: string;
+  buffer: string;
+  proposalId: string;
+  softwareVersion: string;
 }
 
 function resolveEnvRpc(envName: string, label: string, defaultRpcUrl?: string): string {
   const value = process.env[envName];
   if (value) return value;
   if (defaultRpcUrl) return defaultRpcUrl;
-  fail(`env var ${envName} (RPC URL for ${label}) is not set`);
+  throw new Error(`env var ${envName} (RPC URL for ${label}) is not set`);
 }
 
-function resolveEnvironment(name: string): { chains: ChainConfig[]; gateway: GatewayConfig } {
+export function resolveEnvironment(name: string): { chains: ChainConfig[]; gateway: GatewayConfig } {
   const def = ENVIRONMENTS[name];
   if (!def) {
-    fail(`--environment must be one of: ${SUPPORTED_ENVIRONMENTS.join(', ')}`);
+    throw new Error(`--environment must be one of: ${SUPPORTED_ENVIRONMENTS.join(', ')}`);
   }
   const chains = def.chains.map((c) => ({
     chainId: c.chainId,
@@ -87,110 +91,43 @@ function resolveEnvironment(name: string): { chains: ChainConfig[]; gateway: Gat
   return { chains, gateway };
 }
 
-function printHelp(): void {
-  const envList = SUPPORTED_ENVIRONMENTS.join(' | ');
-  const rows: string[] = [];
-  for (const [name, def] of Object.entries(ENVIRONMENTS)) {
-    const chainBits = def.chains.map((c) => `${c.label} (chainId=${c.chainId}, $${c.rpcUrlEnv})`).join(', ');
-    rows.push(`    ${name.padEnd(8)}${chainBits}, gateway $${def.gateway.rpcUrlEnv}`);
-  }
+// Validate + parse raw params into typed inputs, resolving env RPC URLs. Throws on bad/missing input.
+export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams): CoprocessorUpgradeInputs {
+  const { chains: hostChains, gateway } = resolveEnvironment(raw.environment);
 
-  console.log(`Usage: prepare-coprocessor-upgrade --environment ENV \\
-                                --start-time ISO --duration D --buffer D \\
-                                --proposal-id N --software-version V
-
-Computes block windows for \`proposeCoprocessorUpgrade(...)\` across the host
-chains + gateway of the chosen environment, then ABI-encodes ready-to-submit
-DAO calldata.
-
-Required flags:
-  --environment         One of: ${envList}. Selects the chain set + the
-                        RPC env-var names the script reads. See env table below.
-  --start-time          ISO 8601 timestamp (UTC) the evaluation window should
-                        begin. Example: 2026-07-01T12:00:00Z
-  --duration            Window length. Format: 30s, 30m, 2h, 1d, or a bare
-                        integer (seconds).
-  --buffer              DAO lead time required between "now" and startBlock.
-                        Same format as --duration. The run exits non-zero if
-                        any chain's startBlock is closer to its tip than this.
-  --proposal-id         Positive integer (decimal or 0x-hex). Contract rejects 0.
-  --software-version    Coprocessor software version string, e.g. v0.14.0.
-
-Other:
-  -h, --help            Show this message and exit.
-
-Environments and the env vars they consume (set these before running):
-${rows.join('\n')}
-
-Exit codes:
-  0  All chains satisfied the buffer; calldata is safe to submit.
-  1  Input validation failed (missing flag, unknown environment, RPC env unset).
-  2  DAO buffer violated on one or more chains. Calldata is still printed for
-     inspection but should NOT be submitted.
-
-See scripts/RUNBOOK.md for the full reference.`);
-}
-
-function parseInputs(): ScriptInputs {
-  const { values } = parseArgs({
-    options: {
-      environment: { type: 'string' },
-      'start-time': { type: 'string' },
-      duration: { type: 'string' },
-      buffer: { type: 'string' },
-      'proposal-id': { type: 'string' },
-      'software-version': { type: 'string' },
-      help: { type: 'boolean', short: 'h' },
-    },
-    strict: true,
-    allowPositionals: false,
-  });
-
-  if (values.help) {
-    printHelp();
-    process.exit(0);
-  }
-
-  const req = (key: string): string => {
-    const v = values[key as keyof typeof values];
-    if (typeof v !== 'string' || v === '') {
-      fail(`--${key} is required`);
-    }
-    return v;
-  };
-
-  const environment = req('environment');
-  const { chains: hostChains, gateway } = resolveEnvironment(environment);
-
-  const startEpochSeconds = parseIsoTimestampToEpochSeconds(req('start-time'));
-  const durationSeconds = parseDurationToSeconds(req('duration'));
-  const bufferSeconds = parseDurationToSeconds(req('buffer'));
+  const startEpochSeconds = parseIsoTimestampToEpochSeconds(raw.startTime);
+  const durationSeconds = parseDurationToSeconds(raw.duration);
+  const bufferSeconds = parseDurationToSeconds(raw.buffer);
 
   let proposalId: bigint;
   try {
-    proposalId = BigInt(req('proposal-id'));
+    proposalId = BigInt(raw.proposalId);
   } catch {
-    fail(`--proposal-id must be an integer (decimal or 0x-hex)`);
+    throw new Error('--proposal-id must be an integer (decimal or 0x-hex)');
   }
   if (proposalId <= 0n) {
-    fail('--proposal-id must be > 0 (contract rejects 0)');
+    throw new Error('--proposal-id must be > 0 (contract rejects 0)');
   }
 
-  const softwareVersion = req('software-version');
+  if (raw.softwareVersion.trim() === '') {
+    throw new Error('--software-version is required');
+  }
 
   return {
-    environment,
+    environment: raw.environment,
     startEpochSeconds,
     durationSeconds,
     bufferSeconds,
     hostChains,
     gateway,
     proposalId,
-    softwareVersion,
+    softwareVersion: raw.softwareVersion,
   };
 }
 
-async function gatherWindows(inputs: ScriptInputs): Promise<{ host: HostReport[]; gateway: GatewayReport }> {
+async function gatherWindows(
+  inputs: CoprocessorUpgradeInputs,
+): Promise<{ host: HostReport[]; gateway: GatewayReport }> {
   const host: HostReport[] = [];
   for (const chain of inputs.hostChains) {
     const provider = new JsonRpcProvider(chain.rpcUrl);
@@ -237,6 +174,57 @@ async function gatherWindows(inputs: ScriptInputs): Promise<{ host: HostReport[]
   return { host, gateway };
 }
 
+// Pure ABI encoder (no RPC); exported for decode round-trip tests.
+export function encodeProposeCoprocessorUpgrade(
+  inputs: CoprocessorUpgradeInputs,
+  reports: { host: HostReport[]; gateway: GatewayReport },
+): string {
+  const iface = new ethers.Interface(PROPOSE_UPGRADE_ABI);
+  const windows = reports.host.map((r) => ({
+    chainId: BigInt(r.chainId),
+    startBlock: BigInt(r.result.startBlock),
+    endBlock: BigInt(r.result.endBlock),
+  }));
+  return iface.encodeFunctionData('proposeCoprocessorUpgrade', [
+    inputs.proposalId,
+    inputs.softwareVersion,
+    windows,
+    BigInt(reports.gateway.result.startBlock),
+  ]);
+}
+
+// Gather windows (real RPC) + encode calldata. Buffer failures surface via `bufferViolations`, not thrown.
+export async function buildCoprocessorUpgradeProposal(
+  inputs: CoprocessorUpgradeInputs,
+): Promise<CoprocessorUpgradeProposal> {
+  const reports = await gatherWindows(inputs);
+  const calldata = encodeProposeCoprocessorUpgrade(inputs, reports);
+  return { inputs, host: reports.host, gateway: reports.gateway, calldata };
+}
+
+// Names the chains (and/or gateway) whose startBlock is closer to the tip than the requested DAO buffer.
+export function bufferViolations(proposal: CoprocessorUpgradeProposal): string[] {
+  const failures: string[] = [];
+  for (const r of proposal.host) {
+    if (!r.bufferOk) failures.push(`chain ${r.chainId}`);
+  }
+  if (!proposal.gateway.bufferOk) failures.push('gateway');
+  return failures;
+}
+
+// No-DAO path (devnet/test-suite where the deployer owns ProtocolConfig): broadcast the byte-identical
+// calldata with the deployer key to `target` on `--network`. Sibling of executeUpgradeProposal. Returns tx hash.
+export async function executeCoprocessorUpgradeProposal(
+  hre: HardhatRuntimeEnvironment,
+  proposal: CoprocessorUpgradeProposal,
+  target: string,
+): Promise<string> {
+  const deployer = new hre.ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(hre.ethers.provider);
+  const tx = await deployer.sendTransaction({ to: target, data: proposal.calldata });
+  await tx.wait();
+  return tx.hash;
+}
+
 function isoUtc(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toISOString();
 }
@@ -264,11 +252,8 @@ function bufferShortageHint(leadSeconds: number, bufferSeconds: number): string 
   return `lead ${formatDuration(lead)}, need ${formatDuration(bufferSeconds)}, short by ${formatDuration(shortBy)}`;
 }
 
-function printSummary(
-  inputs: ScriptInputs,
-  reports: { host: HostReport[]; gateway: GatewayReport },
-  calldata: string,
-): void {
+export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProposal): void {
+  const { inputs } = proposal;
   console.log('# proposeCoprocessorUpgrade — computed block windows');
   console.log('');
   console.log(`Environment        : ${inputs.environment}`);
@@ -283,7 +268,7 @@ function printSummary(
   );
   console.log('');
   console.log('## Host chains');
-  for (const report of reports.host) {
+  for (const report of proposal.host) {
     console.log(`  chainId=${report.chainId}`);
     console.log(`    rpc            : ${report.rpcUrl}`);
     console.log(
@@ -310,30 +295,30 @@ function printSummary(
   }
   console.log('');
   console.log('## Gateway');
-  console.log(`  rpc              : ${reports.gateway.rpcUrl}`);
+  console.log(`  rpc              : ${proposal.gateway.rpcUrl}`);
   console.log(
-    `  tip              : block ${reports.gateway.result.currentTipBlock} @ ${isoUtc(reports.gateway.result.currentTipTimestamp)}`,
+    `  tip              : block ${proposal.gateway.result.currentTipBlock} @ ${isoUtc(proposal.gateway.result.currentTipTimestamp)}`,
   );
-  console.log(`  block time       : ${formatBlockTime(reports.gateway.result.effectiveBlockTimeSeconds)}`);
+  console.log(`  block time       : ${formatBlockTime(proposal.gateway.result.effectiveBlockTimeSeconds)}`);
   console.log(
-    `  gwStartBlock     : ${reports.gateway.result.startBlock} (estimated ${isoUtc(reports.gateway.result.startBlockEstimatedTimestamp)}, skew ${reports.gateway.result.startSkewSeconds >= 0 ? '+' : ''}${reports.gateway.result.startSkewSeconds}s)`,
+    `  gwStartBlock     : ${proposal.gateway.result.startBlock} (estimated ${isoUtc(proposal.gateway.result.startBlockEstimatedTimestamp)}, skew ${proposal.gateway.result.startSkewSeconds >= 0 ? '+' : ''}${proposal.gateway.result.startSkewSeconds}s)`,
   );
-  if (!reports.gateway.bufferOk) {
+  if (!proposal.gateway.bufferOk) {
     console.log(
-      `  buffer           : NO — ${bufferShortageHint(bufferLeadSeconds(reports.gateway.result), inputs.bufferSeconds)}`,
+      `  buffer           : NO — ${bufferShortageHint(bufferLeadSeconds(proposal.gateway.result), inputs.bufferSeconds)}`,
     );
   }
-  if (reports.gateway.result.usedFallback) {
+  if (proposal.gateway.result.usedFallback) {
     console.log(`  WARN             : block-time sampling failed; used configured fallback`);
   }
-  if (reports.gateway.driftWarn) {
+  if (proposal.gateway.driftWarn) {
     console.log(`  WARN             : observed block time drifted >20% from fallback`);
   }
   console.log('');
   console.log('## Cross-chain alignment');
   const allStarts = [
-    ...reports.host.map((r) => ({ label: `chain ${r.chainId}`, ts: r.result.startBlockEstimatedTimestamp })),
-    { label: 'gateway', ts: reports.gateway.result.startBlockEstimatedTimestamp },
+    ...proposal.host.map((r) => ({ label: `chain ${r.chainId}`, ts: r.result.startBlockEstimatedTimestamp })),
+    { label: 'gateway', ts: proposal.gateway.result.startBlockEstimatedTimestamp },
   ];
   const minStart = Math.min(...allStarts.map((s) => s.ts));
   const maxStart = Math.max(...allStarts.map((s) => s.ts));
@@ -345,43 +330,5 @@ function printSummary(
   }
   console.log('');
   console.log('## Calldata');
-  console.log(calldata);
+  console.log(proposal.calldata);
 }
-
-function encodeCalldata(inputs: ScriptInputs, reports: { host: HostReport[]; gateway: GatewayReport }): string {
-  const iface = new ethers.Interface(PROPOSE_UPGRADE_ABI);
-  const windows = reports.host.map((r) => ({
-    chainId: BigInt(r.chainId),
-    startBlock: BigInt(r.result.startBlock),
-    endBlock: BigInt(r.result.endBlock),
-  }));
-  return iface.encodeFunctionData('proposeCoprocessorUpgrade', [
-    inputs.proposalId,
-    inputs.softwareVersion,
-    windows,
-    BigInt(reports.gateway.result.startBlock),
-  ]);
-}
-
-async function main(): Promise<void> {
-  const inputs = parseInputs();
-  const reports = await gatherWindows(inputs);
-  const calldata = encodeCalldata(inputs, reports);
-
-  printSummary(inputs, reports, calldata);
-
-  const bufferFailures: string[] = [];
-  for (const r of reports.host) {
-    if (!r.bufferOk) bufferFailures.push(`chain ${r.chainId}`);
-  }
-  if (!reports.gateway.bufferOk) bufferFailures.push('gateway');
-  if (bufferFailures.length > 0) {
-    console.error(`\nerror: DAO buffer violated for: ${bufferFailures.join(', ')}`);
-    process.exit(2);
-  }
-}
-
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});

@@ -1,4 +1,4 @@
-// Registry of supported environments for `prepareCoprocessorUpgrade.ts`.
+// Registry of supported environments for the `task:prepareCoprocessorUpgrade` hardhat task.
 //
 // To add a new chain to an existing environment: append to that environment's
 // `chains` array. To add a new environment: add a top-level key with `chains`

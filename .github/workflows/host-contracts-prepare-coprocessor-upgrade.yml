@@ -1,11 +1,11 @@
 # Manually-triggered helper for operators preparing a `proposeCoprocessorUpgrade`
-# DAO call. Runs `scripts/prepareCoprocessorUpgrade.ts` against the chosen
-# environment's real RPC URLs (stored as repo secrets) and emits the report +
-# ABI-encoded calldata to the workflow log.
+# DAO call. Runs the `task:prepareCoprocessorUpgrade` hardhat task against the
+# chosen environment's real RPC URLs (stored as repo secrets) and emits the report
+# + ABI-encoded calldata to the workflow log.
 #
 # The chain set per environment lives in
-# scripts/utils/environments.ts (`ENVIRONMENTS`). This workflow only wires the
-# per-env secrets to the env vars the script expects.
+# tasks/utils/environments.ts (`ENVIRONMENTS`). This workflow only wires the
+# per-env secrets to the env vars the task expects.
 #
 # Required repo secrets:
 #   For environment=devnet:
@@ -106,7 +106,7 @@ jobs:
           PROPOSAL_ID: ${{ inputs.proposal-id }}
           SOFTWARE_VERSION: ${{ inputs.software-version }}
         run: |
-          npm run --silent prepare-coprocessor-upgrade -- \
+          npx hardhat task:prepareCoprocessorUpgrade \
             --environment "$ENVIRONMENT" \
             --start-time "$START_TIME" \
             --duration "$DURATION" \
