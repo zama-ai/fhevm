@@ -124,7 +124,7 @@ async fn run_uploader_loop(
                     continue;
                 }
 
-                let mut trx = pool.begin().await?;
+                let mut trx = fhevm_engine_common::versioning::begin_guarded_pool(&pool).await?;
 
                 let item = match job {
                     UploadJob::Normal(item) => {
@@ -967,7 +967,7 @@ async fn fetch_pending_uploads(
         if row_incomplete || should_verify_existing_s3 {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts WHERE handle = $1;",
-                handle
+                handle,
             )
             .fetch_optional(db_pool)
             .await
@@ -989,7 +989,7 @@ async fn fetch_pending_uploads(
         if has_ct128_ciphertext && (row_incomplete || should_verify_existing_s3) {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1;",
-                handle
+                handle,
             )
             .fetch_optional(db_pool)
             .await

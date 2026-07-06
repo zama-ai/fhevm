@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO handle_bridged_events\n                        (src_handle, dst_handle, dst_chain_id, receiver_dapp,\n                         guid, block_number, block_hash, transaction_id)\n                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n                     ON CONFLICT (dst_handle, block_hash) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c5303fc6e4044de3eca50948ffa9d9a07205ea33edb9e2aa80ef8dcc6cb98fc7"
+}

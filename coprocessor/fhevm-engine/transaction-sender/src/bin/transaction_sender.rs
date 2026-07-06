@@ -147,6 +147,10 @@ struct Conf {
 
     #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
     pub gauge_update_interval_secs: u64,
+
+    /// Print the compiled-in coprocessor stack version and exit.
+    #[arg(long)]
+    pub stack_version: bool,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -164,6 +168,7 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 }
 
 fn parse_args() -> Conf {
+    fhevm_engine_common::handle_stack_version_flag();
     let args = Conf::parse();
     // Set global configs from args
     let _ = telemetry::HOST_TXN_LATENCY_CONFIG.set(args.metric_host_txn_latency);
@@ -296,7 +301,7 @@ async fn main() -> anyhow::Result<()> {
     let gateway_provider =
         NonceManagedProvider::new(gateway_provider, Some(wallet.default_signer().address()));
 
-    let config = ConfigSettings {
+    let mut config = ConfigSettings {
         verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
         add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
         verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
@@ -313,9 +318,29 @@ async fn main() -> anyhow::Result<()> {
         health_check_timeout: conf.health_check_timeout,
         gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
         graceful_shutdown_timeout: conf.graceful_shutdown_timeout,
+        // Auto-detected from the versioning table below; the CLI flag is ignored.
+        gcs_mode: false,
     };
 
     let database_url = resolve_database_url_from_option(conf.database_url)?;
+
+    let gcs_mode =
+        match fhevm_engine_common::versioning::resolve_gcs_mode(database_url.as_str()).await {
+            Ok(gcs_mode) => gcs_mode,
+            Err(err) => {
+                tracing::error!(error = %err, "Failed to resolve gcs_mode from versioning table");
+                std::process::exit(1);
+            }
+        };
+    config.gcs_mode = gcs_mode;
+
+    // The transaction sender always uses the default `public` search_path,
+    // even when `gcs_mode` is true. Unlike the GCS compute workers, it never
+    // reads or writes during the dry-run window — it stays parked until the
+    // cutover finalizes (see `TransactionSender::run`). By the time it submits
+    // anything, `execute_cutover` has already merged `gcs.*` into `public` and
+    // dropped the `gcs` schema, so all its writes target `public`. `gcs_mode`
+    // is kept purely as the gate flag passed through to the sender.
     let (db_pool, _pool_refresh_handle) = connect_pool_with_options_and_connect_options(
         &database_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(conf.database_pool_size),

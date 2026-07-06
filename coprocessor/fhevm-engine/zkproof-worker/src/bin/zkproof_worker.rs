@@ -72,9 +72,14 @@ pub struct Args {
     /// Prometheus metrics: "coprocessor_zkverify_op_latency_seconds",
     #[arg(long, default_value = "0.01:2.0:0.01", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_zkverify_op_latency: MetricsConfig,
+
+    /// Print the compiled-in coprocessor stack version and exit.
+    #[arg(long)]
+    pub stack_version: bool,
 }
 
 pub fn parse_args() -> Args {
+    fhevm_engine_common::handle_stack_version_flag();
     let args = Args::parse();
     // Set global configs from args
     let _ = ZKVERIFY_OP_LATENCY_HISTOGRAM_CONF.set(args.metric_zkverify_op_latency);
@@ -99,6 +104,15 @@ async fn main() {
         }
     };
 
+    let gcs_mode =
+        match fhevm_engine_common::versioning::resolve_gcs_mode(database_url.as_str()).await {
+            Ok(gcs_mode) => gcs_mode,
+            Err(err) => {
+                error!(error = %err, "Failed to resolve gcs_mode from versioning table");
+                std::process::exit(1);
+            }
+        };
+
     let conf = zkproof_worker::Config {
         database_url,
         listen_database_channel: args.pg_listen_channel,
@@ -108,6 +122,7 @@ async fn main() {
         worker_thread_count: args.worker_thread_count,
         pg_timeout: args.pg_timeout,
         pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
+        gcs_mode,
     };
 
     let cancel_token = CancellationToken::new();

@@ -283,7 +283,10 @@ async fn schedule_dex(
     let caller = zero_address();
     let num_samples = sample_count(num_tx);
     let mut handle_counter = random_handle();
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let shared_tx_id = next_handle(&mut handle_counter);
     let setup_tx_id = if dependent {
         shared_tx_id

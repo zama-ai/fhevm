@@ -49,3 +49,15 @@ struct KmsContextAnchor {
     /// @notice keccak256 hash of the emitted context payload (nodes, thresholds, software version, PCR values)
     bytes32 contextInfoHash;
 }
+
+/**
+ * @notice Struct that represents a per-host-chain replay window used during a coprocessor blue-green upgrade.
+ */
+struct ChainUpgradeWindow {
+    /// @notice Host chain id the window applies to
+    uint64 chainId;
+    /// @notice First block GCS replays in dry-run, inclusive
+    uint64 startBlock;
+    /// @notice Last block GCS replays in dry-run, inclusive
+    uint64 endBlock;
+}
