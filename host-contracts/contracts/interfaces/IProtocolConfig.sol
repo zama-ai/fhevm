@@ -143,17 +143,10 @@ interface IProtocolConfig {
     event KmsContextDestroyed(uint256 indexed kmsContextId);
 
     /**
-     * @notice Emitted when a pending epoch under the active KMS context is aborted.
-     * @param kmsContextId The active context ID that owned the pending epoch.
-     * @param epochId The aborted pending epoch ID.
+     * @notice Emitted when a KMS epoch is destroyed.
+     * @param epochId The destroyed epoch ID.
      */
-    event PendingEpochAborted(uint256 indexed kmsContextId, uint256 indexed epochId);
-
-    /**
-     * @notice Emitted when a pending KMS context is aborted before being created.
-     * @param kmsContextId The aborted pending context ID.
-     */
-    event PendingContextAborted(uint256 indexed kmsContextId);
+    event KmsEpochDestroyed(uint256 indexed epochId);
 
     /**
      * @notice Emitted when a coprocessor upgrade is proposed. This event drives the
@@ -271,19 +264,17 @@ interface IProtocolConfig {
     /// @param kmsContextId The invalid context ID.
     error InvalidKmsContext(uint256 kmsContextId);
 
-    /// @notice Cannot destroy the current active context.
-    /// @param kmsContextId The current context ID.
-    error CurrentKmsContextCannotBeDestroyed(uint256 kmsContextId);
+    /// @notice Cannot destroy the latest active context.
+    /// @param kmsContextId The latest active context ID.
+    error LatestActiveKmsContextCannotBeDestroyed(uint256 kmsContextId);
 
-    /// @notice The epoch ID is invalid or not pending.
-    /// @param epochId The epoch ID.
-    error InvalidEpoch(uint256 epochId);
+    /// @notice Cannot destroy the latest active epoch.
+    /// @param epochId The latest active epoch ID.
+    error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
 
-    /// @notice The pending epoch belongs to a non-active context (a context-switch epoch);
-    ///         abort its context via abortPendingContext instead.
+    /// @notice The epoch ID is invalid or not in the required lifecycle state for this operation.
     /// @param epochId The epoch ID.
-    /// @param contextId The context that owns the epoch.
-    error EpochNotUnderActiveContext(uint256 epochId, uint256 contextId);
+    error InvalidKmsEpoch(uint256 epochId);
 
     /// @notice The KMS context is not pending.
     /// @param kmsContextId The context ID.
@@ -395,24 +386,16 @@ interface IProtocolConfig {
     ) external;
 
     /**
-     * @notice Abort a pending epoch under the current active KMS context.
-     * @param epochId The pending epoch ID to abort.
-     */
-    function abortPendingEpoch(uint256 epochId) external;
-
-    /**
-     * @notice Abort a pending KMS context before it reaches the created state.
-     * @dev Reverts once the context has been confirmed into `Created` or `Active`; use
-     *      `destroyKmsContext` for non-active contexts past the pending stage.
-     * @param kmsContextId The pending context ID to abort.
-     */
-    function abortPendingContext(uint256 kmsContextId) external;
-
-    /**
      * @notice Destroy a KMS context, preventing it from being used.
      * @param kmsContextId The context ID to destroy.
      */
     function destroyKmsContext(uint256 kmsContextId) external;
+
+    /**
+     * @notice Destroy a superseded (non-current) KMS epoch, preventing it from being used.
+     * @param epochId The epoch ID to destroy.
+     */
+    function destroyKmsEpoch(uint256 epochId) external;
 
     /**
      * @notice Propose a coprocessor upgrade. Emits `CoprocessorUpgradeProposed` and does not
@@ -473,7 +456,7 @@ interface IProtocolConfig {
      * @dev Non-canonical hosts use this to import signer/threshold state without replaying
      *      context-creation confirmations. The `contextId` and `epochId` must be strictly greater
      *      than the latest active context and latest known epoch IDs. Gaps are allowed (canonical
-     *      contexts/epochs that were aborted or never activated are simply never mirrored).
+     *      contexts/epochs that were destroyed or never activated are simply never mirrored).
      * @param contextId The canonical context ID to mirror; must exceed the current active context ID.
      * @param epochId The canonical epoch ID to activate for the mirrored context.
      * @param kmsNodeParams The KMS nodes from the canonical context, including MPC metadata.
