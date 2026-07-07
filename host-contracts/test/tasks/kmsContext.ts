@@ -5,6 +5,8 @@ import hre, { ethers, run } from 'hardhat';
 import {
   encodeDefineNewEpochForCurrentKmsContext,
   encodeDefineNewKmsContextAndEpoch,
+  encodeDestroyKmsContext,
+  encodeDestroyKmsEpoch,
   getProtocolConfigInterface,
   inspectKmsContextSwitch,
   predictNewKmsContextId,
@@ -188,6 +190,51 @@ describe('KMS context tasks', function () {
   });
 
   // ---------------------------------------------------------------------------
+  // destroyKmsContext / destroyKmsEpoch — DAO calldata (build) + direct (execute)
+  // ---------------------------------------------------------------------------
+
+  describe('destroyKmsContext', function () {
+    it('builds calldata that decodes back to the context id (DAO path)', async function () {
+      const iface = await getProtocolConfigInterface(hre);
+      const encoded = encodeDestroyKmsContext(iface, 7n);
+      const decoded = iface.decodeFunctionData('destroyKmsContext', encoded.calldata);
+      expect(decoded[0]).to.equal(7n);
+      expect(encoded.calldata.slice(0, 10)).to.equal(iface.getFunction('destroyKmsContext')!.selector);
+    });
+
+    it('broadcasts the destruction of a non-current PENDING context (no-DAO path)', async function () {
+      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
+      process.env[PROTOCOL_CONFIG_ENV_VAR] = proxyAddress;
+
+      // Open a context switch so a non-current, live (PENDING) context exists to destroy.
+      const newNodes = [
+        makeNode('0x00000000000000000000000000000000000B1111', '0x00000000000000000000000000000000000B2222', 0),
+        makeNode('0x00000000000000000000000000000000000B3333', '0x00000000000000000000000000000000000B4444', 1),
+      ];
+      setKmsEnv(newNodes, { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 });
+      await run('task:defineNewKmsContextAndEpoch', {});
+      const pending = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(pending.contextState).to.equal('PENDING');
+
+      await run('task:destroyKmsContext', { contextId: pending.pendingContextId!.toString() });
+
+      const after = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(after.aborted).to.equal(true);
+      expect(after.abortReason).to.equal('context-destroyed');
+    });
+  });
+
+  describe('destroyKmsEpoch', function () {
+    it('builds calldata that decodes back to the epoch id (DAO path)', async function () {
+      const iface = await getProtocolConfigInterface(hre);
+      const encoded = encodeDestroyKmsEpoch(iface, 42n);
+      const decoded = iface.decodeFunctionData('destroyKmsEpoch', encoded.calldata);
+      expect(decoded[0]).to.equal(42n);
+      expect(encoded.calldata.slice(0, 10)).to.equal(iface.getFunction('destroyKmsEpoch')!.selector);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Status task (event-indexing monitor)
   // ---------------------------------------------------------------------------
 
@@ -355,12 +402,12 @@ describe('KMS context tasks', function () {
       expect(inProgress.aborted).to.equal(false);
       expect(inProgress.contextState).to.equal('PENDING');
 
-      await (await (await asOwner()).abortPendingContext(contextId)).wait();
+      await (await (await asOwner()).destroyKmsContext(contextId)).wait();
 
       const aborted = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(aborted.flow).to.equal('context-switch');
       expect(aborted.aborted).to.equal(true);
-      expect(aborted.abortReason).to.equal('context-aborted');
+      expect(aborted.abortReason).to.equal('context-destroyed');
     });
   });
 });
