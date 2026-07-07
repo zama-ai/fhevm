@@ -9,7 +9,7 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 cd "$ROOT/solana"
-bash scripts/check-zama-host-idl.sh
+NO_DNA=1 bash scripts/check-zama-host-idl.sh
 
 cd "$ROOT/coprocessor/fhevm-engine"
-SQLX_OFFLINE=true cargo test -p tfhe-worker solana_poc -- --ignored --test-threads=1
+NO_DNA=1 SQLX_OFFLINE=true cargo test -p tfhe-worker solana_poc -- --ignored --test-threads=1
