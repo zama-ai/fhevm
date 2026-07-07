@@ -28,7 +28,6 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
     // The NotCustodian{Signer,TxSender} selectors were inherited from the GatewayConfigChecks
     // base by every concrete consumer below. The base helper that emitted them was removed as
     // unreachable dead code in issue #1370, so they disappear from each derived ABI.
-    CiphertextCommits: ["error NotCustodianSigner(address)", "error NotCustodianTxSender(address)"],
     Decryption: [
       "error AccountNotAllowedToUseCiphertext(bytes32,address)",
       "error PublicDecryptNotAllowed(bytes32)",
@@ -36,6 +35,12 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "function isDelegatedUserDecryptionReady((address,address),(bytes32,address)[],bytes) returns (bool)",
       "error NotCustodianSigner(address)",
       "error NotCustodianTxSender(address)",
+      // RFC-023 step 2 (issue #1645): ciphertext-material consensus moved off-chain. The request
+      // events now emit handles only (bytes32[]) instead of SnsCiphertextMaterial[], and the
+      // per-request key-id conformance error was dropped. This is an accepted in-place ABI break.
+      "error DifferentKeyIdsNotAllowed((bytes32,uint256,bytes32,address[]),(bytes32,uint256,bytes32,address[]))",
+      "event PublicDecryptionRequest(uint256 indexed,(bytes32,uint256,bytes32,address[])[],bytes)",
+      "event UserDecryptionRequest(uint256 indexed,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)",
     ],
     InputVerification: ["error NotCustodianSigner(address)", "error NotCustodianTxSender(address)"],
     GatewayConfig: [
