@@ -311,7 +311,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         //   - more than `t`, so faulty nodes can never approve a switch on their own;
         //   - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
         //     arrive — anything higher lets a dead node block the switch forever.
-        // `n - t` satisfies both (`n - t >= t + 1`) under the `n = 3t + 1` topology the KMS core
+        // `n - t` satisfies `n - t >= t + 1` under the `n = 3t + 1` topology the KMS core
         // requires; the contract itself does not enforce the topology.
         // Floored at 1 so the degenerate `t = n` config cannot make the quorum zero.
         uint256 previousQuorum = $.kmsNodesForContext[previousContextId].length -
