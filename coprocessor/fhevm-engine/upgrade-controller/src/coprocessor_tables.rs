@@ -370,8 +370,10 @@ mod tests {
         .into_iter()
         .collect();
 
-        let classified: BTreeSet<String> =
-            COPROCESSOR_TABLES.iter().map(|t| t.name.to_string()).collect();
+        let classified: BTreeSet<String> = COPROCESSOR_TABLES
+            .iter()
+            .map(|t| t.name.to_string())
+            .collect();
 
         let missing: Vec<&String> = db_tables.difference(&classified).collect();
         let stale: Vec<&String> = classified.difference(&db_tables).collect();
