@@ -222,6 +222,23 @@ const readActiveIds = async (target: Target) => ({
   crsId: parseUintOutput(await castCall(target.rpcUrl, target.kmsGenerationAddress, "getActiveCrsId()(uint256)")),
 });
 
+/** The active id must not move across an abort; when it does, tell apart the aborted request
+ * activating (the product failure the abort exists to prevent) from an unrelated id activating
+ * (a pending ceremony from an earlier or concurrent run completing mid-flight). */
+export const assertActiveIdUnchanged = (kind: "key" | "CRS", baseline: bigint, current: bigint, abortedId: bigint) => {
+  if (current === baseline) {
+    return;
+  }
+  if (current === abortedId) {
+    throw new PreflightError(
+      `kms-generation-abort: the aborted ${kind} ${abortedId} became active — the abort did not prevent activation`,
+    );
+  }
+  throw new PreflightError(
+    `kms-generation-abort: active ${kind} changed to an id this run never requested (${baseline} -> ${current}) — a pending ceremony from an earlier or concurrent run completed mid-flight; make sure only one run targets the stack, or re-up for a clean baseline`,
+  );
+};
+
 /**
  * Aborts an in-flight keygen and proves every layer retired it: contract state, quiesced
  * connector DBs, and an unchanged active key.
@@ -265,9 +282,7 @@ const abortKeygenMidFlight = async (state: State, target: Target, owner: Owner, 
   await pollConnectors(parties, "no keygen work left in flight", statusQuery("keygen_requests", "key_id", keyId), ["missing", "completed", "aborted", "failed"]);
 
   const { keyId: activeKeyId } = await readActiveIds(target);
-  if (activeKeyId !== baselineKeyId) {
-    throw new PreflightError(`kms-generation-abort: active key changed across an aborted keygen: ${baselineKeyId} -> ${activeKeyId}`);
-  }
+  assertActiveIdUnchanged("key", baselineKeyId, activeKeyId, keyId);
   console.log("[kms-generation-abort] keygen abort verified across contract, connector, and active key");
 };
 
@@ -302,9 +317,7 @@ const abortCrsgenMidFlight = async (state: State, target: Target, owner: Owner, 
   await pollConnectors(parties, "crsgen request terminal", statusQuery("crsgen_requests", "crs_id", crsId), ["completed", "aborted", "failed"]);
 
   const { crsId: activeCrsId } = await readActiveIds(target);
-  if (activeCrsId !== baselineCrsId) {
-    throw new PreflightError(`kms-generation-abort: active CRS changed across an aborted crsgen: ${baselineCrsId} -> ${activeCrsId}`);
-  }
+  assertActiveIdUnchanged("CRS", baselineCrsId, activeCrsId, crsId);
   console.log("[kms-generation-abort] crsgen abort verified across contract, connector, and active CRS");
 };
 
