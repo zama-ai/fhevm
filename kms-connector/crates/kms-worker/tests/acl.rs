@@ -35,7 +35,7 @@ use tracing::{info, warn};
 #[tokio::test]
 async fn test_decryption_acl_failure(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::default()
-        .with_db(DbInstance::setup().await?)
+        .with_db(DbInstance::setup_external().await?)
         .build();
 
     // Test constant
