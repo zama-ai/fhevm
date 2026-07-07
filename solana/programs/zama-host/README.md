@@ -47,9 +47,9 @@ this handle" — current membership, or an MMR-proven historical/public-decrypt 
 ## Instruction-Local Transients
 
 `fhe_eval` composes mixed FHE steps in one host instruction: **Binary / Ternary / TrivialEncrypt /
-Rand** (no `Input` step — DD-007/DD-023). Binary scratch results can feed ternary `if_then_else`, and
-trivial-encrypt / rand births can participate in the same frame. Outputs produced earlier in the eval
-can be referenced as transient operands by later operations.
+Rand / RandBounded** (no `Input` step — DD-007/DD-023). Binary scratch results can feed ternary
+`if_then_else`, and trivial-encrypt / random births can participate in the same frame. Outputs
+produced earlier in the eval can be referenced as transient operands by later operations.
 Durable operands must still be authorized by a live or historically-proven `EncryptedValue`. Transient
 outputs create no `EncryptedValue` state at all. Only outputs marked durable create (first bind) or
 supersede (subsequent binds) an `EncryptedValue`, carrying the same `previous_handle`/`previous_subjects`
@@ -143,8 +143,6 @@ test_emit_*  ->  poc feature + test_shims_enabled + test_authority
 The zero-birth-entropy fallback is the only surviving state relaxation; it is confined to the local
 PoC chain id (`HostConfig::zero_birth_entropy_allowed`, DD-014). Registered-signer threshold policy and
 real proof/transciphering validation are still external/open design items.
-Trivial and random handle birth paths (now `fhe_eval` `TrivialEncrypt`/`Rand` steps — the standalone
-`trivial_encrypt_and_bind`/`fhe_rand_and_bind` instructions were removed) include output entropy in
-handle derivation before binding the result into an `EncryptedValue`. There is no `fhe_eval` step for
-bounded random yet (`fhe_rand_bounded_and_bind` was removed with the old model and not rebuilt,
-`docs/DESIGN_DECISIONS.md` DD-032).
+Trivial and random handle birth paths (now `fhe_eval` `TrivialEncrypt`/`Rand`/`RandBounded` steps —
+the standalone `trivial_encrypt_and_bind`/`fhe_rand*_and_bind` instructions were removed) include
+output entropy in handle derivation before binding the result into an `EncryptedValue`.

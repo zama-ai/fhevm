@@ -152,12 +152,11 @@ pub mod IERC721Errors {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC721IncorrectOwner(address,uint256,address)` and selector `0x64283d7b`.
-```solidity
-error ERC721IncorrectOwner(address sender, uint256 tokenId, address owner);
-```*/
+    ```solidity
+    error ERC721IncorrectOwner(address sender, uint256 tokenId, address owner);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC721IncorrectOwner {
@@ -190,9 +189,7 @@ error ERC721IncorrectOwner(address sender, uint256 tokenId, address owner);
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -220,9 +217,7 @@ error ERC721IncorrectOwner(address sender, uint256 tokenId, address owner);
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC721IncorrectOwner {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC721IncorrectOwner(address,uint256,address)";
             const SELECTOR: [u8; 4] = [100u8, 40u8, 61u8, 123u8];
             #[inline]
@@ -237,9 +232,9 @@ error ERC721IncorrectOwner(address sender, uint256 tokenId, address owner);
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.sender,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tokenId),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.tokenId,
+                    ),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.owner,
                     ),
@@ -247,19 +242,18 @@ error ERC721IncorrectOwner(address sender, uint256 tokenId, address owner);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC721InsufficientApproval(address,uint256)` and selector `0x177e802f`.
-```solidity
-error ERC721InsufficientApproval(address operator, uint256 tokenId);
-```*/
+    ```solidity
+    error ERC721InsufficientApproval(address operator, uint256 tokenId);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC721InsufficientApproval {
@@ -288,9 +282,7 @@ error ERC721InsufficientApproval(address operator, uint256 tokenId);
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -299,16 +291,14 @@ error ERC721InsufficientApproval(address operator, uint256 tokenId);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<ERC721InsufficientApproval>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<ERC721InsufficientApproval> for UnderlyingRustTuple<'_> {
             fn from(value: ERC721InsufficientApproval) -> Self {
                 (value.operator, value.tokenId)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for ERC721InsufficientApproval {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ERC721InsufficientApproval {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     operator: tuple.0,
@@ -319,9 +309,7 @@ error ERC721InsufficientApproval(address operator, uint256 tokenId);
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC721InsufficientApproval {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC721InsufficientApproval(address,uint256)";
             const SELECTOR: [u8; 4] = [23u8, 126u8, 128u8, 47u8];
             #[inline]
@@ -336,26 +324,25 @@ error ERC721InsufficientApproval(address operator, uint256 tokenId);
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.operator,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tokenId),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.tokenId,
+                    ),
                 )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC721InvalidApprover(address)` and selector `0xa9fbf51f`.
-```solidity
-error ERC721InvalidApprover(address approver);
-```*/
+    ```solidity
+    error ERC721InvalidApprover(address approver);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC721InvalidApprover {
@@ -376,9 +363,7 @@ error ERC721InvalidApprover(address approver);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -402,9 +387,7 @@ error ERC721InvalidApprover(address approver);
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC721InvalidApprover {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC721InvalidApprover(address)";
             const SELECTOR: [u8; 4] = [169u8, 251u8, 245u8, 31u8];
             #[inline]
@@ -423,19 +406,18 @@ error ERC721InvalidApprover(address approver);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC721InvalidOperator(address)` and selector `0x5b08ba18`.
-```solidity
-error ERC721InvalidOperator(address operator);
-```*/
+    ```solidity
+    error ERC721InvalidOperator(address operator);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC721InvalidOperator {
@@ -456,9 +438,7 @@ error ERC721InvalidOperator(address operator);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -482,9 +462,7 @@ error ERC721InvalidOperator(address operator);
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC721InvalidOperator {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC721InvalidOperator(address)";
             const SELECTOR: [u8; 4] = [91u8, 8u8, 186u8, 24u8];
             #[inline]
@@ -503,19 +481,18 @@ error ERC721InvalidOperator(address operator);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC721InvalidOwner(address)` and selector `0x89c62b64`.
-```solidity
-error ERC721InvalidOwner(address owner);
-```*/
+    ```solidity
+    error ERC721InvalidOwner(address owner);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC721InvalidOwner {
@@ -536,9 +513,7 @@ error ERC721InvalidOwner(address owner);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -562,9 +537,7 @@ error ERC721InvalidOwner(address owner);
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC721InvalidOwner {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC721InvalidOwner(address)";
             const SELECTOR: [u8; 4] = [137u8, 198u8, 43u8, 100u8];
             #[inline]
@@ -583,19 +556,18 @@ error ERC721InvalidOwner(address owner);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC721InvalidReceiver(address)` and selector `0x64a0ae92`.
-```solidity
-error ERC721InvalidReceiver(address receiver);
-```*/
+    ```solidity
+    error ERC721InvalidReceiver(address receiver);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC721InvalidReceiver {
@@ -616,9 +588,7 @@ error ERC721InvalidReceiver(address receiver);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -642,9 +612,7 @@ error ERC721InvalidReceiver(address receiver);
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC721InvalidReceiver {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC721InvalidReceiver(address)";
             const SELECTOR: [u8; 4] = [100u8, 160u8, 174u8, 146u8];
             #[inline]
@@ -663,19 +631,18 @@ error ERC721InvalidReceiver(address receiver);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC721InvalidSender(address)` and selector `0x73c6ac6e`.
-```solidity
-error ERC721InvalidSender(address sender);
-```*/
+    ```solidity
+    error ERC721InvalidSender(address sender);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC721InvalidSender {
@@ -696,9 +663,7 @@ error ERC721InvalidSender(address sender);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -722,9 +687,7 @@ error ERC721InvalidSender(address sender);
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC721InvalidSender {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC721InvalidSender(address)";
             const SELECTOR: [u8; 4] = [115u8, 198u8, 172u8, 110u8];
             #[inline]
@@ -743,19 +706,18 @@ error ERC721InvalidSender(address sender);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC721NonexistentToken(uint256)` and selector `0x7e273289`.
-```solidity
-error ERC721NonexistentToken(uint256 tokenId);
-```*/
+    ```solidity
+    error ERC721NonexistentToken(uint256 tokenId);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ERC721NonexistentToken {
@@ -773,14 +735,10 @@ error ERC721NonexistentToken(uint256 tokenId);
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U256,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -804,9 +762,7 @@ error ERC721NonexistentToken(uint256 tokenId);
         #[automatically_derived]
         impl alloy_sol_types::SolError for ERC721NonexistentToken {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ERC721NonexistentToken(uint256)";
             const SELECTOR: [u8; 4] = [126u8, 39u8, 50u8, 137u8];
             #[inline]
@@ -818,23 +774,22 @@ error ERC721NonexistentToken(uint256 tokenId);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.tokenId),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.tokenId,
+                    ),
                 )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     ///Container for all the [`IERC721Errors`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum IERC721ErrorsErrors {
         #[allow(missing_docs)]
         ERC721IncorrectOwner(ERC721IncorrectOwner),
@@ -916,21 +871,16 @@ error ERC721NonexistentToken(uint256 tokenId);
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<IERC721ErrorsErrors>] = &[
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<IERC721ErrorsErrors>] = &[
                 {
                     fn ERC721InsufficientApproval(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
                         <ERC721InsufficientApproval as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IERC721ErrorsErrors::ERC721InsufficientApproval)
+                            data,
+                        )
+                        .map(IERC721ErrorsErrors::ERC721InsufficientApproval)
                     }
                     ERC721InsufficientApproval
                 },
@@ -938,9 +888,7 @@ error ERC721NonexistentToken(uint256 tokenId);
                     fn ERC721InvalidOperator(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidOperator as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <ERC721InvalidOperator as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(IERC721ErrorsErrors::ERC721InvalidOperator)
                     }
                     ERC721InvalidOperator
@@ -949,9 +897,7 @@ error ERC721NonexistentToken(uint256 tokenId);
                     fn ERC721IncorrectOwner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721IncorrectOwner as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <ERC721IncorrectOwner as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(IERC721ErrorsErrors::ERC721IncorrectOwner)
                     }
                     ERC721IncorrectOwner
@@ -960,9 +906,7 @@ error ERC721NonexistentToken(uint256 tokenId);
                     fn ERC721InvalidReceiver(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <ERC721InvalidReceiver as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(IERC721ErrorsErrors::ERC721InvalidReceiver)
                     }
                     ERC721InvalidReceiver
@@ -971,9 +915,7 @@ error ERC721NonexistentToken(uint256 tokenId);
                     fn ERC721InvalidSender(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidSender as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <ERC721InvalidSender as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(IERC721ErrorsErrors::ERC721InvalidSender)
                     }
                     ERC721InvalidSender
@@ -982,9 +924,7 @@ error ERC721NonexistentToken(uint256 tokenId);
                     fn ERC721NonexistentToken(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721NonexistentToken as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <ERC721NonexistentToken as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(IERC721ErrorsErrors::ERC721NonexistentToken)
                     }
                     ERC721NonexistentToken
@@ -993,9 +933,7 @@ error ERC721NonexistentToken(uint256 tokenId);
                     fn ERC721InvalidOwner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidOwner as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <ERC721InvalidOwner as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(IERC721ErrorsErrors::ERC721InvalidOwner)
                     }
                     ERC721InvalidOwner
@@ -1004,21 +942,17 @@ error ERC721NonexistentToken(uint256 tokenId);
                     fn ERC721InvalidApprover(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
-                        <ERC721InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <ERC721InvalidApprover as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(IERC721ErrorsErrors::ERC721InvalidApprover)
                     }
                     ERC721InvalidApprover
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -1030,7 +964,8 @@ error ERC721NonexistentToken(uint256 tokenId);
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<IERC721ErrorsErrors>] = &[
+            )
+                -> alloy_sol_types::Result<IERC721ErrorsErrors>] = &[
                 {
                     fn ERC721InsufficientApproval(
                         data: &[u8],
@@ -1080,9 +1015,9 @@ error ERC721NonexistentToken(uint256 tokenId);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
                         <ERC721InvalidSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC721ErrorsErrors::ERC721InvalidSender)
+                            data,
+                        )
+                        .map(IERC721ErrorsErrors::ERC721InvalidSender)
                     }
                     ERC721InvalidSender
                 },
@@ -1102,9 +1037,9 @@ error ERC721NonexistentToken(uint256 tokenId);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IERC721ErrorsErrors> {
                         <ERC721InvalidOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IERC721ErrorsErrors::ERC721InvalidOwner)
+                            data,
+                        )
+                        .map(IERC721ErrorsErrors::ERC721InvalidOwner)
                     }
                     ERC721InvalidOwner
                 },
@@ -1121,12 +1056,10 @@ error ERC721NonexistentToken(uint256 tokenId);
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -1134,9 +1067,7 @@ error ERC721NonexistentToken(uint256 tokenId);
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::ERC721IncorrectOwner(inner) => {
-                    <ERC721IncorrectOwner as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <ERC721IncorrectOwner as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::ERC721InsufficientApproval(inner) => {
                     <ERC721InsufficientApproval as alloy_sol_types::SolError>::abi_encoded_size(
@@ -1144,34 +1075,22 @@ error ERC721NonexistentToken(uint256 tokenId);
                     )
                 }
                 Self::ERC721InvalidApprover(inner) => {
-                    <ERC721InvalidApprover as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <ERC721InvalidApprover as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::ERC721InvalidOperator(inner) => {
-                    <ERC721InvalidOperator as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <ERC721InvalidOperator as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::ERC721InvalidOwner(inner) => {
-                    <ERC721InvalidOwner as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <ERC721InvalidOwner as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::ERC721InvalidReceiver(inner) => {
-                    <ERC721InvalidReceiver as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <ERC721InvalidReceiver as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::ERC721InvalidSender(inner) => {
-                    <ERC721InvalidSender as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <ERC721InvalidSender as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::ERC721NonexistentToken(inner) => {
-                    <ERC721NonexistentToken as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <ERC721NonexistentToken as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
             }
         }
@@ -1179,51 +1098,31 @@ error ERC721NonexistentToken(uint256 tokenId);
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::ERC721IncorrectOwner(inner) => {
-                    <ERC721IncorrectOwner as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <ERC721IncorrectOwner as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::ERC721InsufficientApproval(inner) => {
                     <ERC721InsufficientApproval as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
                 Self::ERC721InvalidApprover(inner) => {
-                    <ERC721InvalidApprover as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <ERC721InvalidApprover as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::ERC721InvalidOperator(inner) => {
-                    <ERC721InvalidOperator as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <ERC721InvalidOperator as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::ERC721InvalidOwner(inner) => {
-                    <ERC721InvalidOwner as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <ERC721InvalidOwner as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::ERC721InvalidReceiver(inner) => {
-                    <ERC721InvalidReceiver as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <ERC721InvalidReceiver as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::ERC721InvalidSender(inner) => {
-                    <ERC721InvalidSender as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                    <ERC721InvalidSender as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::ERC721NonexistentToken(inner) => {
                     <ERC721NonexistentToken as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
             }
@@ -1232,7 +1131,7 @@ error ERC721NonexistentToken(uint256 tokenId);
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IERC721Errors`](self) contract instance.
 
-See the [wrapper's documentation](`IERC721ErrorsInstance`) for more details.*/
+    See the [wrapper's documentation](`IERC721ErrorsInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1245,43 +1144,41 @@ See the [wrapper's documentation](`IERC721ErrorsInstance`) for more details.*/
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IERC721ErrorsInstance<P, N>>,
-    > {
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<IERC721ErrorsInstance<P, N>>>
+    {
         IERC721ErrorsInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+    >(
+        provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
         IERC721ErrorsInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IERC721Errors`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`IERC721Errors`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`IERC721Errors`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct IERC721ErrorsInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1292,23 +1189,21 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for IERC721ErrorsInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("IERC721ErrorsInstance").field(&self.address).finish()
+            f.debug_tuple("IERC721ErrorsInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > IERC721ErrorsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        IERC721ErrorsInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`IERC721Errors`](self) contract instance.
 
-See the [wrapper's documentation](`IERC721ErrorsInstance`) for more details.*/
+        See the [wrapper's documentation](`IERC721ErrorsInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
             Self {
                 address,
                 provider,
@@ -1317,22 +1212,20 @@ See the [wrapper's documentation](`IERC721ErrorsInstance`) for more details.*/
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(
-            provider: P,
-        ) -> alloy_contract::Result<IERC721ErrorsInstance<P, N>> {
+        pub async fn deploy(provider: P) -> alloy_contract::Result<IERC721ErrorsInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+        and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -1374,10 +1267,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Function calls.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > IERC721ErrorsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        IERC721ErrorsInstance<P, N>
+    {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -1391,10 +1283,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Event filters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > IERC721ErrorsInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        IERC721ErrorsInstance<P, N>
+    {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.

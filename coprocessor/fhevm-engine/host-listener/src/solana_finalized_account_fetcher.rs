@@ -1,3 +1,7 @@
+//! Fetches finalized on-chain account state before enqueueing decrypts, so a
+//! decrypt is only served for data a finalized slot actually committed
+//! (finalized-fetch trust model, `solana/docs/DESIGN_DECISIONS.md` DD-024).
+
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};

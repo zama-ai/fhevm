@@ -11,14 +11,14 @@ use zama_host::state::{
     computed_bound_eval_ternary_handle, computed_bound_eval_trivial_handle,
     computed_eval_handle, computed_eval_rand_seed,
     computed_eval_ternary_handle, computed_eval_trivial_handle,
-    computed_rand_handle, FheBinaryOpCode as PgmBinaryOpCode, FheEvalArgs,
-    FheEvalOperand, FheEvalOutput, FheEvalStep,
-    FheTernaryOpCode as PgmTernaryOpCode,
+    computed_rand_bounded_handle, computed_rand_handle,
+    FheBinaryOpCode as PgmBinaryOpCode, FheEvalArgs, FheEvalOperand,
+    FheEvalOutput, FheEvalStep, FheTernaryOpCode as PgmTernaryOpCode,
 };
 
 use crate::generated::{
-    FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, FheTernaryOpCode,
-    FheTernaryOpEvent, TrivialEncryptEvent, EVENT_VERSION,
+    FheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent, FheRandEvent,
+    FheTernaryOpCode, FheTernaryOpEvent, TrivialEncryptEvent, EVENT_VERSION,
 };
 use std::collections::{HashMap, VecDeque};
 
@@ -807,6 +807,53 @@ pub fn reconstruct_fhe_eval_steps_with_hints(
                     result,
                 })
             }
+            FheEvalStep::RandBounded {
+                upper_bound,
+                fhe_type,
+                output,
+            } => {
+                let seed = match resolve_durable_binding(
+                    output,
+                    lineage_leaf_counts,
+                    handle_hints,
+                )? {
+                    DurableBinding::Derived {
+                        value_key,
+                        sequence,
+                    } => computed_bound_eval_rand_seed(
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                        value_key,
+                        sequence,
+                    ),
+                    DurableBinding::ExplicitHandle(_) => return None,
+                    DurableBinding::Unbound => computed_eval_rand_seed(
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                    ),
+                };
+                let result = computed_rand_bounded_handle(
+                    *upper_bound,
+                    seed,
+                    *fhe_type,
+                    ctx.chain_id,
+                );
+                produced.push(result);
+                SolanaHostEvent::FheRandBounded(FheRandBoundedEvent {
+                    version: EVENT_VERSION,
+                    subject,
+                    upper_bound: *upper_bound,
+                    seed,
+                    fhe_type: *fhe_type,
+                    result,
+                })
+            }
         };
         steps_out.push(ReconstructedEvalStep {
             event,
@@ -844,7 +891,8 @@ fn fhe_eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
         FheEvalStep::Binary { output, .. }
         | FheEvalStep::Ternary { output, .. }
         | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. } => output,
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::RandBounded { output, .. } => output,
     }
 }
 
@@ -1295,6 +1343,39 @@ mod tests {
                 assert_eq!(e.lhs, step0);
             }
             other => panic!("expected FheBinaryOp, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fhe_eval_walk_reconstructs_bounded_rand() {
+        let upper_bound = {
+            let mut bytes = [0u8; 32];
+            bytes[31] = 10;
+            bytes
+        };
+        let plan = FheEvalArgs {
+            context_id: [1u8; 32],
+            steps: vec![FheEvalStep::RandBounded {
+                upper_bound,
+                fhe_type: 5,
+                output: FheEvalOutput::AllowedLocal,
+            }],
+        };
+
+        let events = reconstruct_fhe_eval_events(
+            &plan,
+            SUBJECT,
+            &ctx(),
+            &HashMap::new(),
+        )
+        .expect("walk");
+        match &events[..] {
+            [SolanaHostEvent::FheRandBounded(event)] => {
+                assert_eq!(event.subject, SUBJECT);
+                assert_eq!(event.upper_bound, upper_bound);
+                assert_eq!(event.fhe_type, 5);
+            }
+            other => panic!("expected FheRandBounded, got {other:?}"),
         }
     }
 

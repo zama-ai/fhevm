@@ -199,7 +199,9 @@ pub(super) fn meter_eval_plan(
                 (cost, depth)
             }
             FheEvalStep::TrivialEncrypt { fhe_type, .. } => (trivial_encrypt_hcu(*fhe_type)?, 0),
-            FheEvalStep::Rand { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0),
+            FheEvalStep::Rand { fhe_type, .. } | FheEvalStep::RandBounded { fhe_type, .. } => {
+                (rand_hcu(*fhe_type)?, 0)
+            }
         };
 
         // Total: running sum, capped.

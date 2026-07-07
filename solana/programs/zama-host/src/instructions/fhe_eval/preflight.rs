@@ -83,9 +83,9 @@ fn preflight_eval_step(
             preflight_encrypted_operand(if_false, step_index, preflight)?;
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
-            preflight_output(output, preflight)?;
-        }
+        FheEvalStep::TrivialEncrypt { output, .. }
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::RandBounded { output, .. } => preflight_output(output, preflight)?,
     }
     Ok(())
 }

@@ -34,6 +34,23 @@ pub fn create_random_amount(
     ctx: Context<CreateRandomAmount>,
     amount_kind: ConfidentialAmountKind,
 ) -> Result<()> {
+    create_random_amount_inner(ctx, amount_kind, None)
+}
+
+/// Creates a token-scoped bounded random encrypted amount for transfer or burn flows.
+pub fn create_random_bounded_amount(
+    ctx: Context<CreateRandomAmount>,
+    amount_kind: ConfidentialAmountKind,
+    upper_bound: [u8; 32],
+) -> Result<()> {
+    create_random_amount_inner(ctx, amount_kind, Some(upper_bound))
+}
+
+fn create_random_amount_inner(
+    ctx: Context<CreateRandomAmount>,
+    amount_kind: ConfidentialAmountKind,
+    upper_bound: Option<[u8; 32]>,
+) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
@@ -63,18 +80,27 @@ pub fn create_random_amount(
         zama_fhe::AccessPolicy::for_compute(ctx.accounts.compute_signer.key())
             .map_err(invalid_eval_plan)?,
     )?;
-    let context_id = transfer_eval_context(
-        b"random-amount",
-        mint_key,
-        owner,
-        owner,
-        encrypted_value_label,
-    )?;
+    let context_tag = if upper_bound.is_some() {
+        b"random-bounded-amount".as_slice()
+    } else {
+        b"random-amount".as_slice()
+    };
+    let context_id =
+        transfer_eval_context(context_tag, mint_key, owner, owner, encrypted_value_label)?;
     let mut builder =
         zama_fhe::EvalBuilder::new(context_id, zama_fhe::EvalAppAuthority::new(owner));
-    builder
-        .rand_u64(amount_output.output())
-        .map_err(invalid_eval_plan)?;
+    match upper_bound {
+        Some(upper_bound) => builder
+            .rand_bounded_u64(
+                zama_fhe::BoundedU64UpperBound::from_be_bytes(upper_bound)
+                    .map_err(invalid_eval_plan)?,
+                amount_output.output(),
+            )
+            .map_err(invalid_eval_plan)?,
+        None => builder
+            .rand_u64(amount_output.output())
+            .map_err(invalid_eval_plan)?,
+    };
     let plan = builder.finish().map_err(invalid_eval_plan)?;
     let compute_authority = fhe::ComputeAuthority::for_mint(
         &ctx.accounts.compute_signer,

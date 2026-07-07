@@ -59,6 +59,8 @@ pub enum EvalBuildError {
     ScalarEncryptedOperand,
     /// The declared FHE type is not accepted by the host ABI.
     UnsupportedFheType,
+    /// A bounded random upper bound is zero, not a power of two, or too wide for euint64.
+    InvalidRandomUpperBound,
     /// The declared binary output type is not valid for the selected operator.
     UnsupportedBinaryOutputType,
     /// Binary operand handle types do not match the selected operator.
@@ -721,6 +723,50 @@ impl DurableOutputBirth {
             .copied()
             .map(AccessSubject::host_entry)
             .collect()
+    }
+}
+
+/// Validated power-of-two upper bound for host bounded-random `euint64` creation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BoundedU64UpperBound {
+    value: [u8; 32],
+}
+
+impl BoundedU64UpperBound {
+    pub fn power_of_two(value: u64) -> Result<Self> {
+        if value == 0 || !value.is_power_of_two() {
+            return Err(EvalBuildError::InvalidRandomUpperBound);
+        }
+        let mut bytes = [0u8; 32];
+        bytes[24..].copy_from_slice(&value.to_be_bytes());
+        Self::from_be_bytes(bytes)
+    }
+
+    pub fn full_width() -> Self {
+        let mut value = [0u8; 32];
+        value[23] = 1;
+        debug_assert!(
+            zama_host::assert_valid_bounded_rand_upper_bound(value, FheType::UINT64.byte()).is_ok()
+        );
+        Self { value }
+    }
+
+    pub fn from_be_bytes(value: [u8; 32]) -> Result<Self> {
+        zama_host::assert_valid_bounded_rand_upper_bound(value, FheType::UINT64.byte())
+            .map_err(|_| EvalBuildError::InvalidRandomUpperBound)?;
+        Ok(Self { value })
+    }
+
+    pub fn bytes(self) -> [u8; 32] {
+        self.value
+    }
+}
+
+impl TryFrom<u64> for BoundedU64UpperBound {
+    type Error = EvalBuildError;
+
+    fn try_from(value: u64) -> Result<Self> {
+        Self::power_of_two(value)
     }
 }
 
@@ -1430,6 +1476,32 @@ impl EvalBuilder {
         self.rand::<Uint<64>>(output)
     }
 
+    pub fn rand_bounded_u64(
+        &mut self,
+        upper_bound: BoundedU64UpperBound,
+        output: Output,
+    ) -> Result<Encrypted<Uint<64>>> {
+        let fhe_type = FheType::UINT64.byte();
+        if self.steps.len() >= MAX_FHE_EVAL_OPS {
+            return Err(EvalBuildError::TooManyOps);
+        }
+        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let mut remaining_accounts = self.remaining_accounts.clone();
+        let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
+        self.remaining_accounts = remaining_accounts;
+        self.steps.push(FheEvalStep::RandBounded {
+            upper_bound: upper_bound.bytes(),
+            fhe_type,
+            output,
+        });
+        self.produced_types.push(fhe_type);
+        Ok(Encrypted::from_operand(Operand::transient(
+            step_index,
+            self.context_id,
+            self.scope,
+        )))
+    }
+
     fn encrypted_operand_type(
         &self,
         operand: &Operand,
@@ -1528,8 +1600,10 @@ fn validate_lowered_step(
             validate_lowered_encrypted_operand(if_false, step_index, used_accounts)?;
             validate_lowered_output(output, used_accounts)?;
         }
-        FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
-            validate_lowered_output(output, used_accounts)?;
+        FheEvalStep::TrivialEncrypt { output, .. }
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::RandBounded { output, .. } => {
+            validate_lowered_output(output, used_accounts)?
         }
     }
     Ok(())

@@ -181,3 +181,20 @@ pub struct FheRandEvent {
     /// Output handle.
     pub result: [u8; 32],
 }
+
+/// Emitted for bounded random ciphertext creation accepted by the host.
+#[event]
+pub struct FheRandBoundedEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Subject associated with the random handle.
+    pub subject: [u8; 32],
+    /// Exclusive upper bound encoded as a 256-bit big-endian integer.
+    pub upper_bound: [u8; 32],
+    /// Random seed carried to worker tests.
+    pub seed: [u8; 16],
+    /// FHE type byte.
+    pub fhe_type: u8,
+    /// Output handle.
+    pub result: [u8; 32],
+}

@@ -1,3 +1,12 @@
+//! Transport-agnostic core of the Solana ingestion path: Anchor event decoding
+//! (`zama-host` + `confidential-token`) and mapping into the coprocessor
+//! database, shared by every transport ([`crate::solana_listener`] RPC polling,
+//! [`crate::solana_grpc_listener`] Yellowstone, LiteSVM in-process tests) and by
+//! the emitless reconstruction path ([`crate::solana_reconstruct`]).
+//!
+//! Design rationale lives in `solana/docs/DESIGN_DECISIONS.md` (event transport:
+//! DD-003; finalized-fetch decrypt trust model: DD-024).
+
 use std::{collections::HashSet, fmt, ops::DerefMut};
 
 use alloy_primitives::{Address, FixedBytes, Log};
@@ -10,8 +19,8 @@ use crate::generated::{
     decode_anchor_event as decode_zama_host_anchor_event,
     decode_confidential_token_anchor_cpi_event,
     decode_confidential_token_anchor_event, ConfidentialTokenEvent,
-    FheBinaryOpCode, FheBinaryOpEvent, FheRandEvent, FheTernaryOpCode,
-    FheTernaryOpEvent, TrivialEncryptEvent, ZamaHostEvent,
+    FheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent, FheRandEvent,
+    FheTernaryOpCode, FheTernaryOpEvent, TrivialEncryptEvent, ZamaHostEvent,
     CONFIDENTIAL_TOKEN_EVENT_VERSION, EVENT_VERSION,
 };
 
@@ -107,6 +116,7 @@ pub enum SolanaHostEvent {
     FheTernaryOp(FheTernaryOpEvent),
     TrivialEncrypt(TrivialEncryptEvent),
     FheRand(FheRandEvent),
+    FheRandBounded(FheRandBoundedEvent),
     FinalizedAccountFetch(SolanaFinalizedAccountFetch),
 }
 
@@ -280,6 +290,7 @@ fn needs_ordered_db_log_index(event: &SolanaHostEvent) -> bool {
             | SolanaHostEvent::FheTernaryOp(_)
             | SolanaHostEvent::TrivialEncrypt(_)
             | SolanaHostEvent::FheRand(_)
+            | SolanaHostEvent::FheRandBounded(_)
     )
 }
 
@@ -403,6 +414,9 @@ fn decode_solana_host_events(event: ZamaHostEvent) -> Vec<SolanaHostEvent> {
             vec![SolanaHostEvent::TrivialEncrypt(event)]
         }
         ZamaHostEvent::FheRand(event) => vec![SolanaHostEvent::FheRand(event)],
+        ZamaHostEvent::FheRandBounded(event) => {
+            vec![SolanaHostEvent::FheRandBounded(event)]
+        }
         ZamaHostEvent::DenySubjectUpdated(_)
         | ZamaHostEvent::HostConfigInitialized(_)
         | ZamaHostEvent::HostConfigUpdated(_)
@@ -531,6 +545,7 @@ fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
         ZamaHostEvent::DenySubjectUpdated(event) => event.version,
         ZamaHostEvent::FheBinaryOp(event) => event.version,
         ZamaHostEvent::FheRand(event) => event.version,
+        ZamaHostEvent::FheRandBounded(event) => event.version,
         ZamaHostEvent::FheTernaryOp(event) => event.version,
         ZamaHostEvent::HostConfigInitialized(event) => event.version,
         ZamaHostEvent::HostConfigUpdated(event) => event.version,
@@ -554,6 +569,9 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
         }
         SolanaHostEvent::FheRand(event) => {
             SolanaMappedEvent::Tfhe(to_fhe_rand_event(event))
+        }
+        SolanaHostEvent::FheRandBounded(event) => {
+            SolanaMappedEvent::Tfhe(to_fhe_rand_bounded_event(event))
         }
         SolanaHostEvent::FinalizedAccountFetch(fetch) => {
             SolanaMappedEvent::FinalizedAccountFetch(fetch)
@@ -1108,6 +1126,24 @@ pub fn to_fhe_rand_event(event: FheRandEvent) -> Log<TfheContractEvents> {
             seed: FixedBytes::<16>::from(event.seed),
             result: Handle::from(event.result),
         }),
+    }
+}
+
+pub fn to_fhe_rand_bounded_event(
+    event: FheRandBoundedEvent,
+) -> Log<TfheContractEvents> {
+    let caller = Address::ZERO;
+    Log {
+        address: caller,
+        data: TfheContractEvents::FheRandBounded(
+            TfheContract::FheRandBounded {
+                caller,
+                upperBound: ClearConst::from_be_slice(&event.upper_bound),
+                randType: event.fhe_type,
+                seed: FixedBytes::<16>::from(event.seed),
+                result: Handle::from(event.result),
+            },
+        ),
     }
 }
 

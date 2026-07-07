@@ -7,7 +7,9 @@ use super::encrypted_value::{grow_account_if_needed, supersede_current_handle};
 use super::input_verification::{verify_input_attestation, InputVerifierParams};
 use crate::{
     errors::ZamaHostError,
-    events::{FheBinaryOpEvent, FheRandEvent, FheTernaryOpEvent, TrivialEncryptEvent},
+    events::{
+        FheBinaryOpEvent, FheRandBoundedEvent, FheRandEvent, FheTernaryOpEvent, TrivialEncryptEvent,
+    },
     state::*,
 };
 

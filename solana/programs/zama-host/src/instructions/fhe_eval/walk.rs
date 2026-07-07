@@ -255,6 +255,30 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 }));
                 visitor.accept_output(ctx, result, output, false)?;
             }
+            FheEvalStep::RandBounded {
+                upper_bound,
+                fhe_type,
+                output,
+            } => {
+                assert_valid_bounded_rand_upper_bound(*upper_bound, *fhe_type)?;
+                let binding = visitor.resolve_output_binding(ctx, output)?;
+                let seed = expected_rand_eval_seed(handle_context, op_index, binding.as_ref());
+                let result = computed_rand_bounded_handle(
+                    *upper_bound,
+                    seed,
+                    *fhe_type,
+                    handle_context.chain_id,
+                );
+                visitor.record_op_event(EvalEvent::RandBounded(FheRandBoundedEvent {
+                    version: EVENT_VERSION,
+                    subject: subject.to_bytes(),
+                    upper_bound: *upper_bound,
+                    seed,
+                    fhe_type: *fhe_type,
+                    result,
+                }));
+                visitor.accept_output(ctx, result, output, false)?;
+            }
         }
     }
     Ok(())

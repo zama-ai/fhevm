@@ -17,6 +17,8 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "zama-host/idl-build"]
+# Demo-only helpers (e.g. create_random_amount) for the e2e scripts; must never
+# be enabled in a production build.
 poc = []
 
 [dependencies]

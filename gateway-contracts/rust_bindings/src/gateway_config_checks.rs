@@ -135,12 +135,11 @@ pub mod GatewayConfigChecks {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorSignerDoesNotMatchTxSender(address,address)` and selector `0xe134bf62`.
-```solidity
-error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
-```*/
+    ```solidity
+    error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct CoprocessorSignerDoesNotMatchTxSender {
@@ -169,9 +168,7 @@ error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSen
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -180,16 +177,14 @@ error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSen
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<CoprocessorSignerDoesNotMatchTxSender>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<CoprocessorSignerDoesNotMatchTxSender> for UnderlyingRustTuple<'_> {
             fn from(value: CoprocessorSignerDoesNotMatchTxSender) -> Self {
                 (value.signerAddress, value.txSenderAddress)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for CoprocessorSignerDoesNotMatchTxSender {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CoprocessorSignerDoesNotMatchTxSender {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     signerAddress: tuple.0,
@@ -200,10 +195,9 @@ error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSen
         #[automatically_derived]
         impl alloy_sol_types::SolError for CoprocessorSignerDoesNotMatchTxSender {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "CoprocessorSignerDoesNotMatchTxSender(address,address)";
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str =
+                "CoprocessorSignerDoesNotMatchTxSender(address,address)";
             const SELECTOR: [u8; 4] = [225u8, 52u8, 191u8, 98u8];
             #[inline]
             fn new<'a>(
@@ -224,19 +218,18 @@ error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSen
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `HostChainDisabled(uint256)` and selector `0x603668c4`.
-```solidity
-error HostChainDisabled(uint256 chainId);
-```*/
+    ```solidity
+    error HostChainDisabled(uint256 chainId);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct HostChainDisabled {
@@ -254,14 +247,10 @@ error HostChainDisabled(uint256 chainId);
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
+        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U256,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -285,9 +274,7 @@ error HostChainDisabled(uint256 chainId);
         #[automatically_derived]
         impl alloy_sol_types::SolError for HostChainDisabled {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "HostChainDisabled(uint256)";
             const SELECTOR: [u8; 4] = [96u8, 54u8, 104u8, 196u8];
             #[inline]
@@ -299,26 +286,25 @@ error HostChainDisabled(uint256 chainId);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
+                        &self.chainId,
+                    ),
                 )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsSignerDoesNotMatchTxSender(address,address)` and selector `0x0d86f521`.
-```solidity
-error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
-```*/
+    ```solidity
+    error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct KmsSignerDoesNotMatchTxSender {
@@ -347,9 +333,7 @@ error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddre
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -358,16 +342,14 @@ error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddre
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<KmsSignerDoesNotMatchTxSender>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<KmsSignerDoesNotMatchTxSender> for UnderlyingRustTuple<'_> {
             fn from(value: KmsSignerDoesNotMatchTxSender) -> Self {
                 (value.signerAddress, value.txSenderAddress)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for KmsSignerDoesNotMatchTxSender {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsSignerDoesNotMatchTxSender {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     signerAddress: tuple.0,
@@ -378,9 +360,7 @@ error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddre
         #[automatically_derived]
         impl alloy_sol_types::SolError for KmsSignerDoesNotMatchTxSender {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "KmsSignerDoesNotMatchTxSender(address,address)";
             const SELECTOR: [u8; 4] = [13u8, 134u8, 245u8, 33u8];
             #[inline]
@@ -402,19 +382,18 @@ error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddre
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotCoprocessorSigner(address)` and selector `0x26cd75dc`.
-```solidity
-error NotCoprocessorSigner(address signerAddress);
-```*/
+    ```solidity
+    error NotCoprocessorSigner(address signerAddress);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotCoprocessorSigner {
@@ -435,9 +414,7 @@ error NotCoprocessorSigner(address signerAddress);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -455,15 +432,15 @@ error NotCoprocessorSigner(address signerAddress);
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotCoprocessorSigner {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { signerAddress: tuple.0 }
+                Self {
+                    signerAddress: tuple.0,
+                }
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotCoprocessorSigner {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotCoprocessorSigner(address)";
             const SELECTOR: [u8; 4] = [38u8, 205u8, 117u8, 220u8];
             #[inline]
@@ -482,19 +459,18 @@ error NotCoprocessorSigner(address signerAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotCoprocessorTxSender(address)` and selector `0x52d725f5`.
-```solidity
-error NotCoprocessorTxSender(address txSenderAddress);
-```*/
+    ```solidity
+    error NotCoprocessorTxSender(address txSenderAddress);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotCoprocessorTxSender {
@@ -515,9 +491,7 @@ error NotCoprocessorTxSender(address txSenderAddress);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -535,15 +509,15 @@ error NotCoprocessorTxSender(address txSenderAddress);
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotCoprocessorTxSender {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { txSenderAddress: tuple.0 }
+                Self {
+                    txSenderAddress: tuple.0,
+                }
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotCoprocessorTxSender {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotCoprocessorTxSender(address)";
             const SELECTOR: [u8; 4] = [82u8, 215u8, 37u8, 245u8];
             #[inline]
@@ -562,19 +536,18 @@ error NotCoprocessorTxSender(address txSenderAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotKmsSigner(address)` and selector `0x2a7c6ef6`.
-```solidity
-error NotKmsSigner(address signerAddress);
-```*/
+    ```solidity
+    error NotKmsSigner(address signerAddress);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotKmsSigner {
@@ -595,9 +568,7 @@ error NotKmsSigner(address signerAddress);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -615,15 +586,15 @@ error NotKmsSigner(address signerAddress);
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotKmsSigner {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { signerAddress: tuple.0 }
+                Self {
+                    signerAddress: tuple.0,
+                }
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotKmsSigner {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotKmsSigner(address)";
             const SELECTOR: [u8; 4] = [42u8, 124u8, 110u8, 246u8];
             #[inline]
@@ -642,19 +613,18 @@ error NotKmsSigner(address signerAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotKmsTxSender(address)` and selector `0xaee86323`.
-```solidity
-error NotKmsTxSender(address txSenderAddress);
-```*/
+    ```solidity
+    error NotKmsTxSender(address txSenderAddress);
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotKmsTxSender {
@@ -675,9 +645,7 @@ error NotKmsTxSender(address txSenderAddress);
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -695,15 +663,15 @@ error NotKmsTxSender(address txSenderAddress);
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotKmsTxSender {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { txSenderAddress: tuple.0 }
+                Self {
+                    txSenderAddress: tuple.0,
+                }
             }
         }
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotKmsTxSender {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotKmsTxSender(address)";
             const SELECTOR: [u8; 4] = [174u8, 232u8, 99u8, 35u8];
             #[inline]
@@ -722,16 +690,15 @@ error NotKmsTxSender(address txSenderAddress);
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     ///Container for all the [`GatewayConfigChecks`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
     pub enum GatewayConfigChecksErrors {
         #[allow(missing_docs)]
         CoprocessorSignerDoesNotMatchTxSender(CoprocessorSignerDoesNotMatchTxSender),
@@ -789,12 +756,8 @@ error NotKmsTxSender(address txSenderAddress);
                 Self::NotCoprocessorTxSender(_) => {
                     <NotCoprocessorTxSender as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::NotKmsSigner(_) => {
-                    <NotKmsSigner as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NotKmsTxSender(_) => {
-                    <NotKmsTxSender as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::NotKmsSigner(_) => <NotKmsSigner as alloy_sol_types::SolError>::SELECTOR,
+                Self::NotKmsTxSender(_) => <NotKmsTxSender as alloy_sol_types::SolError>::SELECTOR,
             }
         }
         #[inline]
@@ -807,13 +770,11 @@ error NotKmsTxSender(address txSenderAddress);
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<GatewayConfigChecksErrors>] = &[
+            )
+                -> alloy_sol_types::Result<GatewayConfigChecksErrors>] = &[
                 {
                     fn KmsSignerDoesNotMatchTxSender(
                         data: &[u8],
@@ -831,9 +792,7 @@ error NotKmsTxSender(address txSenderAddress);
                     fn NotCoprocessorSigner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotCoprocessorSigner as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <NotCoprocessorSigner as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(GatewayConfigChecksErrors::NotCoprocessorSigner)
                     }
                     NotCoprocessorSigner
@@ -851,9 +810,7 @@ error NotKmsTxSender(address txSenderAddress);
                     fn NotCoprocessorTxSender(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <NotCoprocessorTxSender as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(GatewayConfigChecksErrors::NotCoprocessorTxSender)
                     }
                     NotCoprocessorTxSender
@@ -862,9 +819,7 @@ error NotKmsTxSender(address txSenderAddress);
                     fn HostChainDisabled(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <HostChainDisabled as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <HostChainDisabled as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(GatewayConfigChecksErrors::HostChainDisabled)
                     }
                     HostChainDisabled
@@ -873,9 +828,7 @@ error NotKmsTxSender(address txSenderAddress);
                     fn NotKmsTxSender(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotKmsTxSender as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
+                        <NotKmsTxSender as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(GatewayConfigChecksErrors::NotKmsTxSender)
                     }
                     NotKmsTxSender
@@ -895,12 +848,10 @@ error NotKmsTxSender(address txSenderAddress);
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -912,7 +863,9 @@ error NotKmsTxSender(address txSenderAddress);
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<GatewayConfigChecksErrors>] = &[
+            ) -> alloy_sol_types::Result<
+                GatewayConfigChecksErrors,
+            >] = &[
                 {
                     fn KmsSignerDoesNotMatchTxSender(
                         data: &[u8],
@@ -941,9 +894,7 @@ error NotKmsTxSender(address txSenderAddress);
                     fn NotKmsSigner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotKmsSigner as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                        <NotKmsSigner as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(GatewayConfigChecksErrors::NotKmsSigner)
                     }
                     NotKmsSigner
@@ -964,9 +915,9 @@ error NotKmsTxSender(address txSenderAddress);
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
                         <HostChainDisabled as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(GatewayConfigChecksErrors::HostChainDisabled)
+                            data,
+                        )
+                        .map(GatewayConfigChecksErrors::HostChainDisabled)
                     }
                     HostChainDisabled
                 },
@@ -974,9 +925,7 @@ error NotKmsTxSender(address txSenderAddress);
                     fn NotKmsTxSender(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GatewayConfigChecksErrors> {
-                        <NotKmsTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
+                        <NotKmsTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
                             .map(GatewayConfigChecksErrors::NotKmsTxSender)
                     }
                     NotKmsTxSender
@@ -996,12 +945,10 @@ error NotKmsTxSender(address txSenderAddress);
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -1094,7 +1041,7 @@ error NotKmsTxSender(address txSenderAddress);
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`GatewayConfigChecks`](self) contract instance.
 
-See the [wrapper's documentation](`GatewayConfigChecksInstance`) for more details.*/
+    See the [wrapper's documentation](`GatewayConfigChecksInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -1107,43 +1054,41 @@ See the [wrapper's documentation](`GatewayConfigChecksInstance`) for more detail
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<GatewayConfigChecksInstance<P, N>>,
-    > {
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<GatewayConfigChecksInstance<P, N>>>
+    {
         GatewayConfigChecksInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+    >(
+        provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
         GatewayConfigChecksInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`GatewayConfigChecks`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`GatewayConfigChecks`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`GatewayConfigChecks`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct GatewayConfigChecksInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -1154,23 +1099,21 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for GatewayConfigChecksInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("GatewayConfigChecksInstance").field(&self.address).finish()
+            f.debug_tuple("GatewayConfigChecksInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > GatewayConfigChecksInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        GatewayConfigChecksInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`GatewayConfigChecks`](self) contract instance.
 
-See the [wrapper's documentation](`GatewayConfigChecksInstance`) for more details.*/
+        See the [wrapper's documentation](`GatewayConfigChecksInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
             Self {
                 address,
                 provider,
@@ -1179,9 +1122,9 @@ See the [wrapper's documentation](`GatewayConfigChecksInstance`) for more detail
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             provider: P,
@@ -1191,10 +1134,10 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+        and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -1236,10 +1179,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Function calls.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > GatewayConfigChecksInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        GatewayConfigChecksInstance<P, N>
+    {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -1253,10 +1195,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Event filters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > GatewayConfigChecksInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        GatewayConfigChecksInstance<P, N>
+    {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.

@@ -33,7 +33,6 @@ pub const MAX_INPUT_PROOF_HANDLES: usize = 16;
 pub const MAX_INPUT_PROOF_EXTRA_DATA: usize = 256;
 
 pub(crate) const COMPUTATION_DOMAIN_SEPARATOR: &[u8] = b"FHE_comp";
-pub(crate) const RANDOM_SEED_DOMAIN_SEPARATOR: &[u8] = b"FHE_seed";
 pub(crate) const COMPUTED_HANDLE_MARKER: u8 = 0xff;
 /// Current handle encoding version byte.
 pub const HANDLE_VERSION: u8 = 0;

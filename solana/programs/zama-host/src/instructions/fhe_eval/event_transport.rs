@@ -10,6 +10,7 @@ pub(super) enum EvalEvent {
     Ternary(FheTernaryOpEvent),
     Trivial(TrivialEncryptEvent),
     Rand(FheRandEvent),
+    RandBounded(FheRandBoundedEvent),
 }
 
 /// With `emit-events` disabled, off-chain reconstruction (Yellowstone gRPC) is the
@@ -43,6 +44,7 @@ pub(super) fn emit_eval_events<'info>(
             EvalEvent::Ternary(event) => emit_eval_event!(event),
             EvalEvent::Trivial(event) => emit_eval_event!(event),
             EvalEvent::Rand(event) => emit_eval_event!(event),
+            EvalEvent::RandBounded(event) => emit_eval_event!(event),
         }
     }
     Ok(())

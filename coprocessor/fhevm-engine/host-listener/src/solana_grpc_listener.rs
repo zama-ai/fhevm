@@ -782,7 +782,8 @@ fn durable_output_handle_hints_for_fhe_eval(
             FheEvalStep::Binary { output, .. }
             | FheEvalStep::Ternary { output, .. }
             | FheEvalStep::TrivialEncrypt { output, .. }
-            | FheEvalStep::Rand { output, .. } => output,
+            | FheEvalStep::Rand { output, .. }
+            | FheEvalStep::RandBounded { output, .. } => output,
         };
         let FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
@@ -820,6 +821,7 @@ fn compute_result_handle(
         E::FheTernaryOp(e) => Some(e.result),
         E::TrivialEncrypt(e) => Some(e.result),
         E::FheRand(e) => Some(e.result),
+        E::FheRandBounded(e) => Some(e.result),
         E::FinalizedAccountFetch(_) => None,
     }
 }

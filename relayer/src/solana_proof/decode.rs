@@ -276,7 +276,8 @@ fn fhe_eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
         FheEvalStep::Binary { output, .. }
         | FheEvalStep::Ternary { output, .. }
         | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. } => output,
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::RandBounded { output, .. } => output,
     }
 }
 

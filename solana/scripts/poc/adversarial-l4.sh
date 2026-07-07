@@ -11,6 +11,7 @@
 #
 # Prereq: a running stack (solana/scripts/poc/clean-e2e.sh) — same as full-vertical.sh. Local-only,
 # MAINNET-safe (validator pinned 127.0.0.1:8899). Run AFTER (or independently of) full-vertical.sh.
+# Manual-only: not wired into solana-e2e.yml CI.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 KMS="$(cd "$ROOT/../../zama/kms" 2>/dev/null && pwd || echo /Users/work/code/zama/kms)"

@@ -43,6 +43,12 @@ const FHE_RAND_EVENT_BYTES: usize = EVENT_VERSION_BYTES
     + EVENT_SEED_BYTES
     + EVENT_U8_BYTES
     + EVENT_HANDLE_BYTES;
+const FHE_RAND_BOUNDED_EVENT_BYTES: usize = EVENT_VERSION_BYTES
+    + EVENT_PUBKEY_BYTES
+    + EVENT_HANDLE_BYTES
+    + EVENT_SEED_BYTES
+    + EVENT_U8_BYTES
+    + EVENT_HANDLE_BYTES;
 
 pub(super) fn should_emit_eval_events_as_cpi(event_count: usize) -> bool {
     event_count <= MAX_CPI_EVAL_EVENTS
@@ -78,6 +84,7 @@ fn eval_step_event_payload_bytes(step: &FheEvalStep) -> usize {
         FheEvalStep::Ternary { .. } => FHE_TERNARY_OP_EVENT_BYTES,
         FheEvalStep::TrivialEncrypt { .. } => TRIVIAL_ENCRYPT_EVENT_BYTES,
         FheEvalStep::Rand { .. } => FHE_RAND_EVENT_BYTES,
+        FheEvalStep::RandBounded { .. } => FHE_RAND_BOUNDED_EVENT_BYTES,
     }
 }
 

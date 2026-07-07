@@ -1285,6 +1285,19 @@
       ]
     },
     {
+      "name": "FheRandBoundedEvent",
+      "discriminator": [
+        119,
+        162,
+        53,
+        151,
+        188,
+        168,
+        21,
+        181
+      ]
+    },
+    {
       "name": "FheRandEvent",
       "discriminator": [
         125,
@@ -2406,6 +2419,114 @@
                 }
               }
             ]
+          },
+          {
+            "name": "RandBounded",
+            "fields": [
+              {
+                "name": "upper_bound",
+                "docs": [
+                  "Exclusive upper bound encoded as a 256-bit big-endian integer."
+                ],
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheRandBoundedEvent",
+      "docs": [
+        "Emitted for bounded random ciphertext creation accepted by the host."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "subject",
+            "docs": [
+              "Subject associated with the random handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "upper_bound",
+            "docs": [
+              "Exclusive upper bound encoded as a 256-bit big-endian integer."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "seed",
+            "docs": [
+              "Random seed carried to worker tests."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          },
+          {
+            "name": "fhe_type",
+            "docs": [
+              "FHE type byte."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "result",
+            "docs": [
+              "Output handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }
