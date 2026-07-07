@@ -53,7 +53,7 @@ interface IKMSGeneration {
     event AbortKeygen(uint256 prepKeygenId);
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
-    event CompressedKeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+    event CompressedKeyMaterialAdded(uint256 indexed keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType, bytes extraData);
     event CrsgenResponse(uint256 crsId, bytes crsDigest, bytes signature, address kmsTxSender);
     event KeygenRequest(uint256 prepKeygenId, uint256 requestId, KeygenRequestKind requestKind, uint256 keyId, bytes extraData);
@@ -728,7 +728,7 @@ interface IKMSGeneration {
       {
         "name": "keyId",
         "type": "uint256",
-        "indexed": false,
+        "indexed": true,
         "internalType": "uint256"
       },
       {
@@ -5210,7 +5210,7 @@ event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDig
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `CompressedKeyMaterialAdded(uint256,string[],(uint8,bytes)[])` and selector `0x80ebc2a4e183000f6837fab1e36970e8bc4a1b19223054c32769db663a4ce346`.
 ```solidity
-event CompressedKeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+event CompressedKeyMaterialAdded(uint256 indexed keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -5242,14 +5242,16 @@ event CompressedKeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, Key
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for CompressedKeyMaterialAdded {
             type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::String>,
                 alloy::sol_types::sol_data::Array<KeyDigest>,
             );
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
             const SIGNATURE: &'static str = "CompressedKeyMaterialAdded(uint256,string[],(uint8,bytes)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
                 128u8, 235u8, 194u8, 164u8, 225u8, 131u8, 0u8, 15u8, 104u8, 55u8, 250u8,
@@ -5264,9 +5266,9 @@ event CompressedKeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, Key
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    keyId: data.0,
-                    kmsNodeStorageUrls: data.1,
-                    keyDigests: data.2,
+                    keyId: topics.1,
+                    kmsNodeStorageUrls: data.0,
+                    keyDigests: data.1,
                 }
             }
             #[inline]
@@ -5287,9 +5289,6 @@ event CompressedKeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, Key
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::String,
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeStorageUrls),
@@ -5300,7 +5299,7 @@ event CompressedKeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, Key
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(),)
+                (Self::SIGNATURE_HASH.into(), self.keyId.clone())
             }
             #[inline]
             fn encode_topics_raw(
@@ -5313,6 +5312,9 @@ event CompressedKeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, Key
                 out[0usize] = alloy_sol_types::abi::token::WordToken(
                     Self::SIGNATURE_HASH,
                 );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.keyId);
                 Ok(())
             }
         }

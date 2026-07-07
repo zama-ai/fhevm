@@ -142,7 +142,7 @@ interface IKMSGeneration {
      * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in the consensus.
      * @param keyDigests The digests of the compressed key material.
      */
-    event CompressedKeyMaterialAdded(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+    event CompressedKeyMaterialAdded(uint256 indexed keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     /**
      * @notice Emitted to trigger a CRS (Common Reference String) generation.

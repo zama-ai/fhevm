@@ -1493,6 +1493,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doMigrationResponse(migrationPrepId, migrationRequestId, kmsPk0, kmsTxSender0);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool sawMigrationKeygenRequest;
+        bool sawCompressedKeyMaterialAdded;
         for (uint256 i = 0; i < logs.length; i++) {
             assertTrue(
                 logs[i].topics[0] != IKMSGeneration.ActivateKey.selector,
@@ -1506,8 +1507,13 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
                 assertEq(emittedKeyId, keyId);
                 sawMigrationKeygenRequest = true;
             }
+            if (logs[i].topics[0] == IKMSGeneration.CompressedKeyMaterialAdded.selector) {
+                assertEq(uint256(logs[i].topics[1]), keyId);
+                sawCompressedKeyMaterialAdded = true;
+            }
         }
         assertTrue(sawMigrationKeygenRequest);
+        assertTrue(sawCompressedKeyMaterialAdded);
 
         // Publication is not activation.
         assertEq(kmsGeneration.getActiveKeyId(), activeKeyIdBefore);

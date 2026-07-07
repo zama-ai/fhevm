@@ -248,10 +248,16 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
             // the connector must parse "CompressedXofKeySet".
             ProtocolEventKind::Keygen(r) if r.requestKind == 1 => then.pb(KeyGenResult {
                 request_id,
-                key_digests: vec![GrpcKeyDigest {
-                    key_type: "CompressedXofKeySet".to_string(),
-                    digest: vec![0xC0, 0xFF, 0xEE],
-                }],
+                key_digests: vec![
+                    GrpcKeyDigest {
+                        key_type: "PublicKey".to_string(),
+                        digest: vec![0xDE, 0xAD],
+                    },
+                    GrpcKeyDigest {
+                        key_type: "CompressedXofKeySet".to_string(),
+                        digest: vec![0xC0, 0xFF, 0xEE],
+                    },
+                ],
                 ..Default::default()
             }),
             ProtocolEventKind::Keygen(_) => then.pb(KeyGenResult {

@@ -86,6 +86,8 @@ where
                     to_keyset_id_decompression_only: None,
                     existing_keyset_id: Some(u256_to_request_id(keygen_request.keyId)),
                     use_existing_key_tag: true,
+                    // KMS-core preserves the legacy CompactPublicKey and ServerKey files while
+                    // making the migrated compressed layout resolvable from the original key ID.
                     copy_compressed_key_to_original: true,
                 }),
             )
