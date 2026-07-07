@@ -335,6 +335,8 @@ pub(crate) struct EvalContext<'a, 'info> {
     pub zama_program: &'a Program<'info, ZamaHost>,
     /// Host config used for chain-id-aware handle derivation.
     pub host_config: &'a Account<'info, HostConfig>,
+    /// Canonical deny-record PDA witnesses supplied as instruction remaining accounts.
+    pub deny_subject_records: &'a [AccountInfo<'info>],
     /// Program-controlled compute signer PDA and its ACL domain.
     pub compute_authority: ComputeAuthority<'info>,
     /// System program used for output ACL creation.
@@ -412,6 +414,12 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
     for seeds in &extra_output_authority_seeds {
         signer_seed_vec.push(seeds.as_slice());
     }
+    validate_deny_subject_records_for_output_authorities(
+        request.context.host_config.grant_deny_list_enabled,
+        request.context.deny_subject_records,
+        app_authority.key(),
+        &extra_output_authorities,
+    )?;
 
     zama_fhe::invoke_eval_signed_resolved(
         &request.plan,
@@ -420,7 +428,7 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
             compute_subject: request.context.compute_authority.account_info(),
             app_account_authority: app_authority.account.clone(),
             host_config: request.context.host_config.to_account_info(),
-            deny_subject_record: None,
+            deny_subject_records: request.context.deny_subject_records,
             system_program: request.context.system_program.to_account_info(),
             event_authority: request.context.event_authority.to_account_info(),
             program: request.context.zama_program.to_account_info(),
@@ -429,6 +437,42 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
         &signer_seed_vec,
     )?;
     Ok(())
+}
+
+fn validate_deny_subject_records_for_output_authorities<'info>(
+    deny_list_enabled: bool,
+    supplied_records: &[AccountInfo<'info>],
+    app_authority: Pubkey,
+    extra_output_authorities: &[OutputAuthority<'info>],
+) -> Result<()> {
+    if !deny_list_enabled {
+        require!(
+            supplied_records.is_empty(),
+            ConfidentialTokenError::UnexpectedRemainingAccounts
+        );
+        return Ok(());
+    }
+
+    for (index, supplied) in supplied_records.iter().enumerate() {
+        require!(
+            !supplied_records[index + 1..]
+                .iter()
+                .any(|later| later.key() == supplied.key()),
+            ConfidentialTokenError::UnexpectedRemainingAccounts
+        );
+        require!(
+            is_deny_record_for_authority(supplied.key(), app_authority)
+                || extra_output_authorities
+                    .iter()
+                    .any(|authority| is_deny_record_for_authority(supplied.key(), authority.key())),
+            ConfidentialTokenError::UnexpectedRemainingAccounts
+        );
+    }
+    Ok(())
+}
+
+fn is_deny_record_for_authority(record: Pubkey, authority: Pubkey) -> bool {
+    zama_host::deny_subject_address(authority).0 == record
 }
 
 /// Inputs required to mark a host handle publicly decryptable.

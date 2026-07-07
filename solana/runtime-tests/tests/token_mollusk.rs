@@ -38,7 +38,10 @@ use anchor_lang::{
 use confidential_token as token;
 use mollusk_svm::{result::Check, Mollusk};
 use solana_sdk::{
-    account::Account, instruction::Instruction, program_error::ProgramError, program_pack::Pack,
+    account::Account,
+    instruction::{AccountMeta, Instruction},
+    program_error::ProgramError,
+    program_pack::Pack,
     pubkey::Pubkey,
 };
 use std::collections::HashMap;
@@ -127,13 +130,22 @@ where
 }
 
 fn host_config_account(admin: Pubkey, coprocessor_signer: [u8; 20]) -> Account {
-    host_config_account_with_kms_context(admin, coprocessor_signer, 0)
+    host_config_account_with_flags(admin, coprocessor_signer, 0, false)
 }
 
 fn host_config_account_with_kms_context(
     admin: Pubkey,
     coprocessor_signer: [u8; 20],
     current_kms_context_id: u64,
+) -> Account {
+    host_config_account_with_flags(admin, coprocessor_signer, current_kms_context_id, false)
+}
+
+fn host_config_account_with_flags(
+    admin: Pubkey,
+    coprocessor_signer: [u8; 20],
+    current_kms_context_id: u64,
+    grant_deny_list_enabled: bool,
 ) -> Account {
     let (host_config, bump) = host::host_config_address();
     let _ = host_config;
@@ -153,7 +165,7 @@ fn host_config_account_with_kms_context(
             paused: false,
             mock_input_enabled: false,
             test_shims_enabled: true,
-            grant_deny_list_enabled: false,
+            grant_deny_list_enabled,
             max_hcu_per_tx: 0,
             max_hcu_depth_per_tx: 0,
             updated_slot: 0,
@@ -163,6 +175,28 @@ fn host_config_account_with_kms_context(
         executable: false,
         rent_epoch: 0,
     }
+}
+
+fn deny_enabled_host_config_account(admin: Pubkey, coprocessor_signer: [u8; 20]) -> Account {
+    host_config_account_with_flags(admin, coprocessor_signer, 0, true)
+}
+
+fn deny_subject_record_account(subject: Pubkey, denied: bool) -> (Pubkey, Account) {
+    let (record, bump) = host::deny_subject_address(subject);
+    (
+        record,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(host::DenySubjectRecord {
+                subject,
+                denied,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
 }
 
 /// Builds a canonical `EncryptedValue` lineage account for direct account-map seeding, mirroring
@@ -575,7 +609,27 @@ fn confidential_transfer_ix(
     to_balance_value: Pubkey,
     amount_attestation: host::CoprocessorInputAttestation,
 ) -> Instruction {
-    anchor_ix(
+    confidential_transfer_ix_with_remaining(
+        fixture,
+        from_token,
+        to_token,
+        from_balance_value,
+        to_balance_value,
+        amount_attestation,
+        Vec::new(),
+    )
+}
+
+fn confidential_transfer_ix_with_remaining(
+    fixture: &TokenFixture,
+    from_token: Pubkey,
+    to_token: Pubkey,
+    from_balance_value: Pubkey,
+    to_balance_value: Pubkey,
+    amount_attestation: host::CoprocessorInputAttestation,
+    remaining: Vec<Pubkey>,
+) -> Instruction {
+    let mut ix = anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
             owner: fixture.owner,
@@ -595,7 +649,43 @@ fn confidential_transfer_ix(
             program: token::id(),
         },
         token::instruction::ConfidentialTransfer { amount_attestation },
-    )
+    );
+    ix.accounts.extend(
+        remaining
+            .into_iter()
+            .map(|pubkey| AccountMeta::new_readonly(pubkey, false)),
+    );
+    ix
+}
+
+fn deny_enabled_transfer_accounts(
+    fixture: &TokenFixture,
+    denied_authority: Option<Pubkey>,
+) -> (HashMap<Pubkey, Account>, Vec<Pubkey>) {
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(
+        fixture.host_config,
+        deny_enabled_host_config_account(
+            fixture.owner,
+            secp_evm_address(&coprocessor_signing_key()),
+        ),
+    );
+
+    let from_deny = host::deny_subject_address(fixture.alice_token).0;
+    let to_deny = host::deny_subject_address(fixture.bob_token).0;
+    let from_account = if denied_authority == Some(fixture.alice_token) {
+        deny_subject_record_account(fixture.alice_token, true).1
+    } else {
+        system_account(0)
+    };
+    let to_account = if denied_authority == Some(fixture.bob_token) {
+        deny_subject_record_account(fixture.bob_token, true).1
+    } else {
+        system_account(0)
+    };
+    accounts.insert(from_deny, from_account);
+    accounts.insert(to_deny, to_account);
+    (accounts, vec![from_deny, to_deny])
 }
 
 fn request_disclose_balance_ix(
@@ -916,6 +1006,101 @@ fn mollusk_confidential_transfer_updates_balance_lineages_and_transferred_amount
     );
     assert_eq!(balance_events[1].old_handle, fixture.bob_initial);
     assert_eq!(balance_events[1].new_handle, bob_balance.current_handle);
+}
+
+#[test]
+fn mollusk_confidential_transfer_with_deny_list_succeeds_when_neither_authority_is_denied() {
+    let fixture = TokenFixture::new();
+    let (accounts, deny_records) = deny_enabled_transfer_accounts(&fixture, None);
+    let context = mollusk().with_context(accounts);
+    let amount_handle = handle_for_chain(23, BALANCE_FHE_TYPE);
+    let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+    let ix = confidential_transfer_ix_with_remaining(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        attestation,
+        deny_records,
+    );
+
+    context.process_and_validate_instruction(&ix, &[Check::success()]);
+
+    let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
+    let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
+    assert_ne!(alice_balance.current_handle, fixture.alice_initial);
+    assert_ne!(bob_balance.current_handle, fixture.bob_initial);
+    assert!(!account_is_system_owned_and_empty(
+        &context,
+        fixture.transferred_amount_value_address(fixture.alice_token)
+    ));
+}
+
+#[test]
+fn mollusk_confidential_transfer_with_deny_list_rejects_denied_from_authority() {
+    let fixture = TokenFixture::new();
+    let (accounts, deny_records) =
+        deny_enabled_transfer_accounts(&fixture, Some(fixture.alice_token));
+    let context = mollusk().with_context(accounts);
+    let amount_handle = handle_for_chain(24, BALANCE_FHE_TYPE);
+    let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+    let ix = confidential_transfer_ix_with_remaining(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        attestation,
+        deny_records,
+    );
+
+    context.process_and_validate_instruction(
+        &ix,
+        &[host_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+
+    let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
+    let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
+    assert_eq!(alice_balance.current_handle, fixture.alice_initial);
+    assert_eq!(bob_balance.current_handle, fixture.bob_initial);
+    assert!(account_is_system_owned_and_empty(
+        &context,
+        fixture.transferred_amount_value_address(fixture.alice_token)
+    ));
+}
+
+#[test]
+fn mollusk_confidential_transfer_with_deny_list_rejects_denied_to_authority() {
+    let fixture = TokenFixture::new();
+    let (accounts, deny_records) =
+        deny_enabled_transfer_accounts(&fixture, Some(fixture.bob_token));
+    let context = mollusk().with_context(accounts);
+    let amount_handle = handle_for_chain(25, BALANCE_FHE_TYPE);
+    let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+    let ix = confidential_transfer_ix_with_remaining(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        attestation,
+        deny_records,
+    );
+
+    context.process_and_validate_instruction(
+        &ix,
+        &[host_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+
+    let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
+    let bob_balance = read_encrypted_value(&context, fixture.bob_balance_value);
+    assert_eq!(alice_balance.current_handle, fixture.alice_initial);
+    assert_eq!(bob_balance.current_handle, fixture.bob_initial);
+    assert!(account_is_system_owned_and_empty(
+        &context,
+        fixture.transferred_amount_value_address(fixture.alice_token)
+    ));
 }
 
 #[test]

@@ -48,8 +48,11 @@ fn host_config_with(
 
 #[test]
 fn zero_birth_entropy_requires_poc_chain_and_test_shims() {
-    // Local PoC chain with the shim flag: relaxation allowed.
-    assert!(host_config_with(SOLANA_POC_CHAIN_ID, true, false).zero_birth_entropy_allowed());
+    // Local PoC chain with the shim flag: relaxation allowed only in PoC-feature builds.
+    assert_eq!(
+        host_config_with(SOLANA_POC_CHAIN_ID, true, false).zero_birth_entropy_allowed(),
+        cfg!(feature = "poc")
+    );
     // Local PoC chain without the shim flag: fails closed (drives the
     // PreviousBankHashUnavailable negative test).
     assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, false).zero_birth_entropy_allowed());

@@ -31,6 +31,7 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
     pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
+    pub(crate) deny_subject_records: &'a [AccountInfo<'info>],
     pub(crate) system_program: &'a Program<'info, System>,
 }
 
@@ -95,6 +96,7 @@ pub(crate) fn execute_transfer<'info>(
     let from_encrypted_value = accounts.from_balance_value.key();
     let to_encrypted_value = accounts.to_balance_value.key();
     if from_key == to_key {
+        assert_no_remaining_accounts(accounts.deny_subject_records)?;
         return Ok(None);
     }
 
@@ -225,6 +227,7 @@ fn execute_transfer_eval<'info>(
             event_authority: accounts.zama_event_authority,
             zama_program: accounts.zama_program,
             host_config: accounts.host_config,
+            deny_subject_records: accounts.deny_subject_records,
             compute_authority,
             system_program: accounts.system_program,
         },

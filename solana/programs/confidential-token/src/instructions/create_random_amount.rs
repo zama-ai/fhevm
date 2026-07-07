@@ -30,28 +30,27 @@ pub struct CreateRandomAmount<'info> {
 }
 
 /// Creates a token-scoped random encrypted amount for transfer or burn flows.
-pub fn create_random_amount(
-    ctx: Context<CreateRandomAmount>,
+pub fn create_random_amount<'info>(
+    ctx: Context<'info, CreateRandomAmount<'info>>,
     amount_kind: ConfidentialAmountKind,
 ) -> Result<()> {
     create_random_amount_inner(ctx, amount_kind, None)
 }
 
 /// Creates a token-scoped bounded random encrypted amount for transfer or burn flows.
-pub fn create_random_bounded_amount(
-    ctx: Context<CreateRandomAmount>,
+pub fn create_random_bounded_amount<'info>(
+    ctx: Context<'info, CreateRandomAmount<'info>>,
     amount_kind: ConfidentialAmountKind,
     upper_bound: [u8; 32],
 ) -> Result<()> {
     create_random_amount_inner(ctx, amount_kind, Some(upper_bound))
 }
 
-fn create_random_amount_inner(
-    ctx: Context<CreateRandomAmount>,
+fn create_random_amount_inner<'info>(
+    ctx: Context<'info, CreateRandomAmount<'info>>,
     amount_kind: ConfidentialAmountKind,
     upper_bound: Option<[u8; 32]>,
 ) -> Result<()> {
-    assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
     let owner = ctx.accounts.owner.key();
@@ -120,6 +119,7 @@ fn create_random_amount_inner(
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
+            deny_subject_records: ctx.remaining_accounts,
             compute_authority,
             system_program: &ctx.accounts.system_program,
         },

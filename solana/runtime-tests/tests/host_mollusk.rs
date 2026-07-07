@@ -487,14 +487,14 @@ fn fhe_eval_ix(
     args: FheEvalArgs,
     remaining: Vec<AccountMeta>,
 ) -> Instruction {
-    fhe_eval_ix_with_deny(
+    fhe_eval_ix_with_deny_records(
         payer,
         compute_subject,
         app_account_authority,
         host_config,
         args,
         remaining,
-        None,
+        Vec::new(),
     )
 }
 
@@ -507,6 +507,26 @@ fn fhe_eval_ix_with_deny(
     remaining: Vec<AccountMeta>,
     deny_subject_record: Option<Pubkey>,
 ) -> Instruction {
+    fhe_eval_ix_with_deny_records(
+        payer,
+        compute_subject,
+        app_account_authority,
+        host_config,
+        args,
+        remaining,
+        deny_subject_record.into_iter().collect(),
+    )
+}
+
+fn fhe_eval_ix_with_deny_records(
+    payer: Pubkey,
+    compute_subject: Pubkey,
+    app_account_authority: Pubkey,
+    host_config: Pubkey,
+    args: FheEvalArgs,
+    remaining: Vec<AccountMeta>,
+    deny_subject_records: Vec<Pubkey>,
+) -> Instruction {
     let mut ix = anchor_ix(
         host::id(),
         host::accounts::FheEval {
@@ -514,7 +534,6 @@ fn fhe_eval_ix_with_deny(
             compute_subject,
             app_account_authority,
             host_config,
-            deny_subject_record,
             system_program: system_program::ID,
             event_authority: event_authority(host::id()),
             program: host::id(),
@@ -522,11 +541,21 @@ fn fhe_eval_ix_with_deny(
         host::instruction::FheEval { args },
     );
     ix.accounts.extend(remaining);
+    ix.accounts
+        .extend(deny_subject_records.into_iter().map(readonly));
     ix
 }
 
 fn writable(pubkey: Pubkey) -> AccountMeta {
     AccountMeta::new(pubkey, false)
+}
+
+fn readonly(pubkey: Pubkey) -> AccountMeta {
+    AccountMeta::new_readonly(pubkey, false)
+}
+
+fn readonly_signer(pubkey: Pubkey) -> AccountMeta {
+    AccountMeta::new_readonly(pubkey, true)
 }
 
 // ---------------------------------------------------------------------------
@@ -1541,6 +1570,99 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     ];
     mollusk().process_and_validate_instruction(
         &eval_ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+}
+
+#[test]
+fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame() {
+    let authority_a = Pubkey::new_unique();
+    let authority_b = Pubkey::new_unique();
+    let (host_config, host_config_account) = deny_enabled_host_config_account(authority_a);
+    let (deny_a, deny_a_account) = (
+        host::deny_subject_address(authority_a).0,
+        empty_system_account(),
+    );
+    let (deny_b, deny_b_account) = deny_subject_record_account(authority_b, true);
+    let output_a_label = label("multi-deny-a");
+    let output_b_label = label("multi-deny-b");
+    let output_a = host::encrypted_value_address(zama_solana_acl::derive_value_key(
+        authority_a.to_bytes(),
+        authority_a.to_bytes(),
+        output_a_label,
+    ))
+    .0;
+    let output_b = host::encrypted_value_address(zama_solana_acl::derive_value_key(
+        authority_b.to_bytes(),
+        authority_b.to_bytes(),
+        output_b_label,
+    ))
+    .0;
+    let args = FheEvalArgs {
+        context_id: [11; 32],
+        steps: vec![
+            FheEvalStep::TrivialEncrypt {
+                plaintext: [3; 32],
+                fhe_type: 5,
+                output: FheEvalOutput::AllowedDurable {
+                    output_encrypted_value_index: 0,
+                    output_app_account_authority_index: None,
+                    output_acl_domain_key: authority_a,
+                    output_app_account: authority_a,
+                    output_encrypted_value_label: output_a_label,
+                    output_subjects: vec![host::AclSubjectEntry {
+                        pubkey: authority_a,
+                    }],
+                    previous_handle: None,
+                    previous_subjects: None,
+                },
+            },
+            FheEvalStep::TrivialEncrypt {
+                plaintext: [4; 32],
+                fhe_type: 5,
+                output: FheEvalOutput::AllowedDurable {
+                    output_encrypted_value_index: 1,
+                    output_app_account_authority_index: Some(2),
+                    output_acl_domain_key: authority_b,
+                    output_app_account: authority_b,
+                    output_encrypted_value_label: output_b_label,
+                    output_subjects: vec![host::AclSubjectEntry {
+                        pubkey: authority_b,
+                    }],
+                    previous_handle: None,
+                    previous_subjects: None,
+                },
+            },
+        ],
+    };
+    let ix = fhe_eval_ix_with_deny_records(
+        authority_a,
+        authority_a,
+        authority_a,
+        host_config,
+        args,
+        vec![
+            writable(output_a),
+            writable(output_b),
+            readonly_signer(authority_b),
+        ],
+        vec![deny_a, deny_b],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority_a, funded_system_account()),
+        (authority_b, funded_system_account()),
+        (host_config, host_config_account),
+        (event_authority(host::id()), Account::default()),
+        (output_a, empty_system_account()),
+        (output_b, empty_system_account()),
+        (deny_a, deny_a_account),
+        (deny_b, deny_b_account),
+    ];
+
+    mollusk().process_and_validate_instruction(
+        &ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
     );

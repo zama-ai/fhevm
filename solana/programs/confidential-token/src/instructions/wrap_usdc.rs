@@ -59,8 +59,7 @@ pub struct WrapUsdc<'info> {
 }
 
 /// Escrows public USDC and rotates the confidential balance by `amount`.
-pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
-    assert_no_remaining_accounts(ctx.remaining_accounts)?;
+pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Result<()> {
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
     let decimals = ctx.accounts.mint.decimals;
@@ -189,6 +188,7 @@ pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
+            deny_subject_records: ctx.remaining_accounts,
             compute_authority,
             system_program: &ctx.accounts.system_program,
         },

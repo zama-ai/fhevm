@@ -1,12 +1,27 @@
 use super::event_budget::assert_eval_log_budget;
 use super::*;
 
-pub(super) fn preflight_eval_frame(
-    remaining_accounts: &[AccountInfo],
+pub(super) fn preflight_eval_frame<'info>(
+    ctx: &Context<'info, FheEval<'info>>,
     args: &FheEvalArgs,
 ) -> Result<()> {
+    preflight_eval_frame_accounts(
+        ctx.remaining_accounts,
+        args,
+        ctx.accounts.app_account_authority.key(),
+        ctx.accounts.host_config.grant_deny_list_enabled,
+    )
+}
+
+fn preflight_eval_frame_accounts(
+    remaining_accounts: &[AccountInfo],
+    args: &FheEvalArgs,
+    app_account_authority: Pubkey,
+    deny_list_enabled: bool,
+) -> Result<()> {
     assert_unique_remaining_accounts(remaining_accounts)?;
-    let mut preflight = EvalPreflight::new(remaining_accounts.len());
+    let mut preflight =
+        EvalPreflight::new(remaining_accounts, app_account_authority, deny_list_enabled);
 
     for (index, step) in args.steps.iter().enumerate() {
         preflight_eval_step(step, index, &mut preflight)?;
@@ -15,16 +30,32 @@ pub(super) fn preflight_eval_frame(
     preflight.finish()
 }
 
-struct EvalPreflight {
+struct EvalPreflight<'a, 'info> {
+    remaining_accounts: &'a [AccountInfo<'info>],
     remaining_accounts_used: Vec<bool>,
+    app_account_authority: Pubkey,
+    deny_list_enabled: bool,
 }
 
-impl EvalPreflight {
+impl<'a, 'info> EvalPreflight<'a, 'info> {
     /// Tracks static frame requirements before any account mutation happens.
-    fn new(remaining_account_count: usize) -> Self {
+    fn new(
+        remaining_accounts: &'a [AccountInfo<'info>],
+        app_account_authority: Pubkey,
+        deny_list_enabled: bool,
+    ) -> Self {
         Self {
-            remaining_accounts_used: vec![false; remaining_account_count],
+            remaining_accounts,
+            remaining_accounts_used: vec![false; remaining_accounts.len()],
+            app_account_authority,
+            deny_list_enabled,
         }
+    }
+
+    fn account(&self, index: u16) -> Result<&AccountInfo<'info>> {
+        self.remaining_accounts
+            .get(index as usize)
+            .ok_or_else(|| error!(ZamaHostError::InvalidFheEvalAccount))
     }
 
     fn mark_account(&mut self, index: u16) -> Result<()> {
@@ -34,6 +65,33 @@ impl EvalPreflight {
             .get_mut(account_index)
             .ok_or_else(|| error!(ZamaHostError::InvalidFheEvalAccount))?;
         *used = true;
+        Ok(())
+    }
+
+    fn mark_output_authority(&mut self, authority_index: Option<u16>) -> Result<Pubkey> {
+        match authority_index {
+            Some(index) => {
+                let authority = self.account(index)?.key();
+                self.mark_account(index)?;
+                Ok(authority)
+            }
+            None => Ok(self.app_account_authority),
+        }
+    }
+
+    fn mark_deny_record(&mut self, authority: Pubkey) -> Result<()> {
+        if !self.deny_list_enabled {
+            return Ok(());
+        }
+        let (expected, _) = deny_subject_address(authority);
+        let Some(index) = self
+            .remaining_accounts
+            .iter()
+            .position(|account| account.key() == expected)
+        else {
+            return Err(error!(ZamaHostError::AclDenyRecordMissing));
+        };
+        self.remaining_accounts_used[index] = true;
         Ok(())
     }
 
@@ -61,7 +119,7 @@ fn assert_unique_remaining_accounts(remaining_accounts: &[AccountInfo]) -> Resul
 fn preflight_eval_step(
     step: &FheEvalStep,
     step_index: usize,
-    preflight: &mut EvalPreflight,
+    preflight: &mut EvalPreflight<'_, '_>,
 ) -> Result<()> {
     match step {
         FheEvalStep::Binary {
@@ -93,7 +151,7 @@ fn preflight_eval_step(
 fn preflight_rhs_operand(
     operand: &FheEvalOperand,
     step_index: usize,
-    preflight: &mut EvalPreflight,
+    preflight: &mut EvalPreflight<'_, '_>,
 ) -> Result<()> {
     match operand {
         FheEvalOperand::Scalar(_) => Ok(()),
@@ -104,7 +162,7 @@ fn preflight_rhs_operand(
 fn preflight_encrypted_operand(
     operand: &FheEvalOperand,
     step_index: usize,
-    preflight: &mut EvalPreflight,
+    preflight: &mut EvalPreflight<'_, '_>,
 ) -> Result<()> {
     match operand {
         FheEvalOperand::AllowedDurable {
@@ -127,7 +185,7 @@ fn preflight_encrypted_operand(
     Ok(())
 }
 
-fn preflight_output(output: &FheEvalOutput, preflight: &mut EvalPreflight) -> Result<()> {
+fn preflight_output(output: &FheEvalOutput, preflight: &mut EvalPreflight<'_, '_>) -> Result<()> {
     match output {
         FheEvalOutput::AllowedLocal => {}
         FheEvalOutput::AllowedDurable {
@@ -136,9 +194,8 @@ fn preflight_output(output: &FheEvalOutput, preflight: &mut EvalPreflight) -> Re
             ..
         } => {
             preflight.mark_account(*output_encrypted_value_index)?;
-            if let Some(index) = output_app_account_authority_index {
-                preflight.mark_account(*index)?;
-            }
+            let authority = preflight.mark_output_authority(*output_app_account_authority_index)?;
+            preflight.mark_deny_record(authority)?;
         }
     }
     Ok(())
@@ -169,7 +226,9 @@ mod tests {
         };
         let accounts = vec![test_account(duplicate), test_account(duplicate)];
 
-        assert!(preflight_eval_frame(&accounts, &args).is_err());
+        assert!(
+            preflight_eval_frame_accounts(&accounts, &args, Pubkey::new_unique(), false).is_err()
+        );
     }
 
     fn test_account(key: Pubkey) -> AccountInfo<'static> {

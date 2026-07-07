@@ -36,11 +36,10 @@ pub struct InitializeTokenAccount<'info> {
 }
 
 /// Initializes a token account and creates its initial confidential balance handle.
-pub fn initialize_token_account(
-    ctx: Context<InitializeTokenAccount>,
+pub fn initialize_token_account<'info>(
+    ctx: Context<'info, InitializeTokenAccount<'info>>,
     initial_balance: u64,
 ) -> Result<()> {
-    assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     require!(
         initial_balance == 0,
@@ -107,6 +106,7 @@ pub fn initialize_token_account(
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
+            deny_subject_records: ctx.remaining_accounts,
             compute_authority,
             system_program: &ctx.accounts.system_program,
         },

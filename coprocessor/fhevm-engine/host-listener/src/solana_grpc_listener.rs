@@ -141,8 +141,8 @@ pub async fn run(
 ///
 /// `remaining_index` (the program's `output_encrypted_value_index`) is relative to
 /// `remaining_accounts`, which follow the named `fhe_eval` accounts — payer,
-/// compute_subject, app_account_authority, host_config, optional deny_subject_record,
-/// system_program, then `#[event_cpi]`'s event_authority + program (see `FheEval` in fhe_eval.rs). Returns
+/// compute_subject, app_account_authority, host_config, system_program, then
+/// `#[event_cpi]`'s event_authority + program (see `FheEval` in fhe_eval.rs). Returns
 /// `None` when the index is out of range; the caller treats that as a hard problem, since
 /// the durable output would otherwise never be marked allowed and never materialize.
 #[cfg(feature = "solana-reconstruct")]
@@ -151,21 +151,9 @@ fn fhe_eval_durable_encrypted_value(
     remaining_index: u16,
 ) -> Option<[u8; 32]> {
     const FHE_EVAL_REMAINING_BASE: usize = 7;
-    const FHE_EVAL_REMAINING_BASE_WITH_DENY_RECORD: usize = 8;
-    let event_authority = anchor_lang::prelude::Pubkey::find_program_address(
-        &[b"__event_authority"],
-        &zama_host::ID,
-    )
-    .0
-    .to_bytes();
-    let base = if accounts.get(6) == Some(&event_authority)
-        && accounts.get(7) == Some(&zama_host::ID.to_bytes())
-    {
-        FHE_EVAL_REMAINING_BASE_WITH_DENY_RECORD
-    } else {
-        FHE_EVAL_REMAINING_BASE
-    };
-    accounts.get(base + remaining_index as usize).copied()
+    accounts
+        .get(FHE_EVAL_REMAINING_BASE + remaining_index as usize)
+        .copied()
 }
 
 #[allow(clippy::too_many_arguments)]

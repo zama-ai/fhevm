@@ -53,13 +53,13 @@ pub mod confidential_token {
     use super::*;
 
     /// Initializes a confidential mint and records its host ACL domain.
-    pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
+    pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Result<()> {
         instructions::initialize_mint(ctx)
     }
 
     /// Initializes a token account and creates its initial confidential balance handle.
-    pub fn initialize_token_account(
-        ctx: Context<InitializeTokenAccount>,
+    pub fn initialize_token_account<'info>(
+        ctx: Context<'info, InitializeTokenAccount<'info>>,
         initial_balance: u64,
     ) -> Result<()> {
         instructions::initialize_token_account(ctx, initial_balance)
@@ -69,8 +69,8 @@ pub mod confidential_token {
     /// transfers and burns take a coprocessor-attested external amount (fromExternal), not a random
     /// handle. Gated behind the `poc` feature so it never ships in the production IDL.
     #[cfg(feature = "poc")]
-    pub fn create_random_amount(
-        ctx: Context<CreateRandomAmount>,
+    pub fn create_random_amount<'info>(
+        ctx: Context<'info, CreateRandomAmount<'info>>,
         amount_kind: ConfidentialAmountKind,
     ) -> Result<()> {
         instructions::create_random_amount(ctx, amount_kind)
@@ -79,8 +79,8 @@ pub mod confidential_token {
     /// Creates a token-scoped bounded random encrypted amount. Vestigial PoC/demo helper gated
     /// behind the `poc` feature with `create_random_amount`.
     #[cfg(feature = "poc")]
-    pub fn create_random_bounded_amount(
-        ctx: Context<CreateRandomAmount>,
+    pub fn create_random_bounded_amount<'info>(
+        ctx: Context<'info, CreateRandomAmount<'info>>,
         amount_kind: ConfidentialAmountKind,
         upper_bound: [u8; 32],
     ) -> Result<()> {
@@ -88,21 +88,21 @@ pub mod confidential_token {
     }
 
     /// Escrows public USDC and rotates the confidential balance by `amount`.
-    pub fn wrap_usdc(ctx: Context<WrapUsdc>, amount: u64) -> Result<()> {
+    pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Result<()> {
         instructions::wrap_usdc(ctx, amount)
     }
 
     /// Burns an encrypted amount by rotating the account balance and encrypted total supply.
-    pub fn confidential_burn(
-        ctx: Context<ConfidentialBurn>,
+    pub fn confidential_burn<'info>(
+        ctx: Context<'info, ConfidentialBurn<'info>>,
         amount_attestation: zama_host::CoprocessorInputAttestation,
     ) -> Result<()> {
         instructions::confidential_burn(ctx, amount_attestation)
     }
 
     /// Transfers an encrypted amount by rotating the sender and recipient balance handles.
-    pub fn confidential_transfer(
-        ctx: Context<ConfidentialTransfer>,
+    pub fn confidential_transfer<'info>(
+        ctx: Context<'info, ConfidentialTransfer<'info>>,
         amount_attestation: zama_host::CoprocessorInputAttestation,
     ) -> Result<()> {
         instructions::confidential_transfer(ctx, amount_attestation)

@@ -1,6 +1,6 @@
 use super::super::common::{
-    assert_encrypted_value_subject_allowed, assert_output_acl_metadata, check_grant_not_denied,
-    read_canonical_encrypted_value,
+    assert_encrypted_value_subject_allowed, assert_output_acl_metadata,
+    check_grant_not_denied_info, read_canonical_encrypted_value,
 };
 use super::handles::EvalHandleContext;
 use super::walk::{walk_eval_frame, EvalStepVisitor};
@@ -257,11 +257,13 @@ fn admit_durable_output_authority<'info>(
         }
         None => ctx.accounts.app_account_authority.to_account_info(),
     };
-    check_grant_not_denied(
+    let deny_record = super::deny_subject_record_for(
         &ctx.accounts.host_config,
+        ctx.remaining_accounts,
+        None,
         authority.key(),
-        ctx.accounts.deny_subject_record.as_ref(),
     )?;
+    check_grant_not_denied_info(&ctx.accounts.host_config, authority.key(), deny_record)?;
     Ok(authority)
 }
 

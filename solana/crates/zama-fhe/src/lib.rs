@@ -745,9 +745,11 @@ impl BoundedU64UpperBound {
     pub fn full_width() -> Self {
         let mut value = [0u8; 32];
         value[23] = 1;
-        debug_assert!(
-            zama_host::assert_valid_bounded_rand_upper_bound(value, FheType::UINT64.byte()).is_ok()
-        );
+        debug_assert!(zama_host::assert_valid_bounded_rand_upper_bound(
+            value,
+            FheType::UINT64.byte()
+        )
+        .is_ok());
         Self { value }
     }
 
@@ -2011,12 +2013,12 @@ pub mod advanced {
 }
 
 #[cfg(feature = "cpi")]
-pub struct EvalCpiAccounts<'info> {
+pub struct EvalCpiAccounts<'a, 'info> {
     pub payer: AccountInfo<'info>,
     pub compute_subject: AccountInfo<'info>,
     pub app_account_authority: AccountInfo<'info>,
     pub host_config: AccountInfo<'info>,
-    pub deny_subject_record: Option<AccountInfo<'info>>,
+    pub deny_subject_records: &'a [AccountInfo<'info>],
     pub system_program: AccountInfo<'info>,
     pub event_authority: AccountInfo<'info>,
     pub program: AccountInfo<'info>,
@@ -2092,10 +2094,10 @@ impl From<anchor_lang::error::Error> for EvalInvokeError {
 /// before constructing the ordered host account list used by
 /// [`invoke_eval_signed_resolved`].
 #[cfg(feature = "cpi")]
-pub fn invoke_eval_signed_with_builder<'info, T, F>(
+pub fn invoke_eval_signed_with_builder<'a, 'info, T, F>(
     context_id: EvalContextId,
     app_authority: EvalAppAuthority,
-    accounts: EvalCpiAccounts<'info>,
+    accounts: EvalCpiAccounts<'a, 'info>,
     dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
     output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
     signer_seeds: &[&[&[u8]]],
@@ -2118,9 +2120,9 @@ where
 /// pubkey, applies signer/writable roles from the plan, and emits the ordered
 /// host account list required by the low-level ABI.
 #[cfg(all(feature = "cpi", feature = "raw-host-api"))]
-pub fn invoke_eval_signed<'info>(
+pub fn invoke_eval_signed<'a, 'info>(
     plan: &EvalPlan,
-    accounts: EvalCpiAccounts<'info>,
+    accounts: EvalCpiAccounts<'a, 'info>,
     available_remaining_accounts: &[AccountInfo<'info>],
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()> {
@@ -2132,9 +2134,9 @@ pub fn invoke_eval_signed<'info>(
 
 /// Invokes `zama-host::fhe_eval` with accounts pre-resolved from an [`EvalPlan`].
 #[cfg(feature = "cpi")]
-pub fn invoke_eval_signed_resolved<'info>(
+pub fn invoke_eval_signed_resolved<'a, 'info>(
     plan: &EvalPlan,
-    accounts: EvalCpiAccounts<'info>,
+    accounts: EvalCpiAccounts<'a, 'info>,
     resolved_accounts: &ResolvedEvalAccounts<'info>,
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()> {
@@ -2142,9 +2144,9 @@ pub fn invoke_eval_signed_resolved<'info>(
 }
 
 #[cfg(feature = "cpi")]
-fn invoke_eval_signed_with_resolver<'info, R>(
+fn invoke_eval_signed_with_resolver<'a, 'info, R>(
     plan: &EvalPlan,
-    accounts: EvalCpiAccounts<'info>,
+    accounts: EvalCpiAccounts<'a, 'info>,
     resolver: &R,
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()>
@@ -2154,12 +2156,12 @@ where
     if accounts.app_account_authority.key() != plan.app_authority.pubkey() {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
+    let deny_subject_records = accounts.deny_subject_records;
     let fixed_accounts = zama_host::cpi::accounts::FheEval {
         payer: accounts.payer,
         compute_subject: accounts.compute_subject,
         app_account_authority: accounts.app_account_authority,
         host_config: accounts.host_config,
-        deny_subject_record: accounts.deny_subject_record,
         system_program: accounts.system_program,
         event_authority: accounts.event_authority,
         program: accounts.program,
@@ -2177,6 +2179,10 @@ where
         };
         account_metas.push(meta);
         account_infos.push(account);
+    }
+    for record in deny_subject_records.iter().cloned() {
+        account_metas.push(AccountMeta::new_readonly(record.key(), false));
+        account_infos.push(record);
     }
 
     let instruction = Instruction {
@@ -2257,13 +2263,13 @@ mod tests {
     }
 
     #[cfg(feature = "cpi")]
-    fn cpi_accounts(app_authority: Pubkey) -> EvalCpiAccounts<'static> {
+    fn cpi_accounts(app_authority: Pubkey) -> EvalCpiAccounts<'static, 'static> {
         EvalCpiAccounts {
             payer: account_info(Pubkey::new_unique(), true),
             compute_subject: account_info(Pubkey::new_unique(), false),
             app_account_authority: account_info(app_authority, false),
             host_config: account_info(Pubkey::new_unique(), false),
-            deny_subject_record: None,
+            deny_subject_records: &[],
             system_program: account_info(Pubkey::new_unique(), false),
             event_authority: account_info(Pubkey::new_unique(), false),
             program: account_info(Pubkey::new_unique(), false),

@@ -185,12 +185,20 @@ pub(super) fn check_grant_not_denied(
     subject: Pubkey,
     deny_record: Option<&UncheckedAccount>,
 ) -> Result<()> {
+    let info = deny_record.map(|account| account.to_account_info());
+    check_grant_not_denied_info(config, subject, info.as_ref())
+}
+
+pub(super) fn check_grant_not_denied_info(
+    config: &HostConfig,
+    subject: Pubkey,
+    deny_record: Option<&AccountInfo>,
+) -> Result<()> {
     if !config.grant_deny_list_enabled {
         require!(deny_record.is_none(), ZamaHostError::AclDenyRecordMismatch);
         return Ok(());
     }
-    let deny_record = deny_record.ok_or(ZamaHostError::AclDenyRecordMissing)?;
-    let info = deny_record.to_account_info();
+    let info = deny_record.ok_or_else(|| error!(ZamaHostError::AclDenyRecordMissing))?;
     let (expected, expected_bump) = deny_subject_address(subject);
     require_keys_eq!(info.key(), expected, ZamaHostError::AclDenyRecordMismatch);
 

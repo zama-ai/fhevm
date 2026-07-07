@@ -193,7 +193,6 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
                 &fixture.host_program_id,
             )
             .0,
-            deny_subject_record: None,
             system_program: system_program::ID,
             event_authority: event_authority(fixture.host_program_id),
             program: fixture.host_program_id,

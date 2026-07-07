@@ -42,11 +42,10 @@ pub struct ConfidentialBurn<'info> {
 }
 
 /// Burns an encrypted amount by rotating the account balance and encrypted total supply.
-pub fn confidential_burn(
-    ctx: Context<ConfidentialBurn>,
+pub fn confidential_burn<'info>(
+    ctx: Context<'info, ConfidentialBurn<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
 ) -> Result<()> {
-    assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
     let compute_signer = ctx.accounts.mint.compute_signer;
@@ -174,6 +173,7 @@ pub fn confidential_burn(
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
+            deny_subject_records: ctx.remaining_accounts,
             compute_authority,
             system_program: &ctx.accounts.system_program,
         },

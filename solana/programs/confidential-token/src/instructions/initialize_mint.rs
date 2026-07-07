@@ -34,8 +34,7 @@ pub struct InitializeMint<'info> {
 }
 
 /// Initializes a confidential mint and records its host ACL domain.
-pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
-    assert_no_remaining_accounts(ctx.remaining_accounts)?;
+pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Result<()> {
     let mint_key = ctx.accounts.mint.key();
     let compute_signer = compute_signer_address(mint_key).0;
     require_keys_eq!(
@@ -91,6 +90,7 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
+            deny_subject_records: ctx.remaining_accounts,
             compute_authority,
             system_program: &ctx.accounts.system_program,
         },

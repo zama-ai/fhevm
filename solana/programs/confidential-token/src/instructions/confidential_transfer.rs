@@ -45,7 +45,10 @@ pub struct ConfidentialTransfer<'info> {
 }
 
 impl<'info> ConfidentialTransfer<'info> {
-    pub(crate) fn as_transfer_accounts(&self) -> TransferAccounts<'_, 'info> {
+    pub(crate) fn as_transfer_accounts<'a>(
+        &'a self,
+        remaining_accounts: &'a [AccountInfo<'info>],
+    ) -> TransferAccounts<'a, 'info> {
         TransferAccounts {
             payer: &self.payer,
             transfer_authority: self.owner.key(),
@@ -59,24 +62,24 @@ impl<'info> ConfidentialTransfer<'info> {
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
+            deny_subject_records: remaining_accounts,
             system_program: &self.system_program,
         }
     }
 }
 
 /// Transfers an encrypted amount by rotating the sender and recipient balance handles.
-pub fn confidential_transfer(
-    ctx: Context<ConfidentialTransfer>,
+pub fn confidential_transfer<'info>(
+    ctx: Context<'info, ConfidentialTransfer<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
 ) -> Result<()> {
-    assert_no_remaining_accounts(ctx.remaining_accounts)?;
     require_keys_eq!(
         ctx.accounts.from_account.owner,
         ctx.accounts.owner.key(),
         ConfidentialTokenError::OwnerMismatch
     );
     let outcome = execute_transfer(
-        ctx.accounts.as_transfer_accounts(),
+        ctx.accounts.as_transfer_accounts(ctx.remaining_accounts),
         ctx.bumps.compute_signer,
         amount_attestation,
     )?;

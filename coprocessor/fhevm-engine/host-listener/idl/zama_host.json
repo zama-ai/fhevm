@@ -540,10 +540,6 @@
           }
         },
         {
-          "name": "deny_subject_record",
-          "optional": true
-        },
-        {
           "name": "system_program",
           "docs": [
             "System program used for durable output ACL creation."

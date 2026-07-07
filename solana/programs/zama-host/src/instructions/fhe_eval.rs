@@ -45,8 +45,6 @@ pub struct FheEval<'info> {
     /// Singleton config PDA.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
-    /// CHECK: required when grant_deny_list_enabled and a durable output is bound; may be uninitialized.
-    pub deny_subject_record: Option<UncheckedAccount<'info>>,
     /// System program used for durable output ACL creation.
     pub system_program: Program<'info, System>,
 }
@@ -62,7 +60,7 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
         !args.steps.is_empty() && args.steps.len() <= MAX_FHE_EVAL_OPS,
         ZamaHostError::InvalidFheEvalOperationCount
     );
-    preflight_eval_frame(ctx.remaining_accounts, &args)?;
+    preflight_eval_frame(&ctx, &args)?;
 
     let subject = ctx.accounts.compute_subject.key();
     let clock = Clock::get()?;
@@ -368,12 +366,37 @@ fn durable_output_authority<'info>(
         }
         None => ctx.accounts.app_account_authority.to_account_info(),
     };
-    check_grant_not_denied(
+    let deny_record = deny_subject_record_for(
         &ctx.accounts.host_config,
+        ctx.remaining_accounts,
+        Some(remaining_accounts_used),
         authority.key(),
-        ctx.accounts.deny_subject_record.as_ref(),
     )?;
+    check_grant_not_denied_info(&ctx.accounts.host_config, authority.key(), deny_record)?;
     Ok(authority)
+}
+
+fn deny_subject_record_for<'a, 'info>(
+    host_config: &HostConfig,
+    remaining_accounts: &'a [AccountInfo<'info>],
+    mut remaining_accounts_used: Option<&mut [bool]>,
+    subject: Pubkey,
+) -> Result<Option<&'a AccountInfo<'info>>> {
+    if !host_config.grant_deny_list_enabled {
+        return Ok(None);
+    }
+    let (expected, _) = deny_subject_address(subject);
+    let Some((index, record)) = remaining_accounts
+        .iter()
+        .enumerate()
+        .find(|(_, account)| account.key() == expected)
+    else {
+        return Err(error!(ZamaHostError::AclDenyRecordMissing));
+    };
+    if let Some(used) = remaining_accounts_used.as_deref_mut() {
+        used[index] = true;
+    }
+    Ok(Some(record))
 }
 
 #[derive(Clone)]
