@@ -524,11 +524,12 @@ pub mod IInputVerification {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyRejected(uint256,address,address)` and selector `0x2fa73174`.
-    ```solidity
-    error CoprocessorAlreadyRejected(uint256 zkProofId, address txSender, address signer);
-    ```*/
+```solidity
+error CoprocessorAlreadyRejected(uint256 zkProofId, address txSender, address signer);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct CoprocessorAlreadyRejected {
@@ -561,7 +562,9 @@ pub mod IInputVerification {
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -570,14 +573,16 @@ pub mod IInputVerification {
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<CoprocessorAlreadyRejected> for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<CoprocessorAlreadyRejected>
+        for UnderlyingRustTuple<'_> {
             fn from(value: CoprocessorAlreadyRejected) -> Self {
                 (value.zkProofId, value.txSender, value.signer)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CoprocessorAlreadyRejected {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CoprocessorAlreadyRejected {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     zkProofId: tuple.0,
@@ -589,7 +594,9 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolError for CoprocessorAlreadyRejected {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "CoprocessorAlreadyRejected(uint256,address,address)";
             const SELECTOR: [u8; 4] = [47u8, 167u8, 49u8, 116u8];
             #[inline]
@@ -601,9 +608,9 @@ pub mod IInputVerification {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.zkProofId,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.txSender,
                     ),
@@ -614,18 +621,19 @@ pub mod IInputVerification {
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyVerified(uint256,address,address)` and selector `0xf9ed431f`.
-    ```solidity
-    error CoprocessorAlreadyVerified(uint256 zkProofId, address txSender, address signer);
-    ```*/
+```solidity
+error CoprocessorAlreadyVerified(uint256 zkProofId, address txSender, address signer);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct CoprocessorAlreadyVerified {
@@ -658,7 +666,9 @@ pub mod IInputVerification {
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -667,14 +677,16 @@ pub mod IInputVerification {
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<CoprocessorAlreadyVerified> for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<CoprocessorAlreadyVerified>
+        for UnderlyingRustTuple<'_> {
             fn from(value: CoprocessorAlreadyVerified) -> Self {
                 (value.zkProofId, value.txSender, value.signer)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for CoprocessorAlreadyVerified {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CoprocessorAlreadyVerified {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     zkProofId: tuple.0,
@@ -686,7 +698,9 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolError for CoprocessorAlreadyVerified {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "CoprocessorAlreadyVerified(uint256,address,address)";
             const SELECTOR: [u8; 4] = [249u8, 237u8, 67u8, 31u8];
             #[inline]
@@ -698,9 +712,9 @@ pub mod IInputVerification {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.zkProofId,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.txSender,
                     ),
@@ -711,18 +725,19 @@ pub mod IInputVerification {
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `VerifyProofNotRequested(uint256)` and selector `0x4711083f`.
-    ```solidity
-    error VerifyProofNotRequested(uint256 zkProofId);
-    ```*/
+```solidity
+error VerifyProofNotRequested(uint256 zkProofId);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct VerifyProofNotRequested {
@@ -740,10 +755,14 @@ pub mod IInputVerification {
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U256,);
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -767,7 +786,9 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolError for VerifyProofNotRequested {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "VerifyProofNotRequested(uint256)";
             const SELECTOR: [u8; 4] = [71u8, 17u8, 8u8, 63u8];
             #[inline]
@@ -779,25 +800,26 @@ pub mod IInputVerification {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.zkProofId,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                 )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `RejectProofResponse(uint256)` and selector `0xe465e141fa8abd95ab7e0855543307f8506ab0170ef664420fb71ab7de0183de`.
-    ```solidity
-    event RejectProofResponse(uint256 indexed zkProofId);
-    ```*/
+```solidity
+event RejectProofResponse(uint256 indexed zkProofId);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -820,18 +842,19 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for RejectProofResponse {
             type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
             const SIGNATURE: &'static str = "RejectProofResponse(uint256)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    228u8, 101u8, 225u8, 65u8, 250u8, 138u8, 189u8, 149u8, 171u8, 126u8, 8u8, 85u8,
-                    84u8, 51u8, 7u8, 248u8, 80u8, 106u8, 176u8, 23u8, 14u8, 246u8, 100u8, 66u8,
-                    15u8, 183u8, 26u8, 183u8, 222u8, 1u8, 131u8, 222u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                228u8, 101u8, 225u8, 65u8, 250u8, 138u8, 189u8, 149u8, 171u8, 126u8, 8u8,
+                85u8, 84u8, 51u8, 7u8, 248u8, 80u8, 106u8, 176u8, 23u8, 14u8, 246u8,
+                100u8, 66u8, 15u8, 183u8, 26u8, 183u8, 222u8, 1u8, 131u8, 222u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -839,20 +862,20 @@ pub mod IInputVerification {
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self {
-                    zkProofId: topics.1,
-                }
+                Self { zkProofId: topics.1 }
             }
             #[inline]
             fn check_signature(
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -872,7 +895,9 @@ pub mod IInputVerification {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.zkProofId);
@@ -896,11 +921,12 @@ pub mod IInputVerification {
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `RejectProofResponseCall(uint256,bytes)` and selector `0x675cefb1743f728fd21b29c5f6a754b3f0f2ad47acf61ffbfb7b5d9cb85e8cef`.
-    ```solidity
-    event RejectProofResponseCall(uint256 indexed zkProofId, bytes extraData);
-    ```*/
+```solidity
+event RejectProofResponseCall(uint256 indexed zkProofId, bytes extraData);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -925,18 +951,19 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for RejectProofResponseCall {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Bytes,);
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
             const SIGNATURE: &'static str = "RejectProofResponseCall(uint256,bytes)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    103u8, 92u8, 239u8, 177u8, 116u8, 63u8, 114u8, 143u8, 210u8, 27u8, 41u8, 197u8,
-                    246u8, 167u8, 84u8, 179u8, 240u8, 242u8, 173u8, 71u8, 172u8, 246u8, 31u8,
-                    251u8, 251u8, 123u8, 93u8, 156u8, 184u8, 94u8, 140u8, 239u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                103u8, 92u8, 239u8, 177u8, 116u8, 63u8, 114u8, 143u8, 210u8, 27u8, 41u8,
+                197u8, 246u8, 167u8, 84u8, 179u8, 240u8, 242u8, 173u8, 71u8, 172u8,
+                246u8, 31u8, 251u8, 251u8, 123u8, 93u8, 156u8, 184u8, 94u8, 140u8, 239u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -954,11 +981,13 @@ pub mod IInputVerification {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -982,7 +1011,9 @@ pub mod IInputVerification {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.zkProofId);
@@ -1001,16 +1032,19 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl From<&RejectProofResponseCall> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &RejectProofResponseCall) -> alloy_sol_types::private::LogData {
+            fn from(
+                this: &RejectProofResponseCall,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `VerifyProofRequest(uint256,uint256,address,address,bytes,bytes)` and selector `0x4ae54f6a6e900d806ffa5bb46ed91459523d2f6ac9b5d62404feab887686d005`.
-    ```solidity
-    event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChainId, address contractAddress, address userAddress, bytes ciphertextWithZKProof, bytes extraData);
-    ```*/
+```solidity
+event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChainId, address contractAddress, address userAddress, bytes ciphertextWithZKProof, bytes extraData);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1048,20 +1082,20 @@ pub mod IInputVerification {
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str =
-                "VerifyProofRequest(uint256,uint256,address,address,bytes,bytes)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    74u8, 229u8, 79u8, 106u8, 110u8, 144u8, 13u8, 128u8, 111u8, 250u8, 91u8, 180u8,
-                    110u8, 217u8, 20u8, 89u8, 82u8, 61u8, 47u8, 106u8, 201u8, 181u8, 214u8, 36u8,
-                    4u8, 254u8, 171u8, 136u8, 118u8, 134u8, 208u8, 5u8,
-                ]);
+            const SIGNATURE: &'static str = "VerifyProofRequest(uint256,uint256,address,address,bytes,bytes)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                74u8, 229u8, 79u8, 106u8, 110u8, 144u8, 13u8, 128u8, 111u8, 250u8, 91u8,
+                180u8, 110u8, 217u8, 20u8, 89u8, 82u8, 61u8, 47u8, 106u8, 201u8, 181u8,
+                214u8, 36u8, 4u8, 254u8, 171u8, 136u8, 118u8, 134u8, 208u8, 5u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1083,11 +1117,13 @@ pub mod IInputVerification {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -1124,7 +1160,9 @@ pub mod IInputVerification {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.zkProofId);
@@ -1151,11 +1189,12 @@ pub mod IInputVerification {
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `VerifyProofRequestSolana(uint256,uint256,bytes32,bytes32,bytes,bytes)` and selector `0x3ac2cd229b0e448a4bb424cf873ae51b75ea9913d6bba81595eb57c49b6e5bbd`.
-    ```solidity
-    event VerifyProofRequestSolana(uint256 indexed zkProofId, uint256 indexed contractChainId, bytes32 contractAddress, bytes32 userAddress, bytes ciphertextWithZKProof, bytes extraData);
-    ```*/
+```solidity
+event VerifyProofRequestSolana(uint256 indexed zkProofId, uint256 indexed contractChainId, bytes32 contractAddress, bytes32 userAddress, bytes ciphertextWithZKProof, bytes extraData);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1193,20 +1232,20 @@ pub mod IInputVerification {
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str =
-                "VerifyProofRequestSolana(uint256,uint256,bytes32,bytes32,bytes,bytes)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    58u8, 194u8, 205u8, 34u8, 155u8, 14u8, 68u8, 138u8, 75u8, 180u8, 36u8, 207u8,
-                    135u8, 58u8, 229u8, 27u8, 117u8, 234u8, 153u8, 19u8, 214u8, 187u8, 168u8, 21u8,
-                    149u8, 235u8, 87u8, 196u8, 155u8, 110u8, 91u8, 189u8,
-                ]);
+            const SIGNATURE: &'static str = "VerifyProofRequestSolana(uint256,uint256,bytes32,bytes32,bytes,bytes)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                58u8, 194u8, 205u8, 34u8, 155u8, 14u8, 68u8, 138u8, 75u8, 180u8, 36u8,
+                207u8, 135u8, 58u8, 229u8, 27u8, 117u8, 234u8, 153u8, 19u8, 214u8, 187u8,
+                168u8, 21u8, 149u8, 235u8, 87u8, 196u8, 155u8, 110u8, 91u8, 189u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1228,11 +1267,13 @@ pub mod IInputVerification {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -1269,7 +1310,9 @@ pub mod IInputVerification {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.zkProofId);
@@ -1291,16 +1334,19 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl From<&VerifyProofRequestSolana> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &VerifyProofRequestSolana) -> alloy_sol_types::private::LogData {
+            fn from(
+                this: &VerifyProofRequestSolana,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `VerifyProofResponse(uint256,bytes32[],bytes[])` and selector `0xfe2c43585786a5a658d2ec5df5dea3fb3385b77c94f60f724ff810896f419835`.
-    ```solidity
-    event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
-    ```*/
+```solidity
+event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1312,7 +1358,9 @@ pub mod IInputVerification {
         #[allow(missing_docs)]
         pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub ctHandles: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
+        pub ctHandles: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
         #[allow(missing_docs)]
         pub signatures: alloy::sol_types::private::Vec<alloy::sol_types::private::Bytes>,
     }
@@ -1327,21 +1375,24 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for VerifyProofResponse {
             type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Bytes>,
             );
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
             const SIGNATURE: &'static str = "VerifyProofResponse(uint256,bytes32[],bytes[])";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    254u8, 44u8, 67u8, 88u8, 87u8, 134u8, 165u8, 166u8, 88u8, 210u8, 236u8, 93u8,
-                    245u8, 222u8, 163u8, 251u8, 51u8, 133u8, 183u8, 124u8, 148u8, 246u8, 15u8,
-                    114u8, 79u8, 248u8, 16u8, 137u8, 111u8, 65u8, 152u8, 53u8,
-                ]);
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                254u8, 44u8, 67u8, 88u8, 87u8, 134u8, 165u8, 166u8, 88u8, 210u8, 236u8,
+                93u8, 245u8, 222u8, 163u8, 251u8, 51u8, 133u8, 183u8, 124u8, 148u8,
+                246u8, 15u8, 114u8, 79u8, 248u8, 16u8, 137u8, 111u8, 65u8, 152u8, 53u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1360,11 +1411,13 @@ pub mod IInputVerification {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -1391,7 +1444,9 @@ pub mod IInputVerification {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.zkProofId);
@@ -1415,11 +1470,12 @@ pub mod IInputVerification {
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `VerifyProofResponseCall(uint256,bytes32[],bytes,address,bytes)` and selector `0x01df0fa69857deb2d405618780115de4758a8a3a7e036c8e539aac1c3e889f69`.
-    ```solidity
-    event VerifyProofResponseCall(uint256 indexed zkProofId, bytes32[] ctHandles, bytes signature, address coprocessorTxSender, bytes extraData);
-    ```*/
+```solidity
+event VerifyProofResponseCall(uint256 indexed zkProofId, bytes32[] ctHandles, bytes signature, address coprocessorTxSender, bytes extraData);
+```*/
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1431,7 +1487,9 @@ pub mod IInputVerification {
         #[allow(missing_docs)]
         pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub ctHandles: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
+        pub ctHandles: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
         #[allow(missing_docs)]
         pub signature: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
@@ -1450,24 +1508,26 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for VerifyProofResponseCall {
             type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type DataToken<'a> = <Self::DataTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str =
-                "VerifyProofResponseCall(uint256,bytes32[],bytes,address,bytes)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 =
-                alloy_sol_types::private::B256::new([
-                    1u8, 223u8, 15u8, 166u8, 152u8, 87u8, 222u8, 178u8, 212u8, 5u8, 97u8, 135u8,
-                    128u8, 17u8, 93u8, 228u8, 117u8, 138u8, 138u8, 58u8, 126u8, 3u8, 108u8, 142u8,
-                    83u8, 154u8, 172u8, 28u8, 62u8, 136u8, 159u8, 105u8,
-                ]);
+            const SIGNATURE: &'static str = "VerifyProofResponseCall(uint256,bytes32[],bytes,address,bytes)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                1u8, 223u8, 15u8, 166u8, 152u8, 87u8, 222u8, 178u8, 212u8, 5u8, 97u8,
+                135u8, 128u8, 17u8, 93u8, 228u8, 117u8, 138u8, 138u8, 58u8, 126u8, 3u8,
+                108u8, 142u8, 83u8, 154u8, 172u8, 28u8, 62u8, 136u8, 159u8, 105u8,
+            ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
             #[inline]
@@ -1488,11 +1548,13 @@ pub mod IInputVerification {
                 topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
             ) -> alloy_sol_types::Result<()> {
                 if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(alloy_sol_types::Error::invalid_event_signature_hash(
-                        Self::SIGNATURE,
-                        topics.0,
-                        Self::SIGNATURE_HASH,
-                    ));
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
                 }
                 Ok(())
             }
@@ -1525,7 +1587,9 @@ pub mod IInputVerification {
                 if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
                     return Err(alloy_sol_types::Error::Overrun);
                 }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(Self::SIGNATURE_HASH);
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.zkProofId);
@@ -1544,23 +1608,27 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl From<&VerifyProofResponseCall> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &VerifyProofResponseCall) -> alloy_sol_types::private::LogData {
+            fn from(
+                this: &VerifyProofResponseCall,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getRejectProofConsensusTxSenders(uint256)` and selector `0x1bbe9fae`.
-    ```solidity
-    function getRejectProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
-    ```*/
+```solidity
+function getRejectProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getRejectProofConsensusTxSendersCall {
         #[allow(missing_docs)]
         pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
     }
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getRejectProofConsensusTxSenders(uint256)`](getRejectProofConsensusTxSendersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1580,10 +1648,14 @@ pub mod IInputVerification {
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U256,);
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1592,14 +1664,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getRejectProofConsensusTxSendersCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getRejectProofConsensusTxSendersCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getRejectProofConsensusTxSendersCall) -> Self {
                     (value.zkProofId,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getRejectProofConsensusTxSendersCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getRejectProofConsensusTxSendersCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { zkProofId: tuple.0 }
                 }
@@ -1607,14 +1681,18 @@ pub mod IInputVerification {
         }
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> =
-                (alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,);
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,);
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1623,14 +1701,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getRejectProofConsensusTxSendersReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getRejectProofConsensusTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getRejectProofConsensusTxSendersReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getRejectProofConsensusTxSendersReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getRejectProofConsensusTxSendersReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1639,11 +1719,18 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getRejectProofConsensusTxSendersCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy::sol_types::private::Vec<alloy::sol_types::private::Address>;
-            type ReturnTuple<'a> =
-                (alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getRejectProofConsensusTxSenders(uint256)";
             const SELECTOR: [u8; 4] = [27u8, 190u8, 159u8, 174u8];
             #[inline]
@@ -1655,50 +1742,57 @@ pub mod IInputVerification {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.zkProofId,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                 )
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::Address,
-                > as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: getRejectProofConsensusTxSendersReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getRejectProofConsensusTxSendersReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getRejectProofConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVerifyProofConsensusTxSenders(uint256)` and selector `0xce7e4257`.
-    ```solidity
-    function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
-    ```*/
+```solidity
+function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVerifyProofConsensusTxSendersCall {
         #[allow(missing_docs)]
         pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
     }
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVerifyProofConsensusTxSenders(uint256)`](getVerifyProofConsensusTxSendersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1718,10 +1812,14 @@ pub mod IInputVerification {
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U256,);
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1730,14 +1828,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getVerifyProofConsensusTxSendersCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getVerifyProofConsensusTxSendersCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getVerifyProofConsensusTxSendersCall) -> Self {
                     (value.zkProofId,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVerifyProofConsensusTxSendersCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getVerifyProofConsensusTxSendersCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { zkProofId: tuple.0 }
                 }
@@ -1745,14 +1845,18 @@ pub mod IInputVerification {
         }
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> =
-                (alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,);
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> =
-                (alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,);
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1761,14 +1865,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getVerifyProofConsensusTxSendersReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<getVerifyProofConsensusTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: getVerifyProofConsensusTxSendersReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVerifyProofConsensusTxSendersReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getVerifyProofConsensusTxSendersReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -1777,11 +1883,18 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getVerifyProofConsensusTxSendersCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy::sol_types::private::Vec<alloy::sol_types::private::Address>;
-            type ReturnTuple<'a> =
-                (alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getVerifyProofConsensusTxSenders(uint256)";
             const SELECTOR: [u8; 4] = [206u8, 126u8, 66u8, 87u8];
             #[inline]
@@ -1793,47 +1906,54 @@ pub mod IInputVerification {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.zkProofId,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                 )
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::Address,
-                > as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: getVerifyProofConsensusTxSendersReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getVerifyProofConsensusTxSendersReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getVerifyProofConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
-    ```solidity
-    function getVersion() external pure returns (string memory);
-    ```*/
+```solidity
+function getVersion() external pure returns (string memory);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall;
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1856,7 +1976,9 @@ pub mod IInputVerification {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1885,7 +2007,9 @@ pub mod IInputVerification {
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -1910,10 +2034,14 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for getVersionCall {
             type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "getVersion()";
             const SELECTOR: [u8; 4] = [13u8, 142u8, 110u8, 44u8];
             #[inline]
@@ -1928,41 +2056,50 @@ pub mod IInputVerification {
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: getVersionReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: getVersionReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getVersionReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isProofRejected(uint256)` and selector `0x0c615839`.
-    ```solidity
-    function isProofRejected(uint256 zkProofId) external view returns (bool);
-    ```*/
+```solidity
+function isProofRejected(uint256 zkProofId) external view returns (bool);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isProofRejectedCall {
         #[allow(missing_docs)]
         pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
     }
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`isProofRejected(uint256)`](isProofRejectedCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1982,10 +2119,14 @@ pub mod IInputVerification {
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U256,);
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2014,7 +2155,9 @@ pub mod IInputVerification {
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2023,14 +2166,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isProofRejectedReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isProofRejectedReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isProofRejectedReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isProofRejectedReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isProofRejectedReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -2039,10 +2184,14 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for isProofRejectedCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isProofRejected(uint256)";
             const SELECTOR: [u8; 4] = [12u8, 97u8, 88u8, 57u8];
             #[inline]
@@ -2054,48 +2203,57 @@ pub mod IInputVerification {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.zkProofId,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                 )
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: isProofRejectedReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: isProofRejectedReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isProofRejectedReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isProofVerified(uint256)` and selector `0xe96f88ea`.
-    ```solidity
-    function isProofVerified(uint256 zkProofId) external view returns (bool);
-    ```*/
+```solidity
+function isProofVerified(uint256 zkProofId) external view returns (bool);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isProofVerifiedCall {
         #[allow(missing_docs)]
         pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
     }
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`isProofVerified(uint256)`](isProofVerifiedCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2115,10 +2273,14 @@ pub mod IInputVerification {
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::primitives::aliases::U256,);
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2147,7 +2309,9 @@ pub mod IInputVerification {
             type UnderlyingRustTuple<'a> = (bool,);
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2156,14 +2320,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<isProofVerifiedReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<isProofVerifiedReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: isProofVerifiedReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isProofVerifiedReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isProofVerifiedReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
@@ -2172,10 +2338,14 @@ pub mod IInputVerification {
         #[automatically_derived]
         impl alloy_sol_types::SolCall for isProofVerifiedCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "isProofVerified(uint256)";
             const SELECTOR: [u8; 4] = [233u8, 111u8, 136u8, 234u8];
             #[inline]
@@ -2187,41 +2357,49 @@ pub mod IInputVerification {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.zkProofId,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                 )
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (<alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(ret),)
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data).map(
-                    |r| {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
                         let r: isProofVerifiedReturn = r.into();
                         r._0
-                    },
-                )
+                    })
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(|r| {
-                    let r: isProofVerifiedReturn = r.into();
-                    r._0
-                })
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isProofVerifiedReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `rejectProofResponse(uint256,bytes)` and selector `0x338007fc`.
-    ```solidity
-    function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external;
-    ```*/
+```solidity
+function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct rejectProofResponseCall {
@@ -2255,7 +2433,9 @@ pub mod IInputVerification {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2264,14 +2444,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<rejectProofResponseCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<rejectProofResponseCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: rejectProofResponseCall) -> Self {
                     (value.zkProofId, value.extraData)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for rejectProofResponseCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for rejectProofResponseCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         zkProofId: tuple.0,
@@ -2287,7 +2469,9 @@ pub mod IInputVerification {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2296,14 +2480,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<rejectProofResponseReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<rejectProofResponseReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: rejectProofResponseReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for rejectProofResponseReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for rejectProofResponseReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -2312,8 +2498,7 @@ pub mod IInputVerification {
         impl rejectProofResponseReturn {
             fn _tokenize(
                 &self,
-            ) -> <rejectProofResponseCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
+            ) -> <rejectProofResponseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
@@ -2323,10 +2508,14 @@ pub mod IInputVerification {
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = rejectProofResponseReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "rejectProofResponse(uint256,bytes)";
             const SELECTOR: [u8; 4] = [51u8, 128u8, 7u8, 252u8];
             #[inline]
@@ -2338,9 +2527,9 @@ pub mod IInputVerification {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.zkProofId,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.extraData,
                     ),
@@ -2352,23 +2541,28 @@ pub mod IInputVerification {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `verifyProofRequest(uint256,address,address,bytes,bytes)` and selector `0xa7004996`.
-    ```solidity
-    function verifyProofRequest(uint256 contractChainId, address contractAddress, address userAddress, bytes memory ciphertextWithZKProof, bytes memory extraData) external;
-    ```*/
+```solidity
+function verifyProofRequest(uint256 contractChainId, address contractAddress, address userAddress, bytes memory ciphertextWithZKProof, bytes memory extraData) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct verifyProofRequestCall {
@@ -2414,7 +2608,9 @@ pub mod IInputVerification {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2423,7 +2619,8 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<verifyProofRequestCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<verifyProofRequestCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: verifyProofRequestCall) -> Self {
                     (
                         value.contractChainId,
@@ -2436,7 +2633,8 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for verifyProofRequestCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofRequestCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         contractChainId: tuple.0,
@@ -2455,7 +2653,9 @@ pub mod IInputVerification {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2464,14 +2664,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<verifyProofRequestReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<verifyProofRequestReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: verifyProofRequestReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for verifyProofRequestReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofRequestReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -2493,12 +2695,15 @@ pub mod IInputVerification {
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = verifyProofRequestReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str =
-                "verifyProofRequest(uint256,address,address,bytes,bytes)";
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "verifyProofRequest(uint256,address,address,bytes,bytes)";
             const SELECTOR: [u8; 4] = [167u8, 0u8, 73u8, 150u8];
             #[inline]
             fn new<'a>(
@@ -2509,9 +2714,9 @@ pub mod IInputVerification {
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (
-                    <alloy::sol_types::sol_data::Uint<256> as alloy_sol_types::SolType>::tokenize(
-                        &self.contractChainId,
-                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contractChainId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.contractAddress,
                     ),
@@ -2532,23 +2737,28 @@ pub mod IInputVerification {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `verifyProofRequestSolana(uint256,bytes32,bytes32,bytes,bytes)` and selector `0x9880380a`.
-    ```solidity
-    function verifyProofRequestSolana(uint256 contractChainId, bytes32 contractAddress, bytes32 userAddress, bytes memory ciphertextWithZKProof, bytes memory extraData) external;
-    ```*/
+```solidity
+function verifyProofRequestSolana(uint256 contractChainId, bytes32 contractAddress, bytes32 userAddress, bytes memory ciphertextWithZKProof, bytes memory extraData) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct verifyProofRequestSolanaCall {
@@ -2594,7 +2804,9 @@ pub mod IInputVerification {
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2603,7 +2815,8 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<verifyProofRequestSolanaCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<verifyProofRequestSolanaCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: verifyProofRequestSolanaCall) -> Self {
                     (
                         value.contractChainId,
@@ -2616,7 +2829,8 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for verifyProofRequestSolanaCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofRequestSolanaCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         contractChainId: tuple.0,
@@ -2635,7 +2849,9 @@ pub mod IInputVerification {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2644,14 +2860,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<verifyProofRequestSolanaReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<verifyProofRequestSolanaReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: verifyProofRequestSolanaReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for verifyProofRequestSolanaReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofRequestSolanaReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -2660,8 +2878,9 @@ pub mod IInputVerification {
         impl verifyProofRequestSolanaReturn {
             fn _tokenize(
                 &self,
-            ) -> <verifyProofRequestSolanaCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
+            ) -> <verifyProofRequestSolanaCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
                 ()
             }
         }
@@ -2674,12 +2893,15 @@ pub mod IInputVerification {
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = verifyProofRequestSolanaReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str =
-                "verifyProofRequestSolana(uint256,bytes32,bytes32,bytes,bytes)";
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "verifyProofRequestSolana(uint256,bytes32,bytes32,bytes,bytes)";
             const SELECTOR: [u8; 4] = [152u8, 128u8, 56u8, 10u8];
             #[inline]
             fn new<'a>(
@@ -2713,30 +2935,37 @@ pub mod IInputVerification {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `verifyProofResponse(uint256,bytes32[],bytes,bytes)` and selector `0x31bedea3`.
-    ```solidity
-    function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, bytes memory signature, bytes memory extraData) external;
-    ```*/
+```solidity
+function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, bytes memory signature, bytes memory extraData) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct verifyProofResponseCall {
         #[allow(missing_docs)]
         pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub ctHandles: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
+        pub ctHandles: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
         #[allow(missing_docs)]
         pub signature: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
@@ -2758,20 +2987,26 @@ pub mod IInputVerification {
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::primitives::aliases::U256,
-                alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
+                alloy::sol_types::private::Vec<
+                    alloy::sol_types::private::FixedBytes<32>,
+                >,
                 alloy::sol_types::private::Bytes,
                 alloy::sol_types::private::Bytes,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2780,19 +3015,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<verifyProofResponseCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<verifyProofResponseCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: verifyProofResponseCall) -> Self {
-                    (
-                        value.zkProofId,
-                        value.ctHandles,
-                        value.signature,
-                        value.extraData,
-                    )
+                    (value.zkProofId, value.ctHandles, value.signature, value.extraData)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for verifyProofResponseCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofResponseCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         zkProofId: tuple.0,
@@ -2810,7 +3042,9 @@ pub mod IInputVerification {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2819,14 +3053,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<verifyProofResponseReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<verifyProofResponseReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: verifyProofResponseReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for verifyProofResponseReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofResponseReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -2835,8 +3071,7 @@ pub mod IInputVerification {
         impl verifyProofResponseReturn {
             fn _tokenize(
                 &self,
-            ) -> <verifyProofResponseCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
+            ) -> <verifyProofResponseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
@@ -2844,14 +3079,20 @@ pub mod IInputVerification {
         impl alloy_sol_types::SolCall for verifyProofResponseCall {
             type Parameters<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = verifyProofResponseReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "verifyProofResponse(uint256,bytes32[],bytes,bytes)";
             const SELECTOR: [u8; 4] = [49u8, 190u8, 222u8, 163u8];
             #[inline]
@@ -2883,30 +3124,37 @@ pub mod IInputVerification {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `verifyProofResponseSolana(uint256,bytes32[],bytes,bytes)` and selector `0x683197d3`.
-    ```solidity
-    function verifyProofResponseSolana(uint256 zkProofId, bytes32[] memory ctHandles, bytes memory signature, bytes memory extraData) external;
-    ```*/
+```solidity
+function verifyProofResponseSolana(uint256 zkProofId, bytes32[] memory ctHandles, bytes memory signature, bytes memory extraData) external;
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct verifyProofResponseSolanaCall {
         #[allow(missing_docs)]
         pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub ctHandles: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
+        pub ctHandles: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
         #[allow(missing_docs)]
         pub signature: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
@@ -2928,20 +3176,26 @@ pub mod IInputVerification {
             #[doc(hidden)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::primitives::aliases::U256,
-                alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
+                alloy::sol_types::private::Vec<
+                    alloy::sol_types::private::FixedBytes<32>,
+                >,
                 alloy::sol_types::private::Bytes,
                 alloy::sol_types::private::Bytes,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2950,19 +3204,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<verifyProofResponseSolanaCall> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<verifyProofResponseSolanaCall>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: verifyProofResponseSolanaCall) -> Self {
-                    (
-                        value.zkProofId,
-                        value.ctHandles,
-                        value.signature,
-                        value.extraData,
-                    )
+                    (value.zkProofId, value.ctHandles, value.signature, value.extraData)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for verifyProofResponseSolanaCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofResponseSolanaCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         zkProofId: tuple.0,
@@ -2980,7 +3231,9 @@ pub mod IInputVerification {
             type UnderlyingRustTuple<'a> = ();
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
                 match _t {
                     alloy_sol_types::private::AssertTypeEq::<
                         <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -2989,14 +3242,16 @@ pub mod IInputVerification {
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<verifyProofResponseSolanaReturn> for UnderlyingRustTuple<'_> {
+            impl ::core::convert::From<verifyProofResponseSolanaReturn>
+            for UnderlyingRustTuple<'_> {
                 fn from(value: verifyProofResponseSolanaReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for verifyProofResponseSolanaReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for verifyProofResponseSolanaReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
@@ -3005,8 +3260,9 @@ pub mod IInputVerification {
         impl verifyProofResponseSolanaReturn {
             fn _tokenize(
                 &self,
-            ) -> <verifyProofResponseSolanaCall as alloy_sol_types::SolCall>::ReturnToken<'_>
-            {
+            ) -> <verifyProofResponseSolanaCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
                 ()
             }
         }
@@ -3014,16 +3270,21 @@ pub mod IInputVerification {
         impl alloy_sol_types::SolCall for verifyProofResponseSolanaCall {
             type Parameters<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::FixedBytes<32>>,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             type Return = verifyProofResponseSolanaReturn;
             type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<'a> as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str =
-                "verifyProofResponseSolana(uint256,bytes32[],bytes,bytes)";
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "verifyProofResponseSolana(uint256,bytes32[],bytes,bytes)";
             const SELECTOR: [u8; 4] = [104u8, 49u8, 151u8, 211u8];
             #[inline]
             fn new<'a>(
@@ -3054,20 +3315,25 @@ pub mod IInputVerification {
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(Into::into)
             }
             #[inline]
-            fn abi_decode_returns_validate(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Into::into)
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
             }
         }
     };
     ///Container for all the [`IInputVerification`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive()]
     pub enum IInputVerificationCalls {
         #[allow(missing_docs)]
         getRejectProofConsensusTxSenders(getRejectProofConsensusTxSendersCall),
@@ -3125,7 +3391,9 @@ pub mod IInputVerification {
                 Self::getVerifyProofConsensusTxSenders(_) => {
                     <getVerifyProofConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getVersion(_) => <getVersionCall as alloy_sol_types::SolCall>::SELECTOR,
+                Self::getVersion(_) => {
+                    <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::isProofRejected(_) => {
                     <isProofRejectedCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -3159,23 +3427,31 @@ pub mod IInputVerification {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<IInputVerificationCalls>] = &[
+            ) -> alloy_sol_types::Result<IInputVerificationCalls>] = &[
                 {
                     fn isProofRejected(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
-                        <isProofRejectedCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <isProofRejectedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(IInputVerificationCalls::isProofRejected)
                     }
                     isProofRejected
                 },
                 {
-                    fn getVersion(data: &[u8]) -> alloy_sol_types::Result<IInputVerificationCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                    fn getVersion(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(IInputVerificationCalls::getVersion)
                     }
                     getVersion
@@ -3197,7 +3473,9 @@ pub mod IInputVerification {
                     fn verifyProofResponse(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
-                        <verifyProofResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <verifyProofResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(IInputVerificationCalls::verifyProofResponse)
                     }
                     verifyProofResponse
@@ -3206,7 +3484,9 @@ pub mod IInputVerification {
                     fn rejectProofResponse(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
-                        <rejectProofResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <rejectProofResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(IInputVerificationCalls::rejectProofResponse)
                     }
                     rejectProofResponse
@@ -3216,9 +3496,9 @@ pub mod IInputVerification {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <verifyProofResponseSolanaCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                            data,
-                        )
-                        .map(IInputVerificationCalls::verifyProofResponseSolana)
+                                data,
+                            )
+                            .map(IInputVerificationCalls::verifyProofResponseSolana)
                     }
                     verifyProofResponseSolana
                 },
@@ -3227,9 +3507,9 @@ pub mod IInputVerification {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <verifyProofRequestSolanaCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                            data,
-                        )
-                        .map(IInputVerificationCalls::verifyProofRequestSolana)
+                                data,
+                            )
+                            .map(IInputVerificationCalls::verifyProofRequestSolana)
                     }
                     verifyProofRequestSolana
                 },
@@ -3237,7 +3517,9 @@ pub mod IInputVerification {
                     fn verifyProofRequest(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
-                        <verifyProofRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <verifyProofRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(IInputVerificationCalls::verifyProofRequest)
                     }
                     verifyProofRequest
@@ -3259,17 +3541,21 @@ pub mod IInputVerification {
                     fn isProofVerified(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
-                        <isProofVerifiedCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                        <isProofVerifiedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
                             .map(IInputVerificationCalls::isProofVerified)
                     }
                     isProofVerified
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -3281,23 +3567,25 @@ pub mod IInputVerification {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                IInputVerificationCalls,
-            >] = &[
+            ) -> alloy_sol_types::Result<IInputVerificationCalls>] = &[
                 {
                     fn isProofRejected(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <isProofRejectedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(IInputVerificationCalls::isProofRejected)
+                                data,
+                            )
+                            .map(IInputVerificationCalls::isProofRejected)
                     }
                     isProofRejected
                 },
                 {
-                    fn getVersion(data: &[u8]) -> alloy_sol_types::Result<IInputVerificationCalls> {
-                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(data)
+                    fn getVersion(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
                             .map(IInputVerificationCalls::getVersion)
                     }
                     getVersion
@@ -3388,18 +3676,20 @@ pub mod IInputVerification {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <isProofVerifiedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                            data,
-                        )
-                        .map(IInputVerificationCalls::isProofVerified)
+                                data,
+                            )
+                            .map(IInputVerificationCalls::isProofVerified)
                     }
                     isProofVerified
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -3523,7 +3813,8 @@ pub mod IInputVerification {
         }
     }
     ///Container for all the [`IInputVerification`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IInputVerificationErrors {
         #[allow(missing_docs)]
         CoprocessorAlreadyRejected(CoprocessorAlreadyRejected),
@@ -3575,19 +3866,21 @@ pub mod IInputVerification {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<IInputVerificationErrors>] = &[
+            ) -> alloy_sol_types::Result<IInputVerificationErrors>] = &[
                 {
                     fn CoprocessorAlreadyRejected(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationErrors> {
                         <CoprocessorAlreadyRejected as alloy_sol_types::SolError>::abi_decode_raw(
-                            data,
-                        )
-                        .map(IInputVerificationErrors::CoprocessorAlreadyRejected)
+                                data,
+                            )
+                            .map(IInputVerificationErrors::CoprocessorAlreadyRejected)
                     }
                     CoprocessorAlreadyRejected
                 },
@@ -3595,7 +3888,9 @@ pub mod IInputVerification {
                     fn VerifyProofNotRequested(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationErrors> {
-                        <VerifyProofNotRequested as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <VerifyProofNotRequested as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(IInputVerificationErrors::VerifyProofNotRequested)
                     }
                     VerifyProofNotRequested
@@ -3605,18 +3900,20 @@ pub mod IInputVerification {
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IInputVerificationErrors> {
                         <CoprocessorAlreadyVerified as alloy_sol_types::SolError>::abi_decode_raw(
-                            data,
-                        )
-                        .map(IInputVerificationErrors::CoprocessorAlreadyVerified)
+                                data,
+                            )
+                            .map(IInputVerificationErrors::CoprocessorAlreadyVerified)
                     }
                     CoprocessorAlreadyVerified
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -3628,9 +3925,7 @@ pub mod IInputVerification {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<
-                IInputVerificationErrors,
-            >] = &[
+            ) -> alloy_sol_types::Result<IInputVerificationErrors>] = &[
                 {
                     fn CoprocessorAlreadyRejected(
                         data: &[u8],
@@ -3666,10 +3961,12 @@ pub mod IInputVerification {
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -3687,7 +3984,9 @@ pub mod IInputVerification {
                     )
                 }
                 Self::VerifyProofNotRequested(inner) => {
-                    <VerifyProofNotRequested as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <VerifyProofNotRequested as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
             }
         }
@@ -3696,24 +3995,28 @@ pub mod IInputVerification {
             match self {
                 Self::CoprocessorAlreadyRejected(inner) => {
                     <CoprocessorAlreadyRejected as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::CoprocessorAlreadyVerified(inner) => {
                     <CoprocessorAlreadyVerified as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
                 Self::VerifyProofNotRequested(inner) => {
                     <VerifyProofNotRequested as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner, out,
+                        inner,
+                        out,
                     )
                 }
             }
         }
     }
     ///Container for all the [`IInputVerification`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IInputVerificationEvents {
         #[allow(missing_docs)]
         RejectProofResponse(RejectProofResponse),
@@ -3738,34 +4041,34 @@ pub mod IInputVerification {
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                1u8, 223u8, 15u8, 166u8, 152u8, 87u8, 222u8, 178u8, 212u8, 5u8, 97u8, 135u8, 128u8,
-                17u8, 93u8, 228u8, 117u8, 138u8, 138u8, 58u8, 126u8, 3u8, 108u8, 142u8, 83u8,
-                154u8, 172u8, 28u8, 62u8, 136u8, 159u8, 105u8,
+                1u8, 223u8, 15u8, 166u8, 152u8, 87u8, 222u8, 178u8, 212u8, 5u8, 97u8,
+                135u8, 128u8, 17u8, 93u8, 228u8, 117u8, 138u8, 138u8, 58u8, 126u8, 3u8,
+                108u8, 142u8, 83u8, 154u8, 172u8, 28u8, 62u8, 136u8, 159u8, 105u8,
             ],
             [
-                58u8, 194u8, 205u8, 34u8, 155u8, 14u8, 68u8, 138u8, 75u8, 180u8, 36u8, 207u8,
-                135u8, 58u8, 229u8, 27u8, 117u8, 234u8, 153u8, 19u8, 214u8, 187u8, 168u8, 21u8,
-                149u8, 235u8, 87u8, 196u8, 155u8, 110u8, 91u8, 189u8,
+                58u8, 194u8, 205u8, 34u8, 155u8, 14u8, 68u8, 138u8, 75u8, 180u8, 36u8,
+                207u8, 135u8, 58u8, 229u8, 27u8, 117u8, 234u8, 153u8, 19u8, 214u8, 187u8,
+                168u8, 21u8, 149u8, 235u8, 87u8, 196u8, 155u8, 110u8, 91u8, 189u8,
             ],
             [
-                74u8, 229u8, 79u8, 106u8, 110u8, 144u8, 13u8, 128u8, 111u8, 250u8, 91u8, 180u8,
-                110u8, 217u8, 20u8, 89u8, 82u8, 61u8, 47u8, 106u8, 201u8, 181u8, 214u8, 36u8, 4u8,
-                254u8, 171u8, 136u8, 118u8, 134u8, 208u8, 5u8,
+                74u8, 229u8, 79u8, 106u8, 110u8, 144u8, 13u8, 128u8, 111u8, 250u8, 91u8,
+                180u8, 110u8, 217u8, 20u8, 89u8, 82u8, 61u8, 47u8, 106u8, 201u8, 181u8,
+                214u8, 36u8, 4u8, 254u8, 171u8, 136u8, 118u8, 134u8, 208u8, 5u8,
             ],
             [
-                103u8, 92u8, 239u8, 177u8, 116u8, 63u8, 114u8, 143u8, 210u8, 27u8, 41u8, 197u8,
-                246u8, 167u8, 84u8, 179u8, 240u8, 242u8, 173u8, 71u8, 172u8, 246u8, 31u8, 251u8,
-                251u8, 123u8, 93u8, 156u8, 184u8, 94u8, 140u8, 239u8,
+                103u8, 92u8, 239u8, 177u8, 116u8, 63u8, 114u8, 143u8, 210u8, 27u8, 41u8,
+                197u8, 246u8, 167u8, 84u8, 179u8, 240u8, 242u8, 173u8, 71u8, 172u8,
+                246u8, 31u8, 251u8, 251u8, 123u8, 93u8, 156u8, 184u8, 94u8, 140u8, 239u8,
             ],
             [
-                228u8, 101u8, 225u8, 65u8, 250u8, 138u8, 189u8, 149u8, 171u8, 126u8, 8u8, 85u8,
-                84u8, 51u8, 7u8, 248u8, 80u8, 106u8, 176u8, 23u8, 14u8, 246u8, 100u8, 66u8, 15u8,
-                183u8, 26u8, 183u8, 222u8, 1u8, 131u8, 222u8,
+                228u8, 101u8, 225u8, 65u8, 250u8, 138u8, 189u8, 149u8, 171u8, 126u8, 8u8,
+                85u8, 84u8, 51u8, 7u8, 248u8, 80u8, 106u8, 176u8, 23u8, 14u8, 246u8,
+                100u8, 66u8, 15u8, 183u8, 26u8, 183u8, 222u8, 1u8, 131u8, 222u8,
             ],
             [
-                254u8, 44u8, 67u8, 88u8, 87u8, 134u8, 165u8, 166u8, 88u8, 210u8, 236u8, 93u8,
-                245u8, 222u8, 163u8, 251u8, 51u8, 133u8, 183u8, 124u8, 148u8, 246u8, 15u8, 114u8,
-                79u8, 248u8, 16u8, 137u8, 111u8, 65u8, 152u8, 53u8,
+                254u8, 44u8, 67u8, 88u8, 87u8, 134u8, 165u8, 166u8, 88u8, 210u8, 236u8,
+                93u8, 245u8, 222u8, 163u8, 251u8, 51u8, 133u8, 183u8, 124u8, 148u8,
+                246u8, 15u8, 114u8, 79u8, 248u8, 16u8, 137u8, 111u8, 65u8, 152u8, 53u8,
             ],
         ];
     }
@@ -3778,45 +4081,71 @@ pub mod IInputVerification {
             data: &[u8],
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
-                Some(<RejectProofResponse as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <RejectProofResponse as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                Some(
+                    <RejectProofResponse as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <RejectProofResponse as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::RejectProofResponse)
                 }
-                Some(<RejectProofResponseCall as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                Some(
+                    <RejectProofResponseCall as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
                     <RejectProofResponseCall as alloy_sol_types::SolEvent>::decode_raw_log(
-                        topics, data,
-                    )
-                    .map(Self::RejectProofResponseCall)
+                            topics,
+                            data,
+                        )
+                        .map(Self::RejectProofResponseCall)
                 }
-                Some(<VerifyProofRequest as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <VerifyProofRequest as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                Some(
+                    <VerifyProofRequest as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <VerifyProofRequest as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::VerifyProofRequest)
                 }
-                Some(<VerifyProofRequestSolana as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                Some(
+                    <VerifyProofRequestSolana as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
                     <VerifyProofRequestSolana as alloy_sol_types::SolEvent>::decode_raw_log(
-                        topics, data,
-                    )
-                    .map(Self::VerifyProofRequestSolana)
+                            topics,
+                            data,
+                        )
+                        .map(Self::VerifyProofRequestSolana)
                 }
-                Some(<VerifyProofResponse as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <VerifyProofResponse as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
+                Some(
+                    <VerifyProofResponse as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <VerifyProofResponse as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
                         .map(Self::VerifyProofResponse)
                 }
-                Some(<VerifyProofResponseCall as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                Some(
+                    <VerifyProofResponseCall as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
                     <VerifyProofResponseCall as alloy_sol_types::SolEvent>::decode_raw_log(
-                        topics, data,
-                    )
-                    .map(Self::VerifyProofResponseCall)
+                            topics,
+                            data,
+                        )
+                        .map(Self::VerifyProofResponseCall)
                 }
-                _ => alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
-                    name: <Self as alloy_sol_types::SolEventInterface>::NAME,
-                    log: alloy_sol_types::private::Box::new(
-                        alloy_sol_types::private::LogData::new_unchecked(
-                            topics.to_vec(),
-                            data.to_vec().into(),
+                _ => {
+                    alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
+                        name: <Self as alloy_sol_types::SolEventInterface>::NAME,
+                        log: alloy_sol_types::private::Box::new(
+                            alloy_sol_types::private::LogData::new_unchecked(
+                                topics.to_vec(),
+                                data.to_vec().into(),
+                            ),
                         ),
-                    ),
-                }),
+                    })
+                }
             }
         }
     }
@@ -3870,7 +4199,7 @@ pub mod IInputVerification {
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`IInputVerification`](self) contract instance.
 
-    See the [wrapper's documentation](`IInputVerificationInstance`) for more details.*/
+See the [wrapper's documentation](`IInputVerificationInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -3883,41 +4212,43 @@ pub mod IInputVerification {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
-        provider: P,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<IInputVerificationInstance<P, N>>>
-    {
-        IInputVerificationInstance::<P, N>::deploy(provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
-
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
+    pub fn deploy<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<IInputVerificationInstance<P, N>>,
+    > {
+        IInputVerificationInstance::<P, N>::deploy(provider)
+    }
+    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+and constructor arguments, if any.
+
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    #[inline]
+    pub fn deploy_builder<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
         IInputVerificationInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IInputVerification`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`IInputVerification`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`IInputVerification`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct IInputVerificationInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -3928,21 +4259,23 @@ pub mod IInputVerification {
     impl<P, N> ::core::fmt::Debug for IInputVerificationInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("IInputVerificationInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("IInputVerificationInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IInputVerificationInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IInputVerificationInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`IInputVerification`](self) contract instance.
 
-        See the [wrapper's documentation](`IInputVerificationInstance`) for more details.*/
+See the [wrapper's documentation](`IInputVerificationInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider,
@@ -3951,9 +4284,9 @@ pub mod IInputVerification {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
             provider: P,
@@ -3963,10 +4296,10 @@ pub mod IInputVerification {
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -4008,9 +4341,10 @@ pub mod IInputVerification {
     }
     /// Function calls.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IInputVerificationInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IInputVerificationInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -4025,18 +4359,36 @@ pub mod IInputVerification {
         pub fn getRejectProofConsensusTxSenders(
             &self,
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, getRejectProofConsensusTxSendersCall, N> {
-            self.call_builder(&getRejectProofConsensusTxSendersCall { zkProofId })
+        ) -> alloy_contract::SolCallBuilder<
+            &P,
+            getRejectProofConsensusTxSendersCall,
+            N,
+        > {
+            self.call_builder(
+                &getRejectProofConsensusTxSendersCall {
+                    zkProofId,
+                },
+            )
         }
         ///Creates a new call builder for the [`getVerifyProofConsensusTxSenders`] function.
         pub fn getVerifyProofConsensusTxSenders(
             &self,
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, getVerifyProofConsensusTxSendersCall, N> {
-            self.call_builder(&getVerifyProofConsensusTxSendersCall { zkProofId })
+        ) -> alloy_contract::SolCallBuilder<
+            &P,
+            getVerifyProofConsensusTxSendersCall,
+            N,
+        > {
+            self.call_builder(
+                &getVerifyProofConsensusTxSendersCall {
+                    zkProofId,
+                },
+            )
         }
         ///Creates a new call builder for the [`getVersion`] function.
-        pub fn getVersion(&self) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
+        pub fn getVersion(
+            &self,
+        ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
             self.call_builder(&getVersionCall)
         }
         ///Creates a new call builder for the [`isProofRejected`] function.
@@ -4059,10 +4411,12 @@ pub mod IInputVerification {
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
             extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, rejectProofResponseCall, N> {
-            self.call_builder(&rejectProofResponseCall {
-                zkProofId,
-                extraData,
-            })
+            self.call_builder(
+                &rejectProofResponseCall {
+                    zkProofId,
+                    extraData,
+                },
+            )
         }
         ///Creates a new call builder for the [`verifyProofRequest`] function.
         pub fn verifyProofRequest(
@@ -4073,13 +4427,15 @@ pub mod IInputVerification {
             ciphertextWithZKProof: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, verifyProofRequestCall, N> {
-            self.call_builder(&verifyProofRequestCall {
-                contractChainId,
-                contractAddress,
-                userAddress,
-                ciphertextWithZKProof,
-                extraData,
-            })
+            self.call_builder(
+                &verifyProofRequestCall {
+                    contractChainId,
+                    contractAddress,
+                    userAddress,
+                    ciphertextWithZKProof,
+                    extraData,
+                },
+            )
         }
         ///Creates a new call builder for the [`verifyProofRequestSolana`] function.
         pub fn verifyProofRequestSolana(
@@ -4090,50 +4446,61 @@ pub mod IInputVerification {
             ciphertextWithZKProof: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, verifyProofRequestSolanaCall, N> {
-            self.call_builder(&verifyProofRequestSolanaCall {
-                contractChainId,
-                contractAddress,
-                userAddress,
-                ciphertextWithZKProof,
-                extraData,
-            })
+            self.call_builder(
+                &verifyProofRequestSolanaCall {
+                    contractChainId,
+                    contractAddress,
+                    userAddress,
+                    ciphertextWithZKProof,
+                    extraData,
+                },
+            )
         }
         ///Creates a new call builder for the [`verifyProofResponse`] function.
         pub fn verifyProofResponse(
             &self,
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
-            ctHandles: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
+            ctHandles: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::FixedBytes<32>,
+            >,
             signature: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, verifyProofResponseCall, N> {
-            self.call_builder(&verifyProofResponseCall {
-                zkProofId,
-                ctHandles,
-                signature,
-                extraData,
-            })
+            self.call_builder(
+                &verifyProofResponseCall {
+                    zkProofId,
+                    ctHandles,
+                    signature,
+                    extraData,
+                },
+            )
         }
         ///Creates a new call builder for the [`verifyProofResponseSolana`] function.
         pub fn verifyProofResponseSolana(
             &self,
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
-            ctHandles: alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
+            ctHandles: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::FixedBytes<32>,
+            >,
             signature: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, verifyProofResponseSolanaCall, N> {
-            self.call_builder(&verifyProofResponseSolanaCall {
-                zkProofId,
-                ctHandles,
-                signature,
-                extraData,
-            })
+            self.call_builder(
+                &verifyProofResponseSolanaCall {
+                    zkProofId,
+                    ctHandles,
+                    signature,
+                    extraData,
+                },
+            )
         }
     }
     /// Event filters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        IInputVerificationInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > IInputVerificationInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.

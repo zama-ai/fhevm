@@ -53,11 +53,12 @@ pub mod GatewayOwnable {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotGatewayOwner(address)` and selector `0x0e56cf3d`.
-    ```solidity
-    error NotGatewayOwner(address sender);
-    ```*/
+```solidity
+error NotGatewayOwner(address sender);
+```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NotGatewayOwner {
@@ -78,7 +79,9 @@ pub mod GatewayOwnable {
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -102,7 +105,9 @@ pub mod GatewayOwnable {
         #[automatically_derived]
         impl alloy_sol_types::SolError for NotGatewayOwner {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NotGatewayOwner(address)";
             const SELECTOR: [u8; 4] = [14u8, 86u8, 207u8, 61u8];
             #[inline]
@@ -121,15 +126,16 @@ pub mod GatewayOwnable {
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
-                    data,
-                )
-                .map(Self::new)
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
     ///Container for all the [`GatewayOwnable`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum GatewayOwnableErrors {
         #[allow(missing_docs)]
         NotGatewayOwner(NotGatewayOwner),
@@ -167,22 +173,32 @@ pub mod GatewayOwnable {
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<GatewayOwnableErrors>] =
-                &[{
+        fn abi_decode_raw(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<GatewayOwnableErrors>] = &[
+                {
                     fn NotGatewayOwner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<GatewayOwnableErrors> {
-                        <NotGatewayOwner as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        <NotGatewayOwner as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
                             .map(GatewayOwnableErrors::NotGatewayOwner)
                     }
                     NotGatewayOwner
-                }];
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_SHIMS[idx](data)
         }
@@ -194,19 +210,26 @@ pub mod GatewayOwnable {
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            )
-                -> alloy_sol_types::Result<GatewayOwnableErrors>] = &[{
-                fn NotGatewayOwner(data: &[u8]) -> alloy_sol_types::Result<GatewayOwnableErrors> {
-                    <NotGatewayOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(data)
-                        .map(GatewayOwnableErrors::NotGatewayOwner)
-                }
-                NotGatewayOwner
-            }];
+            ) -> alloy_sol_types::Result<GatewayOwnableErrors>] = &[
+                {
+                    fn NotGatewayOwner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<GatewayOwnableErrors> {
+                        <NotGatewayOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(GatewayOwnableErrors::NotGatewayOwner)
+                    }
+                    NotGatewayOwner
+                },
+            ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(alloy_sol_types::Error::unknown_selector(
-                    <Self as alloy_sol_types::SolInterface>::NAME,
-                    selector,
-                ));
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -214,7 +237,9 @@ pub mod GatewayOwnable {
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::NotGatewayOwner(inner) => {
-                    <NotGatewayOwner as alloy_sol_types::SolError>::abi_encoded_size(inner)
+                    <NotGatewayOwner as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
                 }
             }
         }
@@ -222,7 +247,10 @@ pub mod GatewayOwnable {
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
                 Self::NotGatewayOwner(inner) => {
-                    <NotGatewayOwner as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
+                    <NotGatewayOwner as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
                 }
             }
         }
@@ -230,7 +258,7 @@ pub mod GatewayOwnable {
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`GatewayOwnable`](self) contract instance.
 
-    See the [wrapper's documentation](`GatewayOwnableInstance`) for more details.*/
+See the [wrapper's documentation](`GatewayOwnableInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -243,41 +271,43 @@ pub mod GatewayOwnable {
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-    Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
-        provider: P,
-    ) -> impl ::core::future::Future<Output = alloy_contract::Result<GatewayOwnableInstance<P, N>>>
-    {
-        GatewayOwnableInstance::<P, N>::deploy(provider)
-    }
-    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-    and constructor arguments, if any.
-
-    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
-    #[inline]
-    pub fn deploy_builder<
+    pub fn deploy<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
-    ) -> alloy_contract::RawCallBuilder<P, N> {
+    ) -> impl ::core::future::Future<
+        Output = alloy_contract::Result<GatewayOwnableInstance<P, N>>,
+    > {
+        GatewayOwnableInstance::<P, N>::deploy(provider)
+    }
+    /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
+and constructor arguments, if any.
+
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    #[inline]
+    pub fn deploy_builder<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
         GatewayOwnableInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`GatewayOwnable`](self) instance.
 
-    Contains type-safe methods for interacting with an on-chain instance of the
-    [`GatewayOwnable`](self) contract located at a given `address`, using a given
-    provider `P`.
+Contains type-safe methods for interacting with an on-chain instance of the
+[`GatewayOwnable`](self) contract located at a given `address`, using a given
+provider `P`.
 
-    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-    be used to deploy a new instance of the contract.
+If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+be used to deploy a new instance of the contract.
 
-    See the [module-level documentation](self) for all the available methods.*/
+See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct GatewayOwnableInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -288,21 +318,23 @@ pub mod GatewayOwnable {
     impl<P, N> ::core::fmt::Debug for GatewayOwnableInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("GatewayOwnableInstance")
-                .field(&self.address)
-                .finish()
+            f.debug_tuple("GatewayOwnableInstance").field(&self.address).finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        GatewayOwnableInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > GatewayOwnableInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`GatewayOwnable`](self) contract instance.
 
-        See the [wrapper's documentation](`GatewayOwnableInstance`) for more details.*/
+See the [wrapper's documentation](`GatewayOwnableInstance`) for more details.*/
         #[inline]
-        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
+        pub const fn new(
+            address: alloy_sol_types::private::Address,
+            provider: P,
+        ) -> Self {
             Self {
                 address,
                 provider,
@@ -311,20 +343,22 @@ pub mod GatewayOwnable {
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-        Returns a new instance of the contract, if the deployment was successful.
+Returns a new instance of the contract, if the deployment was successful.
 
-        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(provider: P) -> alloy_contract::Result<GatewayOwnableInstance<P, N>> {
+        pub async fn deploy(
+            provider: P,
+        ) -> alloy_contract::Result<GatewayOwnableInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-        and constructor arguments, if any.
+and constructor arguments, if any.
 
-        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -366,9 +400,10 @@ pub mod GatewayOwnable {
     }
     /// Function calls.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        GatewayOwnableInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > GatewayOwnableInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -382,9 +417,10 @@ pub mod GatewayOwnable {
     }
     /// Event filters.
     #[automatically_derived]
-    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
-        GatewayOwnableInstance<P, N>
-    {
+    impl<
+        P: alloy_contract::private::Provider<N>,
+        N: alloy_contract::private::Network,
+    > GatewayOwnableInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
