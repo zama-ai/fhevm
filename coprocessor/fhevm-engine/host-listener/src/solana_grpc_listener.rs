@@ -251,7 +251,10 @@ async fn subscribe_loop(
                     Some(UpdateOneof::Transaction(txu)) => {
                         let slot = txu.slot;
                         if let Some(info) = txu.transaction {
+                            let signature =
+                                bs58::encode(&info.signature).into_string();
                             if info.is_vote {
+                                *from_slot = Some(slot);
                                 continue;
                             }
                             if let Err(err) = ingest_transaction(
@@ -262,8 +265,13 @@ async fn subscribe_loop(
                             )
                             .await
                             {
-                                // Do not advance from_slot past a failed ingest.
-                                error!(slot, error = %err, "failed to ingest gRPC transaction");
+                                error!(
+                                    slot,
+                                    signature = %signature,
+                                    error = %err,
+                                    "failed to ingest gRPC transaction; skipping"
+                                );
+                                *from_slot = Some(slot);
                                 continue;
                             }
                         }
@@ -918,17 +926,11 @@ mod fhe_eval_acl_tests {
     }
 
     fn fhe_eval_accounts_with_deny_record() -> Vec<[u8; 32]> {
+        // Accounts 0..=6 are the named FheEval accounts plus Anchor event-cpi
+        // accounts. The optional deny record is remaining_accounts[0], and the
+        // durable output is remaining_accounts[1].
         let mut accounts: Vec<[u8; 32]> = (0..9).map(acct).collect();
-        let event_authority =
-            anchor_lang::prelude::Pubkey::find_program_address(
-                &[b"__event_authority"],
-                &zama_host::ID,
-            )
-            .0
-            .to_bytes();
         accounts[1] = SUBJECT;
-        accounts[6] = event_authority;
-        accounts[7] = zama_host::ID.to_bytes();
         accounts[8] = ENCRYPTED_VALUE;
         accounts
     }
@@ -1123,7 +1125,7 @@ mod fhe_eval_acl_tests {
     fn durable_output_after_optional_deny_record_resolves() {
         let accounts = fhe_eval_accounts_with_deny_record();
         assert_eq!(
-            fhe_eval_durable_encrypted_value(&accounts, 0),
+            fhe_eval_durable_encrypted_value(&accounts, 1),
             Some(ENCRYPTED_VALUE)
         );
     }

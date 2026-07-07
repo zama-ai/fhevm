@@ -214,10 +214,24 @@ fi
 echo "==> [5/5] run Solana host-listener"
 pkill -f solana_host_listener 2>/dev/null || true
 sleep 1
+
+run_logged_background() {
+  local log_file="$1"
+  shift
+  local process_name
+  process_name="$(basename "$1")"
+  (
+    "$@"
+    status=$?
+    echo "[setup] $process_name exited with status $status"
+  ) >>"$log_file" 2>&1 &
+}
+
 # Always rebuild the listener from THIS worktree's source: its event decoders are generated
 # (build.rs -> OUT_DIR) from the program IDLs, so a stale prebuilt binary silently decodes zero
 # events when the program's event layout has moved (it drops every event whose generated struct
 # no longer matches), leaving the coprocessor with no work and the vertical hanging at SNS commit.
+: >/tmp/solana-host-listener.log
 if [ "$RECONSTRUCT" = 1 ]; then
   # gRPC transport + off-chain reconstruction: the listener INGESTS events rebuilt from
   # the tx instructions (the program emits nothing), so this leg stands in for the whole
@@ -225,16 +239,18 @@ if [ "$RECONSTRUCT" = 1 ]; then
   # on-chain HostConfig PDA at startup — no --chain-id / --zero-birth-entropy flags.
   ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --features solana-grpc,solana-reconstruct --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
     || { echo "[setup] host-listener (grpc,reconstruct) build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
-  ( "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
+  run_logged_background /tmp/solana-host-listener.log \
+    "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
       --transport grpc --grpc-url "$GRPC_URL" \
       --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
-      --host-chain-id="$SID_I64" --reconstruct >/tmp/solana-host-listener.log 2>&1 & )
+      --host-chain-id="$SID_I64" --reconstruct
 else
   ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
     || { echo "[setup] host-listener build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
-  ( "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
+  run_logged_background /tmp/solana-host-listener.log \
+    "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
       --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
-      --host-chain-id="$SID_I64" >/tmp/solana-host-listener.log 2>&1 & )
+      --host-chain-id="$SID_I64"
 fi
 
 # The Solana decrypt pipeline is two-stage: the host-listener ingests events and, for
@@ -249,8 +265,10 @@ pkill -f solana_finalized_account_fetcher 2>/dev/null || true
 sleep 1
 ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --bin solana_finalized_account_fetcher >>/tmp/solana-host-listener-build.log 2>&1 ) \
   || { echo "[setup] finalized-account fetcher build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
-( "$ROOT/coprocessor/fhevm-engine/target/debug/solana_finalized_account_fetcher" \
+: >/tmp/solana-finalized-account-fetcher.log
+run_logged_background /tmp/solana-finalized-account-fetcher.log \
+  "$ROOT/coprocessor/fhevm-engine/target/debug/solana_finalized_account_fetcher" \
     --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
-    --host-chain-id="$SID_I64" >/tmp/solana-finalized-account-fetcher.log 2>&1 & )
+    --host-chain-id="$SID_I64"
 
 echo "==> Solana side-stack ready. zama_host=$ZAMA_HOST_ID host_chain_id=$SID_U64 (i64 $SID_I64)"

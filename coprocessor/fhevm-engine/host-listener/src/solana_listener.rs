@@ -39,6 +39,12 @@ use crate::solana_adapter::{
 /// `getSignaturesForAddress` returns at most this many entries per call.
 const SIGNATURES_PAGE_LIMIT: usize = 1_000;
 
+#[derive(Debug)]
+enum SignatureIngestError {
+    Retry(anyhow::Error),
+    Skip(anyhow::Error),
+}
+
 /// Runtime configuration for the live Solana listener loop.
 #[derive(Clone, Debug)]
 pub struct SolanaListenerConfig {
@@ -96,7 +102,7 @@ pub async fn run(
         };
 
         for signature in signatures {
-            match ingest_signature(
+            let result = ingest_signature(
                 db,
                 rpc,
                 config,
@@ -104,16 +110,40 @@ pub async fn run(
                 #[cfg(feature = "solana-reconstruct")]
                 &mut encrypted_value_tracker,
             )
-            .await
-            {
-                Ok(()) => cursor = Some(signature),
-                Err(err) => {
-                    // Stop advancing the cursor on the first failure so the next
-                    // poll retries this signature rather than skipping it.
-                    error!(signature = %signature, error = %err, "Failed to ingest transaction");
-                    break;
-                }
+            .await;
+            if !record_signature_ingest_result(&mut cursor, signature, result) {
+                break;
             }
+        }
+    }
+}
+
+fn record_signature_ingest_result(
+    cursor: &mut Option<Signature>,
+    signature: Signature,
+    result: std::result::Result<(), SignatureIngestError>,
+) -> bool {
+    match result {
+        Ok(()) => {
+            *cursor = Some(signature);
+            true
+        }
+        Err(SignatureIngestError::Skip(err)) => {
+            error!(
+                signature = %signature,
+                error = %err,
+                "Failed to ingest transaction; skipping"
+            );
+            *cursor = Some(signature);
+            true
+        }
+        Err(SignatureIngestError::Retry(err)) => {
+            error!(
+                signature = %signature,
+                error = %err,
+                "Failed to ingest transaction; retrying next tick"
+            );
+            false
         }
     }
 }
@@ -182,7 +212,7 @@ async fn ingest_signature(
     signature: &Signature,
     #[cfg(feature = "solana-reconstruct")]
     encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
-) -> Result<()> {
+) -> std::result::Result<(), SignatureIngestError> {
     let confirmed = rpc
         .get_transaction_with_config(
             signature,
@@ -193,7 +223,8 @@ async fn ingest_signature(
             },
         )
         .await
-        .with_context(|| format!("get_transaction {signature}"))?;
+        .with_context(|| format!("get_transaction {signature}"))
+        .map_err(SignatureIngestError::Retry)?;
 
     let (events, block) = extract_host_events_with_tracker(
         &confirmed,
@@ -201,9 +232,8 @@ async fn ingest_signature(
         #[cfg(feature = "solana-reconstruct")]
         encrypted_value_tracker,
     )
-    .with_context(|| {
-        format!("decode CPI events for transaction {signature}")
-    })?;
+    .with_context(|| format!("decode CPI events for transaction {signature}"))
+    .map_err(SignatureIngestError::Skip)?;
 
     if events.is_empty() {
         return Ok(());
@@ -213,12 +243,17 @@ async fn ingest_signature(
     let mut tx = db
         .new_transaction()
         .await
-        .context("open database transaction")?;
+        .context("open database transaction")
+        .map_err(SignatureIngestError::Retry)?;
     let stats =
         insert_solana_events(db, &mut tx, events, transaction_id, block)
             .await
-            .context("insert_solana_events")?;
-    tx.commit().await.context("commit database transaction")?;
+            .context("insert_solana_events")
+            .map_err(SignatureIngestError::Retry)?;
+    tx.commit()
+        .await
+        .context("commit database transaction")
+        .map_err(SignatureIngestError::Retry)?;
 
     info!(
         signature = %signature,
@@ -535,6 +570,39 @@ mod tests {
         payload.push(5); // to_type (euint64)
         payload.extend_from_slice(&[8; 32]); // result handle
         payload
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn per_signature_decode_error_advances_cursor_and_continues_batch() {
+        let signatures = vec![
+            Signature::new_unique(),
+            Signature::new_unique(),
+            Signature::new_unique(),
+        ];
+        let mut results = vec![
+            Ok(()),
+            Err(SignatureIngestError::Skip(anyhow::anyhow!("bad decode"))),
+            Ok(()),
+        ]
+        .into_iter();
+
+        let mut cursor = None;
+        let mut attempted = Vec::new();
+        for signature in signatures.iter().cloned() {
+            attempted.push(signature);
+            assert!(record_signature_ingest_result(
+                &mut cursor,
+                signature,
+                results.next().expect("test result")
+            ));
+        }
+
+        assert_eq!(attempted, signatures);
+        assert_eq!(cursor, signatures.last().cloned());
+        assert!(logs_contain("Failed to ingest transaction; skipping"));
+        assert!(logs_contain("bad decode"));
+        assert!(logs_contain(&signatures[1].to_string()));
     }
 
     /// Builds a confirmed-transaction fixture in the exact JSON shape returned by
