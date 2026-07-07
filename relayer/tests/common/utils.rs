@@ -1018,6 +1018,12 @@ pub fn test_keyurl_expected_url(segment: &str, id: u64) -> String {
     format!("{TEST_KEYURL_STORAGE_URL}/{TEST_KEYURL_STORAGE_PREFIX}/{segment}/{id_hex}")
 }
 
+/// The served `dataId` for a given on-chain id: `0x`-prefixed 32-byte big-endian, lowercase hex.
+#[allow(dead_code)]
+pub fn test_keyurl_expected_data_id(id: u64) -> String {
+    format!("0x{}", hex::encode(U256::from(id).to_be_bytes::<32>()))
+}
+
 /// Register a single `eth_call` response keyed by destination address and 4-byte selector.
 fn register_call_response(
     host_server: &MockServer,

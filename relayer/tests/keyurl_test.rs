@@ -6,7 +6,8 @@
 mod common;
 
 use crate::common::utils::{
-    test_keyurl_expected_url, TestSetup, TEST_KEYURL_CRS_ID, TEST_KEYURL_KEY_ID,
+    test_keyurl_expected_data_id, test_keyurl_expected_url, TestSetup, TEST_KEYURL_CRS_ID,
+    TEST_KEYURL_KEY_ID,
 };
 use rstest::rstest;
 use serde_json::Value;
@@ -109,15 +110,15 @@ mod helpers {
 
         // --- Chain-sourced values (served from the host-chain poller) ---
 
-        // dataId carries the real on-chain getActiveKeyId / getActiveCrsId (decimal string).
+        // dataId carries the real on-chain getActiveKeyId / getActiveCrsId, as 0x-prefixed hex.
         assert_eq!(
             fhe_public_key["dataId"].as_str().unwrap(),
-            TEST_KEYURL_KEY_ID.to_string(),
+            test_keyurl_expected_data_id(TEST_KEYURL_KEY_ID),
             "fhePublicKey.dataId should equal on-chain getActiveKeyId"
         );
         assert_eq!(
             crs_2048["dataId"].as_str().unwrap(),
-            TEST_KEYURL_CRS_ID.to_string(),
+            test_keyurl_expected_data_id(TEST_KEYURL_CRS_ID),
             "crs.2048.dataId should equal on-chain getActiveCrsId"
         );
 
