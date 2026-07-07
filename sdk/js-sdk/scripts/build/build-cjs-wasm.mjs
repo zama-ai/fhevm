@@ -12,6 +12,7 @@ import {
   createWasmBuildContext,
   generatedWasmLoaderRels,
   generatedWasmRels,
+  isWasmBase64DataRel,
   logWasmBuildSummary,
   removeUnexpectedTscJsOutputs,
   writeGeneratedWasmArtifacts,
@@ -41,21 +42,33 @@ cleanWasmDest(context);
 
 ////////////////////////////////////////////////////////////////////////////////
 // 1. ESM → CJS for allowed runtime JS files.
+//
+//    Auto-generated base64 WASM payloads are transpiled without a sourcemap:
+//    they're giant data-only files with no logic to step through, and the
+//    sourcemap would otherwise roughly double their published size.
 ////////////////////////////////////////////////////////////////////////////////
 
-await build({
-  entryPoints: [...transpileSet],
+const base64DataEntryPoints = [...transpileSet].filter((f) => isWasmBase64DataRel(context.sourceRel(f)));
+const codeEntryPoints = [...transpileSet].filter((f) => !isWasmBase64DataRel(context.sourceRel(f)));
+
+const sharedBuildOptions = {
   outdir: context.dest,
   outbase: WASM_SRC,
   format: 'cjs',
   platform: 'node',
   bundle: false,
-  sourcemap: 'linked',
   logLevel: 'info',
   // wasmBaseUrl.js intentionally uses import.meta.url with a CJS fallback;
   // suppress the warning since the empty-object case is already handled.
   logOverride: { 'empty-import-meta': 'silent' },
-});
+};
+
+if (codeEntryPoints.length > 0) {
+  await build({ ...sharedBuildOptions, entryPoints: codeEntryPoints, sourcemap: 'linked' });
+}
+if (base64DataEntryPoints.length > 0) {
+  await build({ ...sharedBuildOptions, entryPoints: base64DataEntryPoints, sourcemap: false });
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // 2. Copy everything else verbatim. Skips the generated sources — we regenerate
