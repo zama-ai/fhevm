@@ -284,11 +284,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         _requestKeygen(paramsType, KeygenRequestKind.Migration, keyId);
     }
 
-    function _requestKeygen(
-        ParamsType paramsType,
-        KeygenRequestKind requestKind,
-        uint256 keyId
-    ) internal virtual {
+    function _requestKeygen(ParamsType paramsType, KeygenRequestKind requestKind, uint256 keyId) internal virtual {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Check that the previous keygen request has reached consensus

@@ -124,12 +124,7 @@ interface IKMSGeneration {
      * @param signature The signature of the KMS node that has responded.
      * @param kmsTxSender The transaction sender of the KMS node that has called the function.
      */
-    event MigrationResponse(
-        uint256 migrationRequestId,
-        KeyDigest[] keyDigests,
-        bytes signature,
-        address kmsTxSender
-    );
+    event MigrationResponse(uint256 migrationRequestId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     /**
      * @notice Emitted when the key is activated.

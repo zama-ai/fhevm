@@ -1499,10 +1499,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
                 "migration flow must never emit ActivateKey"
             );
             if (logs[i].topics[0] == IKMSGeneration.KeygenRequest.selector) {
-                (, uint256 requestId, IKMSGeneration.KeygenRequestKind requestKind, uint256 emittedKeyId, ) = abi.decode(
-                    logs[i].data,
-                    (uint256, uint256, IKMSGeneration.KeygenRequestKind, uint256, bytes)
-                );
+                (, uint256 requestId, IKMSGeneration.KeygenRequestKind requestKind, uint256 emittedKeyId, ) = abi
+                    .decode(logs[i].data, (uint256, uint256, IKMSGeneration.KeygenRequestKind, uint256, bytes));
                 assertEq(requestId, migrationRequestId);
                 assertTrue(requestKind == IKMSGeneration.KeygenRequestKind.Migration, "request kind must be Migration");
                 assertEq(emittedKeyId, keyId);
