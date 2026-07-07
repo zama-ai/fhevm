@@ -286,6 +286,29 @@ const bundleFromFiles = async (
   }
 };
 
+/**
+ * Selects the newest short main-commit SHA published by every gating repo-owned package.
+ *
+ * A package gates resolution only when its published tag set intersects the candidate
+ * window. Two kinds of package are treated as "don't gate on this":
+ *  - an empty set: the image hasn't been published yet (typically a brand-new image
+ *    whose CI build hasn't landed);
+ *  - a non-empty set whose tags are all feature-branch builds not yet on main: it would
+ *    otherwise reject every main commit and stall resolution entirely.
+ * Both are pinned to the resolved sha by presetBundle (host-listener release cadence, as
+ * bundleFromFiles does for network targets) until CI publishes them for main commits, at
+ * which point they start gating again automatically.
+ */
+export const selectSupportedMainSha = (
+  candidateShas: string[],
+  packageTagsMap: Record<string, Set<string>>,
+): string | undefined => {
+  const gatingSets = Object.values(packageTagsMap).filter(
+    (set) => set.size > 0 && candidateShas.some((sha) => set.has(sha)),
+  );
+  return candidateShas.find((sha) => gatingSets.every((set) => set.has(sha)));
+};
+
 /** Fetches the available tag sets for all repo-owned packages. */
 const repoPackageTags = async (targetTag?: string) =>
   Object.fromEntries(
@@ -337,16 +360,11 @@ export const resolveTarget = async (
   } catch (error) {
     throw new GitHubApiError(error instanceof Error ? error.message : String(error));
   }
-  const short = commits
+  const candidateShas = commits
     .slice(0, Math.min(floor, compatFloor) + 1)
     .map((sha) => sha.slice(0, 7))
-    // Packages with an empty tag set (not published yet — typically new images
-    // introduced on a branch before CI lands) are treated as "don't gate on this".
-    // bundleFromFiles falls back to the host-listener tag for them.
-    .find((sha) =>
-      REPO_TAG.test(sha) &&
-      Object.values(packageTagsMap).every((set) => set.size === 0 || set.has(sha)),
-    );
+    .filter((sha) => REPO_TAG.test(sha));
+  const short = selectSupportedMainSha(candidateShas, packageTagsMap);
   if (!short) {
     throw new GitHubApiError("Could not find a supported modern latest-main image set");
   }
