@@ -17,8 +17,9 @@
  *     lands on chain first; waiting for connector ingestion can lose the race to a fast
  *     ceremony.
  *   - Assert connector statuses phase-agnostically — depending on where the abort catches a
- *     party, request rows end `aborted` (KMS Core canceled the ceremony) or `completed` (late
- *     work absorbed on chain without consensus), and abort rows end `completed` or `failed`
+ *     party, request rows end `aborted` (KMS Core canceled the ceremony), `completed` (late
+ *     work absorbed on chain without consensus), or `failed` (a threshold party's ceremony
+ *     died once its peers aborted theirs), and abort rows end `completed` or `failed`
  *     (nothing left to cancel). What matters: no work stays in flight, nothing activates, and
  *     recovery completes.
  *
@@ -258,10 +259,10 @@ const abortKeygenMidFlight = async (state: State, target: Target, owner: Owner, 
   // Connector settlement (see the module doc for why the statuses are phase-dependent).
   const parties = state.scenario.kms.parties;
   await pollConnectors(parties, "abort ingested and terminal", statusQuery("abort_keygen_requests", "prep_keygen_id", prepKeygenId), ["completed", "failed"]);
-  await pollConnectors(parties, "prep-keygen request terminal", statusQuery("prep_keygen_requests", "prep_keygen_id", prepKeygenId), ["completed", "aborted"]);
+  await pollConnectors(parties, "prep-keygen request terminal", statusQuery("prep_keygen_requests", "prep_keygen_id", prepKeygenId), ["completed", "aborted", "failed"]);
   // A KeygenRequest emitted in the trigger-to-abort window may still be one listener batch away.
   await Bun.sleep(LISTENER_BATCH_GRACE_MS);
-  await pollConnectors(parties, "no keygen work left in flight", statusQuery("keygen_requests", "key_id", keyId), ["missing", "completed", "aborted"]);
+  await pollConnectors(parties, "no keygen work left in flight", statusQuery("keygen_requests", "key_id", keyId), ["missing", "completed", "aborted", "failed"]);
 
   const { keyId: activeKeyId } = await readActiveIds(target);
   if (activeKeyId !== baselineKeyId) {
@@ -298,7 +299,7 @@ const abortCrsgenMidFlight = async (state: State, target: Target, owner: Owner, 
 
   const parties = state.scenario.kms.parties;
   await pollConnectors(parties, "abort ingested and terminal", statusQuery("abort_crsgen_requests", "crs_id", crsId), ["completed", "failed"]);
-  await pollConnectors(parties, "crsgen request terminal", statusQuery("crsgen_requests", "crs_id", crsId), ["completed", "aborted"]);
+  await pollConnectors(parties, "crsgen request terminal", statusQuery("crsgen_requests", "crs_id", crsId), ["completed", "aborted", "failed"]);
 
   const { crsId: activeCrsId } = await readActiveIds(target);
   if (activeCrsId !== baselineCrsId) {
