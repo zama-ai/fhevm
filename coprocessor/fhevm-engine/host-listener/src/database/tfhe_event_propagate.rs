@@ -90,6 +90,20 @@ pub type ChainCache = Arc<RwLock<lru::LruCache<Handle, ChainHash>>>;
 pub type OrderedChains = Vec<Chain>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
+/// Depth bound for the producer-resolution ancestry walk. Fork
+/// disambiguation only matters above finality; anything deeper resolves via
+/// finalization status. Far above any real finality lag.
+const ANCESTRY_WALK_DEPTH: i64 = 1024;
+/// Reorgs orphaning blocks closer than this to the branch activation height
+/// keep their legacy rows (see the straddle guard in
+/// `cleanup_orphaned_branch_state`). Generously above any real finality lag,
+/// since reorgs cannot be deeper than finality.
+const BRANCH_ACTIVATION_STRADDLE_WINDOW: i64 = 128;
+/// Finalized `host_chain_blocks_valid` rows older than this many blocks
+/// below the finalized head are eligible for pruning (when unreferenced).
+const BLOCKS_VALID_RETENTION: i64 = 10_000;
+/// Upper bound of rows removed per pruning pass; keeps each pass short.
+const BLOCKS_VALID_PRUNE_BATCH: i64 = 1_000;
 const SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE: i64 = 1_907_000_000;
 const SLOW_LANE_RESET_BATCH_SIZE: i64 = 5_000;
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
@@ -241,7 +255,24 @@ const STATEMENT_CANCELLED: DbErrorCode = DbErrorCode::Borrowed("57014"); // SQLS
 
 fn apply_connection_options(options: PgConnectOptions) -> PgConnectOptions {
     options.options([
-        ("statement_timeout", "10000"), // 10 seconds
+        // 120s: large-object (lowrite) writes of the KMS server key can take
+        // 25s+ under DB contention; 10s was too tight and rolled back the
+        // key-activation download every cycle.
+        ("statement_timeout", "120000"), // 120 seconds
+    ])
+}
+
+/// Same as [`apply_connection_options`] but additionally pins
+/// `search_path = gcs,public` so every connection routes unqualified writes
+/// to the `gcs` schema (with fallback to `public` for shared read-only
+/// tables). Used by the host-listener in `--gcs-mode`.
+fn apply_connection_options_gcs(options: PgConnectOptions) -> PgConnectOptions {
+    options.options([
+        ("statement_timeout", "120000"), // 120 seconds; see apply_connection_options
+        (
+            "search_path",
+            fhevm_engine_common::database::GCS_SEARCH_PATH,
+        ),
     ])
 }
 
@@ -281,6 +312,17 @@ pub struct Database {
     pub chain_id: ChainId,
     pub dependence_chain: ChainCache,
     pub tick: HeartBeat,
+    /// When true, every connection in this pool sets
+    /// `search_path = gcs,public` so writes resolve to the GCS schema.
+    gcs_mode: bool,
+    /// Host-chain height at which wave-1 branch dual-writes activate
+    /// (`FHEVM_BRANCH_ACTIVATION_BLOCK`, default 0 = from genesis). Below
+    /// it, ingestion writes legacy state only and producers resolve as
+    /// branchless. Set to a fleet-common height above the rolling upgrade's
+    /// completion so branch-row keying is deterministic across operators
+    /// that upgrade at different times; the wave-2 cutover
+    /// (`FHEVM_BRANCH_CUTOVER_BLOCK`) must be >= this height.
+    pub branch_activation_block: u64,
 }
 
 #[derive(Debug)]
@@ -299,6 +341,34 @@ pub struct LogTfhe {
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
 
+fn parse_branch_activation_block() -> u64 {
+    const ENV_VAR: &str = "FHEVM_BRANCH_ACTIVATION_BLOCK";
+
+    match std::env::var(ENV_VAR) {
+        Ok(value) => match value.parse::<u64>() {
+            Ok(block) => block,
+            Err(err) => {
+                error!(
+                    env_var = ENV_VAR,
+                    value = %value,
+                    error = %err,
+                    "Invalid branch activation block configuration"
+                );
+                std::process::exit(1);
+            }
+        },
+        Err(std::env::VarError::NotPresent) => 0,
+        Err(err) => {
+            error!(
+                env_var = ENV_VAR,
+                error = %err,
+                "Invalid branch activation block configuration"
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StatsForConsumer {
     pub number_of_new_gaps: i64,
@@ -312,7 +382,17 @@ impl Database {
         chain_id: ChainId,
         dependence_cache_size: u16,
     ) -> Result<Self> {
-        let (pool, pool_refresh_handle) = Self::new_pool(url).await;
+        Self::new_with_gcs_mode(url, chain_id, dependence_cache_size, false)
+            .await
+    }
+
+    pub async fn new_with_gcs_mode(
+        url: &DatabaseURL,
+        chain_id: ChainId,
+        dependence_cache_size: u16,
+        gcs_mode: bool,
+    ) -> Result<Self> {
+        let (pool, pool_refresh_handle) = Self::new_pool(url, gcs_mode).await;
         let bucket_cache =
             Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
                 std::num::NonZeroU16::new(
@@ -321,6 +401,7 @@ impl Database {
                 .unwrap()
                 .into(),
             )));
+        let branch_activation_block = parse_branch_activation_block();
         let db = Database {
             url: url.clone(),
             chain_id,
@@ -328,6 +409,8 @@ impl Database {
             pool_refresh_handle: Arc::new(RwLock::new(pool_refresh_handle)),
             dependence_chain: bucket_cache,
             tick: HeartBeat::default(),
+            gcs_mode,
+            branch_activation_block,
         };
         // Wave-1 deploy safety: a binary may start before the branch-context
         // migration has applied (e.g. a rolling deploy where the db-migration
@@ -486,7 +569,15 @@ impl Database {
         Ok(slow_dep_chain_ids)
     }
 
-    async fn new_pool(url: &DatabaseURL) -> (PgPool, PoolRefreshHandle) {
+    async fn new_pool(
+        url: &DatabaseURL,
+        gcs_mode: bool,
+    ) -> (PgPool, PoolRefreshHandle) {
+        let transform: fn(PgConnectOptions) -> PgConnectOptions = if gcs_mode {
+            apply_connection_options_gcs
+        } else {
+            apply_connection_options
+        };
         let connect = || {
             connect_pool_with_options_and_connect_options(
                 url,
@@ -496,7 +587,7 @@ impl Database {
                     .max_connections(8)
                     .acquire_timeout(Duration::from_secs(5)),
                 None,
-                apply_connection_options,
+                transform,
             )
         };
         let mut pool = connect().await;
@@ -511,8 +602,21 @@ impl Database {
         pool.expect("unreachable")
     }
 
-    pub async fn new_transaction(&self) -> Result<Transaction<'_>, SqlxError> {
-        self.pool().await.begin().await
+    /// Begin a write transaction fenced against cutover. Runs `assert_not_retired`
+    /// at BEGIN (via `begin_guarded_pool`), then takes the shared cutover advisory
+    /// lock and re-checks retirement. Returns `Ok(None)` if a committed cutover has
+    /// retired this stack — the caller must skip the write. GCS-mode connections
+    /// (`self.gcs_mode`) skip the gate: they write the gcs schema, not the cutover
+    /// target. See `versioning::cutover_gate`.
+    pub async fn new_transaction(
+        &self,
+    ) -> Result<Option<Transaction<'_>>, SqlxError> {
+        let pool = self.pool().await;
+        fhevm_engine_common::versioning::begin_write_guarded(
+            &pool,
+            self.gcs_mode,
+        )
+        .await
     }
 
     pub async fn pool(&self) -> sqlx::Pool<Postgres> {
@@ -523,7 +627,7 @@ impl Database {
         tokio::time::sleep(RECONNECTION_DELAY).await;
         let (old_pool, old_refresh_handle) = {
             let (new_pool, new_refresh_handle) =
-                Self::new_pool(&self.url).await;
+                Self::new_pool(&self.url, self.gcs_mode).await;
             let mut pool = self.pool.write().await;
             let mut pool_refresh_handle =
                 self.pool_refresh_handle.write().await;
@@ -602,6 +706,21 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
+        // Below the fleet-common activation height only legacy state is
+        // written: per-node dual-write start times would otherwise key branch
+        // rows divergently across operators during a rolling upgrade.
+        if log.block_number < self.branch_activation_block {
+            return self
+                .insert_computation_legacy_row(
+                    tx,
+                    &output_handle,
+                    &dependencies,
+                    fhe_operation,
+                    is_scalar,
+                    log,
+                )
+                .await;
+        }
         // Wave-1 producer writes require the branch row so wave-2 consumers have
         // complete block-scoped state; branch write failures abort this ingest
         // transaction and are retried with the rest of the event.
@@ -629,6 +748,31 @@ impl Database {
         // Wave-1 dual-write: the legacy pipeline still executes from the
         // legacy tables, so every branch row is mirrored there until the
         // block-scoped readers take over in wave 2.
+        let legacy_inserted = self
+            .insert_computation_legacy_row(
+                tx,
+                &output_handle,
+                &dependencies,
+                fhe_operation,
+                is_scalar,
+                log,
+            )
+            .await?;
+        Ok(inserted || legacy_inserted)
+    }
+
+    async fn insert_computation_legacy_row(
+        &self,
+        tx: &mut Transaction<'_>,
+        output_handle: &[u8],
+        dependencies: &[Vec<u8>],
+        fhe_operation: FheOperation,
+        is_scalar: bool,
+        log: &LogTfhe,
+    ) -> Result<bool, SqlxError> {
+        // Schema isolation handles BCS/GCS routing at the connection layer
+        // (`search_path = gcs,public` for GCS, default `public` for BCS), so
+        // this INSERT references `computations` unqualified.
         let query = sqlx::query!(
             r#"
             INSERT INTO computations (
@@ -649,7 +793,7 @@ impl Database {
             ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
             output_handle,
-            &dependencies,
+            dependencies,
             fhe_operation as i16,
             is_scalar,
             log.dependence_chain.to_vec(),
@@ -663,11 +807,10 @@ impl Database {
             self.chain_id.as_i64(),
             log.block_number as i64
         );
-        let legacy_inserted = query
+        query
             .execute(tx.deref_mut())
             .await
-            .map(|result| result.rows_affected() > 0)?;
-        Ok(inserted || legacy_inserted)
+            .map(|result| result.rows_affected() > 0)
     }
 
     #[rustfmt::skip]
@@ -782,12 +925,27 @@ impl Database {
         }
     }
 
+    /// Finalizes `(block_number, block_hash)` and orphans its observed
+    /// sibling forks. Returns `Ok(Some(orphaned_hashes))` on success and
+    /// `Ok(None)` when finalization was REFUSED (row missing, already
+    /// orphaned, or parent linkage contradicting the finalized predecessor);
+    /// callers must stop their ascending batch on `None`.
     pub async fn update_block_as_finalized(
         &self,
         tx: &mut Transaction<'_>,
         block_number: i64,
         block_hash: &BlockHash,
-    ) -> Result<Vec<Vec<u8>>, SqlxError> {
+    ) -> Result<Option<Vec<Vec<u8>>>, SqlxError> {
+        // Finalization is destructive (orphaned siblings' state is deleted by
+        // the caller), yet the hash comes from a single by-number RPC lookup.
+        // Two defenses gate it: the (number, hash) row must have been
+        // observed by ingestion (pre-existing), and its recorded parent hash
+        // must not contradict the finalized predecessor — a stale or poisoned
+        // RPC answering with a fork sibling fails the linkage check and the
+        // block is retried on a later pass instead of orphaning the true
+        // chain. Rows with the '' parent sentinel (recorded before parent
+        // tracking, not yet repaired) pass vacuously: only positive evidence
+        // of a mismatch blocks finalization.
         let finalized_result = sqlx::query!(
             r#"
             UPDATE host_chain_blocks_valid
@@ -796,6 +954,15 @@ impl Database {
               AND block_hash = $2
               AND block_number = $3
               AND block_status <> 'orphaned'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM host_chain_blocks_valid prev
+                  WHERE prev.chain_id = $1
+                    AND prev.block_number = $3 - 1
+                    AND prev.block_status = 'finalized'
+                    AND host_chain_blocks_valid.parent_hash <> ''::BYTEA
+                    AND host_chain_blocks_valid.parent_hash <> prev.block_hash
+              )
             "#,
             self.chain_id.as_i64(),
             block_hash.to_vec(),
@@ -809,9 +976,15 @@ impl Database {
                 chain_id = self.chain_id.as_i64(),
                 block_number,
                 block_hash = %to_hex(block_hash.as_slice()),
-                "skipping finalization for missing or already orphaned block"
+                "skipping finalization: block missing, already orphaned, or parent \
+                 linkage contradicts the finalized predecessor"
             );
-            return Ok(vec![]);
+            // Distinguishable from "finalized, no siblings": the caller must
+            // STOP its ascending batch here — the next height's linkage
+            // check would pass vacuously (no finalized predecessor) and a
+            // poisoned RPC could finalize a fork block right behind the
+            // refusal.
+            return Ok(None);
         }
 
         let orphaned_rows = sqlx::query!(
@@ -835,7 +1008,7 @@ impl Database {
             .map(|row| row.block_hash)
             .collect::<Vec<_>>();
         if direct_orphaned_hashes.is_empty() {
-            return Ok(vec![]);
+            return Ok(Some(vec![]));
         }
 
         // Finalizing one block orphans every observed sibling branch at the
@@ -878,7 +1051,7 @@ impl Database {
         orphaned_hashes.sort();
         orphaned_hashes.dedup();
 
-        Ok(orphaned_hashes)
+        Ok(Some(orphaned_hashes))
     }
 
     pub async fn cleanup_orphaned_branch_state(
@@ -1104,13 +1277,49 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
+        // Activation-boundary straddle guard: a transaction included on a
+        // fork block >= FHEVM_BRANCH_ACTIVATION_BLOCK writes branch rows,
+        // while its canonical re-inclusion BELOW the activation height writes
+        // legacy-only. Orphaning the fork then removes the handle's only
+        // branch context, and the NOT EXISTS guards below would delete the
+        // legacy rows the canonical below-activation inclusion depends on.
+        // For reorgs near the boundary, skip the legacy deletions entirely —
+        // a small, bounded residue of dead legacy rows (same accepted class
+        // as the retained ciphertext bytes) instead of permanent loss.
+        let near_activation_boundary = self.branch_activation_block > 0
+            && sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(
+                     SELECT 1 FROM host_chain_blocks_valid
+                     WHERE chain_id = $1
+                       AND block_hash = ANY($2::bytea[])
+                       AND block_number < $3
+                 )",
+            )
+            .bind(self.chain_id.as_i64())
+            .bind(orphaned_block_hashes)
+            .bind(
+                (self.branch_activation_block as i64)
+                    .saturating_add(BRANCH_ACTIVATION_STRADDLE_WINDOW),
+            )
+            .fetch_one(tx.deref_mut())
+            .await?;
+        if near_activation_boundary {
+            tracing::warn!(
+                chain_id = self.chain_id.as_i64(),
+                activation = self.branch_activation_block,
+                "Reorg near the branch activation boundary: keeping legacy rows"
+            );
+        }
+
         // Wave-1 dual-write: legacy readers are still live. Remove legacy
         // computation/ACL/PBS/digest rows only when no retained branch context
         // remains for the same logical work, i.e. only for handles that existed
         // solely on the now-orphaned fork (NOT EXISTS guard). Legacy ciphertext
         // bytes (`ciphertexts`/`ciphertexts128`) are intentionally NOT deleted
         // here.
-        if !orphaned_legacy_computation_handles.is_empty() {
+        if near_activation_boundary {
+            // Legacy deletions skipped (see the straddle guard above).
+        } else if !orphaned_legacy_computation_handles.is_empty() {
             sqlx::query!(
                 r#"
                 DELETE FROM computations c
@@ -1130,25 +1339,26 @@ impl Database {
             .await?;
         }
 
-        if !orphaned_legacy_pbs_handles.is_empty() {
-            sqlx::query!(
-                r#"
-                DELETE FROM ciphertext_digest d
-                WHERE d.host_chain_id = $1
-                  AND d.handle = ANY($2::bytea[])
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM pbs_computations_branch p
-                      WHERE p.host_chain_id = d.host_chain_id
-                        AND p.handle = d.handle
-                  )
-                "#,
-                self.chain_id.as_i64(),
-                &orphaned_legacy_pbs_handles as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-
+        if !near_activation_boundary && !orphaned_legacy_pbs_handles.is_empty()
+        {
+            // Ordering contract with sns-worker: pbs_computations rows (an
+            // sns provenance witness) are deleted BEFORE ciphertext_digest
+            // rows. The sns batch transaction holds FOR UPDATE locks on the
+            // pbs rows it is processing (work acquisition) and
+            // enqueue_upload_task takes FOR KEY SHARE on the pbs row before
+            // inserting a digest row, so this DELETE orders against any
+            // in-flight digest insert: either it waits and the digest DELETE
+            // below removes the just-committed row, or — because the digest
+            // mirror triggers take advisory stripe locks in the opposite
+            // order on both sides — Postgres resolves the collision as a
+            // deadlock and aborts one transaction whole. Both outcomes
+            // converge: an aborted finalization pass re-runs from scratch
+            // (nothing was committed, blocks stay pending), an aborted sns
+            // batch is re-fetched, and a later witness read sees the
+            // committed deletion and skips. With the opposite delete order, a
+            // digest row inserted by a concurrent sns transaction would be
+            // silently resurrected after this cleanup commits and drive a
+            // phantom addCiphertextMaterial publication.
             sqlx::query!(
                 r#"
                 DELETE FROM pbs_computations p
@@ -1166,9 +1376,27 @@ impl Database {
             )
             .execute(tx.deref_mut())
             .await?;
+
+            sqlx::query!(
+                r#"
+                DELETE FROM ciphertext_digest d
+                WHERE d.host_chain_id = $1
+                  AND d.handle = ANY($2::bytea[])
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM pbs_computations_branch p
+                      WHERE p.host_chain_id = d.host_chain_id
+                        AND p.handle = d.handle
+                  )
+                "#,
+                self.chain_id.as_i64(),
+                &orphaned_legacy_pbs_handles as _,
+            )
+            .execute(tx.deref_mut())
+            .await?;
         }
 
-        if !orphaned_allowed_rows.is_empty() {
+        if !near_activation_boundary && !orphaned_allowed_rows.is_empty() {
             sqlx::query!(
                 r#"
                 DELETE FROM allowed_handles a
@@ -1233,7 +1461,8 @@ impl Database {
         // Confidential bridge: destination-side reorg retraction. The bridge
         // worker sets `is_associated` in the same transaction as the
         // ciphertext copy, so a flagged observation in an orphaned block is
-        // the provenance of a materialization that must be retracted (a
+        // the provenance of a materialization that must be retracted — or
+        // re-attributed to a surviving sibling observation, see below (a
         // fallback-materialized handle is never flagged and its state is
         // compute-pipeline state, cleaned above). Deleting the copied
         // `ciphertext_digest` row cancels a not-yet-sent
@@ -1263,21 +1492,69 @@ impl Database {
             .collect::<Vec<_>>();
 
         if !retracted_dst_handles.is_empty() {
-            sqlx::query!(
-                "DELETE FROM ciphertexts WHERE handle = ANY($1::bytea[])",
-                &retracted_dst_handles as _,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-
-            sqlx::query!(
-                "DELETE FROM ciphertext_digest
-                 WHERE handle = ANY($1::bytea[]) AND host_chain_id = $2",
+            // The same destination handle can be observed in several blocks
+            // (the HandleBridged event re-included on competing forks). When a
+            // surviving non-orphaned observation exists, the materialized copy
+            // is still canonically justified — deleting it would tear the
+            // ciphertext out from under destination-chain readers until
+            // re-association. Transfer the association flag to one surviving
+            // observation instead (keeping the retraction contract: the copy
+            // is always attributed to a live observation, so a later orphaning
+            // of that block retracts it properly). Only handles with no
+            // surviving observation lose their copy.
+            let transferred = sqlx::query!(
+                r#"
+                UPDATE handle_bridged_events h
+                SET is_associated = TRUE
+                WHERE h.id IN (
+                    SELECT DISTINCT ON (s.dst_handle) s.id
+                    FROM handle_bridged_events s
+                    WHERE s.dst_handle = ANY($1::bytea[])
+                      AND s.dst_chain_id = $2
+                      AND (
+                            s.block_hash = ''::BYTEA
+                            OR NOT EXISTS (
+                                SELECT 1
+                                FROM host_chain_blocks_valid b
+                                WHERE b.chain_id = s.dst_chain_id
+                                  AND b.block_hash = s.block_hash
+                                  AND b.block_status = 'orphaned'
+                            )
+                      )
+                    ORDER BY s.dst_handle, s.id
+                )
+                RETURNING h.dst_handle AS "dst_handle!"
+                "#,
                 &retracted_dst_handles as _,
                 self.chain_id.as_i64(),
             )
-            .execute(tx.deref_mut())
+            .fetch_all(tx.deref_mut())
             .await?;
+
+            let transferred: std::collections::HashSet<Vec<u8>> =
+                transferred.into_iter().map(|r| r.dst_handle).collect();
+            let orphan_only_handles: Vec<Vec<u8>> = retracted_dst_handles
+                .into_iter()
+                .filter(|h| !transferred.contains(h))
+                .collect();
+
+            if !orphan_only_handles.is_empty() {
+                sqlx::query!(
+                    "DELETE FROM ciphertexts WHERE handle = ANY($1::bytea[])",
+                    &orphan_only_handles as _,
+                )
+                .execute(tx.deref_mut())
+                .await?;
+
+                sqlx::query!(
+                    "DELETE FROM ciphertext_digest
+                     WHERE handle = ANY($1::bytea[]) AND host_chain_id = $2",
+                    &orphan_only_handles as _,
+                    self.chain_id.as_i64(),
+                )
+                .execute(tx.deref_mut())
+                .await?;
+            }
         }
 
         // Source-side approvals from orphaned blocks were never consumable
@@ -1294,6 +1571,22 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
+        // Fallback-grant observations from orphaned blocks: the grant's
+        // synthetic computation rows are context-keyed and cleaned above; a
+        // canonical re-inclusion carries (and re-synthesizes from) its own
+        // observation row.
+        sqlx::query!(
+            r#"
+            DELETE FROM fallback_granted_events
+            WHERE dst_chain_id = $1
+              AND block_hash = ANY($2::bytea[])
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
         Ok(())
     }
 
@@ -1302,14 +1595,20 @@ impl Database {
         tx: &mut Transaction<'_>,
         block_summary: &BlockSummary,
         finalized: bool,
+        fhe_event_count: i32,
+        allow_event_count: i32,
     ) -> Result<(), SqlxError> {
         let status = if finalized { "finalized" } else { "pending" };
-        // Preserve existing state, but repair missing ancestry so branch
-        // resolution remains available after restarts.
+        // Insert with per-block event counts (written once at first insert and
+        // not touched on later finalization transitions). On conflict, preserve
+        // existing state but repair missing/stale ancestry so branch resolution
+        // remains available after restarts.
         sqlx::query!(
             r#"
-            INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO host_chain_blocks_valid
+                (chain_id, block_hash, parent_hash, block_number, block_status,
+                 fhe_event_count, allow_event_count)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (chain_id, block_hash) DO UPDATE
             -- A block hash immutably determines its parent, so a freshly
             -- observed non-empty parent_hash is authoritative: prefer it. This
@@ -1322,23 +1621,31 @@ impl Database {
             block_summary.parent_hash.to_vec(),
             block_summary.number as i64,
             status,
+            fhe_event_count,
+            allow_event_count,
         )
         .execute(tx.deref_mut())
         .await?;
 
         // 2. Finalize this block or orphan the competing observed branch, then
         // clean branch-scoped computations/ACL/PBS/digest/bytes for that
-        // orphan branch in the same transaction.
+        // orphan branch in the same transaction. This path just recorded the
+        // block it finalizes (ingestion of a finalized block), so a linkage
+        // refusal (None) means the recorded row genuinely contradicts the
+        // finalized predecessor: skip cleanup and leave it for the
+        // finalization loop to sort out.
         if finalized {
-            let orphaned_hashes = self
+            if let Some(orphaned_hashes) = self
                 .update_block_as_finalized(
                     tx,
                     block_summary.number as i64,
                     &block_summary.hash,
                 )
-                .await?;
-            self.cleanup_orphaned_branch_state(tx, &orphaned_hashes)
-                .await?;
+                .await?
+            {
+                self.cleanup_orphaned_branch_state(tx, &orphaned_hashes)
+                    .await?;
+            }
         }
         Ok(())
     }
@@ -1349,7 +1656,9 @@ impl Database {
         catchup: bool,
     ) -> Result<f64, SqlxError> {
         let duplicate_count_increase = if catchup { 0 } else { 1 };
-        let pool = self.pool().await;
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(0.0);
+        };
         let delay_seconds = sqlx::query_scalar!(
             r#"
             WITH upserted AS (
@@ -1384,8 +1693,9 @@ impl Database {
             block_summary.number as i64,
             duplicate_count_increase
         )
-        .fetch_one(&pool)
+        .fetch_one(tx.as_mut())
         .await?;
+        tx.commit().await?;
 
         Ok(delay_seconds)
     }
@@ -1395,7 +1705,15 @@ impl Database {
         &self,
         finalization_margin: i64,
     ) -> Result<StatsForConsumer, SqlxError> {
-        let pool = self.pool().await;
+        // This CTE marks rows `stats_processed` (a write), so gate it against
+        // cutover. On a retired stack, report zero stats and touch nothing.
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(StatsForConsumer {
+                number_of_new_gaps: 0,
+                total_new_gap_size: 0,
+                number_of_duplicated_inserts: 0,
+            });
+        };
         let row = sqlx::query!(
             r#"
             WITH last_block_number AS (
@@ -1444,8 +1762,9 @@ impl Database {
             self.chain_id.as_i64(),
             finalization_margin,
         )
-        .fetch_one(&pool)
+        .fetch_one(tx.as_mut())
         .await?;
+        tx.commit().await?;
 
         Ok(StatsForConsumer {
             number_of_new_gaps: row.number_of_new_gaps,
@@ -1459,12 +1778,15 @@ impl Database {
         last_block_max: i64,
         chain_id: ChainId,
     ) -> Result<HashSet<i64>, SqlxError> {
-        // most of the time there is only 1 block pending
+        // Most of the time there is only 1 block pending. Under a backlog,
+        // take the OLDEST pending blocks: finalization must progress
+        // oldest-first so each block's parent-linkage check anchors on a
+        // finalized predecessor instead of passing vacuously.
         let blocks_number = sqlx::query!(
             r#"
             SELECT block_number FROM host_chain_blocks_valid
             WHERE block_status = 'pending' AND block_number <= $1 AND chain_id = $2
-            ORDER BY block_number DESC
+            ORDER BY block_number ASC
             LIMIT 10
             "#,
             last_block_max,
@@ -1476,6 +1798,119 @@ impl Database {
             .into_iter()
             .map(|record| record.block_number)
             .collect())
+    }
+
+    /// Prunes old, unreferenced, finalized `host_chain_blocks_valid` rows.
+    ///
+    /// The table records one row per observed block and nothing deleted it,
+    /// so it grew without bound (and with it every ancestry probe). Rows are
+    /// deleted only when they are (a) finalized, (b) older than
+    /// [`BLOCKS_VALID_RETENTION`] blocks below the finalized head, and
+    /// (c) referenced by NO branch, bridge or fallback state — so producer
+    /// resolution (which matches old producers by finalization status),
+    /// orphan guards (orphaned rows are never pruned) and bridge/fallback
+    /// readiness checks are unaffected by construction. Most blocks carry no
+    /// FHE activity, so in steady state nearly everything old is prunable.
+    /// Batched to [`BLOCKS_VALID_PRUNE_BATCH`] rows per call.
+    pub async fn prune_finalized_block_history(
+        &self,
+        last_finalized_block: i64,
+    ) -> Result<u64, SqlxError> {
+        let prune_below =
+            last_finalized_block.saturating_sub(BLOCKS_VALID_RETENTION);
+        if prune_below <= 0 {
+            return Ok(0);
+        }
+        let pool = self.pool.read().await.clone();
+        let deleted = sqlx::query!(
+            r#"
+            DELETE FROM host_chain_blocks_valid b
+            WHERE b.ctid IN (
+                SELECT c.ctid
+                FROM host_chain_blocks_valid c
+                WHERE c.chain_id = $1
+                  AND c.block_status = 'finalized'
+                  AND c.block_number < $2
+                  AND NOT EXISTS (
+                      SELECT 1 FROM computations_branch r
+                      WHERE r.host_chain_id = $1
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM pbs_computations_branch r
+                      WHERE r.host_chain_id = $1
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM pbs_computations_branch r
+                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM allowed_handles_branch r
+                      WHERE r.host_chain_id = $1
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM allowed_handles_branch r
+                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ciphertext_digest_branch r
+                      WHERE r.host_chain_id = $1
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ciphertext_digest_branch r
+                      WHERE r.host_chain_id = $1 AND r.block_hash = c.block_hash
+                  )
+                  -- ciphertexts(128)_branch have no hash-leading index; probe
+                  -- through their block_number partial indexes instead.
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ciphertexts_branch r
+                      WHERE r.block_number = c.block_number
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ciphertexts128_branch r
+                      WHERE r.block_number = c.block_number
+                        AND r.producer_block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bridge_handle_events r
+                      WHERE r.block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM handle_bridged_events r
+                      WHERE r.block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM fallback_granted_events r
+                      WHERE r.block_hash = c.block_hash
+                  )
+                  -- KMS key/CRS activation staging joins the finalized row by
+                  -- (chain_id, block_hash) when a 'ready' event activates;
+                  -- pruning it would strand the activation forever. Small
+                  -- tables, guarded unconditionally.
+                  AND NOT EXISTS (
+                      SELECT 1 FROM kms_key_activation_events r
+                      WHERE r.chain_id = $1 AND r.block_hash = c.block_hash
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM kms_crs_activation_events r
+                      WHERE r.chain_id = $1 AND r.block_hash = c.block_hash
+                  )
+                ORDER BY c.block_number ASC
+                LIMIT $3
+            )
+            "#,
+            self.chain_id.as_i64(),
+            prune_below,
+            BLOCKS_VALID_PRUNE_BATCH,
+        )
+        .execute(&pool)
+        .await?
+        .rows_affected();
+        Ok(deleted)
     }
 
     pub async fn poller_get_last_caught_up_block(
@@ -1500,8 +1935,10 @@ impl Database {
         chain_id: ChainId,
         block: i64,
     ) -> Result<(), SqlxError> {
-        let pool = self.pool.read().await.clone();
-        sqlx::query!(
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(());
+        };
+        sqlx::query(
             r#"
             INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
             VALUES ($1, $2)
@@ -1509,11 +1946,12 @@ impl Database {
             SET last_caught_up_block = EXCLUDED.last_caught_up_block,
                 updated_at = NOW()
             "#,
-            chain_id.as_i64(),
-            block,
         )
-        .execute(&pool)
+        .bind(chain_id.as_i64())
+        .bind(block)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -1540,6 +1978,25 @@ impl Database {
         current_parent_hash: &[u8],
         current_block_number: u64,
     ) -> Result<ProducerBlock, SqlxError> {
+        // Pre-activation blocks carry no branch rows by construction:
+        // resolve as branchless without querying, deterministically across
+        // operators regardless of when each node started dual-writing.
+        if current_block_number < self.branch_activation_block {
+            return Ok(ProducerBlock {
+                hash: Vec::new(),
+                number: current_block_number,
+            });
+        }
+        // The recursive walk disambiguates producers among live forks, so it
+        // only needs to cover the un-finalized region near the head; it is
+        // depth-bounded (ANCESTRY_WALK_DEPTH blocks, far above any real
+        // finality lag) so its cost no longer grows with recorded chain
+        // history. Producers below that window sit on the finalized chain by
+        // construction — exactly one non-orphaned row per height — and are
+        // matched by finalization status directly. A pending block older than
+        // the window (finalization stalled for >1024 blocks) would be
+        // unresolvable here, but such a chain is already outside operating
+        // limits.
         let producer_row = sqlx::query!(
             r#"
             WITH RECURSIVE ancestry(block_number, block_hash, parent_hash) AS (
@@ -1551,16 +2008,29 @@ impl Database {
                   ON parent.chain_id = $1
                  AND parent.block_hash = child.parent_hash
                  AND parent.block_number = child.block_number - 1
-                WHERE child.block_number > 0
+                WHERE child.block_number > GREATEST($2::BIGINT - $6::BIGINT, 0)
                   AND parent.block_status <> 'orphaned'
             )
             SELECT c.producer_block_hash, c.block_number
             FROM computations_branch c
-            JOIN ancestry a
-              ON c.producer_block_hash = a.block_hash
-             AND c.block_number IS NOT DISTINCT FROM a.block_number
             WHERE c.host_chain_id = $1
               AND c.output_handle = $5
+              AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM ancestry a
+                        WHERE c.producer_block_hash = a.block_hash
+                          AND c.block_number IS NOT DISTINCT FROM a.block_number
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM host_chain_blocks_valid f
+                        WHERE f.chain_id = $1
+                          AND f.block_hash = c.producer_block_hash
+                          AND f.block_number = c.block_number
+                          AND f.block_status = 'finalized'
+                    )
+              )
             ORDER BY c.block_number DESC
             LIMIT 1
             "#,
@@ -1569,6 +2039,7 @@ impl Database {
             current_block_hash,
             current_parent_hash,
             handle,
+            ANCESTRY_WALK_DEPTH,
         )
         .fetch_optional(tx.deref_mut())
         .await?;
@@ -2011,16 +2482,20 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let mut inserted = false;
         for (handle, producer_block) in handles {
-            inserted |= insert_pbs_computation_branch_row(
-                tx,
-                self.chain_id.as_i64(),
-                handle,
-                transaction_id.clone(),
-                acl_block_number as i64,
-                acl_block_hash,
-                &producer_block.hash,
-            )
-            .await?;
+            // Below the activation height only legacy state is written (see
+            // Database::branch_activation_block).
+            if acl_block_number >= self.branch_activation_block {
+                inserted |= insert_pbs_computation_branch_row(
+                    tx,
+                    self.chain_id.as_i64(),
+                    handle,
+                    transaction_id.clone(),
+                    acl_block_number as i64,
+                    acl_block_hash,
+                    &producer_block.hash,
+                )
+                .await?;
+            }
             // Wave-1 dual-write: keep feeding the legacy sns-worker until
             // wave 2 switches it to the branch tables.
             let query = sqlx::query!(
@@ -2070,6 +2545,102 @@ impl Database {
         Ok(exists)
     }
 
+    /// Records a FallbackGrantedPlaintext observation durably, keyed by the
+    /// observing block (mirrors handle_bridged_events). Observations are
+    /// facts about what the chain emitted; whether a synthetic computation is
+    /// created for them is decided separately by
+    /// [`Self::fallback_grant_conflicts`].
+    #[allow(clippy::too_many_arguments)]
+    pub async fn record_fallback_grant_observation(
+        &self,
+        tx: &mut Transaction<'_>,
+        dst_handle: &[u8],
+        plaintext: &[u8],
+        transaction_hash: &Option<Handle>,
+        block_number: u64,
+        block_hash: &[u8],
+    ) -> Result<(), SqlxError> {
+        sqlx::query!(
+            r#"
+            INSERT INTO fallback_granted_events
+                (dst_chain_id, dst_handle, plaintext, block_number,
+                 block_hash, transaction_id)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (dst_handle, block_hash) DO NOTHING
+            "#,
+            self.chain_id.as_i64(),
+            dst_handle,
+            plaintext,
+            block_number as i64,
+            block_hash,
+            transaction_hash.as_ref().map(|h| h.to_vec()),
+        )
+        .execute(tx.deref_mut())
+        .await?;
+        Ok(())
+    }
+
+    /// Decides whether a FallbackGrantedPlaintext observation must be
+    /// suppressed instead of synthesizing its TrivialEncrypt computation.
+    ///
+    /// Suppress when:
+    /// 1. a computation exists for the handle from a DIFFERENT transaction —
+    ///    an earlier, different grant (first-wins per the contract) or a real
+    ///    computation owns the handle;
+    /// 2. this exact (handle, transaction, block) context was already
+    ///    synthesized — pure re-observation, the pipeline inserts would all
+    ///    no-op;
+    /// 3. the handle has a ciphertext but no computation at all — a bridge
+    ///    association copied the real ciphertext (which writes no
+    ///    computations row) and a real association always beats the fallback.
+    ///
+    /// Crucially, the SAME grant re-observed in a different block (fork
+    /// sibling or canonical re-inclusion after a reorg) is NOT suppressed:
+    /// it creates a branch computation row for its own context while the
+    /// legacy insert no-ops (ON CONFLICT (output_handle, transaction_id)),
+    /// so reorg cleanup of one fork can never erase the grant from the
+    /// surviving fork.
+    pub async fn fallback_grant_conflicts(
+        &self,
+        tx: &mut Transaction<'_>,
+        dst_handle: &[u8],
+        transaction_hash: &Option<Handle>,
+        block_hash: &[u8],
+    ) -> Result<bool, SqlxError> {
+        let transaction_id = transaction_hash.as_ref().map(|h| h.to_vec());
+        let conflicts = sqlx::query_scalar!(
+            r#"
+            SELECT (
+                EXISTS(
+                    SELECT 1 FROM computations
+                    WHERE output_handle = $1
+                      AND transaction_id IS DISTINCT FROM $2
+                )
+                OR EXISTS(
+                    SELECT 1 FROM computations_branch
+                    WHERE output_handle = $1
+                      AND transaction_id IS NOT DISTINCT FROM $2
+                      AND producer_block_hash = $3
+                )
+                OR (
+                    NOT EXISTS(
+                        SELECT 1 FROM computations WHERE output_handle = $1
+                    )
+                    AND EXISTS(
+                        SELECT 1 FROM ciphertexts WHERE handle = $1
+                    )
+                )
+            ) AS "conflicts!"
+            "#,
+            dst_handle,
+            transaction_id as _,
+            block_hash,
+        )
+        .fetch_one(tx.deref_mut())
+        .await?;
+        Ok(conflicts)
+    }
+
     /// Add the handle to the allowed_handles table
     pub async fn insert_allowed_handle(
         &self,
@@ -2100,20 +2671,27 @@ impl Database {
         tx: &mut Transaction<'_>,
         insert: AllowedHandleInsert<'_>,
     ) -> Result<bool, SqlxError> {
-        let branch_inserted = insert_allowed_handle_branch_row(
-            tx,
-            AllowedHandleBranchRow {
-                chain_id: self.chain_id.as_i64(),
-                handle: &insert.handle,
-                account_address: &insert.account_address,
-                event_type: insert.event_type as i16,
-                transaction_id: insert.transaction_id.clone(),
-                producer_block: insert.producer_block,
-                acl_block_number: insert.acl_block_number,
-                acl_block_hash: insert.acl_block_hash,
-            },
-        )
-        .await?;
+        // Below the activation height only legacy state is written (see
+        // Database::branch_activation_block).
+        let branch_inserted =
+            if insert.acl_block_number >= self.branch_activation_block {
+                insert_allowed_handle_branch_row(
+                    tx,
+                    AllowedHandleBranchRow {
+                        chain_id: self.chain_id.as_i64(),
+                        handle: &insert.handle,
+                        account_address: &insert.account_address,
+                        event_type: insert.event_type as i16,
+                        transaction_id: insert.transaction_id.clone(),
+                        producer_block: insert.producer_block,
+                        acl_block_number: insert.acl_block_number,
+                        acl_block_hash: insert.acl_block_hash,
+                    },
+                )
+                .await?
+            } else {
+                false
+            };
         // Wave-1 dual-write: keep feeding the legacy readers until wave 2
         // switches them to the branch tables.
         let query = sqlx::query!(

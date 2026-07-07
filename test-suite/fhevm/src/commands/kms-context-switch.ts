@@ -156,9 +156,19 @@ const switchKmsContext = async (
   await stepComposeTask("host-sc", state, ["host-sc-context-switch"], { noDeps: true, env: hostEnv });
   await waitForContainer("host-sc-context-switch", "complete");
 
+  const pendingContextId = baseline.contextId + 1n;
+  console.log(`[kms-context-switch] pre-registering pending context ${pendingContextId} on the gateway…`);
+  await stepComposeTask("gateway-sc", state, ["gateway-sc-context-switch"], {
+    noDeps: true,
+    env: { KMS_CONTEXT_ID: pendingContextId.toString(), ...gatewayEnv },
+  });
+  await waitForContainer("gateway-sc-context-switch", "complete");
+
   // In-flight transparency: while the new context is PENDING (the cores are resharing), the
   // previous context keeps serving — app flows and user decryption must work unchanged. Racy by
   // nature: if activation completes mid-probe the checks must still pass (that is the invariant).
+  // The gateway is pre-registered with the pending context before this probe so a fresh SDK client
+  // cannot observe the new active host context before the gateway accepts it.
   await runSmoke("kms-context-switch: input-proof while the switch is pending (previous context serving)");
   if (!(await runDecryption("kms-context-switch: decrypt while the switch is pending (previous context serving)"))) {
     throw new PreflightError(
@@ -172,21 +182,16 @@ const switchKmsContext = async (
     isSwap ? "node-swap context" : "context switch (NewKmsContext)",
     (current) => current.contextId > baseline.contextId,
   );
+  if (afterSwitch.contextId !== pendingContextId) {
+    throw new PreflightError(
+      `kms-context-switch: activated unexpected contextId=${afterSwitch.contextId}; expected pre-registered contextId=${pendingContextId}`,
+    );
+  }
   console.log(
     isSwap
       ? `[kms-context-switch] context switched: contextId ${baseline.contextId} -> ${afterSwitch.contextId} — the spare reshared and confirmed`
       : `[kms-context-switch] context switched: contextId ${baseline.contextId} -> ${afterSwitch.contextId} (epochId=${afterSwitch.epochId})`,
   );
-
-  // The gateway keeps its own KMS-context registry; register the new committee on GatewayConfig so its
-  // Decryption contract accepts decryptions tagged with it (and, for a swap, the spare's signatures
-  // while rejecting the dropped node's) — else it reverts InvalidKmsContext.
-  console.log(`[kms-context-switch] registering context ${afterSwitch.contextId} on the gateway (updateKmsContext)…`);
-  await stepComposeTask("gateway-sc", state, ["gateway-sc-context-switch"], {
-    noDeps: true,
-    env: { KMS_CONTEXT_ID: afterSwitch.contextId.toString(), ...gatewayEnv },
-  });
-  await waitForContainer("gateway-sc-context-switch", "complete");
 
   if (!(await runDecryption(`kms-context-switch: decrypt after context switch (contextId=${afterSwitch.contextId})`))) {
     throw new PreflightError(

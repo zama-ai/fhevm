@@ -10,7 +10,7 @@ import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {ProtocolConfigUpgradedExample} from "@fhevm-host-contracts/examples/ProtocolConfigUpgradedExample.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
-import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
@@ -2283,7 +2283,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             realImpl,
-            abi.encodeCall(ProtocolConfig.reinitializeV2, (nodes, thresholds, softwareVersion, pcrValues))
+            abi.encodeCall(ProtocolConfig.reinitializeV2, (nodes, softwareVersion, pcrValues))
         );
         protocolConfig = ProtocolConfig(protocolConfigAdd);
 
@@ -2748,5 +2748,232 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(kmsTxSender0);
         vm.expectRevert();
         protocolConfig.confirmEpochActivation(epochId, keys, crsList);
+    }
+
+    // -----------------------------------------------------------------------
+    // Coprocessor context tests
+    // -----------------------------------------------------------------------
+
+    function _makeChainUpgradeWindows(uint256 count) internal pure returns (ChainUpgradeWindow[] memory windows) {
+        windows = new ChainUpgradeWindow[](count);
+        for (uint256 i = 0; i < count; i++) {
+            windows[i] = ChainUpgradeWindow({
+                chainId: uint64(i + 1),
+                startBlock: uint64(100 + i),
+                endBlock: uint64(200 + i)
+            });
+        }
+    }
+
+    function _defaultSoftwareVersion() internal pure returns (string memory) {
+        return "v0.14.0";
+    }
+
+    function _defaultGwStartBlock() internal pure returns (uint64) {
+        return 8421337;
+    }
+
+    function _defaultProposalId() internal pure returns (uint256) {
+        return 1;
+    }
+
+    function test_proposeCoprocessorUpgrade_singleChain() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        uint64 gwStart = _defaultGwStartBlock();
+        string memory version = _defaultSoftwareVersion();
+        uint256 proposalId = _defaultProposalId();
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart);
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart);
+    }
+
+    function test_proposeCoprocessorUpgrade_multiChain() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(3);
+        uint64 gwStart = _defaultGwStartBlock();
+        string memory version = _defaultSoftwareVersion();
+        uint256 proposalId = _defaultProposalId();
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(proposalId, version, windows, gwStart);
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(proposalId, version, windows, gwStart);
+    }
+
+    function test_revertCoprocessor_InvalidProposalId() public {
+        _setupDefault();
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.InvalidProposalId.selector);
+        protocolConfig.proposeCoprocessorUpgrade(
+            0,
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_EmptySoftwareVersion() public {
+        _setupDefault();
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.EmptySoftwareVersion.selector);
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            "",
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_EmptyChainUpgradeWindows() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = new ChainUpgradeWindow[](0);
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.EmptyChainUpgradeWindows.selector);
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_ZeroChainId() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        windows[0].chainId = 0;
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.ZeroChainId.selector);
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_DuplicateChainId() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(2);
+        windows[1].chainId = windows[0].chainId;
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.DuplicateChainId.selector, windows[0].chainId));
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_InvalidBlockWindow() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        windows[0].startBlock = 500;
+        windows[0].endBlock = 100; // start > end
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.InvalidBlockWindow.selector,
+                windows[0].chainId,
+                uint64(500),
+                uint64(100)
+            )
+        );
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_revertCoprocessor_ZeroGwStartBlock() public {
+        _setupDefault();
+        vm.prank(owner);
+        vm.expectRevert(IProtocolConfig.ZeroGwStartBlock.selector);
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            0
+        );
+    }
+
+    function test_proposeCoprocessorUpgrade_sameIdTwice_bothEmit() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+        uint256 proposalId = _defaultProposalId();
+
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(
+            proposalId,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+
+        // Uniqueness is the caller's responsibility — contract does not enforce.
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(
+            proposalId,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(
+            proposalId,
+            _defaultSoftwareVersion(),
+            windows,
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_proposeCoprocessorUpgrade_maxUint256() public {
+        _setupDefault();
+        uint256 proposalId = type(uint256).max;
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(
+            proposalId,
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock()
+        );
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(
+            proposalId,
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock()
+        );
+    }
+
+    function test_proposeCoprocessorUpgrade_twoDistinctPending_bothEmit() public {
+        _setupDefault();
+        ChainUpgradeWindow[] memory windows = _makeChainUpgradeWindows(1);
+
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(1, _defaultSoftwareVersion(), windows, _defaultGwStartBlock());
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.CoprocessorUpgradeProposed(2, _defaultSoftwareVersion(), windows, _defaultGwStartBlock());
+        vm.prank(owner);
+        protocolConfig.proposeCoprocessorUpgrade(2, _defaultSoftwareVersion(), windows, _defaultGwStartBlock());
+    }
+
+    function test_revertProposeCoprocessorUpgradeNotOwner() public {
+        _setupDefault();
+        vm.prank(address(0x999));
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+        protocolConfig.proposeCoprocessorUpgrade(
+            _defaultProposalId(),
+            _defaultSoftwareVersion(),
+            _makeChainUpgradeWindows(1),
+            _defaultGwStartBlock()
+        );
     }
 }

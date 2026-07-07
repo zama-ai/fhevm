@@ -15,7 +15,7 @@ use tracing::{error, info, warn};
 use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
 use crate::contracts::{
-    AclContract, BridgeContract, KMSGeneration, TfheContract,
+    AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
@@ -23,6 +23,7 @@ use crate::database::tfhe_event_propagate::{
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
+use crate::protocol_config::metrics::PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER;
 
 pub struct BlockLogs<T> {
     pub logs: Vec<T>,
@@ -31,11 +32,15 @@ pub struct BlockLogs<T> {
     pub finalized: bool,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct IngestOptions {
     pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
+    /// Resolved once at startup from the listener's own `chain_id` and the
+    /// configured `--ethereum-chain-id`. When false, the listener silently
+    /// skips `ProtocolConfig.CoprocessorUpgradeProposed` events.
+    pub is_protocol_config_listener: bool,
 }
 
 /// Converts a block timestamp to a UTC `PrimitiveDateTime`.
@@ -147,6 +152,12 @@ fn classify_slow_by_split_dependency_closure(
     slow_dep_chain_ids
 }
 
+/// pg_notify channel announcing a fully-ingested block.
+///
+/// Must stay in sync with `consensus_detector::NEW_BLOCK_CHANNEL`. Snake_case
+/// per the channel-name convention.
+const NEW_BLOCK_CHANNEL: &str = "event_new_block";
+
 fn is_valid_fallback_dst_handle(
     dst_handle: &[u8; 32],
     chain_id: ChainId,
@@ -198,10 +209,41 @@ pub async fn ingest_block_logs(
     acl_contract_address: &Option<Address>,
     tfhe_contract_address: &Option<Address>,
     kms_generation_contract_address: &Option<Address>,
+    protocol_config_contract_address: &Option<Address>,
     confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
-    let mut tx = db.new_transaction().await?;
+    let Some(mut tx) = db.new_transaction().await? else {
+        info!("cutover completed — host-listener skipping block ingest (retired stack)");
+        return Ok(());
+    };
+
+    // Queue `pg_notify('event_new_block', ...)` at the top of the transaction so
+    // postgres defers delivery until `tx.commit()` below succeeds. Same
+    // "after all events committed" guarantee as emitting post-commit, but
+    // atomic with the data — if the tx rolls back, the notification is
+    // discarded too. JSON shape must match consensus_detector::NewBlockPayload.
+    let new_block_payload = serde_json::json!({
+        "chain_id": chain_id.as_u64() as i64,
+        "block_height": block_logs.summary.number as i64,
+        "block_hash": format!("{:#x}", block_logs.summary.hash),
+    })
+    .to_string();
+    info!(
+        channel = NEW_BLOCK_CHANNEL,
+        payload = %new_block_payload,
+        "Queuing new_block pg_notify in ingest transaction"
+    );
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(NEW_BLOCK_CHANNEL)
+        .bind(&new_block_payload)
+        .execute(&mut *tx)
+        .await?;
+
+    // Only the listener watching the configured Ethereum host chain decodes
+    // `CoprocessorUpgradeProposed`; every other listener skips the channel.
+    let is_protocol_config_listener = options.is_protocol_config_listener;
+
     let mut is_allowed = HashSet::<Handle>::new();
     let mut seen_fallback_handles = HashSet::<Handle>::new();
     let mut acl_event_log = vec![];
@@ -212,6 +254,10 @@ pub async fn ingest_block_logs(
     let mut catchup_insertion = 0;
     let block_timestamp = block_date_time_utc(block_logs.summary.timestamp);
     let mut at_least_one_insertion = false;
+    // Per-block tallies persisted in host_chain_blocks_valid. Counted at decode
+    // time, so an event that fails to insert (e.g. ON CONFLICT) still counts.
+    let mut allow_event_count: i32 = 0;
+    let mut fhe_event_count: i32 = 0;
 
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
@@ -220,6 +266,7 @@ pub async fn ingest_block_logs(
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
+                allow_event_count = allow_event_count.saturating_add(1);
                 let handles = acl_result_handles(&event);
                 for handle in handles {
                     is_allowed.insert(handle.to_vec());
@@ -234,6 +281,7 @@ pub async fn ingest_block_logs(
             if let Ok(event) =
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
+                fhe_event_count = fhe_event_count.saturating_add(1);
                 let log = LogTfhe {
                     event,
                     transaction_hash: log.transaction_hash,
@@ -264,6 +312,15 @@ pub async fn ingest_block_logs(
             }
         }
 
+        let is_protocol_config_address = is_protocol_config_listener
+            && protocol_config_contract_address
+                .as_ref()
+                .is_some_and(|addr| &log.inner.address == addr);
+        if is_protocol_config_address {
+            handle_protocol_config_log(&mut tx, chain_id, log).await?;
+            continue;
+        }
+
         let is_bridge_address = &current_address == confidential_bridge_address;
         if is_bridge_address {
             if let Ok(event) =
@@ -279,22 +336,39 @@ pub async fn ingest_block_logs(
                     if !is_valid_fallback_dst_handle(&dst_handle.0, chain_id) {
                         continue;
                     }
+                    // Record the observation durably (keyed by block hash)
+                    // regardless of the synthesis decision below: reorg
+                    // cleanup and operators need the grant to survive even
+                    // when this particular observation is suppressed.
+                    db.record_fallback_grant_observation(
+                        &mut tx,
+                        dst_handle.as_slice(),
+                        &e.plaintext.to_be_bytes::<32>(),
+                        &log.transaction_hash,
+                        block_number,
+                        block_hash.as_ref(),
+                    )
+                    .await?;
                     // The contract specifies that if multiple fallback events
                     // are emitted for the same handle, only the first one is
-                    // the source of truth. Skip this event if the handle is
-                    // already handled: seen earlier in this block, an earlier
-                    // fallback's committed computation, or a ciphertext already
-                    // materialized for it (e.g. the bridge worker's copy of the
-                    // real ciphertext, which writes no `computations` row). The
-                    // ciphertext check keeps materialization write-once.
+                    // the source of truth: skip duplicates within this block
+                    // and grants from a different transaction. The SAME grant
+                    // re-observed in another block context (fork sibling or
+                    // canonical re-inclusion after a reorg) is synthesized
+                    // again for its own context, so cleanup of one fork never
+                    // erases the grant from the surviving fork. A handle
+                    // materialized by a bridge association (ciphertext copy
+                    // without a computations row) also stays write-once.
                     let first_in_block =
                         seen_fallback_handles.insert(dst_handle.to_vec());
                     if !first_in_block
                         || db
-                            .computation_exists(&mut tx, dst_handle.as_slice())
-                            .await?
-                        || db
-                            .ciphertext_exists(&mut tx, dst_handle.as_slice())
+                            .fallback_grant_conflicts(
+                                &mut tx,
+                                dst_handle.as_slice(),
+                                &log.transaction_hash,
+                                block_hash.as_ref(),
+                            )
                             .await?
                     {
                         warn!(
@@ -367,6 +441,7 @@ pub async fn ingest_block_logs(
         if is_acl_address
             || is_tfhe_address
             || is_kms_gen_address
+            || is_protocol_config_address
             || is_bridge_address
         {
             error!(
@@ -505,8 +580,14 @@ pub async fn ingest_block_logs(
         block_number,
     )
     .await?;
-    db.mark_block_as_valid(&mut tx, &block_logs.summary, block_logs.finalized)
-        .await?;
+    db.mark_block_as_valid(
+        &mut tx,
+        &block_logs.summary,
+        block_logs.finalized,
+        fhe_event_count,
+        allow_event_count,
+    )
+    .await?;
     if at_least_one_insertion {
         db.update_dependence_chain(
             &mut tx,
@@ -518,6 +599,100 @@ pub async fn ingest_block_logs(
         .await?;
     }
     tx.commit().await
+}
+
+/// Channel name the upgrade-controller LISTENs on for `CoprocessorUpgradeProposed` events.
+const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
+
+/// Decodes a log known to come from the configured ProtocolConfig contract on
+/// the authority chain and dispatches it. Caller must pre-gate on
+/// `is_protocol_config_listener && log.address == protocol_config_contract_address`.
+async fn handle_protocol_config_log(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    log: &Log,
+) -> Result<(), sqlx::Error> {
+    match ProtocolConfig::ProtocolConfigEvents::decode_log(&log.inner) {
+        Ok(event) => match &event.data {
+            ProtocolConfig::ProtocolConfigEvents::CoprocessorUpgradeProposed(proposed) => {
+                notify_coprocessor_upgrade_proposed(tx, chain_id, proposed).await?;
+            }
+            other => {
+                warn!(
+                    ?other,
+                    block_number = ?log.block_number,
+                    tx_hash = ?log.transaction_hash,
+                    log_index = ?log.log_index,
+                    "ProtocolConfig event decoded but no handler matched — likely a new variant added without updating host-listener",
+                );
+                PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+            }
+        },
+        Err(_) => {
+            PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+        }
+    }
+    Ok(())
+}
+
+async fn notify_coprocessor_upgrade_proposed(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    event: &ProtocolConfig::CoprocessorUpgradeProposed,
+) -> Result<(), sqlx::Error> {
+    let listener_chain_id = chain_id.as_u64();
+
+    if event.proposalId.is_zero() {
+        warn!(
+            chain_id = listener_chain_id,
+            "Rejecting CoprocessorUpgradeProposed with proposalId == 0 — production contract guards against this; defense in depth against test mocks or future callers"
+        );
+        return Ok(());
+    }
+
+    let proposal_id_bytes = event.proposalId.to_be_bytes::<32>();
+    let proposal_id_hex =
+        format!("0x{}", alloy_primitives::hex::encode(proposal_id_bytes));
+
+    let Some(window) = event
+        .chainUpgradeWindows
+        .iter()
+        .find(|w| w.chainId == listener_chain_id)
+    else {
+        warn!(
+            listener_chain_id,
+            proposal_id = %proposal_id_hex,
+            nb_windows = event.chainUpgradeWindows.len(),
+            "CoprocessorUpgradeProposed does not include this chain — authority listener will not emit event_upgrade_activated"
+        );
+        return Ok(());
+    };
+
+    info!(
+        proposal_id = %proposal_id_hex,
+        software_version = %event.softwareVersion,
+        chain_id = listener_chain_id,
+        start_block = window.startBlock,
+        end_block = window.endBlock,
+        gw_start_block = event.gwStartBlock,
+        "Decoded CoprocessorUpgradeProposed, emitting pg_notify('event_upgrade_activated')"
+    );
+
+    let payload = serde_json::json!({
+        "proposal_id":        &proposal_id_hex,
+        "chain_id":           listener_chain_id as i64,
+        "start_block":        window.startBlock as i64,
+        "end_block":          window.endBlock as i64,
+        "gw_start_block":     event.gwStartBlock as i64,
+        "version":            &event.softwareVersion,
+    });
+
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(UPGRADE_ACTIVATED_CHANNEL)
+        .bind(payload.to_string())
+        .execute(&mut **tx)
+        .await
+        .map(|_| ())
 }
 
 pub async fn update_finalized_blocks(
@@ -551,8 +726,85 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
 {
     info!(last_block_number, finality_lag, "Updating finalized blocks");
+    let last_finalized_block = last_block_number.saturating_sub(finality_lag);
+
+    // Read the candidate numbers in a short transaction, then resolve the
+    // canonical hashes over RPC with NO transaction open: block fetches can
+    // take seconds each, and holding the finalization transaction across the
+    // round-trips kept its row locks pinned for the whole time.
+    let blocks_number = {
+        let mut tx = match db.new_transaction().await {
+            Ok(Some(tx)) => tx,
+            Ok(None) => {
+                info!(
+                    "cutover completed — skipping finalized-blocks lookup (retired stack)"
+                );
+                return;
+            }
+            Err(err) => {
+                error!(
+                    ?err,
+                    "Failed to create transaction for finalized blocks update"
+                );
+                return;
+            }
+        };
+        match Database::get_finalized_blocks_number(
+            &mut tx,
+            last_finalized_block as i64,
+            db.chain_id,
+        )
+        .await
+        {
+            Ok(numbers) => numbers,
+            Err(err) => {
+                error!(
+                    ?err,
+                    last_finalized_block,
+                    "Failed to fetch finalized blocks number"
+                );
+                return;
+            }
+        }
+    };
+    info!(?blocks_number, "Finalizing blocks");
+
+    // Ascending: finalization verifies each block's parent linkage against
+    // its finalized predecessor, so within one batch the predecessor must be
+    // finalized first.
+    let mut blocks_number: Vec<i64> = blocks_number.into_iter().collect();
+    blocks_number.sort_unstable();
+
+    let mut canonical = Vec::with_capacity(blocks_number.len());
+    for block_number in blocks_number {
+        match get_block_hash_by_number(block_number as u64).await {
+            Ok(block_hash) => canonical.push((block_number, block_hash)),
+            Err(err) => {
+                error!(
+                    block_number,
+                    ?err,
+                    "Failed to fetch block for finalization, \
+                     stopping the batch at the gap"
+                );
+                // STOP, don't skip: a gap at this height would let the next
+                // height's parent-linkage check pass vacuously (no finalized
+                // predecessor), the same hazard the refusal branch below
+                // stops the batch for. The fetched prefix is still safe to
+                // finalize; the rest retries next pass.
+                break;
+            }
+        }
+    }
+    if canonical.is_empty() {
+        return;
+    }
+
     let mut tx = match db.new_transaction().await {
-        Ok(tx) => tx,
+        Ok(Some(tx)) => tx,
+        Ok(None) => {
+            info!("cutover completed — skipping finalized-blocks update (retired stack)");
+            return;
+        }
         Err(err) => {
             error!(
                 ?err,
@@ -561,42 +813,12 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             return;
         }
     };
-    let last_finalized_block = last_block_number.saturating_sub(finality_lag);
-    let blocks_number = match Database::get_finalized_blocks_number(
-        &mut tx,
-        last_finalized_block as i64,
-        db.chain_id,
-    )
-    .await
-    {
-        Ok(numbers) => numbers,
-        Err(err) => {
-            error!(
-                ?err,
-                last_finalized_block, "Failed to fetch finalized blocks number"
-            );
-            return;
-        }
-    };
-    info!(?blocks_number, "Finalizing blocks");
-    for block_number in blocks_number {
-        let block_hash =
-            match get_block_hash_by_number(block_number as u64).await {
-                Ok(block_hash) => block_hash,
-                Err(err) => {
-                    error!(
-                        block_number,
-                        ?err,
-                        "Failed to fetch block for finalization"
-                    );
-                    continue;
-                }
-            };
+    for (block_number, block_hash) in canonical {
         match db
             .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
         {
-            Ok(orphaned_hashes) => {
+            Ok(Some(orphaned_hashes)) => {
                 if let Err(err) = db
                     .cleanup_orphaned_branch_state(&mut tx, &orphaned_hashes)
                     .await
@@ -608,6 +830,19 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                     );
                     return;
                 }
+            }
+            Ok(None) => {
+                // Finalization refused (missing row / orphaned / parent
+                // linkage contradiction). STOP the batch: the next height's
+                // linkage check would pass vacuously without a finalized
+                // predecessor, letting a stale or poisoned RPC finalize a
+                // fork block right behind the refusal. Earlier blocks of
+                // this batch stay finalized; the rest retries next pass.
+                warn!(
+                    block_number,
+                    "Stopping finalization batch at refused block"
+                );
+                break;
             }
             Err(err) => {
                 error!(
@@ -627,6 +862,17 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     // Delayed delegation rely on this signal to reconsider ready delegation
     if let Err(err) = db.block_notification().await {
         error!(error = %err, "Error notifying listener for new block");
+    }
+    // Best-effort maintenance: drop old finalized block rows nothing
+    // references anymore, so ancestry probes and the table itself stop
+    // growing with chain history. Failures only delay pruning.
+    match db
+        .prune_finalized_block_history(last_finalized_block as i64)
+        .await
+    {
+        Ok(0) => {}
+        Ok(pruned) => info!(pruned, "Pruned finalized block history"),
+        Err(err) => error!(?err, "Failed to prune finalized block history"),
     }
 }
 
@@ -784,5 +1030,13 @@ mod tests {
             slow.contains(&chains[3].hash),
             "D should be slow (depends on B and C)"
         );
+    }
+
+    #[test]
+    fn proposal_id_max_uint256_round_trips_to_hex() {
+        let proposal_id = alloy::primitives::U256::MAX;
+        let bytes = proposal_id.to_be_bytes::<32>();
+        let hex = format!("0x{}", alloy_primitives::hex::encode(bytes));
+        assert_eq!(hex, format!("0x{}", "ff".repeat(32)));
     }
 }

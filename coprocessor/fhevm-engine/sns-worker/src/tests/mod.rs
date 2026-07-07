@@ -314,6 +314,109 @@ async fn test_lifo_mode() {
     }
 }
 
+/// Reorg cleanup deletes the pbs_computations and ciphertext_digest rows of
+/// handles that lived solely on an orphaned fork. An sns task that fetched
+/// its work before the cleanup must not resurrect the digest row afterwards
+/// (that would drive a phantom addCiphertextMaterial publication), and a
+/// mark-uploaded landing after the cleanup must be a no-op, not an error.
+#[tokio::test]
+#[serial(db)]
+#[cfg(not(feature = "gpu"))]
+async fn enqueue_upload_task_skips_after_reorg_cleanup() {
+    init_tracing();
+
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .unwrap();
+
+    // Persistent-DB (COPROCESSOR_TEST_LOCALHOST) runs reuse the database:
+    // start from a clean slate so query_sns_tasks below fetches OUR row and
+    // this test leaves nothing behind for the next one.
+    clean_up(&pool).await.unwrap();
+
+    let host_chain_id: i64 = 1;
+    let handle = vec![0x42u8; 32];
+    let key_id_gw: DbKeyId = vec![0u8; 32];
+
+    test_harness::db_utils::insert_ciphertext64(&pool, &handle, &vec![0xAB; 32])
+        .await
+        .unwrap();
+    test_harness::db_utils::insert_into_pbs_computations(&pool, host_chain_id, &handle)
+        .await
+        .unwrap();
+
+    // Acquire the task the same way the worker does, then release the lock.
+    let mut trx = pool.begin().await.unwrap();
+    let task = query_sns_tasks(&mut trx, 1, Order::Asc, &key_id_gw)
+        .await
+        .unwrap()
+        .expect("one task")
+        .remove(0);
+    trx.rollback().await.unwrap();
+
+    // Live provenance: the digest row is enqueued.
+    let mut trx = pool.begin().await.unwrap();
+    assert!(task.enqueue_upload_task(&mut trx).await.unwrap());
+    trx.commit().await.unwrap();
+    let digest_rows = || async {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1")
+            .bind(&handle)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+    assert_eq!(digest_rows().await, 1);
+
+    // Simulate the reorg cleanup for an orphan-only handle.
+    for sql in [
+        "DELETE FROM pbs_computations WHERE handle = $1",
+        "DELETE FROM ciphertext_digest WHERE handle = $1",
+    ] {
+        sqlx::query(sql).bind(&handle).execute(&pool).await.unwrap();
+    }
+
+    // The in-flight task must not resurrect the digest row...
+    let mut trx = pool.begin().await.unwrap();
+    assert!(!task.enqueue_upload_task(&mut trx).await.unwrap());
+    trx.commit().await.unwrap();
+    assert_eq!(digest_rows().await, 0, "digest row must not be resurrected");
+
+    // ...and a late mark-uploaded is a cancelled no-op, not an error.
+    let mut trx = pool.begin().await.unwrap();
+    task.mark_ciphertexts_uploaded(&mut trx, vec![0xC1; 32], vec![0xC2; 32], 1)
+        .await
+        .expect("mark after cleanup must be a no-op");
+    trx.commit().await.unwrap();
+    assert_eq!(digest_rows().await, 0);
+
+    // Bridge-retraction variant: the pbs row survives (allow events created
+    // it) but the copied ciphertexts row was retracted. The ciphertext
+    // witness must veto the enqueue on its own.
+    test_harness::db_utils::insert_into_pbs_computations(&pool, host_chain_id, &handle)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM ciphertexts WHERE handle = $1")
+        .bind(&handle)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut trx = pool.begin().await.unwrap();
+    assert!(
+        !task.enqueue_upload_task(&mut trx).await.unwrap(),
+        "missing ciphertexts row must veto the enqueue"
+    );
+    trx.commit().await.unwrap();
+    assert_eq!(digest_rows().await, 0);
+
+    // Leave the shared (localhost-mode) database as we found it.
+    clean_up(&pool).await.unwrap();
+}
+
 #[tokio::test]
 #[serial(db)]
 #[cfg(not(feature = "gpu"))]
@@ -354,7 +457,7 @@ async fn test_garbage_collect() {
         .expect("insert into ciphertexts");
 
         let _ = sqlx::query!(
-            "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext, ciphertext128 )
+            "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext, ciphertext128)
                 VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT DO NOTHING;",
             host_chain_id,
@@ -1090,6 +1193,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         schedule_policy,
         pg_auto_explain_with_min_duration: Some(Duration::from_secs(1)),
         metrics: Default::default(),
+        gcs_mode: false,
         private_key: None,
         signer_type: fhevm_engine_common::types::SignerType::PrivateKey,
         s3_migration: S3MigrationMode::No,

@@ -20,6 +20,9 @@ migration Job racing the service Deployments. This runbook closes both.
 3. Run `helm upgrade` only after the migration has completed.
 4. Verify the index is `valid`, the migration completed, and watch DB
    write load.
+5. Ensure `FHEVM_BRANCH_ACTIVATION_BLOCK` is set to an appropriate
+   value (see section below) if this deployment is in a
+   multi-coprocessor environment.
 
 > The host-listener also applies an **in-code schema guard**
 > (`Database::wait_for_branch_schema`): if a binary starts before the migration
@@ -120,6 +123,59 @@ Legacy ciphertext **bytes** (`ciphertexts` / `ciphertexts128`) are intentionally
 deleted by orphan cleanup. As a result an orphan-only handle leaves its (now unreferenced)
 ciphertext bytes behind — a small, bounded storage residue, accepted in wave 1 to keep the
 authoritative pre-cutover byte store intact for the wave-2 legacy fallback.
+
+## Branch activation height (`FHEVM_BRANCH_ACTIVATION_BLOCK`)
+
+Without it, every node starts dual-writing branch rows the moment its binary upgrades.
+During a rolling upgrade that start time is node-local: handles produced in the window
+get branch rows on some operators and not others (and with different producer keying if
+a reorg lands mid-window), and the reorg cleanup's `NOT EXISTS` guards then make
+different legacy-deletion decisions per operator — a fleet-divergence hazard on live
+read paths.
+
+Set `FHEVM_BRANCH_ACTIVATION_BLOCK` (host-listener env) to a **fleet-common host-chain
+height comfortably above the expected completion of the rolling upgrade** (all
+operators must use the same value). Below it, ingestion writes legacy state only and
+producers resolve as branchless, so branch-row keying is identical on every node by
+construction, regardless of upgrade timing. The default `0` (active from genesis) is
+for fresh chains and single-operator test stacks.
+
+In Helm values, set it through the shared env block so every host-listener pod
+variant receives the same value:
+
+```yaml
+commonConfig:
+  env:
+    - name: FHEVM_BRANCH_ACTIVATION_BLOCK
+      value: "12345678"
+```
+
+If the deployment intentionally sets host-listener-specific env instead, apply
+the same value consistently to every enabled host-listener variant
+(`hostListenerShared.env`, `hostListenerPollerShared.env`,
+`hostListenerCatchupOnlyShared.env`, `hostListenerConsumerShared.env`, and any
+per-chain `chains[].hostListener*.env` overrides). Do not leave one variant or
+operator on a different value.
+
+The value must parse as an unsigned integer. A malformed value is a hard
+configuration error: the host-listener logs the invalid setting and exits rather
+than silently defaulting to `0`, because falling back to genesis activation could
+make operators start branch tracking at different heights.
+
+Wave-2 interaction: the wave-2 cutover height (`FHEVM_BRANCH_CUTOVER_BLOCK`) must be
+`>=` the activation height — blocks below activation have no branch rows to execute
+from, and wave-2's legacy fallback covers them.
+
+New-feature state (confidential-bridge event tables, fallback-grant observations) is
+not gated: those tables are keyed by observation block hash and are deterministic
+across operators regardless of upgrade timing.
+
+A reorg that straddles the activation boundary (fork block at or above it, canonical
+re-inclusion below it) is handled conservatively: orphan cleanup skips the legacy-row
+deletions for reorgs within 128 blocks of the activation height, leaving a small
+bounded residue of dead legacy rows instead of risking deletion of a canonical
+below-activation inclusion. Prefer an activation height in a historically quiet
+period anyway.
 
 ## Rollback
 
