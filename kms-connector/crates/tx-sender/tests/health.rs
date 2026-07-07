@@ -4,7 +4,7 @@ use connector_utils::{
         health::{Healthcheck, query_healthcheck_endpoint},
         server::{GIT_COMMIT_HASH, LivenessResponse, VersionResponse, start_monitoring_server},
     },
-    tests::setup::{TestInstanceBuilder, pick_free_port},
+    tests::setup::{BlockchainInstance, DbInstance, TestInstanceBuilder, pick_free_port},
 };
 use rstest::rstest;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
@@ -15,7 +15,10 @@ use tx_sender::monitoring::health::{HealthStatus, State};
 #[timeout(Duration::from_secs(300))]
 #[tokio::test]
 async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
+    let mut test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup_container().await?)
+        .with_blockchain(BlockchainInstance::setup().await?)
+        .build();
     let state = State::new(
         test_instance.db().clone(),
         test_instance.provider().clone(),
@@ -76,7 +79,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     query_healthcheck_endpoint::<HealthStatus>(monitoring_url.clone()).await?;
 
     // Pause Gateway and verify healthcheck failure
-    test_instance.anvil_container().pause().await?;
+    test_instance.pause_anvil()?;
     query_healthcheck_endpoint::<HealthStatus>(monitoring_url)
         .await
         .unwrap_err();
