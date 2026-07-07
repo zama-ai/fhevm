@@ -214,8 +214,8 @@ spec:
                 {{- toYaml $chain.protocolConfigContractAddressValueFrom | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with $.Values.commonConfig.ethereumChainId }}
-            - name: ETHEREUM_CHAIN_ID
+            {{- with $.Values.commonConfig.canonicalProtocolConfigChainId }}
+            - name: CANONICAL_PROTOCOL_CONFIG_CHAIN_ID
               value: {{ . | quote }}
             {{- end }}
           {{- if default $.Values.commonConfig.tracing.enabled $.Values.hostListenerPollerShared.tracing.enabled }}
