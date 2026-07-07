@@ -65,6 +65,9 @@ pub enum ConfidentialTokenError {
     /// Total-supply authority PDA did not match the mint.
     #[msg("total supply authority does not match mint")]
     TotalSupplyAuthorityMismatch,
+    /// HCU authority PDA did not match the mint.
+    #[msg("HCU authority does not match mint")]
+    HcuAuthorityMismatch,
     /// The KMS EIP-712 public-decrypt certificate failed secp256k1 threshold verification.
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,

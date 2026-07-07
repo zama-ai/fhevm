@@ -74,10 +74,11 @@ pub mod confidential_deposit_app {
             zama_program: ctx.accounts.zama_program.to_account_info(),
             host_config: ctx.accounts.host_config.to_account_info(),
             system_program: ctx.accounts.system_program.to_account_info(),
-            // This path does not thread the block-cap accounts; behavior-neutral while the host cap
-            // is unrestricted (its default). Threading is a separate rollout step.
+            // The meter and trust witness stay un-threaded here; behavior-neutral while the host
+            // cap is unrestricted (its default). Threading them is a separate rollout step.
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
+            hcu_authority: ctx.accounts.hcu_authority.to_account_info(),
             event_authority: ctx
                 .accounts
                 .confidential_token_event_authority
@@ -178,6 +179,8 @@ pub struct Deposit<'info> {
     pub zama_program: Program<'info, ZamaHost>,
     /// CHECK: ZamaHost config PDA; validated by the host program.
     pub host_config: UncheckedAccount<'info>,
+    /// CHECK: The mint's HCU authority PDA; validated and signed by `confidential_token`.
+    pub hcu_authority: UncheckedAccount<'info>,
     /// CHECK: confidential-token event-CPI authority; validated by the token program.
     pub confidential_token_event_authority: UncheckedAccount<'info>,
     /// confidential-token program composed via CPI.

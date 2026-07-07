@@ -50,6 +50,13 @@ pub struct FheEval<'info> {
     pub host_config: Account<'info, HostConfig>,
     /// System program used for durable output ACL creation.
     pub system_program: Program<'info, System>,
+    /// The app identity the HCU block cap meters and trusts. Both HCU PDAs (`hcu_block_meter`,
+    /// `hcu_trusted_app_record`) are derived from this key — never from `payer` or
+    /// `app_account_authority`. A `Signer` so the identity is unforgeable: a program can only
+    /// sign its own PDAs via CPI seeds, so no caller can spend another app's meter or steal its
+    /// trusted bypass. Always required — even under the unrestricted default — so activating
+    /// the cap never changes the instruction's account shape.
+    pub hcu_authority: Signer<'info>,
     /// Per-app HCU block meter (written once in the execution `charge`). Untrusted apps in the
     /// metering band MUST supply it; trusted apps and the unrestricted default omit it. An
     /// `UncheckedAccount` because it may be uninitialized (lazy-created) and is validated manually.

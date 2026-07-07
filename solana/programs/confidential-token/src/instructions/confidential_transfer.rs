@@ -51,6 +51,10 @@ pub struct ConfidentialTransfer<'info> {
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it. The HCU
     /// trust witness — present + valid bypasses the cap; absent means untrusted (metered).
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    /// CHECK: validated against the canonical `["hcu-authority", mint]` PDA and program-signed
+    /// into the CPI. The mint-scoped identity the host block cap meters and trusts — mandatory
+    /// on every eval, matching the host account shape.
+    pub hcu_authority: UncheckedAccount<'info>,
 }
 
 impl<'info> ConfidentialTransfer<'info> {
@@ -79,6 +83,7 @@ impl<'info> ConfidentialTransfer<'info> {
                 .hcu_trusted_app_record
                 .as_ref()
                 .map(|account| account.to_account_info()),
+            hcu_authority: &self.hcu_authority,
         }
     }
 }

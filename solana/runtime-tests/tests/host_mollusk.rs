@@ -1687,6 +1687,7 @@ fn mollusk_fhe_eval_rejects_public_decrypt_output_without_input_role() {
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -1771,6 +1772,7 @@ fn mollusk_fhe_eval_rejects_system_account_public_decrypt_role_grant_without_inp
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -1866,6 +1868,7 @@ fn mollusk_fhe_eval_allows_app_owned_public_decrypt_role_grant_without_input_rol
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -1998,6 +2001,7 @@ fn mollusk_fhe_eval_composes_transient_binary_ops_into_durable_ternary_output() 
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -2198,6 +2202,7 @@ fn mollusk_fhe_eval_identical_steps_derive_unique_transient_handles() {
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -2301,6 +2306,7 @@ fn mollusk_fhe_eval_binds_multiple_durable_outputs_with_distinct_authorities() {
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -2457,6 +2463,7 @@ fn mollusk_fhe_eval_rolls_back_first_durable_output_when_second_output_exists() 
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -2572,6 +2579,7 @@ fn mollusk_fhe_eval_rejects_duplicate_durable_output_reference_without_partial_b
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -2711,6 +2719,7 @@ fn mollusk_fhe_eval_switches_event_transport_above_cpi_threshold() {
             host::accounts::FheEval {
                 // Block-cap optional accounts: default cap is unrestricted, so existing flows
                 // pass None/None and behave exactly as before the feature.
+                hcu_authority: authority,
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
                 payer: authority,
@@ -2804,6 +2813,7 @@ fn mollusk_fhe_eval_rejects_scalar_lhs_before_events() {
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: fixture.authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: fixture.authority,
@@ -2882,6 +2892,7 @@ fn mollusk_fhe_eval_rejects_binary_rhs_type_mismatch_before_output() {
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -2973,6 +2984,9 @@ struct EvalFixture {
     host_config: Pubkey,
     acl_domain_key: Pubkey,
     app_account: Pubkey,
+    /// Dedicated HCU metering identity — deliberately distinct from `app_account` /
+    /// `app_account_authority` so block-cap tests prove the meter never keys on those.
+    hcu_authority: Pubkey,
     balance_label: [u8; 32],
     balance_nonce_key: [u8; 32],
     balance_handle: [u8; 32],
@@ -3037,6 +3051,7 @@ impl EvalFixture {
             host_config,
             acl_domain_key,
             app_account,
+            hcu_authority: Pubkey::new_unique(),
             balance_label,
             balance_nonce_key,
             balance_handle,
@@ -3120,6 +3135,7 @@ impl EvalFixture {
             host::accounts::FheEval {
                 // Block-cap optional accounts: default cap is unrestricted, so existing flows
                 // pass None/None and behave exactly as before the feature.
+                hcu_authority: self.authority,
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
                 payer: self.authority,
@@ -3186,6 +3202,7 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
             host::accounts::FheEval {
                 // Block-cap optional accounts: default cap is unrestricted, so existing flows
                 // pass None/None and behave exactly as before the feature.
+                hcu_authority: authority,
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
                 payer: authority,
@@ -3237,6 +3254,7 @@ fn mollusk_fhe_eval_rejects_unused_dynamic_accounts_without_events() {
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -4819,6 +4837,7 @@ fn verified_input_add_eval_ix(
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -4953,6 +4972,7 @@ fn durable_input_add_eval_ix(
         host::accounts::FheEval {
             // Block-cap optional accounts: default cap is unrestricted, so existing flows
             // pass None/None and behave exactly as before the feature.
+            hcu_authority: authority,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             payer: authority,
@@ -5499,24 +5519,26 @@ impl EvalFixture {
         fixture
     }
 
-    /// The app identity both new PDAs are keyed on (the frame's `app_account_authority`).
+    /// The app identity both new PDAs are keyed on (the frame's `hcu_authority` signer) —
+    /// deliberately NOT `app_account_authority`.
     fn block_cap_app(&self) -> Pubkey {
-        self.app_account
+        self.hcu_authority
     }
 
     fn meter_pda(&self) -> Pubkey {
-        host::hcu_block_meter_address(self.app_account).0
+        host::hcu_block_meter_address(self.hcu_authority).0
     }
 
     fn trust_pda(&self) -> Pubkey {
-        host::hcu_trusted_app_address(self.app_account).0
+        host::hcu_trusted_app_address(self.hcu_authority).0
     }
 
     fn seed_account(&self, key: Pubkey, account: Account) {
         self.context.account_store.borrow_mut().insert(key, account);
     }
 
-    /// The standard durable-output frame, threading the two optional block-cap accounts.
+    /// The standard durable-output frame with the fixture's `hcu_authority` signed in,
+    /// threading the two optional block-cap accounts.
     fn block_cap_instruction(&self, meter: Option<Pubkey>, trust: Option<Pubkey>) -> Instruction {
         let context_id = label("block-cap-frame");
         let steps = self.success_steps(context_id, self.app_account, false);
@@ -5528,6 +5550,7 @@ impl EvalFixture {
                 app_account_authority: self.app_account,
                 host_config: self.host_config,
                 system_program: system_program::ID,
+                hcu_authority: self.hcu_authority,
                 hcu_block_meter: meter,
                 hcu_trusted_app_record: trust,
                 event_authority: event_authority(self.program_id),
@@ -5547,7 +5570,7 @@ impl EvalFixture {
     }
 
     /// A transient-only frame (single step, `AllowedLocal` output) — produces no durable
-    /// ACL record, so nothing welds `app_account_authority` on-chain.
+    /// ACL record; the block-cap identity comes solely from the `hcu_authority` signer.
     fn transient_only_instruction(
         &self,
         meter: Option<Pubkey>,
@@ -5569,6 +5592,7 @@ impl EvalFixture {
                 app_account_authority: self.app_account,
                 host_config: self.host_config,
                 system_program: system_program::ID,
+                hcu_authority: self.hcu_authority,
                 hcu_block_meter: meter,
                 hcu_trusted_app_record: trust,
                 event_authority: event_authority(self.program_id),
@@ -6009,9 +6033,9 @@ fn mollusk_initialize_host_config_defaults_block_cap_to_unrestricted() {
 
 #[test]
 fn mollusk_fhe_eval_unrestricted_cap_none_none_succeeds() {
-    // The default (u64::MAX) short-circuits: a caller passing neither optional account
-    // behaves exactly as before the feature — the frame binds its durable output and no
-    // meter is ever created.
+    // The default (u64::MAX) short-circuits: with the mandatory hcu_authority signed in but
+    // neither optional account supplied, the frame binds its durable output and no meter is
+    // ever created or touched.
     let fixture = EvalFixture::with_block_cap(u64::MAX);
     let result = fixture
         .context
@@ -6019,6 +6043,43 @@ fn mollusk_fhe_eval_unrestricted_cap_none_none_succeeds() {
     assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
     assert!(read_acl_record(&fixture.context, fixture.output_acl_record).is_some());
     assert!(read_hcu_block_meter(&fixture.context, fixture.meter_pda()).is_none());
+}
+
+#[test]
+fn mollusk_fhe_eval_missing_hcu_authority_account_fails_structurally() {
+    // The hcu_authority is a mandatory account, not program logic: a frame missing it never
+    // reaches the handler — the account layer rejects the shape outright, even under the
+    // unrestricted default. There is no account shape that evals without an HCU identity.
+    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    let mut ix = fixture.block_cap_instruction(None, None);
+    let authority = fixture.block_cap_app();
+    ix.accounts.retain(|meta| meta.pubkey != authority);
+    let result = fixture.context.process_instruction(&ix);
+    assert!(result.raw_result.is_err());
+    fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_unsigned_hcu_authority_is_rejected() {
+    // The hcu_authority must SIGN. A supplied-but-unsigned authority is rejected by the
+    // account layer — otherwise any caller could name a trusted app's authority to steal its
+    // bypass, or a victim's authority to drain its in-slot budget.
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let mut ix = fixture.block_cap_instruction(Some(fixture.meter_pda()), None);
+    let authority = fixture.block_cap_app();
+    for meta in ix.accounts.iter_mut() {
+        if meta.pubkey == authority {
+            meta.is_signer = false;
+        }
+    }
+    let result = fixture.context.process_instruction(&ix);
+    assert_eq!(
+        result.raw_result,
+        Err(InstructionError::Custom(
+            anchor_lang::error::ErrorCode::AccountNotSigner as u32
+        ))
+    );
+    fixture.assert_no_output();
 }
 
 #[test]
@@ -6341,6 +6402,14 @@ fn mollusk_fhe_eval_clean_first_call_lazy_creates_meter_at_frame_cost() {
         fixture.context.mollusk.sysvars.clock.slot
     );
     assert!(read_acl_record(&fixture.context, fixture.output_acl_record).is_some());
+    // Metering keys on the dedicated hcu_authority, never on app_account_authority: the two
+    // identities differ in this fixture and nothing accrued under the latter's key.
+    assert_ne!(fixture.block_cap_app(), fixture.app_account);
+    assert!(read_hcu_block_meter(
+        &fixture.context,
+        host::hcu_block_meter_address(fixture.app_account).0
+    )
+    .is_none());
 }
 
 #[test]
@@ -6387,24 +6456,28 @@ fn mollusk_fhe_eval_extra_remaining_account_still_rejected_with_block_cap() {
     assert_instruction_custom_error(&result, host::errors::ZamaHostError::InvalidFheEvalAccount);
 }
 
+/// Exact HCU cost of the fixture's transient-only frame: a single `Ge` at ebool.
+const TRANSIENT_FRAME_HCU: u64 = 21_000;
+
 #[test]
-fn doc_transient_only_frame_has_no_durable_identity_to_meter() {
-    // Documentation test (not a guard): a transient-only frame (all AllowedLocal outputs)
-    // creates no durable ACL record, so nothing welds `app_account_authority` on-chain. That
-    // is precisely why per-app metering cannot bind identity for such frames — a throwaway
-    // authority escapes the cap. On-chain metering of transient-only work is a deliberate,
-    // specified-but-deferred follow-up (a payer-fallback meter); it is NOT enforced in v1.
-    // Asserted under the unrestricted default, where the block cap is short-circuited
-    // regardless of frame shape, so the absence of a durable footprint is unambiguous.
-    let fixture = EvalFixture::with_block_cap(u64::MAX);
+fn mollusk_fhe_eval_transient_only_frame_is_metered_via_hcu_authority() {
+    // A transient-only frame (all AllowedLocal outputs) creates no durable ACL record, so
+    // nothing welds `app_account_authority` on-chain — but the metering identity is the
+    // dedicated `hcu_authority` signer, independent of the frame's output shape, so the
+    // frame is still charged in full. (Under the pre-signer design this work escaped the cap
+    // entirely; this is the regression guard for that gap.)
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let meter_pda = fixture.meter_pda();
     let result = fixture
         .context
-        .process_instruction(&fixture.transient_only_instruction(None, None));
+        .process_instruction(&fixture.transient_only_instruction(Some(meter_pda), None));
     assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
-    // No durable output ACL record: nothing binds the app identity.
+    // No durable output ACL record was produced...
     fixture.assert_no_output();
-    // No per-app meter is created for a transient-only frame.
-    assert!(read_hcu_block_meter(&fixture.context, fixture.meter_pda()).is_none());
+    // ...yet the frame accrued onto the authority's meter.
+    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
+    assert_eq!(meter.app, fixture.block_cap_app());
+    assert_eq!(meter.used_hcu, TRANSIENT_FRAME_HCU);
 }
 
 #[test]

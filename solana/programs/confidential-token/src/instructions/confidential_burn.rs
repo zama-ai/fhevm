@@ -42,6 +42,9 @@ pub struct ConfidentialBurn<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
+    /// CHECK: validated against the canonical `["hcu-authority", mint]` PDA and program-signed
+    /// into the host CPI as this mint's HCU metering identity.
+    pub hcu_authority: UncheckedAccount<'info>,
 }
 
 /// Burns an encrypted amount by rotating the account balance and encrypted total supply.
@@ -207,8 +210,9 @@ pub fn confidential_burn(
             host_config: &ctx.accounts.host_config,
             compute_authority,
             system_program: &ctx.accounts.system_program,
-            // This instruction does not thread the block-cap accounts; behavior-neutral while the
-            // host cap is unrestricted (its default). Threading is a separate rollout step.
+            // The meter and trust witness stay un-threaded here; behavior-neutral while the
+            // host cap is unrestricted (its default). Threading them is a separate rollout step.
+            hcu_authority: fhe::HcuAuthority::for_mint(&ctx.accounts.hcu_authority, mint_key)?,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
         },

@@ -28,6 +28,9 @@ pub struct CreateRandomAmount<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
+    /// CHECK: validated against the canonical `["hcu-authority", mint]` PDA and program-signed
+    /// into the host CPI as this mint's HCU metering identity.
+    pub hcu_authority: UncheckedAccount<'info>,
 }
 
 /// Creates a token-scoped random encrypted amount for transfer or burn flows.
@@ -126,8 +129,9 @@ fn create_random_amount_inner(
             host_config: &ctx.accounts.host_config,
             compute_authority,
             system_program: &ctx.accounts.system_program,
-            // This instruction does not thread the block-cap accounts; behavior-neutral
-            // while the host cap is unrestricted (its default).
+            // The meter and trust witness stay un-threaded here; behavior-neutral while
+            // the host cap is unrestricted (its default).
+            hcu_authority: fhe::HcuAuthority::for_mint(&ctx.accounts.hcu_authority, mint_key)?,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
         },
