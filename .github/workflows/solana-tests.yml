@@ -93,6 +93,7 @@ jobs:
             retry curl -sSfL "https://release.anza.xyz/v${SOLANA_VERSION}/install" -o /tmp/anza-install.sh
             sh /tmp/anza-install.sh
           fi
+          mkdir -p "$HOME/.cache/solana"
           echo "$SOLANA_BIN" >> "$GITHUB_PATH"
 
       - name: Install Anchor CLI
@@ -202,6 +203,7 @@ jobs:
             retry curl -sSfL "https://release.anza.xyz/v${SOLANA_VERSION}/install" -o /tmp/anza-install.sh
             sh /tmp/anza-install.sh
           fi
+          mkdir -p "$HOME/.cache/solana"
           echo "$SOLANA_BIN" >> "$GITHUB_PATH"
 
       - name: Install Anchor CLI
