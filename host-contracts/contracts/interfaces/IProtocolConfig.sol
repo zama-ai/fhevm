@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {KmsNode, KmsNodeParams, PcrValues} from "../shared/Structs.sol";
+import {KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "../shared/Structs.sol";
 import {IKMSGeneration} from "./IKMSGeneration.sol";
 
 /**
@@ -117,15 +117,15 @@ interface IProtocolConfig {
     /**
      * @notice Emitted on every successful KMS context creation confirmation.
      * @param kmsContextId The pending context ID being confirmed.
-     * @param signer The KMS signer that confirmed.
-     * @param isPreviousSigner Whether the signer is part of the previous active context.
-     * @param isNewSigner Whether the signer is part of the new pending context.
+     * @param txSender The KMS tx sender that confirmed.
+     * @param isPreviousTxSender Whether the tx sender is part of the previous active context.
+     * @param isNewTxSender Whether the tx sender is part of the new pending context.
      */
     event KmsContextCreationConfirmation(
         uint256 indexed kmsContextId,
-        address indexed signer,
-        bool isPreviousSigner,
-        bool isNewSigner
+        address indexed txSender,
+        bool isPreviousTxSender,
+        bool isNewTxSender
     );
 
     /**
@@ -154,6 +154,21 @@ interface IProtocolConfig {
      * @param kmsContextId The aborted pending context ID.
      */
     event PendingContextAborted(uint256 indexed kmsContextId);
+
+    /**
+     * @notice Emitted when a coprocessor upgrade is proposed. This event drives the
+     *         coprocessor software upgrade.
+     * @param proposalId Caller-supplied identifier for this upgrade attempt.
+     * @param softwareVersion The coprocessor software version for the proposal.
+     * @param chainUpgradeWindows The per-host-chain replay windows for the upgrade.
+     * @param gwStartBlock The Gateway block at which GCS's gateway-listener resumes from.
+     */
+    event CoprocessorUpgradeProposed(
+        uint256 indexed proposalId,
+        string softwareVersion,
+        ChainUpgradeWindow[] chainUpgradeWindows,
+        uint64 gwStartBlock
+    );
 
     /**
      * @notice Emitted when the public decryption threshold for a KMS context is updated.
@@ -283,10 +298,10 @@ interface IProtocolConfig {
     /// @param kmsContextId The context ID.
     error KmsContextCreationUnauthorized(address caller, uint256 kmsContextId);
 
-    /// @notice The signer has already confirmed creation for the KMS context.
-    /// @param signer The signer address.
+    /// @notice The tx sender has already confirmed creation for the KMS context.
+    /// @param txSender The tx sender address.
     /// @param kmsContextId The context ID.
-    error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
+    error KmsContextCreationAlreadyConfirmed(address txSender, uint256 kmsContextId);
 
     /// @notice The caller cannot confirm activation for the epoch.
     /// @param caller The unauthorized caller.
@@ -312,6 +327,31 @@ interface IProtocolConfig {
     /// @param epochId The rejected epoch ID.
     /// @param currentEpochId The latest known epoch ID.
     error NonIncreasingEpochId(uint256 epochId, uint256 currentEpochId);
+
+    /// @notice The coprocessor `softwareVersion` argument is the empty string.
+    error EmptySoftwareVersion();
+
+    /// @notice The `chainUpgradeWindows` array argument is empty.
+    error EmptyChainUpgradeWindows();
+
+    /// @notice A chain entry has a zero `chainId`.
+    error ZeroChainId();
+
+    /// @notice The same `chainId` appears more than once in the `chainUpgradeWindows` array.
+    /// @param chainId The duplicated chain id.
+    error DuplicateChainId(uint64 chainId);
+
+    /// @notice The block window for a chain entry is invalid (`startBlock > endBlock`).
+    /// @param chainId The chain id whose window is invalid.
+    /// @param startBlock The provided start block.
+    /// @param endBlock The provided end block.
+    error InvalidBlockWindow(uint64 chainId, uint64 startBlock, uint64 endBlock);
+
+    /// @notice The `gwStartBlock` argument is zero.
+    error ZeroGwStartBlock();
+
+    /// @notice The supplied `proposalId` is zero.
+    error InvalidProposalId();
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
@@ -373,6 +413,23 @@ interface IProtocolConfig {
      * @param kmsContextId The context ID to destroy.
      */
     function destroyKmsContext(uint256 kmsContextId) external;
+
+    /**
+     * @notice Propose a coprocessor upgrade. Emits `CoprocessorUpgradeProposed` and does not
+     *         change any on-chain state — the lifecycle of the proposal (dry-run, consensus,
+     *         cutover, failure) is driven entirely off-chain.
+     * @param proposalId Caller-supplied identifier for this upgrade attempt. Must be non-zero.
+     *        Uniqueness across calls is the caller's responsibility; the contract does not enforce it.
+     * @param softwareVersion The coprocessor software version.
+     * @param chainUpgradeWindows The per-host-chain replay windows.
+     * @param gwStartBlock The Gateway block to resume from.
+     */
+    function proposeCoprocessorUpgrade(
+        uint256 proposalId,
+        string calldata softwareVersion,
+        ChainUpgradeWindow[] calldata chainUpgradeWindows,
+        uint64 gwStartBlock
+    ) external;
 
     /**
      * @notice Update the public decryption threshold for a KMS context.

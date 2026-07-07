@@ -79,6 +79,24 @@ commonConfig:
   aclContractAddress: {}            # required — e.g. 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
   fhevmExecutorContractAddress: {}  # required — e.g. 0x...
   kmsGenerationContractAddress: {}  # optional — e.g. 0x...
+  protocolConfigContractAddress: {}  # optional — e.g. 0x...
+
+  # Ethereum host chain id. Only the host-listener whose own chain id matches
+  # this value decodes ProtocolConfig.CoprocessorUpgradeProposed events.
+  ethereumChainId: ""
+
+  # Coprocessor stack version baked into the service images (the value printed
+  # by `<binary> --stack-version`). When set, it is surfaced as the
+  # `app.kubernetes.io/version` pod label so blue/green tooling can select pods
+  # by stack version. Should mirror the STACK_VERSION compiled into the images.
+  stackVersion: ""
+  # Optional startup probe that runs `<binary> --stack-version` in-cluster to
+  # confirm the deployed image exposes the expected stack-version flag. Disabled
+  # by default so it does not affect existing deployments.
+  stackVersionProbe:
+    enabled: false
+    periodSeconds: 10
+    failureThreshold: 30
 
   # Gateway chain configuration. Consumed by gwListener and txSender.
   # Each field accepts either a literal `value` or a `valueFrom` block
@@ -188,11 +206,22 @@ polygonContractConfigMap:
 dbMigration:
   enabled: true
 
-  # Helm hook annotations for deployment ordering
-  annotations:
-    # "helm.sh/hook": "pre-install, pre-upgrade"
-    # "helm.sh/hook-weight": "0"
-    # "helm.sh/hook-needs": "config-setup"
+  # Optional Helm hook annotations for Infra-owned deployment ordering.
+  #
+  # Default hooks are disabled because Helm pre-install/pre-upgrade hooks run
+  # before normal chart resources. The migration Job can depend on chart-created
+  # ConfigMaps/Secrets (for example the IAM DB auth RDS CA ConfigMap), which
+  # would not exist yet during a hook on fresh installs or first enablement.
+  #
+  # Wave-1 upgrades still require the migration to complete before service
+  # Deployments roll; see RUNBOOK-wave1-block-scope.md. Infra may opt into a
+  # hook only if every Job dependency is pre-existing or rendered as an earlier
+  # hook with a lower hook weight.
+  annotations: {}
+  # annotations:
+  #   "helm.sh/hook": "pre-upgrade"
+  #   "helm.sh/hook-weight": "5"
+  #   "helm.sh/hook-delete-policy": "before-hook-creation"
 
   image:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/db-migration

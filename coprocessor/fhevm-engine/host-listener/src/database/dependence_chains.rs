@@ -502,6 +502,7 @@ mod tests {
             event: tfhe_event(e),
             is_allowed,
             block_number: 0,
+            block_hash: TransactionHash::ZERO,
             block_timestamp: sqlx::types::time::PrimitiveDateTime::MIN,
             transaction_hash: Some(tx),
             dependence_chain: TransactionHash::ZERO,

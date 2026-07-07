@@ -22,7 +22,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 
 # Build application
 COPY . .
-RUN cargo build --release -p listener_core
+RUN cargo build --release -p listener_core --features iam-auth
 
 # ── Runtime ──────────────────────────────────────────────────────────
 FROM gcr.io/distroless/cc-debian12:nonroot AS prod

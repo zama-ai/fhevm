@@ -13,7 +13,7 @@ use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
+    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ProducerBlock, ToType, Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
 use sqlx::PgPool;
@@ -94,6 +94,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
         dcid_max_no_progress_cycles: 2,
         dcid_ignore_dependency_count_threshold: 100,
         drift_revert_watcher_timeouts: Default::default(),
+        stack_version: false,
     };
 
     std::thread::spawn(move || {
@@ -153,12 +154,11 @@ pub async fn wait_until_all_allowed_handles_computed(
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        let count = sqlx::query!(
-            "SELECT count(1) FROM computations WHERE is_allowed = TRUE AND is_completed = FALSE"
+        let current_count: i64 = sqlx::query_scalar(
+            "SELECT count(1) FROM computations WHERE is_allowed = TRUE AND is_completed = FALSE",
         )
         .fetch_one(&pool)
         .await?;
-        let current_count = count.count.unwrap();
         if current_count == 0 {
             break;
         }
@@ -222,6 +222,7 @@ pub async fn insert_tfhe_event(
         transaction_hash: Some(tx_hash),
         is_allowed,
         block_number: log.block_number.unwrap_or(0),
+        block_hash: log.block_hash.unwrap_or_default(),
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: tx_hash,
         tx_depth_size: 0,
@@ -241,7 +242,7 @@ pub async fn allow_handle(
         String::new(),
         AllowEvents::AllowedForDecryption,
         None,
-        0,
+        ProducerBlock::new(&[], 0),
     )
     .await
 }

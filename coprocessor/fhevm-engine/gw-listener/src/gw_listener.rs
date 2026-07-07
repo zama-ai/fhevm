@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use alloy::eips::BlockId;
@@ -6,8 +7,10 @@ use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_options_for_database_url;
+use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
+use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres, Row};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
@@ -36,6 +39,10 @@ pub struct GatewayListener<P: Provider<Ethereum> + Clone + 'static> {
     conf: ConfigSettings,
     cancel_token: CancellationToken,
     provider: P,
+    /// Runtime stack mode, updated by the `event_stack_version_upgraded`
+    /// listener. When this (blue) stack is retired at cutover it flips to
+    /// paused and the work loop becomes a no-op.
+    stack_mode: Arc<StackMode>,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
@@ -45,11 +52,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         cancel_token: CancellationToken,
         provider: P,
     ) -> Self {
+        let stack_mode = StackMode::new(conf.gcs_mode);
         GatewayListener {
             input_verification_address,
             conf,
             cancel_token,
             provider,
+            stack_mode,
         }
     }
 
@@ -59,6 +68,25 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             self.input_verification_address = %self.input_verification_address,
             "Starting Gateway Listener",
         );
+
+        // In GCS mode the listener is NOT paused before activation: it brings up
+        // and processes events from startup, writing to `gcs.*` via the
+        // connection's `search_path`. Only the cutover transition (below) pauses
+        // it, when this (blue) stack is retired.
+
+        // Listen for `event_stack_version_upgraded`: at cutover this (blue)
+        // stack is retired and `stack_mode` flips to paused, turning the
+        // GW get-logs loop into a no-op.
+        {
+            let pool = db_pool.clone();
+            let stack_mode = self.stack_mode.clone();
+            let cancel = self.cancel_token.clone();
+            tokio::spawn(async move {
+                if let Err(err) = run_stack_version_listener(pool, stack_mode, cancel).await {
+                    error!(error = %err, "stack-version listener exited with error");
+                }
+            });
+        }
 
         let get_logs_handle = {
             let s = self.clone();
@@ -150,6 +178,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 }
 
                 _ = ticker.tick() => {
+                    // Paused (retired blue stack after cutover): no-op — don't
+                    // fetch or process any logs.
+                    if self.stack_mode.is_paused() {
+                        continue;
+                    }
+
                     let current_block = self.provider.get_block_number().await.inspect(|_| {
                         GET_BLOCK_NUM_SUCCESS_COUNTER.inc();
                     }).inspect_err(|_| {
@@ -441,14 +475,33 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         )
         .await;
 
+        let block_number: Option<i64> = log
+            .block_number
+            .map(|n| n.try_into())
+            .transpose()
+            .map_err(|err| anyhow::anyhow!("block_number does not fit in i64: {err}"))?;
+
+        // Cutover safety: fence this write behind the shared cutover lock +
+        // retirement re-check. `verify_proofs` is not a merge target, but this
+        // makes every BCS write uniformly stop the instant a cutover retires the
+        // stack. GCS-mode listeners skip the gate (they write the gcs schema).
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+        )
+        .await?
+        else {
+            info!("Cutover completed — gw-listener skipping verify_proofs insert (retired stack)");
+            return Ok(());
+        };
         // TODO: check if we can avoid the cast from u256 to i64
         sqlx::query!(
             "WITH ins AS (
-                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id, block_number)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT(zk_proof_id) DO NOTHING
             )
-            SELECT pg_notify($8, '')",
+            SELECT pg_notify($9, '')",
             request.zkProofId.to::<i64>(),
             chain_id.as_i64(),
             request.contractAddress.to_string(),
@@ -456,10 +509,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             Some(request.ciphertextWithZKProof.as_ref()),
             request.extraData.as_ref(),
             transaction_id,
+            block_number,
             self.conf.verify_proof_req_db_channel
         )
-        .execute(db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -512,6 +567,18 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .earliest_open_ct_commits_block
             .map(i64::try_from)
             .transpose()?;
+        // Cutover safety: gate the watermark write (+ its notify) behind the
+        // shared cutover lock + retirement re-check, so a retired BCS listener
+        // stops advancing the watermark the instant a cutover flips the stack.
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            db_pool,
+            self.stack_mode.gcs_mode(),
+        )
+        .await?
+        else {
+            info!("Cutover completed — gw-listener skipping watermark update (retired stack)");
+            return Ok(());
+        };
         sqlx::query(
             "INSERT into gw_listener_last_block (dummy_id, last_block_num, earliest_open_ct_commits_block)
             VALUES (true, $1, $2)
@@ -521,8 +588,23 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         )
         .bind(last_block_num)
         .bind(earliest_open_ct_commits_block)
-        .execute(db_pool)
+        .execute(tx.as_mut())
         .await?;
+
+        // Wake the upgrade-controller's Gateway-side readiness task so it can
+        // re-check whether the GCS gw-listener has reached `gw_start_block`.
+        // The payload carries the new tip purely for observability; the
+        // controller re-reads the `gw_listener_last_block` watermark itself. In
+        // GCS mode this notify (and the progress row above) target the `gcs`
+        // schema's watermark via the connection's `search_path`.
+        if let Some(last_block_num) = last_block_num {
+            sqlx::query("SELECT pg_notify($1, $2)")
+                .bind(EVENT_GW_NEW_BLOCK)
+                .bind(last_block_num.to_string())
+                .execute(tx.as_mut())
+                .await?;
+        }
+        tx.commit().await?;
 
         *number_of_last_processed_updates += 1;
         if (*number_of_last_processed_updates)

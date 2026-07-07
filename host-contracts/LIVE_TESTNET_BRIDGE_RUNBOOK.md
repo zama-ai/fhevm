@@ -18,7 +18,7 @@ Target chains used as the running example:
 
 The procedure generalizes to any chain pair that has a canonical LayerZero V2
 endpoint. The LZ V2 endpoint address is the same on every chain -
-**WARNING: this is only true for testnets not for mainnets where the endpoint address changes depending on the chain**:
+**WARNING: this is only true for testnets not for mainnets where the endpoint address changes**:
 `0x6EDCE65403992e310A62460808c4b910D972f10f`.
 
 > **Scope.** This runbook covers the host-contract side of the stack plus the
@@ -347,7 +347,7 @@ it should be an uninitialized (i.e. zero) handle. Run this command several times
 cast call "$POLYGON_AMOY_OFT_ADDRESS" "balanceOf(address)(bytes32)" "$DEPLOYER_ADDRESS" --rpc-url "$POLYGON_AMOY_RPC_URL"
 ```
 
-Note also that when the destination side fires, the daemon termina should log something like:
+Note also that when the destination side fires, the daemon terminal should log something like:
 
 ```
 [mock-coprocessor:polygonAmoy] processed blocks YYYYY-YYYYY (head=YYYYY): inserted=1 pending=0 skipped=0
@@ -390,7 +390,7 @@ PROFILE_DST_EID=40267 \
 forge script scripts/HandlesReceiverProfiler.s.sol:HandlesReceiverProfilerExample -vv
 ```
 
-#### Verify the fitted parameters cover the whole input domain (WARNING: this can take more than 2 hours to run until completion)
+#### Verify the fitted parameters cover the whole input domain (WARNING: this can take more than 20 minutes to run until completion)
 
 The profiler fits the three coefficients (`base`, `perHandle`, `perByte`) from a **coarse** grid. To gain confidence that the resulting formula `base + perHandle·nHandles + perByte·payloadLen` is an **upper bound** on the real `lzReceive` gas for _every_ admissible input, use `scripts/verify_lzreceive_budget.sh`. It measures each `(nHandles, payloadLen)` cell through the same real `EndpointV2.lzReceive` path as the profiler and asserts the budget covers the measured gas, sweeping all handle counts values in `1..32` and every single payload length value in `[0, 10000]`.
 
@@ -405,7 +405,7 @@ PROFILE_SRC_EID=40161 PROFILE_DST_EID=40267 \
 VERIFY_BASE_GAS=<RECOMMENDED_LZ_RECEIVE_BASE_GAS> \
 VERIFY_PER_HANDLE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_HANDLE_GAS> \
 VERIFY_PER_PAYLOAD_BYTE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_PAYLOAD_BYTE_GAS> \
-scripts/verify_lzreceive_budget.sh
+bash scripts/verify_lzreceive_budget.sh
 
 # Sepolia verifier command
 PROFILE_RPC_URL="$SEPOLIA_RPC_URL" \
@@ -415,22 +415,23 @@ PROFILE_SRC_EID=40267 PROFILE_DST_EID=40161 \
 VERIFY_BASE_GAS=<RECOMMENDED_LZ_RECEIVE_BASE_GAS> \
 VERIFY_PER_HANDLE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_HANDLE_GAS> \
 VERIFY_PER_PAYLOAD_BYTE_GAS=<RECOMMENDED_LZ_RECEIVE_PER_PAYLOAD_BYTE_GAS> \
-scripts/verify_lzreceive_budget.sh
+bash scripts/verify_lzreceive_budget.sh
 ```
 
 A clean run ends with `PASS: every cell ... is within budget`. If any cell exceeds the budget, the offending `(nHandles, payloadLen)` is printed and the script exits non-zero.
 
-> **⚠️ Use a paid/dedicated RPC, and expect it to run for a few hours.** The exhaustive sweep performs roughly `32 × 10001 ≈ 320k` real `lzReceive` calls against a fork of the destination chain, each fetching cold state over the network — far beyond the rate limits of free public endpoints. To keep host memory bounded the script runs the sweep in **batches, each in its own short-lived `forge` process** (a single monolithic run gets OOM-killed: `zsh: killed`). When a batch is still OOM-killed it is automatically subdivided and retried, so no manual tuning is needed.
+> **⚠️ Use a paid/dedicated RPC, and expect it to run for more than 20 minutes.** The exhaustive sweep performs roughly `32 × 10001 ≈ 320k` real `lzReceive` calls against a fork of the destination chain, each fetching cold state over the network — far beyond the rate limits of free public endpoints. To keep host memory bounded the script runs the sweep in **batches, each in its own short-lived `forge` process** (a single monolithic run gets OOM-killed: `zsh: killed`). When a batch is still OOM-killed it is automatically subdivided and retried, so no manual tuning is needed.
 
 > The script exits with such an error (see below) **only** if it finds a counter-example — a `(nHandles, payloadLen)` pair whose measured gas exceeds the budget, meaning the fitted coefficients are insufficient. In that case it stops at the first offending cell and prints a report of the form below. This should not happen with coefficients obtained from the profiler; if it does, re-run the profiler from the previous step with a finer grid to derive larger parameters, then re-verify.
 
 ```
 # only this kind of Error output shows that the budget parameters are ill-fitted
-     slack: NEGATIVE by 45424
+     slack: NEGATIVE by 45438
   RESULT: FAIL - first under-budget cell  n / len: 1 0
-     measured / budget: 56525 11525
+     measured / budget: 56525 11511
 Error: script failed: budget insufficient: see FAIL log above
-FAIL: forge exited 1 on payloadLen in [0, 249] -- verifier reverted (under-budget)
+FAIL: forge exited 1 on payloadLen in [0, 49] -- verifier reverted (under-budget)
+      or a config/RPC error. See UNDER-BUDGET / RESULT: FAIL lines above for (n, len).
 ```
 
 ---
@@ -552,7 +553,7 @@ RPC_URL="$SEPOLIA_RPC_URL" npx hardhat task:sendHandlesList \
   --app "$SEPOLIA_HANDLES_OAPP_ADDRESS" \
   --dst-eid 40267 \
   --dst-app "$POLYGON_AMOY_HANDLES_OAPP_ADDRESS" \
-  --count 4 \
+  --count 2 \
   --payload-length 512 \
   --network sepolia
 ```
@@ -622,3 +623,94 @@ the app generated the encrypted list on Sepolia, the bridge delivered the handle
 associations via LayerZero, the destination app committed the delivery hash and
 re-granted the derived handles on Amoy, and the mock coprocessor propagated the
 cleartext end-to-end.
+
+### 7.6 — Stress test the bridge across a matrix of sizes
+
+`scripts/stress/handlesListBridgeStress.ts` exercises the already-deployed-and-wired
+`HandlesListConfidentialOApp` pair across a matrix of message sizes and reports the
+cross-chain delivery status of each transfer. It fires one
+`generateAndSendHandlesList` per couple of:
+
+- `handleCounts = [1, 2, 4, 8, 16, 32]`
+- `payloadLens  = [0, 1, 64, 256, 1024, 8192]`
+
+i.e. **36 bridging transactions** from the chosen source chain, then waits (max
+**15 minutes**, otherwise it throws a timeout error) while polling the destination
+chain for the outcome of every transfer.
+
+The script keys everything off the LayerZero **guid**, derived on the source side
+from the EndpointV2 `PacketSent(encodedPayload, …)` event (the guid is embedded in
+`encodedPayload`). On the destination chain it listens only to
+EndpointV2 events:
+
+| Destination event (EndpointV2) | Meaning                             | Treated as              |
+| ------------------------------ | ----------------------------------- | ----------------------- |
+| `ComposeDelivered(guid)`       | both `lzReceive` and `lzCompose` ok | `SUCCESS` (terminal)    |
+| `LzReceiveAlert(guid)`         | an `lzReceive` attempt failed       | transient retry (count) |
+| `LzComposeAlert(guid)`         | an `lzCompose` attempt failed       | transient retry (count) |
+
+`PacketDelivered` (the `lzReceive`-success event) is deliberately **not** tracked:
+the bridge's `_lzReceive` always calls `endpoint.sendCompose(...)`, so every
+successful `lzReceive` is necessarily followed by a compose outcome
+(`ComposeDelivered` or `LzComposeAlert`).
+
+> **Why alerts are transient, not failures.** The LayerZero **executor automatically
+> retries** failed legs, so an alert is only a "last attempt failed" signal, not a
+> verdict. Firing 36 messages back-to-back makes a few legs hit a transient out-of-gas
+> (the per-message gas cost varies slightly with how the nonces are processed), so you'll
+> often see one or two non-deterministic `LzReceiveAlert`s that the executor then retries
+> and that always end up succeeding. The script
+> therefore treats **only `ComposeDelivered` as terminal SUCCESS**, just counts the
+> alerts (shown in the `alerts` column as `Nr/Mc` = lzReceive/lzCompose retries), and
+> falls back to the last alerting leg (`RECEIVE_FAILED` / `COMPOSE_FAILED`) **only** for
+> guids that never reach `SUCCESS` before the 15-minute deadline (those are genuine
+> persistent failures, e.g. an `lzCompose` out-of-gas, which keeps re-alerting and never
+> delivers).
+
+Prerequisites: the app must be deployed and wired on **both** chains (steps
+7.1–7.3), the mock daemon (step 4) running, and the deployer funded on the source
+chain with enough native gas to cover 36 LayerZero fees (the larger
+`count`/`payload-length` couples cost more). It reads RPC URLs from your env
+(`SEPOLIA_RPC_URL`, `POLYGON_AMOY_RPC_URL`) and the app/bridge addresses from
+`addresses-{sepolia,amoy}/.env.host`.
+
+Run it with the source chain as the only argument (the other chain is the
+destination):
+
+```bash
+# Sepolia → Amoy
+SEPOLIA_RPC_URL="$SEPOLIA_RPC_URL" POLYGON_AMOY_RPC_URL="$POLYGON_AMOY_RPC_URL" \
+  pnpm stress:handlesList sepolia
+
+# Amoy → Sepolia
+SEPOLIA_RPC_URL="$SEPOLIA_RPC_URL" POLYGON_AMOY_RPC_URL="$POLYGON_AMOY_RPC_URL" \
+  pnpm stress:handlesList polygonAmoy
+```
+
+When all 36 transfers reach `SUCCESS` (or the 15-minute deadline is hit), it prints a
+table summarizing each transfer (row number `Tx#`, `count`, `payloadLen`, `composeGas`,
+`fee_wei`, `alerts`, short `guid`, `status`) plus a per-status tally, e.g.:
+
+```
+=== HandlesListConfidentialOApp bridge stress results ===
++-----+-------+------------+------------+-----------+--------+-----------------+---------+
+| Tx# | count | payloadLen | composeGas | fee_wei   | alerts | guid            | status  |
++-----+-------+------------+------------+-----------+--------+-----------------+---------+
+| 1   | 1     | 0          | 300000     | 12345     | 0r/0c  | 0x1234ab…cdef01 | SUCCESS |
+| 6   | 1     | 8192       | 709600     | 999999999 | 1r/0c  | 0x9f02cc…aa12be | SUCCESS |
+| …   | …     | …          | …          | …         | …      | …               | …       |
++-----+-------+------------+------------+-----------+--------+-----------------+---------+
+Summary: { SUCCESS: 36 }
+```
+
+A non-zero `alerts` value on a `SUCCESS` row (eg: an alerts of `1r/2c` means that the
+`lzReceive` leg was retried once, and the `lzCompose` leg was retired twice) is just the
+transient blip-then-retry described above — the executor healed it and
+the row still ended `SUCCESS`. Only act on a row that ends `COMPOSE_FAILED` / `RECEIVE_FAILED`
+(kept re-alerting until the deadline and never reached `SUCCESS`): inspect the failing leg's
+revert reason and, if it's an out-of-gas error, raise the gas
+budget for the failing leg, then re-run. A `TIMEOUT` row never produced any terminal event
+within 15 minutes (probably because the DVN or Executor service is unavailable).
+Finally, a row may also never leave the source chain: `SEND_FAILED`
+means the send tx reverted or never confirmed (e.g. insufficient native balance for the
+fee), and `NO_PACKET_SENT` means it was mined but no `PacketSent` log was found — this should never happen.

@@ -1,13 +1,15 @@
 use alloy_primitives::Address;
+use fhevm_engine_common::branch::BRANCHLESS_PRODUCER_BLOCK_HASH;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::{Crs, CrsCache};
 use fhevm_engine_common::db_keys::DbKey;
 use fhevm_engine_common::db_keys::DbKeyCache;
+use fhevm_engine_common::gcs_activation::{run_gcs_gw_activation_watcher, GCS_NOT_ACTIVATED};
 use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
+use fhevm_engine_common::{telemetry, HANDLE_VERSION};
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use sha3::Digest;
@@ -15,6 +17,7 @@ use sha3::Keccak256;
 use sqlx::{postgres::PgListener, PgPool};
 use sqlx::{Postgres, Transaction};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicI64, Ordering};
 use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformanceParams;
 use tfhe::zk::{ZkComputeLoad, ZkPkeV2SupportedHashConfig};
 use tfhe::ReRandomizationContext;
@@ -38,10 +41,10 @@ use tracing::{debug, error, info, warn};
 pub const MAX_CACHED_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
-const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
-const HANDLE_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_hdl";
-const RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"ZKw_Rrnd";
-const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
+pub(crate) const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
+pub(crate) const HANDLE_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_hdl";
+pub(crate) const RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"ZKw_Rrnd";
+pub(crate) const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
 
 pub(crate) struct Ciphertext {
     handle: Vec<u8>,
@@ -56,6 +59,17 @@ pub struct ZkProofService {
 
     // Timestamp of the last moment the service was active
     last_active_at: Arc<RwLock<SystemTime>>,
+
+    // GCS activation state, mirrored from `upgrade_state.gw_start_block`
+    // (stack_role='GCS') by the gateway activation watcher. Holds
+    // `GCS_NOT_ACTIVATED` until the watcher observes `gw_dry_run_started` — i.e.
+    // the GCS gw-listener has reached `gw_start_block` and pre-start proofs have
+    // been pruned. The zkproof-worker switches its re-randomization strategy at
+    // the Gateway block, so unlike the tfhe-/sns-workers it gates on
+    // `gw_start_block`, not the host-chain `start_block`. In BCS mode (when
+    // `conf.gcs_mode = false`) the watcher is never spawned and this value
+    // stays at the sentinel for the lifetime of the process.
+    gw_start_block_state: Arc<AtomicI64>,
 }
 impl HealthCheckService for ZkProofService {
     async fn health_check(&self) -> HealthStatus {
@@ -92,13 +106,19 @@ impl ZkProofService {
         let max_pool_connections =
             std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
 
-        let Some(pool_mngr) = PostgresPoolManager::connect_pool(
+        // In --gcs-mode the pool is pinned to `search_path = gcs,public` so
+        // unqualified writes (`INSERT INTO ciphertexts`, `INSERT INTO
+        // state_hash`) resolve to the GCS schema; shared read-only tables
+        // (keys, crs, host_chains, upgrade_state, verify_proofs, …) still
+        // resolve from `public` via fallback.
+        let Some(pool_mngr) = PostgresPoolManager::connect_pool_with_gcs_mode(
             token.child_token(),
             conf.database_url.as_str(),
             conf.pg_timeout,
             max_pool_connections,
             Duration::from_secs(2),
             conf.pg_auto_explain_with_min_duration,
+            conf.gcs_mode,
         )
         .await
         else {
@@ -106,10 +126,36 @@ impl ZkProofService {
             return None;
         };
 
+        let gw_start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
+
+        if conf.gcs_mode {
+            // Long-lived task that mirrors `upgrade_state.gw_start_block`
+            // (stack_role='GCS') into the atomic once `gw_dry_run_started` is
+            // set, woken by `event_gw_dry_run_started`. Lives for the lifetime
+            // of the service so it survives transient DB hiccups inside workers.
+            let watcher_pool = pool_mngr.pool();
+            let watcher_state = gw_start_block_state.clone();
+            tokio::spawn(async move {
+                loop {
+                    if let Err(err) =
+                        run_gcs_gw_activation_watcher(&watcher_pool, &watcher_state).await
+                    {
+                        error!(
+                            target: "zkproof_worker",
+                            error = %err,
+                            "GCS activation watcher errored; restarting in 5s"
+                        );
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                }
+            });
+        }
+
         Some(ZkProofService {
             pool_mngr,
             conf,
             last_active_at: Arc::new(RwLock::new(SystemTime::UNIX_EPOCH)),
+            gw_start_block_state,
         })
     }
 
@@ -122,16 +168,19 @@ impl ZkProofService {
             self.pool_mngr.clone(),
             self.conf.clone(),
             self.last_active_at.clone(),
+            self.gw_start_block_state.clone(),
         )
         .await
     }
 }
+
 /// Executes the main loop for handling verify_proofs requests inserted in the
 /// database
 pub async fn execute_verify_proofs_loop(
     pool_mngr: PostgresPoolManager,
     conf: Config,
     last_active_at: Arc<RwLock<SystemTime>>,
+    gw_start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
     let gpu_enabled = fhevm_engine_common::utils::log_backend();
     info!(gpu_enabled, conf = %conf, "Starting with config");
@@ -153,6 +202,7 @@ pub async fn execute_verify_proofs_loop(
         let db_key_cache = db_key_cache.clone();
         let last_active_at = last_active_at.clone();
         let host_chain_cache = host_chain_cache.clone();
+        let gw_start_block_state = gw_start_block_state.clone();
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         let op = move |pool: PgPool, ct: CancellationToken| {
@@ -160,6 +210,7 @@ pub async fn execute_verify_proofs_loop(
             let host_chain_cache = host_chain_cache.clone();
             let last_active_at = last_active_at.clone();
             let conf = conf.clone();
+            let gw_start_block_state = gw_start_block_state.clone();
             async move {
                 execute_worker(
                     conf,
@@ -168,6 +219,7 @@ pub async fn execute_verify_proofs_loop(
                     db_key_cache,
                     host_chain_cache,
                     last_active_at,
+                    gw_start_block_state,
                 )
                 .await
                 .map_err(ServiceError::from)
@@ -206,6 +258,7 @@ async fn execute_worker(
     db_key_cache: DbKeyCache,
     host_chain_cache: Arc<HostChainsCache>,
     last_active_at: Arc<RwLock<SystemTime>>,
+    gw_start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
@@ -242,6 +295,18 @@ async fn execute_worker(
 
     loop {
         update_last_active(last_active_at.clone()).await;
+
+        // GCS gating: skip the iteration entirely until the gateway activation
+        // watcher has released the worker (GCS gw-listener reached
+        // `gw_start_block`, pre-start proofs pruned). Before release, processing
+        // proofs would either re-randomize pre-switchover Gateway blocks or
+        // diverge across operators — exactly what the gw_start_block alignment
+        // prevents.
+        if conf.gcs_mode && gw_start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+            debug!("GCS not yet activated; sleeping before re-check");
+            tokio::time::sleep(Duration::from_secs(conf.pg_polling_interval as u64)).await;
+            continue;
+        }
 
         execute_verify_proof_routine(
             &pool,
@@ -304,9 +369,19 @@ async fn execute_verify_proof_routine(
     // failure. Enforces the invariant: "one unknown chain on the queue must
     // not stop processing for known chains" — workers simply don't see those
     // rows.
-    let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
+    // Cutover safety (BCS only): begin a write tx fenced against cutover before
+    // inserting verified input ciphertexts into the `ciphertexts` table
+    // execute_cutover merges. `None` means a committed cutover retired this stack.
+    // See versioning::begin_write_guarded.
+    let Some(mut txn) =
+        fhevm_engine_common::versioning::begin_write_guarded(pool, conf.gcs_mode).await?
+    else {
+        info!("Cutover completed — zkproof BCS worker skipping cycle");
+        return Ok(());
+    };
+
     if let Ok(row) = sqlx::query!(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id, block_number
             FROM verify_proofs
             WHERE verified IS NULL
               AND chain_id = ANY($1::bigint[])
@@ -350,6 +425,7 @@ async fn execute_verify_proof_routine(
         let contract_address = row.contract_address;
         let user_address = row.user_address;
         let transaction_id: Option<Vec<u8>> = row.transaction_id;
+        let block_number: Option<i64> = row.block_number;
 
         info!(
             message = "Process zk-verify request",
@@ -413,6 +489,9 @@ async fn execute_verify_proof_routine(
                     verified = true;
                     let count = cts.len();
                     insert_ciphertexts(&mut txn, cts, blob_hash).await?;
+                    if let Some(bn) = block_number {
+                        insert_input_handles(&mut txn, cts, bn).await?;
+                    }
                     tracing::Span::current().record("count", count);
 
                     info!(message = "Ciphertexts inserted", request_id, count);
@@ -693,7 +772,7 @@ fn finalize_ciphertext(
     handle[21] = ct_idx as u8;
     handle[22..30].copy_from_slice(&aux_data.chain_id.as_u64().to_be_bytes());
     handle[30] = serialized_type as u8;
-    handle[31] = current_ciphertext_version() as u8;
+    handle[31] = HANDLE_VERSION as u8;
 
     tracing::Span::current().record("ct_type", tracing::field::display(serialized_type));
     info!(
@@ -701,7 +780,8 @@ fn finalize_ciphertext(
         handle = %hex::encode(&handle),
         user_address = %aux_data.user_address,
         contract_address = %aux_data.contract_address,
-        version = current_ciphertext_version(),
+        ct_version = current_ciphertext_version(),
+        handle_version = HANDLE_VERSION,
         acl_contract_address = %aux_data.acl_contract_address,
         "create_handle details"
     );
@@ -746,13 +826,16 @@ pub(crate) async fn insert_ciphertexts(
     cts: &[Ciphertext],
     blob_hash: &Vec<u8>,
 ) -> Result<(), ExecutionError> {
+    // Schema isolation handles BCS/GCS routing at the connection layer
+    // (`search_path = gcs,public` for GCS, default `public` for BCS), so
+    // this INSERT references `ciphertexts` unqualified.
     for (i, ct) in cts.iter().enumerate() {
         sqlx::query!(
             r#"
             INSERT INTO ciphertexts (
-                handle, ciphertext, ciphertext_version, ciphertext_type, 
-                input_blob_hash, input_blob_index, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                handle, ciphertext, ciphertext_version, ciphertext_type,
+                input_blob_hash, input_blob_index, is_input, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW())
             ON CONFLICT (handle, ciphertext_version) DO NOTHING;
             "#,
             &ct.handle,
@@ -764,6 +847,30 @@ pub(crate) async fn insert_ciphertexts(
         )
         .execute(db_txn.as_mut())
         .await?;
+
+        // User inputs are not derived from any block: store them as branchless
+        // (empty producer_block_hash) so dependency resolution can fall back to
+        // them on every branch and reorg cleanup never deletes them. The branch
+        // row is required for wave-2 consumers, so failures abort the
+        // verification transaction and roll back the legacy insert above.
+        sqlx::query!(
+            r#"
+            INSERT INTO ciphertexts_branch (
+                handle, ciphertext, ciphertext_version, ciphertext_type,
+                input_blob_hash, input_blob_index, producer_block_hash, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            ON CONFLICT (handle, ciphertext_version, producer_block_hash) DO NOTHING;
+            "#,
+            &ct.handle,
+            &ct.compressed,
+            ct.ct_version,
+            ct.ct_type,
+            &blob_hash,
+            i as i32,
+            BRANCHLESS_PRODUCER_BLOCK_HASH,
+        )
+        .execute(db_txn.as_mut())
+        .await?;
     }
 
     // Notify all workers that new ciphertext is inserted
@@ -772,6 +879,35 @@ pub(crate) async fn insert_ciphertexts(
         "SELECT pg_notify($1, 'zk-worker')",
         EVENT_CIPHERTEXT_COMPUTED
     )
+    .execute(db_txn.as_mut())
+    .await?;
+    Ok(())
+}
+
+// Record the handles of verified input ciphertexts produced by a ZK proof
+// against the host-chain block where the VerifyProofRequest was emitted.
+// Input handles do not flow through the scheduler and so are not represented
+// as `computations` rows; they live here purely so that block-level state
+// hashing can find every ciphertext that contributes to a given block.
+pub(crate) async fn insert_input_handles(
+    db_txn: &mut Transaction<'_, Postgres>,
+    cts: &[Ciphertext],
+    block_number: i64,
+) -> Result<(), ExecutionError> {
+    if cts.is_empty() {
+        return Ok(());
+    }
+    let handles: Vec<Vec<u8>> = cts.iter().map(|ct| ct.handle.clone()).collect();
+    sqlx::query(
+        r#"
+        INSERT INTO input_handles (handle, block_number)
+        SELECT h, $2
+        FROM unnest($1::BYTEA[]) AS t(h)
+        ON CONFLICT (handle) DO NOTHING
+        "#,
+    )
+    .bind(&handles)
+    .bind(block_number)
     .execute(db_txn.as_mut())
     .await?;
     Ok(())
