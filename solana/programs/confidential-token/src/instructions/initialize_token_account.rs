@@ -36,6 +36,15 @@ pub struct InitializeTokenAccount<'info> {
     /// CHECK: validated against the canonical `["hcu-authority", mint]` PDA and program-signed
     /// into the host CPI as this mint's HCU metering identity.
     pub hcu_authority: UncheckedAccount<'info>,
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// canonical `["hcu-block-meter", hcu_authority]` PDA. Supplied by an untrusted mint under a
+    /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
+    #[account(mut)]
+    pub hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// canonical `["hcu-trusted", hcu_authority]` PDA. Present + valid bypasses the cap; absent
+    /// means the mint is metered.
+    pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
 /// Initializes a token account and creates its initial confidential balance handle.
@@ -117,11 +126,17 @@ pub fn initialize_token_account(
             host_config: &ctx.accounts.host_config,
             compute_authority,
             system_program: &ctx.accounts.system_program,
-            // The meter and trust witness stay un-threaded here; behavior-neutral while the
-            // host cap is unrestricted (its default). Threading them is a separate rollout step.
             hcu_authority: fhe::HcuAuthority::for_mint(&ctx.accounts.hcu_authority, mint_key)?,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
+            hcu_block_meter: ctx
+                .accounts
+                .hcu_block_meter
+                .as_ref()
+                .map(|account| account.to_account_info()),
+            hcu_trusted_app_record: ctx
+                .accounts
+                .hcu_trusted_app_record
+                .as_ref()
+                .map(|account| account.to_account_info()),
         },
         accounts: &eval_accounts,
         plan,

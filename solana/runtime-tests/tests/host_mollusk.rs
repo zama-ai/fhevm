@@ -6260,9 +6260,10 @@ fn mollusk_fhe_eval_wrong_app_meter_is_rejected() {
 }
 
 #[test]
-fn mollusk_fhe_eval_squatted_meter_is_rejected() {
-    // A pre-squatted (system-owned, non-empty) account at the meter PDA fails lazy-creation
-    // rather than being adopted as a counter.
+fn mollusk_fhe_eval_squatted_meter_with_data_is_rejected() {
+    // A pre-squatted (system-owned, non-empty DATA) account at the meter PDA fails lazy-creation
+    // rather than being adopted as a counter. An attacker cannot actually put data on the PDA
+    // (allocate needs the PDA's signature), so this guards against a genuinely malformed account.
     let fixture = EvalFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
     fixture.seed_account(
@@ -6281,6 +6282,81 @@ fn mollusk_fhe_eval_squatted_meter_is_rejected() {
         .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
     assert_instruction_custom_error(&result, host::errors::ZamaHostError::PdaCreationMismatch);
     fixture.assert_no_output();
+}
+
+#[test]
+fn mollusk_fhe_eval_prefunded_empty_meter_is_created_not_griefed() {
+    // Anti-griefing: the meter PDA address is predictable, so a third party can pre-fund it with a
+    // bare lamport transfer (system-owned, EMPTY data) before the app's first metered frame. The
+    // fused `create_account` would abort on any pre-funded target (AccountAlreadyInUse) and wedge
+    // every metered frame forever; the fund-shortfall+allocate+assign path absorbs the donation and
+    // creates the meter normally.
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let meter_pda = fixture.meter_pda();
+    fixture.seed_account(meter_pda, system_account(1));
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
+    assert_eq!(meter.app, fixture.block_cap_app());
+    assert_eq!(meter.used_hcu, FIXTURE_FRAME_HCU);
+    // The donated lamport was topped up to at least rent-exempt.
+    let lamports = fixture
+        .context
+        .account_store
+        .borrow()
+        .get(&meter_pda)
+        .expect("meter account")
+        .lamports;
+    assert!(
+        lamports
+            >= anchor_lang::prelude::Rent::default()
+                .minimum_balance(8 + host::HcuBlockMeter::SPACE)
+    );
+    assert!(read_acl_record(&fixture.context, fixture.output_acl_record).is_some());
+}
+
+#[test]
+fn mollusk_fhe_eval_overfunded_empty_meter_is_created_preserving_surplus() {
+    // A donation far above rent is equally harmless: no top-up transfer occurs, the meter is created,
+    // and the surplus lamports are preserved (the account is simply more-than-rent-exempt).
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let meter_pda = fixture.meter_pda();
+    let donated = 5_000_000_000u64;
+    fixture.seed_account(meter_pda, system_account(donated));
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(Some(meter_pda), None));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
+    assert_eq!(meter.used_hcu, FIXTURE_FRAME_HCU);
+    let lamports = fixture
+        .context
+        .account_store
+        .borrow()
+        .get(&meter_pda)
+        .expect("meter account")
+        .lamports;
+    assert_eq!(lamports, donated);
+}
+
+#[test]
+fn mollusk_fhe_eval_prefunded_output_acl_is_created_not_griefed() {
+    // The same anti-griefing property for the durable output-ACL path (`create_pda_strict`): its
+    // address is predictable too, so a pre-funded (system-owned, empty) donation at the output PDA
+    // must not block the frame. Asserted under the unrestricted cap so the meter path is inert and
+    // only the output-ACL creation is exercised.
+    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    fixture.seed_account(fixture.output_acl_record, system_account(1));
+
+    let result = fixture
+        .context
+        .process_instruction(&fixture.block_cap_instruction(None, None));
+    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
+    assert!(read_acl_record(&fixture.context, fixture.output_acl_record).is_some());
 }
 
 #[test]

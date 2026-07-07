@@ -697,6 +697,8 @@ fn consume_amount(
                 host_config,
                 system_program: system_program::ID,
                 hcu_authority: confidential_token::hcu_authority_address(mint).0,
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
                 event_authority: token_evt,
                 program: confidential_token::ID,
             })
@@ -725,6 +727,8 @@ fn consume_amount(
             host_config,
             system_program: system_program::ID,
             hcu_authority: confidential_token::hcu_authority_address(mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: token_evt,
             program: confidential_token::ID,
         })
@@ -805,6 +809,8 @@ fn consume_wrap(
                 host_config,
                 system_program: system_program::ID,
                 hcu_authority: confidential_token::hcu_authority_address(mint).0,
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
                 event_authority: token_evt,
                 program: confidential_token::ID,
             })
@@ -873,6 +879,8 @@ fn consume_wrap(
             token_program: spl_token_id,
             system_program: system_program::ID,
             hcu_authority: confidential_token::hcu_authority_address(mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: token_evt,
             program: confidential_token::ID,
         })
@@ -1013,6 +1021,8 @@ fn consume_burn(
             host_config,
             system_program: system_program::ID,
             hcu_authority: confidential_token::hcu_authority_address(mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: token_evt,
             program: confidential_token::ID,
         })
@@ -1300,6 +1310,8 @@ fn initialize_mint(
             host_config,
             system_program: system_program::ID,
             hcu_authority: confidential_token::hcu_authority_address(mint_pk).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: token_event_authority,
             program: confidential_token::ID,
         })

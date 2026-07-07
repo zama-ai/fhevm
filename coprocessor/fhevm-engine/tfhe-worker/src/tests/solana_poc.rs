@@ -874,6 +874,8 @@ fn token_fixture_with_initial_balances(
                 host_config,
                 system_program: system_program::ID,
                 hcu_authority: hcu_authority_address(token_program_id, mint.pubkey()),
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
                 event_authority: event_authority(token_program_id),
                 program: token_program_id,
             }
@@ -973,6 +975,8 @@ fn initialize_token_account(svm: &mut LiteSVM, owner: &Keypair, init: TokenAccou
                 host_config: init.host_config,
                 system_program: system_program::ID,
                 hcu_authority: hcu_authority_address(init.token_program_id, init.mint),
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
                 event_authority: event_authority(init.token_program_id),
                 program: init.token_program_id,
             }

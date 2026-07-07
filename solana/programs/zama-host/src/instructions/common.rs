@@ -1,7 +1,10 @@
 //! Shared account contexts and validation helpers for instruction modules.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{program::invoke_signed, system_instruction, system_program};
+use anchor_lang::solana_program::{
+    program::{invoke, invoke_signed},
+    system_instruction, system_program,
+};
 
 use crate::{
     errors::ZamaHostError,
@@ -658,12 +661,7 @@ pub(super) fn create_pda_if_needed<'info>(
     );
     require!(account.data_is_empty(), ZamaHostError::PdaCreationMismatch);
     require!(!account.executable, ZamaHostError::PdaCreationMismatch);
-    let rent = Rent::get()?.minimum_balance(space);
-    invoke_signed(
-        &system_instruction::create_account(payer.key, account.key, rent, space as u64, &crate::ID),
-        &[payer.clone(), account.clone(), system_program.clone()],
-        &[seeds],
-    )?;
+    let rent = fund_allocate_assign(payer, account, system_program, space, seeds)?;
     require_keys_eq!(
         *account.owner,
         crate::ID,
@@ -679,6 +677,48 @@ pub(super) fn create_pda_if_needed<'info>(
         ZamaHostError::PdaCreationMismatch
     );
     Ok(())
+}
+
+/// Creates a program-owned PDA at `account` in a way that tolerates a pre-existing lamport balance.
+///
+/// The seeds are predictable for several PDAs (the HCU block meter, ACL permission/record accounts),
+/// so a third party can pre-fund the address with a bare `transfer` before the program first creates
+/// it. `system_instruction::create_account` refuses any non-zero-lamport target (`AccountAlreadyInUse`),
+/// which would let that donation permanently block creation — a griefing DoS. Splitting the fused
+/// primitive into transfer-shortfall + `allocate` + `assign` sidesteps it: an attacker can only add
+/// lamports (they cannot sign for the PDA to `allocate`/`assign` it), and `allocate`/`assign` ignore
+/// the balance. Returns the rent-exempt minimum so callers can assert `lamports() >= rent`.
+fn fund_allocate_assign<'info>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    space: usize,
+    seeds: &[&[u8]],
+) -> Result<u64> {
+    let rent = Rent::get()?.minimum_balance(space);
+    // Top up only the shortfall. A donation of `rent` or more makes this a no-op; the surplus is
+    // harmless (the account is simply more-than-rent-exempt). The transfer is authorized by `payer`,
+    // already a transaction signer, so no PDA seeds are needed for it.
+    let balance = account.lamports();
+    if balance < rent {
+        invoke(
+            &system_instruction::transfer(payer.key, account.key, rent - balance),
+            &[payer.clone(), account.clone(), system_program.clone()],
+        )?;
+    }
+    // Both allocate and assign are indifferent to the lamport balance; each requires the PDA to
+    // "sign", which only this program can do via `seeds`, so a squatter cannot perform them.
+    invoke_signed(
+        &system_instruction::allocate(account.key, space as u64),
+        &[account.clone(), system_program.clone()],
+        &[seeds],
+    )?;
+    invoke_signed(
+        &system_instruction::assign(account.key, &crate::ID),
+        &[account.clone(), system_program.clone()],
+        &[seeds],
+    )?;
+    Ok(rent)
 }
 
 pub(super) fn create_pda_strict<'info>(
@@ -702,12 +742,10 @@ pub(super) fn create_pda_strict<'info>(
         !account.executable,
         ZamaHostError::FheEvalOutputAlreadyInitialized
     );
-    let rent = Rent::get()?.minimum_balance(space);
-    invoke_signed(
-        &system_instruction::create_account(payer.key, account.key, rent, space as u64, &crate::ID),
-        &[payer.clone(), account.clone(), system_program.clone()],
-        &[seeds],
-    )?;
+    // Predictable output-ACL addresses are equally pre-fundable, so create tolerant of a donated
+    // balance (see `fund_allocate_assign`); a lamport donation is not "initialization", so the
+    // strict system-owned/empty entry guards above still hold the real no-overwrite invariant.
+    let rent = fund_allocate_assign(payer, account, system_program, space, seeds)?;
     require_keys_eq!(
         *account.owner,
         crate::ID,
