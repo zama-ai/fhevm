@@ -45,7 +45,7 @@ async fn test_decryption_context_not_found(
     #[case] event_type: TestEventType,
 ) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::default()
-        .with_db(DbInstance::setup().await?)
+        .with_db(DbInstance::setup_external().await?)
         .build();
 
     const MAX_DECRYPTION_ATTEMPTS: u16 = 3;
@@ -152,7 +152,7 @@ async fn test_decryption_context_not_found(
 #[tokio::test]
 async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::default()
-        .with_db(DbInstance::setup().await?)
+        .with_db(DbInstance::setup_external().await?)
         .build();
 
     const MAX_DECRYPTION_ATTEMPTS: u16 = 3;
@@ -255,7 +255,7 @@ async fn setup_context_manager(
     asserter: Asserter,
 ) -> anyhow::Result<(TestInstance, DbContextManager<impl Provider + Clone>)> {
     let test_instance = TestInstanceBuilder::default()
-        .with_db(DbInstance::setup().await?)
+        .with_db(DbInstance::setup_external().await?)
         .build();
     let mock_provider = ProviderBuilder::new()
         .disable_recommended_fillers()

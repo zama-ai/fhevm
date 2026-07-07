@@ -101,20 +101,21 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
+        with:
+          tool: cargo-nextest
+
       - name: Formatting
         run: cargo fmt -- --check
 
       - name: Linting
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      # `make test-ci` starts the shared Postgres server (waiting until healthy),
+      # runs the tests, then tears the server down.
       - name: Run Tests
         env:
           BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
           CARGO_INCREMENTAL: "0"
-          CARGO_PROFILE_DEV_DEBUG: line-tables-only
-          CARGO_PROFILE_TEST_DEBUG: line-tables-only
-          # Disable rust-lld's internal parallelism so concurrent links
-          # don't multiplicatively oversubscribe RAM/tmpfs.
-          RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
-        run: |
-          RUST_BACKTRACE=full cargo test --jobs 16
+        run: make test-ci
