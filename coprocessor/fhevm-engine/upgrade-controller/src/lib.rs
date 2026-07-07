@@ -16,6 +16,9 @@ use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Level};
 
+mod coprocessor_tables;
+pub use coprocessor_tables::{CoprocessorTable, COPROCESSOR_TABLES};
+
 pub const UPGRADE_ACTIVATED_CHANNEL: &str =
     fhevm_engine_common::gcs_activation::EVENT_UPGRADE_ACTIVATED;
 /// Must stay in sync with `consensus_detector::UNANIMITY_CONSENSUS_CHANNEL`.
@@ -319,68 +322,24 @@ pub async fn handle_upgrade_activated(
     Ok(())
 }
 
-/// A `public` table cloned into the `gcs` schema for the dry-run.
-///
-/// `conflict_cols` is the `ON CONFLICT` target [`execute_cutover`] uses when
-/// merging the table's GCS rows back into `public` (see [`merge_gcs_table`]); it
-/// must name an existing unique / primary-key constraint on `public.<name>`. An
-/// **empty** slice means the table is intentionally *not* merged — it is dropped
-/// with the schema because its rows are either already in `public` via the
-/// always-live blue stack (deterministically derived from on-chain events) or
-/// transient runtime coordination consumed before cutover.
-#[derive(Debug, Clone, Copy)]
-pub struct GcsTable {
-    pub name: &'static str,
-    pub conflict_cols: &'static [&'static str],
-}
-
-/// Tables that the GCS stack writes to during the dry-run phase. Each gets
-/// duplicated into the `gcs` schema with `CREATE TABLE gcs.X (LIKE public.X
-/// INCLUDING ALL)` at upgrade-controller startup (gated on `gcs_mode`); those
-/// with a non-empty [`GcsTable::conflict_cols`] are merged back into `public.X`
-/// at cutover.
-///
-/// `INCLUDING ALL` copies defaults, identity, constraints (incl. PKs/uniques),
-/// generated columns, indexes, statistics, storage, comments, and compression
-/// — but NOT triggers, rules, foreign keys, or ownership.
-///
-/// To add a new table to the dry-run, list it here (set `conflict_cols` to its
-/// PK if it must be merged at cutover, or `&[]` if it should be dropped).
-pub const GCS_DUPLICATED_TABLES: &[GcsTable] = &[
-    GcsTable { name: "ciphertexts", conflict_cols: &["handle", "ciphertext_version"] },
-    GcsTable { name: "ciphertexts128", conflict_cols: &["tenant_id", "handle"] },
-    // Green-wins overwrite propagates GCS's NULL digests into public, re-arming
-    // the sns-worker resubmit loop to backfill S3 after cutover. It also resets
-    // txn_*/s3_* tracking, so already-sent handles are re-published on-chain.
-    GcsTable { name: "ciphertext_digest", conflict_cols: &["handle"] },
-    GcsTable { name: "computations", conflict_cols: &["output_handle", "transaction_id"] },
-    GcsTable { name: "pbs_computations", conflict_cols: &["tenant_id", "handle"] },
-    GcsTable { name: "state_hash", conflict_cols: &[] },
-    GcsTable { name: "input_handles", conflict_cols: &[] },
-    // Green-wins can resurrect rows the blue sender deleted after sending,
-    // re-broadcasting verifyProofResponse (contract idempotency absorbs it).
-    GcsTable { name: "verify_proofs", conflict_cols: &["zk_proof_id"] },
-    GcsTable { name: "transactions", conflict_cols: &[] },
-    GcsTable { name: "allowed_handles", conflict_cols: &[] },
-    GcsTable { name: "host_chain_blocks_valid", conflict_cols: &[] },
-    GcsTable { name: "dependence_chain", conflict_cols: &["dependence_chain_id"] },
-    GcsTable { name: "kms_key_activation_events", conflict_cols: &[] },
-    GcsTable { name: "kms_crs_activation_events", conflict_cols: &[] },
-    GcsTable { name: "gw_listener_last_block", conflict_cols: &[] },
-];
-
 /// Create the versioned GCS schema (e.g. `"gcs-0.14.0"`) and a
-/// `CREATE TABLE <schema>.X (LIKE public.X INCLUDING ALL)` for every table
-/// listed in [`GCS_DUPLICATED_TABLES`]. The schema name is [`GCS_SCHEMA_QUOTED`]
-/// so it stays in lockstep with the GCS services' `search_path`. Idempotent.
+/// `CREATE TABLE <schema>.X (LIKE public.X INCLUDING ALL)` for every
+/// [`COPROCESSOR_TABLES`] entry with `duplicated = true`. The schema name is
+/// [`GCS_SCHEMA_QUOTED`] so it stays in lockstep with the GCS services'
+/// `search_path`. Idempotent.
 pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
     let mut tx = pool.begin().await?;
 
     let create_schema = format!("CREATE SCHEMA IF NOT EXISTS {GCS_SCHEMA_QUOTED}");
     sqlx::query(&create_schema).execute(&mut *tx).await?;
 
-    for table in GCS_DUPLICATED_TABLES {
-        let name = table.name;
+    let duplicated: Vec<&str> = COPROCESSOR_TABLES
+        .iter()
+        .filter(|t| t.duplicated)
+        .map(|t| t.name)
+        .collect();
+
+    for name in &duplicated {
         let sql = format!(
             "CREATE TABLE IF NOT EXISTS {GCS_SCHEMA_QUOTED}.{name} \
              (LIKE public.{name} INCLUDING ALL)"
@@ -391,7 +350,7 @@ pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
     tx.commit().await?;
     info!(
         schema = GCS_SCHEMA_QUOTED,
-        tables = ?GCS_DUPLICATED_TABLES,
+        tables = ?duplicated,
         "GCS schema created with empty table duplicates"
     );
     Ok(())
@@ -806,7 +765,7 @@ async fn transition_to_gw_dry_run_started(pool: &Pool<Postgres>) -> Result<(), E
 /// Merge every row from `gcs.<table>` into `public.<table>`, letting the GCS
 /// rows win on collisions (`ON CONFLICT (<conflict_cols>) DO UPDATE`) — GCS is
 /// the canonical writer for its dry-run window. Driven by [`execute_cutover`]
-/// over the [`GCS_DUPLICATED_TABLES`] entries that carry a `conflict_cols`.
+/// over the [`COPROCESSOR_TABLES`] entries where [`CoprocessorTable::is_merged`].
 ///
 /// The column list is read from the live catalog rather than hard-coded: these
 /// tables have accreted many columns across migrations, and a stale
@@ -941,8 +900,8 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     //    schema. Each merge lets the GCS rows win on PK collisions (GCS is the
     //    canonical writer for its dry-run window).
     info!(stack_version, "cutover: merging gcs tables into public");
-    for table in GCS_DUPLICATED_TABLES {
-        if table.conflict_cols.is_empty() {
+    for table in COPROCESSOR_TABLES {
+        if !table.is_merged() {
             continue;
         }
         merge_gcs_table(&mut tx, table.name, table.conflict_cols).await?;
