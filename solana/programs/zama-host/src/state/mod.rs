@@ -9,9 +9,7 @@ use solana_keccak_hasher::hashv as keccak_hashv;
 use solana_sha256_hasher::hashv;
 use solana_sysvar::get_sysvar;
 
-use crate::constants::{
-    COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER, RANDOM_SEED_DOMAIN_SEPARATOR,
-};
+use crate::constants::{COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER};
 use crate::errors::ZamaHostError;
 
 pub mod acl_permission;
@@ -169,6 +167,15 @@ pub enum FheEvalStep {
     },
     /// Random ciphertext step.
     Rand {
+        /// FHE type byte embedded in the output handle.
+        fhe_type: u8,
+        /// Whether this output remains instruction-local or is bound into durable ACL state.
+        output: FheEvalOutput,
+    },
+    /// Bounded random ciphertext step.
+    RandBounded {
+        /// Exclusive upper bound encoded as a 256-bit big-endian integer.
+        upper_bound: [u8; 32],
         /// FHE type byte embedded in the output handle.
         fhe_type: u8,
         /// Whether this output remains instruction-local or is bound into durable ACL state.
@@ -586,200 +593,6 @@ pub fn acl_nonce_key(
     .to_bytes()
 }
 
-/// Derives an unbound binary-op handle using the current slot context.
-///
-/// This helper uses [`SOLANA_POC_CHAIN_ID`]. CPI callers that have a
-/// [`HostConfig`] should prefer [`computed_binary_handle_for_current_slot_with_chain_id`].
-pub fn computed_binary_handle_for_current_slot(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-) -> Result<[u8; 32]> {
-    computed_binary_handle_for_current_slot_with_chain_id(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        SOLANA_POC_CHAIN_ID,
-    )
-}
-
-/// Derives an unbound binary-op handle using the current slot context and chain id.
-pub fn computed_binary_handle_for_current_slot_with_chain_id(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-) -> Result<[u8; 32]> {
-    computed_binary_handle_for_current_slot_with_chain_id_and_test_fallback(
-        op, lhs, rhs, scalar, fhe_type, chain_id, false,
-    )
-}
-
-/// Derives an unbound binary-op handle, optionally using the local-test zero
-/// fallback when explicitly allowed by host config.
-pub fn computed_binary_handle_for_current_slot_with_chain_id_and_test_fallback(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    allow_test_zero: bool,
-) -> Result<[u8; 32]> {
-    let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash_with_test_fallback(clock.slot, allow_test_zero)?;
-    Ok(computed_binary_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        clock.unix_timestamp,
-    ))
-}
-
-/// Derives a nonce-bound binary-op output handle using the current slot context.
-///
-/// This helper uses [`SOLANA_POC_CHAIN_ID`]. CPI callers that have a
-/// [`HostConfig`] should prefer
-/// [`computed_bound_binary_handle_for_current_slot_with_chain_id`].
-pub fn computed_bound_binary_handle_for_current_slot(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    computed_bound_binary_handle_for_current_slot_with_chain_id(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        SOLANA_POC_CHAIN_ID,
-        output_nonce_key,
-        output_nonce_sequence,
-    )
-}
-
-/// Derives a nonce-bound binary-op output handle using the current slot context and chain id.
-pub fn computed_bound_binary_handle_for_current_slot_with_chain_id(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    computed_bound_binary_handle_for_current_slot_with_chain_id_and_test_fallback(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        output_nonce_key,
-        output_nonce_sequence,
-        false,
-    )
-}
-
-/// Derives a nonce-bound binary-op output handle, optionally using the
-/// local-test zero fallback when explicitly allowed by host config.
-#[allow(clippy::too_many_arguments)]
-pub fn computed_bound_binary_handle_for_current_slot_with_chain_id_and_test_fallback(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-    allow_test_zero: bool,
-) -> Result<[u8; 32]> {
-    let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash_with_test_fallback(clock.slot, allow_test_zero)?;
-    Ok(computed_bound_binary_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        clock.unix_timestamp,
-        output_nonce_key,
-        output_nonce_sequence,
-    ))
-}
-
-/// Derives a nonce-bound ternary-op output handle using the current slot context and chain id.
-pub fn computed_bound_ternary_handle_for_current_slot_with_chain_id(
-    op: FheTernaryOpCode,
-    control: [u8; 32],
-    if_true: [u8; 32],
-    if_false: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    computed_bound_ternary_handle_for_current_slot_with_chain_id_and_test_fallback(
-        op,
-        control,
-        if_true,
-        if_false,
-        fhe_type,
-        chain_id,
-        output_nonce_key,
-        output_nonce_sequence,
-        false,
-    )
-}
-
-/// Derives a nonce-bound ternary-op output handle, optionally using the
-/// local-test zero fallback when explicitly allowed by host config.
-#[allow(clippy::too_many_arguments)]
-pub fn computed_bound_ternary_handle_for_current_slot_with_chain_id_and_test_fallback(
-    op: FheTernaryOpCode,
-    control: [u8; 32],
-    if_true: [u8; 32],
-    if_false: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-    allow_test_zero: bool,
-) -> Result<[u8; 32]> {
-    let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash_with_test_fallback(clock.slot, allow_test_zero)?;
-    Ok(computed_bound_ternary_handle(
-        op,
-        control,
-        if_true,
-        if_false,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        clock.unix_timestamp,
-        output_nonce_key,
-        output_nonce_sequence,
-    ))
-}
-
 /// Derives an instruction-local eval handle using the current slot context.
 ///
 /// This helper uses [`SOLANA_POC_CHAIN_ID`]. CPI callers that have a
@@ -949,147 +762,6 @@ fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_t
     result[22..30].copy_from_slice(chain_id_bytes);
     result[30] = fhe_type;
     result[31] = HANDLE_VERSION;
-}
-
-/// Derives an unbound binary-op handle from explicit slot entropy.
-pub fn computed_binary_handle(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-) -> [u8; 32] {
-    let op_byte = [op.as_u8()];
-    let scalar_byte = [u8::from(scalar)];
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = keccak_hashv(&[
-        COMPUTATION_DOMAIN_SEPARATOR,
-        &op_byte,
-        &lhs,
-        &rhs,
-        &scalar_byte,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
-}
-
-/// Derives a nonce-bound binary-op output handle from explicit slot entropy.
-///
-/// Binding the handle to `(output_nonce_key, output_nonce_sequence)` prevents
-/// two durable output ACL records from intentionally storing the same computed
-/// handle for the same operation.
-pub fn computed_bound_binary_handle(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let base_result = computed_binary_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    );
-    let mut result = base_result;
-    result[..21].copy_from_slice(
-        &keccak_hashv(&[
-            b"FHE_bound_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
-    );
-    result
-}
-
-/// Derives an unbound ternary-op handle from explicit slot entropy.
-pub fn computed_ternary_handle(
-    op: FheTernaryOpCode,
-    control: [u8; 32],
-    if_true: [u8; 32],
-    if_false: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-) -> [u8; 32] {
-    let op_byte = [op.as_u8()];
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = keccak_hashv(&[
-        COMPUTATION_DOMAIN_SEPARATOR,
-        &op_byte,
-        &control,
-        &if_true,
-        &if_false,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
-}
-
-/// Derives a nonce-bound ternary-op output handle from explicit slot entropy.
-pub fn computed_bound_ternary_handle(
-    op: FheTernaryOpCode,
-    control: [u8; 32],
-    if_true: [u8; 32],
-    if_false: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let base_result = computed_ternary_handle(
-        op,
-        control,
-        if_true,
-        if_false,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    );
-    let mut result = base_result;
-    result[..21].copy_from_slice(
-        &keccak_hashv(&[
-            b"FHE_bound_ternary_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
-    );
-    result
 }
 
 /// Derives an instruction-local eval operation handle from explicit slot entropy.
@@ -1359,64 +1031,6 @@ pub fn computed_bound_eval_rand_seed(
         b"FHE_bound_eval_seed",
         &context_id,
         &op_index_bytes,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-        &output_nonce_key,
-        &sequence_bytes,
-    ])
-    .to_bytes();
-    let mut seed = [0; 16];
-    seed.copy_from_slice(&hash[..16]);
-    seed
-}
-
-/// Derives a trivial-encrypt handle from explicit slot entropy.
-pub fn computed_trivial_handle(
-    plaintext: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let fhe_type_bytes = [fhe_type];
-    let mut result = keccak_hashv(&[
-        COMPUTATION_DOMAIN_SEPARATOR,
-        &[2],
-        &plaintext,
-        &fhe_type_bytes,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-        &output_nonce_key,
-        &sequence_bytes,
-    ])
-    .to_bytes();
-
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
-}
-
-/// Derives the random seed emitted for a durable random-handle birth.
-pub fn computed_rand_seed(
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 16] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let hash = keccak_hashv(&[
-        RANDOM_SEED_DOMAIN_SEPARATOR,
         crate::ID.as_ref(),
         &chain_id_bytes,
         &previous_bank_hash,

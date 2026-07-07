@@ -569,7 +569,7 @@ public-receivable token should evaluate the staged inbound-credit profile (pendi
 recipient timing) or otherwise predeclare/lock the recipient's next balance ACL sequence so the
 inbound-write surface is bounded.
 
-## DD-017: Role-Aware `fhe_eval` And Per-Op Bind Instructions Supersede The RFC-024 execute_frame Frame
+## DD-017: Role-Aware `fhe_eval` Supersedes The RFC-024 execute_frame Frame
 
 Status: adopted — note: RFC-024 (tech-spec #448) is still OPEN/unmerged, so this DD documents a
 deliberate divergence from a *draft* execute_frame sketch, not a supersession of an accepted spec
@@ -582,12 +582,10 @@ host." The implementation diverged from that sketch and the reversal was not pre
 
 Decision:
 
-The host exposes per-handle-class binding instructions — `fhe_binary_op_and_bind_output`,
-`fhe_ternary_op_and_bind_output`, `trivial_encrypt_and_bind`, `fhe_rand_and_bind`,
-`fhe_rand_bounded_and_bind` — plus one batched eval instruction for composed plans: `fhe_eval`. The
-eval instruction accepts mixed binary/ternary, trivial-encrypt, rand, and verified-input steps with
-instruction-local transients. It is the practical successor to `execute_frame`. (Input birth is not a
-separate instruction: external inputs enter through the `fhe_eval` `VerifiedInput` operand, DD-007.) Every durable-output path takes a signer witness: either the fixed
+The host exposes one compute-producing instruction: `fhe_eval`. The eval instruction accepts mixed
+binary/ternary, trivial-encrypt, rand, bounded-rand, and verified-input steps with instruction-local
+transients. It is the practical successor to `execute_frame`. (Input birth is not a separate
+instruction: external inputs enter through the `fhe_eval` `VerifiedInput` operand, DD-007.) Every durable-output path takes a signer witness: either the fixed
 `app_account_authority: Signer` account, or an explicit per-output authority account in
 `remaining_accounts` that must be a signer and match `output_app_account`. The host then validates the
 metadata with `assert_output_acl_metadata` (`instructions/common.rs`). This reinstates and now
@@ -614,9 +612,9 @@ Rationale:
 A validated `app_account_authority == output_app_account` signer makes the app account that receives
 durable ACL output prove control via a Solana signature, rather than trusting an unsigned
 `authorized_app_accounts[]` declaration. Per-output signer witnesses extend the same guarantee to
-multi-app evals without making authorization a free-form unsigned list. Per-class instructions remain
-for compatibility and individually testable handle-birth paths; `fhe_eval` provides batched multi-step
-composition with transient/durable outputs when a single CPI is required.
+multi-app evals without making authorization a free-form unsigned list. Centralizing compute in
+`fhe_eval` also centralizes app identity, HCU metering, event replay, and listener reconstruction for
+every FHE operation.
 
 Consequences:
 

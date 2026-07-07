@@ -153,10 +153,10 @@ SDK `sdk/js-sdk/src/core/coprocessor/SolanaZkProof-p.ts`.
 
 **EVM:** `FHEVMExecutor` — one op per external call, gas + `HCULimit` for per-op/tx/block metering.
 **Solana:** `fhe_eval` is a bounded batched evaluator (`MAX_FHE_EVAL_OPS=16`, mixed
-binary/ternary/trivial-encrypt/rand steps + `VerifiedInput` operands + `AllowedLocal` transients)
+binary/ternary/trivial-encrypt/rand/bounded-rand steps + `VerifiedInput` operands + `AllowedLocal` transients)
 — Solana-native batching that respects the CPI depth budget (constraint 4). Compute identity is an
-explicit `compute_subject: Signer` (constraint 1). Per-op standalone instructions
-(`fhe_binary_op*`, `fhe_rand*`, `trivial_encrypt_and_bind`) exist alongside.
+explicit `compute_subject: Signer` (constraint 1). Compute-producing host work is routed through
+`fhe_eval`; ACL, material, KMS, and admin endpoints remain separate non-compute instructions.
 
 | Capability | Status |
 |---|---|

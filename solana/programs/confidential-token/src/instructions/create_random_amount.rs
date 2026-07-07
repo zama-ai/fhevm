@@ -82,72 +82,55 @@ fn create_random_amount_inner(
         zama_fhe::AccessPolicy::for_compute(ctx.accounts.compute_signer.key())
             .map_err(invalid_eval_plan)?,
     )?;
-    // Unbounded rand goes through the generic `EvalBuilder` + `fhe::eval` path
-    // used by every other token instruction. Bounded rand cannot: it maps to a
-    // dedicated host instruction (`fhe_rand_bounded_and_bind`) that the plan
-    // builder does not express, so it routes through `fhe::rand_bounded_u64`.
-    let handle = match upper_bound {
-        Some(upper_bound) => fhe::rand_bounded_u64(
-            fhe::BoundedRandU64 {
-                payer: &ctx.accounts.owner,
-                event_authority: &ctx.accounts.zama_event_authority,
-                zama_program: &ctx.accounts.zama_program,
-                host_config: &ctx.accounts.host_config,
-                compute_authority: fhe::ComputeAuthority::for_mint(
-                    &ctx.accounts.compute_signer,
-                    mint_key,
-                    ctx.bumps.compute_signer,
-                )?,
-                output_authority: fhe::OutputAuthority::transaction_signer(&ctx.accounts.owner),
-                output: amount_output,
-                system_program: &ctx.accounts.system_program,
-            },
-            zama_fhe::BoundedU64UpperBound::from_be_bytes(upper_bound)
-                .map_err(invalid_eval_plan)?,
-        )?,
-        None => {
-            let context_id = transfer_eval_context(
-                b"random-amount",
-                mint_key,
-                owner,
-                owner,
-                encrypted_value_label,
-                nonce_sequence,
-                nonce_sequence,
-            )?;
-            let mut builder =
-                zama_fhe::EvalBuilder::new(context_id, zama_fhe::EvalAppAuthority::new(owner));
-            builder
-                .rand_u64(amount_output.output())
-                .map_err(invalid_eval_plan)?;
-            let plan = builder.finish().map_err(invalid_eval_plan)?;
-            let compute_authority = fhe::ComputeAuthority::for_mint(
-                &ctx.accounts.compute_signer,
-                mint_key,
-                ctx.bumps.compute_signer,
-            )?;
-            let eval_accounts = fhe::EvalAccountSet::for_plan(
-                &plan,
-                [amount_output.account_info()],
-                [fhe::OutputAuthority::transaction_signer(
-                    &ctx.accounts.owner,
-                )],
-            )?;
-            fhe::eval(fhe::Eval {
-                context: fhe::EvalContext {
-                    payer: &ctx.accounts.owner,
-                    event_authority: &ctx.accounts.zama_event_authority,
-                    zama_program: &ctx.accounts.zama_program,
-                    host_config: &ctx.accounts.host_config,
-                    compute_authority,
-                    system_program: &ctx.accounts.system_program,
-                },
-                accounts: &eval_accounts,
-                plan,
-            })?;
-            amount_output.handle()?
-        }
+    let context_id = transfer_eval_context(
+        b"random-amount",
+        mint_key,
+        owner,
+        owner,
+        encrypted_value_label,
+        nonce_sequence,
+        nonce_sequence,
+    )?;
+    let mut builder =
+        zama_fhe::EvalBuilder::new(context_id, zama_fhe::EvalAppAuthority::new(owner));
+    match upper_bound {
+        Some(upper_bound) => builder
+            .rand_bounded_u64(
+                zama_fhe::BoundedU64UpperBound::from_be_bytes(upper_bound)
+                    .map_err(invalid_eval_plan)?,
+                amount_output.output(),
+            )
+            .map_err(invalid_eval_plan)?,
+        None => builder
+            .rand_u64(amount_output.output())
+            .map_err(invalid_eval_plan)?,
     };
+    let plan = builder.finish().map_err(invalid_eval_plan)?;
+    let compute_authority = fhe::ComputeAuthority::for_mint(
+        &ctx.accounts.compute_signer,
+        mint_key,
+        ctx.bumps.compute_signer,
+    )?;
+    let eval_accounts = fhe::EvalAccountSet::for_plan(
+        &plan,
+        [amount_output.account_info()],
+        [fhe::OutputAuthority::transaction_signer(
+            &ctx.accounts.owner,
+        )],
+    )?;
+    fhe::eval(fhe::Eval {
+        context: fhe::EvalContext {
+            payer: &ctx.accounts.owner,
+            event_authority: &ctx.accounts.zama_event_authority,
+            zama_program: &ctx.accounts.zama_program,
+            host_config: &ctx.accounts.host_config,
+            compute_authority,
+            system_program: &ctx.accounts.system_program,
+        },
+        accounts: &eval_accounts,
+        plan,
+    })?;
+    let handle = amount_output.handle()?;
     ctx.accounts.token_account.next_amount_nonce_sequence = nonce_sequence
         .checked_add(1)
         .ok_or(ConfidentialTokenError::AclNonceOverflow)?;

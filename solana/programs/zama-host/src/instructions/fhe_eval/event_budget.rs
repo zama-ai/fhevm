@@ -12,7 +12,8 @@ fn eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
         FheEvalStep::Binary { output, .. }
         | FheEvalStep::Ternary { output, .. }
         | FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. } => output,
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::RandBounded { output, .. } => output,
     }
 }
 
@@ -60,6 +61,12 @@ const TRIVIAL_ENCRYPT_EVENT_BYTES: usize = EVENT_VERSION_BYTES
     + EVENT_HANDLE_BYTES;
 const FHE_RAND_EVENT_BYTES: usize = EVENT_VERSION_BYTES
     + EVENT_PUBKEY_BYTES
+    + EVENT_SEED_BYTES
+    + EVENT_U8_BYTES
+    + EVENT_HANDLE_BYTES;
+const FHE_RAND_BOUNDED_EVENT_BYTES: usize = EVENT_VERSION_BYTES
+    + EVENT_PUBKEY_BYTES
+    + EVENT_HANDLE_BYTES
     + EVENT_SEED_BYTES
     + EVENT_U8_BYTES
     + EVENT_HANDLE_BYTES;
@@ -133,6 +140,7 @@ fn eval_step_event_payload_bytes(step: &FheEvalStep) -> usize {
         FheEvalStep::Ternary { .. } => FHE_TERNARY_OP_EVENT_BYTES,
         FheEvalStep::TrivialEncrypt { .. } => TRIVIAL_ENCRYPT_EVENT_BYTES,
         FheEvalStep::Rand { .. } => FHE_RAND_EVENT_BYTES,
+        FheEvalStep::RandBounded { .. } => FHE_RAND_BOUNDED_EVENT_BYTES,
     }
 }
 
