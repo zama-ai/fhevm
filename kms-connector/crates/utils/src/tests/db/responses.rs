@@ -194,6 +194,7 @@ pub async fn insert_rand_keygen_response(
 
     Ok(KeygenResponse {
         key_id,
+        is_migration: false,
         key_digests,
         signature,
     })

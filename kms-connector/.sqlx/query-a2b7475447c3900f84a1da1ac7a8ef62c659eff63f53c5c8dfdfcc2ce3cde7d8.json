@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO keygen_requests(prep_keygen_id, key_id, migration_key_id, extra_data, tx_hash, created_at, otlp_context)\n            VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a2b7475447c3900f84a1da1ac7a8ef62c659eff63f53c5c8dfdfcc2ce3cde7d8"
+}

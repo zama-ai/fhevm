@@ -28,7 +28,7 @@ describe('task:abortKeygen / task:abortCrsgen', function () {
   });
 
   it('moves a keygen from pending to aborted (not completed)', async function () {
-    await kmsGeneration.keygen(0, 0, 0);
+    await kmsGeneration.keygen(0);
     const prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1n;
     const keyId = KEY_COUNTER_BASE + 1n;
 

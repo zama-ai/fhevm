@@ -204,7 +204,7 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         ProtocolEventKind::PrepKeygen(r) => {
             (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
         }
-        ProtocolEventKind::Keygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
+        ProtocolEventKind::Keygen(r) => (r.requestId, "KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
         ProtocolEventKind::NewKmsContext(r) => (r.contextId, "NewMpcContext", "unreachable"),
         ProtocolEventKind::NewKmsEpoch(r) => (r.epochId, "NewMpcEpoch", "GetEpochResult"),
@@ -244,9 +244,9 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 preprocessing_id: request_id,
                 ..Default::default()
             }),
-            // Lock in the real digest type a FromExisting keygen returns:
+            // Lock in the real digest type a migration keygen returns:
             // the connector must parse "CompressedXofKeySet".
-            ProtocolEventKind::Keygen(r) if r.mode == 1 => then.pb(KeyGenResult {
+            ProtocolEventKind::Keygen(r) if r.requestKind == 1 => then.pb(KeyGenResult {
                 request_id,
                 key_digests: vec![GrpcKeyDigest {
                     key_type: "CompressedXofKeySet".to_string(),
@@ -362,16 +362,18 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             preprocessing_id: Some(u256_to_request_id(r.prepKeygenId)),
             ..Default::default()
         }),
-        ProtocolEventKind::Keygen(r) if r.mode == 1 => KmsGrpcResponse::Keygen(KeyGenResult {
-            request_id: Some(u256_to_request_id(r.keyId)),
-            key_digests: vec![GrpcKeyDigest {
-                key_type: "CompressedXofKeySet".to_string(),
-                digest: vec![0xC0, 0xFF, 0xEE],
-            }],
-            ..Default::default()
-        }),
+        ProtocolEventKind::Keygen(r) if r.requestKind == 1 => {
+            KmsGrpcResponse::Keygen(KeyGenResult {
+                request_id: Some(u256_to_request_id(r.requestId)),
+                key_digests: vec![GrpcKeyDigest {
+                    key_type: "CompressedXofKeySet".to_string(),
+                    digest: vec![0xC0, 0xFF, 0xEE],
+                }],
+                ..Default::default()
+            })
+        }
         ProtocolEventKind::Keygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
-            request_id: Some(u256_to_request_id(r.keyId)),
+            request_id: Some(u256_to_request_id(r.requestId)),
             ..Default::default()
         }),
         ProtocolEventKind::Crsgen(r) => KmsGrpcResponse::Crsgen(CrsGenResult {

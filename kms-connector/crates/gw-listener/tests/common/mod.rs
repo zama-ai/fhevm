@@ -161,7 +161,7 @@ pub async fn mock_event_on_gw(
             };
             let tx = test_instance
                 .kms_generation_contract()
-                .keygen(ParamsTypeDb::Test as u8, 0, U256::ZERO)
+                .keygen(ParamsTypeDb::Test as u8)
                 .send()
                 .await?;
             (tx, event.into())
@@ -180,15 +180,15 @@ pub async fn mock_event_on_gw(
             (tx, event.into())
         }
         TestEventType::CompressedKeyMigrationKeygen => {
-            let rand_migrated_key_id = rand_u256();
+            let rand_key_id = rand_u256();
             let event = KeygenRequest {
-                mode: 1,
-                existingKeyId: rand_migrated_key_id,
+                requestKind: 1,
+                keyId: rand_key_id,
                 ..Default::default()
             };
             let tx = test_instance
                 .kms_generation_contract()
-                .keygen(ParamsTypeDb::Test as u8, 1, rand_migrated_key_id)
+                .migrateKey(rand_key_id)
                 .send()
                 .await?;
             (tx, event.into())
@@ -209,7 +209,7 @@ pub async fn mock_event_on_gw(
         TestEventType::AbortKeygen => {
             test_instance
                 .kms_generation_contract()
-                .keygen(ParamsTypeDb::Test as u8, 0, U256::ZERO)
+                .keygen(ParamsTypeDb::Test as u8)
                 .send()
                 .await?
                 .get_receipt()
@@ -385,10 +385,10 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
-        ProtocolEventKind::Keygen(e) if e.mode == 1 => {
+        ProtocolEventKind::Keygen(e) if e.requestKind == 1 => {
             for r in rows {
-                if Some(e.existingKeyId)
-                    == r.try_get::<Option<[u8; 32]>, _>("migrated_key_id")?
+                if Some(e.keyId)
+                    == r.try_get::<Option<[u8; 32]>, _>("migration_key_id")?
                         .map(U256::from_le_bytes)
                 {
                     return Ok(());

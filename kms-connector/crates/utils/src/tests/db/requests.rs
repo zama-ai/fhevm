@@ -340,8 +340,8 @@ pub async fn insert_rand_prep_keygen_request(
     .await?;
 
     Ok(PrepKeygenRequest {
-        mode: 0,
-        existingKeyId: alloy::primitives::U256::ZERO,
+        requestKind: 0,
+        keyId: alloy::primitives::U256::ZERO,
         prepKeygenId: prep_keygen_request_id,
         paramsType: params_type as u8,
         extraData: extra_data.into(),
@@ -375,9 +375,9 @@ pub async fn insert_rand_keygen_request(
 
     Ok(KeygenRequest {
         prepKeygenId: prep_key_id,
+        requestId: key_id,
+        requestKind: 0,
         keyId: key_id,
-        mode: 0,
-        existingKeyId: alloy::primitives::U256::ZERO,
         extraData: extra_data.into(),
     })
 }
@@ -387,20 +387,20 @@ pub async fn insert_rand_compressed_key_migration_request(
     options: InsertRequestOptions,
 ) -> anyhow::Result<KeygenRequest> {
     let migration_request_id = options.id.unwrap_or_else(rand_u256);
-    let migrated_key_id = rand_u256();
+    let migration_key_id = rand_u256();
     let prep_key_id = rand_u256();
     let status = options.status.unwrap_or(OperationStatus::Pending);
     let extra_data = options.build_extra_data();
 
     sqlx::query!(
         "INSERT INTO keygen_requests(
-            prep_keygen_id, key_id, migrated_key_id, extra_data, created_at, otlp_context,
+            prep_keygen_id, key_id, migration_key_id, extra_data, created_at, otlp_context,
             already_sent, status
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
         prep_key_id.as_le_slice(),
         migration_request_id.as_le_slice(),
-        migrated_key_id.as_le_slice(),
+        migration_key_id.as_le_slice(),
         extra_data.to_vec() as Vec<u8>,
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
@@ -412,9 +412,9 @@ pub async fn insert_rand_compressed_key_migration_request(
 
     Ok(KeygenRequest {
         prepKeygenId: prep_key_id,
-        keyId: migration_request_id,
-        mode: 1,
-        existingKeyId: migrated_key_id,
+        requestId: migration_request_id,
+        requestKind: 1,
+        keyId: migration_key_id,
         extraData: extra_data.into(),
     })
 }

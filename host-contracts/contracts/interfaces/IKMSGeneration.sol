@@ -16,14 +16,11 @@ interface IKMSGeneration {
     }
 
     /**
-     * @notice How a keygen produces its material (RFC-029).
-     * Fresh mints a new key and activates it on consensus; FromExisting
-     * re-materializes compressed material for the existing active key and
-     * only publishes digests — it never activates anything.
+     * @notice Why a KMS keygen request was emitted.
      */
-    enum KeygenMode {
+    enum KeygenRequestKind {
         Fresh, // 0
-        FromExisting // 1
+        Migration // 1
     }
 
     /**
@@ -63,6 +60,16 @@ interface IKMSGeneration {
     }
 
     /**
+     * @notice One published material record for a key.
+     * @param kmsNodeStorageUrls The KMS node storage URLs associated with the consensus record.
+     * @param keyDigests The typed digests signed for the record.
+     */
+    struct KeyMaterial {
+        string[] kmsNodeStorageUrls;
+        KeyDigest[] keyDigests;
+    }
+
+    /**
      * @notice Emitted to trigger an FHE key generation preprocessing.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param paramsType The type of the parameters to use.
@@ -71,8 +78,8 @@ interface IKMSGeneration {
     event PrepKeygenRequest(
         uint256 prepKeygenId,
         ParamsType paramsType,
-        KeygenMode mode,
-        uint256 existingKeyId,
+        KeygenRequestKind requestKind,
+        uint256 keyId,
         bytes extraData
     );
 
@@ -87,10 +94,19 @@ interface IKMSGeneration {
     /**
      * @notice Emitted to trigger an FHE key generation.
      * @param prepKeygenId The ID of the preprocessing keygen request.
-     * @param keyId The ID of the key to generate.
+     * @param requestId The ID of the keygen request.
+     * @param keyId The durable key identity. For fresh keygen this is equal to `requestId`.
+     * For migration this is the existing key whose material is being augmented.
+     * @param requestKind Whether this is a fresh keygen or a migration material request.
      * @param extraData Additional context data.
      */
-    event KeygenRequest(uint256 prepKeygenId, uint256 keyId, KeygenMode mode, uint256 existingKeyId, bytes extraData);
+    event KeygenRequest(
+        uint256 prepKeygenId,
+        uint256 requestId,
+        KeygenRequestKind requestKind,
+        uint256 keyId,
+        bytes extraData
+    );
 
     /**
      * @notice Emitted when a KMS node has responded to a keygen request.
@@ -100,6 +116,20 @@ interface IKMSGeneration {
      * @param kmsTxSender The transaction sender of the KMS node that has called the function.
      */
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
+
+    /**
+     * @notice Emitted when a KMS node has responded to a migration material request.
+     * @param migrationRequestId The ID of the migration request.
+     * @param keyDigests The digests of the migrated key material.
+     * @param signature The signature of the KMS node that has responded.
+     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
+     */
+    event MigrationResponse(
+        uint256 migrationRequestId,
+        KeyDigest[] keyDigests,
+        bytes signature,
+        address kmsTxSender
+    );
 
     /**
      * @notice Emitted when the key is activated.
@@ -316,12 +346,6 @@ interface IKMSGeneration {
     error NotActiveKey(uint256 keyId);
 
     /**
-     * @notice Error thrown when a Fresh keygen is given a non-zero existing key.
-     * @param existingKeyId The unexpected existing key ID.
-     */
-    error InvalidExistingKeyId(uint256 existingKeyId);
-
-    /**
      * @notice Error thrown when a compressed-key materials response carries no
      * CompressedKeyset-typed digest.
      * @param migrationRequestId The migration keygen request ID.
@@ -330,15 +354,15 @@ interface IKMSGeneration {
 
     /**
      * @notice Trigger an FHE key generation.
-     * @param paramsType The type of FHE parameters to use. Ignored for
-     * FromExisting, which inherits the existing key's parameters.
-     * @param mode Fresh mints and (on consensus) activates a new key;
-     * FromExisting re-materializes compressed material for the active key
-     * (RFC-029) and only publishes digests via {CompressedKeyMaterialAdded}.
-     * @param existingKeyId The active key to re-materialize (FromExisting);
-     * MUST be 0 for Fresh.
+     * @param paramsType The type of FHE parameters to use.
      */
-    function keygen(ParamsType paramsType, KeygenMode mode, uint256 existingKeyId) external;
+    function keygen(ParamsType paramsType) external;
+
+    /**
+     * @notice Trigger compressed material production for an existing active key.
+     * @param keyId The durable key identity whose material is being augmented.
+     */
+    function migrateKey(uint256 keyId) external;
 
     /**
      * @notice Handle the response of a preprocessing keygen request.
@@ -356,11 +380,30 @@ interface IKMSGeneration {
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
 
     /**
+     * @notice Handle the response of a migration material request.
+     * @param migrationRequestId The ID of the migration request.
+     * @param keyDigests The digests of the migrated key material.
+     * @param signature The signature of the KMS node that has responded.
+     */
+    function migrationResponse(
+        uint256 migrationRequestId,
+        KeyDigest[] calldata keyDigests,
+        bytes calldata signature
+    ) external;
+
+    /**
      * @notice Get the compressed key materials published for a given key ID.
      * @param keyId The ID of the key.
      * @return The compressed key materials (storage URLs, key digests).
      */
     function getCompressedKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
+
+    /**
+     * @notice Get all published material records for a given key ID.
+     * @param keyId The ID of the key.
+     * @return The material records, each grouping storage URLs with the digests signed for them.
+     */
+    function getAllKeyMaterials(uint256 keyId) external view returns (KeyMaterial[] memory);
 
     /**
      * @notice Trigger a CRS generation.

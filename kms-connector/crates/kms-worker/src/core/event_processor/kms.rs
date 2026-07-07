@@ -77,18 +77,14 @@ where
             .await
             .map_err(RequestCheckError::record)?;
 
-        // RFC-029 FromExisting: keygen-from-existing reuses the secret key
-        // shares, generates the compressed keyset, keeps the existing key's
-        // tag, and copies the compressed material to the original key's
-        // storage slot so coprocessors download it from the existing path.
-        let from_existing = keygen_request.mode == 1;
-        let (keyset_config, keyset_added_info) = if from_existing {
+        let is_migration = keygen_request.requestKind == 1;
+        let (keyset_config, keyset_added_info) = if is_migration {
             (
                 COMPRESSED_MIGRATION_KEY_SET_CONFIG,
                 Some(KeySetAddedInfo {
                     from_keyset_id_decompression_only: None,
                     to_keyset_id_decompression_only: None,
-                    existing_keyset_id: Some(u256_to_request_id(keygen_request.existingKeyId)),
+                    existing_keyset_id: Some(u256_to_request_id(keygen_request.keyId)),
                     use_existing_key_tag: true,
                     copy_compressed_key_to_original: true,
                 }),
@@ -99,7 +95,7 @@ where
         };
 
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
-            request_id: Some(u256_to_request_id(keygen_request.keyId)),
+            request_id: Some(u256_to_request_id(keygen_request.requestId)),
             preproc_id: Some(u256_to_request_id(keygen_request.prepKeygenId)),
             domain: Some(self.domain.clone()),
             params: None,

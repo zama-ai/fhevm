@@ -124,13 +124,18 @@ where
         &self,
         response: KeygenResponse,
     ) -> Result<TransactionReceipt, Error> {
-        let call_builder = self.kms_generation_contract.keygenResponse(
-            response.key_id,
-            response.key_digests.into_iter().map(|k| k.into()).collect(),
-            response.signature.into(),
-        );
+        let key_digests = response.key_digests.into_iter().map(|k| k.into()).collect();
+        let signature = response.signature.into();
+        let call = if response.is_migration {
+            self.kms_generation_contract
+                .migrationResponse(response.key_id, key_digests, signature)
+                .into_transaction_request()
+        } else {
+            self.kms_generation_contract
+                .keygenResponse(response.key_id, key_digests, signature)
+                .into_transaction_request()
+        };
 
-        let call = call_builder.into_transaction_request();
         self.send_tx_with_retry(call).await
     }
 

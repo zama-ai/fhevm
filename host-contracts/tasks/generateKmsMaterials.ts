@@ -27,7 +27,7 @@ task('task:triggerKeygen')
     const kmsGeneration = await hre.ethers.getContractAt('KMSGeneration', proxyAddress, deployer);
 
     // Request the key generation.
-    const keygenTx = await kmsGeneration.keygen(paramsType, 0, 0);
+    const keygenTx = await kmsGeneration.keygen(paramsType);
     await keygenTx.wait();
 
     console.log('Keygen triggering done!');

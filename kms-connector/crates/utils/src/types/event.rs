@@ -113,7 +113,7 @@ impl ProtocolEvent {
                 update_prep_keygen_status(db, e.prepKeygenId, status, already_sent).await
             }
             ProtocolEventKind::Keygen(e) => {
-                update_keygen_status(db, e.keyId, status, already_sent).await
+                update_keygen_status(db, e.requestId, status, already_sent).await
             }
             ProtocolEventKind::Crsgen(e) => {
                 update_crsgen_status(db, e.crsId, status, already_sent).await
@@ -349,12 +349,11 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
 }
 
 pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    // The prep round is mode-agnostic for the KMS; reconstruct as Fresh.
     let kind = ProtocolEventKind::PrepKeygen(PrepKeygenRequest {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
         paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
-        mode: 0,
-        existingKeyId: U256::ZERO,
+        requestKind: 0,
+        keyId: U256::ZERO,
         extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
@@ -368,12 +367,15 @@ pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
 }
 
 pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    let migrated = row.try_get::<Option<[u8; 32]>, _>("migrated_key_id")?;
+    let request_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?);
+    let migration_key_id = row.try_get::<Option<[u8; 32]>, _>("migration_key_id")?;
     let kind = ProtocolEventKind::Keygen(KeygenRequest {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
-        keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
-        mode: if migrated.is_some() { 1 } else { 0 },
-        existingKeyId: migrated.map(U256::from_le_bytes).unwrap_or_default(),
+        requestId: request_id,
+        requestKind: if migration_key_id.is_some() { 1 } else { 0 },
+        keyId: migration_key_id
+            .map(U256::from_le_bytes)
+            .unwrap_or(request_id),
         extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
@@ -649,7 +651,7 @@ impl Display for ProtocolEventKind {
                 write!(f, "PrepKeygenRequest #{:#066x}", e.prepKeygenId)
             }
             ProtocolEventKind::Keygen(e) => {
-                write!(f, "KeygenRequest #{:#066x}", e.keyId)
+                write!(f, "KeygenRequest #{:#066x}", e.requestId)
             }
             ProtocolEventKind::Crsgen(e) => {
                 write!(f, "CrsgenRequest #{:#066x}", e.crsId)
