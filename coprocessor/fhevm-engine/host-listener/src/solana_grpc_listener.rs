@@ -864,8 +864,8 @@ mod fhe_eval_acl_tests {
     };
     use crate::solana_reconstruct::{
         AllowSubjectsArgs, DecodedInstruction, EncryptedValueLineageTracker,
-        EncryptedValueSubjectGrant, UpdateEncryptedValueArgs,
-        ENCRYPTED_VALUE_ACCOUNT_INDEX,
+        EncryptedValueSubjectGrant, MakeHandlePublicArgs,
+        UpdateEncryptedValueArgs, ENCRYPTED_VALUE_ACCOUNT_INDEX,
     };
     use zama_host::state::AclSubjectEntry;
 
@@ -901,10 +901,6 @@ mod fhe_eval_acl_tests {
         let mut data = discriminator(name).to_vec();
         args.serialize(&mut data).expect("serialize instruction");
         data
-    }
-
-    fn encode_instruction_no_args(name: &str) -> Vec<u8> {
-        discriminator(name).to_vec()
     }
 
     fn encode_cpi_event(name: &str, event: impl AnchorSerialize) -> Vec<u8> {
@@ -1067,7 +1063,10 @@ mod fhe_eval_acl_tests {
             decoded_ix(update_data, encrypted_value_accounts(), 0, true),
             decoded_ix(allow_data, encrypted_value_accounts(), 1, false),
             decoded_ix(
-                encode_instruction_no_args("make_handle_public"),
+                encode_instruction(
+                    "make_handle_public",
+                    MakeHandlePublicArgs { handle: [9; 32] },
+                ),
                 encrypted_value_accounts(),
                 2,
                 false,
@@ -1189,6 +1188,7 @@ mod fhe_eval_acl_tests {
                     if fetch.reason == "subject_allowed"
                         && fetch.account_key == ENCRYPTED_VALUE
                         && fetch.handle == Some(Handle::from([4; 32]))
+                        && fetch.subject == Some([7; 32])
             )
         }));
     }
@@ -1339,7 +1339,7 @@ mod fhe_eval_acl_tests {
                 reason: "subject_allowed",
                 handle: Some([9; 32]),
                 related_account: None,
-                subject: None,
+                subject: Some([7; 32]),
             },
             SemanticFact::Fetch {
                 account_key: ENCRYPTED_VALUE,

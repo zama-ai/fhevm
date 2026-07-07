@@ -101,6 +101,11 @@ pub struct UpdateEncryptedValueArgs {
 }
 
 #[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
+pub struct MakeHandlePublicArgs {
+    pub handle: [u8; 32],
+}
+
+#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
 pub struct AllowSubjectsArgs {
     pub subjects: Vec<EncryptedValueSubjectGrant>,
 }
@@ -116,9 +121,10 @@ pub struct RemoveSubjectArgs {
 pub enum EncryptedValueInstruction {
     Create(CreateEncryptedValueArgs),
     Update(UpdateEncryptedValueArgs),
-    /// No args: which handle/lineage this affects is resolved from
-    /// [`EncryptedValueLineageTracker`], not from the instruction.
-    MakeHandlePublic,
+    /// `None` is only a compatibility/safety fallback for a known
+    /// discriminator whose args fail to decode; normal Anchor payloads carry the
+    /// exact handle made public on-chain.
+    MakeHandlePublic(Option<MakeHandlePublicArgs>),
     AllowSubjects(AllowSubjectsArgs),
     RemoveSubject(RemoveSubjectArgs),
 }
@@ -170,7 +176,9 @@ pub fn decode_encrypted_value_instruction(
                 .map(EncryptedValueInstruction::Update)
         }
         d if d == MAKE_HANDLE_PUBLIC_DISCRIMINATOR => {
-            Some(EncryptedValueInstruction::MakeHandlePublic)
+            Some(EncryptedValueInstruction::MakeHandlePublic(
+                MakeHandlePublicArgs::try_from_slice(payload).ok(),
+            ))
         }
         d if d == ALLOW_SUBJECTS_DISCRIMINATOR => {
             AllowSubjectsArgs::try_from_slice(payload)
@@ -193,7 +201,7 @@ fn encrypted_value_account_index(
         EncryptedValueInstruction::RemoveSubject(_) => 1,
         EncryptedValueInstruction::Create(_)
         | EncryptedValueInstruction::Update(_)
-        | EncryptedValueInstruction::MakeHandlePublic
+        | EncryptedValueInstruction::MakeHandlePublic(_)
         | EncryptedValueInstruction::AllowSubjects(_) => {
             ENCRYPTED_VALUE_ACCOUNT_INDEX
         }
@@ -202,8 +210,8 @@ fn encrypted_value_account_index(
 
 /// Tracks each `EncryptedValue` lineage's current handle across the
 /// instructions the listener has decoded so far (in on-chain order), so
-/// `make_handle_public`, `allow_subjects`, and `remove_subject` — which carry no handle
-/// themselves — resolve to the right handle without an extra account fetch.
+/// `allow_subjects`, `remove_subject`, and malformed `make_handle_public`
+/// fallback payloads resolve to the right handle without an extra account fetch.
 ///
 /// Chosen over finalized-account-fetcher resolution: at decode time the
 /// transaction is only confirmed, not finalized, so the fetcher hasn't run
@@ -284,29 +292,44 @@ pub fn encrypted_value_instruction_fetches(
                 ),
             ]
         }
-        // Tracker misses (lineage created before this listener started) queue
-        // the fetch WITHOUT a handle instead of dropping it; the finalized
-        // fetcher resolves the account's own `current_handle` at release time.
-        EncryptedValueInstruction::MakeHandlePublic => {
+        EncryptedValueInstruction::MakeHandlePublic(Some(args)) => {
+            vec![acl_record_fetch(
+                encrypted_value_account,
+                args.handle,
+                "handle_made_public",
+            )]
+        }
+        // A known discriminator with malformed args can only fall back to the
+        // lineage tracker. Tracker misses queue without a handle so the
+        // finalized account can resolve its current handle instead of guessing.
+        EncryptedValueInstruction::MakeHandlePublic(None) => {
             vec![current_handle_fetch(
                 encrypted_value_account,
                 tracker.current_handle(encrypted_value_account),
                 "handle_made_public",
             )]
         }
-        EncryptedValueInstruction::AllowSubjects(_) => {
-            vec![current_handle_fetch(
-                encrypted_value_account,
-                tracker.current_handle(encrypted_value_account),
-                "subject_allowed",
-            )]
-        }
-        EncryptedValueInstruction::RemoveSubject(_) => {
-            vec![current_handle_fetch(
+        EncryptedValueInstruction::AllowSubjects(args) => args
+            .subjects
+            .iter()
+            .map(|grant| {
+                let mut fetch = current_handle_fetch(
+                    encrypted_value_account,
+                    tracker.current_handle(encrypted_value_account),
+                    "subject_allowed",
+                );
+                fetch.subject = Some(grant.subject);
+                fetch
+            })
+            .collect(),
+        EncryptedValueInstruction::RemoveSubject(args) => {
+            let mut fetch = current_handle_fetch(
                 encrypted_value_account,
                 tracker.current_handle(encrypted_value_account),
                 "subject_removed",
-            )]
+            );
+            fetch.subject = Some(args.subject);
+            vec![fetch]
         }
     }
 }
@@ -371,7 +394,7 @@ pub fn encrypted_value_bound_handle(
     match instruction {
         EncryptedValueInstruction::Create(args) => Some(args.handle),
         EncryptedValueInstruction::Update(args) => Some(args.new_handle),
-        EncryptedValueInstruction::MakeHandlePublic
+        EncryptedValueInstruction::MakeHandlePublic(_)
         | EncryptedValueInstruction::AllowSubjects(_)
         | EncryptedValueInstruction::RemoveSubject(_) => None,
     }
@@ -970,11 +993,21 @@ mod encrypted_value_decode_tests {
     }
 
     #[test]
-    fn decodes_make_handle_public_with_no_args() {
+    fn decodes_make_handle_public_handle_arg() {
+        let args = MakeHandlePublicArgs { handle: [4; 32] };
+        let data = encode(MAKE_HANDLE_PUBLIC_DISCRIMINATOR, args.clone());
+        assert_eq!(
+            decode_encrypted_value_instruction(&data),
+            Some(EncryptedValueInstruction::MakeHandlePublic(Some(args)))
+        );
+    }
+
+    #[test]
+    fn make_handle_public_malformed_args_keeps_tracker_fallback() {
         let data = MAKE_HANDLE_PUBLIC_DISCRIMINATOR.to_vec();
         assert_eq!(
             decode_encrypted_value_instruction(&data),
-            Some(EncryptedValueInstruction::MakeHandlePublic)
+            Some(EncryptedValueInstruction::MakeHandlePublic(None))
         );
     }
 
@@ -1065,11 +1098,12 @@ mod encrypted_value_decode_tests {
     }
 
     #[test]
-    fn make_handle_public_resolves_current_handle_from_lineage_tracker() {
+    fn make_handle_public_uses_decoded_handle_not_tracker_current() {
         let mut tracker = EncryptedValueLineageTracker::new();
-        tracker.record(ENCRYPTED_VALUE, [4; 32]);
+        tracker.record(ENCRYPTED_VALUE, [9; 32]);
+        let args = MakeHandlePublicArgs { handle: [4; 32] };
         let fetches = encrypted_value_instruction_fetches(
-            &EncryptedValueInstruction::MakeHandlePublic,
+            &EncryptedValueInstruction::MakeHandlePublic(Some(args)),
             ENCRYPTED_VALUE,
             &mut tracker,
         );
@@ -1079,15 +1113,22 @@ mod encrypted_value_decode_tests {
             fetches[0].handle,
             Some(crate::database::tfhe_event_propagate::Handle::from([4; 32]))
         );
+        assert_ne!(
+            fetches[0].handle,
+            Some(crate::database::tfhe_event_propagate::Handle::from([9; 32])),
+            "make_handle_public must release the instruction handle, not the tracker current handle"
+        );
     }
 
     #[test]
-    fn make_handle_public_with_unknown_lineage_queues_handle_less_fetch() {
-        // No prior create/update seen for this account: defer handle resolution
-        // to the finalized EncryptedValue account instead of guessing.
+    fn malformed_make_handle_public_with_unknown_lineage_queues_handle_less_fetch(
+    ) {
+        // Known discriminator but malformed args, and no prior create/update seen
+        // for this account: defer handle resolution to the finalized
+        // EncryptedValue account instead of guessing.
         let mut tracker = EncryptedValueLineageTracker::new();
         let fetches = encrypted_value_instruction_fetches(
-            &EncryptedValueInstruction::MakeHandlePublic,
+            &EncryptedValueInstruction::MakeHandlePublic(None),
             ENCRYPTED_VALUE,
             &mut tracker,
         );
@@ -1097,27 +1138,36 @@ mod encrypted_value_decode_tests {
     }
 
     #[test]
-    fn allow_subjects_resolves_current_handle_from_lineage_tracker() {
+    fn allow_subjects_produces_per_subject_grants() {
         let mut tracker = EncryptedValueLineageTracker::new();
         tracker.record(ENCRYPTED_VALUE, [4; 32]);
         let args = AllowSubjectsArgs {
-            subjects: vec![EncryptedValueSubjectGrant { subject: [6; 32] }],
+            subjects: vec![
+                EncryptedValueSubjectGrant { subject: [6; 32] },
+                EncryptedValueSubjectGrant { subject: [7; 32] },
+            ],
         };
         let fetches = encrypted_value_instruction_fetches(
             &EncryptedValueInstruction::AllowSubjects(args),
             ENCRYPTED_VALUE,
             &mut tracker,
         );
-        assert_eq!(fetches.len(), 1);
-        assert_eq!(fetches[0].reason, "subject_allowed");
-        assert_eq!(
-            fetches[0].handle,
-            Some(crate::database::tfhe_event_propagate::Handle::from([4; 32]))
-        );
+        assert_eq!(fetches.len(), 2);
+        for fetch in &fetches {
+            assert_eq!(fetch.reason, "subject_allowed");
+            assert_eq!(
+                fetch.handle,
+                Some(crate::database::tfhe_event_propagate::Handle::from(
+                    [4; 32]
+                ))
+            );
+        }
+        assert_eq!(fetches[0].subject, Some([6; 32]));
+        assert_eq!(fetches[1].subject, Some([7; 32]));
     }
 
     #[test]
-    fn remove_subject_resolves_current_handle_from_lineage_tracker() {
+    fn remove_subject_produces_subject_scoped_removal_fetch() {
         let mut tracker = EncryptedValueLineageTracker::new();
         tracker.record(ENCRYPTED_VALUE, [4; 32]);
         let args = RemoveSubjectArgs { subject: [6; 32] };
@@ -1128,6 +1178,7 @@ mod encrypted_value_decode_tests {
         );
         assert_eq!(fetches.len(), 1);
         assert_eq!(fetches[0].reason, "subject_removed");
+        assert_eq!(fetches[0].subject, Some([6; 32]));
         assert_eq!(
             fetches[0].handle,
             Some(crate::database::tfhe_event_propagate::Handle::from([4; 32]))
@@ -1205,6 +1256,7 @@ mod encrypted_value_decode_tests {
         assert_eq!(fetches.len(), 1);
         assert_eq!(fetches[0].account_key, ENCRYPTED_VALUE);
         assert_eq!(fetches[0].reason, "subject_removed");
+        assert_eq!(fetches[0].subject, Some([6; 32]));
     }
 
     #[test]

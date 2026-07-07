@@ -46,15 +46,23 @@ pub struct SolanaFinalizedAccountFetcherConfig {
 /// is confirmed on-chain. `AllowedForDecryption` releases a handle for public decrypt;
 /// `AllowedAccount` records a durable per-subject allow. Both also enqueue the
 /// SNS digest (`pbs_computations`) so the handle's ciphertext gets a ct128.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct DecryptEnqueue {
     pub handle: crate::database::tfhe_event_propagate::Handle,
     pub allow_event: AllowEvents,
+    pub account_address: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SubjectRevoke {
+    handle: crate::database::tfhe_event_propagate::Handle,
+    account_address: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct FinalizedEncryptedValueAccount {
     current_handle: [u8; 32],
+    subjects: Vec<[u8; 32]>,
     leaf_count: u64,
 }
 
@@ -83,8 +91,7 @@ pub fn decrypt_enqueue_for_fetch(
         | "acl_record_bound"
         | "encrypted_value_created"
         | "handle_superseded"
-        | "subject_allowed"
-        | "subject_removed" => AllowEvents::AllowedAccount,
+        | "subject_allowed" => AllowEvents::AllowedAccount,
         // handle_material_sealed also emits an EncryptedValue-account fetch, but
         // the allow it confirms already arrived via its own subject/public-decrypt
         // event; the material-sealed fetch is only a witness for the on-chain
@@ -99,7 +106,7 @@ pub fn decrypt_enqueue_for_fetch(
         // refers to. Resolved below after the account is decoded.
         None if matches!(
             job.reason.as_str(),
-            "subject_allowed" | "subject_removed" | "handle_made_public"
+            "subject_allowed" | "handle_made_public"
         ) =>
         {
             match finalized_current_handle(&witness.data) {
@@ -128,10 +135,102 @@ pub fn decrypt_enqueue_for_fetch(
     if !encrypted_value_claim_is_finalized(job, witness, handle) {
         return None;
     }
+    let account_address = match allow_event {
+        AllowEvents::AllowedForDecryption => String::new(),
+        AllowEvents::AllowedAccount => allowed_account_address(job)?,
+    };
     Some(DecryptEnqueue {
         handle,
         allow_event,
+        account_address,
     })
+}
+
+fn subject_revoke_for_fetch(
+    job: &SolanaFinalizedAccountFetchJob,
+    witness: &SolanaFinalizedAccountWitness,
+    host_program_id: Option<[u8; 32]>,
+) -> Option<SubjectRevoke> {
+    if job.kind != SolanaFinalizedAccountFetchKind::EncryptedValueAccount
+        || job.reason != "subject_removed"
+    {
+        return None;
+    }
+    let subject = match job.subject {
+        Some(subject) => subject,
+        None => {
+            warn!("subject_removed fetch has no subject; refusing to revoke");
+            return None;
+        }
+    };
+    let handle = match job.handle {
+        Some(handle) => handle,
+        None => match finalized_current_handle(&witness.data) {
+            Some(handle) => handle,
+            None => {
+                warn!(
+                    "handle-less subject_removed fetch on an invalid EncryptedValue account; refusing to revoke"
+                );
+                return None;
+            }
+        },
+    };
+    if let Some(program_id) = host_program_id {
+        if witness.owner != program_id {
+            warn!(
+                handle = %handle,
+                "finalized EncryptedValue account not owned by zama_host program; refusing to revoke subject"
+            );
+            return None;
+        }
+    }
+    let account = match decode_finalized_encrypted_value_account(&witness.data)
+    {
+        Ok(account) => account,
+        Err(err) => {
+            warn!(
+                error = %err,
+                "finalized account is not a valid EncryptedValue account; refusing to revoke subject"
+            );
+            return None;
+        }
+    };
+    if account.subjects.contains(&subject) {
+        warn!(
+            "finalized EncryptedValue account still contains removed subject; refusing to revoke"
+        );
+        return None;
+    }
+    Some(SubjectRevoke {
+        handle,
+        account_address: solana_subject_account_address(subject),
+    })
+}
+
+fn allowed_account_address(
+    job: &SolanaFinalizedAccountFetchJob,
+) -> Option<String> {
+    match job.reason.as_str() {
+        "subject_allowed" => {
+            let subject = match job.subject {
+                Some(subject) => subject,
+                None => {
+                    warn!("subject_allowed fetch has no subject; refusing to release");
+                    return None;
+                }
+            };
+            Some(solana_subject_account_address(subject))
+        }
+        _ => Some(
+            job.subject
+                .map(solana_subject_account_address)
+                .unwrap_or_default(),
+        ),
+    }
+}
+
+fn solana_subject_account_address(subject: [u8; 32]) -> String {
+    bs58::encode(subject).into_string()
 }
 
 /// The finalized account's `current_handle`, or `None` when the data does not
@@ -168,9 +267,11 @@ fn encrypted_value_claim_is_finalized(
         | "acl_record_bound"
         | "encrypted_value_created"
         | "handle_made_public"
-        | "subject_allowed"
-        | "subject_removed" => {
+        | "subject_allowed" => {
             if account.current_handle == handle {
+                if job.reason == "subject_allowed" {
+                    return subject_allowed_claim_is_finalized(job, &account);
+                }
                 true
             } else {
                 warn!(
@@ -200,6 +301,27 @@ fn encrypted_value_claim_is_finalized(
     }
 }
 
+fn subject_allowed_claim_is_finalized(
+    job: &SolanaFinalizedAccountFetchJob,
+    account: &FinalizedEncryptedValueAccount,
+) -> bool {
+    let subject = match job.subject {
+        Some(subject) => subject,
+        None => {
+            warn!("subject_allowed fetch has no subject; refusing to release");
+            return false;
+        }
+    };
+    if account.subjects.contains(&subject) {
+        true
+    } else {
+        warn!(
+            "finalized EncryptedValue account does not contain allowed subject; refusing to release handle"
+        );
+        false
+    }
+}
+
 fn decode_finalized_encrypted_value_account(
     data: &[u8],
 ) -> Result<FinalizedEncryptedValueAccount> {
@@ -212,13 +334,22 @@ fn decode_finalized_encrypted_value_account(
     reader.skip(32)?; // encrypted_value_label
     let current_handle = reader.read_array::<32>()?;
     let subjects_len = reader.read_u32()? as usize;
-    reader.skip(checked_vec_bytes(subjects_len, 32)?)?;
+    let subjects_bytes = reader.take(checked_vec_bytes(subjects_len, 32)?)?;
+    let subjects = subjects_bytes
+        .chunks_exact(32)
+        .map(|chunk| {
+            let mut subject = [0u8; 32];
+            subject.copy_from_slice(chunk);
+            subject
+        })
+        .collect();
     let leaf_count = reader.read_u64()?;
     let peaks_len = reader.read_u32()? as usize;
     reader.skip(checked_vec_bytes(peaks_len, 32)?)?;
     reader.read_array::<1>()?; // bump
     Ok(FinalizedEncryptedValueAccount {
         current_handle,
+        subjects,
         leaf_count,
     })
 }
@@ -495,10 +626,19 @@ where
                 store_finalized_account_witness(&mut tx, &witness).await?;
                 complete_finalized_account_fetch(&mut tx, job).await?;
 
-                // Finalized state confirmed: release the handle for decryption
-                // in the SAME tx that records the witness, so a crash can never
-                // leave a completed fetch without its downstream pbs/allow work.
-                if let Some(enqueue) =
+                // Finalized state confirmed: apply the ACL effect in the SAME tx
+                // that records the witness, so a crash can never leave a
+                // completed fetch without its downstream DB state.
+                if let Some(revoke) =
+                    subject_revoke_for_fetch(job, &witness, host_program_id)
+                {
+                    db.delete_allowed_handle(
+                        &mut tx,
+                        revoke.handle.to_vec(),
+                        revoke.account_address,
+                    )
+                    .await?;
+                } else if let Some(enqueue) =
                     decrypt_enqueue_for_fetch(job, &witness, host_program_id)
                 {
                     let handle = enqueue.handle.to_vec();
@@ -506,7 +646,7 @@ where
                     db.insert_allowed_handle(
                         &mut tx,
                         handle.clone(),
-                        String::new(),
+                        enqueue.account_address,
                         enqueue.allow_event,
                         transaction_id.clone(),
                         job.block_number,
@@ -650,13 +790,21 @@ mod tests {
         reason: &str,
         handle: Option<Handle>,
     ) -> SolanaFinalizedAccountFetchJob {
+        acl_record_job_with_subject(reason, handle, None)
+    }
+
+    fn acl_record_job_with_subject(
+        reason: &str,
+        handle: Option<Handle>,
+        subject: Option<[u8; 32]>,
+    ) -> SolanaFinalizedAccountFetchJob {
         SolanaFinalizedAccountFetchJob {
             account_key: [1; 32],
             kind: SolanaFinalizedAccountFetchKind::EncryptedValueAccount,
             reason: reason.to_owned(),
             handle,
             related_account: None,
-            subject: None,
+            subject,
             transaction_id: Handle::from([2; 32]),
             block_number: 9,
             attempts: 1,
@@ -668,18 +816,37 @@ mod tests {
         current_handle: [u8; 32],
         leaf_count: u64,
     ) -> SolanaFinalizedAccountWitness {
+        witness_owned_by_with_subjects(
+            owner,
+            current_handle,
+            &[[6; 32]],
+            leaf_count,
+        )
+    }
+
+    fn witness_owned_by_with_subjects(
+        owner: [u8; 32],
+        current_handle: [u8; 32],
+        subjects: &[[u8; 32]],
+        leaf_count: u64,
+    ) -> SolanaFinalizedAccountWitness {
         SolanaFinalizedAccountWitness {
             account_key: [1; 32],
             owner,
             lamports: 1,
             executable: false,
-            data: encrypted_value_account_data(current_handle, leaf_count),
+            data: encrypted_value_account_data(
+                current_handle,
+                subjects,
+                leaf_count,
+            ),
             observed_slot: 42,
         }
     }
 
     fn encrypted_value_account_data(
         current_handle: [u8; 32],
+        subjects: &[[u8; 32]],
         leaf_count: u64,
     ) -> Vec<u8> {
         let mut data = Vec::new();
@@ -688,8 +855,10 @@ mod tests {
         data.extend_from_slice(&[4; 32]); // app_account
         data.extend_from_slice(&[5; 32]); // encrypted_value_label
         data.extend_from_slice(&current_handle);
-        data.extend_from_slice(&1_u32.to_le_bytes());
-        data.extend_from_slice(&[6; 32]); // subjects[0]
+        data.extend_from_slice(&(subjects.len() as u32).to_le_bytes());
+        for subject in subjects {
+            data.extend_from_slice(subject);
+        }
         data.extend_from_slice(&leaf_count.to_le_bytes());
         data.extend_from_slice(&0_u32.to_le_bytes()); // peaks
         data.push(255); // bump
@@ -711,6 +880,7 @@ mod tests {
             enqueue.allow_event as i16,
             AllowEvents::AllowedForDecryption as i16
         );
+        assert_eq!(enqueue.account_address, "");
     }
 
     #[test]
@@ -729,28 +899,46 @@ mod tests {
                 enqueue.allow_event as i16,
                 AllowEvents::AllowedAccount as i16
             );
+            assert_eq!(enqueue.account_address, "");
         }
     }
 
     #[test]
     fn handle_less_current_handle_fetch_resolves_from_finalized_account() {
-        // Decode-time tracker miss: allow_subjects/remove_subject/make_handle_public
+        // Decode-time tracker miss: allow_subjects/make_handle_public
         // queue without a handle; the finalized account's current_handle is released.
-        for (reason, allow_event) in [
-            ("subject_allowed", AllowEvents::AllowedAccount),
-            ("subject_removed", AllowEvents::AllowedAccount),
-            ("handle_made_public", AllowEvents::AllowedForDecryption),
-        ] {
-            let job = acl_record_job(reason, None);
-            let enqueue = decrypt_enqueue_for_fetch(
-                &job,
-                &witness_owned_by(HOST_PROGRAM, [9; 32], 0),
-                Some(HOST_PROGRAM),
-            )
-            .unwrap_or_else(|| panic!("handle-less {reason} must enqueue"));
-            assert_eq!(enqueue.handle, Handle::from([9; 32]));
-            assert_eq!(enqueue.allow_event as i16, allow_event as i16);
-        }
+        let subject_job =
+            acl_record_job_with_subject("subject_allowed", None, Some([6; 32]));
+        let enqueue = decrypt_enqueue_for_fetch(
+            &subject_job,
+            &witness_owned_by(HOST_PROGRAM, [9; 32], 0),
+            Some(HOST_PROGRAM),
+        )
+        .expect("handle-less subject_allowed must enqueue");
+        assert_eq!(enqueue.handle, Handle::from([9; 32]));
+        assert_eq!(
+            enqueue.allow_event as i16,
+            AllowEvents::AllowedAccount as i16
+        );
+        assert_eq!(
+            enqueue.account_address,
+            solana_subject_account_address([6; 32])
+        );
+
+        let public_job = acl_record_job("handle_made_public", None);
+        let enqueue = decrypt_enqueue_for_fetch(
+            &public_job,
+            &witness_owned_by(HOST_PROGRAM, [9; 32], 0),
+            Some(HOST_PROGRAM),
+        )
+        .expect("handle-less handle_made_public must enqueue");
+        assert_eq!(enqueue.handle, Handle::from([9; 32]));
+        assert_eq!(
+            enqueue.allow_event as i16,
+            AllowEvents::AllowedForDecryption as i16
+        );
+        assert_eq!(enqueue.account_address, "");
+
         // Reasons whose handle is always carried in the instruction args stay
         // rejected without one.
         assert!(decrypt_enqueue_for_fetch(
@@ -764,14 +952,9 @@ mod tests {
     #[test]
     fn encrypted_value_instruction_reasons_release_the_expected_allow_kind() {
         // RFC-024 EncryptedValue instruction-decode reasons (create/update/
-        // allow_subjects/remove_subject -> durable account allow; make_handle_public
-        // -> public decrypt), same trust guard as the legacy finalized-account reasons above.
-        for reason in [
-            "encrypted_value_created",
-            "handle_superseded",
-            "subject_allowed",
-            "subject_removed",
-        ] {
+        // allow_subjects -> durable account allow; make_handle_public -> public
+        // decrypt), same trust guard as the legacy finalized-account reasons above.
+        for reason in ["encrypted_value_created", "handle_superseded"] {
             let handle = Handle::from([6; 32]);
             let job = acl_record_job(reason, Some(handle));
             let enqueue = decrypt_enqueue_for_fetch(
@@ -785,7 +968,30 @@ mod tests {
                 enqueue.allow_event as i16,
                 AllowEvents::AllowedAccount as i16
             );
+            assert_eq!(enqueue.account_address, "");
         }
+
+        let handle = Handle::from([6; 32]);
+        let job = acl_record_job_with_subject(
+            "subject_allowed",
+            Some(handle),
+            Some([6; 32]),
+        );
+        let enqueue = decrypt_enqueue_for_fetch(
+            &job,
+            &witness_owned_by(HOST_PROGRAM, [6; 32], 1),
+            Some(HOST_PROGRAM),
+        )
+        .expect("subject_allowed must enqueue");
+        assert_eq!(enqueue.handle, handle);
+        assert_eq!(
+            enqueue.allow_event as i16,
+            AllowEvents::AllowedAccount as i16
+        );
+        assert_eq!(
+            enqueue.account_address,
+            solana_subject_account_address([6; 32])
+        );
 
         let handle = Handle::from([7; 32]);
         let job = acl_record_job("handle_made_public", Some(handle));
@@ -800,6 +1006,73 @@ mod tests {
             enqueue.allow_event as i16,
             AllowEvents::AllowedForDecryption as i16
         );
+        assert_eq!(enqueue.account_address, "");
+    }
+
+    #[test]
+    fn subject_allowed_requires_subject_in_job_and_finalized_account() {
+        let handle = Handle::from([6; 32]);
+        let missing_subject_job =
+            acl_record_job("subject_allowed", Some(handle));
+        assert!(decrypt_enqueue_for_fetch(
+            &missing_subject_job,
+            &witness_owned_by(HOST_PROGRAM, [6; 32], 0),
+            Some(HOST_PROGRAM),
+        )
+        .is_none());
+
+        let absent_subject_job = acl_record_job_with_subject(
+            "subject_allowed",
+            Some(handle),
+            Some([8; 32]),
+        );
+        assert!(decrypt_enqueue_for_fetch(
+            &absent_subject_job,
+            &witness_owned_by(HOST_PROGRAM, [6; 32], 0),
+            Some(HOST_PROGRAM),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn subject_removed_revokes_without_positive_enqueue() {
+        let handle = Handle::from([6; 32]);
+        let job = acl_record_job_with_subject(
+            "subject_removed",
+            Some(handle),
+            Some([6; 32]),
+        );
+        let witness =
+            witness_owned_by_with_subjects(HOST_PROGRAM, [6; 32], &[], 0);
+
+        assert!(
+            decrypt_enqueue_for_fetch(&job, &witness, Some(HOST_PROGRAM))
+                .is_none()
+        );
+        let revoke =
+            subject_revoke_for_fetch(&job, &witness, Some(HOST_PROGRAM))
+                .expect("subject_removed must revoke the scoped allow");
+        assert_eq!(revoke.handle, handle);
+        assert_eq!(
+            revoke.account_address,
+            solana_subject_account_address([6; 32])
+        );
+    }
+
+    #[test]
+    fn subject_removed_does_not_revoke_if_subject_is_still_finalized() {
+        let handle = Handle::from([6; 32]);
+        let job = acl_record_job_with_subject(
+            "subject_removed",
+            Some(handle),
+            Some([6; 32]),
+        );
+        assert!(subject_revoke_for_fetch(
+            &job,
+            &witness_owned_by(HOST_PROGRAM, [6; 32], 0),
+            Some(HOST_PROGRAM),
+        )
+        .is_none());
     }
 
     #[test]

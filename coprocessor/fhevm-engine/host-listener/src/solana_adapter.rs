@@ -536,7 +536,13 @@ fn request_witness_fetch(
 fn dedup_account_fetches(fetches: &mut Vec<SolanaFinalizedAccountFetch>) {
     let mut seen = HashSet::new();
     fetches.retain(|fetch| {
-        seen.insert((fetch.account_key, fetch.kind, fetch.reason, fetch.handle))
+        seen.insert((
+            fetch.account_key,
+            fetch.kind,
+            fetch.reason,
+            fetch.handle,
+            fetch.subject,
+        ))
     });
 }
 
@@ -637,9 +643,9 @@ pub fn normalize_solana_events_for_db(
 /// compute-scheduling path (see the eager-compute note above).
 ///
 /// `encrypted_value_created` / `handle_superseded` / `handle_made_public` /
-/// `subject_allowed` / `subject_removed` name the RFC-024 `EncryptedValue` instruction-derived
+/// `subject_allowed` name the RFC-024 positive `EncryptedValue` instruction-derived
 /// signals (`create_encrypted_value`, `update_encrypted_value`,
-/// `make_handle_public`, `allow_subjects`, `remove_subject`); the legacy
+/// `make_handle_public`, `allow_subjects`); the legacy
 /// `public_decrypt_allowed` / `acl_subject_allowed` / `acl_record_bound` reasons are kept for the
 /// still-IDL-driven decode path pending its RFC-024 instruction-decode rewrite
 /// (tracked separately — see host-listener README/TODO).
@@ -661,7 +667,6 @@ pub(crate) fn is_solana_allow_reason(reason: &str) -> bool {
             | "handle_superseded"
             | "handle_made_public"
             | "subject_allowed"
-            | "subject_removed"
     )
 }
 
@@ -742,7 +747,7 @@ async fn insert_finalized_account_fetch(
     block_number: u64,
 ) -> Result<bool, SqlxError> {
     let handle = fetch.handle.map(|handle| handle.to_vec());
-    let handle_key = finalized_fetch_handle_key(fetch.handle);
+    let handle_key = finalized_fetch_handle_key(fetch.handle, fetch.subject);
     let related_account = fetch.related_account.map(|account| account.to_vec());
     let subject = fetch.subject.map(|subject| subject.to_vec());
     sqlx::query(
@@ -785,14 +790,29 @@ async fn insert_finalized_account_fetch(
     .map(|result| result.rows_affected() > 0)
 }
 
-fn finalized_fetch_handle_key(handle: Option<Handle>) -> Vec<u8> {
+fn finalized_fetch_handle_key(
+    handle: Option<Handle>,
+    subject: Option<[u8; 32]>,
+) -> Vec<u8> {
     let mut key = Vec::with_capacity(33);
-    match handle {
-        Some(handle) => {
+    match (handle, subject) {
+        (Some(handle), Some(subject)) => {
+            key.push(2);
+            let mut hasher = Sha256::new();
+            hasher.update(handle.as_slice());
+            hasher.update(subject);
+            let digest = hasher.finalize();
+            key.extend_from_slice(&digest[..32]);
+        }
+        (Some(handle), None) => {
             key.push(1);
             key.extend_from_slice(handle.as_slice());
         }
-        None => {
+        (None, Some(subject)) => {
+            key.push(3);
+            key.extend_from_slice(&subject);
+        }
+        (None, None) => {
             key.push(0);
             key.extend_from_slice(&[0u8; 32]);
         }
@@ -903,7 +923,7 @@ pub async fn complete_finalized_account_fetch(
     tx: &mut Transaction<'_>,
     job: &SolanaFinalizedAccountFetchJob,
 ) -> Result<(), SqlxError> {
-    let handle_key = finalized_fetch_handle_key(job.handle);
+    let handle_key = finalized_fetch_handle_key(job.handle, job.subject);
     sqlx::query(
         r#"
         UPDATE solana_finalized_account_fetches
@@ -928,7 +948,7 @@ pub async fn fail_finalized_account_fetch(
     job: &SolanaFinalizedAccountFetchJob,
     error: &str,
 ) -> Result<(), SqlxError> {
-    let handle_key = finalized_fetch_handle_key(job.handle);
+    let handle_key = finalized_fetch_handle_key(job.handle, job.subject);
     sqlx::query(
         r#"
         UPDATE solana_finalized_account_fetches
@@ -954,7 +974,7 @@ pub async fn retry_finalized_account_fetch(
     job: &SolanaFinalizedAccountFetchJob,
     error: &str,
 ) -> Result<(), SqlxError> {
-    let handle_key = finalized_fetch_handle_key(job.handle);
+    let handle_key = finalized_fetch_handle_key(job.handle, job.subject);
     sqlx::query(
         r#"
         UPDATE solana_finalized_account_fetches
@@ -1157,6 +1177,40 @@ mod tests {
 
     fn handle(byte: u8) -> Handle {
         Handle::from([byte; 32])
+    }
+
+    #[test]
+    fn subject_scoped_fetches_keep_distinct_queue_keys() {
+        let handle = handle(4);
+        assert_ne!(
+            finalized_fetch_handle_key(Some(handle), Some([6; 32])),
+            finalized_fetch_handle_key(Some(handle), Some([7; 32]))
+        );
+        assert_ne!(
+            finalized_fetch_handle_key(Some(handle), Some([6; 32])),
+            finalized_fetch_handle_key(Some(handle), None)
+        );
+
+        let mut fetches = vec![
+            SolanaFinalizedAccountFetch {
+                account_key: [1; 32],
+                kind: SolanaFinalizedAccountFetchKind::EncryptedValueAccount,
+                reason: "subject_allowed",
+                handle: Some(handle),
+                related_account: None,
+                subject: Some([6; 32]),
+            },
+            SolanaFinalizedAccountFetch {
+                account_key: [1; 32],
+                kind: SolanaFinalizedAccountFetchKind::EncryptedValueAccount,
+                reason: "subject_allowed",
+                handle: Some(handle),
+                related_account: None,
+                subject: Some([7; 32]),
+            },
+        ];
+        dedup_account_fetches(&mut fetches);
+        assert_eq!(fetches.len(), 2);
     }
 
     #[test]
