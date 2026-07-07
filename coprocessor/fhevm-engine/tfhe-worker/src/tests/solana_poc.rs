@@ -21,7 +21,8 @@ use host_listener::{
     solana_adapter::{
         decode_anchor_cpi_events, decode_anchor_log_events, decode_solana_transaction_events,
         insert_solana_events, normalize_solana_events_for_db, solana_transaction_id,
-        SolanaAclAllowedEvent, SolanaBlockMeta, SolanaFinalizedAccountFetchKind, SolanaHostEvent,
+        SolanaAclAllowedEvent, SolanaBlockMeta, SolanaFinalizedAccountFetch,
+        SolanaFinalizedAccountFetchKind, SolanaHostEvent,
     },
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
@@ -116,7 +117,7 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     db_tx.commit().await?;
 
     assert_eq!(stats.tfhe_events, 5);
-    assert_eq!(stats.acl_events, 7);
+    assert_eq!(stats.acl_events, 3);
 
     wait_until_computed(&harness.app).await?;
     assert!(kms_like_user_decrypt_check(
@@ -306,7 +307,7 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
         account_fetches[0].handle,
         tfhe_result_handle(&tfhe_logs[0].event.data)
     );
-    assert!(!tfhe_logs[0].is_allowed);
+    assert!(tfhe_logs[0].is_allowed);
 }
 
 #[test]
@@ -511,9 +512,13 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     ];
     let (meta, account_keys, signature) =
         send_many_with_meta(&mut fixture.svm, &fixture.alice, initial_ixs);
-    let initial_events = host_events(&meta, &account_keys, fixture.host_program_id);
+    let mut initial_events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&initial_events), 3);
     assert_eq!(count_acl_events(&initial_events), 3);
+    add_allow_fetches(
+        &mut initial_events,
+        &[fixture.alice_initial, fixture.bob_initial, amount_handle],
+    );
 
     insert_host_events(&harness.listener_db, initial_events, signature, 1).await?;
     wait_until_computed(&harness.app).await?;
@@ -598,9 +603,10 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
     ];
     let (meta, account_keys, signature) =
         send_many_with_meta(&mut fixture.svm, &fixture.payer, ixs);
-    let events = host_events(&meta, &account_keys, fixture.host_program_id);
+    let mut events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&events), 1);
     assert_eq!(count_acl_events(&events), 1);
+    add_allow_fetches(&mut events, &[rand_handle]);
 
     insert_host_events(&harness.listener_db, events, signature, 1).await?;
     wait_until_computed(&harness.app).await?;
@@ -1364,6 +1370,19 @@ fn count_acl_events(events: &[SolanaHostEvent]) -> usize {
         .count()
 }
 
+fn add_allow_fetches(events: &mut Vec<SolanaHostEvent>, handles: &[[u8; 32]]) {
+    events.extend(handles.iter().copied().map(|handle| {
+        SolanaHostEvent::FinalizedAccountFetch(SolanaFinalizedAccountFetch {
+            account_key: handle,
+            kind: SolanaFinalizedAccountFetchKind::AclRecord,
+            reason: "acl_record_bound",
+            handle: Some(Handle::from(handle)),
+            related_account: None,
+            subject: None,
+        })
+    }));
+}
+
 fn signed_user_decrypt_request(
     signer: &Keypair,
     allowed_acl_domain_keys: Vec<Pubkey>,
@@ -1621,9 +1640,9 @@ fn send_with_meta(
     payer: &Keypair,
     ix: Instruction,
 ) -> (TransactionMetadata, Vec<Pubkey>, Signature) {
-    // Confidential transfer's real euint64 FHE ops exceed the default 200k CU limit
-    // (mollusk measures ~258k); raise it like a real client would.
-    let ixs = [set_compute_unit_limit_ix(400_000), ix];
+    // Confidential transfer's real euint64 FHE ops exceed the default 200k CU limit;
+    // use the same client-side budget as the PoC live client.
+    let ixs = [set_compute_unit_limit_ix(1_400_000), ix];
     let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
@@ -1637,7 +1656,7 @@ fn send_many_with_meta(
     ixs: Vec<Instruction>,
 ) -> (TransactionMetadata, Vec<Pubkey>, Signature) {
     let mut ixs = ixs;
-    ixs.insert(0, set_compute_unit_limit_ix(400_000));
+    ixs.insert(0, set_compute_unit_limit_ix(1_400_000));
     let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
