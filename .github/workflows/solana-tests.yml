@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changes-solana: ${{ steps.filter.outputs.solana }}
+      changes-litesvm-gate: ${{ steps.filter.outputs.litesvm-gate }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -40,6 +41,18 @@ jobs:
               - coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
               - coprocessor/fhevm-engine/host-listener/src/solana_reconstruct.rs
               - coprocessor/fhevm-engine/host-listener/src/solana_grpc_listener.rs
+            litesvm-gate:
+              - .github/workflows/solana-tests.yml
+              - solana/**
+              - coprocessor/fhevm-engine/Cargo.lock
+              - coprocessor/fhevm-engine/Cargo.toml
+              - coprocessor/fhevm-engine/fhevm-engine-common/**
+              - coprocessor/fhevm-engine/fhevm-keys/**
+              - coprocessor/fhevm-engine/host-listener/**
+              - coprocessor/fhevm-engine/scheduler/**
+              - coprocessor/fhevm-engine/test-harness/**
+              - coprocessor/fhevm-engine/tfhe-worker/**
+              - coprocessor/proto/**
 
   build-and-test:
     name: solana-tests/build-and-test
@@ -140,3 +153,86 @@ jobs:
         env:
           SQLX_OFFLINE: 'true'
         run: cargo test -p host-listener --features solana-grpc,solana-reconstruct fhe_eval_acl
+
+  litesvm-coprocessor-gate:
+    name: solana-tests/litesvm-coprocessor-gate
+    needs: check-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-litesvm-gate == 'true' }}
+    permissions:
+      contents: 'read'
+    runs-on: large_ubuntu_16
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Checkout required LFS key fixtures
+        run: |
+          git lfs pull \
+            --include="coprocessor/fhevm-engine/fhevm-keys/xof-keyset,coprocessor/fhevm-engine/fhevm-keys/xof-cks,coprocessor/fhevm-engine/fhevm-keys/pp" \
+            --exclude=""
+
+      - name: Setup Rust toolchain file
+        run: cp coprocessor/fhevm-engine/rust-toolchain.toml .
+
+      - uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+
+      - name: Cache Solana CLI and AVM
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.avm
+            ~/.local/share/solana
+          key: solana-toolchain-${{ runner.os }}-anchor-${{ env.ANCHOR_VERSION }}-solana-${{ env.SOLANA_VERSION }}
+
+      - name: Install Solana CLI
+        run: |
+          if ! command -v solana >/dev/null; then
+            sh -c "$(curl -sSfL "https://release.anza.xyz/v${SOLANA_VERSION}/install")"
+          fi
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI via AVM
+        run: |
+          cargo install --git https://github.com/solana-foundation/anchor avm --locked --force
+          avm install "${ANCHOR_VERSION}"
+          avm use "${ANCHOR_VERSION}"
+          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
+
+      - name: Verify toolchain versions
+        working-directory: solana
+        run: |
+          solana --version
+          anchor --version
+          test "$(anchor --version)" = "anchor-cli ${ANCHOR_VERSION}"
+          test "$(awk -F'"' '/^anchor_version/ { print $2 }' Anchor.toml)" = "${ANCHOR_VERSION}"
+
+      - name: Install cargo dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler mold clang
+
+      - name: Cache cargo
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            coprocessor/fhevm-engine/target
+          key: ${{ runner.os }}-cargo-litesvm-coprocessor-${{ hashFiles('coprocessor/fhevm-engine/Cargo.lock', 'solana/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-litesvm-coprocessor-
+
+      - name: Verify Docker is available for testcontainers
+        run: docker info
+
+      - name: Build Solana PoC SBF programs
+        working-directory: solana
+        run: bash scripts/check-zama-host-idl.sh
+
+      - name: Run ignored LiteSVM coprocessor integration tests
+        working-directory: coprocessor/fhevm-engine
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+          RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+          SQLX_OFFLINE: 'true'
+        run: cargo test -p tfhe-worker solana_poc -- --ignored --test-threads=1

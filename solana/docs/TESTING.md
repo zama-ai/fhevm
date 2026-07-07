@@ -62,6 +62,14 @@ cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo check -p host-listener
 cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener solana_adapter::tests::
 ```
 
+The LiteSVM coprocessor gate runs the ignored real-TFHE worker integration tests. It needs Docker
+running locally because the test harness starts a disposable Postgres container with testcontainers;
+no manual database setup is needed. From the repository root:
+
+```bash
+bash solana/scripts/test-litesvm-coprocessor-gate.sh
+```
+
 > Note on a green test run: the suites print many `Program ... failed: custom program error: 0x...`
 > lines. Those are **negative tests** asserting expected reverts, not test failures. The
 > authoritative signal is the `test result: ok` summary lines and the process exit code.
