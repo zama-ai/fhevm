@@ -293,7 +293,11 @@ async fn wait_for_response_in_db(
             "SELECT * FROM user_decryption_responses"
         }
         ProtocolEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
-        ProtocolEventKind::Keygen(_) => "SELECT * FROM keygen_responses",
+        ProtocolEventKind::Keygen(_) => {
+            "SELECT keygen_responses.*, keygen_requests.migration_key_id
+             FROM keygen_responses
+             LEFT JOIN keygen_requests ON keygen_requests.key_id = keygen_responses.key_id"
+        }
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
         ProtocolEventKind::NewKmsContext(_) => "SELECT * FROM new_kms_context_responses",
         ProtocolEventKind::NewKmsEpoch(_) => "SELECT * FROM epoch_result_responses",
