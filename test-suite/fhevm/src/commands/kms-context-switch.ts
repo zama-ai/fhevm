@@ -106,22 +106,13 @@ const committeeSwapPlan = (kms: State["scenario"]["kms"]) => {
 
 /**
  * NewKmsContext step. On a cluster with a spare core this is a genuine node swap: the new context
- * drops a committee node and promotes the spare, keeping n = committeeSize so the threshold stays
- * valid. The dropped node's TX-SENDER is stopped before the switch is broadcast, so it can never
- * submit confirmKmsContextCreation — the switch must complete on the n − t previous-side quorum
- * without it (a node that cannot transact must not veto its own removal).
- * The other components of the node stays up, because the reshare needs it: the core is a
- * passive gRPC server driven by its own kms-worker (gw-listener -> DB -> kms-worker -> core), so
- * stopping more of the tier leaves the core out of the reshare entirely — and the KMS core cannot
- * yet complete a reshare with an absent Set 1 (outgoing) party: the receive stalls for
- * discard_inactive_sessions_interval × rounds (hours in production), and once it finally times the
- * party out the robust path fails ("no majority vote could be found" -> zero-padded contribution
- * -> "Could not reconstruct the sharing", a terminal "Resharing failed during epoch creation").
- * Upgrade this to a full party stop once the core handles dead reshare peers. The dropped node
- * reshares as Set 1 (outgoing), the spare as Set 2 (incoming), the rest as both. Without a spare
- * it is a same-committee reshare. Activation still gates on the spare: it requires ALL
- * new-committee signers to confirm, so the context id only advances once the spare has reshared
- * and submitted confirmKmsContextCreation.
+ * drops a committee node and promotes the spare, keeping n = committeeSize. The dropped node's
+ * tx-sender is stopped before the broadcast, so the switch must complete on the n − t
+ * previous-side quorum without its confirmation — a node that cannot transact must not veto its
+ * own removal. The rest of the node stays up because the reshare still needs its core (the KMS
+ * core cannot yet reshare around an absent outgoing party); upgrade to a full party stop once it
+ * can. Without a spare it is a same-committee reshare. Activation gates on ALL new-committee
+ * signers, so the context id only advances once the spare has reshared and confirmed.
  */
 const switchKmsContext = async (
   state: State,
@@ -136,10 +127,7 @@ const switchKmsContext = async (
   const gatewayEnv: Record<string, string> = isSwap ? { GATEWAY_SC_CONTEXT_ENV: "gateway-sc-swap.env" } : {};
 
   if (isSwap) {
-    // The dropped node's tx-sender goes down BEFORE the switch is broadcast, so it can never confirm
-    // on-chain. The switch must still complete — the previous-side quorum is n − t. Its core and
-    // event pipeline keep running so the reshare can finish (see the doc comment above). The
-    // tx-sender stays down: the new committee does not include the node.
+    // Stopped before the broadcast and left down: the new committee does not include the node.
     const droppedTxSenders = dropped.map((party) => kmsTxSenderName(party));
     console.log(
       `[kms-context-switch] stopping dropped node(s) ${dropped.join(",")} tx-sender before the switch — a node that cannot confirm must not block its own replacement…`,
