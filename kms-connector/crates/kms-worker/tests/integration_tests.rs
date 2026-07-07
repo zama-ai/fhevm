@@ -375,10 +375,16 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
         ProtocolEventKind::Keygen(r) if r.requestKind == 1 => {
             KmsGrpcResponse::Keygen(KeyGenResult {
                 request_id: Some(u256_to_request_id(r.requestId)),
-                key_digests: vec![GrpcKeyDigest {
-                    key_type: "CompressedXofKeySet".to_string(),
-                    digest: vec![0xC0, 0xFF, 0xEE],
-                }],
+                key_digests: vec![
+                    GrpcKeyDigest {
+                        key_type: "PublicKey".to_string(),
+                        digest: vec![0xDE, 0xAD],
+                    },
+                    GrpcKeyDigest {
+                        key_type: "CompressedXofKeySet".to_string(),
+                        digest: vec![0xC0, 0xFF, 0xEE],
+                    },
+                ],
                 ..Default::default()
             })
         }
@@ -402,7 +408,13 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             unreachable!("abort events do not produce KMS response rows in this test")
         }
     };
-    assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
+    let mut expected = KmsResponseKind::process(expected_response)?;
+    if matches!(request, ProtocolEventKind::Keygen(r) if r.requestKind == 1) {
+        if let KmsResponseKind::Keygen(r) = &mut expected {
+            r.is_migration = true;
+        }
+    }
+    assert_eq!(response.kind, expected);
     info!("OK!");
     Ok(())
 }
