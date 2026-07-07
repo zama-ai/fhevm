@@ -294,36 +294,22 @@ task('task:deployEmptyUUPSProxies')
     }
   });
 
-task('task:deployEmptyProxiesProtocolConfigKMSGeneration').setAction(async function (_, { ethers, upgrades, run }) {
+task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, { ethers, upgrades, run }) {
   ensureAddressesDirectoryExists();
 
-  const existingEnv = readExistingHostEnv();
-
-  const targets = [
-    { envKey: 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', setterTask: 'task:setProtocolConfigAddress' },
-    { envKey: 'KMS_GENERATION_CONTRACT_ADDRESS', setterTask: 'task:setKMSGenerationAddress' },
-    { envKey: 'CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS', setterTask: 'task:setBridgeAddress' },
-  ] as const;
-
-  const missingTargets = targets.filter(({ envKey }) => !existingEnv[envKey]);
-
-  if (missingTargets.length === 0) {
+  if (readExistingHostEnv().CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS) {
     console.warn(
-      'Empty-proxy bootstrap is a no-op; addresses/.env.host already contains ProtocolConfig, KMSGeneration and ConfidentialBridge.',
+      'Empty-proxy bootstrap is a no-op; addresses/.env.host already contains CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS.',
     );
     return;
   }
 
-  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
-  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-
+  const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
   await run('compile:specific', { contract: 'contracts/emptyProxy' });
 
-  for (const { envKey, setterTask } of missingTargets) {
-    const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-    await run(setterTask, { address: proxyAddress });
-    process.env[envKey] = proxyAddress;
-  }
+  const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run('task:setBridgeAddress', { address: proxyAddress });
+  process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS = proxyAddress;
 });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -596,8 +582,10 @@ export function buildProtocolConfigContextArgs(): [ReturnType, ReturnType, strin
   return [buildKmsNodeParams(), buildKmsThresholds(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
 }
 
-// Reinitialize takes the same argument tuple as context construction; alias to avoid drift.
-export const buildProtocolConfigReinitializeArgs = buildProtocolConfigContextArgs;
+// Reinitialize recovers the thresholds from storage, so it omits them from the argument tuple.
+export function buildProtocolConfigReinitializeArgs(): [ReturnType, string, ReturnType] {
+  return [buildKmsNodeParams(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
+}
 
 task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const parsedEnv = readHostEnv();

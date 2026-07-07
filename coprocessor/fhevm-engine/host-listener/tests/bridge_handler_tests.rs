@@ -50,7 +50,11 @@ async fn ingest(
         address: Address::ZERO,
         data: event,
     };
-    let mut tx = db.new_transaction().await.expect("tx");
+    let mut tx = db
+        .new_transaction()
+        .await
+        .expect("tx")
+        .expect("new_transaction() returns Some on a live stack");
     let inserted = db
         .handle_bridge_event(
             &mut tx,
@@ -377,6 +381,18 @@ async fn ingest_fallback_block(
     events: &[(FixedBytes<32>, U256, u8)],
     block_number: u64,
 ) {
+    let block_hash = FixedBytes::from([block_number as u8; 32]);
+    ingest_fallback_block_at(db, events, block_number, block_hash).await
+}
+
+/// Like `ingest_fallback_block` but with an explicit block hash, so tests can
+/// observe the same grant on sibling fork blocks at one height.
+async fn ingest_fallback_block_at(
+    db: &mut Database,
+    events: &[(FixedBytes<32>, U256, u8)],
+    block_number: u64,
+    block_hash: FixedBytes<32>,
+) {
     let logs = events
         .iter()
         .enumerate()
@@ -400,7 +416,7 @@ async fn ingest_fallback_block(
         logs,
         summary: BlockSummary {
             number: block_number,
-            hash: FixedBytes::from([block_number as u8; 32]),
+            hash: block_hash,
             parent_hash: FixedBytes::ZERO,
             timestamp: BLOCK_TIMESTAMP,
         },
@@ -411,12 +427,14 @@ async fn ingest_fallback_block(
         dependence_by_connexity: false,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
+        is_protocol_config_listener: false,
     };
     let chain_id = db.chain_id;
     ingest_block_logs(
         chain_id,
         db,
         &block_logs,
+        &None,
         &None,
         &None,
         &None,
@@ -441,6 +459,20 @@ async fn computation_count(db: &Database, handle: FixedBytes<32>) -> i64 {
     let pool = db.pool().await;
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM computations WHERE output_handle = $1",
+    )
+    .bind(handle.as_slice())
+    .fetch_one(&pool)
+    .await
+    .unwrap()
+}
+
+async fn branch_computation_count(
+    db: &Database,
+    handle: FixedBytes<32>,
+) -> i64 {
+    let pool = db.pool().await;
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM computations_branch WHERE output_handle = $1",
     )
     .bind(handle.as_slice())
     .fetch_one(&pool)
@@ -621,6 +653,151 @@ async fn fallback_duplicates_in_one_block_use_first_event() {
     assert_trivial_encrypt_operands(&db, dst_handle, 111, 5).await;
 }
 
+/// The same grant transaction observed on two sibling fork blocks: each
+/// observation synthesizes into its own branch context (the legacy row is
+/// shared via ON CONFLICT), so cleaning up the orphaned fork leaves the
+/// canonical fork's materialization intact. Before this fix the second
+/// observation was suppressed by the first's rows and cleanup erased the
+/// grant permanently.
+#[tokio::test]
+#[serial(db)]
+async fn fallback_same_grant_on_sibling_fork_survives_cleanup() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    let fork_hash = FixedBytes::from([0xF0u8; 32]);
+    let canonical_hash = FixedBytes::from([0xC0u8; 32]);
+
+    // Same grant tx (0x77) re-included on both forks at the same height.
+    ingest_fallback_block_at(
+        &mut db,
+        &[(dst_handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        fork_hash,
+    )
+    .await;
+    ingest_fallback_block_at(
+        &mut db,
+        &[(dst_handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        canonical_hash,
+    )
+    .await;
+
+    // One legacy row (shared), one branch row per observed context.
+    assert_eq!(computation_count(&db, dst_handle).await, 1);
+    assert_eq!(
+        branch_computation_count(&db, dst_handle).await,
+        2,
+        "each fork context must carry its own branch row"
+    );
+
+    // The fork orphans; its context-keyed state is cleaned up.
+    run_bridge_cleanup(&db, &[fork_hash.to_vec()]).await;
+
+    assert_eq!(
+        computation_count(&db, dst_handle).await,
+        1,
+        "the grant must survive on the canonical fork"
+    );
+    assert_eq!(branch_computation_count(&db, dst_handle).await, 1);
+    assert_trivial_encrypt_operands(&db, dst_handle, 123, 5).await;
+
+    // The durable observation for the canonical block survives; the
+    // orphaned one is gone.
+    let pool = db.pool().await;
+    let observations: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM fallback_granted_events WHERE dst_handle = $1",
+    )
+    .bind(dst_handle.as_slice())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(observations, 1);
+}
+
+/// Below FHEVM_BRANCH_ACTIVATION_BLOCK ingestion writes legacy state only —
+/// per-node dual-write start times would otherwise key branch rows
+/// divergently across operators during a rolling upgrade. At and above the
+/// activation height, branch rows appear.
+#[tokio::test]
+#[serial(db)]
+async fn branch_writes_gated_by_activation_height() {
+    std::env::set_var("FHEVM_BRANCH_ACTIVATION_BLOCK", "100");
+    // Database::new reads the env at construction.
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    std::env::remove_var("FHEVM_BRANCH_ACTIVATION_BLOCK");
+    assert_eq!(db.branch_activation_block, 100);
+
+    // The fallback synthesis drives the ordinary computation/pbs insert
+    // paths, so it exercises the gates end-to-end.
+    let below = fallback_dst_handle(DST_CHAIN_ID, 5);
+    ingest_fallback_block(&mut db, &[(below, U256::from(7_u64), 0x31)], 50)
+        .await;
+    assert_eq!(
+        computation_count(&db, below).await,
+        1,
+        "legacy write must happen below the activation height"
+    );
+    assert_eq!(
+        branch_computation_count(&db, below).await,
+        0,
+        "no branch computation row below the activation height"
+    );
+    let pool = db.pool().await;
+    let branch_pbs: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pbs_computations_branch WHERE handle = $1",
+    )
+    .bind(below.as_slice())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        branch_pbs, 0,
+        "no branch pbs row below the activation height"
+    );
+    assert_eq!(
+        pbs_count(&db, below).await,
+        1,
+        "legacy pbs row still written"
+    );
+
+    let above = fallback_dst_handle(DST_CHAIN_ID, 4);
+    ingest_fallback_block(&mut db, &[(above, U256::from(8_u64), 0x32)], 150)
+        .await;
+    assert_eq!(computation_count(&db, above).await, 1);
+    assert_eq!(
+        branch_computation_count(&db, above).await,
+        1,
+        "branch rows resume at the activation height"
+    );
+}
+
+/// A different grant (different transaction) for an already-granted handle
+/// stays suppressed across blocks: first grant wins.
+#[tokio::test]
+#[serial(db)]
+async fn fallback_different_grant_across_blocks_keeps_first() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+
+    ingest_fallback_block(
+        &mut db,
+        &[(dst_handle, U256::from(111_u64), 0x11)],
+        BLOCK_NUMBER,
+    )
+    .await;
+    ingest_fallback_block(
+        &mut db,
+        &[(dst_handle, U256::from(222_u64), 0x22)],
+        BLOCK_NUMBER + 1,
+    )
+    .await;
+
+    assert_eq!(computation_count(&db, dst_handle).await, 1);
+    assert_eq!(branch_computation_count(&db, dst_handle).await, 1);
+    assert_trivial_encrypt_operands(&db, dst_handle, 111, 5).await;
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn fallback_ignored_when_handle_has_ciphertext() {
@@ -695,7 +872,11 @@ async fn seed_materialization(db: &Database, handle: &[u8], chain_id: u64) {
 }
 
 async fn run_bridge_cleanup(db: &Database, orphaned_hashes: &[Vec<u8>]) {
-    let mut tx = db.new_transaction().await.expect("tx");
+    let mut tx = db
+        .new_transaction()
+        .await
+        .expect("tx")
+        .expect("new_transaction() returns Some on a live stack");
     db.cleanup_orphaned_branch_state(&mut tx, orphaned_hashes)
         .await
         .expect("cleanup");
@@ -876,5 +1057,106 @@ async fn reorg_keeps_unassociated_and_canonical_bridge_state() {
         .await,
         1,
         "canonical source approval must survive"
+    );
+}
+
+/// The same destination handle observed on two forks: retracting the fork
+/// that performed the association must not delete the copy while the sibling
+/// observation survives — the flag transfers to the sibling instead. Once the
+/// sibling's block orphans too, the copy is retracted for real.
+#[tokio::test]
+#[serial(db)]
+async fn reorg_transfers_association_to_surviving_sibling() {
+    let (db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = handle_for_chain(DST_CHAIN_ID, 0x88);
+    let first_hash = vec![0x0C; 32];
+    let second_hash = vec![0x0D; 32];
+
+    // The association was performed from the first fork's observation; the
+    // sibling fork carries the same event, unflagged.
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &first_hash,
+        true,
+    )
+    .await;
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &second_hash,
+        false,
+    )
+    .await;
+    seed_materialization(&db, dst_handle.as_slice(), DST_CHAIN_ID).await;
+
+    run_bridge_cleanup(&db, &[first_hash]).await;
+
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events
+             WHERE dst_handle = $1 AND is_associated",
+            dst_handle.as_slice(),
+        )
+        .await,
+        1,
+        "association flag must transfer to the surviving sibling"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        1,
+        "copy must survive while a sibling observation remains"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        1,
+        "digest must survive while a sibling observation remains"
+    );
+
+    // The sibling's block orphans in a later round: now the copy goes.
+    run_bridge_cleanup(&db, &[second_hash]).await;
+
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM handle_bridged_events WHERE dst_handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "no observation may remain after both forks orphan"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "copy must be retracted once no observation survives"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "digest must be retracted once no observation survives"
     );
 }

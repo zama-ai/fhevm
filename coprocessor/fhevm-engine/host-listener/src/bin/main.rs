@@ -3,6 +3,7 @@ use fhevm_engine_common::telemetry;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    fhevm_engine_common::handle_stack_version_flag();
     let args = host_listener::cmd::Args::parse();
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(

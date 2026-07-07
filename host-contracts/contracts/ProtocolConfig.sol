@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
-import {KmsContextAnchor, KmsNode, KmsNodeParams, PcrValues} from "./shared/Structs.sol";
+import {KmsContextAnchor, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
@@ -244,7 +244,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
      * @notice Re-initializes the contract from V1.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      * @param kmsNodeParams The existing context's KMS node set, used to recompute the anchor hash.
-     * @param thresholds The existing context's thresholds, used to recompute the anchor hash.
      * @param softwareVersion The KMS software version expected for the context.
      * @param pcrValues Accepted enclave PCR values for the context.
      */
@@ -252,7 +251,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2(
         KmsNodeParams[] calldata kmsNodeParams,
-        KmsThresholds calldata thresholds,
         string calldata softwareVersion,
         PcrValues[] calldata pcrValues
     ) public virtual reinitializer(REINITIALIZER_VERSION) {
@@ -261,6 +259,13 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // Bring the existing context into the epoch-lifecycle shape: active context + first epoch.
         $.epochCounter = EPOCH_COUNTER_BASE;
         uint256 contextId = $.currentKmsContextId;
+
+        KmsThresholds memory thresholds = KmsThresholds({
+            publicDecryption: $.publicDecryptionThresholdForContext[contextId],
+            userDecryption: $.userDecryptionThresholdForContext[contextId],
+            kmsGen: $.kmsGenThresholdForContext[contextId],
+            mpc: $.mpcThresholdForContext[contextId]
+        });
         $.latestActiveKmsContextId = contextId;
         $.contextState[contextId] = ContextState.Active;
         uint256 epochId = ++$.epochCounter;
@@ -510,6 +515,44 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
+    function proposeCoprocessorUpgrade(
+        uint256 proposalId,
+        string calldata softwareVersion,
+        ChainUpgradeWindow[] calldata chainUpgradeWindows,
+        uint64 gwStartBlock
+    ) external virtual onlyACLOwner {
+        if (proposalId == 0) {
+            revert InvalidProposalId();
+        }
+        if (bytes(softwareVersion).length == 0) {
+            revert EmptySoftwareVersion();
+        }
+        if (chainUpgradeWindows.length == 0) {
+            revert EmptyChainUpgradeWindows();
+        }
+        if (gwStartBlock == 0) {
+            revert ZeroGwStartBlock();
+        }
+
+        for (uint256 i = 0; i < chainUpgradeWindows.length; i++) {
+            ChainUpgradeWindow calldata cw = chainUpgradeWindows[i];
+            if (cw.chainId == 0) {
+                revert ZeroChainId();
+            }
+            if (cw.startBlock > cw.endBlock) {
+                revert InvalidBlockWindow(cw.chainId, cw.startBlock, cw.endBlock);
+            }
+            for (uint256 j = 0; j < i; j++) {
+                if (chainUpgradeWindows[j].chainId == cw.chainId) {
+                    revert DuplicateChainId(cw.chainId);
+                }
+            }
+        }
+
+        emit CoprocessorUpgradeProposed(proposalId, softwareVersion, chainUpgradeWindows, gwStartBlock);
+    }
+
+    /// @inheritdoc IProtocolConfig
     function updatePublicDecryptionThresholdForContext(
         uint256 kmsContextId,
         uint256 threshold
@@ -638,7 +681,10 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /// @inheritdoc IProtocolConfig
     function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view virtual returns (bool) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.epochState[epochId] == EpochState.Active && $.contextForEpoch[epochId] == kmsContextId;
+        return
+            $.epochState[epochId] == EpochState.Active &&
+            $.contextForEpoch[epochId] == kmsContextId &&
+            _isValidKmsContext(kmsContextId);
     }
 
     /// @inheritdoc IProtocolConfig

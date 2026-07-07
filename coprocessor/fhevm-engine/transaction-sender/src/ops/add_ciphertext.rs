@@ -18,7 +18,7 @@ use alloy::{
 use anyhow::bail;
 use async_trait::async_trait;
 use fhevm_engine_common::{telemetry, utils::to_hex};
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, Transaction};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
 
@@ -186,6 +186,20 @@ where
         txn_block_number: Option<i64>,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
+        // Cutover safety: both writes below target tables execute_cutover merges
+        // into `public` (ciphertext_digest, ciphertexts128). Gate them behind the
+        // shared cutover lock + retirement re-check so a retired BCS sender cannot
+        // clobber a re-armed digest or delete the merged green ct128. These run
+        // AFTER the on-chain send as plain DB writes, so no advisory lock is held
+        // across the on-chain call. See versioning::cutover_gate.
+        let Some(mut tx) =
+            fhevm_engine_common::versioning::begin_write_guarded(&self.db_pool, self.conf.gcs_mode)
+                .await?
+        else {
+            info!("Cutover completed — skipping post-send digest/ct128 writes on retired stack");
+            return Ok(());
+        };
+
         sqlx::query!(
             "UPDATE ciphertext_digest
             SET
@@ -197,7 +211,7 @@ where
             txn_block_number,
             handle
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
 
         // Delete the local 128-bit ciphertext after successful transaction
@@ -205,7 +219,9 @@ where
         //
         // The deletion happens here but not in the SNS worker after upload because
         // here it is less probable that the deletion fails due to a race condition
-        delete_ct128_from_db(&self.db_pool, handle.to_vec()).await?;
+        delete_ct128_from_db(&mut tx, handle.to_vec()).await?;
+
+        tx.commit().await?;
 
         if let Some(txn_hash) = src_transaction_id {
             telemetry::try_end_l1_transaction(&self.db_pool, &txn_hash).await?;
@@ -461,11 +477,11 @@ where
 
 /// Deletes the local record of a 128-bit ciphertext
 async fn delete_ct128_from_db(
-    pool: &sqlx::Pool<Postgres>,
+    tx: &mut Transaction<'_, Postgres>,
     handle: Vec<u8>,
 ) -> Result<(), sqlx::Error> {
     let rows_affected = sqlx::query!("DELETE FROM ciphertexts128 WHERE  handle = $1", handle)
-        .execute(pool)
+        .execute(tx.as_mut())
         .await?
         .rows_affected();
 
