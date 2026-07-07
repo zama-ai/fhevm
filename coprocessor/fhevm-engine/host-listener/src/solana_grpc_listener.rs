@@ -20,9 +20,7 @@ use futures_util::stream::StreamExt;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use time::{OffsetDateTime, PrimitiveDateTime};
 use tokio_util::sync::CancellationToken;
-#[cfg(feature = "solana-reconstruct")]
-use tracing::warn;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::Channel;
@@ -44,6 +42,8 @@ use crate::solana_slot_hashes::{
 };
 
 const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
+const SOLANA_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const SOLANA_GRPC_INGEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug)]
 pub struct SolanaGrpcListenerConfig {
@@ -86,8 +86,9 @@ pub async fn run(
     // Confirmed (not the RpcClient default of finalized) so on-chain reads —
     // getBlockTime and the acl_record read for commit_handle_material — see
     // recently-created state, matching the gRPC subscription commitment.
-    let rpc = RpcClient::new_with_commitment(
+    let rpc = RpcClient::new_with_timeout_and_commitment(
         config.rpc_fallback_url.clone(),
+        SOLANA_RPC_REQUEST_TIMEOUT,
         solana_commitment_config::CommitmentConfig::confirmed(),
     );
     // TODO(unbounded-cache): these per-slot maps are insert/get only — never
@@ -257,22 +258,38 @@ async fn subscribe_loop(
                                 *from_slot = Some(slot);
                                 continue;
                             }
-                            if let Err(err) = ingest_transaction(
-                                db, rpc, config, slot, &info, slot_time,
-                                &*slot_bank_hash, &*slot_clock_ts,
-                                #[cfg(feature = "solana-reconstruct")]
-                                encrypted_value_tracker,
+                            match tokio::time::timeout(
+                                SOLANA_GRPC_INGEST_TIMEOUT,
+                                ingest_transaction(
+                                    db, rpc, config, slot, &info, slot_time,
+                                    &*slot_bank_hash, &*slot_clock_ts,
+                                    #[cfg(feature = "solana-reconstruct")]
+                                    encrypted_value_tracker,
+                                ),
                             )
                             .await
                             {
-                                error!(
-                                    slot,
-                                    signature = %signature,
-                                    error = %err,
-                                    "failed to ingest gRPC transaction; skipping"
-                                );
-                                *from_slot = Some(slot);
-                                continue;
+                                Ok(Ok(())) => {}
+                                Ok(Err(err)) => {
+                                    error!(
+                                        slot,
+                                        signature = %signature,
+                                        error = %err,
+                                        "failed to ingest gRPC transaction; skipping"
+                                    );
+                                    *from_slot = Some(slot);
+                                    continue;
+                                }
+                                Err(_) => {
+                                    warn!(
+                                        slot,
+                                        signature = %signature,
+                                        timeout = ?SOLANA_GRPC_INGEST_TIMEOUT,
+                                        "timed out ingesting gRPC transaction; skipping"
+                                    );
+                                    *from_slot = Some(slot);
+                                    continue;
+                                }
                             }
                         }
                         *from_slot = Some(slot);

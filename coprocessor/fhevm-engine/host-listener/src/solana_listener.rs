@@ -28,7 +28,7 @@ use solana_transaction_status::{
 };
 use time::{OffsetDateTime, PrimitiveDateTime};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::database::tfhe_event_propagate::Database;
 use crate::solana_adapter::{
@@ -38,6 +38,7 @@ use crate::solana_adapter::{
 
 /// `getSignaturesForAddress` returns at most this many entries per call.
 const SIGNATURES_PAGE_LIMIT: usize = 1_000;
+const SOLANA_RPC_AWAIT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
 enum SignatureIngestError {
@@ -93,24 +94,50 @@ pub async fn run(
             _ = ticker.tick() => {}
         }
 
-        let signatures = match fetch_new_signatures(rpc, config, cursor).await {
-            Ok(signatures) => signatures,
-            Err(err) => {
+        let signatures = match tokio::time::timeout(
+            SOLANA_RPC_AWAIT_TIMEOUT,
+            fetch_new_signatures(rpc, config, cursor),
+        )
+        .await
+        {
+            Ok(Ok(signatures)) => signatures,
+            Ok(Err(err)) => {
                 error!(error = %err, "Failed to fetch new signatures; retrying next tick");
+                continue;
+            }
+            Err(_) => {
+                warn!(
+                    timeout = ?SOLANA_RPC_AWAIT_TIMEOUT,
+                    "Timed out fetching new signatures; retrying next tick"
+                );
                 continue;
             }
         };
 
         for signature in signatures {
-            let result = ingest_signature(
-                db,
-                rpc,
-                config,
-                &signature,
-                #[cfg(feature = "solana-reconstruct")]
-                &mut encrypted_value_tracker,
+            let result = match tokio::time::timeout(
+                SOLANA_RPC_AWAIT_TIMEOUT,
+                ingest_signature(
+                    db,
+                    rpc,
+                    config,
+                    &signature,
+                    #[cfg(feature = "solana-reconstruct")]
+                    &mut encrypted_value_tracker,
+                ),
             )
-            .await;
+            .await
+            {
+                Ok(result) => result,
+                Err(_) => {
+                    warn!(
+                        signature = %signature,
+                        timeout = ?SOLANA_RPC_AWAIT_TIMEOUT,
+                        "Timed out ingesting transaction; retrying next tick"
+                    );
+                    break;
+                }
+            };
             if !record_signature_ingest_result(&mut cursor, signature, result) {
                 break;
             }

@@ -2,7 +2,11 @@ use crate::chain_id::ChainId;
 use crate::utils::to_hex;
 use bigdecimal::num_traits::ToPrimitive;
 use opentelemetry::{trace::TraceContextExt, trace::TracerProvider, KeyValue};
-use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::{
+    trace::{BatchConfigBuilder, BatchSpanProcessor, SdkTracerProvider},
+    Resource,
+};
 use prometheus::{register_histogram, Histogram};
 use sqlx::PgConnection;
 use std::fmt;
@@ -10,11 +14,17 @@ use std::{
     num::NonZeroUsize,
     str::FromStr,
     sync::{Arc, LazyLock, OnceLock},
+    time::Duration,
 };
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    filter::{filter_fn, LevelFilter},
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+    Layer,
+};
 
 /// Calls provider shutdown exactly once when dropped.
 pub struct TracerProviderGuard {
@@ -44,6 +54,9 @@ impl Drop for TracerProviderGuard {
 }
 
 static TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
+const DEFAULT_OTLP_EXPORT_TIMEOUT: Duration = Duration::from_secs(3);
+const OTLP_BATCH_MAX_QUEUE_SIZE: usize = 512;
+const OTLP_BATCH_MAX_EXPORT_BATCH_SIZE: usize = 128;
 
 /// Flush buffered OTLP spans; call before `std::process::exit`.
 pub fn flush() {
@@ -77,7 +90,7 @@ pub fn init_json_subscriber(
     service_name: &str,
     tracer_name: &'static str,
 ) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
-    let level_filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
+    let level_filter = LevelFilter::from_level(log_level);
     let fmt_layer = tracing_subscriber::fmt::layer()
         .json()
         .with_target(false)
@@ -102,11 +115,19 @@ pub fn init_json_subscriber(
         }
     };
 
-    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    let telemetry_layer = tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_filter(filter_fn(|metadata| {
+            !is_otel_internal_target(metadata.target())
+        }));
     base.with(telemetry_layer).try_init()?;
     opentelemetry::global::set_tracer_provider(trace_provider.clone());
     let _ = TRACER_PROVIDER.set(trace_provider.clone());
     Ok(Some(TracerProviderGuard::new(trace_provider)))
+}
+
+fn is_otel_internal_target(target: &str) -> bool {
+    target.starts_with("opentelemetry")
 }
 
 /// Initializes tracing with JSON logs and best-effort OTLP export.
@@ -137,6 +158,7 @@ fn setup_otel_with_tracer(
 > {
     let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
+        .with_timeout(otlp_export_timeout())
         .build()?;
 
     let resource = Resource::builder_empty()
@@ -146,13 +168,34 @@ fn setup_otel_with_tracer(
         )])
         .build();
 
+    let batch_config = BatchConfigBuilder::default()
+        .with_max_queue_size(OTLP_BATCH_MAX_QUEUE_SIZE)
+        .with_max_export_batch_size(OTLP_BATCH_MAX_EXPORT_BATCH_SIZE)
+        .build();
+    let batch_processor = BatchSpanProcessor::builder(otlp_exporter)
+        .with_batch_config(batch_config)
+        .build();
+
     let trace_provider = SdkTracerProvider::builder()
         .with_resource(resource)
-        .with_batch_exporter(otlp_exporter)
+        .with_span_processor(batch_processor)
         .build();
 
     let tracer = trace_provider.tracer(tracer_name);
     Ok((tracer, trace_provider))
+}
+
+fn otlp_export_timeout() -> Duration {
+    parse_timeout_env(opentelemetry_otlp::OTEL_EXPORTER_OTLP_TRACES_TIMEOUT)
+        .or_else(|| parse_timeout_env(opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT))
+        .unwrap_or(DEFAULT_OTLP_EXPORT_TIMEOUT)
+}
+
+fn parse_timeout_env(var: &str) -> Option<Duration> {
+    std::env::var(var)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_millis)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -542,5 +585,39 @@ mod tests {
         // A second shutdown is a no-op.
         guard.shutdown_once();
         assert!(guard.tracer_provider.is_none());
+    }
+
+    #[test]
+    fn otel_internal_targets_are_not_forwarded_to_filtered_layer() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+
+        struct CountingLayer(Arc<AtomicUsize>);
+
+        impl<S: tracing::Subscriber> Layer<S> for CountingLayer {
+            fn on_event(&self, _event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let forwarded = Arc::new(AtomicUsize::new(0));
+        let filtered_layer =
+            CountingLayer(forwarded.clone()).with_filter(tracing_subscriber::filter::filter_fn(
+                |metadata| !is_otel_internal_target(metadata.target()),
+            ));
+        let subscriber = tracing_subscriber::registry().with(filtered_layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!(target: "opentelemetry", "internal");
+            tracing::info!(target: "opentelemetry_sdk", "internal");
+            tracing::info!(target: "opentelemetry-otlp", "internal");
+            tracing::info!(target: "opentelemetry_otlp", "internal");
+            tracing::info!(target: "host_listener", "application");
+        });
+
+        assert_eq!(forwarded.load(Ordering::SeqCst), 1);
     }
 }

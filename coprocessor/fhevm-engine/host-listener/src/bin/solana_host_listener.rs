@@ -21,6 +21,8 @@ use host_listener::cmd::DEFAULT_DEPENDENCE_CACHE_SIZE;
 use host_listener::database::tfhe_event_propagate::Database;
 use host_listener::solana_listener::{run, SolanaListenerConfig};
 
+const SOLANA_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[derive(Parser, Debug, Clone)]
 #[command(version, about = "Solana host listener", long_about = None)]
 struct Args {
@@ -117,8 +119,11 @@ async fn main() -> Result<()> {
     match args.transport {
         Transport::Rpc => {
             let commitment = CommitmentConfig::confirmed();
-            let rpc =
-                RpcClient::new_with_commitment(args.url.clone(), commitment);
+            let rpc = RpcClient::new_with_timeout_and_commitment(
+                args.url.clone(),
+                SOLANA_RPC_REQUEST_TIMEOUT,
+                commitment,
+            );
             let config = SolanaListenerConfig {
                 rpc_url: args.url,
                 program_id,
@@ -166,8 +171,9 @@ async fn run_grpc(
         // Confirmed (not the RpcClient default of finalized) so a freshly created
         // HostConfig is visible without waiting for finalization; matches the
         // gRPC subscription's commitment.
-        let rpc = RpcClient::new_with_commitment(
+        let rpc = RpcClient::new_with_timeout_and_commitment(
             args.url.clone(),
+            SOLANA_RPC_REQUEST_TIMEOUT,
             CommitmentConfig::confirmed(),
         );
         let (host_config_pda, _) =
