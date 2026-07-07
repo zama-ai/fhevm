@@ -137,7 +137,7 @@ fn base58_encode(bytes: &[u8; 32]) -> String {
             carry /= 58;
         }
     }
-    let mut out: Vec<u8> = std::iter::repeat(ALPHABET[0]).take(leading_zeros).collect();
+    let mut out: Vec<u8> = std::iter::repeat_n(ALPHABET[0], leading_zeros).collect();
     out.extend(digits.iter().rev().map(|&d| ALPHABET[d as usize]));
     String::from_utf8(out).unwrap()
 }

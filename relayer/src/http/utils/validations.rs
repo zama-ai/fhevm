@@ -192,10 +192,7 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
                     .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()))
             }
         }
-        s if s.len() >= 4
-            && s.starts_with("0x")
-            && &s[2..4] == EXTRA_DATA_SOLANA_VERSION_BYTE =>
-        {
+        s if s.len() >= 4 && s.starts_with("0x") && &s[2..4] == EXTRA_DATA_SOLANA_VERSION_BYTE => {
             validate_solana_mmr_proof_extra_data(s)
         }
         _ => Err(ValidationError::new("validation_error")
@@ -536,7 +533,10 @@ mod tests {
     #[test]
     fn extra_data_rejects_non_hex_solana_v3_blob() {
         // Right length, 0x03 version, but non-hex payload.
-        let bad = format!("0x03{}", "zz".repeat(EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES - 1));
+        let bad = format!(
+            "0x03{}",
+            "zz".repeat(EXTRA_DATA_SOLANA_MMR_PROOF_MIN_BYTES - 1)
+        );
         assert!(validate_extra_data_field_decryption(&bad).is_err());
     }
 

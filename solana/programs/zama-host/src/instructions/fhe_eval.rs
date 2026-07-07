@@ -379,7 +379,7 @@ fn durable_output_authority<'info>(
 fn deny_subject_record_for<'a, 'info>(
     host_config: &HostConfig,
     remaining_accounts: &'a [AccountInfo<'info>],
-    mut remaining_accounts_used: Option<&mut [bool]>,
+    remaining_accounts_used: Option<&mut [bool]>,
     subject: Pubkey,
 ) -> Result<Option<&'a AccountInfo<'info>>> {
     if !host_config.grant_deny_list_enabled {
@@ -393,7 +393,7 @@ fn deny_subject_record_for<'a, 'info>(
     else {
         return Err(error!(ZamaHostError::AclDenyRecordMissing));
     };
-    if let Some(used) = remaining_accounts_used.as_deref_mut() {
+    if let Some(used) = remaining_accounts_used {
         used[index] = true;
     }
     Ok(Some(record))

@@ -202,7 +202,7 @@ pub(super) fn check_grant_not_denied_info(
     let (expected, expected_bump) = deny_subject_address(subject);
     require_keys_eq!(info.key(), expected, ZamaHostError::AclDenyRecordMismatch);
 
-    if is_absent_deny_record(&info)? {
+    if is_absent_deny_record(info)? {
         return Ok(());
     }
     require_keys_eq!(*info.owner, crate::ID, ZamaHostError::AclDenyRecordMismatch);

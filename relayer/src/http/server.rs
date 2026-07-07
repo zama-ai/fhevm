@@ -43,6 +43,7 @@ async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
     Err(anyhow::anyhow!("HTTP server failed to start"))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_http_server(
     config: &HttpConfig,
     orchestrator: Arc<Orchestrator>,

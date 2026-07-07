@@ -1,9 +1,9 @@
 use crate::core::event_processor::{
+    KmsClient, ProcessingError, RequestCheckError,
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
     protocol_config::ProtocolConfigProcessor,
-    KmsClient, ProcessingError, RequestCheckError,
 };
 use alloy::providers::Provider;
 use anyhow::anyhow;

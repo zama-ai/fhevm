@@ -1,12 +1,12 @@
 use crate::core::{
     config::{Config, HostChainKind},
     event_processor::{
+        CiphertextManager, ProcessingError, RequestCheckError, RequestCheckKind,
         context::ContextManager,
         solana_user_decrypt::{
-            check_solana_handles_acl, check_solana_handles_public_decrypt,
-            verify_solana_user_decrypt_signature, SolanaHost,
+            SolanaHost, check_solana_handles_acl, check_solana_handles_public_decrypt,
+            verify_solana_user_decrypt_signature,
         },
-        CiphertextManager, ProcessingError, RequestCheckError, RequestCheckKind,
     },
     solana_acl::HandleBytes,
     solana_v2_fetcher::SolanaV2Fetcher,
@@ -14,20 +14,19 @@ use crate::core::{
 use alloy::{
     consensus::Transaction,
     hex,
-    primitives::{map::DefaultHashBuilder, Address, Bytes, FixedBytes, U256},
+    primitives::{Address, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
     providers::Provider,
     sol_types::{Eip712Domain, SolCall},
 };
 use anyhow::anyhow;
 use connector_utils::types::{
-    extra_data::parse_extra_data, handle::extract_chain_id_from_handle, u256_to_request_id,
-    KmsGrpcRequest,
+    KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
+    u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, delegatedUserDecryptionRequestCall,
-    userDecryptionRequest_1Call as userDecryptionRequestCall, DecryptionInstance, HandleEntry,
-    SnsCiphertextMaterial, UserDecryptionRequestSolana,
-    UserDecryptionRequest_1 as UserDecryptionRequestV2,
+    self, DecryptionInstance, HandleEntry, SnsCiphertextMaterial,
+    UserDecryptionRequest_1 as UserDecryptionRequestV2, UserDecryptionRequestSolana,
+    delegatedUserDecryptionRequestCall, userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
 use futures::future::{join_all, try_join_all};
@@ -857,8 +856,8 @@ impl UserDecryptionExtraData {
 mod tests {
     use super::*;
     use alloy::{
-        providers::{mock::Asserter, ProviderBuilder},
-        signers::{local::PrivateKeySigner, SignerSync},
+        providers::{ProviderBuilder, mock::Asserter},
+        signers::{SignerSync, local::PrivateKeySigner},
         sol_types::SolValue,
         transports::http::reqwest,
     };
@@ -873,7 +872,7 @@ mod tests {
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
     use user_decryption_signature::{
-        compute_user_decrypt_digest, default_user_decrypt_domain, ERC1271_MAGIC_VALUE,
+        ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
     };
 
     enum ExpectedOutcome {
