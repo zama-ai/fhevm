@@ -10,7 +10,7 @@ use std::time::Duration;
 use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
 use fhevm_engine_common::utils::DatabaseURL;
 use serde::Deserialize;
-use sqlx::{postgres::PgListener, Pool, Postgres};
+use sqlx::{postgres::PgListener, Pool, Postgres, Transaction};
 use thiserror::Error;
 use tokio::select;
 use tokio_util::sync::CancellationToken;
@@ -319,32 +319,54 @@ pub async fn handle_upgrade_activated(
     Ok(())
 }
 
+/// A `public` table cloned into the `gcs` schema for the dry-run.
+///
+/// `conflict_cols` is the `ON CONFLICT` target [`execute_cutover`] uses when
+/// merging the table's GCS rows back into `public` (see [`merge_gcs_table`]); it
+/// must name an existing unique / primary-key constraint on `public.<name>`. An
+/// **empty** slice means the table is intentionally *not* merged — it is dropped
+/// with the schema because its rows are either already in `public` via the
+/// always-live blue stack (deterministically derived from on-chain events) or
+/// transient runtime coordination consumed before cutover.
+#[derive(Debug, Clone, Copy)]
+pub struct GcsTable {
+    pub name: &'static str,
+    pub conflict_cols: &'static [&'static str],
+}
+
 /// Tables that the GCS stack writes to during the dry-run phase. Each gets
 /// duplicated into the `gcs` schema with `CREATE TABLE gcs.X (LIKE public.X
-/// INCLUDING ALL)` at upgrade-controller startup (gated on `gcs_mode`), then
-/// merged back into `public.X` at cutover.
+/// INCLUDING ALL)` at upgrade-controller startup (gated on `gcs_mode`); those
+/// with a non-empty [`GcsTable::conflict_cols`] are merged back into `public.X`
+/// at cutover.
 ///
 /// `INCLUDING ALL` copies defaults, identity, constraints (incl. PKs/uniques),
 /// generated columns, indexes, statistics, storage, comments, and compression
 /// — but NOT triggers, rules, foreign keys, or ownership.
 ///
-/// To add a new table to the dry-run, list it here.
-pub const GCS_DUPLICATED_TABLES: &[&str] = &[
-    "ciphertexts",
-    "ciphertexts128",
-    "ciphertext_digest",
-    "computations",
-    "pbs_computations",
-    "state_hash",
-    "input_handles",
-    "verify_proofs",
-    "transactions",
-    "allowed_handles",
-    "host_chain_blocks_valid",
-    "dependence_chain",
-    "kms_key_activation_events",
-    "kms_crs_activation_events",
-    "gw_listener_last_block",
+/// To add a new table to the dry-run, list it here (set `conflict_cols` to its
+/// PK if it must be merged at cutover, or `&[]` if it should be dropped).
+pub const GCS_DUPLICATED_TABLES: &[GcsTable] = &[
+    GcsTable { name: "ciphertexts", conflict_cols: &["handle", "ciphertext_version"] },
+    GcsTable { name: "ciphertexts128", conflict_cols: &["tenant_id", "handle"] },
+    // Green-wins overwrite propagates GCS's NULL digests into public, re-arming
+    // the sns-worker resubmit loop to backfill S3 after cutover. It also resets
+    // txn_*/s3_* tracking, so already-sent handles are re-published on-chain.
+    GcsTable { name: "ciphertext_digest", conflict_cols: &["handle"] },
+    GcsTable { name: "computations", conflict_cols: &["output_handle", "transaction_id"] },
+    GcsTable { name: "pbs_computations", conflict_cols: &["tenant_id", "handle"] },
+    GcsTable { name: "state_hash", conflict_cols: &[] },
+    GcsTable { name: "input_handles", conflict_cols: &[] },
+    // Green-wins can resurrect rows the blue sender deleted after sending,
+    // re-broadcasting verifyProofResponse (contract idempotency absorbs it).
+    GcsTable { name: "verify_proofs", conflict_cols: &["zk_proof_id"] },
+    GcsTable { name: "transactions", conflict_cols: &[] },
+    GcsTable { name: "allowed_handles", conflict_cols: &[] },
+    GcsTable { name: "host_chain_blocks_valid", conflict_cols: &[] },
+    GcsTable { name: "dependence_chain", conflict_cols: &["dependence_chain_id"] },
+    GcsTable { name: "kms_key_activation_events", conflict_cols: &[] },
+    GcsTable { name: "kms_crs_activation_events", conflict_cols: &[] },
+    GcsTable { name: "gw_listener_last_block", conflict_cols: &[] },
 ];
 
 /// Create the versioned GCS schema (e.g. `"gcs-0.14.0"`) and a
@@ -358,9 +380,10 @@ pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
     sqlx::query(&create_schema).execute(&mut *tx).await?;
 
     for table in GCS_DUPLICATED_TABLES {
+        let name = table.name;
         let sql = format!(
-            "CREATE TABLE IF NOT EXISTS {GCS_SCHEMA_QUOTED}.{table} \
-             (LIKE public.{table} INCLUDING ALL)"
+            "CREATE TABLE IF NOT EXISTS {GCS_SCHEMA_QUOTED}.{name} \
+             (LIKE public.{name} INCLUDING ALL)"
         );
         sqlx::query(&sql).execute(&mut *tx).await?;
     }
@@ -780,6 +803,73 @@ async fn transition_to_gw_dry_run_started(pool: &Pool<Postgres>) -> Result<(), E
     Ok(())
 }
 
+/// Merge every row from `gcs.<table>` into `public.<table>`, letting the GCS
+/// rows win on collisions (`ON CONFLICT (<conflict_cols>) DO UPDATE`) — GCS is
+/// the canonical writer for its dry-run window. Driven by [`execute_cutover`]
+/// over the [`GCS_DUPLICATED_TABLES`] entries that carry a `conflict_cols`.
+///
+/// The column list is read from the live catalog rather than hard-coded: these
+/// tables have accreted many columns across migrations, and a stale
+/// hand-maintained list would silently drop a column or fail the whole cutover
+/// transaction. `conflict_cols` must name an existing unique/primary-key
+/// constraint on `public.<table>`. Generated / identity columns are excluded
+/// (they cannot appear in an INSERT column list). Returns the number of rows
+/// merged.
+async fn merge_gcs_table(
+    tx: &mut Transaction<'_, Postgres>,
+    table: &str,
+    conflict_cols: &[&str],
+) -> Result<u64, Error> {
+    let cols: Vec<String> = sqlx::query_scalar(
+        "SELECT column_name
+           FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = $1
+            AND is_generated = 'NEVER'
+            AND is_identity = 'NO'
+          ORDER BY ordinal_position",
+    )
+    .bind(table)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    if cols.is_empty() {
+        return Err(Error::Payload(format!(
+            "cannot merge gcs.{table}: no insertable columns found for public.{table}"
+        )));
+    }
+
+    let col_list = cols.join(", ");
+    let set_clause = cols
+        .iter()
+        .filter(|c| !conflict_cols.contains(&c.as_str()))
+        .map(|c| format!("{c} = EXCLUDED.{c}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let conflict = conflict_cols.join(", ");
+
+    // If every column is part of the conflict key the SET would be empty; the
+    // row already matches, so DO NOTHING is the correct degenerate case.
+    let action = if set_clause.is_empty() {
+        "DO NOTHING".to_string()
+    } else {
+        format!("DO UPDATE SET {set_clause}")
+    };
+
+    let sql = format!(
+        "INSERT INTO public.{table} ({col_list})
+         SELECT {col_list} FROM {GCS_SCHEMA_QUOTED}.{table}
+         ON CONFLICT ({conflict}) {action}"
+    );
+    let merged = sqlx::query(&sql).execute(&mut **tx).await?;
+    info!(
+        table,
+        merged = merged.rows_affected(),
+        "merged gcs table into public"
+    );
+    Ok(merged.rows_affected())
+}
+
 /// Cutover routine — invoked when `event_unanimity_consensus` fires and the
 /// FSM has been transitioned from `DryRunStarted` to `UpgradeAuthorized`.
 ///
@@ -847,92 +937,16 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .await?;
     info!(stack_version, "versioning row updated");
 
-    info!(
-        stack_version,
-        "cutover: merging ciphertexts from gcs schema into public"
-    );
-
-    // 3. Merge gcs.ciphertexts → public.ciphertexts. `ON CONFLICT DO UPDATE`
-    //    lets the GCS rows win on PK collisions: GCS is the canonical writer for
-    //    its window.
-    let merge_sql = format!(
-        "INSERT INTO public.ciphertexts
-             (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type,
-              input_blob_hash, input_blob_index, created_at, ciphertext128, is_input)
-         SELECT tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type,
-                input_blob_hash, input_blob_index, created_at, ciphertext128, is_input
-         FROM {GCS_SCHEMA_QUOTED}.ciphertexts
-         ON CONFLICT (handle, ciphertext_version) DO UPDATE
-         SET ciphertext       = EXCLUDED.ciphertext,
-             ciphertext_type  = EXCLUDED.ciphertext_type,
-             input_blob_hash  = EXCLUDED.input_blob_hash,
-             input_blob_index = EXCLUDED.input_blob_index,
-             created_at       = EXCLUDED.created_at,
-             ciphertext128    = EXCLUDED.ciphertext128,
-             is_input         = EXCLUDED.is_input"
-    );
-    let merged = sqlx::query(&merge_sql).execute(&mut *tx).await?;
-    info!(
-        merged = merged.rows_affected(),
-        "merged gcs.ciphertexts into public.ciphertexts"
-    );
-
-    info!(
-        stack_version,
-        "cutover: merging ciphertexts128 and digest from gcs schema into public"
-    );
-
-    // 3b. Merge gcs.ciphertexts128 → public.ciphertexts128. These are the
-    //     expensive squashed-noise (PBS) outputs the green worker computed
-    //     during the dry-run. The GCS rows win on PK collisions (GCS is the
-    //     canonical writer for its window). The now-live green uploader reads
-    //     these bytes to (re)upload ct128 to S3 after cutover.
-    let merge_ct128_sql = format!(
-        "INSERT INTO public.ciphertexts128
-             (tenant_id, handle, ciphertext, created_at)
-         SELECT tenant_id, handle, ciphertext, created_at
-         FROM {GCS_SCHEMA_QUOTED}.ciphertexts128
-         ON CONFLICT (tenant_id, handle) DO UPDATE
-         SET ciphertext = EXCLUDED.ciphertext,
-             created_at = EXCLUDED.created_at"
-    );
-    let merged_ct128 = sqlx::query(&merge_ct128_sql).execute(&mut *tx).await?;
-    info!(
-        merged = merged_ct128.rows_affected(),
-        "merged gcs.ciphertexts128 into public.ciphertexts128"
-    );
-
-    info!(
-        stack_version,
-        "cutover: merging ciphertext_digest from gcs schema into public"
-    );
-
-    // 3c. Merge gcs.ciphertext_digest → public.ciphertext_digest, RE-ARMED for
-    //     re-upload: both digests are NULLed. The now-live green uploader's
-    //     resubmit loop keys off NULL digests and re-uploads ct64+ct128,
-    //     overwriting the blue stack's S3 objects. `txn_is_sent` is left
-    //     untouched on conflict — this backfill is scoped to S3 only and does
-    //     not re-drive the on-chain transaction-sender for already-sent handles.
-    let merge_digest_sql = format!(
-        "INSERT INTO public.ciphertext_digest
-             (tenant_id, handle, host_chain_id, key_id_gw, transaction_id,
-              ciphertext, ciphertext128, ciphertext128_format)
-         SELECT tenant_id, handle, host_chain_id, key_id_gw, transaction_id,
-                NULL, NULL, ciphertext128_format
-         FROM {GCS_SCHEMA_QUOTED}.ciphertext_digest
-         ON CONFLICT (handle) DO UPDATE
-         SET host_chain_id        = EXCLUDED.host_chain_id,
-             key_id_gw            = EXCLUDED.key_id_gw,
-             transaction_id       = EXCLUDED.transaction_id,
-             ciphertext           = NULL,
-             ciphertext128        = NULL,
-             ciphertext128_format = EXCLUDED.ciphertext128_format"
-    );
-    let merged_digest = sqlx::query(&merge_digest_sql).execute(&mut *tx).await?;
-    info!(
-        merged = merged_digest.rows_affected(),
-        "merged gcs.ciphertext_digest into public.ciphertext_digest (re-armed for re-upload)"
-    );
+    // 3. Merge the GCS-canonical tables back into public before dropping the
+    //    schema. Each merge lets the GCS rows win on PK collisions (GCS is the
+    //    canonical writer for its dry-run window).
+    info!(stack_version, "cutover: merging gcs tables into public");
+    for table in GCS_DUPLICATED_TABLES {
+        if table.conflict_cols.is_empty() {
+            continue;
+        }
+        merge_gcs_table(&mut tx, table.name, table.conflict_cols).await?;
+    }
 
     // 5. Drop the gcs schema (and everything in it) now that its data has been
 

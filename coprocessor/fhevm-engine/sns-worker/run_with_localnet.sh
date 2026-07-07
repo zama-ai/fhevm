@@ -5,31 +5,18 @@ set -euo pipefail
 # Configuration
 # ------------------------------------------------------------------------------
 
-readonly POSTGRES_USER="postgres"
-readonly POSTGRES_PASSWORD="postgres"
-readonly SERVER="0.0.0.0"
-
-readonly DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${SERVER}:5432/coprocessor"
-readonly TENANT_API_KEY="a1503fb6-d79b-4e9e-826d-44cf262f3e05"
-
-readonly AWS_ACCESS_KEY_ID="fhevm-access-key"
-readonly AWS_SECRET_ACCESS_KEY="fhevm-access-secret-key"
-readonly AWS_ENDPOINT_URL="http://${SERVER}:9000"
-readonly AWS_REGION="eu-west-1"
-
-readonly OTEL_EXPORTER_OTLP_ENDPOINT="http://${SERVER}:7717"
+# Shared config (DATABASE_URL, TENANT_API_KEY, AWS_*, OTEL_*) comes from the
+# restored ../.env-test so every fleet service uses the same environment.
+source ./../.env-test
 
 # ------------------------------------------------------------------------------
 # Environment
 # ------------------------------------------------------------------------------
 
+# .env-test defines but does not export DATABASE_URL; sns-worker reads it from
+# the environment (falls back to the DATABASE_URL env var), so export it
+# explicitly. AWS_* and OTEL_* are already exported by .env-test.
 export DATABASE_URL
-export TENANT_API_KEY
-export AWS_ACCESS_KEY_ID
-export AWS_SECRET_ACCESS_KEY
-export AWS_ENDPOINT_URL
-export AWS_REGION
-export OTEL_EXPORTER_OTLP_ENDPOINT
 
 # Second argument: service name (optional)
 readonly SERVICE_NAME="${2:-sns-worker-1}"
@@ -97,7 +84,6 @@ echo "FEATURES: ${FEATURES[*]:-<none>}"
 # ------------------------------------------------------------------------------
 
 cargo run --jobs 32 --release "${CARGO_FEATURES[@]}" -- \
-    --tenant-api-key="${TENANT_API_KEY}" \
     --pg-listen-channels "event_pbs_computations" "event_ciphertext_computed" \
     --pg-notify-channel "event_ciphertext128_computed" \
     --work-items-batch-size=1 \
@@ -108,4 +94,6 @@ cargo run --jobs 32 --release "${CARGO_FEATURES[@]}" -- \
     --bucket-name-ct64="ct64" \
     --bucket-name-ct128="ct128" \
     --schedule-policy="sequential" \
+    --signer-type=private-key \
+    --private-key="${TX_SENDER_PRIVATE_KEY}" \
     --health-check-port=10003

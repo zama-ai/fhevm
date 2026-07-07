@@ -5,17 +5,15 @@ set -euo pipefail
 # Configuration
 # ------------------------------------------------------------------------------
 
-readonly POSTGRES_USER="postgres"
-readonly POSTGRES_PASSWORD="postgres"
-readonly SERVER="0.0.0.0"
+# Shared config (DATABASE_URL, TENANT_API_KEY, OTEL_*) comes from the restored
+# ../.env-test so every fleet service uses the same environment.
+source ./../.env-test
 
-readonly DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${SERVER}:5432/coprocessor"
-readonly TENANT_API_KEY="a1503fb6-d79b-4e9e-826d-44cf262f3e05"
-readonly OTEL_EXPORTER_OTLP_ENDPOINT="http://${SERVER}:4317"
-
+# .env-test defines but does not export these two; zkproof-worker reads them
+# from the environment, so export them explicitly. OTEL_* is already exported
+# by .env-test.
 export DATABASE_URL
 export TENANT_API_KEY
-export OTEL_EXPORTER_OTLP_ENDPOINT
 
 # ------------------------------------------------------------------------------
 # Defaults

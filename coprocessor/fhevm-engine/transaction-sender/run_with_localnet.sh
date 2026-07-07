@@ -8,7 +8,6 @@ cargo run --release -- \
 --private-key=${TX_SENDER_PRIVATE_KEY} \
 --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS} \
 --input-verification-address=${INPUT_VERIFICATION_ADDRESS} \
---multichain-acl-address=${MULTICHAIN_ACL_ADDRESS} \
 --database-url=${DATABASE_URL} \
 --database-pool-size=10 \
 --database-polling-interval-secs=5 \
@@ -17,5 +16,4 @@ cargo run --release -- \
 --verify-proof-resp-batch-limit=128 \
 --verify-proof-resp-max-retries=15 \
 --verify-proof-remove-after-max-retries \
---signer-type=private-key \
---host-chain-url ${RPC_WS_URL} 
+--signer-type=private-key
