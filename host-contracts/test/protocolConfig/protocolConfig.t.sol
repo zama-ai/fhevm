@@ -1011,6 +1011,27 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
     }
 
+    function test_isValidEpochForContext_falseAfterContextDestroyed() public {
+        _setupEpochLifecycle();
+        uint256 oldContextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        uint256 oldEpochId = EPOCH_COUNTER_BASE + 1;
+        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        uint256 newEpochId = EPOCH_COUNTER_BASE + 2;
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        _activatePendingContextWithTwoKmsNodes(newContextId, newEpochId);
+
+        // The old context's epoch stays Active after rotation, so the pair is still valid
+        assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+
+        // but destroying the old context must invalidate its epoch too.
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(oldContextId);
+
+        assertFalse(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+    }
+
     function test_abortPendingEpochForCurrentKmsContext() public {
         _setupEpochLifecycle();
         uint256 epochId = EPOCH_COUNTER_BASE + 2;
@@ -2275,7 +2296,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             realImpl,
-            abi.encodeCall(ProtocolConfig.reinitializeV2, (nodes, thresholds, softwareVersion, pcrValues))
+            abi.encodeCall(ProtocolConfig.reinitializeV2, (nodes, softwareVersion, pcrValues))
         );
         protocolConfig = ProtocolConfig(protocolConfigAdd);
 
