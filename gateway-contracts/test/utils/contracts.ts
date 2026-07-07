@@ -173,12 +173,6 @@ export async function loadTestVariablesFixture() {
     getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS"),
   );
 
-  // Load the CiphertextCommits contract
-  const ciphertextCommits = await hre.ethers.getContractAt(
-    "CiphertextCommits",
-    getRequiredEnvVar("CIPHERTEXT_COMMITS_ADDRESS"),
-  );
-
   // Load the Decryption contract
   const decryption = await hre.ethers.getContractAt("Decryption", getRequiredEnvVar("DECRYPTION_ADDRESS"));
 
@@ -198,7 +192,6 @@ export async function loadTestVariablesFixture() {
   return {
     ...fixtureData,
     gatewayConfig,
-    ciphertextCommits,
     decryption,
     inputVerification,
     chainIds,

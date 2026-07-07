@@ -2,30 +2,6 @@ import { task, types } from "hardhat/config";
 
 import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 
-task("task:verifyCiphertextCommits")
-  .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
-    false,
-    types.boolean,
-  )
-  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
-    if (useInternalProxyAddress) {
-      loadGatewayAddresses();
-    }
-    const proxyAddress = getRequiredEnvVar("CIPHERTEXT_COMMITS_ADDRESS");
-
-    const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
-    await run("verify:verify", {
-      address: proxyAddress,
-      constructorArguments: [],
-    });
-    await run("verify:verify", {
-      address: implementationAddress,
-      constructorArguments: [],
-    });
-  });
-
 task("task:verifyDecryption")
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -190,13 +166,6 @@ task("task:verifyAllGatewayContracts")
       // to not panic if Blockscout throws an error due to already verified implementation
       console.log("Verify KMSGeneration contract:");
       await hre.run("task:verifyKMSGeneration", { useInternalProxyAddress });
-    } catch (error) {
-      console.error("An error occurred:", error);
-    }
-    try {
-      // to not panic if Blockscout throws an error due to already verified implementation
-      console.log("Verify CiphertextCommits contract:");
-      await hre.run("task:verifyCiphertextCommits", { useInternalProxyAddress });
     } catch (error) {
       console.error("An error occurred:", error);
     }

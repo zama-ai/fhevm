@@ -144,11 +144,6 @@ task("task:deployInputVerification").setAction(async function (_, hre) {
   await deployContractImplementation("InputVerification", hre, REGULAR_EMPTY_PROXY_NAME, true);
 });
 
-// Deploy the CiphertextCommits contract
-task("task:deployCiphertextCommits").setAction(async function (_, hre) {
-  await deployContractImplementation("CiphertextCommits", hre, REGULAR_EMPTY_PROXY_NAME, true);
-});
-
 // Deploy the Decryption contract
 task("task:deployDecryption").setAction(async function (_, hre) {
   await deployContractImplementation("Decryption", hre, REGULAR_EMPTY_PROXY_NAME, true);
@@ -206,9 +201,6 @@ task("task:deployImplementationContracts").setAction(async function (_, hre) {
 
   console.log("Deploy InputVerification contract:");
   await hre.run("task:deployInputVerification");
-
-  console.log("Deploy CiphertextCommits contract:");
-  await hre.run("task:deployCiphertextCommits");
 
   console.log("Deploy Decryption contract:");
   await hre.run("task:deployDecryption");

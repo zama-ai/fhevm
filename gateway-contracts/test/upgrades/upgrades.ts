@@ -3,8 +3,6 @@ import { Wallet } from "ethers";
 import { ethers, upgrades } from "hardhat";
 
 import {
-  CiphertextCommitsV2Example__factory,
-  CiphertextCommits__factory,
   DecryptionV2Example__factory,
   Decryption__factory,
   EmptyUUPSProxyGatewayConfig__factory,
@@ -24,8 +22,6 @@ describe("Upgrades", function () {
   let owner: Wallet;
   let regularEmptyUUPSFactory: EmptyUUPSProxy__factory;
   let gatewayConfigEmptyUUPSFactory: EmptyUUPSProxyGatewayConfig__factory;
-  let ciphertextCommitsFactoryV1: CiphertextCommits__factory;
-  let ciphertextCommitsFactoryV2: CiphertextCommitsV2Example__factory;
   let decryptionFactoryV1: Decryption__factory;
   let decryptionFactoryV2: DecryptionV2Example__factory;
   let gatewayConfigFactoryV1: GatewayConfig__factory;
@@ -42,9 +38,6 @@ describe("Upgrades", function () {
     regularEmptyUUPSFactory = await ethers.getContractFactory("EmptyUUPSProxy", owner);
     gatewayConfigEmptyUUPSFactory = await ethers.getContractFactory("EmptyUUPSProxyGatewayConfig", owner);
 
-    ciphertextCommitsFactoryV1 = await ethers.getContractFactory("CiphertextCommits", owner);
-    ciphertextCommitsFactoryV2 = await ethers.getContractFactory("CiphertextCommitsV2Example", owner);
-
     decryptionFactoryV1 = await ethers.getContractFactory("Decryption", owner);
     decryptionFactoryV2 = await ethers.getContractFactory("DecryptionV2Example", owner);
 
@@ -59,21 +52,6 @@ describe("Upgrades", function () {
 
     protocolPaymentFactoryV1 = await ethers.getContractFactory("ProtocolPayment", owner);
     protocolPaymentFactoryV2 = await ethers.getContractFactory("ProtocolPaymentV2Example", owner);
-  });
-
-  it("Should deploy upgradable CiphertextCommits", async function () {
-    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
-      initializer: "initialize",
-      kind: "uups",
-    });
-    const ciphertextCommits = await upgrades.upgradeProxy(emptyUUPS, ciphertextCommitsFactoryV1);
-    await ciphertextCommits.waitForDeployment();
-    const initialVersion = await ciphertextCommits.getVersion();
-    const ciphertextCommitsV2 = await upgrades.upgradeProxy(ciphertextCommits, ciphertextCommitsFactoryV2);
-    await ciphertextCommitsV2.waitForDeployment();
-    const newVersion = await ciphertextCommitsV2.getVersion();
-    expect(newVersion).to.not.be.equal(initialVersion);
-    expect(newVersion).to.equal("CiphertextCommits v1000.0.0");
   });
 
   it("Should deploy upgradable Decryption", async function () {

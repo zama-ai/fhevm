@@ -263,56 +263,6 @@ async function prepareUpgradeContract(
   );
 }
 
-task("task:upgradeCiphertextCommits")
-  .addParam(
-    "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/CiphertextCommits.sol:CiphertextCommits",
-  )
-  .addParam(
-    "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/examples/CiphertextCommitsUpgradedExample.sol:CiphertextCommitsUpgradedExample",
-  )
-  .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
-    false,
-    types.boolean,
-  )
-  .addOptionalParam(
-    "verifyContract",
-    "Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)",
-    true,
-    types.boolean,
-  )
-  .setAction(async function (taskArgs: TaskArguments, hre) {
-    await upgradeContract("CiphertextCommits", "CIPHERTEXT_COMMITS_ADDRESS", taskArgs, hre);
-  });
-
-task("task:prepareUpgradeCiphertextCommits")
-  .addParam(
-    "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/CiphertextCommits.sol:CiphertextCommits",
-  )
-  .addParam(
-    "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/CiphertextCommits.sol:CiphertextCommits",
-  )
-  .addOptionalParam(
-    "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
-    false,
-    types.boolean,
-  )
-  .addOptionalParam(
-    "verifyContract",
-    "Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)",
-    true,
-    types.boolean,
-  )
-  .setAction(async function (taskArgs: TaskArguments, hre) {
-    await prepareUpgradeContract("CiphertextCommits", "CIPHERTEXT_COMMITS_ADDRESS", taskArgs, hre);
-  });
-
 task("task:upgradeDecryption")
   .addParam(
     "currentImplementation",

@@ -66,28 +66,6 @@ struct HostChain {
 }
 
 /**
- * @notice Data structure used to transfer a Switch and Squash (SNS) ciphertext and some of its metadata between
- * the Gateway contracts.
- */
-struct SnsCiphertextMaterial {
-    bytes32 ctHandle;
-    uint256 keyId;
-    bytes32 snsCiphertextDigest;
-    address[] coprocessorTxSenderAddresses;
-}
-
-/**
- * @notice Data structure used to transfer a regular ciphertext and some of its metadata between
- * the Gateway contracts.
- */
-struct CiphertextMaterial {
-    bytes32 ctHandle;
-    uint256 keyId;
-    bytes32 ciphertextDigest;
-    address[] coprocessorTxSenderAddresses;
-}
-
-/**
  * @notice A struct that contains a ciphertext handle and a contract address that is
  * expected to be allowed to decrypt this ciphertext
  */

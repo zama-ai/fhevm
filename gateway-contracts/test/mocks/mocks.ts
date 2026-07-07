@@ -2,12 +2,11 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-import { CiphertextCommitsMock, DecryptionMock, GatewayConfigMock, InputVerificationMock } from "../../typechain-types";
+import { DecryptionMock, GatewayConfigMock, InputVerificationMock } from "../../typechain-types";
 import { toValues } from "../utils";
 
 describe("Mock contracts", function () {
   // Mock contracts
-  let ciphertextCommitsMock: CiphertextCommitsMock;
   let decryptionMock: DecryptionMock;
   let gatewayConfigMock: GatewayConfigMock;
   let inputVerificationMock: InputVerificationMock;
@@ -19,13 +18,6 @@ describe("Mock contracts", function () {
   const DefaultUint256 = 0;
   const DefaultString = "";
   const EmptyArray: never[] = [];
-
-  const DefaultSnsCiphertextMaterial = {
-    ctHandle: DefaultBytes32,
-    keyId: DefaultUint256,
-    snsCiphertextDigest: DefaultBytes32,
-    coprocessorTxSenderAddresses: EmptyArray,
-  };
 
   const DefaultProtocolMetadata = { name: DefaultString, website: DefaultString };
 
@@ -72,9 +64,6 @@ describe("Mock contracts", function () {
   };
 
   async function loadMockContractsFixture() {
-    const ciphertextCommitsFactory = await ethers.getContractFactory("CiphertextCommitsMock");
-    const ciphertextCommitsMock = await ciphertextCommitsFactory.deploy();
-
     const decryptionFactory = await ethers.getContractFactory("DecryptionMock");
     const decryptionMock = await decryptionFactory.deploy();
 
@@ -85,7 +74,6 @@ describe("Mock contracts", function () {
     const inputVerificationMock = await inputVerificationFactory.deploy();
 
     return {
-      ciphertextCommitsMock,
       decryptionMock,
       gatewayConfigMock,
       inputVerificationMock,
@@ -95,22 +83,9 @@ describe("Mock contracts", function () {
   before(async function () {
     // Initialize globally used variables before each test
     const fixture = await loadFixture(loadMockContractsFixture);
-    ciphertextCommitsMock = fixture.ciphertextCommitsMock;
     decryptionMock = fixture.decryptionMock;
     gatewayConfigMock = fixture.gatewayConfigMock;
     inputVerificationMock = fixture.inputVerificationMock;
-  });
-
-  describe("CiphertextCommitsMock", async function () {
-    it("Should emit AddCiphertextMaterial and AddCiphertextMaterialConsensus events on add ciphertext material call", async function () {
-      await expect(
-        ciphertextCommitsMock.addCiphertextMaterial(DefaultBytes32, DefaultUint256, DefaultBytes32, DefaultBytes32),
-      )
-        .to.emit(ciphertextCommitsMock, "AddCiphertextMaterial")
-        .withArgs(DefaultBytes32, DefaultUint256, DefaultBytes32, DefaultBytes32, DefaultAddress)
-        .to.emit(ciphertextCommitsMock, "AddCiphertextMaterialConsensus")
-        .withArgs(DefaultBytes32, DefaultUint256, DefaultBytes32, DefaultBytes32, [DefaultAddress]);
-    });
   });
 
   describe("DecryptionMock", async function () {
@@ -122,7 +97,7 @@ describe("Mock contracts", function () {
       publicDecryptionCounterId++;
       await expect(decryptionMock.publicDecryptionRequest([DefaultBytes32], DefaultBytes))
         .to.emit(decryptionMock, "PublicDecryptionRequest")
-        .withArgs(publicDecryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultBytes);
+        .withArgs(publicDecryptionCounterId, [DefaultBytes32], DefaultBytes);
     });
 
     it("Should emit PublicDecryptionResponseCall and PublicDecryptionResponse events on public decryption response", async function () {
@@ -150,17 +125,8 @@ describe("Mock contracts", function () {
           DefaultBytes,
         ),
       )
-        .to.emit(
-          decryptionMock,
-          "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)",
-        )
-        .withArgs(
-          userDecryptionCounterId,
-          toValues([DefaultSnsCiphertextMaterial]),
-          DefaultAddress,
-          DefaultBytes,
-          DefaultBytes,
-        );
+        .to.emit(decryptionMock, "UserDecryptionRequest(uint256,bytes32[],address,bytes,bytes)")
+        .withArgs(userDecryptionCounterId, [DefaultBytes32], DefaultAddress, DefaultBytes, DefaultBytes);
     });
 
     it("Should emit UserDecryptionRequest event on delegated user decryption request", async function () {
@@ -176,17 +142,8 @@ describe("Mock contracts", function () {
           DefaultBytes,
         ),
       )
-        .to.emit(
-          decryptionMock,
-          "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)",
-        )
-        .withArgs(
-          userDecryptionCounterId,
-          toValues([DefaultSnsCiphertextMaterial]),
-          DefaultAddress,
-          DefaultBytes,
-          DefaultBytes,
-        );
+        .to.emit(decryptionMock, "UserDecryptionRequest(uint256,bytes32[],address,bytes,bytes)")
+        .withArgs(userDecryptionCounterId, [DefaultBytes32], DefaultAddress, DefaultBytes, DefaultBytes);
     });
 
     it("Should emit response and consensus events on user decryption response", async function () {
