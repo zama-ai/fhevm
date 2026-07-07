@@ -4,7 +4,8 @@
  * Drives the two ProtocolConfig KMS-context lifecycle flows end to end on a threshold-mode cluster and
  * proves the KMS reacts to the emitted events:
  *   1. NewKmsContext — broadcast `defineNewKmsContextAndEpoch` (same committee, so no new signing
- *      keys are needed), wait for the new context to become the on-chain active one, then decrypt.
+ *      keys are needed; on a spare-core cluster, a node swap with the dropped node's tx-sender
+ *      stopped first), wait for the new context to become the on-chain active one, then decrypt.
  *   2. NewKmsEpoch — broadcast `defineNewEpochForCurrentKmsContext` (same context, new epoch), wait
  *      for the new epoch to activate, then decrypt again.
  *
@@ -22,12 +23,13 @@
 import { PreflightError } from "../errors";
 import { castCall, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
 import { stepComposeTask } from "../flow/runtime-compose";
-import { reconstructionThreshold } from "../kms-party";
+import { kmsTxSenderName, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import {
   type DecryptionRunner,
   partyContainers,
   setRunning,
+  waitForContainersStopped,
   waitForPartiesRunning,
   waitForPartiesStopped,
 } from "./kms-generation";
@@ -104,11 +106,13 @@ const committeeSwapPlan = (kms: State["scenario"]["kms"]) => {
 
 /**
  * NewKmsContext step. On a cluster with a spare core this is a genuine node swap: the new context
- * drops a committee node and promotes the spare, keeping n = committeeSize so the threshold stays
- * valid. The dropped node reshares as Set 1 (outgoing), the spare as Set 2 (incoming), the rest as
- * both. Without a spare it is a same-committee reshare. Activation already gates on the spare:
- * it requires ALL new-committee signers to confirm, so the context id only advances once the
- * spare has reshared and submitted confirmKmsContextCreation.
+ * drops a committee node and promotes the spare, keeping n = committeeSize. The dropped node's
+ * tx-sender is stopped before the broadcast, so the switch must complete on the n − t
+ * previous-side quorum without its confirmation — a node that cannot transact must not veto its
+ * own removal. The rest of the node stays up because the reshare still needs its core (the KMS
+ * core cannot yet reshare around an absent outgoing party); upgrade to a full party stop once it
+ * can. Without a spare it is a same-committee reshare. Activation gates on ALL new-committee
+ * signers, so the context id only advances once the spare has reshared and confirmed.
  */
 const switchKmsContext = async (
   state: State,
@@ -122,9 +126,19 @@ const switchKmsContext = async (
   const hostEnv: Record<string, string> = isSwap ? { HOST_SC_CONTEXT_ENV: "host-sc-swap.env" } : {};
   const gatewayEnv: Record<string, string> = isSwap ? { GATEWAY_SC_CONTEXT_ENV: "gateway-sc-swap.env" } : {};
 
+  if (isSwap) {
+    // Stopped before the broadcast and left down: the new committee does not include the node.
+    const droppedTxSenders = dropped.map((party) => kmsTxSenderName(party));
+    console.log(
+      `[kms-context-switch] stopping dropped node(s) ${dropped.join(",")} tx-sender before the switch — a node that cannot confirm must not block its own replacement…`,
+    );
+    await setRunning(droppedTxSenders, "stop");
+    await waitForContainersStopped(droppedTxSenders);
+  }
+
   console.log(
     isSwap
-      ? `[kms-context-switch] broadcasting defineNewKmsContextAndEpoch — node swap (drop ${dropped.join(",")}, add ${added.join(",")}, keep ${continuing.join(",")})…`
+      ? `[kms-context-switch] broadcasting defineNewKmsContextAndEpoch — node swap (drop ${dropped.join(",")} with tx-sender stopped, add ${added.join(",")}, keep ${continuing.join(",")})…`
       : "[kms-context-switch] broadcasting defineNewKmsContextAndEpoch (NewKmsContext, same committee)…",
   );
   await stepComposeTask("host-sc", state, ["host-sc-context-switch"], { noDeps: true, env: hostEnv });
