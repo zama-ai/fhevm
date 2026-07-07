@@ -217,9 +217,9 @@ pub fn parse_solana_mmr_proof_extra_data(extra_data: &[u8]) -> Option<SolanaUser
 
 /// Parses a Solana `extraData` blob per [`SOLANA_EXTRA_DATA_VERSION_CONTEXT_ONLY`] /
 /// [`SOLANA_EXTRA_DATA_VERSION_MMR_PROOF`]. Unknown versions, and malformed `v0x03` bodies, decode
-/// as the all-zero/empty default (context-only, no proof) — the caller's dispatch on
-/// `acl_value_key == [0; 32]` then naturally routes to the current-ACL (no-proof) path, matching
-/// the "absent tail" behavior of a `v0x01` blob. This function is intentionally infallible: a
+/// as the all-zero/empty default (context-only, no named lineage/proof). Current-ACL requests use
+/// a well-formed `v0x03` body with a nonzero `acl_value_key` and empty `mmr_proof_bytes`; malformed
+/// tails lose that key and fail closed in the caller. This function is intentionally infallible: a
 /// malformed extraData tail must never crash request processing, only fail to grant a proof-gated
 /// decrypt (a fail-closed, not fail-open, outcome — the current-ACL path has its own membership
 /// check).
@@ -426,6 +426,19 @@ mod tests {
         assert_eq!(parsed.acl_value_key, value_key);
         assert_eq!(parsed.proof_slot, 42);
         assert_eq!(parsed.mmr_proof_bytes, proof);
+    }
+
+    #[test]
+    fn extra_data_v3_with_empty_proof_keeps_acl_value_key() {
+        let ctx = [7u8; 32];
+        let value_key = [9u8; 32];
+        let blob = encode_solana_extra_data_mmr_proof(ctx, value_key, 0, &[]);
+        let parsed = parse_solana_user_decrypt_extra_data(&blob);
+
+        assert_eq!(parsed.context_id, ctx);
+        assert_eq!(parsed.acl_value_key, value_key);
+        assert_eq!(parsed.proof_slot, 0);
+        assert!(parsed.mmr_proof_bytes.is_empty());
     }
 
     #[test]

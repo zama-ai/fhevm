@@ -60,6 +60,7 @@ pub enum DecodedInstruction {
     },
     MakeHandlePublic {
         encrypted_value: [u8; 32],
+        handle: [u8; 32],
     },
 }
 
@@ -84,7 +85,9 @@ impl DecodedInstruction {
             | DecodedInstruction::FheEvalUpdateEncryptedValue {
                 encrypted_value, ..
             }
-            | DecodedInstruction::MakeHandlePublic { encrypted_value } => *encrypted_value,
+            | DecodedInstruction::MakeHandlePublic {
+                encrypted_value, ..
+            } => *encrypted_value,
         }
     }
 }
@@ -168,8 +171,10 @@ pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction
             subject,
         }])
     } else if disc == discriminator("make_handle_public") {
+        let handle = <[u8; 32]>::deserialize(&mut body).map_err(borsh_err)?;
         Ok(vec![DecodedInstruction::MakeHandlePublic {
             encrypted_value: account_at(ix, ENCRYPTED_VALUE_ACCOUNT_INDEX)?,
+            handle,
         }])
     } else if disc == discriminator("fhe_eval") {
         let plan = FheEvalArgs::deserialize(&mut body).map_err(borsh_err)?;
@@ -438,15 +443,16 @@ mod tests {
     }
 
     #[test]
-    fn decodes_make_handle_public_with_no_args() {
+    fn decodes_make_handle_public_with_handle_arg() {
         let ev = pk(3);
         let accounts = vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)];
-        let ix = ix_with_data(accounts, "make_handle_public", ());
+        let ix = ix_with_data(accounts, "make_handle_public", pk(0x20));
         let decoded = decode_instruction(&ix).unwrap().unwrap();
         assert_eq!(
             decoded,
             DecodedInstruction::MakeHandlePublic {
-                encrypted_value: ev
+                encrypted_value: ev,
+                handle: pk(0x20),
             }
         );
     }
@@ -519,7 +525,7 @@ mod tests {
     fn other_program_instructions_are_skipped_by_the_program_filter() {
         let ev = pk(4);
         let accounts = vec![pk(0xA), pk(0xB), ev, pk(0xC), pk(0xD)];
-        let mut ix = ix_with_data(accounts, "make_handle_public", ());
+        let mut ix = ix_with_data(accounts, "make_handle_public", pk(0x20));
         ix.program_id = pk(0xFF); // a different (CPI caller) program
         let decoded = decode_program_instructions(program_id(), &[ix]).unwrap();
         assert!(decoded.is_empty());

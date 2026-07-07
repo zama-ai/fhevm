@@ -185,6 +185,9 @@ pub enum ZamaHostError {
     /// `previous_handle`/`previous_subjects` did not match the account's current state.
     #[msg("encrypted value previous state does not match the account")]
     PreviousStateMismatch,
+    /// `make_handle_public` named a handle that is not the account's current handle.
+    #[msg("encrypted value public handle does not match the account")]
+    EncryptedValuePublicHandleMismatch,
     /// The caller subject is not allowed by the encrypted value.
     #[msg("encrypted value subject is not allowed")]
     SubjectNotAllowed,

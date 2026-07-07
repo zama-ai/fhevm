@@ -146,6 +146,7 @@ pub fn request_burn_redemption(
     fhe::allow_public_decrypt(fhe::AllowPublicDecrypt {
         authority: &ctx.accounts.owner,
         payer: &ctx.accounts.owner,
+        handle: burned_handle,
         encrypted_value: ctx.accounts.burned_amount_value.to_account_info(),
         host_config: &ctx.accounts.host_config,
         deny_subject_record: ctx

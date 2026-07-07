@@ -247,7 +247,10 @@ pub struct MakeEncryptedValueHandlePublic<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn make_handle_public(ctx: Context<MakeEncryptedValueHandlePublic>) -> Result<()> {
+pub fn make_handle_public(
+    ctx: Context<MakeEncryptedValueHandlePublic>,
+    handle: [u8; 32],
+) -> Result<()> {
     assert_not_paused(&ctx.accounts.host_config)?;
     let info = ctx.accounts.encrypted_value.to_account_info();
     let mut value = read_canonical_encrypted_value(&info)?;
@@ -261,14 +264,15 @@ pub fn make_handle_public(ctx: Context<MakeEncryptedValueHandlePublic>) -> Resul
         authority,
         ctx.accounts.deny_subject_record.as_ref(),
     )?;
+    require!(
+        handle == value.current_handle,
+        ZamaHostError::EncryptedValuePublicHandleMismatch
+    );
 
     let account_key = info.key().to_bytes();
     let leaf_index = value.leaf_count;
-    let commitment = zama_solana_acl::public_decrypt_leaf_commitment(
-        account_key,
-        leaf_index,
-        value.current_handle,
-    );
+    let commitment =
+        zama_solana_acl::public_decrypt_leaf_commitment(account_key, leaf_index, handle);
     zama_solana_acl::mmr_append(&mut value.peaks, &mut value.leaf_count, commitment)
         .map_err(map_mmr_append_error)?;
 

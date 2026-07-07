@@ -5,8 +5,9 @@
 //! `create_encrypted_value` and `allow_subjects` mutate state but append no MMR
 //! leaf (mirrors the host program). `update_encrypted_value` supersedes the
 //! current handle and appends one historical-access leaf per allowed subject.
-//! `make_handle_public` carries no args on-chain; its leaf's handle is this
-//! replayer's tracked `current_handle` at the time it executes.
+//! `make_handle_public` carries the exact public handle on-chain, so replay can
+//! reconstruct public-decrypt leaves even after `fhe_eval` output handles whose
+//! slot entropy is unavailable to this service.
 
 use zama_solana_acl::lineage::LineageEvent;
 
@@ -18,8 +19,6 @@ pub enum ReplayError {
     PreviousStateMismatch([u8; 32]),
     #[error("instruction referenced a lineage that was never created: {0:x?}")]
     UnknownLineage([u8; 32]),
-    #[error("make_handle_public referenced a lineage whose current handle is unknown: {0:x?}")]
-    UnknownCurrentHandle([u8; 32]),
     #[error("remove_subject referenced a subject that is not allowed on lineage {0:x?}")]
     SubjectNotFound([u8; 32]),
     #[error("remove_subject would remove the last subject from lineage {0:x?}")]
@@ -164,14 +163,14 @@ pub fn apply_instruction(
             state.current_handle = None;
             Ok(Some(event))
         }
-        DecodedInstruction::MakeHandlePublic { encrypted_value } => {
-            let state = state
+        DecodedInstruction::MakeHandlePublic {
+            encrypted_value,
+            handle,
+        } => {
+            state
                 .as_mut()
                 .ok_or(ReplayError::UnknownLineage(*encrypted_value))?;
-            let handle = state
-                .current_handle
-                .ok_or(ReplayError::UnknownCurrentHandle(*encrypted_value))?;
-            Ok(Some(LineageEvent::MarkedPublic { handle }))
+            Ok(Some(LineageEvent::MarkedPublic { handle: *handle }))
         }
     }
 }
@@ -182,6 +181,7 @@ mod tests {
     use crate::solana_proof::decode::SubjectGrant;
     use zama_solana_acl::{
         historical_access_leaf_commitment, lineage::reconstruct, mmr::mmr_verify,
+        public_decrypt_leaf_commitment,
     };
 
     fn pk(tag: u8) -> [u8; 32] {
@@ -227,6 +227,7 @@ mod tests {
 
         let make_public = DecodedInstruction::MakeHandlePublic {
             encrypted_value: ev,
+            handle: pk(0x11),
         };
         let event = apply_instruction(&mut state, &make_public)
             .unwrap()
@@ -333,6 +334,40 @@ mod tests {
             events,
             vec![LineageEvent::handle_superseded(pk(0x10), &[owner])]
         );
+    }
+
+    #[test]
+    fn make_public_after_fhe_eval_create_uses_decoded_handle() {
+        let ev = pk(0x06);
+        let owner = pk(0x30);
+        let handle = pk(0x44);
+        let create = DecodedInstruction::FheEvalCreateEncryptedValue {
+            encrypted_value: ev,
+            subjects: vec![SubjectGrant { subject: owner }],
+        };
+        let make_public = DecodedInstruction::MakeHandlePublic {
+            encrypted_value: ev,
+            handle,
+        };
+
+        let (state, events) = replay(&[create, make_public]).unwrap();
+        let reconstructed = reconstruct(ev, &events).unwrap();
+        let proof = reconstructed
+            .build_verified_proof(&reconstructed.peaks, reconstructed.leaf_count, 0)
+            .unwrap();
+
+        assert_eq!(state.unwrap().current_handle, None);
+        assert_eq!(events, vec![LineageEvent::MarkedPublic { handle }]);
+        assert_eq!(
+            reconstructed.leaves,
+            vec![public_decrypt_leaf_commitment(ev, 0, handle)]
+        );
+        assert!(mmr_verify(
+            &reconstructed.peaks,
+            reconstructed.leaf_count,
+            reconstructed.leaves[0],
+            &proof
+        ));
     }
 
     #[test]
@@ -469,6 +504,7 @@ mod tests {
         let mut state: Option<LineageReplayState> = None;
         let make_public = DecodedInstruction::MakeHandlePublic {
             encrypted_value: ev,
+            handle: pk(0x20),
         };
         assert_eq!(
             apply_instruction(&mut state, &make_public),

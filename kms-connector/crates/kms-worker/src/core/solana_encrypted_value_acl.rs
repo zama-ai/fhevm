@@ -59,7 +59,9 @@ fn map_acl_error(error: AclError) -> SolanaAclVerificationError {
         AclError::PublicDecryptProofInvalid => {
             SolanaAclVerificationError::PublicDecryptProofInvalid
         }
-        AclError::MmrInconsistent => SolanaAclVerificationError::MmrStateInconsistent,
+        AclError::MmrInconsistent | AclError::MmrPeakCapacityExceeded => {
+            SolanaAclVerificationError::MmrStateInconsistent
+        }
         AclError::BadDiscriminator
         | AclError::BadAccountData
         | AclError::SubjectCapacityExceeded => SolanaAclVerificationError::InvalidAccountData,

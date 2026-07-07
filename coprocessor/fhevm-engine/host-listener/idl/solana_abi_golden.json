@@ -384,11 +384,11 @@
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "42c7fcf7f4ac2a76",
-      "fixture_len": 8,
+      "fixture_hex": "42c7fcf7f4ac2a760102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "fixture_len": 40,
       "name": "make_handle_public",
       "program": "zama_host",
-      "schema_hash": "73868e1fb11daaa9621fd84bb447711c5dc8795c8cb597b68fce3857af011896"
+      "schema_hash": "d28b07064df1c00009f0fbbbd77f405c3c0169271aec6cea75e2b343d596a977"
     },
     {
       "category": "instruction_args",

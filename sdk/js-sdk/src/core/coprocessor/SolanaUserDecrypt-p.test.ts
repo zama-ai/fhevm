@@ -28,6 +28,7 @@ const CONTEXT_ID = (() => {
 const DOMAIN_KEYS = [new Uint8Array(32).fill(0x01), new Uint8Array(32).fill(0x02)];
 const PUBLIC_KEY = new TextEncoder().encode('public-key-bytes');
 const HANDLES = [new Uint8Array(32).fill(0x03), new Uint8Array(32).fill(0xaa)];
+const ACL_VALUE_KEY = new Uint8Array(32).fill(0x55);
 
 const VECTOR: SolanaUserDecryptInput = {
   contractsChainId: 0xcafen,
@@ -110,11 +111,18 @@ describe('SolanaUserDecrypt signer and request builder', () => {
 
   it('carries the ed25519 auth fields as typed values, not packed into extraData (RFC-021)', () => {
     const req = buildSolanaUserDecryptRequest(signed, SEED);
-    // extraData is context-only (v0x01 ‖ contextId) — the 0x03 auth blob is not on the wire.
+    // With no aclValueKey, extraData falls back to context-only (v0x01 ‖ contextId).
     expect(req.extraData).toBe('0x01' + bytesToHex(CONTEXT_ID).slice(2));
     // The auth fields travel as typed gateway fields instead.
     expect(req.solanaUserIdentity).toBe(bytesToHex(PK));
     expect(req.solanaNonce).toBe(bytesToHex(NONCE));
     expect(req.solanaAllowedAclDomainKeys).toEqual(DOMAIN_KEYS.map((k) => bytesToHex(k)));
+  });
+
+  it('emits v0x03 extraData for a nonzero aclValueKey even with an empty proof', () => {
+    const req = buildSolanaUserDecryptRequest({ ...signed, aclValueKey: ACL_VALUE_KEY }, SEED);
+    expect(req.extraData).toBe(
+      '0x03' + bytesToHex(CONTEXT_ID).slice(2) + bytesToHex(ACL_VALUE_KEY).slice(2) + '0000000000000000' + '00000000',
+    );
   });
 });

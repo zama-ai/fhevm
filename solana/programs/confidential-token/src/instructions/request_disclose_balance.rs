@@ -127,6 +127,7 @@ pub fn request_disclose_balance(
     fhe::allow_public_decrypt(fhe::AllowPublicDecrypt {
         authority: &ctx.accounts.owner,
         payer: &ctx.accounts.owner,
+        handle,
         encrypted_value: ctx.accounts.balance_value.to_account_info(),
         host_config: &ctx.accounts.host_config,
         deny_subject_record: ctx

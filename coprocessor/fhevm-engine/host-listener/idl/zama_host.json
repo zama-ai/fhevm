@@ -703,7 +703,17 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "remove_subject",
@@ -1672,31 +1682,36 @@
     },
     {
       "code": 6058,
+      "name": "EncryptedValuePublicHandleMismatch",
+      "msg": "encrypted value public handle does not match the account"
+    },
+    {
+      "code": 6059,
       "name": "SubjectNotAllowed",
       "msg": "encrypted value subject is not allowed"
     },
     {
-      "code": 6059,
+      "code": 6060,
       "name": "SubjectNotFound",
       "msg": "encrypted value subject is not a current member"
     },
     {
-      "code": 6060,
+      "code": 6061,
       "name": "EncryptedValueEmptySubjects",
       "msg": "encrypted value must be created with at least one subject"
     },
     {
-      "code": 6061,
+      "code": 6062,
       "name": "EncryptedValueLastSubject",
       "msg": "encrypted value must retain at least one subject"
     },
     {
-      "code": 6062,
+      "code": 6063,
       "name": "EncryptedValueMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
     },
     {
-      "code": 6063,
+      "code": 6064,
       "name": "EncryptedValueMmrPeakCapacityExceeded",
       "msg": "encrypted value MMR peak capacity exceeded"
     }

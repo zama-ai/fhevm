@@ -437,6 +437,8 @@ pub struct AllowPublicDecrypt<'a, 'info> {
     pub authority: &'a Signer<'info>,
     /// Rent payer for the account's growth, if any.
     pub payer: &'a Signer<'info>,
+    /// Current handle expected on the lineage.
+    pub handle: [u8; 32],
     /// `EncryptedValue` lineage whose current handle is marked public.
     pub encrypted_value: AccountInfo<'info>,
     /// ZamaHost config account.
@@ -451,17 +453,20 @@ pub struct AllowPublicDecrypt<'a, 'info> {
 
 /// Delegates public-decrypt authorization to ZamaHost.
 pub fn allow_public_decrypt<'info>(request: AllowPublicDecrypt<'_, 'info>) -> Result<()> {
-    cpi::make_handle_public(CpiContext::new(
-        request.zama_program.key(),
-        cpi::accounts::MakeEncryptedValueHandlePublic {
-            payer: request.payer.to_account_info(),
-            authority: request.authority.to_account_info(),
-            encrypted_value: request.encrypted_value,
-            host_config: request.host_config.to_account_info(),
-            deny_subject_record: request.deny_subject_record,
-            system_program: request.system_program.to_account_info(),
-        },
-    ))
+    cpi::make_handle_public(
+        CpiContext::new(
+            request.zama_program.key(),
+            cpi::accounts::MakeEncryptedValueHandlePublic {
+                payer: request.payer.to_account_info(),
+                authority: request.authority.to_account_info(),
+                encrypted_value: request.encrypted_value,
+                host_config: request.host_config.to_account_info(),
+                deny_subject_record: request.deny_subject_record,
+                system_program: request.system_program.to_account_info(),
+            },
+        ),
+        request.handle,
+    )
 }
 
 /// Inputs required to add subjects to an existing lineage.

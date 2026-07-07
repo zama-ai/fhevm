@@ -112,6 +112,7 @@ pub fn request_disclose_amount(
     fhe::allow_public_decrypt(fhe::AllowPublicDecrypt {
         authority: &ctx.accounts.requester,
         payer: &ctx.accounts.requester,
+        handle: amount_handle,
         encrypted_value: ctx.accounts.amount_value.to_account_info(),
         host_config: &ctx.accounts.host_config,
         deny_subject_record: ctx

@@ -64,6 +64,10 @@ function assertLen(name: string, bytes: Uint8Array, len: number): void {
   }
 }
 
+function isZeroBytes(bytes: Uint8Array): boolean {
+  return bytes.every((byte) => byte === 0);
+}
+
 /** Fields shared by the `extraData` blob and the signing preimage. */
 export interface SolanaUserDecryptInput {
   /** The host chain id the handles belong to (`contracts_chain_id`). */
@@ -85,8 +89,8 @@ export interface SolanaUserDecryptInput {
   /** Validity window duration (seconds). */
   readonly durationSeconds: bigint;
   /**
-   * The lineage value key for a historical/public MMR-proof decrypt; all-zero (the default) for
-   * a current-ACL request. Mirrors `acl_value_key` in `solana_extra_data.rs`.
+   * The lineage value key for a current/historical/public decrypt; all-zero (the default) only
+   * when no lineage is named. Mirrors `acl_value_key` in `solana_extra_data.rs`.
    */
   readonly aclValueKey?: Uint8Array | undefined;
   /**
@@ -103,10 +107,12 @@ export interface SolanaUserDecryptInput {
 
 const ZERO_ACL_VALUE_KEY = new Uint8Array(32);
 
-/** Fills in the MMR-proof tail defaults (all-zero/empty, i.e. "no proof") for fields left unset. */
-function withProofDefaults(
-  input: SolanaUserDecryptInput,
-): { aclValueKey: Uint8Array; mmrProofBytes: Uint8Array; proofSlot: bigint } {
+/** Fills in the MMR-proof tail defaults (all-zero/empty, i.e. "no named lineage/proof") for fields left unset. */
+function withProofDefaults(input: SolanaUserDecryptInput): {
+  aclValueKey: Uint8Array;
+  mmrProofBytes: Uint8Array;
+  proofSlot: bigint;
+} {
   return {
     aclValueKey: input.aclValueKey ?? ZERO_ACL_VALUE_KEY,
     mmrProofBytes: input.mmrProofBytes ?? new Uint8Array(0),
@@ -218,7 +224,7 @@ export interface SolanaUserDecryptRequest {
   readonly attestationType: typeof SOLANA_USER_DECRYPT_ATTESTATION_TYPE;
   /** The 64-byte ed25519 signature over the signing preimage, 0x-hex. */
   readonly signature: BytesHex;
-  /** `extraData`, 0x-hex: v0x01 context-only when no proof is present, or v0x03 with the MMR-proof tail. */
+  /** `extraData`, 0x-hex: v0x01 context-only when no ACL value key is present, or v0x03 with the ACL/proof tail. */
   readonly extraData: BytesHex;
   /** The ML-KEM re-encryption public key, 0x-hex. */
   readonly publicKey: BytesHex;
@@ -260,14 +266,12 @@ export function buildSolanaUserDecryptRequest(
   }
 
   // The signed preimage always commits to the MMR-proof tail (all-zero/empty when absent); only
-  // the `extraData` wire shape is conditional: a proof-bearing request needs the v0x03 tail on
-  // the wire for the connector to decode it, while a plain current-ACL request keeps the smaller
-  // v0x01 context-only blob. Presence of `mmrProofBytes` is the signal for which to emit.
+  // the `extraData` wire shape is conditional. Any nonzero aclValueKey names a lineage the
+  // connector must fetch, so it needs the v0x03 tail even when the proof bytes are empty.
   const { aclValueKey, mmrProofBytes, proofSlot } = withProofDefaults(input);
-  const extraData =
-    mmrProofBytes.length > 0
-      ? buildSolanaUserDecryptMmrProofExtraData(input.contextId, aclValueKey, proofSlot, mmrProofBytes)
-      : buildSolanaUserDecryptContextExtraData(input.contextId);
+  const extraData = !isZeroBytes(aclValueKey)
+    ? buildSolanaUserDecryptMmrProofExtraData(input.contextId, aclValueKey, proofSlot, mmrProofBytes)
+    : buildSolanaUserDecryptContextExtraData(input.contextId);
 
   return {
     attestationType: SOLANA_USER_DECRYPT_ATTESTATION_TYPE,

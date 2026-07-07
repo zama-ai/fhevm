@@ -125,16 +125,23 @@ mod tests {
     use crate::solana_proof::decode::RawInstruction;
     use crate::solana_proof::replay::LineageReplayState;
     use crate::solana_proof::store::FileLeafStore;
+    use anchor_lang::prelude::Pubkey;
     use async_trait::async_trait;
     use borsh::BorshSerialize;
     use sha2::{Digest, Sha256};
     use std::collections::HashMap;
     use std::sync::Mutex;
+    use zama_host::state::{AclSubjectEntry, FheEvalArgs, FheEvalOutput, FheEvalStep};
     use zama_solana_acl::lineage::LineageEvent;
     use zama_solana_acl::mmr::mmr_append;
+    use zama_solana_acl::{authorize_public, public_decrypt_leaf_commitment, EncryptedValue};
 
     fn pk(tag: u8) -> [u8; 32] {
         [tag; 32]
+    }
+
+    fn pubkey(tag: u8) -> Pubkey {
+        Pubkey::new_from_array(pk(tag))
     }
 
     fn discriminator(name: &str) -> [u8; 8] {
@@ -156,6 +163,42 @@ mod tests {
             program_id,
             accounts,
             data,
+        }
+    }
+
+    fn fhe_eval_accounts(program_id: [u8; 32], remaining: &[[u8; 32]]) -> Vec<[u8; 32]> {
+        let mut accounts = vec![
+            pk(0xA0),
+            pk(0xA1),
+            pk(0xA2),
+            pk(0xA3),
+            pk(0xA4),
+            pk(0xA5),
+            program_id,
+        ];
+        accounts.extend_from_slice(remaining);
+        accounts
+    }
+
+    fn eval_create_output(subject: [u8; 32]) -> FheEvalArgs {
+        FheEvalArgs {
+            context_id: pk(0x01),
+            steps: vec![FheEvalStep::TrivialEncrypt {
+                plaintext: pk(0x02),
+                fhe_type: 5,
+                output: FheEvalOutput::AllowedDurable {
+                    output_encrypted_value_index: 0,
+                    output_app_account_authority_index: None,
+                    output_acl_domain_key: pubkey(0x40),
+                    output_app_account: pubkey(0x41),
+                    output_encrypted_value_label: pk(0x42),
+                    output_subjects: vec![AclSubjectEntry {
+                        pubkey: Pubkey::new_from_array(subject),
+                    }],
+                    previous_handle: None,
+                    previous_subjects: None,
+                },
+            }],
         }
     }
 
@@ -354,6 +397,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn eval_created_lineage_make_public_builds_verified_public_proof() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x05);
+        let owner = pk(0x30);
+        let handle = pk(0x44);
+        let chain = FakeChain::new(program_id);
+
+        let leaf = public_decrypt_leaf_commitment(lineage, 0, handle);
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
+        chain.set_lineage_state(
+            lineage,
+            OnChainLineageState {
+                peaks: peaks.clone(),
+                leaf_count,
+                proof_slot: 90,
+            },
+        );
+
+        let eval_ix = make_ix(
+            program_id,
+            fhe_eval_accounts(program_id, &[lineage]),
+            "fhe_eval",
+            eval_create_output(owner),
+        );
+        chain.push_tx("sig1", 1, &[lineage], vec![eval_ix]);
+
+        let make_public_ix = make_ix(
+            program_id,
+            vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
+            "make_handle_public",
+            handle,
+        );
+        chain.push_tx("sig2", 2, &[lineage], vec![make_public_ix]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        let result = build_proof(&chain, &store, program_id, lineage, 0, 1000)
+            .await
+            .unwrap();
+        let proof = result.mmr_proof.as_ref().unwrap();
+        let acl = EncryptedValue {
+            acl_domain_key: pk(0x40),
+            app_account: pk(0x41),
+            encrypted_value_label: pk(0x42),
+            current_handle: handle,
+            subjects: vec![owner],
+            leaf_count,
+            peaks,
+            bump: 0,
+        };
+        let mut proof_bytes = vec![0x02];
+        proof.serialize(&mut proof_bytes).unwrap();
+
+        assert!(result.verified);
+        assert_eq!(result.leaf_count, 1);
+        assert_eq!(result.proof_slot, 90);
+        assert_eq!(proof_bytes[0], 0x02);
+        authorize_public(lineage, &acl, handle, proof).unwrap();
+        assert_eq!(
+            store.get_events(lineage).await.unwrap(),
+            vec![LineageEvent::MarkedPublic { handle }]
+        );
+    }
+
+    #[tokio::test]
     async fn returns_lagging_when_catch_up_budget_is_exhausted() {
         let program_id = pk(0x99);
         let lineage = pk(0x04);
@@ -379,7 +492,7 @@ mod tests {
                 program_id,
                 vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
                 "make_handle_public",
-                (),
+                pk(0x10),
             );
             chain.push_tx(sig, slot, &[lineage], vec![make_public_ix]);
         }

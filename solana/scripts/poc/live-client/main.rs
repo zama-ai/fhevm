@@ -340,6 +340,12 @@ fn allow_for_decryption(
         .send()?;
     println!("OK allow_subjects (idempotent membership): {grant_sig}");
 
+    let (handle, _) = existing_lineage_state(host, encrypted_value)?.ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "encrypted value lineage missing before make_handle_public",
+        )
+    })?;
     let public_sig = host
         .request()
         .accounts(zama_host::accounts::MakeEncryptedValueHandlePublic {
@@ -350,7 +356,7 @@ fn allow_for_decryption(
             deny_subject_record: None,
             system_program: system_program::ID,
         })
-        .args(zama_host::instruction::MakeHandlePublic {})
+        .args(zama_host::instruction::MakeHandlePublic { handle })
         .send()?;
     println!("OK allow_for_decryption (public): {public_sig}");
     Ok(())

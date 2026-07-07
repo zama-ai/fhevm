@@ -187,7 +187,10 @@ pub mod zama_host {
         instructions::update_encrypted_value(ctx, new_handle, previous_handle, previous_subjects)
     }
 
-    pub fn make_handle_public(ctx: Context<MakeEncryptedValueHandlePublic>) -> Result<()> {
-        instructions::make_handle_public(ctx)
+    pub fn make_handle_public(
+        ctx: Context<MakeEncryptedValueHandlePublic>,
+        handle: [u8; 32],
+    ) -> Result<()> {
+        instructions::make_handle_public(ctx, handle)
     }
 }

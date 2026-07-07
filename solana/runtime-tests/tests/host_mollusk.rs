@@ -450,8 +450,9 @@ fn make_handle_public_ix(
     authority: Pubkey,
     encrypted_value: Pubkey,
     host_config: Pubkey,
+    handle: [u8; 32],
 ) -> Instruction {
-    make_handle_public_ix_with_deny(payer, authority, encrypted_value, host_config, None)
+    make_handle_public_ix_with_deny(payer, authority, encrypted_value, host_config, handle, None)
 }
 
 fn make_handle_public_ix_with_deny(
@@ -459,6 +460,7 @@ fn make_handle_public_ix_with_deny(
     authority: Pubkey,
     encrypted_value: Pubkey,
     host_config: Pubkey,
+    handle: [u8; 32],
     deny_subject_record: Option<Pubkey>,
 ) -> Instruction {
     anchor_ix(
@@ -471,7 +473,7 @@ fn make_handle_public_ix_with_deny(
             deny_subject_record,
             system_program: system_program::ID,
         },
-        host::instruction::MakeHandlePublic {},
+        host::instruction::MakeHandlePublic { handle },
     )
 }
 
@@ -1271,7 +1273,7 @@ fn mollusk_make_handle_public_appends_public_decrypt_leaf() {
         handle,
         &[subject],
     );
-    let ix = make_handle_public_ix(authority, subject, address, host_config);
+    let ix = make_handle_public_ix(authority, subject, address, host_config, handle);
     let accounts = vec![
         (system_program::ID, system_program_account()),
         (authority, funded_system_account()),
@@ -1290,19 +1292,51 @@ fn mollusk_make_handle_public_appends_public_decrypt_leaf() {
 }
 
 #[test]
+fn mollusk_make_handle_public_rejects_wrong_expected_handle() {
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let subject = Pubkey::new_unique();
+    let handle = handle_for_chain(5, 5);
+    let wrong_handle = handle_for_chain(6, 5);
+    let (address, value) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        handle,
+        &[subject],
+    );
+    let ix = make_handle_public_ix(authority, subject, address, host_config, wrong_handle);
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (subject, funded_system_account()),
+        (address, encrypted_value_account(&value)),
+        (host_config, host_config_account),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::EncryptedValuePublicHandleMismatch,
+        )],
+    );
+}
+
+#[test]
 fn mollusk_make_handle_public_rejects_unallowed_subject() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let allowed = Pubkey::new_unique();
     let subject = Pubkey::new_unique();
+    let handle = handle_for_chain(5, 5);
     let (address, value) = new_lineage(
         Pubkey::new_unique(),
         authority,
         label("balance"),
-        handle_for_chain(5, 5),
+        handle,
         &[allowed],
     );
-    let ix = make_handle_public_ix(authority, subject, address, host_config);
+    let ix = make_handle_public_ix(authority, subject, address, host_config, handle);
     let accounts = vec![
         (system_program::ID, system_program_account()),
         (authority, funded_system_account()),
@@ -1394,6 +1428,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
         caller,
         allow_address,
         host_config,
+        allow_value.current_handle,
         Some(deny_record),
     );
     let accounts = vec![
@@ -1833,7 +1868,7 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
         &[subject],
     );
 
-    let make_public_ix = make_handle_public_ix(authority, subject, address, host_config);
+    let make_public_ix = make_handle_public_ix(authority, subject, address, host_config, handle0);
     let accounts0 = vec![
         (system_program::ID, system_program_account()),
         (authority, funded_system_account()),

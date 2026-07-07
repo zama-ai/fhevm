@@ -413,7 +413,7 @@ mod tests {
             program_id,
             vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
             "make_handle_public",
-            (),
+            pk(0x21),
         );
         chain.push_tx("sig3", 3, &[lineage], vec![make_public_ix]);
 
@@ -448,7 +448,7 @@ mod tests {
             program_id,
             vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
             "make_handle_public",
-            (),
+            pk(0x20),
         );
         // Seed replay state as though `create` already happened before the cursor.
         store
@@ -515,7 +515,7 @@ mod tests {
                 program_id,
                 vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
                 "make_handle_public",
-                (),
+                pk(0x20),
             );
             chain.push_tx(sig, slot, &[lineage], vec![make_public_ix]);
         }
@@ -562,7 +562,7 @@ mod tests {
             program_id,
             vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
             "make_handle_public",
-            (),
+            pk(0x20),
         );
         chain.push_tx("sig_new", 2, &[lineage], vec![make_public_ix]);
 

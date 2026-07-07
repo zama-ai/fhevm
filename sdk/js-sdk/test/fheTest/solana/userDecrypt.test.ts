@@ -11,12 +11,21 @@ import { keccak_256 } from '@noble/hashes/sha3.js';
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-// Avoid loading the TKMS WASM module for transport-key generation in a unit test.
-vi.mock('../../../src/core/kms/TransportKeyPair-p.ts', async (importOriginal) => {
+// Avoid loading the TKMS WASM module for key generation/de-signcryption in a request-shape unit test.
+vi.mock('../../../src/solana/deSigncrypt.ts', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return {
     ...actual,
-    generateTransportKeyPair: vi.fn(() => Promise.resolve({ publicKey: '0x' + 'ab'.repeat(16) } as unknown)),
+    generateSolanaTransportKeyPair: vi.fn(() =>
+      Promise.resolve({
+        secretKey: {} as unknown,
+        publicKey: {} as unknown,
+        publicKeyBytes: new Uint8Array(16).fill(0xab),
+      }),
+    ),
+    deSigncryptSolanaUserDecrypt: vi.fn(() =>
+      Promise.resolve([{ bytes: new Uint8Array([0, 0, 0, 0, 0, 0, 0, 42]), fheType: 5 }]),
+    ),
   };
 });
 
@@ -28,6 +37,7 @@ const { solanaUserDecryptSigningPreimage, solanaUserDecryptClientId } =
 
 const SEED = new Uint8Array(32).fill(0x42);
 const ZERO_BYTES32 = '0x' + '00'.repeat(32);
+const ACL_VALUE_KEY = new Uint8Array(32).fill(0x55);
 
 // Test fixture: a Solana host chain built through the public factory. There is no shipped
 // placeholder Solana chain — consumers (and this test) construct one from their deployment.
@@ -143,12 +153,14 @@ describe('createFhevmDecryptClient(...).userDecrypt', () => {
     const result = await client.userDecrypt({
       handles: [handleHex],
       transportPublicKey: ('0x' + 'ab'.repeat(16)) as BytesHex,
+      aclValueKey: ACL_VALUE_KEY,
       nonce,
       validity: { startTimestamp: 1000n, durationSeconds: 3600n },
     });
 
-    // The aggregated signcrypted shares are returned verbatim.
-    expect(result.shares).toEqual([{ signature: 'bb'.repeat(65), payload: 'aa', extraData: '0x00' }]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.type).toBe('uint64');
+    expect(result[0]?.value).toBe(42n);
 
     // POSTed to the v3 Solana ed25519 seam.
     expect(postedUrl).toMatch(/\/v3\/user-decrypt$/);
@@ -168,7 +180,9 @@ describe('createFhevmDecryptClient(...).userDecrypt', () => {
     expect(payload.solanaUserIdentity).toBe(identityHex);
     expect(payload.solanaNonce).toBe('0x' + '09'.repeat(32));
     expect(payload.solanaAllowedAclDomainKeys).toEqual([ZERO_BYTES32]);
-    expect(payload.extraData).toBe('0x01' + '00'.repeat(32));
+    expect(payload.extraData).toBe(
+      '0x03' + '00'.repeat(32) + Buffer.from(ACL_VALUE_KEY).toString('hex') + '0000000000000000' + '00000000',
+    );
 
     // userAddress is keccak256(identity)[12..], lowercase 0x; reused for the EVM-shaped handle fields
     // the connector ignores on the Solana arm.
@@ -193,6 +207,7 @@ describe('createFhevmDecryptClient(...).userDecrypt', () => {
       allowedAclDomainKeys: testChain.fhevm.acl.domainKeys.map(hexToBytes),
       startTimestamp: 1000n,
       durationSeconds: 3600n,
+      aclValueKey: ACL_VALUE_KEY,
     });
     expect(ed25519.verify(hexToBytes(body.signature as string), preimage, signer.publicKey)).toBe(true);
   });

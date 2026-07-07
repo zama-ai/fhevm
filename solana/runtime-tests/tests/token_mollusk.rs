@@ -127,6 +127,14 @@ where
 }
 
 fn host_config_account(admin: Pubkey, coprocessor_signer: [u8; 20]) -> Account {
+    host_config_account_with_kms_context(admin, coprocessor_signer, 0)
+}
+
+fn host_config_account_with_kms_context(
+    admin: Pubkey,
+    coprocessor_signer: [u8; 20],
+    current_kms_context_id: u64,
+) -> Account {
     let (host_config, bump) = host::host_config_address();
     let _ = host_config;
     Account {
@@ -139,7 +147,7 @@ fn host_config_account(admin: Pubkey, coprocessor_signer: [u8; 20]) -> Account {
             input_verification_contract: INPUT_VERIFICATION_CONTRACT,
             coprocessor_signer,
             decryption_contract: DECRYPTION_CONTRACT,
-            current_kms_context_id: 0,
+            current_kms_context_id,
             material_authority: admin,
             test_authority: admin,
             paused: false,
@@ -245,6 +253,20 @@ fn read_confidential_mint(
         .clone();
     token::ConfidentialMint::try_deserialize(&mut account.data.as_slice())
         .expect("mint account should deserialize")
+}
+
+fn read_disclosure_request(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) -> token::DisclosureRequest {
+    let account = context
+        .account_store
+        .borrow()
+        .get(&address)
+        .expect("missing disclosure request account")
+        .clone();
+    token::DisclosureRequest::try_deserialize(&mut account.data.as_slice())
+        .expect("disclosure request should deserialize")
 }
 
 fn expected_historical_peaks(
@@ -576,6 +598,34 @@ fn confidential_transfer_ix(
     )
 }
 
+fn request_disclose_balance_ix(
+    fixture: &TokenFixture,
+    request_nonce: [u8; 32],
+    expires_slot: u64,
+    disclosure_request: Pubkey,
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::RequestDiscloseBalance {
+            owner: fixture.owner,
+            mint: fixture.mint,
+            token_account: fixture.alice_token,
+            balance_value: fixture.alice_balance_value,
+            disclosure_request,
+            deny_subject_record: None,
+            zama_program: host::id(),
+            host_config: fixture.host_config,
+            system_program: system_program::ID,
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::RequestDiscloseBalance {
+            request_nonce,
+            expires_slot,
+        },
+    )
+}
+
 // ---------------------------------------------------------------------------
 // initialize_mint / initialize_token_account
 // ---------------------------------------------------------------------------
@@ -866,6 +916,97 @@ fn mollusk_confidential_transfer_updates_balance_lineages_and_transferred_amount
     );
     assert_eq!(balance_events[1].old_handle, fixture.bob_initial);
     assert_eq!(balance_events[1].new_handle, bob_balance.current_handle);
+}
+
+#[test]
+fn mollusk_request_disclose_balance_after_transfer_marks_current_handle_public() {
+    let fixture = TokenFixture::new();
+    let kms_context_id = 7;
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(
+        fixture.host_config,
+        host_config_account_with_kms_context(
+            fixture.owner,
+            secp_evm_address(&coprocessor_signing_key()),
+            kms_context_id,
+        ),
+    );
+    let context = mollusk().with_context(accounts);
+
+    let amount_handle = handle_for_chain(22, BALANCE_FHE_TYPE);
+    let transfer_ix = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer),
+    );
+    context.process_and_validate_instruction(&transfer_ix, &[Check::success()]);
+
+    let before = read_encrypted_value(&context, fixture.alice_balance_value);
+    assert_ne!(before.current_handle, fixture.alice_initial);
+    assert_eq!(before.leaf_count, 2);
+
+    let request_nonce = [0x77; 32];
+    let expires_slot = 200;
+    let disclosure_request = token::disclosure_request_address(
+        fixture.mint,
+        fixture.owner,
+        before.current_handle,
+        request_nonce,
+    )
+    .0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(disclosure_request, system_account(0));
+
+    let disclose_ix =
+        request_disclose_balance_ix(&fixture, request_nonce, expires_slot, disclosure_request);
+    let result = context.process_and_validate_instruction(&disclose_ix, &[Check::success()]);
+
+    let after = read_encrypted_value(&context, fixture.alice_balance_value);
+    assert_eq!(after.current_handle, before.current_handle);
+    assert_eq!(after.leaf_count, 3);
+    let mut expected_peaks = before.peaks.clone();
+    let mut expected_count = before.leaf_count;
+    let public_leaf = zama_solana_acl::public_decrypt_leaf_commitment(
+        fixture.alice_balance_value.to_bytes(),
+        before.leaf_count,
+        before.current_handle,
+    );
+    zama_solana_acl::mmr_append(&mut expected_peaks, &mut expected_count, public_leaf).unwrap();
+    assert_eq!(expected_count, after.leaf_count);
+    assert_eq!(after.peaks, expected_peaks);
+
+    let request = read_disclosure_request(&context, disclosure_request);
+    assert_eq!(request.mint, fixture.mint);
+    assert_eq!(request.requester, fixture.owner);
+    assert_eq!(request.token_account, fixture.alice_token);
+    assert_eq!(request.app_account, fixture.alice_token);
+    assert_eq!(request.handle, before.current_handle);
+    assert_eq!(request.encrypted_value, fixture.alice_balance_value);
+    assert_eq!(request.host_config, fixture.host_config);
+    assert_eq!(request.kms_context_id, kms_context_id);
+    assert_eq!(request.request_nonce, request_nonce);
+    assert_eq!(request.chain_id, host::SOLANA_POC_CHAIN_ID);
+    assert_eq!(request.expires_slot, expires_slot);
+    assert_eq!(request.mode, token::DISCLOSURE_REQUEST_MODE_BALANCE);
+    assert_eq!(request.status, token::REQUEST_STATUS_PENDING);
+
+    let events: Vec<token::BalanceDisclosureRequestedEvent> = result
+        .inner_instructions
+        .iter()
+        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
+        .collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].handle, before.current_handle);
+    assert_eq!(events[0].encrypted_value, fixture.alice_balance_value);
+    assert_eq!(events[0].request, disclosure_request);
+    assert_eq!(events[0].request_hash, request.request_hash);
+    assert_eq!(events[0].kms_context_id, kms_context_id);
+    assert_eq!(events[0].expires_slot, expires_slot);
 }
 
 #[test]
