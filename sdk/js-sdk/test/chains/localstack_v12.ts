@@ -14,7 +14,7 @@ export const localstack_v12 = /*#__PURE__*/ defineFhevmChain({
         address: '0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11',
       },
       protocolConfig: {
-        address: '0x52054F36036811ca418be59e41Fc6DD1b9e4F4c8',
+        address: '0x0000000000000000000000000000000000000000',
       },
     },
     relayerUrl: 'http://localhost:3000',
