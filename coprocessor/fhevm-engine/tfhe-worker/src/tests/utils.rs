@@ -188,6 +188,8 @@ pub async fn errors_on_allowed_handles(
 pub async fn wait_until_all_allowed_handles_computed(
     test_instance: &TestInstance,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let started_at = std::time::Instant::now();
+    let timeout = Duration::from_secs(300);
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
         .connect(test_instance.db_url())
@@ -203,6 +205,16 @@ pub async fn wait_until_all_allowed_handles_computed(
         if current_count == 0 {
             println!("All computations completed");
             break;
+        } else if started_at.elapsed() >= timeout {
+            let errors = errors_on_allowed_handles(test_instance).await?;
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!(
+                    "timed out after {:?} waiting for {current_count} allowed computations; errors: {errors:?}",
+                    timeout
+                ),
+            )
+            .into());
         } else {
             println!("{current_count} computations remaining, waiting...");
         }

@@ -12,4 +12,4 @@ cd "$ROOT/solana"
 NO_DNA=1 bash scripts/check-zama-host-idl.sh
 
 cd "$ROOT/coprocessor/fhevm-engine"
-NO_DNA=1 SQLX_OFFLINE=true cargo test -p tfhe-worker solana_poc -- --ignored --test-threads=1
+NO_DNA=1 SQLX_OFFLINE=true cargo test -p tfhe-worker solana_poc -- --ignored --test-threads=1 --nocapture
