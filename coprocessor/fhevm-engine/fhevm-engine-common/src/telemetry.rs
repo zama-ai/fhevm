@@ -149,6 +149,29 @@ pub fn init_tracing_otel_with_logs_only_fallback(
     }
 }
 
+/// JSON logs only — no OTLP exporter is created.
+///
+/// Use this when no OTEL collector is configured (e.g. CI / the Solana e2e).
+/// An OTLP exporter pointed at an absent collector otherwise fails every export
+/// and can stall the caller's async runtime; when tracing isn't being collected
+/// anyway, simply don't create the exporter.
+pub fn init_logs_only(
+    log_level: tracing::Level,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let level_filter = LevelFilter::from_level(log_level);
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .json()
+        .with_target(false)
+        .with_current_span(true)
+        .with_span_list(false)
+        .with_level(true);
+    tracing_subscriber::registry()
+        .with(level_filter)
+        .with(fmt_layer)
+        .try_init()?;
+    Ok(())
+}
+
 fn setup_otel_with_tracer(
     service_name: &str,
     tracer_name: &'static str,

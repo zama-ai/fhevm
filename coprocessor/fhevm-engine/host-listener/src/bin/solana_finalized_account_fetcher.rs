@@ -94,11 +94,19 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     ensure!(args.batch_size > 0, "--batch-size must be positive");
 
-    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
-        args.log_level,
-        &args.service_name,
-        "otlp-layer",
-    );
+    // Only stand up the OTLP exporter when a collector is actually configured;
+    // otherwise (CI / the Solana e2e) a doomed exporter can stall the runtime,
+    // so fall back to JSON-logs-only.
+    let _otel_guard = if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
+        telemetry::init_tracing_otel_with_logs_only_fallback(
+            args.log_level,
+            &args.service_name,
+            "otlp-layer",
+        )
+    } else {
+        let _ = telemetry::init_logs_only(args.log_level);
+        None
+    };
 
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 

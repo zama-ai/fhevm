@@ -89,11 +89,19 @@ enum Transport {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
-        args.log_level,
-        &args.service_name,
-        "otlp-layer",
-    );
+    // Only stand up the OTLP exporter when a collector is actually configured.
+    // With no collector (CI / the Solana e2e) a doomed exporter can stall the
+    // ingest loop's runtime, so fall back to JSON-logs-only there.
+    let _otel_guard = if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
+        telemetry::init_tracing_otel_with_logs_only_fallback(
+            args.log_level,
+            &args.service_name,
+            "otlp-layer",
+        )
+    } else {
+        let _ = telemetry::init_logs_only(args.log_level);
+        None
+    };
 
     let program_id = Pubkey::from_str(&args.program_id)
         .with_context(|| format!("invalid program id {}", args.program_id))?;
