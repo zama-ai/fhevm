@@ -27,14 +27,12 @@ const ACL_ABI = [
 const DURATION_SECONDS = 7 * 24 * 60 * 60;
 const POSITIVE_TIMEOUT_MS = 4 * 60 * 1000;
 const TIMEOUT_MARGIN_MS = 60 * 1000;
-// Observation window for the stuck-at-KMS negatives. Unlike the unified suite
-// this is a fixed floor rather than a runtime 3x-latency calibration: this
-// suite's only positive control runs AFTER the negatives, so there's no earlier
-// latency sample to calibrate from. 90s is comfortably above the positive
-// latencies observed on this stack (KMS round trips ~2-30s), so a request that
-// WOULD succeed has ample time to do so — a still-`pending` job at the window
-// end is a genuine rejection, not a slow success.
-const NEGATIVE_WINDOW_MS = 90 * 1000;
+// How long to watch a request that must NOT succeed. When the KMS Connector
+// rejects a request it never responds to the relayer, so the job simply stays
+// queued — the test waits this long and then treats "still pending" as
+// rejected. A successful decryption takes ~2-30s on this stack, so a request
+// that would succeed had ample time to do so.
+const REJECTION_WAIT_MS = 90 * 1000;
 // The KMS Connector reads `decryptionSignatureInvalidatedBefore` from the host
 // ACL at a lagging block tag (same reason delegation needs propagation). After
 // an invalidation tx, mine/await this many blocks before submitting a request
@@ -211,7 +209,7 @@ describe('Decryption signature invalidation', function () {
   });
 
   it('test decryption signature invalidation rejects a request signed before the invalidation timestamp', async function () {
-    this.timeout(NEGATIVE_WINDOW_MS + TIMEOUT_MARGIN_MS);
+    this.timeout(REJECTION_WAIT_MS + TIMEOUT_MARGIN_MS);
     const threshold = await ensureEveInvalidated();
     // Ensure the KMS observes eve's threshold before this KMS-dependent request,
     // whichever earlier test wrote it (or this test, in a grep-isolated run).
@@ -228,7 +226,7 @@ describe('Decryption signature invalidation', function () {
     };
     const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.eve }, {
       waitForTerminal: true,
-      timeoutMs: NEGATIVE_WINDOW_MS,
+      timeoutMs: REJECTION_WAIT_MS,
     });
     // Signature is valid, so the relayer accepts; the invalidation check is
     // enforced only by the KMS Connector (startTimestamp < invalidatedBefore),
@@ -312,7 +310,7 @@ describe('Decryption signature invalidation', function () {
   });
 
   it('test decryption signature invalidation kills pre-approved smart-account requests after signer rotation', async function () {
-    this.timeout(POSITIVE_TIMEOUT_MS + NEGATIVE_WINDOW_MS + 3 * TIMEOUT_MARGIN_MS);
+    this.timeout(POSITIVE_TIMEOUT_MS + REJECTION_WAIT_MS + 3 * TIMEOUT_MARGIN_MS);
     // The motivating scenario for invalidation: a Safe-style wallet pre-approves a
     // decryption request; after a signer rotation the pre-approval is STILL
     // ERC-1271-valid (approveHash survives rotation), so the wallet must call
@@ -367,7 +365,7 @@ describe('Decryption signature invalidation', function () {
     // Guard against a malformed 202-without-jobId making the stuck-at-KMS
     // assertion below pass vacuously (pollJob on an absent id never succeeds).
     expect(postB.jobId, JSON.stringify(postB.raw)).to.be.a('string');
-    const pollB = await pollJob(cfg, postB.jobId!, { timeoutMs: NEGATIVE_WINDOW_MS });
+    const pollB = await pollJob(cfg, postB.jobId!, { timeoutMs: REJECTION_WAIT_MS });
     expectStuckAtKms(pollB);
   });
 });
