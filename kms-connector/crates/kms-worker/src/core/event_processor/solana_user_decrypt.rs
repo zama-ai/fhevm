@@ -11,7 +11,8 @@
 //!
 //! This module re-verifies the ed25519 signature **inside every KMS party's connector**, binding
 //! the re-encryption `publicKey` (handles, identity, nonce, allowed domains, validity window) AND
-//! — new in this rewrite — the MMR proof tail (`acl_value_key`, `proof_slot`, `mmr_proof_bytes`)
+//! — new in this rewrite — the MMR proof tail (`acl_value_key`, proof leaf count carried in
+//! the legacy `proof_slot` wire field, `mmr_proof_bytes`)
 //! to the Solana identity. A relayer cannot substitute the proof, the lineage, or the slot any
 //! more than it could substitute the re-encryption key: `SOLANA_USER_DECRYPT_DOMAIN_TAG` was
 //! bumped to `v2` specifically so a `v1` signature (proof-less) can never verify against the `v2`
@@ -47,16 +48,16 @@
 //! ## Freshness contract: Recoverable (budget-exempt) vs Irrecoverable
 //!
 //! [`dispatch_solana_mmr_proof`] verifies the proof against the live peaks FIRST. Only on
-//! verification failure does it compare `proof_slot` (the leaf_count the proof was built against)
-//! to the account's live `leaf_count`:
+//! verification failure does it compare the proof leaf count (the leaf_count the proof was built
+//! against, carried in the legacy `proof_slot` wire field) to the account's live `leaf_count`:
 //! - **mismatch** → `ProcessingError::RecoverableBudgetExempt`: the lineage advanced since the
 //!   proof was built and the proof's mountain may have merged, so the client can rebuild and
 //!   resubmit a fresh proof. This budget-exempt path is only for MMR proof verification failures;
 //!   domain/owner/canonical-account failures are request errors even if the count changed.
-//! - **match** (proof_slot == live leaf_count but still fails to verify) → `Irrecoverable`: the
+//! - **match** (proof leaf count == live leaf_count but still fails to verify) → `Irrecoverable`: the
 //!   proof is simply wrong for the account's actual state, not stale.
 //!
-//! A proof that still verifies against the live peaks despite `proof_slot != leaf_count` (count
+//! A proof that still verifies against the live peaks despite `proof_leaf_count != leaf_count` (count
 //! drifted but the relevant mountain never merged) is accepted — verify-first, never rebuilt from
 //! a mere count mismatch.
 
@@ -102,7 +103,7 @@ pub struct VerifiedSolanaAuth {
     /// (no-proof) request.
     pub mmr_proof_bytes: Vec<u8>,
     /// The lineage `leaf_count` the proof was built against; 0 for a current-ACL request.
-    pub proof_slot: u64,
+    pub proof_leaf_count: u64,
 }
 
 /// Per-chain Solana host configuration needed to authorize a user-decrypt request: the expected
@@ -163,7 +164,7 @@ pub fn verify_solana_user_decrypt_signature(
         allowed_acl_domain_keys,
         acl_value_key: extra.acl_value_key,
         mmr_proof_bytes: extra.mmr_proof_bytes,
-        proof_slot: extra.proof_slot,
+        proof_leaf_count: extra.proof_slot,
     })
 }
 
@@ -246,7 +247,7 @@ pub fn dispatch_solana_current(
 
 /// Historical/public path: decodes the mode byte + `MmrProof` from `auth.mmr_proof_bytes`,
 /// verifies it against the LIVE peaks in `acl`, and classifies a verification failure by
-/// `auth.proof_slot` vs `acl.leaf_count` (see the module doc's freshness contract).
+/// `auth.proof_leaf_count` vs `acl.leaf_count` (see the module doc's freshness contract).
 pub fn dispatch_solana_mmr_proof(
     verifier: &SolanaAclVerifier,
     account_key: SolanaPubkeyBytes,
@@ -279,7 +280,7 @@ pub fn dispatch_solana_mmr_proof(
         }
     };
 
-    result.map_err(|e| classify_mmr_verification_failure(e, auth.proof_slot, acl.leaf_count))
+    result.map_err(|e| classify_mmr_verification_failure(e, auth.proof_leaf_count, acl.leaf_count))
 }
 
 fn decode_solana_mmr_proof_blob(mmr_proof_bytes: &[u8]) -> Result<(u8, MmrProof), ProcessingError> {
@@ -292,6 +293,12 @@ fn decode_solana_mmr_proof_blob(mmr_proof_bytes: &[u8]) -> Result<(u8, MmrProof)
     let proof = MmrProof::deserialize(&mut cursor).map_err(|e| {
         ProcessingError::Irrecoverable(anyhow!("failed to decode Solana MMR proof: {e}"))
     })?;
+    if !cursor.is_empty() {
+        return Err(ProcessingError::Irrecoverable(anyhow!(
+            "Solana MMR-proof blob has {} trailing byte(s) after the Borsh proof",
+            cursor.len()
+        )));
+    }
     if proof.siblings.len() > MAX_MMR_SIBLINGS {
         return Err(ProcessingError::Irrecoverable(anyhow!(
             "Solana MMR proof carries {} siblings, exceeding the cap of {MAX_MMR_SIBLINGS}",
@@ -307,7 +314,7 @@ fn dispatch_solana_public_mmr_proof(
     owner: SolanaPubkeyBytes,
     acl: &EncryptedValue,
     handle: HandleBytes,
-    proof_slot: u64,
+    proof_leaf_count: u64,
     mmr_proof_bytes: &[u8],
 ) -> Result<(), ProcessingError> {
     let (mode, proof) = decode_solana_mmr_proof_blob(mmr_proof_bytes)?;
@@ -325,16 +332,16 @@ fn dispatch_solana_public_mmr_proof(
     };
     verifier
         .verify_public_decrypt_exact(target, &proof)
-        .map_err(|e| classify_mmr_verification_failure(e, proof_slot, acl.leaf_count))
+        .map_err(|e| classify_mmr_verification_failure(e, proof_leaf_count, acl.leaf_count))
 }
 
 /// Verify-FIRST staleness classification: only reached after `verify_*` has already rejected the
-/// proof. A `proof_slot`/live-`leaf_count` mismatch at that point means the lineage moved since
+/// proof. A proof-leaf-count/live-`leaf_count` mismatch at that point means the lineage moved since
 /// the proof was built (its mountain may have merged) — Recoverable, budget-exempt (see module
 /// doc). Equal counts with a still-failing proof means the proof is simply wrong — Irrecoverable.
 fn classify_mmr_verification_failure(
     error: crate::core::solana_acl::SolanaAclVerificationError,
-    proof_slot: u64,
+    proof_leaf_count: u64,
     live_leaf_count: u64,
 ) -> ProcessingError {
     let is_freshness_shaped = matches!(
@@ -342,9 +349,9 @@ fn classify_mmr_verification_failure(
         crate::core::solana_acl::SolanaAclVerificationError::HistoricalAccessProofInvalid
             | crate::core::solana_acl::SolanaAclVerificationError::PublicDecryptProofInvalid
     );
-    if is_freshness_shaped && proof_slot != live_leaf_count {
+    if is_freshness_shaped && proof_leaf_count != live_leaf_count {
         ProcessingError::RecoverableBudgetExempt(anyhow!(
-            "Solana MMR proof stale: built at leaf_count={proof_slot}, live leaf_count={live_leaf_count} ({error})"
+            "Solana MMR proof stale: built at leaf_count={proof_leaf_count}, live leaf_count={live_leaf_count} ({error})"
         ))
     } else {
         ProcessingError::Irrecoverable(anyhow!(
@@ -719,6 +726,30 @@ mod tests {
             .expect("historical decrypt must authorize");
     }
 
+    #[test]
+    fn trailing_bytes_after_mmr_proof_rejected() {
+        let kp = identity_kp(11);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut l = lineage(h(10), &[owner]);
+        l.rotate(h(11));
+        let proof = l.proof(0);
+        let mut blob = proof_blob(MMR_MODE_HISTORICAL, &proof);
+        blob.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+
+        let request = signed_mmr_request(&kp, h(10), l.value_key(), blob, l.acl.leaf_count);
+        let auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
+
+        let verifier = SolanaAclVerifier::new(HOST);
+        let err = dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(10), &auth)
+            .expect_err("proof blobs with trailing bytes must be rejected");
+        match err {
+            ProcessingError::Irrecoverable(e) => {
+                assert!(e.to_string().contains("trailing byte"), "got: {e}");
+            }
+            other => panic!("trailing proof bytes must be Irrecoverable, got {other:?}"),
+        }
+    }
+
     // (2) PUBLIC ACCEPT
     #[test]
     fn public_accept() {
@@ -842,6 +873,49 @@ mod tests {
                 panic!("a stale (merged) proof must be RecoverableBudgetExempt, got {other:?}")
             }
         }
+    }
+
+    #[test]
+    fn invalid_mmr_proof_classification_uses_leaf_count() {
+        let kp = identity_kp(15);
+        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
+        let mut l = lineage(h(80), &[owner]);
+        l.rotate(h(81));
+        l.rotate(h(82));
+        l.rotate(h(83));
+
+        let stale_leaf_count = l.acl.leaf_count;
+        assert_eq!(stale_leaf_count, 3);
+        let stale_blob = proof_blob(MMR_MODE_HISTORICAL, &l.proof(2));
+        l.rotate(h(84));
+        let live_leaf_count = l.acl.leaf_count;
+        assert_eq!(live_leaf_count, 4);
+
+        let verifier = SolanaAclVerifier::new(HOST);
+        let stale_request =
+            signed_mmr_request(&kp, h(82), l.value_key(), stale_blob, stale_leaf_count);
+        let stale_auth = verify_solana_user_decrypt_signature(&stale_request, CHAIN_ID).unwrap();
+        let stale_err =
+            dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(82), &stale_auth)
+                .expect_err("a proof built against an older leaf_count must be rejected");
+        assert!(
+            matches!(stale_err, ProcessingError::RecoverableBudgetExempt(_)),
+            "stale invalid proof must be budget-exempt recoverable, got {stale_err:?}"
+        );
+
+        let mut live_proof = l.proof(2);
+        live_proof.siblings[0][0] ^= 0xff;
+        let live_blob = proof_blob(MMR_MODE_HISTORICAL, &live_proof);
+        let live_request =
+            signed_mmr_request(&kp, h(82), l.value_key(), live_blob, live_leaf_count);
+        let live_auth = verify_solana_user_decrypt_signature(&live_request, CHAIN_ID).unwrap();
+        let live_err =
+            dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(82), &live_auth)
+                .expect_err("an invalid proof carrying the live leaf_count must be rejected");
+        assert!(
+            matches!(live_err, ProcessingError::Irrecoverable(_)),
+            "invalid proof at live leaf_count must be irrecoverable, got {live_err:?}"
+        );
     }
 
     // (3b) VERIFY-FIRST ACCEPTS COUNT DRIFT WITHOUT A MERGE

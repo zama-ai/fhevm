@@ -13,6 +13,7 @@ use crate::solana_proof::store::LeafStore;
 pub struct MmrProofResult {
     pub mmr_proof: Option<MmrProof>,
     pub leaf_count: u64,
+    /// Backwards-compatible wire name for the lineage `leaf_count` the proof was built against.
     pub proof_slot: u64,
     pub verified: bool,
 }
@@ -29,10 +30,8 @@ pub enum ProofError {
     Lineage(LineageError),
     #[error("no on-chain account found for lineage")]
     LineageNotFound,
-    #[error(
-        "lineage proof data is lagging chain state at slot {proof_slot} (leaf_count {leaf_count})"
-    )]
-    Lagging { leaf_count: u64, proof_slot: u64 },
+    #[error("lineage proof data is lagging chain state (leaf_count {leaf_count})")]
+    Lagging { leaf_count: u64 },
 }
 
 /// Builds a proof for `(lineage, leaf_index)`. On `PeaksDiverged` (the local
@@ -53,7 +52,6 @@ pub async fn build_proof<C: ChainFetcher, S: LeafStore>(
         .ok_or(ProofError::LineageNotFound)?;
     let lagging = || ProofError::Lagging {
         leaf_count: on_chain.leaf_count,
-        proof_slot: on_chain.proof_slot,
     };
 
     match try_build(
@@ -68,7 +66,7 @@ pub async fn build_proof<C: ChainFetcher, S: LeafStore>(
         Ok(proof) => Ok(MmrProofResult {
             mmr_proof: Some(proof),
             leaf_count: on_chain.leaf_count,
-            proof_slot: on_chain.proof_slot,
+            proof_slot: on_chain.leaf_count,
             verified: true,
         }),
         Err(LineageError::PeaksDiverged) => {
@@ -95,7 +93,7 @@ pub async fn build_proof<C: ChainFetcher, S: LeafStore>(
                 Ok(proof) => Ok(MmrProofResult {
                     mmr_proof: Some(proof),
                     leaf_count: on_chain.leaf_count,
-                    proof_slot: on_chain.proof_slot,
+                    proof_slot: on_chain.leaf_count,
                     verified: true,
                 }),
                 Err(LineageError::PeaksDiverged) => Err(lagging()),
@@ -297,14 +295,7 @@ mod tests {
 
         let program_id = pk(0x99);
         let chain = FakeChain::new(program_id);
-        chain.set_lineage_state(
-            lineage,
-            OnChainLineageState {
-                peaks,
-                leaf_count,
-                proof_slot: 77,
-            },
-        );
+        chain.set_lineage_state(lineage, OnChainLineageState { peaks, leaf_count });
 
         let dir = tempfile::tempdir().unwrap();
         let store = FileLeafStore::open(dir.path().join("leaves.json"))
@@ -323,7 +314,7 @@ mod tests {
             .unwrap();
         assert!(result.verified);
         assert_eq!(result.leaf_count, 1);
-        assert_eq!(result.proof_slot, 77);
+        assert_eq!(result.proof_slot, 1);
         assert!(result.mmr_proof.is_some());
     }
 
@@ -339,14 +330,7 @@ mod tests {
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
-        chain.set_lineage_state(
-            lineage,
-            OnChainLineageState {
-                peaks,
-                leaf_count,
-                proof_slot: 88,
-            },
-        );
+        chain.set_lineage_state(lineage, OnChainLineageState { peaks, leaf_count });
 
         let update_ix = {
             #[derive(BorshSerialize)]
@@ -392,7 +376,7 @@ mod tests {
             result.verified,
             "catch-up should have ingested the missing event and verified"
         );
-        assert_eq!(result.proof_slot, 88);
+        assert_eq!(result.proof_slot, 1);
         assert!(result.mmr_proof.is_some());
     }
 
@@ -413,7 +397,6 @@ mod tests {
             OnChainLineageState {
                 peaks: peaks.clone(),
                 leaf_count,
-                proof_slot: 90,
             },
         );
 
@@ -457,7 +440,7 @@ mod tests {
 
         assert!(result.verified);
         assert_eq!(result.leaf_count, 1);
-        assert_eq!(result.proof_slot, 90);
+        assert_eq!(result.proof_slot, 1);
         assert_eq!(proof_bytes[0], 0x02);
         authorize_public(lineage, &acl, handle, proof).unwrap();
         assert_eq!(
@@ -478,14 +461,7 @@ mod tests {
             let leaf = zama_solana_acl::public_decrypt_leaf_commitment(lineage, index, pk(0x10));
             mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
         }
-        chain.set_lineage_state(
-            lineage,
-            OnChainLineageState {
-                peaks,
-                leaf_count,
-                proof_slot: 111,
-            },
-        );
+        chain.set_lineage_state(lineage, OnChainLineageState { peaks, leaf_count });
 
         for (sig, slot) in [("sig1", 1), ("sig2", 2)] {
             let make_public_ix = make_ix(
@@ -515,13 +491,7 @@ mod tests {
         let error = build_proof(&chain, &store, program_id, lineage, 0, 1)
             .await
             .unwrap_err();
-        assert!(matches!(
-            error,
-            ProofError::Lagging {
-                leaf_count: 2,
-                proof_slot: 111
-            }
-        ));
+        assert!(matches!(error, ProofError::Lagging { leaf_count: 2 }));
         assert!(store.get_events(lineage).await.unwrap().is_empty());
     }
 
@@ -535,14 +505,7 @@ mod tests {
         let mut peaks = Vec::new();
         let mut leaf_count = 0u64;
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
-        chain.set_lineage_state(
-            lineage,
-            OnChainLineageState {
-                peaks,
-                leaf_count,
-                proof_slot: 99,
-            },
-        );
+        chain.set_lineage_state(lineage, OnChainLineageState { peaks, leaf_count });
 
         let dir = tempfile::tempdir().unwrap();
         let store = FileLeafStore::open(dir.path().join("leaves.json"))
@@ -552,12 +515,6 @@ mod tests {
         let error = build_proof(&chain, &store, program_id, lineage, 0, 1000)
             .await
             .unwrap_err();
-        assert!(matches!(
-            error,
-            ProofError::Lagging {
-                leaf_count: 1,
-                proof_slot: 99
-            }
-        ));
+        assert!(matches!(error, ProofError::Lagging { leaf_count: 1 }));
     }
 }

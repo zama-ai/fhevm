@@ -19,6 +19,9 @@ import { createClearValue } from '../../core/handle/ClearValue.js';
 import { bytesToClearValueType } from '../../core/handle/FheType.js';
 import { generateSolanaTransportKeyPair, deSigncryptSolanaUserDecrypt } from '../deSigncrypt.js';
 import {
+  decodeMmrProofTransportBlob,
+  MMR_MODE_HISTORICAL,
+  MMR_MODE_PUBLIC,
   verifyHistoricalAccessProof,
   verifyPublicDecryptProof,
   type MmrProof,
@@ -143,6 +146,31 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
+function mmrProofsEqual(a: MmrProof, b: MmrProof): boolean {
+  if (a.leafIndex !== b.leafIndex || a.siblings.length !== b.siblings.length) return false;
+  for (let i = 0; i < a.siblings.length; i++) {
+    const left = a.siblings[i];
+    const right = b.siblings[i];
+    if (left === undefined || right === undefined || !bytesEqual(left, right)) return false;
+  }
+  return true;
+}
+
+function modeHex(mode: number): string {
+  return `0x${mode.toString(16).padStart(2, '0')}`;
+}
+
+function assertCanonicalMmrProofBytes(mmrProof: SolanaUserDecryptMmrProofParameter): void {
+  const decoded = decodeMmrProofTransportBlob(mmrProof.mmrProofBytes);
+  const expectedMode = mmrProof.mode === 'historical' ? MMR_MODE_HISTORICAL : MMR_MODE_PUBLIC;
+  if (decoded.mode !== expectedMode) {
+    throw new Error(`MMR proof mode byte mismatch: expected ${modeHex(expectedMode)}, got ${modeHex(decoded.mode)}`);
+  }
+  if (!mmrProofsEqual(decoded.proof, mmrProof.proof)) {
+    throw new Error('MMR proof bytes do not match the decoded proof parameter');
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -202,6 +230,7 @@ export async function userDecrypt(
     throw new Error('`aclValueKey` is required for current-handle Solana user decrypt requests');
   }
   if (mmrProof !== undefined) {
+    assertCanonicalMmrProofBytes(mmrProof);
     // Refuse to sign over a proof that would fail on-chain/in-connector verification: verifying
     // client-side, before signing, catches a malformed or stale proof here instead of burning a
     // relayer round trip (or worse, silently trusting an unverified proof).
@@ -343,9 +372,7 @@ export async function userDecrypt(
       throw new Error(`missing handle at index ${i}`);
     }
     if (plaintext.fheType !== handle.fheTypeId) {
-      throw new Error(
-        `unexpected FHE type at index ${i}: got ${plaintext.fheType}, expected ${handle.fheTypeId}`,
-      );
+      throw new Error(`unexpected FHE type at index ${i}: got ${plaintext.fheType}, expected ${handle.fheTypeId}`);
     }
     return createClearValue({
       value: bytesToClearValueType(handle.fheType, plaintext.bytes),

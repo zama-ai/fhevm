@@ -41,7 +41,6 @@ pub struct ChainTransaction {
 pub struct OnChainLineageState {
     pub peaks: Vec<[u8; 32]>,
     pub leaf_count: u64,
-    pub proof_slot: u64,
 }
 
 #[async_trait]
@@ -352,9 +351,6 @@ impl ChainFetcher for RpcChainFetcher {
         if result.is_null() || result.get("value").map(|v| v.is_null()).unwrap_or(true) {
             return Ok(None);
         }
-        let proof_slot = result["context"]["slot"]
-            .as_u64()
-            .ok_or_else(|| ChainError::Rpc("missing account context slot".to_string()))?;
         let data_field = result["value"]["data"][0]
             .as_str()
             .ok_or_else(|| ChainError::Rpc("missing base64 account data".to_string()))?;
@@ -364,7 +360,6 @@ impl ChainFetcher for RpcChainFetcher {
         Ok(Some(OnChainLineageState {
             peaks: decoded.peaks,
             leaf_count: decoded.leaf_count,
-            proof_slot,
         }))
     }
 }

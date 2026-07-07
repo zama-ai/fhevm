@@ -116,13 +116,7 @@ export function historicalAccessLeafCommitment(
   assertLen(encryptedValueAccount, 32, 'encryptedValueAccount');
   assertLen(handle, 32, 'handle');
   assertLen(subject, 32, 'subject');
-  return sha256Parts(
-    HISTORICAL_ACCESS_LEAF_PREFIX,
-    encryptedValueAccount,
-    u64BE(leafIndex),
-    handle,
-    subject,
-  );
+  return sha256Parts(HISTORICAL_ACCESS_LEAF_PREFIX, encryptedValueAccount, u64BE(leafIndex), handle, subject);
 }
 
 /**
@@ -147,6 +141,74 @@ export type MmrProof = {
 
 /** Upper bound on `siblings`, matching the Rust connector's decode-time cap (`mmr.rs`, u64 height). */
 export const MAX_MMR_SIBLINGS = 64;
+
+/** Transport-blob mode byte for a historical-access MMR proof. */
+export const MMR_MODE_HISTORICAL = 0x01;
+/** Transport-blob mode byte for a public-decrypt MMR proof. */
+export const MMR_MODE_PUBLIC = 0x02;
+
+export type MmrProofTransportBlob = {
+  readonly mode: number;
+  readonly proof: MmrProof;
+};
+
+function dataView(bytes: Uint8Array): DataView {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+}
+
+function requireRemaining(bytes: Uint8Array, offset: number, needed: number, field: string): void {
+  const remaining = bytes.length - offset;
+  if (remaining < needed) {
+    throw new Error(
+      `Solana MMR-proof blob is truncated while reading ${field}: need ${needed} bytes, got ${remaining}`,
+    );
+  }
+}
+
+/**
+ * Decodes `mode || Borsh(MmrProof)` and requires the Borsh proof to consume the full blob.
+ * Borsh encodes `MmrProof` as `leaf_index: u64 LE` then `siblings: Vec<[u8;32]>`.
+ */
+export function decodeMmrProofTransportBlob(mmrProofBytes: Uint8Array): MmrProofTransportBlob {
+  if (mmrProofBytes.length === 0) {
+    throw new Error('Solana MMR-proof blob is empty (missing mode byte)');
+  }
+  const mode = mmrProofBytes[0]!;
+  const view = dataView(mmrProofBytes);
+  let offset = 1;
+
+  requireRemaining(mmrProofBytes, offset, 8, 'leaf_index');
+  const leafIndex = view.getBigUint64(offset, true);
+  offset += 8;
+
+  requireRemaining(mmrProofBytes, offset, 4, 'siblings length');
+  const siblingCount = view.getUint32(offset, true);
+  offset += 4;
+  if (siblingCount > MAX_MMR_SIBLINGS) {
+    throw new Error(`Solana MMR proof carries ${siblingCount} siblings, exceeding the cap of ${MAX_MMR_SIBLINGS}`);
+  }
+
+  const expectedLength = offset + siblingCount * 32;
+  if (mmrProofBytes.length < expectedLength) {
+    throw new Error(
+      `Solana MMR-proof blob is truncated while reading siblings: need ${expectedLength - offset} bytes, got ${
+        mmrProofBytes.length - offset
+      }`,
+    );
+  }
+  if (mmrProofBytes.length > expectedLength) {
+    throw new Error(
+      `Solana MMR-proof blob has ${mmrProofBytes.length - expectedLength} trailing byte(s) after the Borsh proof`,
+    );
+  }
+
+  const siblings: Uint8Array[] = [];
+  for (let i = 0; i < siblingCount; i++) {
+    const start = offset + i * 32;
+    siblings.push(mmrProofBytes.slice(start, start + 32));
+  }
+  return { mode, proof: { leafIndex, siblings } };
+}
 
 function popcount64(value: bigint): number {
   let count = 0;
@@ -226,12 +288,7 @@ export function verifyHistoricalAccessProof(
   subject: Uint8Array,
   proof: MmrProof,
 ): boolean {
-  const commitment = historicalAccessLeafCommitment(
-    encryptedValueAccount,
-    proof.leafIndex,
-    handle,
-    subject,
-  );
+  const commitment = historicalAccessLeafCommitment(encryptedValueAccount, proof.leafIndex, handle, subject);
   return mmrVerify(peaks, leafCount, commitment, proof);
 }
 

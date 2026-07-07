@@ -75,15 +75,12 @@ pub enum HttpError {
 impl IntoResponse for HttpError {
     fn into_response(self) -> Response {
         match self {
-            HttpError::Proof(ProofError::Lagging {
-                leaf_count,
-                proof_slot,
-            }) => (
+            HttpError::Proof(ProofError::Lagging { leaf_count }) => (
                 axum::http::StatusCode::SERVICE_UNAVAILABLE,
                 Json(MmrProofResponse {
                     mmr_proof: None,
                     leaf_count,
-                    proof_slot,
+                    proof_slot: leaf_count,
                     verified: false,
                     status: "lagging",
                 }),
