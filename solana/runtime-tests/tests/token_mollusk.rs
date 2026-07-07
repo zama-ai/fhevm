@@ -4296,10 +4296,11 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     assert_eq!(meter.last_seen_slot, context.mollusk.sysvars.clock.slot);
     // Regression guard on the metering granularity: nothing accrues to the sender token
     // account's key — a sybil minting fresh token accounts gets no fresh budget.
-    assert!(
-        read_hcu_block_meter(&context, host::hcu_block_meter_address(fixture.alice_token).0)
-            .is_none()
-    );
+    assert!(read_hcu_block_meter(
+        &context,
+        host::hcu_block_meter_address(fixture.alice_token).0
+    )
+    .is_none());
 }
 
 /// Exact HCU cost of `create_random_amount` (Transfer kind): a single `FheRand` at euint64.
@@ -4346,7 +4347,11 @@ fn mollusk_create_random_amount_trusted_authority_bypasses_meter_through_cpi() {
     let trust_pda = host::hcu_trusted_app_address(hcu_authority).0;
     let meter_pda = host::hcu_block_meter_address(hcu_authority).0;
     let context = create_random_amount_block_cap_context(&fixture, amount_acl, 500_000);
-    seed_account(&context, trust_pda, hcu_trusted_app_record_account(hcu_authority, true));
+    seed_account(
+        &context,
+        trust_pda,
+        hcu_trusted_app_record_account(hcu_authority, true),
+    );
 
     let ix = create_random_amount_ix_with_block_cap_accounts(
         &fixture,

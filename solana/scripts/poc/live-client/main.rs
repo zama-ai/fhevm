@@ -42,9 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TRIVIAL_ENCRYPT drives a real zama-host trivial encryption through fhe_eval. The host
     // computes the result handle on-chain and emits a TrivialEncryptEvent the live host-listener
     // ingests into the coprocessor DB for the tfhe-worker to materialize.
-    if std::env::var("TRIVIAL_ENCRYPT").is_ok()
-        || std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok()
-    {
+    if std::env::var("TRIVIAL_ENCRYPT").is_ok() || std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
         trivial_encrypt_eval(&host, &payer, host_config)?;
         return Ok(());
     }
