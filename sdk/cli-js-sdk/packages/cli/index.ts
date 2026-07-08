@@ -7,6 +7,7 @@ import { consola } from "consola";
 
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
 import { registerPublicDecryptCommands } from "./src/cli/commands/public-decrypt";
+import { registerUserDecryptCommands } from "./src/cli/commands/user-decrypt";
 import { DEFAULT_NETWORK, NETWORKS } from "@cli-fhevm-sdk/toolkit/types";
 
 const program = new Command()
@@ -26,6 +27,7 @@ const program = new Command()
 
 registerInputProofCommand(program);
 registerPublicDecryptCommands(program);
+registerUserDecryptCommands(program);
 
 program.parseAsync().catch((error: unknown) => {
   consola.error(error instanceof Error ? (error.stack ?? error.message) : error);
