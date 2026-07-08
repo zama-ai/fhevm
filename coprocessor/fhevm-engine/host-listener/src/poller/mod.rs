@@ -97,7 +97,7 @@ pub struct PollerConfig {
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
     pub gcs_mode: bool,
-    pub ethereum_chain_id: Option<u64>,
+    pub canonical_protocol_config_chain_id: Option<u64>,
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
@@ -144,7 +144,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let chain_id_str = chain_id.to_string();
     let is_protocol_config_listener =
         crate::protocol_config::resolve_protocol_config_listener(
-            config.ethereum_chain_id,
+            config.canonical_protocol_config_chain_id,
             chain_id.as_u64(),
         )?;
     blockchain_timeout_tick.update();
