@@ -1427,6 +1427,9 @@ fn create_durable_public_decrypt_operand(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
@@ -1554,6 +1557,9 @@ fn fhe_eval_binary(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
@@ -1671,6 +1677,9 @@ fn fhe_eval_unary(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
@@ -1815,6 +1824,9 @@ fn fhe_eval_ternary(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
@@ -1919,6 +1931,9 @@ fn fhe_eval_rand_bounded(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
@@ -2039,6 +2054,9 @@ fn fhe_eval_sum(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
@@ -2180,6 +2198,9 @@ fn fhe_eval_is_in(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
@@ -2297,6 +2318,9 @@ fn fhe_eval_mul_div(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
