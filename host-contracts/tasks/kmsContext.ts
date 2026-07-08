@@ -191,7 +191,7 @@ export interface KmsContextSwitchStatus {
   newTxSendersOutstanding?: string[];
   previousTxSendersConfirmed?: string[];
   previousConfirmationCount?: number;
-  previousTxSenderThreshold?: number; // the (n - t + 1) old-side quorum target
+  previousTxSenderThreshold?: number; // the (n - t) old-side quorum target
   contextCreationQuorumReached?: boolean;
   stuckBelowPreviousThreshold?: boolean;
 
@@ -214,7 +214,7 @@ function outstanding(expected: string[], confirmed: Set<string>): string[] {
 // plus the current active-context view. ProtocolConfig exposes no getter for the intermediate
 // `Created` state or the live confirmation tally, and the new (pending) context's signer set is not
 // readable via `getKmsSignersForContext` until it is `Active` — so the new set is taken from the
-// `NewKmsContext` event, while the old-side `(n - t + 1)` target is read from views on the still-
+// `NewKmsContext` event, while the old-side `(n - t)` target is read from views on the still-
 // active previous context.
 export async function inspectKmsContextSwitch(
   hre: HardhatRuntimeEnvironment,
@@ -313,10 +313,10 @@ async function fillContextSwitch(
   const newTxSenders = newContextEvent.args.kmsNodeParams.map((node) => checksum(node.txSenderAddress));
   status.newTxSenders = newTxSenders;
 
-  // Old-side (n - t + 1) target: the previous context is still active, so its views are readable.
+  // Old-side (n - t) target (floored at 1): the previous context is still active, so its views are readable.
   const previousSigners: string[] = await pc.getKmsSignersForContext(previousContextId);
   const previousMpcThreshold: bigint = await pc.getMpcThresholdForContext(previousContextId);
-  status.previousTxSenderThreshold = previousSigners.length - Number(previousMpcThreshold) + 1;
+  status.previousTxSenderThreshold = Math.max(previousSigners.length - Number(previousMpcThreshold), 1);
 
   // Tally creation confirmations from events.
   const creationConfirmations = await pc.queryFilter(
@@ -446,10 +446,10 @@ function printStatus(status: KmsContextSwitchStatus): void {
     }
     console.log(
       'previous tx senders confirmed:',
-      `${status.previousConfirmationCount} (need >= ${status.previousTxSenderThreshold} = n - t + 1)`,
+      `${status.previousConfirmationCount} (need >= ${status.previousTxSenderThreshold} = n - t)`,
     );
     if (status.stuckBelowPreviousThreshold) {
-      console.log('  ⚠ stuck below the (n - t + 1) old-side confirmation target');
+      console.log('  ⚠ stuck below the (n - t) old-side confirmation target');
     }
     console.log('creation quorum reached:', status.contextCreationQuorumReached);
   }
