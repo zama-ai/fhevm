@@ -609,7 +609,20 @@ fn build_public_decrypt_proof(
     value_account: &zama_host::EncryptedValue,
     handle: [u8; 32],
 ) -> Result<(zama_solana_acl::MmrProof, Vec<u8>), Box<dyn std::error::Error>> {
-    let events = [zama_solana_acl::LineageEvent::MarkedPublic { handle }];
+    // The burned/disclosed lineage can hold MORE than one public-decrypt leaf for the
+    // SAME handle: a born-public burn (DD-036) seals one, and a later explicit
+    // `make_handle_public` seal appends another — the host has no live "already public"
+    // flag by design (lib.rs authorize_public docs), so it never dedups. Reconstruct one
+    // `MarkedPublic` per on-chain leaf so the reconstructed peaks/leaf_count match the
+    // live account. NOTE (PoC shortcut): this assumes the lineage is entirely
+    // same-handle public leaves, which holds for full-vertical's single-burn flow; a
+    // lineage that also carries supersede (historical) leaves cannot be rebuilt from the
+    // handle alone — route through the relayer proof service (`solana_proof::build_proof`)
+    // for that (tracked follow-up).
+    let events: Vec<zama_solana_acl::LineageEvent> =
+        std::iter::repeat(zama_solana_acl::LineageEvent::MarkedPublic { handle })
+            .take(value_account.leaf_count as usize)
+            .collect();
     let reconstructed =
         zama_solana_acl::reconstruct(encrypted_value_account, &events).map_err(|e| {
             std::io::Error::new(
@@ -1711,6 +1724,54 @@ mod tests {
         let (built, proof_bytes) =
             build_public_decrypt_proof(encrypted_value_account, &host_value, handle).unwrap();
         assert_eq!(built, proof);
+        assert_eq!(proof_bytes[0], MMR_MODE_PUBLIC);
+        assert!(
+            zama_solana_acl::authorize_public(encrypted_value_account, &value, handle, &built)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn public_decrypt_proof_for_twice_public_handle_verifies() {
+        // Regression for the full-vertical born-public burned handle: it is made public
+        // TWICE (born-public burn per DD-036, then an explicit make_handle_public seal),
+        // so the on-chain lineage has leaf_count == 2 for the SAME handle. A single-event
+        // reconstruction yields leaf_count == 1 and diverges (PeaksDiverged); the proof
+        // builder must reconstruct one MarkedPublic per on-chain leaf.
+        let encrypted_value_account = [0xAC; 32];
+        let handle = [0x21; 32];
+        let events = [
+            zama_solana_acl::LineageEvent::MarkedPublic { handle },
+            zama_solana_acl::LineageEvent::MarkedPublic { handle },
+        ];
+        let reconstructed = zama_solana_acl::reconstruct(encrypted_value_account, &events).unwrap();
+        assert_eq!(reconstructed.leaf_count, 2);
+        let mut value = zama_solana_acl::EncryptedValue {
+            current_handle: handle,
+            leaf_count: reconstructed.leaf_count,
+            peaks: reconstructed.peaks.clone(),
+            ..Default::default()
+        };
+        value.subjects = vec![[0x01; 32]];
+        let host_value = zama_host::EncryptedValue {
+            acl_domain_key: Pubkey::new_from_array(value.acl_domain_key),
+            app_account: Pubkey::new_from_array(value.app_account),
+            encrypted_value_label: value.encrypted_value_label,
+            current_handle: value.current_handle,
+            subjects: value
+                .subjects
+                .iter()
+                .copied()
+                .map(Pubkey::new_from_array)
+                .collect(),
+            leaf_count: value.leaf_count,
+            peaks: value.peaks.clone(),
+            bump: value.bump,
+        };
+
+        // Regressed as PeaksDiverged before the leaf_count-aware reconstruction fix.
+        let (built, proof_bytes) =
+            build_public_decrypt_proof(encrypted_value_account, &host_value, handle).unwrap();
         assert_eq!(proof_bytes[0], MMR_MODE_PUBLIC);
         assert!(
             zama_solana_acl::authorize_public(encrypted_value_account, &value, handle, &built)
