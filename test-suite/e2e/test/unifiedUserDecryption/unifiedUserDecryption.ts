@@ -20,6 +20,7 @@ import {
   directHandle,
   expectRelayerAclRejection,
   expectStuckAtKms,
+  isSignatureRejection,
   requestUnifiedUserDecrypt,
   submitUnifiedRequest,
 } from '../sdk/unified/unifiedUserDecrypt';
@@ -777,6 +778,81 @@ describe('Unified user decryption', function () {
         durationSeconds: DURATION_SECONDS,
       };
       const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.eve }, {
+        waitForTerminal: true,
+        timeoutMs: negativeWindowMs,
+      });
+      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+      expectRelayerAclRejection(poll, /ACL check failed/);
+    });
+
+    it('test unified user decrypt contract delegate re-points its delegated access by rotating its signer', async function () {
+      this.timeout(2 * POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+      // A delegation granted TO a contract is governed by that contract's
+      // ERC-1271 policy, not by the on-chain delegation: rotating the wallet's
+      // owner re-points the delegated access at a different EOA with no
+      // delegator involvement (a de-facto off-chain re-delegation — the
+      // on-chain "no transitive delegation" rule is not violated, but the
+      // delegator trusts the delegate contract's policy, present and future).
+      // The delegator's levers remain revocation and expiry.
+      await (await erc1271Wallet.connect(signers.bob).transferOwnership(signers.eve.address)).wait();
+
+      // Fresh re-encryption key: the relayer dedups on (handles, userAddress,
+      // allowedContracts, publicKey, extraData) — reusing the suite key would
+      // return the three-address test's cached result instead of a real job.
+      const repointPublicKey = (await instances.alice.generateKeypair()).publicKey;
+      const req: UnifiedDecryptRequest = {
+        handles: [delegatedHandle(delegatedCtHandle, tokenAddress, smartWalletAddress)],
+        userAddress: erc1271WalletAddress,
+        allowedContracts: [],
+        publicKey: repointPublicKey,
+        startTimestamp: backdatedStartTimestamp(),
+        durationSeconds: DURATION_SECONDS,
+      };
+
+      // The OLD owner (bob) no longer passes the wallet's isValidSignature.
+      const { post: postOld } = await submitUnifiedRequest(cfg, req, { kind: 'erc1271', ownerSigner: signers.bob });
+      expect(isSignatureRejection(postOld), JSON.stringify(postOld.raw)).to.equal(true);
+
+      // The NEW owner (eve) decrypts the delegated handle — no new on-chain
+      // delegation was created; the wallet's policy alone re-pointed access.
+      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'erc1271', ownerSigner: signers.eve }, {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      });
+      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+      expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    });
+
+    it('test unified user decrypt revoking a contract delegate closes access for its current signer', async function () {
+      this.timeout(SLOW_TEST_TIMEOUT_MS);
+      // The delegator's lever against a contract delegate's signature policy:
+      // revoking the delegation closes access for WHOEVER the wallet currently
+      // authorizes. The signature still passes ERC-1271 (hence 202), but the
+      // delegation ACL check now fails.
+      await (
+        await smartWallet.connect(signers.carol).revokeUserDecryptionDelegation(erc1271WalletAddress, tokenAddress)
+      ).wait();
+      const currentBlock = await ethers.provider.getBlockNumber();
+      await waitForBlock(currentBlock + PROPAGATION_BLOCKS);
+
+      // Sign with the wallet's CURRENT owner (eve after the rotation test;
+      // bob if this test runs in isolation).
+      const ownerAddress = await erc1271Wallet.owner();
+      const ownerSigner = [signers.bob, signers.eve].find((s) => s.address === ownerAddress);
+      expect(ownerSigner, `unexpected wallet owner ${ownerAddress}`).to.not.equal(undefined);
+
+      // Fresh re-encryption key: a reused key would dedup onto the earlier
+      // (pre-revocation) succeeded job and false-fail this negative.
+      const revokedPublicKey = (await instances.alice.generateKeypair()).publicKey;
+      const req: UnifiedDecryptRequest = {
+        handles: [delegatedHandle(delegatedCtHandle, tokenAddress, smartWalletAddress)],
+        userAddress: erc1271WalletAddress,
+        allowedContracts: [],
+        publicKey: revokedPublicKey,
+        startTimestamp: backdatedStartTimestamp(),
+        durationSeconds: DURATION_SECONDS,
+      };
+      const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'erc1271', ownerSigner: ownerSigner! }, {
         waitForTerminal: true,
         timeoutMs: negativeWindowMs,
       });
