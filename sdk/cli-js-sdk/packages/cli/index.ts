@@ -5,6 +5,7 @@ import "./src/env";
 import { Command, Option } from "@commander-js/extra-typings";
 import { consola } from "consola";
 
+import { registerDelegatedUserDecryptCommands } from "./src/cli/commands/delegated-user-decrypt";
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
 import { registerPublicDecryptCommands } from "./src/cli/commands/public-decrypt";
 import { registerUserDecryptCommands } from "./src/cli/commands/user-decrypt";
@@ -28,6 +29,7 @@ const program = new Command()
 registerInputProofCommand(program);
 registerPublicDecryptCommands(program);
 registerUserDecryptCommands(program);
+registerDelegatedUserDecryptCommands(program);
 
 program.parseAsync().catch((error: unknown) => {
   consola.error(error instanceof Error ? (error.stack ?? error.message) : error);
