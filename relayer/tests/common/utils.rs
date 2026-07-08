@@ -1013,15 +1013,15 @@ pub const TEST_KEYURL_STORAGE_PREFIX: &str = "PUB-p1";
 /// The full object URL the poller reconstructs for a given `segment` (`PublicKey` / `CRS`) and id:
 /// `{storage_url}/{storage_prefix}/{segment}/{id_hex}` (id as 32-byte big-endian, lowercase hex).
 #[allow(dead_code)]
-pub fn test_keyurl_expected_url(segment: &str, id: u64) -> String {
-    let id_hex = hex::encode(U256::from(id).to_be_bytes::<32>());
+pub fn test_keyurl_expected_url(segment: &str, id: U256) -> String {
+    let id_hex = hex::encode(id.to_be_bytes::<32>());
     format!("{TEST_KEYURL_STORAGE_URL}/{TEST_KEYURL_STORAGE_PREFIX}/{segment}/{id_hex}")
 }
 
 /// The served `dataId` for a given on-chain id: `0x`-prefixed 32-byte big-endian, lowercase hex.
 #[allow(dead_code)]
-pub fn test_keyurl_expected_data_id(id: u64) -> String {
-    format!("0x{}", hex::encode(U256::from(id).to_be_bytes::<32>()))
+pub fn test_keyurl_expected_data_id(id: U256) -> String {
+    format!("0x{}", hex::encode(id.to_be_bytes::<32>()))
 }
 
 /// Register a single `eth_call` response keyed by destination address and 4-byte selector.

@@ -9,6 +9,7 @@ use crate::common::utils::{
     test_keyurl_expected_data_id, test_keyurl_expected_url, TestSetup, TEST_KEYURL_CRS_ID,
     TEST_KEYURL_KEY_ID,
 };
+use alloy::primitives::U256;
 use rstest::rstest;
 use serde_json::Value;
 
@@ -113,12 +114,12 @@ mod helpers {
         // dataId carries the real on-chain getActiveKeyId / getActiveCrsId, as 0x-prefixed hex.
         assert_eq!(
             fhe_public_key["dataId"].as_str().unwrap(),
-            test_keyurl_expected_data_id(TEST_KEYURL_KEY_ID),
+            test_keyurl_expected_data_id(U256::from(TEST_KEYURL_KEY_ID)),
             "fhePublicKey.dataId should equal on-chain getActiveKeyId"
         );
         assert_eq!(
             crs_2048["dataId"].as_str().unwrap(),
-            test_keyurl_expected_data_id(TEST_KEYURL_CRS_ID),
+            test_keyurl_expected_data_id(U256::from(TEST_KEYURL_CRS_ID)),
             "crs.2048.dataId should equal on-chain getActiveCrsId"
         );
 
@@ -126,12 +127,12 @@ mod helpers {
         // hex-encoded id: {storageUrl}/{storagePrefix}/{PublicKey|CRS}/{id_hex}.
         assert_eq!(
             fhe_public_key["urls"][0].as_str().unwrap(),
-            test_keyurl_expected_url("PublicKey", TEST_KEYURL_KEY_ID),
+            test_keyurl_expected_url("PublicKey", U256::from(TEST_KEYURL_KEY_ID)),
             "fhePublicKey.urls[0] should be the reconstructed object URL"
         );
         assert_eq!(
             crs_2048["urls"][0].as_str().unwrap(),
-            test_keyurl_expected_url("CRS", TEST_KEYURL_CRS_ID),
+            test_keyurl_expected_url("CRS", U256::from(TEST_KEYURL_CRS_ID)),
             "crs.2048.urls[0] should be the reconstructed object URL"
         );
 
