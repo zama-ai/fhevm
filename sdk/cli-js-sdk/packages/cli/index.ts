@@ -11,6 +11,7 @@ import { registerFheTestCommands } from "./src/cli/commands/fhe-test";
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
 import { registerPublicDecryptCommands } from "./src/cli/commands/public-decrypt";
 import { registerRelayerResultCommands } from "./src/cli/commands/relayer-result";
+import { registerTokenCommands } from "./src/cli/commands/token";
 import { registerUserDecryptCommands } from "./src/cli/commands/user-decrypt";
 import { DEFAULT_NETWORK, NETWORKS } from "@cli-fhevm-sdk/toolkit/types";
 
@@ -35,6 +36,7 @@ registerUserDecryptCommands(program);
 registerDelegatedUserDecryptCommands(program);
 registerRelayerResultCommands(program);
 registerFheTestCommands(program);
+registerTokenCommands(program);
 registerCompletionCommands(program);
 
 program.parseAsync().catch((error: unknown) => {
