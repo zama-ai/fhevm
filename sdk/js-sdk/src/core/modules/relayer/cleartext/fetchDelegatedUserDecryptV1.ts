@@ -1,4 +1,4 @@
-import type { BytesHex, ChecksummedAddress } from '../../../types/primitives.js';
+import type { BytesHex, ChecksummedAddress, Uint32BigInt } from '../../../types/primitives.js';
 import type { FetchUserDecryptResultItem } from '../../../types/relayer.js';
 import type { CleartextEthereumModule } from '../../ethereum/types-ct.js';
 import type {
@@ -6,12 +6,69 @@ import type {
   FetchUserDecryptReturnType,
   RelayerClientWithRuntime,
 } from '../types.js';
+import type { KmsSignersContext } from '../../../types/kmsSignersContext.js';
 import { remove0x } from '../../../base/string.js';
 import { asUint32BigInt, tryParseUintBigIntString, randomUniqueUints } from '../../../base/uint.js';
 import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
 import { userDecryptResultToKmsSigncryptedShares } from '../utils.js';
 import { getKmsSignersPrivateKeyMap } from './signers.js';
+import { isForgeFhevmV1, readPlaintexts, xorMaskWithPublicKey } from './forgeFhevmV1.js';
+import { readCurrentKmsSignersContext } from '../../../host-contracts/readKmsSignersContext-p.js';
 
+////////////////////////////////////////////////////////////////////////////////
+// runDelegatedUserDecryptOffChain
+////////////////////////////////////////////////////////////////////////////////
+
+async function runDelegatedUserDecryptOffChain(
+  relayerClient: RelayerClientWithRuntime,
+  payload: FetchDelegatedUserDecryptParameters['payload'],
+): Promise<{
+  readonly commonKmsSigncryptedSharePayload: BytesHex;
+  readonly signersAddress: readonly ChecksummedAddress[];
+  readonly threshold: Uint32BigInt;
+  readonly extraData: BytesHex;
+}> {
+  const { kmsDecryptEip712Message } = payload;
+  const pairs = payload.handleContractPairs;
+  const trustedClient = getTrustedClient(relayerClient);
+
+  const rawCleartexts = await readPlaintexts(
+    relayerClient,
+    trustedClient,
+    pairs.map((p) => p.handle),
+  );
+
+  const currentKmsSignersContext: KmsSignersContext = await readCurrentKmsSignersContext(relayerClient, {
+    kmsVerifierAddress: relayerClient.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    protocolConfigAddress: relayerClient.chain.fhevm.contracts.protocolConfig?.address as
+      | ChecksummedAddress
+      | undefined,
+  });
+  const signersAddress = currentKmsSignersContext.signers;
+  const threshold = currentKmsSignersContext.threshold;
+
+  const maskedCleartexts = xorMaskWithPublicKey(kmsDecryptEip712Message.publicKey, rawCleartexts);
+
+  // extraData: the permit's message.extraData is already asserted equal to the
+  // current KmsSignersContext extraData by the caller (fetchKmsSigncryptedSharesV1
+  // step 9), so reusing it keeps the shares consistent with that context.
+  const extraData = kmsDecryptEip712Message.extraData;
+
+  const commonKmsSigncryptedSharePayload = relayerClient.runtime.ethereum.encode({
+    types: ['uint256[]', 'bytes'],
+    values: [maskedCleartexts, extraData],
+  });
+
+  return {
+    signersAddress,
+    threshold: BigInt(threshold) as Uint32BigInt,
+    commonKmsSigncryptedSharePayload,
+    extraData,
+  };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// runDelegatedUserDecryptOnChain
 ////////////////////////////////////////////////////////////////////////////////
 
 const delegatedUserDecryptAbi = [
@@ -62,6 +119,50 @@ const delegatedUserDecryptAbi = [
   },
 ] as const;
 
+async function runDelegatedUserDecryptOnChain(
+  relayerClient: RelayerClientWithRuntime,
+  payload: FetchDelegatedUserDecryptParameters['payload'],
+): Promise<{
+  readonly commonKmsSigncryptedSharePayload: BytesHex;
+  readonly signersAddress: readonly ChecksummedAddress[];
+  readonly threshold: Uint32BigInt;
+  readonly extraData: BytesHex;
+}> {
+  const { kmsDecryptEip712Message, kmsDecryptEip712Signer, kmsDecryptEip712Signature } = payload;
+  const pairs = payload.handleContractPairs;
+  const trustedClient = getTrustedClient(relayerClient);
+  const res = (await relayerClient.runtime.ethereum.readContract(trustedClient, {
+    abi: delegatedUserDecryptAbi,
+    address: relayerClient.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    args: [
+      pairs.map((p) => ({
+        handle: p.handle.bytes32Hex,
+        contractAddress: p.contractAddress,
+      })),
+      kmsDecryptEip712Message.delegatorAddress,
+      kmsDecryptEip712Signer,
+      kmsDecryptEip712Message.publicKey,
+      kmsDecryptEip712Message.contractAddresses,
+      _parseUintBigIntString('kmsDecryptEip712Message.startTimestamp', kmsDecryptEip712Message.startTimestamp),
+      _parseUintBigIntString('kmsDecryptEip712Message.durationDays', kmsDecryptEip712Message.durationDays),
+      kmsDecryptEip712Signature,
+    ],
+    functionName: delegatedUserDecryptAbi[0].name,
+  })) as unknown[];
+
+  const commonKmsSigncryptedSharePayload = res[0] as BytesHex;
+  const signersAddress = res[1] as readonly ChecksummedAddress[];
+  const threshold = asUint32BigInt(res[2]);
+  const extraData = res[3] as BytesHex;
+
+  return {
+    commonKmsSigncryptedSharePayload,
+    signersAddress,
+    threshold,
+    extraData,
+  };
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function fetchDelegatedUserDecrypt(
@@ -87,32 +188,19 @@ export async function fetchDelegatedUserDecrypt(
     }
   }
 
-  const { kmsDecryptEip712Message, kmsDecryptEip712Signer, kmsDecryptEip712Signature } = payload;
-  const trustedClient = getTrustedClient(relayerClient);
-  const res = (await relayerClient.runtime.ethereum.readContract(trustedClient, {
-    abi: delegatedUserDecryptAbi,
-    address: relayerClient.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    args: [
-      pairs.map((p) => ({
-        handle: p.handle.bytes32Hex,
-        contractAddress: p.contractAddress,
-      })),
-      kmsDecryptEip712Message.delegatorAddress,
-      kmsDecryptEip712Signer,
-      kmsDecryptEip712Message.publicKey,
-      kmsDecryptEip712Message.contractAddresses,
-      _parseUintBigIntString('kmsDecryptEip712Message.startTimestamp', kmsDecryptEip712Message.startTimestamp),
-      _parseUintBigIntString('kmsDecryptEip712Message.durationDays', kmsDecryptEip712Message.durationDays),
-      kmsDecryptEip712Signature,
-    ],
-    functionName: delegatedUserDecryptAbi[0].name,
-  })) as unknown[];
+  const offChain = await isForgeFhevmV1(relayerClient);
 
-  const commonKmsSigncryptedSharePayload = res[0] as BytesHex;
-  const commonKmsSigncryptedSharePayloadNo0x = remove0x(commonKmsSigncryptedSharePayload);
-  const signersAddress = res[1] as readonly ChecksummedAddress[];
-  const threshold = asUint32BigInt(res[2]);
-  const extraData = res[3] as BytesHex;
+  let res;
+  if (offChain) {
+    res = await runDelegatedUserDecryptOffChain(relayerClient, payload);
+  } else {
+    res = await runDelegatedUserDecryptOnChain(relayerClient, payload);
+  }
+
+  const commonKmsSigncryptedSharePayload = res.commonKmsSigncryptedSharePayload;
+  const extraData = res.extraData;
+  const threshold = res.threshold;
+  const signersAddress = res.signersAddress;
 
   const signers = getKmsSignersPrivateKeyMap(relayerClient);
 
@@ -130,7 +218,7 @@ export async function fetchDelegatedUserDecrypt(
     }
 
     const signature = await cleartextEthereumModule.sign({ hash: commonKmsSigncryptedSharePayload, privateKey });
-    result.push({ signature: remove0x(signature), payload: commonKmsSigncryptedSharePayloadNo0x, extraData });
+    result.push({ signature: remove0x(signature), payload: remove0x(commonKmsSigncryptedSharePayload), extraData });
   }
 
   return userDecryptResultToKmsSigncryptedShares(result);
