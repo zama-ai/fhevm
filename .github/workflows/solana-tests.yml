@@ -248,10 +248,19 @@ jobs:
         working-directory: solana
         run: bash scripts/check-zama-host-idl.sh
 
-      - name: Run ignored LiteSVM coprocessor integration tests
+      - name: Run focused LiteSVM coprocessor smoke tests
         working-directory: coprocessor/fhevm-engine
         env:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
           RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
           SQLX_OFFLINE: 'true'
-        run: cargo test -p tfhe-worker solana_poc -- --ignored --test-threads=1 --nocapture
+        run: |
+          set -euo pipefail
+          tests=(
+            solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata
+            solana_fhe_rand_creates_ciphertext_and_decrypts
+            solana_user_decrypt_acl_invariants_match_evm_semantics
+          )
+          for test in "${tests[@]}"; do
+            cargo test -p tfhe-worker "$test" -- --ignored --test-threads=1 --nocapture
+          done

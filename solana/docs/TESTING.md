@@ -62,9 +62,10 @@ cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo check -p host-listener
 cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener solana_adapter::tests::
 ```
 
-The LiteSVM coprocessor gate runs the ignored real-TFHE worker integration tests. It needs Docker
-running locally because the test harness starts a disposable Postgres container with testcontainers;
-no manual database setup is needed. From the repository root:
+The LiteSVM coprocessor gate runs a focused set of ignored Solana PoC smoke tests, including one
+real-TFHE worker round trip. It needs Docker running locally because the worker test harness starts
+a disposable Postgres container with testcontainers; no manual database setup is needed. From the
+repository root:
 
 ```bash
 bash solana/scripts/test-litesvm-coprocessor-gate.sh
