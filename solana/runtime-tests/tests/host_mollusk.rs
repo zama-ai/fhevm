@@ -1548,6 +1548,7 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
                 output_subjects: vec![host::AclSubjectEntry { pubkey: caller }],
                 previous_handle: None,
                 previous_subjects: None,
+                make_public: false,
             },
         }],
     };
@@ -1616,6 +1617,7 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
                     }],
                     previous_handle: None,
                     previous_subjects: None,
+                    make_public: false,
                 },
             },
             FheEvalStep::TrivialEncrypt {
@@ -1632,6 +1634,7 @@ fn mollusk_fhe_eval_rejects_denied_second_output_authority_in_multi_output_frame
                     }],
                     previous_handle: None,
                     previous_subjects: None,
+                    make_public: false,
                 },
             },
         ],
@@ -1753,6 +1756,7 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
                 output_subjects: vec![host::AclSubjectEntry { pubkey: owner }],
                 previous_handle: None,
                 previous_subjects: None,
+                make_public: false,
             },
         }],
     };
@@ -2101,6 +2105,7 @@ fn mollusk_fhe_eval_creates_durable_output_from_local_binary_add() {
                 output_subjects: vec![host::AclSubjectEntry { pubkey: authority }],
                 previous_handle: None,
                 previous_subjects: None,
+                make_public: false,
             },
         }],
     };
@@ -2173,6 +2178,7 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
                 output_subjects: vec![host::AclSubjectEntry { pubkey: authority }],
                 previous_handle: Some(output_handle),
                 previous_subjects: Some(previous_subjects),
+                make_public: false,
             },
         }],
     };

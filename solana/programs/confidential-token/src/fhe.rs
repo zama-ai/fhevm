@@ -30,6 +30,27 @@ impl<'info> DurableOutput<'info> {
         slot: zama_fhe::DurableSlot,
         access: zama_fhe::AccessPolicy,
     ) -> Result<Self> {
+        Self::new_inner(encrypted_value, slot, access, false)
+    }
+
+    /// Like [`new`], but binds the output born publicly decryptable: the host
+    /// seals a public-decrypt leaf for the new handle inside the same eval CPI
+    /// (EVM `unwrap` parity; DD-036). Used by `confidential_burn` for the burned
+    /// delta so every burn stays permanently redeemable with no second CPI.
+    pub(crate) fn new_public(
+        encrypted_value: AccountInfo<'info>,
+        slot: zama_fhe::DurableSlot,
+        access: zama_fhe::AccessPolicy,
+    ) -> Result<Self> {
+        Self::new_inner(encrypted_value, slot, access, true)
+    }
+
+    fn new_inner(
+        encrypted_value: AccountInfo<'info>,
+        slot: zama_fhe::DurableSlot,
+        access: zama_fhe::AccessPolicy,
+        make_public: bool,
+    ) -> Result<Self> {
         require_keys_eq!(
             encrypted_value.key(),
             slot.address(),
@@ -49,7 +70,8 @@ impl<'info> DurableOutput<'info> {
                 value.current_handle,
                 value.subjects.clone(),
             )
-        };
+        }
+        .with_make_public(make_public);
         output.birth().map_err(|error| {
             msg!("invalid durable FHE output: {:?}", error);
             error!(ConfidentialTokenError::InvalidFheEvalPlan)

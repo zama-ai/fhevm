@@ -278,6 +278,22 @@ mod tests {
         [tag; 32]
     }
 
+    /// Doc-sync guard for `docs/MMR_ACL_MVP.md` "Resource Bounds And Liveness":
+    /// the stranding-impossible argument quotes these exact numbers, so a change
+    /// here must update that section (and the liveness audit) in the same PR.
+    #[test]
+    fn resource_bounds_match_liveness_doc() {
+        assert_eq!(MAX_ENCRYPTED_VALUE_SUBJECTS, 8, "MMR_ACL_MVP.md liveness section");
+        assert_eq!(MAX_MMR_PEAKS, 64, "MMR_ACL_MVP.md liveness section");
+        // account_size = 153 + 32·subjects + 32·peaks; max = 2457 bytes, forever.
+        assert_eq!(EncryptedValue::account_size(0, 0), 153);
+        assert_eq!(
+            EncryptedValue::account_size(MAX_ENCRYPTED_VALUE_SUBJECTS, MAX_MMR_PEAKS),
+            2457,
+            "max account must stay « Solana's 10240-byte realloc cap"
+        );
+    }
+
     /// A test lineage that maintains its own leaf list so it can build proofs,
     /// mirroring an off-chain proof service.
     #[derive(Default)]

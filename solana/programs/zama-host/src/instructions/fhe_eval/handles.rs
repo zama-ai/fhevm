@@ -43,7 +43,6 @@ pub(super) fn expected_binary_eval_result(
             *handle_context.context_id,
             op_index,
             binding.value_key,
-            binding.sequence,
         ),
     }
 }
@@ -84,7 +83,6 @@ pub(super) fn expected_ternary_eval_result(
             *handle_context.context_id,
             op_index,
             binding.value_key,
-            binding.sequence,
         ),
     }
 }
@@ -116,7 +114,6 @@ pub(super) fn expected_trivial_eval_result(
             *handle_context.context_id,
             op_index,
             binding.value_key,
-            binding.sequence,
         ),
     }
 }
@@ -141,7 +138,6 @@ pub(super) fn expected_rand_eval_seed(
             *handle_context.context_id,
             op_index,
             binding.value_key,
-            binding.sequence,
         ),
     }
 }

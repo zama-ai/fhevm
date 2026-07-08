@@ -13,6 +13,7 @@
 //! RPC `getBlockTime` on a miss.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
@@ -45,6 +46,111 @@ const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
 const SOLANA_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const SOLANA_GRPC_INGEST_TIMEOUT: Duration = Duration::from_secs(60);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IngestFailureKind {
+    Permanent,
+    Retryable,
+    Fatal,
+}
+
+#[derive(Debug)]
+struct IngestFailure {
+    kind: IngestFailureKind,
+    error: anyhow::Error,
+}
+
+impl IngestFailure {
+    fn permanent(error: impl Into<anyhow::Error>) -> Self {
+        Self {
+            kind: IngestFailureKind::Permanent,
+            error: error.into(),
+        }
+    }
+
+    fn retryable(error: impl Into<anyhow::Error>) -> Self {
+        Self {
+            kind: IngestFailureKind::Retryable,
+            error: error.into(),
+        }
+    }
+
+    fn fatal(error: impl Into<anyhow::Error>) -> Self {
+        Self {
+            kind: IngestFailureKind::Fatal,
+            error: error.into(),
+        }
+    }
+
+    fn context(self, context: &'static str) -> Self {
+        Self {
+            kind: self.kind,
+            error: self.error.context(context),
+        }
+    }
+
+    fn kind(&self) -> IngestFailureKind {
+        self.kind
+    }
+
+    fn into_error(self) -> anyhow::Error {
+        self.error
+    }
+}
+
+impl fmt::Display for IngestFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.error)
+    }
+}
+
+#[derive(Debug)]
+struct FatalListenerError(anyhow::Error);
+
+impl FatalListenerError {
+    fn new(error: anyhow::Error) -> Self {
+        Self(error)
+    }
+
+    fn into_inner(self) -> anyhow::Error {
+        self.0
+    }
+}
+
+impl fmt::Display for FatalListenerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for FatalListenerError {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CursorDecision {
+    Advance,
+    RetrySameCursor,
+    FatalSameCursor,
+}
+
+fn cursor_decision_for_ingest_failure(
+    kind: IngestFailureKind,
+) -> CursorDecision {
+    match kind {
+        IngestFailureKind::Permanent => CursorDecision::Advance,
+        IngestFailureKind::Retryable => CursorDecision::RetrySameCursor,
+        IngestFailureKind::Fatal => CursorDecision::FatalSameCursor,
+    }
+}
+
+fn apply_cursor_decision(
+    from_slot: &mut Option<u64>,
+    slot: u64,
+    decision: CursorDecision,
+) {
+    if decision == CursorDecision::Advance {
+        *from_slot = Some(slot);
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SolanaGrpcListenerConfig {
     /// Yellowstone gRPC endpoint, e.g. `http://poc-solana-validator:10000`.
@@ -70,6 +176,20 @@ pub struct SolanaGrpcListenerConfig {
     pub reconstruct: bool,
 }
 
+#[cfg(feature = "solana-reconstruct")]
+fn validate_lineage_tracker_commitment(
+    config: &SolanaGrpcListenerConfig,
+) -> Result<()> {
+    if config.commitment != CommitmentLevel::Finalized {
+        anyhow::bail!(
+            "solana gRPC lineage reconstruction requires finalized commitment; \
+             got {:?}",
+            config.commitment
+        );
+    }
+    Ok(())
+}
+
 /// Connects, subscribes, and ingests until `cancel` fires. Reconnects with a
 /// `from_slot` cursor on stream errors; inserts are idempotent so replay is safe.
 pub async fn run(
@@ -82,10 +202,11 @@ pub async fn run(
         grpc_url = %config.grpc_url,
         "Starting Solana host listener (Yellowstone gRPC transport)"
     );
+    #[cfg(feature = "solana-reconstruct")]
+    validate_lineage_tracker_commitment(config)?;
 
-    // Confirmed (not the RpcClient default of finalized) so on-chain reads —
-    // getBlockTime and the acl_record read for commit_handle_material — see
-    // recently-created state, matching the gRPC subscription commitment.
+    // Confirmed is enough for block-time fallback reads; reconstruction state
+    // safety comes from the subscription commitment validated above.
     let rpc = RpcClient::new_with_timeout_and_commitment(
         config.rpc_fallback_url.clone(),
         SOLANA_RPC_REQUEST_TIMEOUT,
@@ -126,13 +247,20 @@ pub async fn run(
         .await
         {
             Ok(()) => return Ok(()), // cancelled
-            Err(err) => {
-                error!(error = %err, from_slot = ?from_slot, "gRPC subscription dropped; reconnecting");
-                tokio::select! {
-                    _ = cancel.cancelled() => return Ok(()),
-                    _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+            Err(err) => match err.downcast::<FatalListenerError>() {
+                Ok(fatal) => {
+                    let err = fatal.into_inner();
+                    error!(error = %err, from_slot = ?from_slot, "gRPC listener stopped on fail-closed ingestion error");
+                    return Err(err);
                 }
-            }
+                Err(err) => {
+                    error!(error = %err, from_slot = ?from_slot, "gRPC subscription dropped; reconnecting");
+                    tokio::select! {
+                        _ = cancel.cancelled() => return Ok(()),
+                        _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+                    }
+                }
+            },
         }
     }
 }
@@ -271,24 +399,61 @@ async fn subscribe_loop(
                             {
                                 Ok(Ok(())) => {}
                                 Ok(Err(err)) => {
-                                    error!(
-                                        slot,
-                                        signature = %signature,
-                                        error = %err,
-                                        "failed to ingest gRPC transaction; skipping"
+                                    let decision =
+                                        cursor_decision_for_ingest_failure(
+                                            err.kind(),
+                                        );
+                                    apply_cursor_decision(
+                                        from_slot, slot, decision,
                                     );
-                                    *from_slot = Some(slot);
-                                    continue;
+                                    match decision {
+                                        CursorDecision::Advance => {
+                                            error!(
+                                                slot,
+                                                signature = %signature,
+                                                error = %err,
+                                                "permanently failed to ingest gRPC transaction; skipping"
+                                            );
+                                            continue;
+                                        }
+                                        CursorDecision::RetrySameCursor => {
+                                            error!(
+                                                slot,
+                                                signature = %signature,
+                                                from_slot = ?from_slot,
+                                                error = %err,
+                                                "retryable gRPC transaction ingest failure; reconnecting without advancing cursor"
+                                            );
+                                            return Err(err
+                                                .into_error()
+                                                .context("retryable gRPC transaction ingest failure"));
+                                        }
+                                        CursorDecision::FatalSameCursor => {
+                                            error!(
+                                                slot,
+                                                signature = %signature,
+                                                from_slot = ?from_slot,
+                                                error = %err,
+                                                "fatal gRPC transaction ingest failure; stopping without advancing cursor"
+                                            );
+                                            return Err(FatalListenerError::new(
+                                                err.into_error(),
+                                            )
+                                            .into());
+                                        }
+                                    }
                                 }
                                 Err(_) => {
                                     warn!(
                                         slot,
                                         signature = %signature,
                                         timeout = ?SOLANA_GRPC_INGEST_TIMEOUT,
-                                        "timed out ingesting gRPC transaction; skipping"
+                                        from_slot = ?from_slot,
+                                        "timed out ingesting gRPC transaction; reconnecting without advancing cursor"
                                     );
-                                    *from_slot = Some(slot);
-                                    continue;
+                                    return Err(anyhow!(
+                                        "timed out ingesting gRPC transaction {signature} in slot {slot}"
+                                    ));
                                 }
                             }
                         }
@@ -365,21 +530,19 @@ async fn ingest_transaction(
     slot_clock_ts: &HashMap<u64, i64>,
     #[cfg(feature = "solana-reconstruct")]
     encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
-) -> Result<()> {
+) -> std::result::Result<(), IngestFailure> {
     #[cfg(not(feature = "solana-reconstruct"))]
     let _ = (slot_bank_hash, slot_clock_ts); // only used by the shadow-compare
     let meta = info
         .meta
         .as_ref()
-        .ok_or_else(|| anyhow!("tx has no meta"))?;
-    let tx = info
-        .transaction
-        .as_ref()
-        .ok_or_else(|| anyhow!("tx has no transaction"))?;
-    let message = tx
-        .message
-        .as_ref()
-        .ok_or_else(|| anyhow!("tx has no message"))?;
+        .ok_or_else(|| IngestFailure::permanent(anyhow!("tx has no meta")))?;
+    let tx = info.transaction.as_ref().ok_or_else(|| {
+        IngestFailure::permanent(anyhow!("tx has no transaction"))
+    })?;
+    let message = tx.message.as_ref().ok_or_else(|| {
+        IngestFailure::permanent(anyhow!("tx has no message"))
+    })?;
 
     // Resolved account-key list: static keys ++ ALT writable ++ ALT readonly,
     // the order `program_id_index` indexes into (matches solana_listener).
@@ -406,10 +569,10 @@ async fn ingest_transaction(
             let program = account_keys
                 .get(ix.program_id_index as usize)
                 .ok_or_else(|| {
-                    anyhow!(
+                    IngestFailure::permanent(anyhow!(
                         "program_id_index {} out of range",
                         ix.program_id_index
-                    )
+                    ))
                 })?;
             inner.push((program.clone(), ix.data.clone()));
         }
@@ -504,14 +667,17 @@ async fn ingest_transaction(
         inner.iter().map(|(p, d)| (p.as_str(), d.as_slice())),
         &config.program_id,
     )
-    .context("decode host events")?;
+    .map_err(|err| {
+        IngestFailure::permanent(err).context("decode host events")
+    })?;
 
     // Choose the event set to ingest. In `--reconstruct` mode, rebuild it off-chain
     // (compute events + acl_record_bound fetches) from the instructions and ingest
     // THAT in place of emit-decode — the swap that lets on-chain emits be removed
     // (#7). With emits off, emit-decode yields nothing, so reconstruction is decided
-    // here, BEFORE the empty gate below; we fall back to emit-decode only when
-    // reconstruction produces nothing (e.g. instruction families not yet covered).
+    // here, BEFORE the empty gate below. Fall back to emit-decode only when the
+    // transaction has no instruction family covered by reconstruction; incomplete
+    // covered reconstruction is a fail-closed ingest error.
     #[cfg(feature = "solana-reconstruct")]
     let events = if config.reconstruct {
         match reconstruct_events_for_insert(
@@ -524,8 +690,10 @@ async fn ingest_transaction(
             encrypted_value_tracker,
         )
         .await
-        {
-            Some(reconstructed) if !reconstructed.is_empty() => {
+        .map_err(|err| {
+            IngestFailure::fatal(err).context("reconstruct Solana host events")
+        })? {
+            ReconstructionOutcome::Complete(reconstructed) => {
                 info!(
                     slot,
                     reconstructed = reconstructed.len(),
@@ -534,11 +702,11 @@ async fn ingest_transaction(
                 );
                 reconstructed
             }
-            Some(_) | None => {
+            ReconstructionOutcome::NotCovered => {
                 if !emit_events.is_empty() {
                     warn!(
                         slot,
-                        "reconstruction unavailable/empty; falling back to emit-decode"
+                        "reconstruction not covered for transaction; falling back to emit-decode"
                     );
                 }
                 emit_events
@@ -565,12 +733,12 @@ async fn ingest_transaction(
     let block_timestamp = match slot_time.get(&slot) {
         Some(ts) => *ts,
         None => {
-            let ts = rpc
-                .get_block_time(slot)
-                .await
-                .context("getBlockTime fallback")?;
-            let pdt = unix_to_pdt(ts)
-                .ok_or_else(|| anyhow!("invalid block_time {ts}"))?;
+            let ts = rpc.get_block_time(slot).await.map_err(|err| {
+                IngestFailure::retryable(err).context("getBlockTime fallback")
+            })?;
+            let pdt = unix_to_pdt(ts).ok_or_else(|| {
+                IngestFailure::permanent(anyhow!("invalid block_time {ts}"))
+            })?;
             slot_time.insert(slot, pdt);
             pdt
         }
@@ -581,12 +749,20 @@ async fn ingest_transaction(
     };
 
     let transaction_id = solana_transaction_id(&info.signature);
-    let mut db_tx = db.new_transaction().await.context("open db tx")?;
+    let mut db_tx = db
+        .new_transaction()
+        .await
+        .map_err(|err| IngestFailure::retryable(err).context("open db tx"))?;
     let stats =
         insert_solana_events(db, &mut db_tx, events, transaction_id, block)
             .await
-            .context("insert_solana_events")?;
-    db_tx.commit().await.context("commit db tx")?;
+            .map_err(|err| {
+                IngestFailure::retryable(err).context("insert_solana_events")
+            })?;
+    db_tx
+        .commit()
+        .await
+        .map_err(|err| IngestFailure::retryable(err).context("commit db tx"))?;
 
     info!(
         slot,
@@ -630,6 +806,13 @@ fn reconstruct_context(
     })
 }
 
+#[cfg(feature = "solana-reconstruct")]
+#[derive(Debug)]
+enum ReconstructionOutcome {
+    Complete(Vec<crate::solana_adapter::SolanaHostEvent>),
+    NotCovered,
+}
+
 /// Rebuilds the ingestable event set off-chain from a transaction's instructions,
 /// for `--reconstruct` mode (the swap that replaces emit-decoding). Covers
 /// `fhe_eval`: one compute event per step, plus an `acl_record_bound` allow-fetch
@@ -650,17 +833,47 @@ async fn reconstruct_events_for_insert(
     slot_clock_ts: &HashMap<u64, i64>,
     _rpc: &RpcClient,
     encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
-) -> Option<Vec<crate::solana_adapter::SolanaHostEvent>> {
+) -> Result<ReconstructionOutcome> {
     use crate::solana_adapter::SolanaHostEvent;
     use crate::solana_reconstruct::{
-        decode_fhe_eval_args, reconstruct_acl_record_bound_fetch,
-        reconstruct_fhe_eval_steps_with_hints,
+        decode_encrypted_value_instruction, decode_fhe_eval_args,
+        reconstruct_acl_record_bound_fetch, reconstruct_fhe_eval_steps,
+        reconstruct_handle_made_public_fetch,
     };
 
     // compute_subject is the 2nd named fhe_eval account. (Durable EncryptedValue
     // PDAs live in remaining_accounts; resolved via
     // fhe_eval_durable_encrypted_value.)
     const COMPUTE_SUBJECT_INDEX: usize = 1;
+
+    let has_lifecycle = instructions.iter().any(|ix| {
+        ix.program == config.program_id
+            && decode_encrypted_value_instruction(&ix.data).is_some()
+    });
+    let has_fhe_eval = instructions.iter().any(|ix| {
+        ix.program == config.program_id
+            && decode_fhe_eval_args(&ix.data).is_some()
+    });
+    if !has_lifecycle && !has_fhe_eval {
+        return Ok(ReconstructionOutcome::NotCovered);
+    }
+
+    let Some(ctx) =
+        reconstruct_context(config, slot, slot_bank_hash, slot_clock_ts)
+    else {
+        if has_fhe_eval {
+            anyhow::bail!(
+                "reconstruct: missing slot derivation context for covered fhe_eval in slot {slot}"
+            );
+        }
+        let events =
+            crate::solana_reconstruct::decode_encrypted_value_fetch_events(
+                instructions,
+                &config.program_id,
+                encrypted_value_tracker,
+            );
+        return Ok(ReconstructionOutcome::Complete(events));
+    };
 
     let mut events =
         crate::solana_reconstruct::decode_encrypted_value_fetch_events(
@@ -669,18 +882,7 @@ async fn reconstruct_events_for_insert(
             encrypted_value_tracker,
         );
 
-    let Some(ctx) =
-        reconstruct_context(config, slot, slot_bank_hash, slot_clock_ts)
-    else {
-        return Some(events);
-    };
-
-    // Pre-instruction MMR leaf counts are intentionally not fetched here. When
-    // the program emits an inner update instruction, its explicit new_handle is
-    // used as the repair path for superseding durable outputs.
-    let lineage_leaf_counts: HashMap<[u8; 32], u64> = HashMap::new();
-
-    for (index, ix) in instructions.iter().enumerate() {
+    for ix in instructions.iter() {
         if ix.program != config.program_id {
             continue;
         }
@@ -690,24 +892,18 @@ async fn reconstruct_events_for_insert(
                 .get(COMPUTE_SUBJECT_INDEX)
                 .copied()
                 .unwrap_or([0u8; 32]);
-            let mut handle_hints = durable_output_handle_hints_for_fhe_eval(
-                index,
-                ix,
-                &plan,
-                instructions,
-                &config.program_id,
-            );
-            let Some(steps) = reconstruct_fhe_eval_steps_with_hints(
-                &plan,
-                subject,
-                &ctx,
-                &lineage_leaf_counts,
-                &mut handle_hints,
-            ) else {
-                continue;
+            // Durable output handles recompute from the plan's value_key + block
+            // entropy alone (DD-015): no lineage leaf count, no handle hints.
+            let Some(steps) = reconstruct_fhe_eval_steps(&plan, subject, &ctx)
+            else {
+                anyhow::bail!(
+                    "reconstruct: incomplete fhe_eval reconstruction in slot {slot}; \
+                     malformed plan or missing handle context"
+                );
             };
             for step in steps {
                 let handle = compute_result_handle(&step.event);
+                let make_public = step.make_public;
                 events.push(step.event);
                 if let (Some(index), Some(handle)) =
                     (step.durable_encrypted_value_index, handle)
@@ -721,107 +917,34 @@ async fn reconstruct_events_for_insert(
                                 handle,
                             ),
                         ));
+                        // Born-public output: the bind appended a public-decrypt
+                        // leaf for the newly bound handle inline (make_public),
+                        // after any superseded-handle leaves. Mirror it so the
+                        // handle's public-decrypt allow-signal is not missed.
+                        if make_public {
+                            events.push(
+                                SolanaHostEvent::FinalizedAccountFetch(
+                                    reconstruct_handle_made_public_fetch(
+                                        encrypted_value,
+                                        handle,
+                                    ),
+                                ),
+                            );
+                        }
                     } else {
-                        // The durable bind marks the output handle allowed; dropping
-                        // it silently leaves the handle unmaterialized and starves
-                        // every later consumer. A miss here means the account layout
-                        // drifted from the program — surface it loudly.
-                        warn!(
-                            slot,
-                            remaining_index = index,
-                            accounts = ix.accounts.len(),
-                            handle = %bs58::encode(handle).into_string(),
-                            "reconstruct: fhe_eval durable bind encrypted_value out of range; \
-                             output handle will not be allowed/materialized"
+                        anyhow::bail!(
+                            "reconstruct: fhe_eval durable bind encrypted_value \
+                             out of range in slot {slot}; remaining_index={index}, \
+                             accounts={}, handle={}",
+                            ix.accounts.len(),
+                            bs58::encode(handle).into_string()
                         );
                     }
                 }
             }
         }
     }
-    Some(events)
-}
-
-#[cfg(feature = "solana-reconstruct")]
-fn durable_output_handle_hints_for_fhe_eval(
-    ix_position: usize,
-    fhe_eval_ix: &crate::solana_reconstruct::DecodedInstruction,
-    plan: &zama_host::state::FheEvalArgs,
-    instructions: &[crate::solana_reconstruct::DecodedInstruction],
-    program_id: &str,
-) -> crate::solana_reconstruct::DurableOutputHandleHints {
-    use crate::solana_reconstruct::{
-        decode_encrypted_value_instruction, decode_fhe_eval_args,
-        encrypted_value_bound_handle, DurableOutputHandleHints,
-        ENCRYPTED_VALUE_ACCOUNT_INDEX,
-    };
-    use std::collections::{HashMap, VecDeque};
-    use zama_host::state::{FheEvalOutput, FheEvalStep};
-
-    let mut bound_handles_by_account: HashMap<[u8; 32], VecDeque<[u8; 32]>> =
-        HashMap::new();
-    for ix in &instructions[ix_position + 1..] {
-        if ix.top_level_index != fhe_eval_ix.top_level_index || !ix.is_inner {
-            break;
-        }
-        if ix.program == program_id && decode_fhe_eval_args(&ix.data).is_some()
-        {
-            break;
-        }
-        if ix.program != program_id {
-            continue;
-        }
-        let Some(instruction) = decode_encrypted_value_instruction(&ix.data)
-        else {
-            continue;
-        };
-        let Some(handle) = encrypted_value_bound_handle(&instruction) else {
-            continue;
-        };
-        let Some(account) =
-            ix.accounts.get(ENCRYPTED_VALUE_ACCOUNT_INDEX).copied()
-        else {
-            continue;
-        };
-        bound_handles_by_account
-            .entry(account)
-            .or_default()
-            .push_back(handle);
-    }
-
-    let mut hints = DurableOutputHandleHints::default();
-    for step in &plan.steps {
-        let output = match step {
-            FheEvalStep::Binary { output, .. }
-            | FheEvalStep::Ternary { output, .. }
-            | FheEvalStep::TrivialEncrypt { output, .. }
-            | FheEvalStep::Rand { output, .. }
-            | FheEvalStep::RandBounded { output, .. } => output,
-        };
-        let FheEvalOutput::AllowedDurable {
-            output_encrypted_value_index,
-            previous_handle: Some(_),
-            ..
-        } = output
-        else {
-            continue;
-        };
-        let Some(encrypted_value) = fhe_eval_durable_encrypted_value(
-            &fhe_eval_ix.accounts,
-            *output_encrypted_value_index,
-        ) else {
-            continue;
-        };
-        let Some(handles) = bound_handles_by_account.get_mut(&encrypted_value)
-        else {
-            continue;
-        };
-        let Some(handle) = handles.pop_front() else {
-            continue;
-        };
-        hints.push(*output_encrypted_value_index, handle);
-    }
-    hints
+    Ok(ReconstructionOutcome::Complete(events))
 }
 
 #[cfg(feature = "solana-reconstruct")]
@@ -839,10 +962,43 @@ fn compute_result_handle(
     }
 }
 
+#[cfg(test)]
+mod ingest_cursor_tests {
+    use super::{
+        apply_cursor_decision, cursor_decision_for_ingest_failure,
+        CursorDecision, IngestFailureKind,
+    };
+
+    #[test]
+    fn retryable_ingest_failure_keeps_cursor_for_replay() {
+        let mut from_slot = Some(40);
+        let decision =
+            cursor_decision_for_ingest_failure(IngestFailureKind::Retryable);
+
+        apply_cursor_decision(&mut from_slot, 42, decision);
+
+        assert_eq!(decision, CursorDecision::RetrySameCursor);
+        assert_eq!(from_slot, Some(40));
+    }
+
+    #[test]
+    fn permanent_ingest_failure_advances_cursor() {
+        let mut from_slot = Some(40);
+        let decision =
+            cursor_decision_for_ingest_failure(IngestFailureKind::Permanent);
+
+        apply_cursor_decision(&mut from_slot, 42, decision);
+
+        assert_eq!(decision, CursorDecision::Advance);
+        assert_eq!(from_slot, Some(42));
+    }
+}
+
 #[cfg(all(test, feature = "solana-reconstruct"))]
 mod fhe_eval_acl_tests {
     use super::{
         fhe_eval_durable_encrypted_value, reconstruct_events_for_insert,
+        validate_lineage_tracker_commitment, ReconstructionOutcome,
         SolanaGrpcListenerConfig,
     };
     use anchor_lang::AnchorSerialize;
@@ -879,11 +1035,25 @@ mod fhe_eval_acl_tests {
             x_token: None,
             rpc_fallback_url: "http://127.0.0.1:1".to_owned(),
             program_id: ZAMA_HOST.to_owned(),
-            commitment: CommitmentLevel::Confirmed,
+            commitment: CommitmentLevel::Finalized,
             chain_id: 12345,
             zero_birth_entropy: true,
             reconstruct: true,
         }
+    }
+
+    #[test]
+    fn confirmed_commitment_is_rejected_for_lineage_tracker() {
+        let mut config = config();
+        config.commitment = CommitmentLevel::Confirmed;
+
+        let err = validate_lineage_tracker_commitment(&config)
+            .expect_err("confirmed stream data must fail closed");
+
+        assert!(
+            err.to_string().contains("requires finalized commitment"),
+            "unexpected error: {err}"
+        );
     }
 
     const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";
@@ -952,6 +1122,28 @@ mod fhe_eval_acl_tests {
         (HashMap::new(), HashMap::from([(42, 1_700_000_000)]))
     }
 
+    /// The durable `Add` output handle the fhe_eval fixtures produce, derived
+    /// exactly as the program does (DD-015: value-key-bound, no leaf-count
+    /// sequence). Matches `config()` (chain_id 12345, zero_birth_entropy →
+    /// previous_bank_hash [0;32]), slot 42's clock ts, op_index 0, scalar rhs,
+    /// and the fixture's output lineage coordinates (acl_domain [8;32],
+    /// app_account [9;32], label [10;32]).
+    fn derived_add_output_handle() -> [u8; 32] {
+        zama_host::state::computed_bound_eval_handle(
+            PgmBinaryOpCode::Add,
+            [3; 32],
+            [1; 32],
+            true,
+            5,
+            12345,
+            [0; 32],
+            1_700_000_000,
+            [1; 32],
+            0,
+            zama_solana_acl::derive_value_key([8; 32], [9; 32], [10; 32]),
+        )
+    }
+
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
     enum SemanticFact {
         Binary {
@@ -1009,6 +1201,15 @@ mod fhe_eval_acl_tests {
         facts
     }
 
+    fn complete_events(outcome: ReconstructionOutcome) -> Vec<SolanaHostEvent> {
+        match outcome {
+            ReconstructionOutcome::Complete(events) => events,
+            ReconstructionOutcome::NotCovered => {
+                panic!("expected reconstruction to cover transaction")
+            }
+        }
+    }
+
     fn multi_instruction_fhe_eval_allow_public_tx() -> Vec<DecodedInstruction> {
         let output_subject =
             anchor_lang::prelude::Pubkey::new_from_array(SUBJECT);
@@ -1035,13 +1236,20 @@ mod fhe_eval_acl_tests {
                     )],
                     previous_handle: Some([8; 32]),
                     previous_subjects: Some(vec![output_subject]),
+                    // This fixture publishes the handle via a standalone
+                    // `make_handle_public` instruction (below), not inline.
+                    make_public: false,
                 },
             }],
         };
+        // The fhe_eval output handle is derived (DD-015), so the inner
+        // update's new_handle and the make_handle_public target are that
+        // derived value — matching what reconstruction recomputes.
+        let output_handle = derived_add_output_handle();
         let update_data = encode_instruction(
             "update_encrypted_value",
             UpdateEncryptedValueArgs {
-                new_handle: [9; 32],
+                new_handle: output_handle,
                 previous_handle: [8; 32],
                 previous_subjects: vec![SUBJECT],
             },
@@ -1065,7 +1273,9 @@ mod fhe_eval_acl_tests {
             decoded_ix(
                 encode_instruction(
                     "make_handle_public",
-                    MakeHandlePublicArgs { handle: [9; 32] },
+                    MakeHandlePublicArgs {
+                        handle: output_handle,
+                    },
                 ),
                 encrypted_value_accounts(),
                 2,
@@ -1077,6 +1287,7 @@ mod fhe_eval_acl_tests {
     fn emit_mode_events_for_multi_instruction_tx(
         instructions: &[DecodedInstruction],
     ) -> Vec<SolanaHostEvent> {
+        let output_handle = derived_add_output_handle();
         let cpi_event = encode_cpi_event(
             "FheBinaryOpEvent",
             zama_host::FheBinaryOpEvent {
@@ -1086,7 +1297,7 @@ mod fhe_eval_acl_tests {
                 lhs: [3; 32],
                 rhs: [1; 32],
                 scalar: true,
-                result: [9; 32],
+                result: output_handle,
             },
         );
         let mut events = decode_solana_transaction_events(
@@ -1107,7 +1318,7 @@ mod fhe_eval_acl_tests {
         events.push(SolanaHostEvent::FinalizedAccountFetch(
             crate::solana_reconstruct::reconstruct_acl_record_bound_fetch(
                 ENCRYPTED_VALUE,
-                [9; 32],
+                output_handle,
             ),
         ));
         events
@@ -1169,17 +1380,19 @@ mod fhe_eval_acl_tests {
         let mut tracker = EncryptedValueLineageTracker::new();
         tracker.record(ENCRYPTED_VALUE, [4; 32]);
 
-        let events = reconstruct_events_for_insert(
-            &config(),
-            &instructions,
-            42,
-            &slot_bank_hash,
-            &slot_clock_ts,
-            &rpc,
-            &mut tracker,
-        )
-        .await
-        .expect("reconstruction should return lifecycle events");
+        let events = complete_events(
+            reconstruct_events_for_insert(
+                &config(),
+                &instructions,
+                42,
+                &slot_bank_hash,
+                &slot_clock_ts,
+                &rpc,
+                &mut tracker,
+            )
+            .await
+            .expect("reconstruction should return lifecycle events"),
+        );
 
         assert!(events.iter().any(|event| {
             matches!(
@@ -1193,8 +1406,16 @@ mod fhe_eval_acl_tests {
         }));
     }
 
+    /// A superseding durable `fhe_eval` output recomputes its handle directly
+    /// from the plan's `value_key` + block entropy (DD-015) — no inner
+    /// `update_encrypted_value` handle hint and no lineage leaf count. The
+    /// reconstructed compute result and its `acl_record_bound` fetch must equal
+    /// the program primitive's output, and the inner update still emits its own
+    /// `handle_superseded` fetch for the outgoing handle.
     #[tokio::test]
-    async fn superseding_fhe_eval_uses_inner_update_handle_hint() {
+    async fn superseding_fhe_eval_derives_output_handle_without_hint() {
+        let expected = derived_add_output_handle();
+
         let plan = FheEvalArgs {
             context_id: [1; 32],
             steps: vec![FheEvalStep::Binary {
@@ -1216,14 +1437,17 @@ mod fhe_eval_acl_tests {
                     output_subjects: vec![],
                     previous_handle: Some([8; 32]),
                     previous_subjects: Some(vec![]),
+                    make_public: false,
                 },
             }],
         };
         let fhe_eval_data = encode_instruction("fhe_eval", plan);
+        // The on-chain supersede CPIs update_encrypted_value with new_handle set
+        // to the derived output handle; the reconstruction no longer reads it.
         let update_data = encode_instruction(
             "update_encrypted_value",
             UpdateEncryptedValueArgs {
-                new_handle: [9; 32],
+                new_handle: expected,
                 previous_handle: [8; 32],
                 previous_subjects: vec![],
             },
@@ -1237,22 +1461,26 @@ mod fhe_eval_acl_tests {
         let mut tracker = EncryptedValueLineageTracker::new();
         tracker.record(ENCRYPTED_VALUE, [8; 32]);
 
-        let events = reconstruct_events_for_insert(
-            &config(),
-            &instructions,
-            42,
-            &slot_bank_hash,
-            &slot_clock_ts,
-            &rpc,
-            &mut tracker,
-        )
-        .await
-        .expect("reconstruction should use inner update hint");
+        let events = complete_events(
+            reconstruct_events_for_insert(
+                &config(),
+                &instructions,
+                42,
+                &slot_bank_hash,
+                &slot_clock_ts,
+                &rpc,
+                &mut tracker,
+            )
+            .await
+            .expect(
+                "reconstruction should derive the supersede handle directly",
+            ),
+        );
 
         assert!(events.iter().any(|event| {
             matches!(
                 event,
-                SolanaHostEvent::FheBinaryOp(op) if op.result == [9; 32]
+                SolanaHostEvent::FheBinaryOp(op) if op.result == expected
             )
         }));
         assert!(events.iter().any(|event| {
@@ -1261,7 +1489,7 @@ mod fhe_eval_acl_tests {
                 SolanaHostEvent::FinalizedAccountFetch(fetch)
                     if fetch.reason == "acl_record_bound"
                         && fetch.account_key == ENCRYPTED_VALUE
-                        && fetch.handle == Some(Handle::from([9; 32]))
+                        && fetch.handle == Some(Handle::from(expected))
             )
         }));
         assert!(events.iter().any(|event| {
@@ -1272,6 +1500,103 @@ mod fhe_eval_acl_tests {
                         && fetch.handle == Some(Handle::from([8; 32]))
             )
         }));
+    }
+
+    /// A durable `fhe_eval` output born public inline (`make_public: true`, with
+    /// no standalone `make_handle_public` instruction) must yield a
+    /// `handle_made_public` allow-fetch for the recomputed output handle, right
+    /// after its `acl_record_bound` fetch — mirroring the inline public-decrypt
+    /// leaf the on-chain bind appends. This is the create case (public leaf at
+    /// index 0); the supersede burn case appends the same public fetch after the
+    /// superseded-handle leaves.
+    #[tokio::test]
+    async fn born_public_fhe_eval_output_emits_handle_made_public_fetch() {
+        let plan = FheEvalArgs {
+            context_id: [1; 32],
+            steps: vec![FheEvalStep::TrivialEncrypt {
+                plaintext: [7; 32],
+                fhe_type: 5,
+                output: FheEvalOutput::AllowedDurable {
+                    output_encrypted_value_index: 0,
+                    output_app_account_authority_index: None,
+                    output_acl_domain_key:
+                        anchor_lang::prelude::Pubkey::new_from_array([8; 32]),
+                    output_app_account:
+                        anchor_lang::prelude::Pubkey::new_from_array([9; 32]),
+                    output_encrypted_value_label: [10; 32],
+                    output_subjects: vec![AclSubjectEntry::user(
+                        anchor_lang::prelude::Pubkey::new_from_array(SUBJECT),
+                    )],
+                    // Fresh lineage (create), born publicly decryptable inline.
+                    previous_handle: None,
+                    previous_subjects: None,
+                    make_public: true,
+                },
+            }],
+        };
+        let instructions = vec![decoded_ix(
+            encode_instruction("fhe_eval", plan),
+            fhe_eval_accounts(),
+            0,
+            false,
+        )];
+        let (slot_bank_hash, slot_clock_ts) = slot_context();
+        let rpc = RpcClient::new("http://127.0.0.1:1".to_owned());
+        let mut tracker = EncryptedValueLineageTracker::new();
+
+        let events = complete_events(
+            reconstruct_events_for_insert(
+                &config(),
+                &instructions,
+                42,
+                &slot_bank_hash,
+                &slot_clock_ts,
+                &rpc,
+                &mut tracker,
+            )
+            .await
+            .expect("born-public create reconstruction should succeed"),
+        );
+
+        // The handle the trivial-encrypt bind recomputed for this output.
+        let bound_handle = events
+            .iter()
+            .find_map(|event| match event {
+                SolanaHostEvent::TrivialEncrypt(e) => Some(e.result),
+                _ => None,
+            })
+            .expect("trivial-encrypt compute event with a result handle");
+
+        let bound_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    SolanaHostEvent::FinalizedAccountFetch(f)
+                        if f.reason == "acl_record_bound"
+                            && f.account_key == ENCRYPTED_VALUE
+                            && f.handle == Some(Handle::from(bound_handle))
+                )
+            })
+            .expect("acl_record_bound fetch for the bound handle");
+
+        let made_public_pos = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    SolanaHostEvent::FinalizedAccountFetch(f)
+                        if f.reason == "handle_made_public"
+                            && f.account_key == ENCRYPTED_VALUE
+                            && f.handle == Some(Handle::from(bound_handle))
+                )
+            })
+            .expect("handle_made_public fetch for the born-public handle");
+
+        assert!(
+            made_public_pos > bound_pos,
+            "public-decrypt fetch must follow the bind fetch (public leaf is last)"
+        );
     }
 
     #[tokio::test]
@@ -1285,7 +1610,7 @@ mod fhe_eval_acl_tests {
         let mut tracker = EncryptedValueLineageTracker::new();
         tracker.record(ENCRYPTED_VALUE, [8; 32]);
 
-        let reconstructed = reconstruct_events_for_insert(
+        let reconstructed = complete_events(reconstruct_events_for_insert(
             &config(),
             &instructions,
             42,
@@ -1297,9 +1622,12 @@ mod fhe_eval_acl_tests {
         .await
         .expect(
             "reconstruction should produce the full multi-instruction fact set",
-        );
+        ));
         let reconstruct_facts = semantic_facts(&reconstructed);
 
+        // The fhe_eval output handle is derived (DD-015), not the old update
+        // hint [9;32]; every fact carrying that output handle uses it.
+        let output_handle = derived_add_output_handle();
         let required_facts = [
             SemanticFact::Binary {
                 op: "Add".to_owned(),
@@ -1307,13 +1635,13 @@ mod fhe_eval_acl_tests {
                 lhs: [3; 32],
                 rhs: [1; 32],
                 scalar: true,
-                result: [9; 32],
+                result: output_handle,
             },
             SemanticFact::Fetch {
                 account_key: ENCRYPTED_VALUE,
                 kind: "EncryptedValueAccount".to_owned(),
                 reason: "acl_record_bound",
-                handle: Some([9; 32]),
+                handle: Some(output_handle),
                 related_account: None,
                 subject: None,
             },
@@ -1329,7 +1657,7 @@ mod fhe_eval_acl_tests {
                 account_key: ENCRYPTED_VALUE,
                 kind: "EncryptedValueAccount".to_owned(),
                 reason: "handle_superseded",
-                handle: Some([9; 32]),
+                handle: Some(output_handle),
                 related_account: None,
                 subject: None,
             },
@@ -1337,7 +1665,7 @@ mod fhe_eval_acl_tests {
                 account_key: ENCRYPTED_VALUE,
                 kind: "EncryptedValueAccount".to_owned(),
                 reason: "subject_allowed",
-                handle: Some([9; 32]),
+                handle: Some(output_handle),
                 related_account: None,
                 subject: Some([7; 32]),
             },
@@ -1345,7 +1673,7 @@ mod fhe_eval_acl_tests {
                 account_key: ENCRYPTED_VALUE,
                 kind: "EncryptedValueAccount".to_owned(),
                 reason: "handle_made_public",
-                handle: Some([9; 32]),
+                handle: Some(output_handle),
                 related_account: None,
                 subject: None,
             },

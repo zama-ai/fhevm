@@ -125,7 +125,7 @@ async fn try_build<S: LeafStore>(
 mod tests {
     use super::*;
     use crate::solana_proof::chain::{ChainError, ChainTransaction, OnChainLineageState};
-    use crate::solana_proof::decode::RawInstruction;
+    use crate::solana_proof::decode::{RawInstruction, SubjectGrant};
     use crate::solana_proof::replay::LineageReplayState;
     use crate::solana_proof::store::FileLeafStore;
     use anchor_lang::prelude::Pubkey;
@@ -169,6 +169,40 @@ mod tests {
         }
     }
 
+    /// Anchor `emit_cpi!` self-invocation sentinel (little-endian of
+    /// `0x1d9acb512ea545e4`), matching the on-chain event transport.
+    const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes();
+
+    fn event_discriminator(name: &str) -> [u8; 8] {
+        let digest = Sha256::digest(format!("event:{name}").as_bytes());
+        let mut out = [0u8; 8];
+        out.copy_from_slice(&digest[..8]);
+        out
+    }
+
+    /// Builds the inner instruction the host emits for a `TrivialEncrypt` op via
+    /// `emit_cpi!`: a self-CPI whose data is the Anchor event sentinel + event
+    /// discriminator + borsh event, carrying the verified output `result` handle.
+    fn trivial_encrypt_event_ix(program_id: [u8; 32], result: [u8; 32]) -> RawInstruction {
+        use anchor_lang::AnchorSerialize;
+        use zama_host::events::TrivialEncryptEvent;
+        let event = TrivialEncryptEvent {
+            version: 1,
+            subject: pk(0x30),
+            plaintext: pk(0x02),
+            fhe_type: 5,
+            result,
+        };
+        let mut data = ANCHOR_EVENT_IX_TAG_LE.to_vec();
+        data.extend_from_slice(&event_discriminator("TrivialEncryptEvent"));
+        event.serialize(&mut data).unwrap();
+        RawInstruction {
+            program_id,
+            accounts: vec![pk(0xEE), program_id],
+            data,
+        }
+    }
+
     fn fhe_eval_accounts(program_id: [u8; 32], remaining: &[[u8; 32]]) -> Vec<[u8; 32]> {
         let mut accounts = vec![
             pk(0xA0),
@@ -200,6 +234,10 @@ mod tests {
                     }],
                     previous_handle: None,
                     previous_subjects: None,
+                    // Publicized via a standalone `make_handle_public` instruction
+                    // in the test below, not inline (see the module note on why
+                    // inline `make_public` is not reconstructable from replay).
+                    make_public: false,
                 },
             }],
         }
@@ -521,5 +559,254 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, ProofError::CorruptCache { leaf_count: 1 }));
+    }
+
+    /// A confidential-burn-style born-public `fhe_eval` supersede: on-chain the
+    /// bind appends `hist(old, owner)`, `hist(old, compute)`, then
+    /// `public(new_burn_handle)`. The output handle behind the public leaf is
+    /// derived on-chain from slot entropy and carried in NO instruction arg, so
+    /// the relayer cannot recompute it from thin JSON-RPC. It is instead resolved
+    /// from the `TrivialEncryptEvent` the burn emits via `emit_cpi!` (an inner
+    /// instruction of the `fhe_eval`, already flattened into the tx by
+    /// `chain::flatten_execution_order`). With that handle the relayer now
+    /// reconstructs all three leaves and serves a verified public-decrypt proof.
+    #[tokio::test]
+    async fn inline_born_public_fhe_eval_supersede_reconstructs_from_event_handle() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x07);
+        let owner = pk(0x30);
+        let compute = pk(0x31);
+        let old_handle = pk(0x20);
+        // Derived on-chain from previous_bank_hash; recovered from the op event.
+        let burn_handle = pk(0x21);
+        let chain = FakeChain::new(program_id);
+
+        // On-chain leaves for the born-public supersede, in append order.
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        mmr_append(
+            &mut peaks,
+            &mut leaf_count,
+            zama_solana_acl::historical_access_leaf_commitment(lineage, 0, old_handle, owner),
+        )
+        .unwrap();
+        mmr_append(
+            &mut peaks,
+            &mut leaf_count,
+            zama_solana_acl::historical_access_leaf_commitment(lineage, 1, old_handle, compute),
+        )
+        .unwrap();
+        mmr_append(
+            &mut peaks,
+            &mut leaf_count,
+            public_decrypt_leaf_commitment(lineage, 2, burn_handle),
+        )
+        .unwrap();
+        chain.set_lineage_state(
+            lineage,
+            OnChainLineageState {
+                peaks: peaks.clone(),
+                leaf_count,
+            },
+        );
+
+        chain.push_tx(
+            "sig1",
+            1,
+            &[lineage],
+            vec![born_public_create_ix(program_id, lineage, old_handle, owner, compute)],
+        );
+
+        // The burn: an fhe_eval durable supersede output, born public inline,
+        // followed by its `emit_cpi!` op event carrying the output handle.
+        chain.push_tx(
+            "sig2",
+            2,
+            &[lineage],
+            vec![
+                born_public_burn_ix(program_id, lineage, old_handle, owner, compute),
+                trivial_encrypt_event_ix(program_id, burn_handle),
+            ],
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        // The public leaf (index 2) now reconstructs and verifies.
+        let result = build_proof(&chain, &store, program_id, lineage, 2, 1000)
+            .await
+            .unwrap();
+        let proof = result.mmr_proof.as_ref().unwrap();
+        assert!(result.verified);
+        assert_eq!(result.leaf_count, 3);
+        assert_eq!(result.proof_slot, 3);
+
+        let acl = EncryptedValue {
+            acl_domain_key: pk(0x40),
+            app_account: pk(0x41),
+            encrypted_value_label: pk(0x42),
+            current_handle: burn_handle,
+            subjects: vec![owner, compute],
+            leaf_count,
+            peaks,
+            bump: 0,
+        };
+        authorize_public(lineage, &acl, burn_handle, proof).unwrap();
+
+        // The two historical leaves plus the event-resolved born-public leaf.
+        assert_eq!(
+            store.get_events(lineage).await.unwrap(),
+            vec![
+                LineageEvent::handle_superseded(old_handle, &[owner, compute]),
+                LineageEvent::MarkedPublic {
+                    handle: burn_handle
+                },
+            ]
+        );
+    }
+
+    /// The event-resolved output handle is UNTRUSTED. If the emitted event
+    /// carries the wrong `result`, the reconstructed public leaf differs from
+    /// chain, the peaks diverge, and the proof fails closed (DD-035) rather than
+    /// mis-serving a proof for a handle that was never made public.
+    #[tokio::test]
+    async fn inline_born_public_fhe_eval_supersede_with_wrong_event_handle_fails_closed() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x08);
+        let owner = pk(0x30);
+        let compute = pk(0x31);
+        let old_handle = pk(0x20);
+        let real_burn_handle = pk(0x21);
+        let forged_handle = pk(0xBB);
+        let chain = FakeChain::new(program_id);
+
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        mmr_append(
+            &mut peaks,
+            &mut leaf_count,
+            zama_solana_acl::historical_access_leaf_commitment(lineage, 0, old_handle, owner),
+        )
+        .unwrap();
+        mmr_append(
+            &mut peaks,
+            &mut leaf_count,
+            zama_solana_acl::historical_access_leaf_commitment(lineage, 1, old_handle, compute),
+        )
+        .unwrap();
+        mmr_append(
+            &mut peaks,
+            &mut leaf_count,
+            public_decrypt_leaf_commitment(lineage, 2, real_burn_handle),
+        )
+        .unwrap();
+        chain.set_lineage_state(lineage, OnChainLineageState { peaks, leaf_count });
+
+        chain.push_tx(
+            "sig1",
+            1,
+            &[lineage],
+            vec![born_public_create_ix(program_id, lineage, old_handle, owner, compute)],
+        );
+        // The event carries a handle that does not match the on-chain leaf.
+        chain.push_tx(
+            "sig2",
+            2,
+            &[lineage],
+            vec![
+                born_public_burn_ix(program_id, lineage, old_handle, owner, compute),
+                trivial_encrypt_event_ix(program_id, forged_handle),
+            ],
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        let error = build_proof(&chain, &store, program_id, lineage, 2, 1000)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, ProofError::CorruptCache { leaf_count: 3 }),
+            "a wrong event-resolved handle must fail closed, got {error:?}"
+        );
+    }
+
+    fn born_public_create_ix(
+        program_id: [u8; 32],
+        lineage: [u8; 32],
+        handle: [u8; 32],
+        owner: [u8; 32],
+        compute: [u8; 32],
+    ) -> RawInstruction {
+        #[derive(BorshSerialize)]
+        struct CreateArgs {
+            acl_domain_key: [u8; 32],
+            app_account: [u8; 32],
+            label: [u8; 32],
+            handle: [u8; 32],
+            subjects: Vec<SubjectGrant>,
+        }
+        make_ix(
+            program_id,
+            vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
+            "create_encrypted_value",
+            CreateArgs {
+                acl_domain_key: pk(0x40),
+                app_account: pk(0x41),
+                label: pk(0x42),
+                handle,
+                subjects: vec![
+                    SubjectGrant { subject: owner },
+                    SubjectGrant { subject: compute },
+                ],
+            },
+        )
+    }
+
+    fn born_public_burn_ix(
+        program_id: [u8; 32],
+        lineage: [u8; 32],
+        previous_handle: [u8; 32],
+        owner: [u8; 32],
+        compute: [u8; 32],
+    ) -> RawInstruction {
+        let plan = FheEvalArgs {
+            context_id: pk(0x01),
+            steps: vec![FheEvalStep::TrivialEncrypt {
+                plaintext: pk(0x02),
+                fhe_type: 5,
+                output: FheEvalOutput::AllowedDurable {
+                    output_encrypted_value_index: 0,
+                    output_app_account_authority_index: None,
+                    output_acl_domain_key: pubkey(0x40),
+                    output_app_account: pubkey(0x41),
+                    output_encrypted_value_label: pk(0x42),
+                    output_subjects: vec![
+                        AclSubjectEntry {
+                            pubkey: Pubkey::new_from_array(owner),
+                        },
+                        AclSubjectEntry {
+                            pubkey: Pubkey::new_from_array(compute),
+                        },
+                    ],
+                    previous_handle: Some(previous_handle),
+                    previous_subjects: Some(vec![
+                        Pubkey::new_from_array(owner),
+                        Pubkey::new_from_array(compute),
+                    ]),
+                    make_public: true,
+                },
+            }],
+        };
+        make_ix(
+            program_id,
+            fhe_eval_accounts(program_id, &[lineage]),
+            "fhe_eval",
+            plan,
+        )
     }
 }

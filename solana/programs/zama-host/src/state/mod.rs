@@ -251,6 +251,13 @@ pub enum FheEvalOutput {
         /// Superseded subject set, parallel to `previous_handle` (`None` on create,
         /// exact stored subjects on update). Same indexer-reconstruction purpose.
         previous_subjects: Option<Vec<Pubkey>>,
+        /// When true, the newly bound handle is born publicly decryptable: after
+        /// writing it as `current_handle`, a public-decrypt leaf is appended for
+        /// the new handle (byte-identical to `make_handle_public`). Carried in
+        /// instruction data so indexers reconstruct that leaf without reading the
+        /// account. This is the opt-in relaxation of the "created lineages cannot
+        /// be born public" invariant (DD-036).
+        make_public: bool,
     },
 }
 
@@ -535,98 +542,6 @@ pub fn computed_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
     ))
 }
 
-/// Derives a nonce-bound eval output handle using the current slot context.
-///
-/// This helper uses [`SOLANA_POC_CHAIN_ID`]. CPI callers that have a
-/// [`HostConfig`] should prefer
-/// [`computed_bound_eval_handle_for_current_slot_with_chain_id`].
-pub fn computed_bound_eval_handle_for_current_slot(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    computed_bound_eval_handle_for_current_slot_with_chain_id(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        SOLANA_POC_CHAIN_ID,
-        context_id,
-        op_index,
-        output_nonce_key,
-        output_nonce_sequence,
-    )
-}
-
-/// Derives a nonce-bound eval output handle using the current slot context and chain id.
-pub fn computed_bound_eval_handle_for_current_slot_with_chain_id(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    computed_bound_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        context_id,
-        op_index,
-        output_nonce_key,
-        output_nonce_sequence,
-        false,
-    )
-}
-
-/// Derives a nonce-bound eval output handle, optionally using the local-test
-/// zero fallback when explicitly allowed by host config.
-#[allow(clippy::too_many_arguments)]
-pub fn computed_bound_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-    allow_test_zero: bool,
-) -> Result<[u8; 32]> {
-    let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash_with_test_fallback(clock.slot, allow_test_zero)?;
-    Ok(computed_bound_eval_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        clock.unix_timestamp,
-        context_id,
-        op_index,
-        output_nonce_key,
-        output_nonce_sequence,
-    ))
-}
-
 fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_type: u8) {
     result[21..32].fill(0);
     result[21] = COMPUTED_HANDLE_MARKER;
@@ -766,7 +681,13 @@ pub fn computed_eval_rand_seed(
     seed
 }
 
-/// Derives a nonce-bound durable output handle for composed eval from explicit slot entropy.
+/// Derives a value-key-bound durable output handle for composed eval from explicit slot entropy.
+///
+/// The `output_nonce_key` (the lineage `value_key`) binding domain-separates a
+/// durable output from the unbound base handle and from other lineages. The
+/// per-update leaf-count sequence was removed (DD-015): base-handle material
+/// (op/operands/type + per-block entropy) already distinguishes distinct
+/// ciphertexts, matching EVM `FHEVMExecutor`, which binds no per-output nonce.
 pub fn computed_bound_eval_handle(
     op: FheBinaryOpCode,
     lhs: [u8; 32],
@@ -779,9 +700,7 @@ pub fn computed_bound_eval_handle(
     context_id: [u8; 32],
     op_index: u16,
     output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
 ) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
     let base_result = computed_eval_handle(
         op,
         lhs,
@@ -796,18 +715,13 @@ pub fn computed_bound_eval_handle(
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &keccak_hashv(&[
-            b"FHE_bound_eval_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
+        &keccak_hashv(&[b"FHE_bound_eval_output", &base_result, &output_nonce_key])
+            .to_bytes()[..21],
     );
     result
 }
 
-/// Derives a nonce-bound durable ternary output handle for composed eval from explicit slot entropy.
+/// Derives a value-key-bound durable ternary output handle for composed eval from explicit slot entropy.
 #[allow(clippy::too_many_arguments)]
 pub fn computed_bound_eval_ternary_handle(
     op: FheTernaryOpCode,
@@ -821,9 +735,7 @@ pub fn computed_bound_eval_ternary_handle(
     context_id: [u8; 32],
     op_index: u16,
     output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
 ) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
     let base_result = computed_eval_ternary_handle(
         op,
         control,
@@ -838,18 +750,13 @@ pub fn computed_bound_eval_ternary_handle(
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &hashv(&[
-            b"FHE_bound_eval_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
+        &hashv(&[b"FHE_bound_eval_output", &base_result, &output_nonce_key])
+            .to_bytes()[..21],
     );
     result
 }
 
-/// Derives a nonce-bound durable trivial-encrypt eval handle from explicit slot entropy.
+/// Derives a value-key-bound durable trivial-encrypt eval handle from explicit slot entropy.
 pub fn computed_bound_eval_trivial_handle(
     plaintext: [u8; 32],
     fhe_type: u8,
@@ -859,11 +766,9 @@ pub fn computed_bound_eval_trivial_handle(
     context_id: [u8; 32],
     op_index: u16,
     output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
     let op_index_bytes = op_index.to_be_bytes();
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let mut result = hashv(&[
@@ -877,14 +782,13 @@ pub fn computed_bound_eval_trivial_handle(
         &previous_bank_hash,
         &timestamp_bytes,
         &output_nonce_key,
-        &sequence_bytes,
     ])
     .to_bytes();
     finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
     result
 }
 
-/// Derives the seed emitted for a nonce-bound durable eval random handle from explicit slot entropy.
+/// Derives the seed emitted for a value-key-bound durable eval random handle from explicit slot entropy.
 pub fn computed_bound_eval_rand_seed(
     chain_id: u64,
     previous_bank_hash: [u8; 32],
@@ -892,11 +796,9 @@ pub fn computed_bound_eval_rand_seed(
     context_id: [u8; 32],
     op_index: u16,
     output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
 ) -> [u8; 16] {
     let chain_id_bytes = chain_id.to_be_bytes();
     let op_index_bytes = op_index.to_be_bytes();
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
     let timestamp_bytes = unix_timestamp.to_be_bytes();
     let hash = hashv(&[
         b"FHE_bound_eval_seed",
@@ -907,7 +809,6 @@ pub fn computed_bound_eval_rand_seed(
         &previous_bank_hash,
         &timestamp_bytes,
         &output_nonce_key,
-        &sequence_bytes,
     ])
     .to_bytes();
     let mut seed = [0; 16];

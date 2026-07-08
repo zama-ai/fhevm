@@ -7,7 +7,10 @@
 //! current handle and appends one historical-access leaf per allowed subject.
 //! `make_handle_public` carries the exact public handle on-chain, so replay can
 //! reconstruct public-decrypt leaves even after `fhe_eval` output handles whose
-//! slot entropy is unavailable to this service.
+//! slot entropy is unavailable to this service. A born-public `fhe_eval` output
+//! resolves that output handle from the op event `decode` correlated with it, so
+//! its supersede emits `HandleSuperseded` (old handle) followed by `MarkedPublic`
+//! (new output handle) — matching the on-chain leaf append order.
 
 use zama_solana_acl::lineage::LineageEvent;
 
@@ -83,14 +86,19 @@ fn validate_previous_state(
     Ok(())
 }
 
-/// Applies one decoded instruction to `state`, returning the `LineageEvent` it
-/// produces, if any. `state` must be the tracked state for the instruction's
-/// `encrypted_value` lineage (created on `CreateEncryptedValue`, looked up by
-/// the caller for the others).
+/// Applies one decoded instruction to `state`, returning the `LineageEvent`s it
+/// produces, in append order. `state` must be the tracked state for the
+/// instruction's `encrypted_value` lineage (created on `CreateEncryptedValue`,
+/// looked up by the caller for the others).
+///
+/// Most instructions produce zero or one event. A born-public `fhe_eval`
+/// supersede produces two: the `HandleSuperseded` for the outgoing handle, then
+/// a `MarkedPublic` for the resolved new output handle — mirroring the on-chain
+/// append order (historical-access leaves, then the public-decrypt leaf).
 pub fn apply_instruction(
     state: &mut Option<LineageReplayState>,
     instruction: &DecodedInstruction,
-) -> Result<Option<LineageEvent>, ReplayError> {
+) -> Result<Vec<LineageEvent>, ReplayError> {
     match instruction {
         DecodedInstruction::CreateEncryptedValue {
             handle, subjects, ..
@@ -101,7 +109,7 @@ pub fn apply_instruction(
             };
             new_state.upsert(subjects);
             *state = Some(new_state);
-            Ok(None)
+            Ok(Vec::new())
         }
         DecodedInstruction::AllowSubjects {
             encrypted_value,
@@ -111,7 +119,7 @@ pub fn apply_instruction(
                 .as_mut()
                 .ok_or(ReplayError::UnknownLineage(*encrypted_value))?;
             state.upsert(subjects);
-            Ok(None)
+            Ok(Vec::new())
         }
         DecodedInstruction::UpdateEncryptedValue {
             encrypted_value,
@@ -125,7 +133,7 @@ pub fn apply_instruction(
             validate_previous_state(state, *encrypted_value, *previous_handle, previous_subjects)?;
             let event = LineageEvent::handle_superseded(*previous_handle, &state.subjects);
             state.current_handle = Some(*new_handle);
-            Ok(Some(event))
+            Ok(vec![event])
         }
         DecodedInstruction::RemoveSubject {
             encrypted_value,
@@ -135,22 +143,38 @@ pub fn apply_instruction(
                 .as_mut()
                 .ok_or(ReplayError::UnknownLineage(*encrypted_value))?;
             state.remove_subject(*encrypted_value, *subject)?;
-            Ok(None)
+            Ok(Vec::new())
         }
-        DecodedInstruction::FheEvalCreateEncryptedValue { subjects, .. } => {
+        DecodedInstruction::FheEvalCreateEncryptedValue {
+            subjects,
+            make_public_handle,
+            ..
+        } => {
             let mut new_state = LineageReplayState {
                 current_handle: None,
                 subjects: Vec::new(),
             };
             new_state.upsert(subjects);
+            // Born-public on create: the resolved output handle is public
+            // immediately, so append its public-decrypt leaf. Recording it as
+            // `current_handle` also lets a later supersede reconstruct without
+            // needing the slot entropy behind the on-chain handle derivation.
+            let events = match make_public_handle {
+                Some(handle) => {
+                    new_state.current_handle = Some(*handle);
+                    vec![LineageEvent::MarkedPublic { handle: *handle }]
+                }
+                None => Vec::new(),
+            };
             *state = Some(new_state);
-            Ok(None)
+            Ok(events)
         }
         DecodedInstruction::FheEvalUpdateEncryptedValue {
             encrypted_value,
             previous_handle,
             previous_subjects,
             output_subjects,
+            make_public_handle,
         } => {
             let state = state
                 .as_mut()
@@ -159,9 +183,18 @@ pub fn apply_instruction(
             if state.subjects.as_slice() != output_subjects.as_slice() {
                 return Err(ReplayError::PreviousStateMismatch(*encrypted_value));
             }
-            let event = LineageEvent::handle_superseded(*previous_handle, &state.subjects);
-            state.current_handle = None;
-            Ok(Some(event))
+            let mut events = vec![LineageEvent::handle_superseded(
+                *previous_handle,
+                &state.subjects,
+            )];
+            match make_public_handle {
+                Some(handle) => {
+                    state.current_handle = Some(*handle);
+                    events.push(LineageEvent::MarkedPublic { handle: *handle });
+                }
+                None => state.current_handle = None,
+            }
+            Ok(events)
         }
         DecodedInstruction::MakeHandlePublic {
             encrypted_value,
@@ -170,7 +203,7 @@ pub fn apply_instruction(
             state
                 .as_mut()
                 .ok_or(ReplayError::UnknownLineage(*encrypted_value))?;
-            Ok(Some(LineageEvent::MarkedPublic { handle: *handle }))
+            Ok(vec![LineageEvent::MarkedPublic { handle: *handle }])
         }
     }
 }
@@ -194,9 +227,7 @@ mod tests {
         let mut state = None;
         let mut events = Vec::new();
         for instruction in instructions {
-            if let Some(event) = apply_instruction(&mut state, instruction)? {
-                events.push(event);
-            }
+            events.extend(apply_instruction(&mut state, instruction)?);
         }
         Ok((state, events))
     }
@@ -212,7 +243,7 @@ mod tests {
             handle: pk(0x10),
             subjects: vec![SubjectGrant { subject: owner }],
         };
-        assert_eq!(apply_instruction(&mut state, &create).unwrap(), None);
+        assert!(apply_instruction(&mut state, &create).unwrap().is_empty());
         assert_eq!(state.as_ref().unwrap().current_handle, Some(pk(0x10)));
 
         let update = DecodedInstruction::UpdateEncryptedValue {
@@ -221,18 +252,19 @@ mod tests {
             previous_handle: pk(0x10),
             previous_subjects: vec![owner],
         };
-        let event = apply_instruction(&mut state, &update).unwrap().unwrap();
-        assert_eq!(event, LineageEvent::handle_superseded(pk(0x10), &[owner]));
+        let events = apply_instruction(&mut state, &update).unwrap();
+        assert_eq!(
+            events,
+            vec![LineageEvent::handle_superseded(pk(0x10), &[owner])]
+        );
         assert_eq!(state.as_ref().unwrap().current_handle, Some(pk(0x11)));
 
         let make_public = DecodedInstruction::MakeHandlePublic {
             encrypted_value: ev,
             handle: pk(0x11),
         };
-        let event = apply_instruction(&mut state, &make_public)
-            .unwrap()
-            .unwrap();
-        assert_eq!(event, LineageEvent::MarkedPublic { handle: pk(0x11) });
+        let events = apply_instruction(&mut state, &make_public).unwrap();
+        assert_eq!(events, vec![LineageEvent::MarkedPublic { handle: pk(0x11) }]);
     }
 
     #[test]
@@ -250,7 +282,7 @@ mod tests {
             encrypted_value: ev,
             subjects: vec![SubjectGrant { subject: s2 }],
         };
-        assert_eq!(apply_instruction(&mut state, &allow).unwrap(), None);
+        assert!(apply_instruction(&mut state, &allow).unwrap().is_empty());
 
         let update = DecodedInstruction::UpdateEncryptedValue {
             encrypted_value: ev,
@@ -258,8 +290,11 @@ mod tests {
             previous_handle: pk(0x10),
             previous_subjects: vec![s1, s2],
         };
-        let event = apply_instruction(&mut state, &update).unwrap().unwrap();
-        assert_eq!(event, LineageEvent::handle_superseded(pk(0x10), &[s1, s2]));
+        let events = apply_instruction(&mut state, &update).unwrap();
+        assert_eq!(
+            events,
+            vec![LineageEvent::handle_superseded(pk(0x10), &[s1, s2])]
+        );
     }
 
     #[test]
@@ -286,6 +321,7 @@ mod tests {
             previous_handle: pk(0x10),
             previous_subjects: vec![owner, spender],
             output_subjects: vec![owner, spender],
+            make_public_handle: None,
         };
 
         let (_, update_events) = replay(&[create.clone(), update]).unwrap();
@@ -319,12 +355,14 @@ mod tests {
         let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
             subjects: vec![SubjectGrant { subject: owner }],
+            make_public_handle: None,
         };
         let eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {
             encrypted_value: ev,
             previous_handle: pk(0x10),
             previous_subjects: vec![owner],
             output_subjects: vec![owner],
+            make_public_handle: None,
         };
 
         let (state, events) = replay(&[create, eval_update]).unwrap();
@@ -344,6 +382,7 @@ mod tests {
         let create = DecodedInstruction::FheEvalCreateEncryptedValue {
             encrypted_value: ev,
             subjects: vec![SubjectGrant { subject: owner }],
+            make_public_handle: None,
         };
         let make_public = DecodedInstruction::MakeHandlePublic {
             encrypted_value: ev,
@@ -384,12 +423,14 @@ mod tests {
             previous_handle: pk(0x10),
             previous_subjects: vec![owner],
             output_subjects: vec![owner],
+            make_public_handle: None,
         };
         let second_eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {
             encrypted_value: ev,
             previous_handle: pk(0x11),
             previous_subjects: vec![owner],
             output_subjects: vec![owner],
+            make_public_handle: None,
         };
 
         let (_, events) = replay(&[create, first_eval_update, second_eval_update]).unwrap();
@@ -433,6 +474,7 @@ mod tests {
             previous_handle: pk(0x10),
             previous_subjects: vec![owner],
             output_subjects: vec![owner],
+            make_public_handle: None,
         };
 
         let (_, events) = replay(&[create, remove, eval_update]).unwrap();
@@ -463,6 +505,7 @@ mod tests {
             previous_handle: pk(0x10),
             previous_subjects: vec![owner],
             output_subjects: vec![owner],
+            make_public_handle: None,
         };
 
         let (_, events) = replay(&[create, eval_update]).unwrap();

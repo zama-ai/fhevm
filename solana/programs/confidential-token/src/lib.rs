@@ -33,6 +33,7 @@ pub use events::*;
 /// The random-amount PoC helper account context (gated behind `poc`, see below).
 #[cfg(feature = "poc")]
 pub use instructions::CreateRandomAmount;
+pub use instructions::common::MmrInclusionProof;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
@@ -144,8 +145,9 @@ pub mod confidential_token {
         cleartext_amount: u64,
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
+        proof: MmrInclusionProof,
     ) -> Result<()> {
-        instructions::disclose_balance_secp(ctx, cleartext_amount, signatures, extra_data)
+        instructions::disclose_balance_secp(ctx, cleartext_amount, signatures, extra_data, proof)
     }
 
     /// Gateway-compatible amount disclosure: verifies the KMS `PublicDecryptVerification`
@@ -156,6 +158,7 @@ pub mod confidential_token {
         cleartext_amount: u64,
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
+        proof: MmrInclusionProof,
     ) -> Result<()> {
         instructions::disclose_amount_secp(
             ctx,
@@ -163,6 +166,7 @@ pub mod confidential_token {
             cleartext_amount,
             signatures,
             extra_data,
+            proof,
         )
     }
 
@@ -174,6 +178,7 @@ pub mod confidential_token {
         cleartext_amount: u64,
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
+        proof: MmrInclusionProof,
     ) -> Result<()> {
         instructions::redeem_burned_amount_secp(
             ctx,
@@ -181,6 +186,7 @@ pub mod confidential_token {
             cleartext_amount,
             signatures,
             extra_data,
+            proof,
         )
     }
 

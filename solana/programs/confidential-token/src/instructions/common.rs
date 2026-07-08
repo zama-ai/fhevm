@@ -375,10 +375,34 @@ pub(crate) fn is_token_amount_label(encrypted_value_label: [u8; 32]) -> bool {
         || encrypted_value_label == transferred_amount_label()
 }
 
-/// Verifies a token account's burned-amount `EncryptedValue` lineage: canonical
-/// address, correct domain/app account, the burned-amount label, and membership
-/// for the owner and mint compute signer.
-pub(crate) fn assert_burned_amount_encrypted_value(
+/// Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction
+/// argument. The shared ACL crate is deliberately Anchor-free (pure `borsh`), so
+/// it cannot derive Anchor's IDL metadata; this local type carries the identical
+/// wire shape and converts into the shared proof for verification.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct MmrInclusionProof {
+    /// Index of the proven leaf within the lineage's MMR.
+    pub leaf_index: u64,
+    /// Authentication path from the leaf up to its mountain peak.
+    pub siblings: Vec<[u8; 32]>,
+}
+
+impl From<MmrInclusionProof> for zama_solana_acl::MmrProof {
+    fn from(proof: MmrInclusionProof) -> Self {
+        zama_solana_acl::MmrProof {
+            leaf_index: proof.leaf_index,
+            siblings: proof.siblings,
+        }
+    }
+}
+
+/// Lineage checks shared by the request and redeem paths: burned-amount handle
+/// type, canonical address, domain/app account, the burned-amount label, and
+/// current membership for the owner and mint compute signer. Does NOT authorize
+/// the specific handle: the redeem path adds an MMR public-decrypt proof, while
+/// the request path binds the handle into the witness (its publicness is proven
+/// at redeem, since the burn already made the handle public — DD-036 / Vector 2).
+pub(crate) fn assert_burned_amount_lineage(
     amount_value: &Account<zama_host::EncryptedValue>,
     burned_handle: [u8; 32],
     mint: Pubkey,
@@ -389,10 +413,6 @@ pub(crate) fn assert_burned_amount_encrypted_value(
     require!(
         zama_host::handle_fhe_type(burned_handle) == BALANCE_FHE_TYPE,
         ConfidentialTokenError::AmountHandleTypeMismatch
-    );
-    require!(
-        amount_value.current_handle == burned_handle,
-        ConfidentialTokenError::AmountAclMismatch
     );
     require_keys_eq!(
         amount_value.acl_domain_key,
@@ -421,6 +441,64 @@ pub(crate) fn assert_burned_amount_encrypted_value(
         amount_value.has_subject(compute_signer),
         ConfidentialTokenError::AmountAclMismatch
     );
+    Ok(())
+}
+
+/// Redeem (consume) path: the burned handle need not be current. It is authorized
+/// by an MMR public-decrypt proof against the lineage's current peaks, so a
+/// redemption pinned to a handle stays valid after later burns supersede the
+/// lineage — closing the fund-stranding window without a per-operation escrow.
+/// Replay is still prevented by the per-handle `burn-redemption` marker PDA.
+pub(crate) fn authorize_burned_amount_redeem(
+    amount_value: &Account<zama_host::EncryptedValue>,
+    encrypted_value_account: Pubkey,
+    burned_handle: [u8; 32],
+    proof: &zama_solana_acl::MmrProof,
+    mint: Pubkey,
+    token_account: Pubkey,
+    owner: Pubkey,
+    compute_signer: Pubkey,
+) -> Result<()> {
+    assert_burned_amount_lineage(
+        amount_value,
+        burned_handle,
+        mint,
+        token_account,
+        owner,
+        compute_signer,
+    )?;
+    zama_solana_acl::authorize_public(
+        encrypted_value_account.to_bytes(),
+        &amount_value.to_shared(),
+        burned_handle,
+        proof,
+    )
+    .map_err(|_| ConfidentialTokenError::PublicDecryptProofInvalid)?;
+    Ok(())
+}
+
+/// Disclose (consume) path twin of `authorize_burned_amount_redeem`: authorize the
+/// witness-pinned handle by an MMR public-decrypt proof instead of requiring it to
+/// still be the live handle, so a disclosure survives its lineage being superseded
+/// during the KMS round-trip. Unlike the redeem path this needs no lineage-binding
+/// assert: the disclosure request witness — a canonical PDA whose `request_hash` is
+/// recomputed and matched — froze the canonical lineage and handle validated at
+/// request time, and `assert_disclosure_request_witness` binds the passed
+/// `EncryptedValue` account to `request.encrypted_value`. Disclosure moves no funds,
+/// so that witness binding plus this proof is the complete authorization.
+pub(crate) fn authorize_disclosed_handle(
+    encrypted_value: &Account<zama_host::EncryptedValue>,
+    encrypted_value_account: Pubkey,
+    pinned_handle: [u8; 32],
+    proof: &zama_solana_acl::MmrProof,
+) -> Result<()> {
+    zama_solana_acl::authorize_public(
+        encrypted_value_account.to_bytes(),
+        &encrypted_value.to_shared(),
+        pinned_handle,
+        proof,
+    )
+    .map_err(|_| ConfidentialTokenError::PublicDecryptProofInvalid)?;
     Ok(())
 }
 

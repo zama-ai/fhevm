@@ -22,8 +22,10 @@ pub struct RequestBurnRedemption<'info> {
         constraint = destination_usdc.owner == owner.key() @ ConfidentialTokenError::OwnerMismatch
     )]
     pub destination_usdc: Box<Account<'info, TokenAccount>>,
-    /// Stable burned-amount lineage whose handle will be redeemed. The owner
-    /// must be allowed so this instruction can append a public-decrypt MMR leaf.
+    /// Stable burned-amount lineage whose (possibly historical) handle will be
+    /// redeemed. The burn already made that handle publicly decryptable, so this
+    /// instruction only sanity-checks the lineage and binds the handle into the
+    /// witness; it re-proves the owner is a live subject via `allow_subjects`.
     #[account(mut)]
     pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Account-backed request witness consumed by the redemption path.
@@ -87,7 +89,10 @@ pub fn request_burn_redemption(
         mint_key,
         ctx.accounts.owner.key(),
     )?;
-    assert_burned_amount_encrypted_value(
+    // Lineage-only checks: the burned handle need NOT be the live handle. The burn already made
+    // it publicly decryptable (DD-036 / Vector 2), so a historical handle superseded by a later
+    // burn can still be requested; redeem proves the handle's publicness via the MMR proof.
+    assert_burned_amount_lineage(
         &ctx.accounts.burned_amount_value,
         burned_handle,
         mint_key,
@@ -123,8 +128,10 @@ pub fn request_burn_redemption(
         expires_slot,
     );
 
-    // Re-add the owner idempotently, then append the public-decrypt MMR leaf for
-    // the current handle.
+    // Re-add the owner idempotently: this is a no-op on membership (the owner is already a
+    // durable subject) but routes through the host, which enforces the pause gate and proves the
+    // owner is currently allowed. The burn — not this request — owns the public-decrypt leaf now,
+    // so no MMR leaf is appended here (keeping a historical handle's proof position stable).
     fhe::allow_subjects(
         fhe::AllowSubjects {
             payer: &ctx.accounts.owner,
@@ -143,20 +150,6 @@ pub fn request_burn_redemption(
             subject: ctx.accounts.owner.key(),
         }],
     )?;
-    fhe::allow_public_decrypt(fhe::AllowPublicDecrypt {
-        authority: &ctx.accounts.owner,
-        payer: &ctx.accounts.owner,
-        handle: burned_handle,
-        encrypted_value: ctx.accounts.burned_amount_value.to_account_info(),
-        host_config: &ctx.accounts.host_config,
-        deny_subject_record: ctx
-            .accounts
-            .deny_subject_record
-            .as_ref()
-            .map(|account| account.to_account_info()),
-        zama_program: &ctx.accounts.zama_program,
-        system_program: &ctx.accounts.system_program,
-    })?;
 
     let request = &mut ctx.accounts.redemption_request;
     request.mint = mint_key;

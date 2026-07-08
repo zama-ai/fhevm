@@ -207,6 +207,7 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
                 output_subjects,
                 previous_handle,
                 previous_subjects,
+                make_public: _,
             } => {
                 let app_account_authority = admit_durable_output_authority(
                     ctx,

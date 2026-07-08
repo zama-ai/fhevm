@@ -15,7 +15,7 @@ use std::str::FromStr;
 
 use anchor_client::{Client, Cluster, CommitmentConfig, Program, Signer};
 use anchor_lang::solana_program::{pubkey::Pubkey, system_program};
-use anchor_lang::AccountDeserialize;
+use anchor_lang::{AccountDeserialize, AnchorDeserialize};
 use solana_keypair::{read_keypair_file, Keypair};
 
 const EVENT_AUTHORITY_SEED: &[u8] = b"__event_authority";
@@ -313,6 +313,7 @@ fn durable_output(
         output_subjects: subjects,
         previous_handle,
         previous_subjects,
+        make_public: false,
     })
 }
 
@@ -968,6 +969,14 @@ fn consume_disclose(
         .try_into()
         .expect("KMS_SIG 65 bytes");
     let extra = hexdec(&std::env::var("EXTRA")?);
+    // Borsh-serialized MmrInclusionProof for the witness-pinned handle's
+    // public-decrypt leaf, produced by the relayer proof service (same shape as
+    // the redeem path). Empty env yields an empty proof, which fails on-chain
+    // authorization by design.
+    let proof = confidential_token::MmrInclusionProof::try_from_slice(&hexdec(
+        &std::env::var("PROOF").unwrap_or_default(),
+    ))
+    .unwrap_or_default();
     let ctx_id: u64 = std::env::var("KMS_CTX_ID")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -998,6 +1007,7 @@ fn consume_disclose(
             cleartext_amount: cleartext,
             signatures: vec![kms_sig],
             extra_data: extra,
+            proof,
         })
         .send()?;
     println!("OK disclose_amount_secp: {sig}");
@@ -1406,8 +1416,9 @@ fn consume_request_redeem(
 /// (redeem_burned_amount_secp): binds the BurnRedemptionRequest witness, verifies the KMS
 /// PublicDecryptVerification EIP-712 cert on-chain via secp256k1 against the witness-pinned KMS
 /// context, and releases the cleartext amount of underlying USDC to the owner. Inputs via env:
-/// MINT, UNDERLYING_MINT, BURNED_ACL, BURNED_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, optional
-/// KMS_CTX_ID (default 1), REQUEST_NONCE.
+/// MINT, UNDERLYING_MINT, BURNED_ACL, BURNED_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, PROOF (borsh
+/// MmrInclusionProof for the burned handle's public-decrypt leaf), optional KMS_CTX_ID
+/// (default 1), REQUEST_NONCE.
 fn consume_redeem(
     _host: &Program<Rc<Keypair>>,
     token: &Program<Rc<Keypair>>,
@@ -1425,6 +1436,13 @@ fn consume_redeem(
         .try_into()
         .expect("KMS_SIG 65 bytes");
     let extra = hexdec(&std::env::var("EXTRA")?);
+    // Borsh-serialized MmrInclusionProof (leaf_index + siblings) for the burned
+    // handle's public-decrypt leaf, produced by the relayer proof service. Empty
+    // env yields an empty proof, which fails on-chain authorization by design.
+    let proof = confidential_token::MmrInclusionProof::try_from_slice(&hexdec(
+        &std::env::var("PROOF").unwrap_or_default(),
+    ))
+    .unwrap_or_default();
     let ctx_id: u64 = std::env::var("KMS_CTX_ID")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -1479,6 +1497,7 @@ fn consume_redeem(
             cleartext_amount: cleartext,
             signatures: vec![kms_sig],
             extra_data: extra,
+            proof,
         })
         .send()?;
     println!("OK redeem_burned_amount_secp: {sig}");

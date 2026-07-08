@@ -3,7 +3,9 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use super::encrypted_value::{grow_account_if_needed, supersede_current_handle};
+use super::encrypted_value::{
+    append_public_decrypt_leaf, grow_account_if_needed, supersede_current_handle,
+};
 use super::input_verification::{verify_input_attestation, InputVerifierParams};
 use crate::{
     errors::ZamaHostError,
@@ -316,6 +318,7 @@ fn accept_eval_output<'info>(
             output_subjects,
             previous_handle,
             previous_subjects,
+            make_public,
         } => {
             let app_account_authority = durable_output_authority(
                 ctx,
@@ -335,6 +338,7 @@ fn accept_eval_output<'info>(
                 output_subjects,
                 previous_handle,
                 previous_subjects,
+                *make_public,
             )?
         }
     };
@@ -464,6 +468,7 @@ fn bind_eval_output<'info>(
     output_subjects: &[AclSubjectEntry],
     previous_handle: &Option<[u8; 32]>,
     previous_subjects: &Option<Vec<Pubkey>>,
+    make_public: bool,
 ) -> Result<()> {
     assert_output_acl_metadata(app_account_authority, output_app_account, output_subjects)?;
 
@@ -496,6 +501,13 @@ fn bind_eval_output<'info>(
             previous_subjects,
         )?;
         supersede_current_handle(output_info, &mut value, result)?;
+        // Born-public opt-in: after the outgoing handle's historical leaves, seal a
+        // public-decrypt leaf for the NEW current handle (leaf order: historical(old)
+        // per subject FIRST, then public(new) LAST). Same commitment as
+        // `make_handle_public`; the single realloc below covers the extra peak.
+        if make_public {
+            append_public_decrypt_leaf(output_info, &mut value, result)?;
+        }
         let space = 8 + EncryptedValue::space(value.subjects.len(), value.peaks.len());
         grow_account_if_needed(
             &ctx.accounts.payer.to_account_info(),
@@ -505,24 +517,14 @@ fn bind_eval_output<'info>(
         )?;
         write_account(output_info, &value)?;
     } else {
-        // Create: a fresh lineage has no previous state to reconstruct, and (like
-        // `create_encrypted_value`) cannot be born public-decryptable.
+        // Create: a fresh lineage has no previous state to reconstruct. It is normally
+        // not born public-decryptable; `make_public` is the documented opt-in relaxation
+        // (DD-036), sealing a public-decrypt leaf for the new handle at leaf index 0.
         require!(
             previous_handle.is_none() && previous_subjects.is_none(),
             ZamaHostError::PreviousStateMismatch
         );
-        create_pda_strict(
-            &ctx.accounts.payer.to_account_info(),
-            output_info,
-            &ctx.accounts.system_program.to_account_info(),
-            8 + EncryptedValue::space(output_subjects.len(), 0),
-            &[
-                zama_solana_acl::ENCRYPTED_VALUE_SEED,
-                value_key.as_ref(),
-                &[bump],
-            ],
-        )?;
-        let value = EncryptedValue {
+        let mut value = EncryptedValue {
             acl_domain_key: output_acl_domain_key,
             app_account: output_app_account,
             encrypted_value_label: output_encrypted_value_label,
@@ -532,6 +534,20 @@ fn bind_eval_output<'info>(
             peaks: Vec::new(),
             bump,
         };
+        if make_public {
+            append_public_decrypt_leaf(output_info, &mut value, result)?;
+        }
+        create_pda_strict(
+            &ctx.accounts.payer.to_account_info(),
+            output_info,
+            &ctx.accounts.system_program.to_account_info(),
+            8 + EncryptedValue::space(value.subjects.len(), value.peaks.len()),
+            &[
+                zama_solana_acl::ENCRYPTED_VALUE_SEED,
+                value_key.as_ref(),
+                &[bump],
+            ],
+        )?;
         write_account(output_info, &value)?;
     }
     Ok(())
@@ -569,11 +585,11 @@ pub(super) fn validate_durable_output_previous_state(
 /// Handle-binding parameters for one durable eval output.
 pub(super) struct OutputBinding {
     pub(super) value_key: [u8; 32],
-    pub(super) sequence: u64,
 }
 
-/// Derives the output lineage's value key, pins the PDA, and reads its current
-/// MMR leaf count (0 when the lineage does not exist yet).
+/// Derives the output lineage's value key and pins the PDA. The bound handle is
+/// domain-separated by this `value_key` alone (the per-update leaf-count sequence
+/// was removed, DD-015), so no account read is needed here.
 pub(super) fn output_binding_from_account(
     output_info: &AccountInfo,
     output_acl_domain_key: Pubkey,
@@ -591,15 +607,7 @@ pub(super) fn output_binding_from_account(
         expected,
         ZamaHostError::EncryptedValuePdaMismatch
     );
-    let sequence = if output_info.owner == &crate::ID {
-        read_canonical_encrypted_value(output_info)?.leaf_count
-    } else {
-        0
-    };
-    Ok(OutputBinding {
-        value_key,
-        sequence,
-    })
+    Ok(OutputBinding { value_key })
 }
 
 fn remaining_account<'a, 'info>(

@@ -162,7 +162,7 @@ async fn run_grpc(
         x_token: args.grpc_x_token.clone(),
         rpc_fallback_url: args.url.clone(),
         program_id: program_id.to_string(),
-        commitment: CommitmentLevel::Confirmed,
+        commitment: CommitmentLevel::Finalized,
         // Auto-detected from the on-chain HostConfig below (reconstruct mode only).
         chain_id: 0,
         zero_birth_entropy: false,
@@ -176,13 +176,12 @@ async fn run_grpc(
         use host_listener::solana_reconstruct::{
             parse_host_config, HOST_CONFIG_SEED,
         };
-        // Confirmed (not the RpcClient default of finalized) so a freshly created
-        // HostConfig is visible without waiting for finalization; matches the
-        // gRPC subscription's commitment.
+        // Match the gRPC subscription finality: the lineage tracker is only safe
+        // when reconstruction is driven by finalized data.
         let rpc = RpcClient::new_with_timeout_and_commitment(
             args.url.clone(),
             SOLANA_RPC_REQUEST_TIMEOUT,
-            CommitmentConfig::confirmed(),
+            CommitmentConfig::finalized(),
         );
         let (host_config_pda, _) =
             Pubkey::find_program_address(&[HOST_CONFIG_SEED], &program_id);

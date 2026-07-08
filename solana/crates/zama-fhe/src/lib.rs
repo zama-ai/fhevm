@@ -630,6 +630,7 @@ pub struct DurableOutput {
     slot: DurableSlot,
     access: AccessPolicy,
     previous: Option<PreviousLineageState>,
+    make_public: bool,
 }
 
 impl DurableOutput {
@@ -639,6 +640,7 @@ impl DurableOutput {
             slot,
             access,
             previous: None,
+            make_public: false,
         }
     }
 
@@ -658,7 +660,16 @@ impl DurableOutput {
                 handle: previous_handle,
                 subjects: previous_subjects,
             }),
+            make_public: false,
         }
+    }
+
+    /// Opts this output into being born publicly decryptable: the host seals a
+    /// public-decrypt leaf for the newly bound handle inside the same eval CPI
+    /// (EVM `unwrap`'s `makePubliclyDecryptable` parity; DD-036).
+    pub fn with_make_public(mut self, make_public: bool) -> Self {
+        self.make_public = make_public;
+        self
     }
 
     pub fn birth(&self) -> Result<DurableOutputBirth> {
@@ -671,6 +682,7 @@ impl DurableOutput {
             encrypted_value_label: self.slot.label.bytes(),
             subjects: self.access.subjects.clone(),
             previous: self.previous.clone(),
+            make_public: self.make_public,
         })
     }
 }
@@ -684,6 +696,7 @@ pub struct DurableOutputBirth {
     encrypted_value_label: [u8; 32],
     subjects: Vec<AccessSubject>,
     previous: Option<PreviousLineageState>,
+    make_public: bool,
 }
 
 impl DurableOutputBirth {
@@ -715,6 +728,10 @@ impl DurableOutputBirth {
         self.previous
             .as_ref()
             .map(|previous| previous.subjects.as_slice())
+    }
+
+    pub fn make_public(&self) -> bool {
+        self.make_public
     }
 
     fn host_subjects(&self) -> Vec<AclSubjectEntry> {
@@ -1944,6 +1961,7 @@ fn lower_output(
                 output_subjects: birth.host_subjects(),
                 previous_handle: birth.previous_handle(),
                 previous_subjects: birth.previous_subjects().map(|s| s.to_vec()),
+                make_public: birth.make_public(),
             })
         }
     }

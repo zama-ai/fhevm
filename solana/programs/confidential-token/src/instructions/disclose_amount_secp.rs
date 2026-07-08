@@ -41,20 +41,18 @@ pub fn disclose_amount_secp(
     cleartext_amount: u64,
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
+    proof: MmrInclusionProof,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     assert_host_config_allows_token_response(&ctx.accounts.host_config)?;
     let mint_key = ctx.accounts.mint.key();
-    assert_token_amount_encrypted_value(
-        &ctx.accounts.amount_value,
-        amount_handle,
-        mint_key,
-        ctx.accounts.mint.compute_signer,
-    )?;
 
     // Bind to the request witness: same mode/handle/accounts/host config; PENDING and unexpired;
-    // recomputed request_hash matches.
+    // recomputed request_hash matches. Passing `amount_handle`/`amount_value.key()` binds them to
+    // `request.handle`/`request.encrypted_value`, so authorization targets the witness-pinned handle
+    // and lineage — not the live lineage handle, which may have been superseded during the KMS
+    // round-trip. The handle's publicness was sealed as a permanent MMR leaf at request time.
     assert_disclosure_request_witness(
         &ctx.accounts.disclosure_request,
         ctx.accounts.disclosure_request.key(),
@@ -65,6 +63,14 @@ pub fn disclose_amount_secp(
         amount_handle,
         ctx.accounts.amount_value.key(),
         ctx.accounts.host_config.key(),
+    )?;
+    // Authorize the pinned handle by MMR public-decrypt proof against the lineage's current peaks.
+    let proof = zama_solana_acl::MmrProof::from(proof);
+    authorize_disclosed_handle(
+        &ctx.accounts.amount_value,
+        ctx.accounts.amount_value.key(),
+        amount_handle,
+        &proof,
     )?;
     // Verify the cert against the witness-pinned context, closing rotation reuse.
     assert_kms_public_decrypt_cert_for_request(

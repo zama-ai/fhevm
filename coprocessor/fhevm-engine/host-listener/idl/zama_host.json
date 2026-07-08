@@ -1596,8 +1596,8 @@
     },
     {
       "code": 6039,
-      "name": "FheEvalEventLogBudgetExceeded",
-      "msg": "FHE eval event log budget is exceeded"
+      "name": "FheEvalBornPublicFrameTooLarge",
+      "msg": "FHE eval born-public output requires a CPI-transportable frame"
     },
     {
       "code": 6040,
@@ -2221,6 +2221,18 @@
                     "vec": "pubkey"
                   }
                 }
+              },
+              {
+                "name": "make_public",
+                "docs": [
+                  "When true, the newly bound handle is born publicly decryptable: after",
+                  "writing it as `current_handle`, a public-decrypt leaf is appended for",
+                  "the new handle (byte-identical to `make_handle_public`). Carried in",
+                  "instruction data so indexers reconstruct that leaf without reading the",
+                  "account. This is the opt-in relaxation of the \"created lineages cannot",
+                  "be born public\" invariant (DD-036)."
+                ],
+                "type": "bool"
               }
             ]
           }

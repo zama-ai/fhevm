@@ -150,7 +150,7 @@ fn recovered_already_applied_event(
     state: &Option<LineageReplayState>,
     instruction: &DecodedInstruction,
     error: &ReplayError,
-) -> Option<Option<LineageEvent>> {
+) -> Option<Vec<LineageEvent>> {
     let state = state.as_ref()?;
     match (instruction, error) {
         (
@@ -165,10 +165,10 @@ fn recovered_already_applied_event(
             && state.current_handle == Some(*new_handle)
             && state.subjects.as_slice() == previous_subjects.as_slice() =>
         {
-            Some(Some(LineageEvent::handle_superseded(
+            Some(vec![LineageEvent::handle_superseded(
                 *previous_handle,
                 previous_subjects,
-            )))
+            )])
         }
         (
             DecodedInstruction::RemoveSubject {
@@ -176,7 +176,9 @@ fn recovered_already_applied_event(
                 subject,
             },
             ReplayError::SubjectNotFound(error_lineage),
-        ) if error_lineage == encrypted_value && !state.subjects.contains(subject) => Some(None),
+        ) if error_lineage == encrypted_value && !state.subjects.contains(subject) => {
+            Some(Vec::new())
+        }
         _ => None,
     }
 }
@@ -184,7 +186,7 @@ fn recovered_already_applied_event(
 fn apply_or_recover_instruction(
     state: &mut Option<LineageReplayState>,
     instruction: &DecodedInstruction,
-) -> Result<Option<LineageEvent>, ReplayError> {
+) -> Result<Vec<LineageEvent>, ReplayError> {
     let original = state.clone();
     match apply_instruction(state, instruction) {
         Ok(event) => Ok(event),
@@ -224,9 +226,7 @@ async fn build_lineage_signature_update<S: LeafStore>(
         .filter(|instruction| instruction.encrypted_value() == lineage)
     {
         touched = true;
-        if let Some(event) = apply_or_recover_instruction(&mut state, instruction)? {
-            events.push(event);
-        }
+        events.extend(apply_or_recover_instruction(&mut state, instruction)?);
     }
 
     if !touched && !mark_even_without_instruction {

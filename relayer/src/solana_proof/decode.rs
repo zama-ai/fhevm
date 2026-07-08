@@ -1,6 +1,15 @@
 //! Decodes zama-host `EncryptedValue` instructions from raw compiled instruction
 //! data (Anchor discriminator + borsh args), independent of transaction/RPC
 //! shape so it can be unit-tested against synthetic data.
+//!
+//! One exception needs sibling context: a born-public (`make_public=true`)
+//! `fhe_eval` durable output commits a public-decrypt leaf to the eval OUTPUT
+//! handle, which is derived on-chain from slot entropy and appears in no
+//! instruction arg. That handle is recovered from the per-step op event the
+//! host emits via `emit_cpi!` (an inner instruction of the same `fhe_eval`), so
+//! [`decode_program_instructions`] correlates each `fhe_eval` with the op events
+//! that immediately follow it. The resolved handle is untrusted and guarded by
+//! the on-chain peak cross-check at proof time (DD-035).
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use sha2::{Digest, Sha256};
@@ -51,12 +60,21 @@ pub enum DecodedInstruction {
     FheEvalCreateEncryptedValue {
         encrypted_value: [u8; 32],
         subjects: Vec<SubjectGrant>,
+        /// `Some(output_handle)` when the durable output was born public
+        /// (`make_public=true`) AND its output handle was resolved from the
+        /// op event this transaction emitted. `None` otherwise — the output
+        /// handle is derived on-chain from slot entropy and appears in no
+        /// instruction arg, so without the event it stays unresolved and any
+        /// born-public leaf fails closed at proof time rather than mis-serving.
+        make_public_handle: Option<[u8; 32]>,
     },
     FheEvalUpdateEncryptedValue {
         encrypted_value: [u8; 32],
         previous_handle: [u8; 32],
         previous_subjects: Vec<[u8; 32]>,
         output_subjects: Vec<[u8; 32]>,
+        /// See [`DecodedInstruction::FheEvalCreateEncryptedValue::make_public_handle`].
+        make_public_handle: Option<[u8; 32]>,
     },
     MakeHandlePublic {
         encrypted_value: [u8; 32],
@@ -98,6 +116,54 @@ fn discriminator(name: &str) -> [u8; 8] {
     let mut out = [0u8; 8];
     out.copy_from_slice(&digest[..8]);
     out
+}
+
+/// Anchor-style 8-byte event discriminator: `sha256("event:<name>")[..8]`.
+fn event_discriminator(name: &str) -> [u8; 8] {
+    let digest = Sha256::digest(format!("event:{name}").as_bytes());
+    let mut out = [0u8; 8];
+    out.copy_from_slice(&digest[..8]);
+    out
+}
+
+/// Anchor's `emit_cpi!` self-invocation sentinel prefixing the event bytes in an
+/// inner instruction (little-endian of `0x1d9acb512ea545e4`). Mirrors the
+/// host-listener's `ANCHOR_EVENT_IX_TAG_LE`.
+const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes();
+
+/// The five `fhe_eval` op events, one emitted per plan step in step order. Every
+/// one carries its verified output handle as the final `result: [u8; 32]` field
+/// (see `zama_host::events`), so the handle is the last 32 bytes of the payload.
+const OP_EVENT_NAMES: [&str; 5] = [
+    "FheBinaryOpEvent",
+    "FheTernaryOpEvent",
+    "TrivialEncryptEvent",
+    "FheRandEvent",
+    "FheRandBoundedEvent",
+];
+
+/// Extracts the verified output handle (`result`) from an `emit_cpi!` op-event
+/// inner instruction (self-CPI to the host program). Returns `None` for any
+/// instruction that is not a recognized op-event CPI. The handle is UNTRUSTED:
+/// callers rely on the on-chain peak cross-check (DD-035) to fail closed if a
+/// resolved handle is wrong — it is never trusted to authorize on its own.
+pub fn op_event_result(ix: &RawInstruction, program_id: [u8; 32]) -> Option<[u8; 32]> {
+    if ix.program_id != program_id {
+        return None;
+    }
+    let after_tag = ix.data.strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)?;
+    if after_tag.len() < 8 + 32 {
+        return None;
+    }
+    let disc: [u8; 8] = after_tag[..8].try_into().ok()?;
+    if !OP_EVENT_NAMES
+        .iter()
+        .any(|name| event_discriminator(name) == disc)
+    {
+        return None;
+    }
+    // `result` is the last field of every op event; borsh has no trailing bytes.
+    after_tag[after_tag.len() - 32..].try_into().ok()
 }
 
 const ENCRYPTED_VALUE_ACCOUNT_INDEX: usize = 2;
@@ -177,11 +243,26 @@ pub fn decode_instructions(ix: &RawInstruction) -> Result<Vec<DecodedInstruction
             handle,
         }])
     } else if disc == discriminator("fhe_eval") {
-        let plan = FheEvalArgs::deserialize(&mut body).map_err(borsh_err)?;
-        decode_fhe_eval_durable_outputs(ix, &plan)
+        // Without the op events (single-instruction decode), no born-public
+        // output handle can be resolved; those leaves fail closed at proof time.
+        decode_fhe_eval_instruction(ix, &[])
     } else {
         Ok(Vec::new())
     }
+}
+
+/// Decodes one `fhe_eval` instruction's durable outputs, resolving each
+/// born-public output's handle from `op_event_results` (the transaction's
+/// op events, in step/emission order). Pass an empty slice when the events are
+/// unavailable.
+fn decode_fhe_eval_instruction(
+    ix: &RawInstruction,
+    op_event_results: &[[u8; 32]],
+) -> Result<Vec<DecodedInstruction>, DecodeError> {
+    let (disc, mut body) = ix.data.split_at(8);
+    debug_assert_eq!(disc, discriminator("fhe_eval"));
+    let plan = FheEvalArgs::deserialize(&mut body).map_err(borsh_err)?;
+    decode_fhe_eval_durable_outputs(ix, &plan, op_event_results)
 }
 
 /// Back-compat helper for tests and single-output callers. Transaction replay
@@ -227,20 +308,36 @@ fn fhe_eval_durable_output_account(
 fn decode_fhe_eval_durable_outputs(
     ix: &RawInstruction,
     plan: &FheEvalArgs,
+    op_event_results: &[[u8; 32]],
 ) -> Result<Vec<DecodedInstruction>, DecodeError> {
+    // Correlation contract: the host emits exactly one op event per plan step,
+    // in step order (see `fhe_eval/walk.rs`), so the durable output produced by
+    // step `i` binds `op_event_results[i]`. Only trust the events when their
+    // count matches the plan exactly; a mismatch means the events for this
+    // instruction were not captured whole (e.g. log-transported large frames we
+    // do not yet read), so resolve no handles and let born-public leaves fail
+    // closed rather than risk a mis-correlation. A wrong-but-well-formed handle
+    // is still caught by the on-chain peak cross-check at proof time (DD-035).
+    let output_handles = (op_event_results.len() == plan.steps.len()).then_some(op_event_results);
     let mut out = Vec::new();
-    for step in &plan.steps {
+    for (step_index, step) in plan.steps.iter().enumerate() {
         let FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
             output_subjects,
             previous_handle,
             previous_subjects,
+            make_public,
             ..
         } = fhe_eval_step_output(step)
         else {
             continue;
         };
         let encrypted_value = fhe_eval_durable_output_account(ix, *output_encrypted_value_index)?;
+        let make_public_handle = if *make_public {
+            output_handles.map(|handles| handles[step_index])
+        } else {
+            None
+        };
         let output_subjects = output_subjects
             .iter()
             .map(|subject| subject.pubkey.to_bytes())
@@ -253,6 +350,7 @@ fn decode_fhe_eval_durable_outputs(
                     .copied()
                     .map(|subject| SubjectGrant { subject })
                     .collect(),
+                make_public_handle,
             }),
             (Some(previous_handle), Some(previous_subjects)) => {
                 out.push(DecodedInstruction::FheEvalUpdateEncryptedValue {
@@ -263,6 +361,7 @@ fn decode_fhe_eval_durable_outputs(
                         .map(|subject| subject.to_bytes())
                         .collect(),
                     output_subjects,
+                    make_public_handle,
                 });
             }
             _ => return Err(DecodeError::InvalidFheEvalPreviousState),
@@ -289,13 +388,38 @@ pub fn decode_program_instructions(
     instructions: &[RawInstruction],
 ) -> Result<Vec<DecodedInstruction>, DecodeError> {
     let mut out = Vec::new();
-    for ix in instructions {
+    let mut index = 0;
+    while index < instructions.len() {
+        let ix = &instructions[index];
         if ix.program_id != program_id {
+            index += 1;
             continue;
         }
-        out.extend(decode_instructions(ix)?);
+        if is_fhe_eval(ix) {
+            // `fhe_eval`'s `emit_cpi!` op events are its own inner instructions,
+            // which `chain::flatten_execution_order` places immediately after it
+            // in execution order. Collect that contiguous run to resolve
+            // born-public output handles for this frame.
+            let mut op_event_results = Vec::new();
+            let mut next = index + 1;
+            while let Some(result) =
+                instructions.get(next).and_then(|ev| op_event_result(ev, program_id))
+            {
+                op_event_results.push(result);
+                next += 1;
+            }
+            out.extend(decode_fhe_eval_instruction(ix, &op_event_results)?);
+            index = next;
+        } else {
+            out.extend(decode_instructions(ix)?);
+            index += 1;
+        }
     }
     Ok(out)
+}
+
+fn is_fhe_eval(ix: &RawInstruction) -> bool {
+    ix.data.len() >= 8 && ix.data[..8] == discriminator("fhe_eval")
 }
 
 #[cfg(test)]
@@ -381,6 +505,46 @@ mod tests {
             previous_handle,
             previous_subjects: previous_subject_tags
                 .map(|subjects| subjects.iter().map(|tag| pubkey(*tag)).collect()),
+            make_public: false,
+        }
+    }
+
+    fn make_public_durable_output(
+        output_encrypted_value_index: u16,
+        subject_tags: &[u8],
+        previous_handle: Option<[u8; 32]>,
+        previous_subject_tags: Option<&[u8]>,
+    ) -> FheEvalOutput {
+        let mut output = durable_output(
+            output_encrypted_value_index,
+            subject_tags,
+            previous_handle,
+            previous_subject_tags,
+        );
+        if let FheEvalOutput::AllowedDurable { make_public, .. } = &mut output {
+            *make_public = true;
+        }
+        output
+    }
+
+    /// Builds the `emit_cpi!` op-event inner instruction the host emits per step,
+    /// carrying the verified output `result` handle (here a `TrivialEncryptEvent`).
+    fn op_event_ix(result: [u8; 32]) -> RawInstruction {
+        use zama_host::events::TrivialEncryptEvent;
+        let event = TrivialEncryptEvent {
+            version: 1,
+            subject: pk(0x30),
+            plaintext: pk(0x02),
+            fhe_type: 5,
+            result,
+        };
+        let mut data = ANCHOR_EVENT_IX_TAG_LE.to_vec();
+        data.extend_from_slice(&event_discriminator("TrivialEncryptEvent"));
+        event.serialize(&mut data).unwrap();
+        RawInstruction {
+            program_id: program_id(),
+            accounts: vec![pk(0xEE), program_id()],
+            data,
         }
     }
 
@@ -499,12 +663,14 @@ mod tests {
                 DecodedInstruction::FheEvalCreateEncryptedValue {
                     encrypted_value: ev0,
                     subjects: vec![SubjectGrant { subject: pk(0x30) }],
+                    make_public_handle: None,
                 },
                 DecodedInstruction::FheEvalUpdateEncryptedValue {
                     encrypted_value: ev1,
                     previous_handle: pk(0x20),
                     previous_subjects: vec![pk(0x31), pk(0x32)],
                     output_subjects: vec![pk(0x31), pk(0x32)],
+                    make_public_handle: None,
                 },
             ]
         );
@@ -540,5 +706,129 @@ mod tests {
             data: vec![1, 2, 3],
         };
         assert_eq!(decode_instruction(&ix), Err(DecodeError::DataTooShort));
+    }
+
+    #[test]
+    fn op_event_result_extracts_handle_from_emit_cpi_event() {
+        let ix = op_event_ix(pk(0x21));
+        assert_eq!(op_event_result(&ix, program_id()), Some(pk(0x21)));
+    }
+
+    #[test]
+    fn op_event_result_ignores_non_event_and_foreign_program_instructions() {
+        // A zama-host instruction that is not an emit_cpi event.
+        let not_event = ix_with_data(vec![], "make_handle_public", pk(0x20));
+        assert_eq!(op_event_result(&not_event, program_id()), None);
+        // The right bytes but a different program id (not a self-CPI).
+        let mut foreign = op_event_ix(pk(0x21));
+        foreign.program_id = pk(0xFF);
+        assert_eq!(op_event_result(&foreign, program_id()), None);
+    }
+
+    #[test]
+    fn born_public_output_handle_is_resolved_from_the_following_op_event() {
+        let ev = pk(0xE0);
+        let burn_handle = pk(0x21);
+        let plan = FheEvalArgs {
+            context_id: pk(0x01),
+            steps: vec![FheEvalStep::TrivialEncrypt {
+                plaintext: pk(0x02),
+                fhe_type: 5,
+                output: make_public_durable_output(0, &[0x30], Some(pk(0x20)), Some(&[0x30])),
+            }],
+        };
+        let eval_ix = ix_with_anchor_data(fhe_eval_accounts(&[ev]), "fhe_eval", plan);
+        let decoded =
+            decode_program_instructions(program_id(), &[eval_ix, op_event_ix(burn_handle)]).unwrap();
+        assert_eq!(
+            decoded,
+            vec![DecodedInstruction::FheEvalUpdateEncryptedValue {
+                encrypted_value: ev,
+                previous_handle: pk(0x20),
+                previous_subjects: vec![pk(0x30)],
+                output_subjects: vec![pk(0x30)],
+                make_public_handle: Some(burn_handle),
+            }]
+        );
+    }
+
+    #[test]
+    fn born_public_output_stays_unresolved_when_event_count_mismatches_plan() {
+        // One durable step but no op event captured: the correlation count check
+        // fails, so no handle is resolved and the born-public leaf fails closed.
+        let ev = pk(0xE0);
+        let plan = FheEvalArgs {
+            context_id: pk(0x01),
+            steps: vec![FheEvalStep::TrivialEncrypt {
+                plaintext: pk(0x02),
+                fhe_type: 5,
+                output: make_public_durable_output(0, &[0x30], Some(pk(0x20)), Some(&[0x30])),
+            }],
+        };
+        let eval_ix = ix_with_anchor_data(fhe_eval_accounts(&[ev]), "fhe_eval", plan);
+        let decoded = decode_program_instructions(program_id(), &[eval_ix]).unwrap();
+        assert_eq!(
+            decoded,
+            vec![DecodedInstruction::FheEvalUpdateEncryptedValue {
+                encrypted_value: ev,
+                previous_handle: pk(0x20),
+                previous_subjects: vec![pk(0x30)],
+                output_subjects: vec![pk(0x30)],
+                make_public_handle: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn multi_step_born_public_binds_each_output_to_its_own_step_event() {
+        // Two durable outputs; the born-public one is the SECOND step, so it must
+        // bind the SECOND event's handle, proving per-step (not positional-in-
+        // durable-subset) correlation.
+        let ev0 = pk(0xE0);
+        let ev1 = pk(0xE1);
+        let first_handle = pk(0x50);
+        let second_handle = pk(0x51);
+        let plan = FheEvalArgs {
+            context_id: pk(0x01),
+            steps: vec![
+                FheEvalStep::TrivialEncrypt {
+                    plaintext: pk(0x02),
+                    fhe_type: 5,
+                    output: durable_output(0, &[0x30], None, None),
+                },
+                FheEvalStep::TrivialEncrypt {
+                    plaintext: pk(0x03),
+                    fhe_type: 5,
+                    output: make_public_durable_output(1, &[0x30], Some(pk(0x20)), Some(&[0x30])),
+                },
+            ],
+        };
+        let eval_ix = ix_with_anchor_data(fhe_eval_accounts(&[ev0, ev1]), "fhe_eval", plan);
+        let decoded = decode_program_instructions(
+            program_id(),
+            &[
+                eval_ix,
+                op_event_ix(first_handle),
+                op_event_ix(second_handle),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            decoded,
+            vec![
+                DecodedInstruction::FheEvalCreateEncryptedValue {
+                    encrypted_value: ev0,
+                    subjects: vec![SubjectGrant { subject: pk(0x30) }],
+                    make_public_handle: None,
+                },
+                DecodedInstruction::FheEvalUpdateEncryptedValue {
+                    encrypted_value: ev1,
+                    previous_handle: pk(0x20),
+                    previous_subjects: vec![pk(0x30)],
+                    output_subjects: vec![pk(0x30)],
+                    make_public_handle: Some(second_handle),
+                },
+            ]
+        );
     }
 }

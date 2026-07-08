@@ -227,6 +227,7 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
                         // First bind for this lineage: no prior state to reconstruct.
                         previous_handle: None,
                         previous_subjects: None,
+                        make_public: false,
                     },
                 }],
             },

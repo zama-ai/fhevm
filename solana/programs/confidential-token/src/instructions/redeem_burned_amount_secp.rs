@@ -79,6 +79,7 @@ pub fn redeem_burned_amount_secp(
     cleartext_amount: u64,
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
+    proof: MmrInclusionProof,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
@@ -110,9 +111,15 @@ pub fn redeem_burned_amount_secp(
         mint_key,
         ctx.accounts.owner.key(),
     )?;
-    assert_burned_amount_encrypted_value(
+    // Authorize the pinned burned handle by MMR public-decrypt proof rather than
+    // requiring it to still be the live handle, so a redemption survives a later
+    // burn superseding the shared burned-amount lineage.
+    let proof = zama_solana_acl::MmrProof::from(proof);
+    authorize_burned_amount_redeem(
         &ctx.accounts.burned_amount_value,
+        ctx.accounts.burned_amount_value.key(),
         burned_handle,
+        &proof,
         mint_key,
         token_account_key,
         ctx.accounts.owner.key(),

@@ -231,6 +231,22 @@ pub(super) fn supersede_current_handle(
     Ok(())
 }
 
+/// Appends a public-decrypt leaf for `handle` at the lineage's next leaf index.
+/// Shared by `make_handle_public` and by `fhe_eval`'s born-public output binding
+/// so both produce a byte-identical public-decrypt commitment.
+pub(super) fn append_public_decrypt_leaf(
+    info: &AccountInfo,
+    value: &mut EncryptedValue,
+    handle: [u8; 32],
+) -> Result<()> {
+    let account_key = info.key().to_bytes();
+    let leaf_index = value.leaf_count;
+    let commitment =
+        zama_solana_acl::public_decrypt_leaf_commitment(account_key, leaf_index, handle);
+    zama_solana_acl::mmr_append(&mut value.peaks, &mut value.leaf_count, commitment)
+        .map_err(map_mmr_append_error)
+}
+
 /// Accounts for `make_handle_public`.
 #[derive(Accounts)]
 pub struct MakeEncryptedValueHandlePublic<'info> {
@@ -269,12 +285,7 @@ pub fn make_handle_public(
         ZamaHostError::EncryptedValuePublicHandleMismatch
     );
 
-    let account_key = info.key().to_bytes();
-    let leaf_index = value.leaf_count;
-    let commitment =
-        zama_solana_acl::public_decrypt_leaf_commitment(account_key, leaf_index, handle);
-    zama_solana_acl::mmr_append(&mut value.peaks, &mut value.leaf_count, commitment)
-        .map_err(map_mmr_append_error)?;
+    append_public_decrypt_leaf(&info, &mut value, handle)?;
 
     let space = 8 + EncryptedValue::space(value.subjects.len(), value.peaks.len());
     grow_account_if_needed(

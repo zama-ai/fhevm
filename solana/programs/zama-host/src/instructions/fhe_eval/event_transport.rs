@@ -28,23 +28,21 @@ pub(super) fn emit_eval_events<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     events: Vec<EvalEvent>,
 ) -> Result<()> {
-    let emit_cpi_events = should_emit_eval_events_as_cpi(events.len());
-    macro_rules! emit_eval_event {
-        ($event:expr) => {
-            if emit_cpi_events {
-                emit_cpi!($event)
-            } else {
-                emit!($event)
-            }
-        };
+    // `emit_cpi!` only (no `emit!` log fallback — no consumer reads logs). A frame
+    // with more events than a CPI transport can hold on the 32KiB heap carries no
+    // event; born-public outputs are kept out of such frames by
+    // `assert_born_public_frame_transportable`, and every other durable handle
+    // reconstructs from instruction data.
+    if !should_emit_eval_events_as_cpi(events.len()) {
+        return Ok(());
     }
     for event in events {
         match event {
-            EvalEvent::Binary(event) => emit_eval_event!(event),
-            EvalEvent::Ternary(event) => emit_eval_event!(event),
-            EvalEvent::Trivial(event) => emit_eval_event!(event),
-            EvalEvent::Rand(event) => emit_eval_event!(event),
-            EvalEvent::RandBounded(event) => emit_eval_event!(event),
+            EvalEvent::Binary(event) => emit_cpi!(event),
+            EvalEvent::Ternary(event) => emit_cpi!(event),
+            EvalEvent::Trivial(event) => emit_cpi!(event),
+            EvalEvent::Rand(event) => emit_cpi!(event),
+            EvalEvent::RandBounded(event) => emit_cpi!(event),
         }
     }
     Ok(())

@@ -28,7 +28,10 @@ pub struct ConfidentialBurn<'info> {
     #[account(mut, address = mint.total_supply_encrypted_value)]
     pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// CHECK: stable `burned_amount` lineage for `token_account`; created on the
-    /// account's first burn, superseded thereafter.
+    /// account's first burn, superseded in place thereafter to each burn's own
+    /// delta. Each burn makes its own delta handle publicly decryptable at burn
+    /// (ERC-7984 `unwrap` parity), so every burn stays permanently redeemable
+    /// even after a later burn supersedes this lineage (DD-036 / Vector 2 closed).
     #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), burned_amount_label()).0)]
     pub burned_amount_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
@@ -87,7 +90,10 @@ pub fn confidential_burn<'info>(
         zama_fhe::AccessPolicy::for_owner_and_compute(owner, compute_signer)
             .map_err(invalid_eval_plan)?,
     )?;
-    let burned_output = fhe::DurableOutput::new(
+    // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
+    // publicly decryptable inside this eval CPI, so the burn is permanently redeemable even after a
+    // later burn supersedes this shared lineage (DD-036 / Vector 2) — with no second make-public CPI.
+    let burned_output = fhe::DurableOutput::new_public(
         ctx.accounts.burned_amount_value.to_account_info(),
         durable_slot(mint_key, token_account_key, burned_amount_label()),
         access_policy_from_subjects(burned_amount_acl_subjects(owner, compute_signer))?,

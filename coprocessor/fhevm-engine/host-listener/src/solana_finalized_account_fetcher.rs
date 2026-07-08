@@ -272,6 +272,16 @@ fn encrypted_value_claim_is_finalized(
                 if job.reason == "subject_allowed" {
                     return subject_allowed_claim_is_finalized(job, &account);
                 }
+                if job.reason == "encrypted_value_created" {
+                    if let Some(subject) = job.subject {
+                        if !account.subjects.contains(&subject) {
+                            warn!(
+                                "finalized EncryptedValue account does not contain created subject; refusing to release handle"
+                            );
+                            return false;
+                        }
+                    }
+                }
                 true
             } else {
                 warn!(
