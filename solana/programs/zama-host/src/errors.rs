@@ -225,4 +225,21 @@ pub enum ZamaHostError {
     /// The attested `contract_chain_id` does not match the host chain id (EVM `contractChainId == block.chainid`).
     #[msg("attested contract chain id does not match the host chain id")]
     AttestationChainIdMismatch,
+    /// The per-app in-slot HCU would exceed the block cap; also the `cap == 0` ban and a meter
+    /// accumulation overflow (all fail closed). Analog of EVM `HCUBlockLimitExceeded`.
+    #[msg("per-app in-slot HCU exceeds the block cap")]
+    HcuBlockLimitExceeded,
+    /// A metered (untrusted) app forwarded no block meter — fail closed rather than un-metered.
+    #[msg("HCU block meter account is required for a metered app")]
+    HcuBlockMeterMissing,
+    /// The supplied block meter is not the canonical PDA / owner / recorded app.
+    #[msg("HCU block meter account does not match the canonical PDA")]
+    HcuBlockMeterMismatch,
+    /// A present trust witness is not the canonical PDA / owner (only an absent witness is benign).
+    #[msg("HCU trusted-app record does not match the canonical PDA")]
+    HcuTrustedAppRecordMismatch,
+    /// A metering-band cap was set below `max_hcu_per_tx`, making a single legal frame impossible.
+    /// Analog of EVM `HCUPerBlockBelowMaxPerTx`.
+    #[msg("HCU block cap is below max_hcu_per_tx")]
+    HcuBlockCapBelowMaxPerTx,
 }

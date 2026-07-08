@@ -27,7 +27,6 @@ pub struct SetDenySubject<'info> {
 pub fn set_deny_subject(ctx: Context<SetDenySubject>, subject: Pubkey, denied: bool) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, ctx.accounts.admin.key())?;
-    let clock = Clock::get()?;
     let (expected, bump) = deny_subject_address(subject);
     require_keys_eq!(
         expected,
@@ -63,7 +62,7 @@ pub fn set_deny_subject(ctx: Context<SetDenySubject>, subject: Pubkey, denied: b
         deny_subject_record: ctx.accounts.deny_subject_record.key(),
         subject,
         denied,
-        updated_slot: clock.slot,
+        updated_slot: Clock::get()?.slot,
     });
     Ok(())
 }

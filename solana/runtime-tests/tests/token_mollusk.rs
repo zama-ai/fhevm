@@ -12,8 +12,14 @@ use mollusk_svm::{
     Mollusk,
 };
 use solana_sdk::{
-    account::Account, ed25519_program, instruction::Instruction, native_loader,
-    program_option::COption, program_pack::Pack, pubkey::Pubkey, sysvar,
+    account::Account,
+    ed25519_program,
+    instruction::{Instruction, InstructionError},
+    native_loader,
+    program_option::COption,
+    program_pack::Pack,
+    pubkey::Pubkey,
+    sysvar,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -1936,6 +1942,11 @@ fn self_transfer_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
+            // Block-cap optional accounts threaded through the transfer CPI; the default
+            // unrestricted cap means None/None here. The HCU authority is mandatory.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            hcu_authority: token::hcu_authority_address(fixture.mint).0,
             owner: fixture.owner,
             payer: fixture.owner,
             mint: fixture.mint,
@@ -1988,9 +1999,34 @@ fn direct_transfer_ix_with_attestation(
     output: DirectTransferOutputAccounts,
     amount_attestation: host::CoprocessorInputAttestation,
 ) -> Instruction {
+    // Block-cap optional accounts threaded through the transfer CPI; the default
+    // unrestricted cap means None/None here. The mint's HCU authority is mandatory.
+    direct_transfer_ix_with_block_cap_accounts(
+        fixture,
+        payer,
+        output,
+        amount_attestation,
+        None,
+        None,
+        token::hcu_authority_address(fixture.mint).0,
+    )
+}
+
+fn direct_transfer_ix_with_block_cap_accounts(
+    fixture: &TokenMolluskFixture,
+    payer: Pubkey,
+    output: DirectTransferOutputAccounts,
+    amount_attestation: host::CoprocessorInputAttestation,
+    hcu_block_meter: Option<Pubkey>,
+    hcu_trusted_app_record: Option<Pubkey>,
+    hcu_authority: Pubkey,
+) -> Instruction {
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
+            hcu_block_meter,
+            hcu_trusted_app_record,
+            hcu_authority,
             owner: fixture.owner,
             payer,
             mint: fixture.mint,
@@ -2090,6 +2126,9 @@ fn initialize_mint_ix(
             zama_program: host::id(),
             host_config,
             system_program: system_program::ID,
+            hcu_authority: token::hcu_authority_address(mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -2119,6 +2158,9 @@ fn initialize_token_account_ix(
             zama_program: host::id(),
             host_config,
             system_program: system_program::ID,
+            hcu_authority: token::hcu_authority_address(mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -2130,6 +2172,22 @@ fn create_random_amount_ix(
     fixture: &TokenMolluskFixture,
     amount_acl_record: Pubkey,
     amount_kind: token::ConfidentialAmountKind,
+) -> Instruction {
+    create_random_amount_ix_with_block_cap_accounts(
+        fixture,
+        amount_acl_record,
+        amount_kind,
+        None,
+        None,
+    )
+}
+
+fn create_random_amount_ix_with_block_cap_accounts(
+    fixture: &TokenMolluskFixture,
+    amount_acl_record: Pubkey,
+    amount_kind: token::ConfidentialAmountKind,
+    hcu_block_meter: Option<Pubkey>,
+    hcu_trusted_app_record: Option<Pubkey>,
 ) -> Instruction {
     anchor_ix(
         token::id(),
@@ -2143,6 +2201,9 @@ fn create_random_amount_ix(
             zama_program: host::id(),
             host_config: fixture.host_config,
             system_program: system_program::ID,
+            hcu_authority: token::hcu_authority_address(fixture.mint).0,
+            hcu_block_meter,
+            hcu_trusted_app_record,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -2168,6 +2229,9 @@ fn create_random_bounded_amount_ix(
             zama_program: host::id(),
             host_config: fixture.host_config,
             system_program: system_program::ID,
+            hcu_authority: token::hcu_authority_address(fixture.mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -2213,6 +2277,9 @@ fn wrap_usdc_ix_with_vault(
             host_config: fixture.host_config,
             token_program: spl_token::id(),
             system_program: system_program::ID,
+            hcu_authority: token::hcu_authority_address(fixture.mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -2260,6 +2327,9 @@ fn burn_ix_with_attestation(
             zama_program: host::id(),
             host_config: fixture.host_config,
             system_program: system_program::ID,
+            hcu_authority: token::hcu_authority_address(fixture.mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -2471,6 +2541,8 @@ fn kms_host_config_account(authority: Pubkey) -> Account {
             grant_deny_list_enabled: false,
             max_hcu_per_tx: 0,
             max_hcu_depth_per_tx: 0,
+            // Ships unrestricted; existing flows are unaffected by the block cap.
+            hcu_block_cap_per_app: u64::MAX,
             updated_slot: 0,
             bump: host::host_config_address().1,
         }),
@@ -3196,6 +3268,8 @@ fn host_config_account(authority: Pubkey) -> Account {
             grant_deny_list_enabled: false,
             max_hcu_per_tx: 0,
             max_hcu_depth_per_tx: 0,
+            // Ships unrestricted; existing flows are unaffected by the block cap.
+            hcu_block_cap_per_app: u64::MAX,
             updated_slot: 0,
             bump: host::host_config_address().1,
         }),
@@ -4070,4 +4144,278 @@ fn system_account(lamports: u64) -> Account {
         executable: false,
         rent_epoch: 0,
     }
+}
+
+/// The transfer fixture's host config with the per-app block cap overridden to `cap`.
+fn host_config_account_with_block_cap(authority: Pubkey, cap: u64) -> Account {
+    let mut account = host_config_account(authority);
+    let mut config = {
+        let mut data = account.data.as_slice();
+        host::HostConfig::try_deserialize(&mut data).expect("valid host config")
+    };
+    config.hcu_block_cap_per_app = cap;
+    account.data = serialized_account(config);
+    account
+}
+
+// ---- Block cap enforced through the confidential-token -> fhe_eval CPI ----
+
+#[test]
+fn mollusk_confidential_transfer_block_cap_ban_is_enforced_through_cpi() {
+    // A confidential transfer reaches fhe_eval only by CPI. With the calling app untrusted
+    // and the cap at the ban sentinel (0), the block-cap breach must surface through the CPI
+    // and roll the whole transfer back — exactly as a direct fhe_eval call is rejected. The
+    // underlying HcuBlockLimitExceeded propagates cleanly through the CPI as the top-level
+    // InstructionError::Custom code (not wrapped), and the transfer's durable outputs are never
+    // created (atomic revert).
+    let fixture = TokenMolluskFixture::new();
+    let amount_handle = handle_for_chain(200, BALANCE_FHE_TYPE);
+    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
+    // The mint's HCU authority is signed in (as on every transfer), but no meter and no
+    // trust witness — the untrusted CPI shape the ban applies to.
+    let ix = direct_transfer_ix(&fixture, output, amount_handle);
+    let context = fixture.context_with_input_amount(amount_handle);
+    // Ban untrusted apps via the block cap (overrides the fixture's unrestricted default).
+    seed_account(
+        &context,
+        fixture.host_config,
+        host_config_account_with_block_cap(fixture.owner, 0),
+    );
+
+    let result = context.process_instruction(&ix);
+
+    // Rejected via CPI with the exact host error code; the transfer's durable outputs are never
+    // created (atomic revert).
+    let expected_code: u32 = host::errors::ZamaHostError::HcuBlockLimitExceeded.into();
+    assert_eq!(
+        result.raw_result,
+        Err(InstructionError::Custom(expected_code))
+    );
+    assert_empty_system_account(&context, output.from_output);
+    assert_empty_system_account(&context, output.transferred);
+    assert_empty_system_account(&context, output.to_output);
+    // Balances are unchanged.
+    assert_eq!(
+        read_token_account(&context, fixture.alice_token).balance_handle,
+        fixture.alice_initial
+    );
+}
+
+#[test]
+fn mollusk_confidential_transfer_rejects_non_canonical_hcu_authority() {
+    // The token program pins the mandatory HCU authority to the canonical
+    // ["hcu-authority", mint] PDA before signing it into the CPI — an arbitrary account in
+    // that slot (e.g. another mint's authority, to spend its budget) is rejected up front,
+    // even while the host cap is unrestricted.
+    let fixture = TokenMolluskFixture::new();
+    let amount_handle = handle_for_chain(202, BALANCE_FHE_TYPE);
+    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
+    let ix = direct_transfer_ix_with_block_cap_accounts(
+        &fixture,
+        fixture.owner,
+        output,
+        amount_attestation(&fixture, amount_handle),
+        None,
+        None,
+        token::hcu_authority_address(Pubkey::new_unique()).0,
+    );
+    let context = fixture.context_with_input_amount(amount_handle);
+
+    let result = context.process_instruction(&ix);
+
+    let expected_code: u32 = token::ConfidentialTokenError::HcuAuthorityMismatch.into();
+    assert_eq!(
+        result.raw_result,
+        Err(InstructionError::Custom(expected_code))
+    );
+    assert_empty_system_account(&context, output.from_output);
+}
+
+/// Exact HCU cost of the combined transfer eval frame (`execute_transfer_eval`), from the frame
+/// cost model: `Ge` at ebool (21_000) + debit `Sub` at euint64 (38_000) + `IfThenElse` at euint64
+/// (45_000) + transferred `Sub` at euint64 (38_000) + credit `Add` at euint64 (38_000). The
+/// `VerifiedInput` amount is an operand, not a step, so it adds no HCU.
+const TRANSFER_FRAME_HCU: u64 = 21_000 + 38_000 + 45_000 + 38_000 + 38_000; // 180_000
+
+fn read_hcu_block_meter(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) -> Option<host::HcuBlockMeter> {
+    let store = context.account_store.borrow();
+    let account = store.get(&address)?;
+    if account.owner != host::id() {
+        return None;
+    }
+    let mut data = account.data.as_slice();
+    host::HcuBlockMeter::try_deserialize(&mut data).ok()
+}
+
+#[test]
+fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
+    // The Some(meter) CPI shape — the production account set once the cap drops below
+    // u64::MAX. With a metering-band cap, the mint's HCU authority signed in, and the meter
+    // threaded through ConfidentialTransfer, the transfer must succeed and the meter must be
+    // lazy-created charged with exactly the frame's HCU, proving the three optional accounts
+    // survive the token -> zama-fhe -> fhe_eval CPI encoding (None placeholder vs real meta,
+    // ordering, writability, PDA signing) end to end. The metering identity is the mint's
+    // ["hcu-authority", mint] PDA — one budget per mint, NOT per sender token account.
+    let fixture = TokenMolluskFixture::new();
+    let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
+    let output = DirectTransferOutputAccounts::canonical(&fixture, 1, 1);
+    let hcu_authority = token::hcu_authority_address(fixture.mint).0;
+    let meter_pda = host::hcu_block_meter_address(hcu_authority).0;
+    let ix = direct_transfer_ix_with_block_cap_accounts(
+        &fixture,
+        fixture.owner,
+        output,
+        amount_attestation(&fixture, amount_handle),
+        Some(meter_pda),
+        None,
+        hcu_authority,
+    );
+    let context = fixture.context_with_input_amount(amount_handle);
+    // A metering-band cap (above the frame cost) instead of the unrestricted default.
+    seed_account(
+        &context,
+        fixture.host_config,
+        host_config_account_with_block_cap(fixture.owner, 500_000),
+    );
+
+    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
+
+    assert!(!result.inner_instructions.is_empty());
+    // The transfer completed: balances rotated onto the new output ACL records.
+    let alice_token = read_token_account(&context, fixture.alice_token);
+    assert_eq!(alice_token.balance_acl_record, output.from_output);
+    assert_ne!(alice_token.balance_handle, fixture.alice_initial);
+    // The meter was lazy-created through the CPI, keyed on the mint's HCU authority, and
+    // charged exactly the transfer frame's HCU at the current slot.
+    let meter = read_hcu_block_meter(&context, meter_pda).expect("meter created through CPI");
+    assert_eq!(meter.app, hcu_authority);
+    assert_eq!(meter.used_hcu, TRANSFER_FRAME_HCU);
+    assert_eq!(meter.last_seen_slot, context.mollusk.sysvars.clock.slot);
+    // Regression guard on the metering granularity: nothing accrues to the sender token
+    // account's key — a sybil minting fresh token accounts gets no fresh budget.
+    assert!(read_hcu_block_meter(
+        &context,
+        host::hcu_block_meter_address(fixture.alice_token).0
+    )
+    .is_none());
+}
+
+/// Exact HCU cost of `create_random_amount` (Transfer kind): a single `FheRand` at euint64.
+const RAND_U64_HCU: u64 = 52_000;
+
+/// A program-owned trust record at the canonical `["hcu-trusted", app]` PDA.
+fn hcu_trusted_app_record_account(app: Pubkey, trusted: bool) -> Account {
+    let (_, bump) = host::hcu_trusted_app_address(app);
+    Account {
+        lamports: 1_000_000_000,
+        data: serialized_account(host::HcuTrustedAppRecord { app, trusted, bump }),
+        owner: host::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+/// Shared setup for the newly-threaded non-transfer eval instructions: a `create_random_amount`
+/// context with a metering-band block cap and the transfer-amount output ACL seeded.
+fn create_random_amount_block_cap_context(
+    fixture: &TokenMolluskFixture,
+    amount_acl: Pubkey,
+    cap: u64,
+) -> mollusk_svm::MolluskContext<HashMap<Pubkey, Account>> {
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(amount_acl, system_account(0));
+    accounts.insert(
+        fixture.host_config,
+        host_config_account_with_block_cap(fixture.owner, cap),
+    );
+    mollusk().with_context(accounts)
+}
+
+#[test]
+fn mollusk_create_random_amount_trusted_authority_bypasses_meter_through_cpi() {
+    // Newly-threaded path: create_random_amount now forwards the trust witness. With the mint's
+    // per-mint hcu_authority registered trusted and the witness threaded, a metering-band cap is
+    // bypassed — the op succeeds and no meter is created (contention-free whitelist path). This
+    // is the wiring that makes "register confidential-token trusted" actually reachable for the
+    // non-transfer instructions, not just ConfidentialTransfer.
+    let fixture = TokenMolluskFixture::new();
+    let hcu_authority = token::hcu_authority_address(fixture.mint).0;
+    let amount_acl = amount_acl_address(fixture.mint, fixture.owner, 0);
+    let trust_pda = host::hcu_trusted_app_address(hcu_authority).0;
+    let meter_pda = host::hcu_block_meter_address(hcu_authority).0;
+    let context = create_random_amount_block_cap_context(&fixture, amount_acl, 500_000);
+    seed_account(
+        &context,
+        trust_pda,
+        hcu_trusted_app_record_account(hcu_authority, true),
+    );
+
+    let ix = create_random_amount_ix_with_block_cap_accounts(
+        &fixture,
+        amount_acl,
+        token::ConfidentialAmountKind::Transfer,
+        None,
+        Some(trust_pda),
+    );
+    context.process_and_validate_instruction(&ix, &[Check::success()]);
+
+    // Bypass: the op succeeded and no meter was lazily created for the authority.
+    assert!(read_hcu_block_meter(&context, meter_pda).is_none());
+    assert!(acl_record_exists(&context, amount_acl));
+}
+
+#[test]
+fn mollusk_create_random_amount_metering_band_charges_meter_through_cpi() {
+    // Newly-threaded path: with a metering-band cap and the meter threaded, create_random_amount
+    // lazy-creates and charges the per-mint meter for exactly the FheRand cost — proving the
+    // optional accounts survive this instruction's token -> zama-fhe -> fhe_eval CPI, not only
+    // ConfidentialTransfer's.
+    let fixture = TokenMolluskFixture::new();
+    let hcu_authority = token::hcu_authority_address(fixture.mint).0;
+    let amount_acl = amount_acl_address(fixture.mint, fixture.owner, 0);
+    let meter_pda = host::hcu_block_meter_address(hcu_authority).0;
+    let context = create_random_amount_block_cap_context(&fixture, amount_acl, 500_000);
+
+    let ix = create_random_amount_ix_with_block_cap_accounts(
+        &fixture,
+        amount_acl,
+        token::ConfidentialAmountKind::Transfer,
+        Some(meter_pda),
+        None,
+    );
+    context.process_and_validate_instruction(&ix, &[Check::success()]);
+
+    let meter = read_hcu_block_meter(&context, meter_pda).expect("meter created through CPI");
+    assert_eq!(meter.app, hcu_authority);
+    assert_eq!(meter.used_hcu, RAND_U64_HCU);
+    assert_eq!(meter.last_seen_slot, context.mollusk.sysvars.clock.slot);
+}
+
+#[test]
+fn mollusk_create_random_amount_metering_band_none_none_fails_closed() {
+    // Newly-threaded path: once the cap is active, an untrusted create_random_amount that forwards
+    // neither meter nor trust witness fails closed (HcuBlockLimitExceeded surfaces via the host's
+    // missing-meter path through the CPI), never silently un-metered, and creates no amount ACL.
+    let fixture = TokenMolluskFixture::new();
+    let amount_acl = amount_acl_address(fixture.mint, fixture.owner, 0);
+    let context = create_random_amount_block_cap_context(&fixture, amount_acl, 500_000);
+
+    let ix = create_random_amount_ix_with_block_cap_accounts(
+        &fixture,
+        amount_acl,
+        token::ConfidentialAmountKind::Transfer,
+        None,
+        None,
+    );
+    let result = context.process_instruction(&ix);
+
+    let expected_code: u32 = host::errors::ZamaHostError::HcuBlockMeterMissing.into();
+    assert_eq!(
+        result.raw_result,
+        Err(InstructionError::Custom(expected_code))
+    );
+    assert!(!acl_record_exists(&context, amount_acl));
 }

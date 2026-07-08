@@ -135,17 +135,20 @@ pub async fn run(
 /// Resolve a durable `fhe_eval` step's output ACL record from the instruction's accounts.
 ///
 /// `remaining_index` (the program's `output_acl_record_index`) is relative to
-/// `remaining_accounts`, which follow the 7 named `fhe_eval` accounts — payer,
-/// compute_subject, app_account_authority, host_config, system_program, then
-/// `#[event_cpi]`'s event_authority + program (see `FheEval` in fhe_eval.rs). Returns
-/// `None` when the index is out of range; the caller treats that as a hard problem, since
-/// the durable output would otherwise never be marked allowed and never materialize.
+/// `remaining_accounts`, which follow the 10 named `fhe_eval` accounts — payer,
+/// compute_subject, app_account_authority, host_config, system_program, hcu_authority,
+/// hcu_block_meter, hcu_trusted_app_record, then `#[event_cpi]`'s event_authority +
+/// program (see `FheEval` in fhe_eval.rs). The two optional HCU accounts are always
+/// present in the account list (as program-id placeholders when `None`): the event_cpi
+/// pair follows them, so they can never be truncated off the tail. Returns `None` when
+/// the index is out of range; the caller treats that as a hard problem, since the
+/// durable output would otherwise never be marked allowed and never materialize.
 #[cfg(feature = "solana-reconstruct")]
 fn fhe_eval_durable_acl_record(
     accounts: &[[u8; 32]],
     remaining_index: u16,
 ) -> Option<[u8; 32]> {
-    const FHE_EVAL_REMAINING_BASE: usize = 7;
+    const FHE_EVAL_REMAINING_BASE: usize = 10;
     accounts
         .get(FHE_EVAL_REMAINING_BASE + remaining_index as usize)
         .copied()
@@ -719,27 +722,28 @@ mod fhe_eval_acl_tests {
 
     #[test]
     fn durable_output_as_sole_remaining_account_resolves() {
-        // The trivial-encrypt-eval shape: 7 named accounts (0..=6) + exactly one
-        // remaining account, the durable output ACL record, at absolute index 7
-        // (remaining_index 0). The off-by-one (base 8) read accounts.get(8) here, found
-        // nothing, and silently dropped the allow-fetch — leaving the output handle
-        // unmaterialized. This pins the base at 7.
-        let accounts: Vec<[u8; 32]> = (0..8).map(acct).collect();
-        assert_eq!(fhe_eval_durable_acl_record(&accounts, 0), Some(acct(7)));
+        // The trivial-encrypt-eval shape: 10 named accounts (0..=9, including the three
+        // HCU accounts and the event_cpi pair) + exactly one remaining account, the
+        // durable output ACL record, at absolute index 10 (remaining_index 0). A stale
+        // base (7, the pre-HCU count) read accounts.get(7) here — the trusted-app-record
+        // placeholder, not zama_host-owned — so the finalized fetch refused the release
+        // and the output handle never materialized. This pins the base at 10.
+        let accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
+        assert_eq!(fhe_eval_durable_acl_record(&accounts, 0), Some(acct(10)));
     }
 
     #[test]
     fn output_after_input_acl_records_resolves() {
-        // A durable input ACL record at 7 and the durable output at 8 (remaining_index 1).
-        let accounts: Vec<[u8; 32]> = (0..9).map(acct).collect();
-        assert_eq!(fhe_eval_durable_acl_record(&accounts, 1), Some(acct(8)));
+        // A durable input ACL record at 10 and the durable output at 11 (remaining_index 1).
+        let accounts: Vec<[u8; 32]> = (0..12).map(acct).collect();
+        assert_eq!(fhe_eval_durable_acl_record(&accounts, 1), Some(acct(11)));
     }
 
     #[test]
     fn missing_remaining_account_returns_none() {
-        // Only the 7 named accounts, no remaining: a durable bind here is a layout drift
+        // Only the 10 named accounts, no remaining: a durable bind here is a layout drift
         // the caller must surface, not silently drop.
-        let accounts: Vec<[u8; 32]> = (0..7).map(acct).collect();
+        let accounts: Vec<[u8; 32]> = (0..10).map(acct).collect();
         assert_eq!(fhe_eval_durable_acl_record(&accounts, 0), None);
     }
 }

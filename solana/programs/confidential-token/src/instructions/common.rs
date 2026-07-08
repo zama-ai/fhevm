@@ -29,6 +29,12 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
     pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
     pub(crate) system_program: &'a Program<'info, System>,
+    /// Per-app HCU block meter forwarded into the host `fhe_eval` CPI (`None` = untrusted, no meter).
+    pub(crate) hcu_block_meter: Option<AccountInfo<'info>>,
+    /// HCU trust witness forwarded into the host `fhe_eval` CPI (`None` = untrusted).
+    pub(crate) hcu_trusted_app_record: Option<AccountInfo<'info>>,
+    /// Mint-scoped HCU authority, validated and program-signed into the CPI.
+    pub(crate) hcu_authority: &'a UncheckedAccount<'info>,
 }
 
 pub(crate) struct TransferOutcome {
@@ -268,6 +274,9 @@ fn execute_transfer_eval<'info>(
             host_config: accounts.host_config,
             compute_authority,
             system_program: accounts.system_program,
+            hcu_authority: fhe::HcuAuthority::for_mint(accounts.hcu_authority, mint_key)?,
+            hcu_block_meter: accounts.hcu_block_meter.clone(),
+            hcu_trusted_app_record: accounts.hcu_trusted_app_record.clone(),
         },
         accounts: &eval_accounts,
         plan,

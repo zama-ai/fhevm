@@ -41,6 +41,7 @@ fn host_config_with(
         grant_deny_list_enabled: false,
         max_hcu_per_tx: 0,
         max_hcu_depth_per_tx: 0,
+        hcu_block_cap_per_app: u64::MAX,
         updated_slot: 0,
         bump: 0,
     }

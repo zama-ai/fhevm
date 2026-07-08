@@ -16,6 +16,8 @@ pub mod acl_permission;
 pub mod acl_record;
 pub mod deny_subject_record;
 pub mod handle_material_commitment;
+pub mod hcu_block_meter;
+pub mod hcu_trusted_app_record;
 pub mod host_chain_address;
 pub mod host_config;
 pub mod kms_context;
@@ -25,6 +27,8 @@ pub use acl_permission::*;
 pub use acl_record::*;
 pub use deny_subject_record::*;
 pub use handle_material_commitment::*;
+pub use hcu_block_meter::*;
+pub use hcu_trusted_app_record::*;
 pub use host_chain_address::*;
 pub use host_config::*;
 pub use kms_context::*;
@@ -230,7 +234,12 @@ pub enum FheEvalOperand {
     /// only where it is consumed in the same `fhe_eval`. Valid as an encrypted operand, not a scalar.
     VerifiedInput {
         /// The inline attestation re-verified to authorize this operand.
-        attestation: CoprocessorInputAttestation,
+        // Boxed so the ~190-byte attestation is paid only by operands that carry one, not
+        // inlined into every `FheEvalOperand` slot of every step (a Rust enum is as large as
+        // its fattest variant, and plans live in `Vec<FheEvalStep>` on the 32KB SBF bump heap
+        // on both sides of the CPI). `Box<T>` is borsh- and IDL-transparent: the wire format
+        // is unchanged.
+        attestation: Box<CoprocessorInputAttestation>,
     },
 }
 
@@ -518,6 +527,16 @@ pub fn acl_permission_address(acl_record: Pubkey, subject: Pubkey) -> (Pubkey, u
 /// Returns the canonical deny-list address for a subject.
 pub fn deny_subject_address(subject: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[DENY_SUBJECT_SEED, subject.as_ref()], &crate::ID)
+}
+
+/// Returns the canonical HCU trust-registry record address for an app authority.
+pub fn hcu_trusted_app_address(app: Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[HCU_TRUSTED_APP_SEED, app.as_ref()], &crate::ID)
+}
+
+/// Returns the canonical per-app HCU block meter address for an app authority.
+pub fn hcu_block_meter_address(app: Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[HCU_BLOCK_METER_SEED, app.as_ref()], &crate::ID)
 }
 
 /// Returns the canonical user-decryption delegation address.

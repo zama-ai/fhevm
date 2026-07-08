@@ -10,8 +10,8 @@ use zama_host::{
 };
 
 use crate::{
-    compute_signer_address, token_account_address, total_supply_authority_address,
-    ConfidentialTokenAccount, ConfidentialTokenError,
+    compute_signer_address, hcu_authority_address, token_account_address,
+    total_supply_authority_address, ConfidentialTokenAccount, ConfidentialTokenError,
 };
 
 /// A durable eval output account bound to the exact slot it is allowed to create.
@@ -153,6 +153,40 @@ impl<'info> ComputeAuthority<'info> {
 
     fn signer_seeds<'a>(&'a self, bump: &'a [u8; 1]) -> [&'a [u8]; 3] {
         [b"fhe-compute", self.acl_domain_key.as_ref(), bump]
+    }
+}
+
+/// Mint-scoped HCU authority PDA: the identity the host's HCU block cap meters and trusts for
+/// this mint's evals. Program-signed via CPI seeds so no other caller can spend this mint's
+/// meter or claim its trusted bypass.
+#[derive(Clone)]
+pub(crate) struct HcuAuthority<'info> {
+    account: AccountInfo<'info>,
+    mint: Pubkey,
+    bump: u8,
+}
+
+impl<'info> HcuAuthority<'info> {
+    pub(crate) fn for_mint(account: &UncheckedAccount<'info>, mint: Pubkey) -> Result<Self> {
+        let (expected, bump) = hcu_authority_address(mint);
+        require_keys_eq!(
+            account.key(),
+            expected,
+            ConfidentialTokenError::HcuAuthorityMismatch
+        );
+        Ok(Self {
+            account: account.to_account_info(),
+            mint,
+            bump,
+        })
+    }
+
+    fn account_info(&self) -> AccountInfo<'info> {
+        self.account.clone()
+    }
+
+    fn signer_seeds<'a>(&'a self, bump: &'a [u8; 1]) -> [&'a [u8]; 3] {
+        [b"hcu-authority", self.mint.as_ref(), bump]
     }
 }
 
@@ -354,6 +388,14 @@ pub(crate) struct EvalContext<'a, 'info> {
     pub compute_authority: ComputeAuthority<'info>,
     /// System program used for output ACL creation.
     pub system_program: &'a Program<'info, System>,
+    /// Mint-scoped HCU authority signed into the host `fhe_eval` CPI — the identity the block
+    /// cap meters and trusts. Mandatory on every eval, matching the host account shape.
+    pub hcu_authority: HcuAuthority<'info>,
+    /// Per-app HCU block meter forwarded into the host `fhe_eval` CPI (`None` unless the caller
+    /// threads it; behavior-neutral while the host cap is unrestricted).
+    pub hcu_block_meter: Option<AccountInfo<'info>>,
+    /// HCU trust witness forwarded into the host `fhe_eval` CPI (`None` unless threaded).
+    pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
 }
 
 /// Inputs required to evaluate an instruction-local FHE plan.
@@ -420,6 +462,12 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
         .map(|seed_bytes| seed_bytes.iter().map(Vec::as_slice).collect())
         .collect();
 
+    let hcu_authority_bump = [request.context.hcu_authority.bump];
+    let hcu_authority_seeds = request
+        .context
+        .hcu_authority
+        .signer_seeds(&hcu_authority_bump);
+
     let mut signer_seed_vec: Vec<&[&[u8]]> = vec![compute_signer_seeds.as_slice()];
     if !app_authority_seeds.is_empty() {
         signer_seed_vec.push(app_authority_seeds.as_slice());
@@ -427,6 +475,7 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
     for seeds in &extra_output_authority_seeds {
         signer_seed_vec.push(seeds.as_slice());
     }
+    signer_seed_vec.push(hcu_authority_seeds.as_slice());
 
     zama_fhe::invoke_eval_signed_resolved(
         &request.plan,
@@ -436,6 +485,9 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
             app_account_authority: app_authority.account.clone(),
             host_config: request.context.host_config.to_account_info(),
             system_program: request.context.system_program.to_account_info(),
+            hcu_authority: request.context.hcu_authority.account_info(),
+            hcu_block_meter: request.context.hcu_block_meter.clone(),
+            hcu_trusted_app_record: request.context.hcu_trusted_app_record.clone(),
             event_authority: request.context.event_authority.to_account_info(),
             program: request.context.zama_program.to_account_info(),
         },

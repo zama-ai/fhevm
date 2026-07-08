@@ -18,9 +18,11 @@ pub struct CommitHandleMaterial<'info> {
     pub payer: Signer<'info>,
     /// Configured material commitment authority.
     pub material_authority: Signer<'info>,
-    /// Singleton host config PDA.
+    /// Singleton host config PDA. Boxed: `try_accounts` deserializes this struct on the
+    /// SBF stack, and the per-app HCU block cap pushed the frame 8 bytes past the 4096
+    /// limit; heap-allocating the config keeps the frame under it.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
-    pub host_config: Account<'info, HostConfig>,
+    pub host_config: Box<Account<'info, HostConfig>>,
     /// Canonical ACL record for the handle whose material is committed and sealed.
     #[account(mut)]
     pub acl_record: Account<'info, AclRecord>,

@@ -287,6 +287,29 @@
           "address": "11111111111111111111111111111111"
         },
         {
+          "name": "hcu_authority",
+          "docs": [
+            "into the host CPI as this mint's HCU metering identity."
+          ]
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "canonical `[\"hcu-block-meter\", hcu_authority]` PDA. Supplied by an untrusted mint under a",
+            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "canonical `[\"hcu-trusted\", hcu_authority]` PDA. Present + valid bypasses the cap; absent",
+            "means the mint is metered."
+          ],
+          "optional": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -425,6 +448,28 @@
             "System program used for ACL account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "HCU block meter — supplied by an untrusted app under a metering-band cap, omitted otherwise."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "trust witness — present + valid bypasses the cap; absent means untrusted (metered)."
+          ],
+          "optional": true
+        },
+        {
+          "name": "hcu_authority",
+          "docs": [
+            "into the CPI. The mint-scoped identity the host block cap meters and trusts — mandatory",
+            "on every eval, matching the host account shape."
+          ]
         },
         {
           "name": "event_authority"
@@ -864,6 +909,29 @@
           "address": "11111111111111111111111111111111"
         },
         {
+          "name": "hcu_authority",
+          "docs": [
+            "into the host CPI as this mint's HCU metering identity."
+          ]
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "canonical `[\"hcu-block-meter\", hcu_authority]` PDA. Supplied by an untrusted mint under a",
+            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "canonical `[\"hcu-trusted\", hcu_authority]` PDA. Present + valid bypasses the cap; absent",
+            "means the mint is metered."
+          ],
+          "optional": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -989,6 +1057,29 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "hcu_authority",
+          "docs": [
+            "into the host CPI as this mint's HCU metering identity."
+          ]
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "canonical `[\"hcu-block-meter\", hcu_authority]` PDA. Supplied by an untrusted mint under a",
+            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "canonical `[\"hcu-trusted\", hcu_authority]` PDA. Present + valid bypasses the cap; absent",
+            "means the mint is metered."
+          ],
+          "optional": true
         },
         {
           "name": "event_authority"
@@ -1957,6 +2048,29 @@
           "address": "11111111111111111111111111111111"
         },
         {
+          "name": "hcu_authority",
+          "docs": [
+            "into the host CPI as this mint's HCU metering identity."
+          ]
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "canonical `[\"hcu-block-meter\", hcu_authority]` PDA. Supplied by an untrusted mint under a",
+            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "canonical `[\"hcu-trusted\", hcu_authority]` PDA. Present + valid bypasses the cap; absent",
+            "means the mint is metered."
+          ],
+          "optional": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -2286,91 +2400,96 @@
     },
     {
       "code": 6020,
+      "name": "HcuAuthorityMismatch",
+      "msg": "HCU authority does not match mint"
+    },
+    {
+      "code": 6021,
       "name": "InvalidKmsCertificate",
       "msg": "KMS public-decrypt certificate is invalid"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "GatewayVerifierConfigUnset",
       "msg": "gateway verifier config is not set"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "InvalidKmsContext",
       "msg": "KMS context is not valid for this request"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "RequestWitnessMismatch",
       "msg": "request witness does not match"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "RequestWitnessUnavailable",
       "msg": "request witness is expired or already consumed"
     },
     {
-      "code": 6025,
+      "code": 6026,
       "name": "MaterialCommitmentMismatch",
       "msg": "material commitment witness does not match"
     },
     {
-      "code": 6026,
+      "code": 6027,
       "name": "PublicDecryptNotReleased",
       "msg": "handle is not released for public decrypt"
     },
     {
-      "code": 6027,
+      "code": 6028,
       "name": "CallbackSettlementMismatch",
       "msg": "transfer callback settlement accounts are invalid"
     },
     {
-      "code": 6028,
+      "code": 6029,
       "name": "ReceiverHookMismatch",
       "msg": "receiver hook return data is invalid"
     },
     {
-      "code": 6029,
+      "code": 6030,
       "name": "ReceiverHookInputTooLarge",
       "msg": "receiver hook input exceeds program limits"
     },
     {
-      "code": 6030,
+      "code": 6031,
       "name": "InvalidFheEvalPlan",
       "msg": "FHE eval plan is invalid"
     },
     {
-      "code": 6031,
+      "code": 6032,
       "name": "DuplicateFheEvalAccount",
       "msg": "FHE eval account list contains a duplicate account"
     },
     {
-      "code": 6032,
+      "code": 6033,
       "name": "UnexpectedFheEvalAccount",
       "msg": "FHE eval account list contains an unexpected account"
     },
     {
-      "code": 6033,
+      "code": 6034,
       "name": "MissingFheEvalAccount",
       "msg": "FHE eval plan is missing a required dynamic account"
     },
     {
-      "code": 6034,
+      "code": 6035,
       "name": "FheEvalAccountNotWritable",
       "msg": "FHE eval dynamic account must be writable"
     },
     {
-      "code": 6035,
+      "code": 6036,
       "name": "DuplicateFheOutputAuthority",
       "msg": "FHE eval output authority list contains a duplicate authority"
     },
     {
-      "code": 6036,
+      "code": 6037,
       "name": "UnexpectedFheOutputAuthority",
       "msg": "FHE eval output authority list contains an unexpected authority"
     },
     {
-      "code": 6037,
+      "code": 6038,
       "name": "MissingFheOutputAuthority",
       "msg": "FHE eval plan is missing a required output authority"
     }
@@ -4208,6 +4327,15 @@
             "name": "max_hcu_depth_per_tx",
             "docs": [
               "Max critical-path (depth) HCU within one `fhe_eval` plan. `0` = unlimited."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "hcu_block_cap_per_app",
+            "docs": [
+              "Per-app HCU budget per slot, enforced in `fhe_eval`. `u64::MAX` = unrestricted (the ship",
+              "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still bypass);",
+              "any other value is the metering band (must be `>= max_hcu_per_tx` unless that is `0`)."
             ],
             "type": "u64"
           },

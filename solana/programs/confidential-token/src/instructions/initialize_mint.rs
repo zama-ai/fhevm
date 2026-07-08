@@ -31,6 +31,18 @@ pub struct InitializeMint<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
+    /// CHECK: validated against the canonical `["hcu-authority", mint]` PDA and program-signed
+    /// into the host CPI as this mint's HCU metering identity.
+    pub hcu_authority: UncheckedAccount<'info>,
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// canonical `["hcu-block-meter", hcu_authority]` PDA. Supplied by an untrusted mint under a
+    /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
+    #[account(mut)]
+    pub hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_eval` CPI, which validates it against the
+    /// canonical `["hcu-trusted", hcu_authority]` PDA. Present + valid bypasses the cap; absent
+    /// means the mint is metered.
+    pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
 /// Initializes a confidential mint and records its host ACL domain.
@@ -95,6 +107,17 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
             host_config: &ctx.accounts.host_config,
             compute_authority,
             system_program: &ctx.accounts.system_program,
+            hcu_authority: fhe::HcuAuthority::for_mint(&ctx.accounts.hcu_authority, mint_key)?,
+            hcu_block_meter: ctx
+                .accounts
+                .hcu_block_meter
+                .as_ref()
+                .map(|account| account.to_account_info()),
+            hcu_trusted_app_record: ctx
+                .accounts
+                .hcu_trusted_app_record
+                .as_ref()
+                .map(|account| account.to_account_info()),
         },
         accounts: &eval_accounts,
         plan,

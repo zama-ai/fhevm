@@ -42,9 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TRIVIAL_ENCRYPT drives a real zama-host trivial encryption through fhe_eval. The host
     // computes the result handle on-chain and emits a TrivialEncryptEvent the live host-listener
     // ingests into the coprocessor DB for the tfhe-worker to materialize.
-    if std::env::var("TRIVIAL_ENCRYPT").is_ok()
-        || std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok()
-    {
+    if std::env::var("TRIVIAL_ENCRYPT").is_ok() || std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
         trivial_encrypt_eval(&host, &payer, host_config)?;
         return Ok(());
     }
@@ -278,6 +276,12 @@ fn trivial_encrypt_eval(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature. The mandatory HCU
+            // authority is the payer itself for this wallet-driven PoC leg.
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
@@ -400,7 +404,9 @@ fn fhe_eval_verified_input_add(
         context_id,
         steps: vec![zama_host::FheEvalStep::Binary {
             op: zama_host::FheBinaryOpCode::Add,
-            lhs: zama_host::FheEvalOperand::VerifiedInput { attestation },
+            lhs: zama_host::FheEvalOperand::VerifiedInput {
+                attestation: Box::new(attestation),
+            },
             rhs: zama_host::FheEvalOperand::Scalar(scalar),
             output_fhe_type: fhe_type,
             output: zama_host::FheEvalOutput::AllowedDurable {
@@ -427,6 +433,12 @@ fn fhe_eval_verified_input_add(
             app_account_authority: payer.pubkey(),
             host_config,
             system_program: system_program::ID,
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature. The mandatory HCU
+            // authority is the payer itself for this wallet-driven PoC leg.
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: zama_event_authority,
             program: zama_host::ID,
         })
@@ -682,6 +694,9 @@ fn consume_amount(
                 zama_program: zama_host::ID,
                 host_config,
                 system_program: system_program::ID,
+                hcu_authority: confidential_token::hcu_authority_address(mint).0,
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
                 event_authority: token_evt,
                 program: confidential_token::ID,
             })
@@ -709,6 +724,9 @@ fn consume_amount(
             zama_program: zama_host::ID,
             host_config,
             system_program: system_program::ID,
+            hcu_authority: confidential_token::hcu_authority_address(mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: token_evt,
             program: confidential_token::ID,
         })
@@ -788,6 +806,9 @@ fn consume_wrap(
                 zama_program: zama_host::ID,
                 host_config,
                 system_program: system_program::ID,
+                hcu_authority: confidential_token::hcu_authority_address(mint).0,
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
                 event_authority: token_evt,
                 program: confidential_token::ID,
             })
@@ -855,6 +876,9 @@ fn consume_wrap(
             host_config,
             token_program: spl_token_id,
             system_program: system_program::ID,
+            hcu_authority: confidential_token::hcu_authority_address(mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: token_evt,
             program: confidential_token::ID,
         })
@@ -994,6 +1018,9 @@ fn consume_burn(
             zama_program: zama_host::ID,
             host_config,
             system_program: system_program::ID,
+            hcu_authority: confidential_token::hcu_authority_address(mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: token_evt,
             program: confidential_token::ID,
         })
@@ -1280,6 +1307,9 @@ fn initialize_mint(
             zama_program: zama_host::ID,
             host_config,
             system_program: system_program::ID,
+            hcu_authority: confidential_token::hcu_authority_address(mint_pk).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: token_event_authority,
             program: confidential_token::ID,
         })
