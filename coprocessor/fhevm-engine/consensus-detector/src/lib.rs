@@ -49,6 +49,9 @@ use crate::state_hash::state_hash_key;
 /// pg_notify channels this service listens on.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
 pub const NEW_OPERATOR_ADDED_CHANNEL: &str = "event_new_operator_added";
+/// Fired by gw-listener on each ingested Gateway block (payload = the new
+/// Gateway tip). Drives the per-Gateway-block consensus track.
+pub const GW_NEW_BLOCK_CHANNEL: &str = fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
 
 /// pg_notify channels this service emits.
 ///
@@ -475,6 +478,95 @@ where
     Ok(())
 }
 
+/// Sealed Gateway blocks for which this operator has already produced a local
+/// `state_hash` row — the candidate set for the Gateway consensus poll. Bounded
+/// to `[gw_start, gw_tip)` so only sealed blocks are polled. A block without a
+/// local hash can never reach unanimity (our own slot would stay empty), so
+/// restricting to locally-produced rows avoids polling peers for nothing.
+async fn pending_gw_consensus_blocks(
+    pool: &Pool<Postgres>,
+    gw_chain_id: i64,
+    gw_start: i64,
+    gw_tip: i64,
+) -> Result<Vec<i64>, Error> {
+    let sql = format!(
+        "SELECT block_number FROM {GCS_SCHEMA_QUOTED}.state_hash
+          WHERE chain_id = $1 AND block_number >= $2 AND block_number < $3
+          ORDER BY block_number"
+    );
+    let rows: Vec<(i64,)> = sqlx::query_as(&sql)
+        .bind(gw_chain_id)
+        .bind(gw_start)
+        .bind(gw_tip)
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(|(b,)| b).collect())
+}
+
+/// Handle an `event_gw_new_block` notification (also invoked on the fallback
+/// poll tick). For each sealed, input-bearing Gateway block with a locally
+/// produced `state_hash` that hasn't yet reached unanimity, fetch every
+/// operator's S3 blob and, on agreement, emit `event_unanimity_consensus` with
+/// `chain_id = gw_chain_id` and `block_height = <gw block>`. Non-unanimous
+/// blocks are left for the next notification / poll tick.
+///
+/// `block_hash` is empty for the Gateway track — no Gateway block hash is stored
+/// anywhere and the consumer gates only on `block_height`.
+async fn handle_gw_new_block(
+    pool: &Pool<Postgres>,
+    http: &reqwest::Client,
+    s3_urls: &Arc<RwLock<Vec<String>>>,
+    gw_chain_id: i64,
+    confirmed: &mut HashSet<i64>,
+) -> Result<(), Error> {
+    // Only meaningful during an active GCS upgrade window with gw_start_block set.
+    if active_upgrade_window(pool).await?.is_none() {
+        return Ok(());
+    }
+    let (Some(gw_start), Some(gw_tip)) = (
+        state_hash::gw_start_block(pool).await?,
+        state_hash::gw_listener_tip(pool).await?,
+    ) else {
+        return Ok(());
+    };
+
+    let blocks = pending_gw_consensus_blocks(pool, gw_chain_id, gw_start, gw_tip).await?;
+    let blocks: Vec<i64> = blocks
+        .into_iter()
+        .filter(|b| !confirmed.contains(b))
+        .collect();
+    if blocks.is_empty() {
+        return Ok(());
+    }
+
+    // Snapshot the URL list so a concurrent `new_operator_added` swap is stable.
+    let urls = s3_urls.read().await.clone();
+    for block in blocks {
+        let mut slots = vec![None; urls.len()];
+        fetch_state_commitments(http, &urls, gw_chain_id, block, &mut slots).await;
+        if all_some_and_identical(&slots) {
+            info!(
+                gw_chain_id,
+                block,
+                operator_count = urls.len(),
+                "gateway unanimity reached — emitting unanimity_consensus"
+            );
+            notify_unanimity(
+                pool,
+                UNANIMITY_CONSENSUS_CHANNEL,
+                &NewBlockPayload {
+                    chain_id: gw_chain_id,
+                    block_height: block,
+                    block_hash: String::new(),
+                },
+            )
+            .await?;
+            confirmed.insert(block);
+        }
+    }
+    Ok(())
+}
+
 async fn build_s3_client(config: &Config) -> aws_sdk_s3::Client {
     let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
     if let Some(endpoint) = config.s3_endpoint.as_deref() {
@@ -499,9 +591,22 @@ pub async fn run<P>(
 where
     P: Provider<Ethereum> + Clone + 'static,
 {
+    // Resolve the Gateway chain id from the connected provider (eth_chainId).
+    // This is the authoritative source — it can't drift from the chain we're
+    // actually watching — and mirrors how transaction-sender derives it. Must
+    // run before `provider` is moved into the S3Service below. Kept as i64 to
+    // match the `state_hash`/`upgrade_state` chain_id columns and the notify
+    // payloads.
+    let gw_chain_id: i64 = provider
+        .get_chain_id()
+        .await?
+        .try_into()
+        .map_err(|e| anyhow::anyhow!("gateway chain_id does not fit in i64: {e}"))?;
+
     info!(
         service_name = %config.service_name,
         gateway_config_address = %config.gateway_config_address,
+        gw_chain_id,
         my_bucket = ?config.my_bucket,
         "starting consensus-detector"
     );
@@ -542,21 +647,28 @@ where
             // it, no GCS state hashes get uploaded and the poll always times
             // out. If it exits unexpectedly, cancel the parent so the service
             // crashes and is restarted by its supervisor.
-            if let Err(e) = state_hash::run(pool, s3, bucket, batch_limit, worker_cancel).await {
+            if let Err(e) =
+                state_hash::run(pool, s3, bucket, batch_limit, gw_chain_id, worker_cancel).await
+            {
                 error!(error = %e, "state_hash worker exited with error; shutting down consensus-detector");
                 parent_cancel.cancel();
             }
         });
     }
 
+    let channels = [
+        NEW_BLOCK_CHANNEL,
+        NEW_OPERATOR_ADDED_CHANNEL,
+        GW_NEW_BLOCK_CHANNEL,
+    ];
     let mut listener = PgListener::connect_with(&pool).await?;
-    listener
-        .listen_all([NEW_BLOCK_CHANNEL, NEW_OPERATOR_ADDED_CHANNEL])
-        .await?;
-    info!(
-        channels = ?[NEW_BLOCK_CHANNEL, NEW_OPERATOR_ADDED_CHANNEL],
-        "listening for notifications"
-    );
+    listener.listen_all(channels).await?;
+    info!(?channels, "listening for notifications");
+
+    // Gateway blocks already confirmed unanimous, so each is emitted once per
+    // process lifetime. In-memory only: on restart we re-emit, which the
+    // consumer (upgrade-controller) must treat idempotently.
+    let mut confirmed_gw_blocks: HashSet<i64> = HashSet::new();
 
     let mut poll = tokio::time::interval(config.poll_interval);
     // First tick fires immediately; skip it so we don't double-trigger on startup.
@@ -591,6 +703,15 @@ where
                             NEW_OPERATOR_ADDED_CHANNEL => {
                                 handle_new_operator_added(&s3_urls, &s3_service, payload).await
                             }
+                            GW_NEW_BLOCK_CHANNEL => {
+                                handle_gw_new_block(
+                                    &pool,
+                                    &http,
+                                    &s3_urls,
+                                    gw_chain_id,
+                                    &mut confirmed_gw_blocks,
+                                ).await
+                            }
                             other => {
                                 warn!(channel = other, "ignoring notification on unexpected channel");
                                 Ok(())
@@ -608,7 +729,14 @@ where
                 }
             }
             _ = poll.tick() => {
-                debug!("poll tick — no notification activity");
+                debug!("poll tick — retrying gateway consensus for unconfirmed blocks");
+                // Fallback so a missed `event_gw_new_block` still converges.
+                if let Err(e) =
+                    handle_gw_new_block(&pool, &http, &s3_urls, gw_chain_id, &mut confirmed_gw_blocks)
+                        .await
+                {
+                    error!(error = %e, "gateway consensus poll-tick retry failed");
+                }
             }
         }
     }
