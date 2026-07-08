@@ -1,0 +1,29 @@
+{
+  "name": "@cli-fhevm-sdk/toolkit",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config/index.ts",
+    "./values": "./src/values/index.ts",
+    "./flows": "./src/flows/index.ts",
+    "./flows/fhe-test": "./src/flows/fhe-test/index.ts",
+    "./flows/public-decrypt": "./src/flows/public-decrypt/index.ts",
+    "./flows/user-decrypt": "./src/flows/user-decrypt/index.ts",
+    "./flows/delegated-user-decrypt": "./src/flows/delegated-user-decrypt/index.ts",
+    "./flows/token": "./src/flows/token/index.ts",
+    "./flows/token/transfer": "./src/flows/token/transfer.ts",
+    "./flows/token/balance": "./src/flows/token/balance.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fhevm/sdk": "1.1.0-alpha.4",
+    "viem": "^2.50.4"
+  }
+}
