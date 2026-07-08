@@ -161,3 +161,160 @@ pub(super) fn expected_rand_eval_seed(
         ),
     }
 }
+
+pub(super) fn expected_unary_eval_result(
+    op: FheUnaryOpCode,
+    operand: [u8; 32],
+    output_fhe_type: u8,
+    handle_context: &EvalHandleContext<'_>,
+    op_index: u16,
+    output: &FheEvalOutput,
+) -> [u8; 32] {
+    match output {
+        FheEvalOutput::AllowedLocal => computed_eval_unary_handle(
+            op,
+            operand,
+            output_fhe_type,
+            handle_context.chain_id,
+            *handle_context.previous_bank_hash,
+            handle_context.unix_timestamp,
+            *handle_context.context_id,
+            op_index,
+        ),
+        FheEvalOutput::AllowedDurable {
+            output_nonce_key,
+            output_nonce_sequence,
+            ..
+        } => computed_bound_eval_unary_handle(
+            op,
+            operand,
+            output_fhe_type,
+            handle_context.chain_id,
+            *handle_context.previous_bank_hash,
+            handle_context.unix_timestamp,
+            *handle_context.context_id,
+            op_index,
+            *output_nonce_key,
+            *output_nonce_sequence,
+        ),
+    }
+}
+
+pub(super) fn expected_sum_eval_result(
+    operand_handles: &[[u8; 32]],
+    fhe_type: u8,
+    handle_context: &EvalHandleContext<'_>,
+    op_index: u16,
+    output: &FheEvalOutput,
+) -> [u8; 32] {
+    match output {
+        FheEvalOutput::AllowedLocal => computed_eval_sum_handle(
+            operand_handles,
+            fhe_type,
+            handle_context.chain_id,
+            *handle_context.previous_bank_hash,
+            handle_context.unix_timestamp,
+            *handle_context.context_id,
+            op_index,
+        ),
+        FheEvalOutput::AllowedDurable {
+            output_nonce_key,
+            output_nonce_sequence,
+            ..
+        } => computed_bound_eval_sum_handle(
+            operand_handles,
+            fhe_type,
+            handle_context.chain_id,
+            *handle_context.previous_bank_hash,
+            handle_context.unix_timestamp,
+            *handle_context.context_id,
+            op_index,
+            *output_nonce_key,
+            *output_nonce_sequence,
+        ),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn expected_is_in_eval_result(
+    value_handle: [u8; 32],
+    set_handles: &[[u8; 32]],
+    fhe_type: u8,
+    handle_context: &EvalHandleContext<'_>,
+    op_index: u16,
+    output: &FheEvalOutput,
+) -> [u8; 32] {
+    match output {
+        FheEvalOutput::AllowedLocal => computed_eval_is_in_handle(
+            value_handle,
+            set_handles,
+            fhe_type,
+            handle_context.chain_id,
+            *handle_context.previous_bank_hash,
+            handle_context.unix_timestamp,
+            *handle_context.context_id,
+            op_index,
+        ),
+        FheEvalOutput::AllowedDurable {
+            output_nonce_key,
+            output_nonce_sequence,
+            ..
+        } => computed_bound_eval_is_in_handle(
+            value_handle,
+            set_handles,
+            fhe_type,
+            handle_context.chain_id,
+            *handle_context.previous_bank_hash,
+            handle_context.unix_timestamp,
+            *handle_context.context_id,
+            op_index,
+            *output_nonce_key,
+            *output_nonce_sequence,
+        ),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn expected_mul_div_eval_result(
+    factor1: [u8; 32],
+    factor2: [u8; 32],
+    scalar: bool,
+    divisor: [u8; 32],
+    output_fhe_type: u8,
+    handle_context: &EvalHandleContext<'_>,
+    op_index: u16,
+    output: &FheEvalOutput,
+) -> [u8; 32] {
+    match output {
+        FheEvalOutput::AllowedLocal => computed_eval_mul_div_handle(
+            factor1,
+            factor2,
+            divisor,
+            scalar,
+            output_fhe_type,
+            handle_context.chain_id,
+            *handle_context.previous_bank_hash,
+            handle_context.unix_timestamp,
+            *handle_context.context_id,
+            op_index,
+        ),
+        FheEvalOutput::AllowedDurable {
+            output_nonce_key,
+            output_nonce_sequence,
+            ..
+        } => computed_bound_eval_mul_div_handle(
+            factor1,
+            factor2,
+            divisor,
+            scalar,
+            output_fhe_type,
+            handle_context.chain_id,
+            *handle_context.previous_bank_hash,
+            handle_context.unix_timestamp,
+            *handle_context.context_id,
+            op_index,
+            *output_nonce_key,
+            *output_nonce_sequence,
+        ),
+    }
+}

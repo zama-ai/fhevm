@@ -7,7 +7,11 @@ pub(super) fn assert_eval_step_birth_policy(step: &FheEvalStep) -> Result<()> {
         | FheEvalStep::Ternary { output, .. }
         | FheEvalStep::TrivialEncrypt { output, .. }
         | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::RandBounded { output, .. } => output,
+        | FheEvalStep::Unary { output, .. }
+        | FheEvalStep::RandBounded { output, .. }
+        | FheEvalStep::Sum { output, .. }
+        | FheEvalStep::IsIn { output, .. }
+        | FheEvalStep::MulDiv { output, .. } => output,
     };
     if let FheEvalOutput::AllowedDurable {
         output_public_decrypt,
@@ -101,9 +105,45 @@ fn preflight_eval_step(
             preflight_encrypted_operand(if_false, step_index, preflight)?;
             preflight_output(output, preflight)?;
         }
-        FheEvalStep::TrivialEncrypt { output, .. }
-        | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::RandBounded { output, .. } => preflight_output(output, preflight)?,
+        FheEvalStep::TrivialEncrypt { output, .. } | FheEvalStep::Rand { output, .. } => {
+            preflight_output(output, preflight)?;
+        }
+        FheEvalStep::Unary {
+            operand, output, ..
+        } => {
+            preflight_encrypted_operand(operand, step_index, preflight)?;
+            preflight_output(output, preflight)?;
+        }
+        FheEvalStep::RandBounded { output, .. } => {
+            preflight_output(output, preflight)?;
+        }
+        FheEvalStep::Sum {
+            operands, output, ..
+        } => {
+            for operand in operands {
+                preflight_encrypted_operand(operand, step_index, preflight)?;
+            }
+            preflight_output(output, preflight)?;
+        }
+        FheEvalStep::IsIn {
+            value, set, output, ..
+        } => {
+            preflight_encrypted_operand(value, step_index, preflight)?;
+            for operand in set {
+                preflight_encrypted_operand(operand, step_index, preflight)?;
+            }
+            preflight_output(output, preflight)?;
+        }
+        FheEvalStep::MulDiv {
+            factor1,
+            factor2,
+            output,
+            ..
+        } => {
+            preflight_encrypted_operand(factor1, step_index, preflight)?;
+            preflight_rhs_operand(factor2, step_index, preflight)?;
+            preflight_output(output, preflight)?;
+        }
     }
     Ok(())
 }

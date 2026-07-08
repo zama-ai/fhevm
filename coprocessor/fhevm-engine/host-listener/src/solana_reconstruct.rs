@@ -12,21 +12,28 @@
 //! implementation could silently lose.
 use anchor_lang::AnchorDeserialize;
 use zama_host::state::{
-    computed_bound_eval_handle, computed_bound_eval_rand_seed,
-    computed_bound_eval_ternary_handle, computed_bound_eval_trivial_handle,
-    computed_eval_handle, computed_eval_rand_seed,
-    computed_eval_ternary_handle, computed_eval_trivial_handle,
+    computed_bound_eval_handle, computed_bound_eval_is_in_handle,
+    computed_bound_eval_mul_div_handle, computed_bound_eval_rand_seed,
+    computed_bound_eval_sum_handle, computed_bound_eval_ternary_handle,
+    computed_bound_eval_trivial_handle, computed_bound_eval_unary_handle,
+    computed_eval_handle, computed_eval_is_in_handle,
+    computed_eval_mul_div_handle, computed_eval_rand_seed,
+    computed_eval_sum_handle, computed_eval_ternary_handle,
+    computed_eval_trivial_handle, computed_eval_unary_handle,
     computed_rand_bounded_handle, computed_rand_handle,
     FheBinaryOpCode as PgmBinaryOpCode, FheEvalArgs, FheEvalOperand,
     FheEvalOutput, FheEvalStep, FheTernaryOpCode as PgmTernaryOpCode,
+    FheUnaryOpCode as PgmUnaryOpCode,
 };
 
 use crate::generated::zama_host_instructions::{
     AllowForDecryptionArgs, ZamaHostInstruction,
 };
 use crate::generated::{
-    FheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent, FheRandEvent,
-    FheTernaryOpCode, FheTernaryOpEvent, TrivialEncryptEvent, EVENT_VERSION,
+    FheBinaryOpCode, FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent,
+    FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
+    FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, TrivialEncryptEvent,
+    EVENT_VERSION,
 };
 use std::collections::HashMap;
 
@@ -238,7 +245,32 @@ fn map_pgm_binary_op(op: PgmBinaryOpCode) -> FheBinaryOpCode {
     match op {
         PgmBinaryOpCode::Add => FheBinaryOpCode::Add,
         PgmBinaryOpCode::Sub => FheBinaryOpCode::Sub,
+        PgmBinaryOpCode::Mul => FheBinaryOpCode::Mul,
+        PgmBinaryOpCode::Div => FheBinaryOpCode::Div,
+        PgmBinaryOpCode::Rem => FheBinaryOpCode::Rem,
+        PgmBinaryOpCode::And => FheBinaryOpCode::And,
+        PgmBinaryOpCode::Or => FheBinaryOpCode::Or,
+        PgmBinaryOpCode::Xor => FheBinaryOpCode::Xor,
+        PgmBinaryOpCode::Shl => FheBinaryOpCode::Shl,
+        PgmBinaryOpCode::Shr => FheBinaryOpCode::Shr,
+        PgmBinaryOpCode::Rotl => FheBinaryOpCode::Rotl,
+        PgmBinaryOpCode::Rotr => FheBinaryOpCode::Rotr,
+        PgmBinaryOpCode::Eq => FheBinaryOpCode::Eq,
+        PgmBinaryOpCode::Ne => FheBinaryOpCode::Ne,
         PgmBinaryOpCode::Ge => FheBinaryOpCode::Ge,
+        PgmBinaryOpCode::Gt => FheBinaryOpCode::Gt,
+        PgmBinaryOpCode::Le => FheBinaryOpCode::Le,
+        PgmBinaryOpCode::Lt => FheBinaryOpCode::Lt,
+        PgmBinaryOpCode::Min => FheBinaryOpCode::Min,
+        PgmBinaryOpCode::Max => FheBinaryOpCode::Max,
+    }
+}
+
+fn map_pgm_unary_op(op: PgmUnaryOpCode) -> FheUnaryOpCode {
+    match op {
+        PgmUnaryOpCode::Neg => FheUnaryOpCode::Neg,
+        PgmUnaryOpCode::Not => FheUnaryOpCode::Not,
+        PgmUnaryOpCode::Cast => FheUnaryOpCode::Cast,
     }
 }
 
@@ -455,6 +487,50 @@ pub fn reconstruct_fhe_eval_steps(
                     result,
                 })
             }
+            FheEvalStep::Unary {
+                op,
+                operand,
+                output_fhe_type,
+                output,
+            } => {
+                let operand_handle = resolve_operand(operand, &produced)?;
+                let result = match output {
+                    FheEvalOutput::AllowedDurable {
+                        output_nonce_key,
+                        output_nonce_sequence,
+                        ..
+                    } => computed_bound_eval_unary_handle(
+                        *op,
+                        operand_handle,
+                        *output_fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                        *output_nonce_key,
+                        *output_nonce_sequence,
+                    ),
+                    FheEvalOutput::AllowedLocal => computed_eval_unary_handle(
+                        *op,
+                        operand_handle,
+                        *output_fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                    ),
+                };
+                produced.push(result);
+                SolanaHostEvent::FheUnaryOp(FheUnaryOpEvent {
+                    version: EVENT_VERSION,
+                    op: map_pgm_unary_op(*op),
+                    subject,
+                    operand: operand_handle,
+                    result,
+                })
+            }
             FheEvalStep::RandBounded {
                 upper_bound,
                 fhe_type,
@@ -498,6 +574,153 @@ pub fn reconstruct_fhe_eval_steps(
                     result,
                 })
             }
+            FheEvalStep::Sum {
+                operands,
+                fhe_type,
+                output,
+            } => {
+                let operand_handles: Vec<[u8; 32]> = operands
+                    .iter()
+                    .map(|operand| resolve_operand(operand, &produced))
+                    .collect::<Option<_>>()?;
+                let result = match output {
+                    FheEvalOutput::AllowedDurable {
+                        output_nonce_key,
+                        output_nonce_sequence,
+                        ..
+                    } => computed_bound_eval_sum_handle(
+                        &operand_handles,
+                        *fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                        *output_nonce_key,
+                        *output_nonce_sequence,
+                    ),
+                    FheEvalOutput::AllowedLocal => computed_eval_sum_handle(
+                        &operand_handles,
+                        *fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                    ),
+                };
+                produced.push(result);
+                SolanaHostEvent::FheSum(FheSumEvent {
+                    version: EVENT_VERSION,
+                    subject,
+                    operands: operand_handles,
+                    fhe_type: *fhe_type,
+                    result,
+                })
+            }
+            FheEvalStep::IsIn {
+                value,
+                set,
+                fhe_type,
+                output,
+            } => {
+                let value_handle = resolve_operand(value, &produced)?;
+                let set_handles: Vec<[u8; 32]> = set
+                    .iter()
+                    .map(|operand| resolve_operand(operand, &produced))
+                    .collect::<Option<_>>()?;
+                let result = match output {
+                    FheEvalOutput::AllowedDurable {
+                        output_nonce_key,
+                        output_nonce_sequence,
+                        ..
+                    } => computed_bound_eval_is_in_handle(
+                        value_handle,
+                        &set_handles,
+                        *fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                        *output_nonce_key,
+                        *output_nonce_sequence,
+                    ),
+                    FheEvalOutput::AllowedLocal => computed_eval_is_in_handle(
+                        value_handle,
+                        &set_handles,
+                        *fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                    ),
+                };
+                produced.push(result);
+                SolanaHostEvent::FheIsIn(FheIsInEvent {
+                    version: EVENT_VERSION,
+                    subject,
+                    value: value_handle,
+                    set: set_handles,
+                    fhe_type: *fhe_type,
+                    result,
+                })
+            }
+            FheEvalStep::MulDiv {
+                factor1,
+                factor2,
+                divisor,
+                output_fhe_type,
+                output,
+            } => {
+                let factor1_handle = resolve_operand(factor1, &produced)?;
+                let (factor2_handle, scalar) = resolve_rhs(factor2, &produced)?;
+                let result = match output {
+                    FheEvalOutput::AllowedDurable {
+                        output_nonce_key,
+                        output_nonce_sequence,
+                        ..
+                    } => computed_bound_eval_mul_div_handle(
+                        factor1_handle,
+                        factor2_handle,
+                        *divisor,
+                        scalar,
+                        *output_fhe_type,
+                        ctx.chain_id,
+                        ctx.previous_bank_hash,
+                        ctx.unix_timestamp,
+                        context_id,
+                        op_index,
+                        *output_nonce_key,
+                        *output_nonce_sequence,
+                    ),
+                    FheEvalOutput::AllowedLocal => {
+                        computed_eval_mul_div_handle(
+                            factor1_handle,
+                            factor2_handle,
+                            *divisor,
+                            scalar,
+                            *output_fhe_type,
+                            ctx.chain_id,
+                            ctx.previous_bank_hash,
+                            ctx.unix_timestamp,
+                            context_id,
+                            op_index,
+                        )
+                    }
+                };
+                produced.push(result);
+                SolanaHostEvent::FheMulDiv(FheMulDivEvent {
+                    version: EVENT_VERSION,
+                    subject,
+                    factor1: factor1_handle,
+                    factor2: factor2_handle,
+                    divisor: *divisor,
+                    scalar,
+                    result,
+                })
+            }
         };
         let durable_acl_record_index = match fhe_eval_step_output(step) {
             FheEvalOutput::AllowedDurable {
@@ -531,7 +754,11 @@ fn fhe_eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
         | FheEvalStep::Ternary { output, .. }
         | FheEvalStep::TrivialEncrypt { output, .. }
         | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::RandBounded { output, .. } => output,
+        | FheEvalStep::Unary { output, .. }
+        | FheEvalStep::RandBounded { output, .. }
+        | FheEvalStep::Sum { output, .. }
+        | FheEvalStep::IsIn { output, .. }
+        | FheEvalStep::MulDiv { output, .. } => output,
     }
 }
 
@@ -687,6 +914,179 @@ mod tests {
                 assert_eq!(event.subject, SUBJECT);
                 assert_eq!(event.upper_bound, upper_bound);
                 assert_eq!(event.fhe_type, 5);
+            }
+            other => panic!("expected FheRandBounded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fhe_eval_walk_reconstructs_composite_and_unary_ops() {
+        let cx = ctx();
+        let context_id = [1u8; 32];
+        let ub = {
+            let mut b = [0u8; 32];
+            b[31] = 128; // power-of-two upper bound
+            b
+        };
+        let plan = FheEvalArgs {
+            context_id,
+            steps: vec![
+                FheEvalStep::TrivialEncrypt {
+                    plaintext: [9u8; 32],
+                    fhe_type: 5,
+                    output: FheEvalOutput::AllowedLocal,
+                },
+                FheEvalStep::TrivialEncrypt {
+                    plaintext: [4u8; 32],
+                    fhe_type: 5,
+                    output: FheEvalOutput::AllowedLocal,
+                },
+                FheEvalStep::Unary {
+                    op: PgmUnaryOpCode::Neg,
+                    operand: FheEvalOperand::AllowedLocal { producer_index: 0 },
+                    output_fhe_type: 5,
+                    output: FheEvalOutput::AllowedLocal,
+                },
+                FheEvalStep::Sum {
+                    operands: vec![
+                        FheEvalOperand::AllowedLocal { producer_index: 0 },
+                        FheEvalOperand::AllowedLocal { producer_index: 1 },
+                    ],
+                    fhe_type: 5,
+                    output: FheEvalOutput::AllowedLocal,
+                },
+                FheEvalStep::IsIn {
+                    value: FheEvalOperand::AllowedLocal { producer_index: 0 },
+                    set: vec![FheEvalOperand::AllowedLocal {
+                        producer_index: 1,
+                    }],
+                    fhe_type: 5,
+                    output: FheEvalOutput::AllowedLocal,
+                },
+                FheEvalStep::MulDiv {
+                    factor1: FheEvalOperand::AllowedLocal { producer_index: 0 },
+                    factor2: FheEvalOperand::Scalar([2u8; 32]),
+                    divisor: [3u8; 32],
+                    output_fhe_type: 5,
+                    output: FheEvalOutput::AllowedLocal,
+                },
+                FheEvalStep::RandBounded {
+                    upper_bound: ub,
+                    fhe_type: 5,
+                    output: FheEvalOutput::AllowedLocal,
+                },
+            ],
+        };
+        let events =
+            reconstruct_fhe_eval_events(&plan, SUBJECT, &cx).expect("walk");
+        assert_eq!(events.len(), 7);
+        let h0 = match &events[0] {
+            SolanaHostEvent::TrivialEncrypt(e) => e.result,
+            other => panic!("expected TrivialEncrypt, got {other:?}"),
+        };
+        let h1 = match &events[1] {
+            SolanaHostEvent::TrivialEncrypt(e) => e.result,
+            other => panic!("expected TrivialEncrypt, got {other:?}"),
+        };
+        // Each op resolves its transient operands to prior steps' handles and
+        // derives the result via the program's own `computed_*` functions.
+        match &events[2] {
+            SolanaHostEvent::FheUnaryOp(e) => {
+                assert_eq!(e.op, FheUnaryOpCode::Neg);
+                assert_eq!(e.operand, h0);
+                assert_eq!(
+                    e.result,
+                    computed_eval_unary_handle(
+                        PgmUnaryOpCode::Neg,
+                        h0,
+                        5,
+                        cx.chain_id,
+                        cx.previous_bank_hash,
+                        cx.unix_timestamp,
+                        context_id,
+                        2,
+                    )
+                );
+            }
+            other => panic!("expected FheUnaryOp, got {other:?}"),
+        }
+        match &events[3] {
+            SolanaHostEvent::FheSum(e) => {
+                assert_eq!(e.operands, vec![h0, h1]);
+                assert_eq!(
+                    e.result,
+                    computed_eval_sum_handle(
+                        &[h0, h1],
+                        5,
+                        cx.chain_id,
+                        cx.previous_bank_hash,
+                        cx.unix_timestamp,
+                        context_id,
+                        3,
+                    )
+                );
+            }
+            other => panic!("expected FheSum, got {other:?}"),
+        }
+        match &events[4] {
+            SolanaHostEvent::FheIsIn(e) => {
+                assert_eq!(e.value, h0);
+                assert_eq!(e.set, vec![h1]);
+                assert_eq!(
+                    e.result,
+                    computed_eval_is_in_handle(
+                        h0,
+                        &[h1],
+                        5,
+                        cx.chain_id,
+                        cx.previous_bank_hash,
+                        cx.unix_timestamp,
+                        context_id,
+                        4,
+                    )
+                );
+            }
+            other => panic!("expected FheIsIn, got {other:?}"),
+        }
+        match &events[5] {
+            SolanaHostEvent::FheMulDiv(e) => {
+                assert_eq!(e.factor1, h0);
+                assert_eq!(e.factor2, [2u8; 32]);
+                assert!(e.scalar);
+                assert_eq!(e.divisor, [3u8; 32]);
+                assert_eq!(
+                    e.result,
+                    computed_eval_mul_div_handle(
+                        h0,
+                        [2u8; 32],
+                        [3u8; 32],
+                        true,
+                        5,
+                        cx.chain_id,
+                        cx.previous_bank_hash,
+                        cx.unix_timestamp,
+                        context_id,
+                        5,
+                    )
+                );
+            }
+            other => panic!("expected FheMulDiv, got {other:?}"),
+        }
+        match &events[6] {
+            SolanaHostEvent::FheRandBounded(e) => {
+                assert_eq!(e.upper_bound, ub);
+                let seed = computed_eval_rand_seed(
+                    cx.chain_id,
+                    cx.previous_bank_hash,
+                    cx.unix_timestamp,
+                    context_id,
+                    6,
+                );
+                assert_eq!(e.seed, seed);
+                assert_eq!(
+                    e.result,
+                    computed_rand_bounded_handle(ub, seed, 5, cx.chain_id)
+                );
             }
             other => panic!("expected FheRandBounded, got {other:?}"),
         }

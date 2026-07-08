@@ -264,3 +264,248 @@ fn acl_record_layout_unchanged_by_hcu() {
     record.try_serialize(&mut buf).unwrap();
     assert_eq!(buf.len(), 8 + AclRecord::SPACE);
 }
+
+/// Builds a handle carrying `fhe_type` in byte 30 (the canonical type nibble read by
+/// `handle_fhe_type`); the remaining bytes only need to differ per operand.
+fn typed_handle(tag: u8, fhe_type: u8) -> [u8; 32] {
+    let mut handle = [tag; 32];
+    handle[30] = fhe_type;
+    handle
+}
+
+/// Asserts the operand-validation result failed with the given Anchor error code.
+fn assert_error(result: Result<()>, expected: ZamaHostError) {
+    let code = match result.unwrap_err() {
+        anchor_lang::error::Error::AnchorError(err) => err.error_code_number,
+        other => panic!("expected an AnchorError, got {other:?}"),
+    };
+    assert_eq!(code, u32::from(expected));
+}
+
+#[test]
+fn assert_sum_operand_types_enforces_uniform_declared_type() {
+    let a = typed_handle(1, 5);
+    let b = typed_handle(2, 5);
+    assert!(assert_sum_operand_types(&[a, b], 5).is_ok());
+    // A single operand whose type differs from the declared type is rejected — the type-confusion
+    // gap this branch closes for Sum.
+    assert_error(
+        assert_sum_operand_types(&[a, typed_handle(3, 4)], 5),
+        ZamaHostError::BinaryOperandTypeMismatch,
+    );
+    // Fewer than two operands, and non-uint declared types, are rejected.
+    assert_error(
+        assert_sum_operand_types(&[a], 5),
+        ZamaHostError::InvalidFheEvalAccount,
+    );
+    assert_error(
+        assert_sum_operand_types(&[typed_handle(1, 0), typed_handle(2, 0)], 0),
+        ZamaHostError::UnsupportedFheType,
+    );
+}
+
+#[test]
+fn assert_is_in_operand_types_enforces_uniform_declared_type() {
+    let value = typed_handle(1, 4);
+    let set = [typed_handle(2, 4), typed_handle(3, 4)];
+    assert!(assert_is_in_operand_types(value, &set, 4).is_ok());
+    // The full EVM/coprocessor range Uint8..Uint256 (2..=8) is accepted, including Uint256.
+    assert!(assert_is_in_operand_types(
+        typed_handle(1, 8),
+        &[typed_handle(2, 8), typed_handle(3, 8)],
+        8
+    )
+    .is_ok());
+    // Value type mismatch and set-element type mismatch are both rejected.
+    assert_error(
+        assert_is_in_operand_types(typed_handle(1, 5), &set, 4),
+        ZamaHostError::BinaryOperandTypeMismatch,
+    );
+    assert_error(
+        assert_is_in_operand_types(value, &[typed_handle(2, 4), typed_handle(3, 5)], 4),
+        ZamaHostError::BinaryOperandTypeMismatch,
+    );
+    // Empty set, and the excluded ebool type, are rejected.
+    assert_error(
+        assert_is_in_operand_types(value, &[], 4),
+        ZamaHostError::InvalidFheEvalAccount,
+    );
+    assert_error(
+        assert_is_in_operand_types(typed_handle(1, 0), &[typed_handle(2, 0)], 0),
+        ZamaHostError::UnsupportedFheType,
+    );
+}
+
+#[test]
+fn assert_mul_div_operand_types_matches_evm_bounds() {
+    let factor1 = typed_handle(1, 5);
+    let factor2 = typed_handle(2, 5);
+    let nonzero_divisor = typed_handle(9, 0);
+    // Encrypted factor2 of the same type, and a scalar factor2 (handle ignored), are both accepted.
+    assert!(assert_mul_div_operand_types(factor1, factor2, false, nonzero_divisor, 5).is_ok());
+    assert!(assert_mul_div_operand_types(factor1, [0u8; 32], true, nonzero_divisor, 5).is_ok());
+    // Uint128 output is rejected — EVM and the coprocessor cap mulDiv at Uint64.
+    assert_error(
+        assert_mul_div_operand_types(
+            typed_handle(1, 6),
+            typed_handle(2, 6),
+            false,
+            nonzero_divisor,
+            6,
+        ),
+        ZamaHostError::UnsupportedFheType,
+    );
+    // factor1 / encrypted-factor2 type mismatches are rejected.
+    assert_error(
+        assert_mul_div_operand_types(typed_handle(1, 4), factor2, false, nonzero_divisor, 5),
+        ZamaHostError::BinaryOperandTypeMismatch,
+    );
+    assert_error(
+        assert_mul_div_operand_types(factor1, typed_handle(2, 4), false, nonzero_divisor, 5),
+        ZamaHostError::BinaryOperandTypeMismatch,
+    );
+    // A zero plaintext divisor is rejected (EVM DivisionByZero parity).
+    assert_error(
+        assert_mul_div_operand_types(factor1, factor2, true, [0u8; 32], 5),
+        ZamaHostError::MulDivDivisorZero,
+    );
+}
+
+#[test]
+fn assert_unary_operand_type_rejects_same_type_cast() {
+    // Cast to a different type is allowed; a same-type cast is rejected (EVM InvalidType parity).
+    assert!(assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 5), 4).is_ok());
+    assert_error(
+        assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 5), 5),
+        ZamaHostError::UnsupportedFheType,
+    );
+    // Neg/Not require operand type == output type; Not additionally accepts ebool, Neg does not.
+    assert!(assert_unary_operand_type(FheUnaryOpCode::Neg, typed_handle(1, 5), 5).is_ok());
+    assert!(assert_unary_operand_type(FheUnaryOpCode::Not, typed_handle(1, 0), 0).is_ok());
+    assert_error(
+        assert_unary_operand_type(FheUnaryOpCode::Neg, typed_handle(1, 0), 0),
+        ZamaHostError::UnsupportedFheType,
+    );
+}
+
+#[test]
+fn assert_binary_operand_types_matches_evm_supported_sets() {
+    // Eq/Ne accept the widest set including Bool and Uint256; their output is ebool.
+    assert!(assert_binary_operand_types(
+        FheBinaryOpCode::Eq,
+        typed_handle(1, 0),
+        typed_handle(2, 0),
+        false,
+        0
+    )
+    .is_ok());
+    assert!(assert_binary_operand_types(
+        FheBinaryOpCode::Ne,
+        typed_handle(1, 8),
+        typed_handle(2, 8),
+        false,
+        0
+    )
+    .is_ok());
+    // Ordered comparisons reject Bool/Uint256 (EVM fheGe supportedTypes = Uint8..Uint128).
+    assert_error(
+        assert_binary_operand_types(
+            FheBinaryOpCode::Ge,
+            typed_handle(1, 0),
+            typed_handle(2, 0),
+            false,
+            0,
+        ),
+        ZamaHostError::UnsupportedFheType,
+    );
+    // Bitwise ops accept Uint256; the operand type must equal the output type.
+    assert!(assert_binary_operand_types(
+        FheBinaryOpCode::And,
+        typed_handle(1, 8),
+        typed_handle(2, 8),
+        false,
+        8
+    )
+    .is_ok());
+    assert_error(
+        assert_binary_operand_types(
+            FheBinaryOpCode::And,
+            typed_handle(1, 8),
+            typed_handle(2, 5),
+            false,
+            8,
+        ),
+        ZamaHostError::BinaryOperandTypeMismatch,
+    );
+}
+
+#[test]
+fn assert_binary_div_rem_require_nonzero_scalar_divisor() {
+    let lhs = typed_handle(1, 5); // euint64
+    let nonzero_scalar = typed_handle(9, 0);
+    // A non-zero scalar divisor is accepted for both Div and Rem.
+    assert!(
+        assert_binary_operand_types(FheBinaryOpCode::Div, lhs, nonzero_scalar, true, 5).is_ok()
+    );
+    assert!(
+        assert_binary_operand_types(FheBinaryOpCode::Rem, lhs, nonzero_scalar, true, 5).is_ok()
+    );
+    // An encrypted divisor is rejected — division is scalar-only (EVM `IsNotScalar`).
+    assert_error(
+        assert_binary_operand_types(FheBinaryOpCode::Div, lhs, typed_handle(2, 5), false, 5),
+        ZamaHostError::DivisorMustBeScalar,
+    );
+    // A zero scalar divisor is rejected.
+    assert_error(
+        assert_binary_operand_types(FheBinaryOpCode::Rem, lhs, [0u8; 32], true, 5),
+        ZamaHostError::DivisionByZero,
+    );
+    // A divisor nonzero only above the euint8 width truncates to zero -> rejected.
+    let mut high_only = [0u8; 32];
+    high_only[30] = 0x01;
+    assert_error(
+        assert_binary_operand_types(FheBinaryOpCode::Div, typed_handle(1, 2), high_only, true, 2),
+        ZamaHostError::DivisionByZero,
+    );
+}
+
+#[test]
+fn assert_mul_div_rejects_width_truncated_zero_divisor() {
+    let factor1 = typed_handle(1, 2); // euint8
+    let factor2 = typed_handle(2, 2);
+    // Divisor nonzero only above the u8 width truncates to zero -> rejected (EVM parity).
+    let mut high_only = [0u8; 32];
+    high_only[30] = 0x01;
+    assert_error(
+        assert_mul_div_operand_types(factor1, factor2, false, high_only, 2),
+        ZamaHostError::MulDivDivisorZero,
+    );
+    // A low-byte-nonzero divisor is accepted.
+    let mut low = [0u8; 32];
+    low[31] = 0x01;
+    assert!(assert_mul_div_operand_types(factor1, factor2, false, low, 2).is_ok());
+}
+
+#[test]
+fn assert_sum_and_is_in_enforce_coprocessor_max_operand_counts() {
+    // Narrow types (Uint8..Uint32) cap at 100 operands; wider ones at 60.
+    let narrow = |n| vec![typed_handle(1, 2); n];
+    assert!(assert_sum_operand_types(&narrow(100), 2).is_ok());
+    assert_error(
+        assert_sum_operand_types(&narrow(101), 2),
+        ZamaHostError::InvalidFheEvalAccount,
+    );
+    let wide = |n| vec![typed_handle(1, 5); n];
+    assert!(assert_sum_operand_types(&wide(60), 5).is_ok());
+    assert_error(
+        assert_sum_operand_types(&wide(61), 5),
+        ZamaHostError::InvalidFheEvalAccount,
+    );
+    // IsIn caps the set size (excluding the tested value) the same way.
+    let value = typed_handle(1, 2);
+    assert!(assert_is_in_operand_types(value, &narrow(100), 2).is_ok());
+    assert_error(
+        assert_is_in_operand_types(value, &narrow(101), 2),
+        ZamaHostError::InvalidFheEvalAccount,
+    );
+}
