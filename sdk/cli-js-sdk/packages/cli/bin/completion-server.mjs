@@ -235,6 +235,7 @@ const root = command(
           opt("--to", "recipient address"),
           opt("--amount", "amount in base units (0 < amount < 2^64)"),
           opt("--from", "operator transferFrom source; spends an existing allowance"),
+          opt("--verify", "decrypt sender balance before/after and the transferred amount; adds two user-decrypt rounds (incompatible with --from)", undefined, undefined, false),
           ...walletOptions,
         ]),
         command("balance", "Read the confidential ERC-7984 balance handle for an account", [

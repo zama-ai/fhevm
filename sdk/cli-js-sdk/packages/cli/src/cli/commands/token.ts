@@ -33,6 +33,10 @@ export const registerTokenCommands = (program: Command): void => {
       parseAddress,
     )
     .option(
+      "--verify",
+      "decrypt sender balance before/after to verify the transfer; adds two user-decrypt rounds (incompatible with --from)",
+    )
+    .option(
       "--private-key <privateKey>",
       "wallet private key; falls back to PRIVATE_KEY",
       parsePrivateKey,
@@ -49,6 +53,7 @@ export const registerTokenCommands = (program: Command): void => {
         to: options.to,
         amount: options.amount,
         from: options.from,
+        verify: options.verify,
         privateKey: options.privateKey,
         mnemonic: options.mnemonic,
         onProgress: createProgressReporter(),
