@@ -24,7 +24,7 @@ queue_rules:
     queue_conditions:
       - base = main
       - label!=do-not-merge
-      - -files~=^(?!\.mergify\.yml$|\.github/)
+      - -files~=^(?!\.mergify\.yml$)
 
   - name: charts-only
     batch_size: 1
@@ -39,9 +39,9 @@ queue_rules:
       - -files~=^(?!charts/)
 
   - name: main
-    batch_size: 1
-    batch_max_wait_time: 1m
-    checks_timeout: 12h
+    batch_size: 3
+    batch_max_wait_time: 1h
+    checks_timeout: 5h
     merge_method: squash
     update_method: rebase
     merge_conditions:
