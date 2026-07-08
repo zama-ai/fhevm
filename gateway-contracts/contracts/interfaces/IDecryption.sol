@@ -97,12 +97,23 @@ interface IDecryption {
      * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @custom:deprecated Emitted for the v0.14 -> v0.15 upgrade period. Should be removed in v0.16.
      */
     event PublicDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
         bytes extraData
     );
+
+    /**
+     * @notice Emitted for a public decryption request, carrying only the ciphertext handles.
+     * @param decryptionId The decryption request ID.
+     * @param ctHandles The handles of the ciphertexts to decrypt.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @dev Shares its name with the legacy event via Solidity event overloading — the
+     * distinct parameter list produces a distinct `topic0`.
+     */
+    event PublicDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, bytes extraData);
 
     /**
      * @notice Emitted when a KMS connector responds to a public decryption request.
@@ -146,6 +157,7 @@ interface IDecryption {
      * relayer-sdk deprecation window for old-format signatures closes. New callers should subscribe
      * to the overloaded unified EIP-712 `UserDecryptionRequest` event emitted by
      * `userDecryptionRequest(HandleEntry[], ...)`.
+     * @custom:deprecated Emitted for the v0.14 -> v0.15 upgrade period. Should be removed in v0.16.
      */
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
@@ -167,10 +179,53 @@ interface IDecryption {
      * off-chain. See `UserDecryptionRequestPayload`.
      * @dev Shares its name with the legacy event via Solidity event overloading — the
      * distinct parameter list produces a distinct `topic0`.
+     * @custom:deprecated Emitted for the v0.14 -> v0.15 upgrade period. Should be removed in v0.16.
      */
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
+        HandleEntry[] handles,
+        UserDecryptionRequestPayload payload
+    );
+
+    /**
+     * @notice Emitted for a user decryption request made via the legacy paths
+     * (`userDecryptionRequest(CtHandleContractPair[], ...)` and `delegatedUserDecryptionRequest`),
+     * carrying only the ciphertext handles.
+     * @param decryptionId The decryption request ID.
+     * @param ctHandles The handles of the ciphertexts to decrypt.
+     * @param userAddress The user's address (the delegate address for delegated requests).
+     * @param publicKey The user's public key used for reencryption.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @custom:deprecated Emitted only by the legacy user decryption paths. Removed when the
+     * relayer-sdk deprecation window for old-format signatures closes. New callers should subscribe
+     * to the overloaded unified EIP-712 `UserDecryptionRequest` event emitted by
+     * `userDecryptionRequest(HandleEntry[], ...)`.
+     * @dev Shares its name with the legacy event via Solidity event overloading — the
+     * distinct parameter list produces a distinct `topic0`.
+     */
+    event UserDecryptionRequest(
+        uint256 indexed decryptionId,
+        bytes32[] ctHandles,
+        address userAddress,
+        bytes publicKey,
+        bytes extraData
+    );
+
+    /**
+     * @notice Emitted for a unified EIP-712 user decryption request, carrying only the handle entries.
+     * @param decryptionId The decryption request ID.
+     * @param handles The handle entries (handle, contractAddress, ownerAddress). Not part of the
+     * signed message. Consumers resolve the ciphertext materials off-chain from the signed S3
+     * attestations (RFC-023 Part 2), so no on-chain `SnsCiphertextMaterial[]` is carried here.
+     * @param payload The EIP-712 signed message and the raw signature, grouped so the KMS Connector
+     * has everything it needs to reconstruct the digest and verify the signature off-chain. See
+     * `UserDecryptionRequestPayload`.
+     * @dev Shares its name with the legacy event via Solidity event overloading — the
+     * distinct parameter list produces a distinct `topic0`.
+     */
+    event UserDecryptionRequest(
+        uint256 indexed decryptionId,
         HandleEntry[] handles,
         UserDecryptionRequestPayload payload
     );
