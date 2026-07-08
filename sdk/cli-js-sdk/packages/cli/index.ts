@@ -8,6 +8,7 @@ import { consola } from "consola";
 import { registerDelegatedUserDecryptCommands } from "./src/cli/commands/delegated-user-decrypt";
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
 import { registerPublicDecryptCommands } from "./src/cli/commands/public-decrypt";
+import { registerRelayerResultCommands } from "./src/cli/commands/relayer-result";
 import { registerUserDecryptCommands } from "./src/cli/commands/user-decrypt";
 import { DEFAULT_NETWORK, NETWORKS } from "@cli-fhevm-sdk/toolkit/types";
 
@@ -30,6 +31,7 @@ registerInputProofCommand(program);
 registerPublicDecryptCommands(program);
 registerUserDecryptCommands(program);
 registerDelegatedUserDecryptCommands(program);
+registerRelayerResultCommands(program);
 
 program.parseAsync().catch((error: unknown) => {
   consola.error(error instanceof Error ? (error.stack ?? error.message) : error);
