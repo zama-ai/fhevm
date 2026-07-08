@@ -5,6 +5,7 @@ import "./src/env";
 import { Command, Option } from "@commander-js/extra-typings";
 import { consola } from "consola";
 
+import { registerInputProofCommand } from "./src/cli/commands/input-proof";
 import { DEFAULT_NETWORK, NETWORKS } from "@cli-fhevm-sdk/toolkit/types";
 
 const program = new Command()
@@ -21,6 +22,8 @@ const program = new Command()
     "relayer base URL override, for example localhost:3000",
   )
   .option("--rpc-url <url>", "host chain RPC URL override");
+
+registerInputProofCommand(program);
 
 program.parseAsync().catch((error: unknown) => {
   consola.error(error instanceof Error ? (error.stack ?? error.message) : error);
