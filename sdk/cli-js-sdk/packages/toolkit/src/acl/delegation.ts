@@ -78,7 +78,7 @@ export const delegateForUserDecryption = async (
 /**
  * Reuses an active user-decryption delegation or creates one when possible.
  *
- * Cached delegated flows can call this without delegator credentials only when
+ * Delegated flows can call this without delegator credentials only when
  * the ACL already has an unexpired delegation.
  */
 export const ensureUserDecryptionDelegation = async (

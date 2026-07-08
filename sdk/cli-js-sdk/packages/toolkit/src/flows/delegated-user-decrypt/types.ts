@@ -9,7 +9,7 @@ import type { FheValueType, UserDecryptResult } from "../../types";
  * Shared options for delegated user decryption.
  *
  * `privateKey`/`mnemonic` identify the delegate. Delegator credentials are
- * optional only for cached flows that can use an existing ACL delegation and a
+ * optional only for flows that can use an existing ACL delegation and a
  * supplied delegator address.
  */
 export type DelegatedUserDecryptBaseOptions = ClientOptions &
