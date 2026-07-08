@@ -32,12 +32,15 @@ pub enum ProofError {
     LineageNotFound,
     #[error("lineage proof data is lagging chain state (leaf_count {leaf_count})")]
     Lagging { leaf_count: u64 },
+    #[error("lineage proof cache diverged from chain after catch-up (leaf_count {leaf_count}); cache rebuild required")]
+    CorruptCache { leaf_count: u64 },
 }
 
 /// Builds a proof for `(lineage, leaf_index)`. On `PeaksDiverged` (the local
 /// event log is behind the live chain account) triggers one targeted catch-up
-/// ingestion for that lineage and retries once; a budget exhaustion or second
-/// divergence is returned as retryable lag.
+/// ingestion for that lineage and retries once; budget exhaustion is returned
+/// as retryable lag, while a second divergence means the local cache cannot be
+/// reconciled by polling the remaining signatures.
 pub async fn build_proof<C: ChainFetcher, S: LeafStore>(
     fetcher: &C,
     store: &S,
@@ -96,7 +99,9 @@ pub async fn build_proof<C: ChainFetcher, S: LeafStore>(
                     proof_slot: on_chain.leaf_count,
                     verified: true,
                 }),
-                Err(LineageError::PeaksDiverged) => Err(lagging()),
+                Err(LineageError::PeaksDiverged) => Err(ProofError::CorruptCache {
+                    leaf_count: on_chain.leaf_count,
+                }),
                 Err(other) => Err(ProofError::Lineage(other)),
             }
         }
@@ -496,7 +501,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn gives_up_gracefully_when_divergence_persists_after_catch_up() {
+    async fn reports_corrupt_cache_when_divergence_persists_after_catch_up() {
         let program_id = pk(0x99);
         let lineage = pk(0x03);
         let chain = FakeChain::new(program_id);
@@ -515,6 +520,6 @@ mod tests {
         let error = build_proof(&chain, &store, program_id, lineage, 0, 1000)
             .await
             .unwrap_err();
-        assert!(matches!(error, ProofError::Lagging { leaf_count: 1 }));
+        assert!(matches!(error, ProofError::CorruptCache { leaf_count: 1 }));
     }
 }

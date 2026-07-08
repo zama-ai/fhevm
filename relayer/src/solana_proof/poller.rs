@@ -8,7 +8,7 @@ use tracing::{error, info};
 
 use crate::solana_proof::chain::ChainFetcher;
 use crate::solana_proof::config::SolanaProofConfig;
-use crate::solana_proof::ingest::poll_once;
+use crate::solana_proof::ingest::{poll_once, MAX_POLL_BACKLOG_PER_CYCLE};
 use crate::solana_proof::store::{Cursor, LeafStore};
 
 /// Runs `ingest::poll_once` on a `poll_interval_secs` timer until the process
@@ -58,6 +58,7 @@ pub async fn run_poll_loop<C: ChainFetcher, S: LeafStore>(
             store.as_ref(),
             program_id,
             config.poll_signature_limit,
+            MAX_POLL_BACKLOG_PER_CYCLE,
         )
         .await
         {

@@ -86,6 +86,17 @@ impl IntoResponse for HttpError {
                 }),
             )
                 .into_response(),
+            HttpError::Proof(ProofError::CorruptCache { leaf_count }) => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(MmrProofResponse {
+                    mmr_proof: None,
+                    leaf_count,
+                    proof_slot: leaf_count,
+                    verified: false,
+                    status: "corrupt_cache",
+                }),
+            )
+                .into_response(),
             other => {
                 let status = match &other {
                     HttpError::InvalidAddress(_) => axum::http::StatusCode::BAD_REQUEST,

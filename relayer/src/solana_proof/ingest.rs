@@ -8,9 +8,9 @@ use std::collections::HashSet;
 use zama_solana_acl::lineage::LineageEvent;
 
 use crate::solana_proof::chain::ChainFetcher;
-use crate::solana_proof::decode::decode_program_instructions;
-use crate::solana_proof::replay::{apply_instruction, LineageReplayState};
-use crate::solana_proof::store::{Cursor, LeafStore};
+use crate::solana_proof::decode::{decode_program_instructions, DecodedInstruction};
+use crate::solana_proof::replay::{apply_instruction, LineageReplayState, ReplayError};
+use crate::solana_proof::store::{Cursor, LeafStore, LineageSignatureUpdate, SignatureUpdate};
 
 #[derive(thiserror::Error, Debug)]
 pub enum IngestError {
@@ -22,7 +22,15 @@ pub enum IngestError {
     Decode(#[from] crate::solana_proof::decode::DecodeError),
     #[error("replay error: {0}")]
     Replay(#[from] crate::solana_proof::replay::ReplayError),
+    #[error("poll backlog exceeds the per-cycle ceiling ({max}); refusing to advance to avoid silently skipping signatures — run an explicit backfill")]
+    BacklogExceeded { max: usize },
 }
+
+/// Generous per-poll-cycle backlog ceiling. The poller ingests the whole
+/// contiguous range newer than the cursor each cycle (oldest-first, gap-free);
+/// this is only a fail-closed backstop against an unbounded backfill/OOM on a
+/// pathological history. Exceeding it errors rather than skipping.
+pub const MAX_POLL_BACKLOG_PER_CYCLE: usize = 10_000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CatchUpOutcome {
@@ -35,44 +43,63 @@ struct SignatureWindow {
     budget_exhausted: bool,
 }
 
+/// How to bound the matching signatures collected in one `fetch_signature_window`
+/// call. Both variants stop at the same count; they differ only in what happens
+/// when the backlog exceeds it.
+enum Overflow {
+    /// Poller: fail closed (`BacklogExceeded`) rather than silently skip. The
+    /// whole range up to `max` is ingested oldest-first with no gap.
+    Ceiling(usize),
+    /// On-demand catch-up: signal `budget_exhausted` (a retryable lag) when more
+    /// than `budget` signatures remain, so the caller reports lag, not an error.
+    Budget(usize),
+}
+
+impl Overflow {
+    fn max(&self) -> usize {
+        match self {
+            Overflow::Ceiling(m) | Overflow::Budget(m) => *m,
+        }
+    }
+
+    /// The window to return once the bound is hit (or `page_limit`/`max` is zero).
+    fn hit(&self) -> Result<SignatureWindow, IngestError> {
+        match self {
+            Overflow::Budget(_) => Ok(SignatureWindow {
+                signatures: Vec::new(),
+                budget_exhausted: true,
+            }),
+            Overflow::Ceiling(max) => Err(IngestError::BacklogExceeded { max: *max }),
+        }
+    }
+}
+
+/// Fetches signatures for `address` newer than `until`, paging newest-first, and
+/// returns them oldest-first so events apply in chain order. Probes one signature
+/// past `overflow.max()` to distinguish "exactly at the bound" from "more remain".
 async fn fetch_signature_window<C, F>(
     fetcher: &C,
     address: [u8; 32],
     until: Option<&str>,
     page_limit: usize,
-    budget: Option<usize>,
+    overflow: Overflow,
     mut stop_at: F,
 ) -> Result<SignatureWindow, IngestError>
 where
     C: ChainFetcher,
     F: FnMut(&str) -> bool,
 {
-    if page_limit == 0 {
-        return Ok(SignatureWindow {
-            signatures: Vec::new(),
-            budget_exhausted: budget == Some(0),
-        });
-    }
-    if budget == Some(0) {
-        return Ok(SignatureWindow {
-            signatures: Vec::new(),
-            budget_exhausted: true,
-        });
+    let max = overflow.max();
+    if page_limit == 0 || max == 0 {
+        return overflow.hit();
     }
 
     let mut before: Option<String> = None;
     let mut newest_first = Vec::new();
     loop {
-        let limit = match budget {
-            Some(max) => page_limit.min(max.saturating_sub(newest_first.len()).saturating_add(1)),
-            None => page_limit,
-        };
-        if limit == 0 {
-            return Ok(SignatureWindow {
-                signatures: Vec::new(),
-                budget_exhausted: true,
-            });
-        }
+        // Ask for one extra beyond what remains of `max`, so a page can reveal
+        // whether the backlog overflows the bound.
+        let limit = page_limit.min(max.saturating_sub(newest_first.len()).saturating_add(1));
 
         let page = fetcher
             .get_signatures_for_address(address, before.as_deref(), until, limit)
@@ -88,15 +115,11 @@ where
                 stopped = true;
                 break;
             }
-            newest_first.push(signature.clone());
-            if let Some(max) = budget {
-                if newest_first.len() > max {
-                    return Ok(SignatureWindow {
-                        signatures: Vec::new(),
-                        budget_exhausted: true,
-                    });
-                }
+            if newest_first.len() == max {
+                // A signature beyond `max` exists before reaching `until`.
+                return overflow.hit();
             }
+            newest_first.push(signature.clone());
         }
 
         if stopped || page.len() < limit {
@@ -112,6 +135,111 @@ where
     })
 }
 
+fn unique_lineages(instructions: &[DecodedInstruction]) -> Vec<[u8; 32]> {
+    let mut lineages = Vec::new();
+    for instruction in instructions {
+        let lineage = instruction.encrypted_value();
+        if !lineages.contains(&lineage) {
+            lineages.push(lineage);
+        }
+    }
+    lineages
+}
+
+fn recovered_already_applied_event(
+    state: &Option<LineageReplayState>,
+    instruction: &DecodedInstruction,
+    error: &ReplayError,
+) -> Option<Option<LineageEvent>> {
+    let state = state.as_ref()?;
+    match (instruction, error) {
+        (
+            DecodedInstruction::UpdateEncryptedValue {
+                encrypted_value,
+                new_handle,
+                previous_handle,
+                previous_subjects,
+            },
+            ReplayError::PreviousStateMismatch(error_lineage),
+        ) if error_lineage == encrypted_value
+            && state.current_handle == Some(*new_handle)
+            && state.subjects.as_slice() == previous_subjects.as_slice() =>
+        {
+            Some(Some(LineageEvent::handle_superseded(
+                *previous_handle,
+                previous_subjects,
+            )))
+        }
+        (
+            DecodedInstruction::RemoveSubject {
+                encrypted_value,
+                subject,
+            },
+            ReplayError::SubjectNotFound(error_lineage),
+        ) if error_lineage == encrypted_value && !state.subjects.contains(subject) => Some(None),
+        _ => None,
+    }
+}
+
+fn apply_or_recover_instruction(
+    state: &mut Option<LineageReplayState>,
+    instruction: &DecodedInstruction,
+) -> Result<Option<LineageEvent>, ReplayError> {
+    let original = state.clone();
+    match apply_instruction(state, instruction) {
+        Ok(event) => Ok(event),
+        Err(error) => {
+            if let Some(event) = recovered_already_applied_event(&original, instruction, &error) {
+                *state = original;
+                Ok(event)
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
+async fn build_lineage_signature_update<S: LeafStore>(
+    store: &S,
+    lineage: [u8; 32],
+    signature: &str,
+    instructions: &[DecodedInstruction],
+    mark_even_without_instruction: bool,
+) -> Result<Option<LineageSignatureUpdate>, IngestError> {
+    if store
+        .get_seen_signatures(lineage)
+        .await?
+        .iter()
+        .any(|seen| seen == signature)
+    {
+        return Ok(None);
+    }
+
+    let mut state = store.get_replay_state(lineage).await?;
+    let mut events = Vec::new();
+    let mut touched = false;
+
+    for instruction in instructions
+        .iter()
+        .filter(|instruction| instruction.encrypted_value() == lineage)
+    {
+        touched = true;
+        if let Some(event) = apply_or_recover_instruction(&mut state, instruction)? {
+            events.push(event);
+        }
+    }
+
+    if !touched && !mark_even_without_instruction {
+        return Ok(None);
+    }
+
+    Ok(Some(LineageSignatureUpdate {
+        lineage,
+        replay_state: state,
+        events,
+    }))
+}
+
 /// One program-wide poll cycle: fetches signatures newer than the stored
 /// cursor, decodes+replays each transaction's instructions oldest-to-newest,
 /// and persists the new cursor. `program_id` and `signature_source_address`
@@ -121,18 +249,24 @@ pub async fn poll_once<C: ChainFetcher, S: LeafStore>(
     fetcher: &C,
     store: &S,
     program_id: [u8; 32],
-    poll_limit: usize,
+    page_limit: usize,
+    max_backlog: usize,
 ) -> Result<usize, IngestError> {
     let cursor = store.get_cursor().await?;
     let until = cursor.as_ref().and_then(|c| c.last_signature.as_deref());
-    let signatures = fetch_signature_window(fetcher, program_id, until, poll_limit, None, |sig| {
-        until == Some(sig)
-    })
+    // Ingest the whole contiguous range newer than the cursor, oldest-first, so
+    // no signature is skipped; a backlog past the ceiling fails closed instead.
+    let signatures = fetch_signature_window(
+        fetcher,
+        program_id,
+        until,
+        page_limit,
+        Overflow::Ceiling(max_backlog),
+        |sig| until == Some(sig),
+    )
     .await?
     .signatures;
 
-    let mut last_slot = cursor.as_ref().map(|c| c.last_slot).unwrap_or(0);
-    let mut last_signature = cursor.and_then(|c| c.last_signature);
     let mut processed = 0usize;
 
     for signature in &signatures {
@@ -140,31 +274,27 @@ pub async fn poll_once<C: ChainFetcher, S: LeafStore>(
             continue;
         };
         let decoded = decode_program_instructions(program_id, &tx.instructions)?;
-        for instruction in &decoded {
-            let lineage = instruction.encrypted_value();
-            let mut state = store.get_replay_state(lineage).await?;
-            let event = apply_instruction(&mut state, instruction)?;
-            if let Some(state) = state {
-                store.set_replay_state(lineage, state).await?;
+        let mut lineages = Vec::new();
+        for lineage in unique_lineages(&decoded) {
+            if let Some(update) =
+                build_lineage_signature_update(store, lineage, signature, &decoded, false).await?
+            {
+                lineages.push(update);
             }
-            if let Some(event) = event {
-                store
-                    .append_events(lineage, std::slice::from_ref(&event))
-                    .await?;
-            }
-            store.mark_signature_seen(lineage, signature).await?;
         }
-        last_slot = tx.slot;
-        last_signature = Some(signature.clone());
+        store
+            .apply_signature_update(SignatureUpdate {
+                signature: signature.clone(),
+                lineages,
+                cursor: Some(Cursor {
+                    last_signature: Some(signature.clone()),
+                    last_slot: tx.slot,
+                }),
+            })
+            .await?;
         processed += 1;
     }
 
-    store
-        .set_cursor(Cursor {
-            last_signature,
-            last_slot,
-        })
-        .await?;
     Ok(processed)
 }
 
@@ -190,7 +320,7 @@ pub async fn catch_up_lineage<C: ChainFetcher, S: LeafStore>(
         lineage,
         None,
         1000,
-        Some(signature_budget),
+        Overflow::Budget(signature_budget),
         |sig| seen.contains(sig),
     )
     .await?;
@@ -201,9 +331,6 @@ pub async fn catch_up_lineage<C: ChainFetcher, S: LeafStore>(
         });
     }
 
-    let mut state: Option<LineageReplayState> = store.get_replay_state(lineage).await?;
-    let mut new_events: Vec<LineageEvent> = Vec::new();
-    let mut processed_signatures = Vec::new();
     let mut processed = 0usize;
 
     for signature in window.signatures {
@@ -214,23 +341,21 @@ pub async fn catch_up_lineage<C: ChainFetcher, S: LeafStore>(
             continue;
         };
         let decoded = decode_program_instructions(program_id, &tx.instructions)?;
-        for instruction in decoded.iter().filter(|i| i.encrypted_value() == lineage) {
-            if let Some(event) = apply_instruction(&mut state, instruction)? {
-                new_events.push(event);
-            }
+        let Some(lineage_update) =
+            build_lineage_signature_update(store, lineage, &signature, &decoded, true).await?
+        else {
+            continue;
+        };
+        let result = store
+            .apply_signature_update(SignatureUpdate {
+                signature: signature.clone(),
+                lineages: vec![lineage_update],
+                cursor: None,
+            })
+            .await?;
+        if result.applied_lineages > 0 {
+            processed += 1;
         }
-        processed_signatures.push(signature);
-        processed += 1;
-    }
-
-    if !new_events.is_empty() {
-        store.append_events(lineage, &new_events).await?;
-    }
-    if let Some(state) = state {
-        store.set_replay_state(lineage, state).await?;
-    }
-    for signature in processed_signatures {
-        store.mark_signature_seen(lineage, &signature).await?;
     }
     Ok(CatchUpOutcome {
         processed,
@@ -274,6 +399,40 @@ mod tests {
             accounts,
             data,
         }
+    }
+
+    fn update_ix(
+        program_id: [u8; 32],
+        lineage: [u8; 32],
+        new_handle: [u8; 32],
+        previous_handle: [u8; 32],
+        previous_subjects: Vec<[u8; 32]>,
+    ) -> RawInstruction {
+        #[derive(BorshSerialize)]
+        struct Args {
+            new_handle: [u8; 32],
+            previous_handle: [u8; 32],
+            previous_subjects: Vec<[u8; 32]>,
+        }
+        make_ix(
+            program_id,
+            vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
+            "update_encrypted_value",
+            Args {
+                new_handle,
+                previous_handle,
+                previous_subjects,
+            },
+        )
+    }
+
+    fn make_public_ix(program_id: [u8; 32], lineage: [u8; 32], handle: [u8; 32]) -> RawInstruction {
+        make_ix(
+            program_id,
+            vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
+            "make_handle_public",
+            handle,
+        )
     }
 
     /// In-memory `ChainFetcher` fake: signatures indexed by address (superset
@@ -417,7 +576,9 @@ mod tests {
         );
         chain.push_tx("sig3", 3, &[lineage], vec![make_public_ix]);
 
-        let processed = poll_once(&chain, &store, program_id, 100).await.unwrap();
+        let processed = poll_once(&chain, &store, program_id, 100, MAX_POLL_BACKLOG_PER_CYCLE)
+            .await
+            .unwrap();
         assert_eq!(processed, 3);
 
         let events = store.get_events(lineage).await.unwrap();
@@ -472,7 +633,9 @@ mod tests {
         chain.push_tx("sig0", 0, &[lineage], vec![]); // already processed, must not resurface
         chain.push_tx("sig1", 1, &[lineage], vec![make_public_ix]);
 
-        let processed = poll_once(&chain, &store, program_id, 100).await.unwrap();
+        let processed = poll_once(&chain, &store, program_id, 100, MAX_POLL_BACKLOG_PER_CYCLE)
+            .await
+            .unwrap();
         assert_eq!(processed, 1, "only sig1 is newer than the cursor");
         let events = store.get_events(lineage).await.unwrap();
         assert_eq!(
@@ -481,8 +644,10 @@ mod tests {
         );
     }
 
+    /// A backlog larger than the RPC page size is ingested in full, oldest-first,
+    /// with no gap: paging across page boundaries must never skip a signature.
     #[tokio::test]
-    async fn poll_once_paginates_backlog_larger_than_limit() {
+    async fn poll_once_ingests_full_backlog_without_gap() {
         let program_id = pk(0x99);
         let lineage = pk(0x04);
         let chain = FakeChain::new(program_id);
@@ -511,16 +676,14 @@ mod tests {
 
         chain.push_tx("sig0", 0, &[lineage], vec![]);
         for (sig, slot) in [("sig1", 1), ("sig2", 2), ("sig3", 3)] {
-            let make_public_ix = make_ix(
-                program_id,
-                vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
-                "make_handle_public",
-                pk(0x20),
-            );
+            let make_public_ix = make_public_ix(program_id, lineage, pk(0x20));
             chain.push_tx(sig, slot, &[lineage], vec![make_public_ix]);
         }
 
-        let processed = poll_once(&chain, &store, program_id, 2).await.unwrap();
+        // page size 2 < backlog 3 -> must page, not truncate.
+        let processed = poll_once(&chain, &store, program_id, 2, MAX_POLL_BACKLOG_PER_CYCLE)
+            .await
+            .unwrap();
         assert_eq!(processed, 3);
         assert_eq!(
             store.get_events(lineage).await.unwrap(),
@@ -533,6 +696,52 @@ mod tests {
         let cursor = store.get_cursor().await.unwrap().unwrap();
         assert_eq!(cursor.last_signature, Some("sig3".to_string()));
         assert_eq!(cursor.last_slot, 3);
+    }
+
+    /// A backlog past the per-cycle ceiling fails closed: it must error and leave
+    /// the cursor untouched rather than silently skip the older signatures.
+    #[tokio::test]
+    async fn poll_once_fails_closed_when_backlog_exceeds_ceiling() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x04);
+        let chain = FakeChain::new(program_id);
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        store
+            .set_replay_state(
+                lineage,
+                LineageReplayState {
+                    current_handle: Some(pk(0x20)),
+                    subjects: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .set_cursor(Cursor {
+                last_signature: Some("sig0".to_string()),
+                last_slot: 0,
+            })
+            .await
+            .unwrap();
+
+        chain.push_tx("sig0", 0, &[lineage], vec![]);
+        for (sig, slot) in [("sig1", 1), ("sig2", 2), ("sig3", 3)] {
+            let make_public_ix = make_public_ix(program_id, lineage, pk(0x20));
+            chain.push_tx(sig, slot, &[lineage], vec![make_public_ix]);
+        }
+
+        // ceiling 2 < backlog 3 -> fail closed, no partial apply.
+        let error = poll_once(&chain, &store, program_id, 100, 2)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, IngestError::BacklogExceeded { max: 2 }));
+        assert!(store.get_events(lineage).await.unwrap().is_empty());
+        let cursor = store.get_cursor().await.unwrap().unwrap();
+        assert_eq!(cursor.last_signature, Some("sig0".to_string()));
     }
 
     #[tokio::test]
@@ -580,6 +789,124 @@ mod tests {
         assert_eq!(
             events,
             vec![LineageEvent::MarkedPublic { handle: pk(0x20) }]
+        );
+    }
+
+    #[tokio::test]
+    async fn catch_up_after_poll_does_not_reapply_same_signature() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x05);
+        let owner = pk(0x30);
+        let chain = FakeChain::new(program_id);
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        store
+            .set_replay_state(
+                lineage,
+                LineageReplayState {
+                    current_handle: Some(pk(0x20)),
+                    subjects: vec![owner],
+                },
+            )
+            .await
+            .unwrap();
+        chain.push_tx(
+            "sig1",
+            1,
+            &[lineage],
+            vec![update_ix(
+                program_id,
+                lineage,
+                pk(0x21),
+                pk(0x20),
+                vec![owner],
+            )],
+        );
+
+        assert_eq!(
+            poll_once(&chain, &store, program_id, 100, MAX_POLL_BACKLOG_PER_CYCLE)
+                .await
+                .unwrap(),
+            1
+        );
+        let outcome = catch_up_lineage(&chain, &store, program_id, lineage, 1000)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            CatchUpOutcome {
+                processed: 0,
+                budget_exhausted: false
+            }
+        );
+        assert_eq!(
+            store.get_events(lineage).await.unwrap(),
+            vec![LineageEvent::handle_superseded(pk(0x20), &[owner])]
+        );
+        assert_eq!(
+            store.get_seen_signatures(lineage).await.unwrap(),
+            vec!["sig1".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn half_applied_update_restarts_without_previous_state_mismatch() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x06);
+        let owner = pk(0x30);
+        let chain = FakeChain::new(program_id);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("leaves.json");
+
+        {
+            let store = FileLeafStore::open(&path).await.unwrap();
+            store
+                .set_replay_state(
+                    lineage,
+                    LineageReplayState {
+                        current_handle: Some(pk(0x21)),
+                        subjects: vec![owner],
+                    },
+                )
+                .await
+                .unwrap();
+        }
+
+        chain.push_tx(
+            "sig1",
+            1,
+            &[lineage],
+            vec![update_ix(
+                program_id,
+                lineage,
+                pk(0x21),
+                pk(0x20),
+                vec![owner],
+            )],
+        );
+        let reopened = FileLeafStore::open(&path).await.unwrap();
+
+        assert_eq!(
+            poll_once(&chain, &reopened, program_id, 100, MAX_POLL_BACKLOG_PER_CYCLE)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            reopened.get_events(lineage).await.unwrap(),
+            vec![LineageEvent::handle_superseded(pk(0x20), &[owner])]
+        );
+        assert_eq!(
+            reopened.get_seen_signatures(lineage).await.unwrap(),
+            vec!["sig1".to_string()]
+        );
+        assert_eq!(
+            reopened.get_cursor().await.unwrap().unwrap().last_signature,
+            Some("sig1".to_string())
         );
     }
 }

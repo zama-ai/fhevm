@@ -41,6 +41,25 @@ pub struct Cursor {
     pub last_slot: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LineageSignatureUpdate {
+    pub lineage: [u8; 32],
+    pub replay_state: Option<LineageReplayState>,
+    pub events: Vec<LineageEvent>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignatureUpdate {
+    pub signature: String,
+    pub lineages: Vec<LineageSignatureUpdate>,
+    pub cursor: Option<Cursor>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignatureApplyResult {
+    pub applied_lineages: usize,
+}
+
 #[async_trait]
 pub trait LeafStore: Send + Sync {
     async fn append_events(
@@ -78,6 +97,11 @@ pub trait LeafStore: Send + Sync {
         lineage: [u8; 32],
         signature: &str,
     ) -> Result<(), StoreError>;
+
+    async fn apply_signature_update(
+        &self,
+        update: SignatureUpdate,
+    ) -> Result<SignatureApplyResult, StoreError>;
 }
 
 // --- wire DTOs (LineageEvent has no Serialize; mirror it locally) ---
@@ -159,6 +183,10 @@ impl From<LineageReplayStateDto> for LineageReplayState {
 
 fn key(lineage: [u8; 32]) -> String {
     hex::encode(lineage)
+}
+
+fn contains_signature(signatures: &[String], signature: &str) -> bool {
+    signatures.iter().any(|seen| seen == signature)
 }
 
 fn path_with_suffix(path: &Path, suffix: &str) -> PathBuf {
@@ -312,13 +340,59 @@ impl LeafStore for FileLeafStore {
     ) -> Result<(), StoreError> {
         let lineage_key = key(lineage);
         self.update_state(|contents| {
-            contents
-                .seen_signatures
-                .entry(lineage_key)
-                .or_default()
-                .push(signature.to_string());
+            let signatures = contents.seen_signatures.entry(lineage_key).or_default();
+            if !contains_signature(signatures, signature) {
+                signatures.push(signature.to_string());
+            }
         })
         .await
+    }
+
+    async fn apply_signature_update(
+        &self,
+        update: SignatureUpdate,
+    ) -> Result<SignatureApplyResult, StoreError> {
+        let SignatureUpdate {
+            signature,
+            lineages,
+            cursor,
+        } = update;
+        let mut applied_lineages = 0usize;
+        self.update_state(|contents| {
+            for lineage_update in lineages {
+                let lineage_key = key(lineage_update.lineage);
+                if contents
+                    .seen_signatures
+                    .get(&lineage_key)
+                    .is_some_and(|signatures| contains_signature(signatures, &signature))
+                {
+                    continue;
+                }
+
+                if !lineage_update.events.is_empty() {
+                    contents
+                        .events
+                        .entry(lineage_key.clone())
+                        .or_default()
+                        .extend(lineage_update.events.iter().map(LineageEventDto::from));
+                }
+                if let Some(state) = lineage_update.replay_state {
+                    contents
+                        .replay_states
+                        .insert(lineage_key.clone(), LineageReplayStateDto::from(&state));
+                }
+
+                let signatures = contents.seen_signatures.entry(lineage_key).or_default();
+                signatures.push(signature.clone());
+                applied_lineages += 1;
+            }
+
+            if let Some(cursor) = cursor {
+                contents.cursor = Some(cursor);
+            }
+        })
+        .await?;
+        Ok(SignatureApplyResult { applied_lineages })
     }
 }
 
@@ -435,6 +509,53 @@ mod tests {
         assert_eq!(
             store.get_seen_signatures(lineage).await.unwrap(),
             vec!["sig-a".to_string(), "sig-b".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_signature_update_is_atomic_and_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+        let lineage = pk(4);
+        let state = LineageReplayState {
+            current_handle: Some(pk(0x11)),
+            subjects: vec![pk(0x30)],
+        };
+        let update = SignatureUpdate {
+            signature: "sig-a".to_string(),
+            lineages: vec![LineageSignatureUpdate {
+                lineage,
+                replay_state: Some(state.clone()),
+                events: vec![LineageEvent::handle_superseded(pk(0x10), &[pk(0x30)])],
+            }],
+            cursor: Some(Cursor {
+                last_signature: Some("sig-a".to_string()),
+                last_slot: 7,
+            }),
+        };
+
+        let first = store.apply_signature_update(update.clone()).await.unwrap();
+        let second = store.apply_signature_update(update).await.unwrap();
+
+        assert_eq!(first.applied_lineages, 1);
+        assert_eq!(second.applied_lineages, 0);
+        assert_eq!(
+            store.get_events(lineage).await.unwrap(),
+            vec![LineageEvent::handle_superseded(pk(0x10), &[pk(0x30)])]
+        );
+        assert_eq!(store.get_replay_state(lineage).await.unwrap(), Some(state));
+        assert_eq!(
+            store.get_seen_signatures(lineage).await.unwrap(),
+            vec!["sig-a".to_string()]
+        );
+        assert_eq!(
+            store.get_cursor().await.unwrap(),
+            Some(Cursor {
+                last_signature: Some("sig-a".to_string()),
+                last_slot: 7,
+            })
         );
     }
 }
