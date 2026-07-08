@@ -136,6 +136,7 @@ const SHIM_PROFILES = {
     coprocessorDropFlags: {
       "host-listener": ["--protocol-config-address"],
       "host-listener-poller": ["--protocol-config-address"],
+      "host-listener-consumer": ["--protocol-config-address"],
     },
     connectorEnv: {},
     composeEnv: {},
