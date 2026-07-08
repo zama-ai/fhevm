@@ -30,9 +30,9 @@ use connector_utils::{
 };
 use fhevm_host_bindings::protocol_config::ProtocolConfig::NewKmsContext;
 use kms_grpc::kms::v1::{
-    CrsGenResult, Empty, EpochResultResponse as GrpcEpochResultResponse, KeyGenPreprocResult,
-    KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload,
-    UserDecryptionResponse, UserDecryptionResponsePayload,
+    CrsGenResult, Empty, EpochResultResponse as GrpcEpochResultResponse,
+    KeyDigest as GrpcKeyDigest, KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse,
+    PublicDecryptionResponsePayload, UserDecryptionResponse, UserDecryptionResponsePayload,
 };
 use kms_worker::core::{Config, event_processor::compute_anchor_event_hash};
 use mocktail::{MockSet, StatusCode, server::MockServer};
@@ -48,11 +48,10 @@ use tracing::{info, warn};
 #[case::user_decryption_v2(TestEventType::UserDecryptionV2, false)]
 #[case::prep_keygen(TestEventType::PrepKeygen, false)]
 #[case::keygen(TestEventType::Keygen, false)]
+#[case::compressed_key_migration(TestEventType::CompressedKeyMigrationKeygen, false)]
 #[case::crsgen(TestEventType::Crsgen, false)]
 #[case::new_kms_context(TestEventType::NewKmsContext, false)]
 #[case::new_kms_epoch(TestEventType::NewKmsEpoch, false)]
-#[case::abort_keygen(TestEventType::AbortKeygen, false)]
-#[case::abort_crsgen(TestEventType::AbortCrsgen, false)]
 #[case::public_decryption_already_sent(TestEventType::PublicDecryption, true)]
 #[case::user_decryption_already_sent(TestEventType::UserDecryption, true)]
 #[case::user_decryption_v2_already_sent(TestEventType::UserDecryptionV2, true)]
@@ -61,8 +60,6 @@ use tracing::{info, warn};
 #[case::crsgen_already_sent(TestEventType::Crsgen, true)]
 #[case::new_kms_context_already_sent(TestEventType::NewKmsContext, true)]
 #[case::new_kms_epoch_already_sent(TestEventType::NewKmsEpoch, true)]
-#[case::abort_keygen_already_sent(TestEventType::AbortKeygen, true)]
-#[case::abort_crsgen_already_sent(TestEventType::AbortCrsgen, true)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_processing_request(
@@ -180,16 +177,8 @@ async fn test_processing_request(
     info!("KmsWorker started!");
 
     // Waiting for kms_worker to process the request
-    if matches!(
-        event_type,
-        TestEventType::AbortKeygen | TestEventType::AbortCrsgen
-    ) {
-        // Abort events yield no response row, so just wait for it to be `completed`
-        wait_for_abort_completed(test_instance.db(), event_type).await?;
-    } else {
-        let response = wait_for_response_in_db(test_instance.db(), &request).await?;
-        check_response_data(&request, response)?;
-    }
+    let response = wait_for_response_in_db(test_instance.db(), &request).await?;
+    check_response_data(&request, response)?;
     check_no_uncompleted_request_in_db(test_instance.db(), event_type).await?;
 
     // Stopping the test
@@ -215,12 +204,13 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         ProtocolEventKind::PrepKeygen(r) => {
             (r.prepKeygenId, "KeyGenPreproc", "GetKeyGenPreprocResult")
         }
-        ProtocolEventKind::Keygen(r) => (r.keyId, "KeyGen", "GetKeyGenResult"),
+        ProtocolEventKind::Keygen(r) => (r.requestId, "KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(r) => (r.crsId, "CrsGen", "GetCrsGenResult"),
         ProtocolEventKind::NewKmsContext(r) => (r.contextId, "NewMpcContext", "unreachable"),
         ProtocolEventKind::NewKmsEpoch(r) => (r.epochId, "NewMpcEpoch", "GetEpochResult"),
-        ProtocolEventKind::AbortKeygen(r) => (r.prepKeygenId, "AbortKeyGen", "unreachable"),
-        ProtocolEventKind::AbortCrsgen(r) => (r.crsId, "AbortCrsGen", "unreachable"),
+        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+            unreachable!("abort events do not produce KMS response rows in this test")
+        }
     };
     let request_id = Some(u256_to_request_id(request_id_u256));
 
@@ -254,6 +244,22 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 preprocessing_id: request_id,
                 ..Default::default()
             }),
+            // Lock in the real digest type a migration keygen returns:
+            // the connector must parse "CompressedXofKeySet".
+            ProtocolEventKind::Keygen(r) if r.requestKind == 1 => then.pb(KeyGenResult {
+                request_id,
+                key_digests: vec![
+                    GrpcKeyDigest {
+                        key_type: "PublicKey".to_string(),
+                        digest: vec![0xDE, 0xAD],
+                    },
+                    GrpcKeyDigest {
+                        key_type: "CompressedXofKeySet".to_string(),
+                        digest: vec![0xC0, 0xFF, 0xEE],
+                    },
+                ],
+                ..Default::default()
+            }),
             ProtocolEventKind::Keygen(_) => then.pb(KeyGenResult {
                 request_id,
                 ..Default::default()
@@ -262,13 +268,14 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
                 request_id,
                 ..Default::default()
             }),
-            ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
-            ProtocolEventKind::NewKmsContext(_)
-            | ProtocolEventKind::AbortKeygen(_)
-            | ProtocolEventKind::AbortCrsgen(_) => then.error(
+            ProtocolEventKind::NewKmsContext(_) => then.error(
                 StatusCode::BAD_REQUEST,
                 "No response expected response from kms-core",
             ),
+            ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
+            ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
+                unreachable!("abort events do not produce KMS response rows in this test")
+            }
         };
     });
 
@@ -286,19 +293,23 @@ async fn wait_for_response_in_db(
             "SELECT * FROM user_decryption_responses"
         }
         ProtocolEventKind::PrepKeygen(_) => "SELECT * FROM prep_keygen_responses",
-        ProtocolEventKind::Keygen(_) => "SELECT * FROM keygen_responses",
+        ProtocolEventKind::Keygen(_) => {
+            "SELECT keygen_responses.*, keygen_requests.migration_key_id
+             FROM keygen_responses
+             LEFT JOIN keygen_requests ON keygen_requests.key_id = keygen_responses.key_id"
+        }
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
         ProtocolEventKind::NewKmsContext(_) => "SELECT * FROM new_kms_context_responses",
         ProtocolEventKind::NewKmsEpoch(_) => "SELECT * FROM epoch_result_responses",
         ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
-            unreachable!("abort events produce no response row")
+            unreachable!("abort events do not produce KMS response rows in this test")
         }
     };
     let response = loop {
         let result = sqlx::query(query).fetch_all(db).await?;
 
         if result.is_empty() {
-            warn!("Response not yet stored in DB...");
+            warn!("Not yet...");
             tokio::time::sleep(Duration::from_millis(200)).await;
         } else {
             match req {
@@ -324,12 +335,12 @@ async fn wait_for_response_in_db(
                     break kms_response::from_epoch_result_row(&result[0])?;
                 }
                 ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
-                    unreachable!("abort events produce no response row")
+                    unreachable!("abort events do not produce KMS response rows in this test")
                 }
             };
         }
     };
-    info!("Response successfully stored in DB!");
+    info!("OK!");
     Ok(response)
 }
 
@@ -361,8 +372,24 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             preprocessing_id: Some(u256_to_request_id(r.prepKeygenId)),
             ..Default::default()
         }),
+        ProtocolEventKind::Keygen(r) if r.requestKind == 1 => {
+            KmsGrpcResponse::Keygen(KeyGenResult {
+                request_id: Some(u256_to_request_id(r.requestId)),
+                key_digests: vec![
+                    GrpcKeyDigest {
+                        key_type: "PublicKey".to_string(),
+                        digest: vec![0xDE, 0xAD],
+                    },
+                    GrpcKeyDigest {
+                        key_type: "CompressedXofKeySet".to_string(),
+                        digest: vec![0xC0, 0xFF, 0xEE],
+                    },
+                ],
+                ..Default::default()
+            })
+        }
         ProtocolEventKind::Keygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
-            request_id: Some(u256_to_request_id(r.keyId)),
+            request_id: Some(u256_to_request_id(r.requestId)),
             ..Default::default()
         }),
         ProtocolEventKind::Crsgen(r) => KmsGrpcResponse::Crsgen(CrsGenResult {
@@ -378,35 +405,16 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             grpc_response: GrpcEpochResultResponse::default(),
         },
         ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
-            unreachable!("abort events produce no response to check")
+            unreachable!("abort events do not produce KMS response rows in this test")
         }
     };
-    assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
-    info!("Response data validated!");
-    Ok(())
-}
-
-async fn wait_for_abort_completed(
-    db: &Pool<Postgres>,
-    event_type: TestEventType,
-) -> anyhow::Result<()> {
-    info!("Waiting for abort request to be marked as completed in DB...");
-    let query = match event_type {
-        TestEventType::AbortKeygen => {
-            "SELECT COUNT(prep_keygen_id) FROM abort_keygen_requests WHERE status = 'completed'"
+    let mut expected = KmsResponseKind::process(expected_response)?;
+    if matches!(request, ProtocolEventKind::Keygen(r) if r.requestKind == 1) {
+        if let KmsResponseKind::Keygen(r) = &mut expected {
+            r.is_migration = true;
         }
-        TestEventType::AbortCrsgen => {
-            "SELECT COUNT(crs_id) FROM abort_crsgen_requests WHERE status = 'completed'"
-        }
-        _ => unreachable!("wait_for_abort_completed only handles abort events"),
-    };
-    loop {
-        let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
-        if count > 0 {
-            info!("Abort request marked as completed in DB!");
-            return Ok(());
-        }
-        warn!("Abort request not yet marked as completed in DB...");
-        tokio::time::sleep(Duration::from_millis(200)).await;
     }
+    assert_eq!(response.kind, expected);
+    info!("OK!");
+    Ok(())
 }

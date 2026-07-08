@@ -9,7 +9,8 @@ use fhevm_host_bindings::kms_generation::KMSGeneration::{
 };
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
-    KeyGenRequest, KeyGenSecretKeyConfig, KeySetConfig, KeySetType, StandardKeySetConfig,
+    KeyGenRequest, KeyGenSecretKeyConfig, KeySetAddedInfo, KeySetConfig, KeySetType,
+    StandardKeySetConfig,
 };
 use tracing::error;
 
@@ -76,17 +77,35 @@ where
             .await
             .map_err(RequestCheckError::record)?;
 
+        let is_migration = keygen_request.requestKind == 1;
+        let (keyset_config, keyset_added_info) = if is_migration {
+            (
+                COMPRESSED_MIGRATION_KEY_SET_CONFIG,
+                Some(KeySetAddedInfo {
+                    from_keyset_id_decompression_only: None,
+                    to_keyset_id_decompression_only: None,
+                    existing_keyset_id: Some(u256_to_request_id(keygen_request.keyId)),
+                    use_existing_key_tag: true,
+                    // KMS-core preserves the legacy CompactPublicKey and ServerKey files while
+                    // making the migrated compressed layout resolvable from the original key ID.
+                    copy_compressed_key_to_original: true,
+                }),
+            )
+        } else {
+            // Used to generate other types of key, but not planned to be supported by the Gateway
+            (UNCOMPRESSED_KEY_SET_CONFIG, None)
+        };
+
         Ok(KmsGrpcRequest::Keygen(KeyGenRequest {
-            request_id: Some(u256_to_request_id(keygen_request.keyId)),
+            request_id: Some(u256_to_request_id(keygen_request.requestId)),
             preproc_id: Some(u256_to_request_id(keygen_request.prepKeygenId)),
             domain: Some(self.domain.clone()),
             params: None,
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
-            // Used to generate other types of key, but not planned to be supported by the Gateway
-            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
-            keyset_added_info: None,
+            keyset_config: Some(keyset_config),
+            keyset_added_info,
         }))
     }
 
@@ -123,6 +142,15 @@ where
         }))
     }
 }
+
+const COMPRESSED_MIGRATION_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
+    keyset_type: KeySetType::Standard as i32,
+    standard_keyset_config: Some(StandardKeySetConfig {
+        compute_key_type: ComputeKeyType::Cpu as i32,
+        secret_key_config: KeyGenSecretKeyConfig::UseExisting as i32,
+        compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
+    }),
+};
 
 const UNCOMPRESSED_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
     keyset_type: KeySetType::Standard as i32,

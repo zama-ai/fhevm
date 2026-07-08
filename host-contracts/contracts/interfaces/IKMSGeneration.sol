@@ -16,11 +16,23 @@ interface IKMSGeneration {
     }
 
     /**
+     * @notice Why a KMS keygen request was emitted.
+     */
+    enum KeygenRequestKind {
+        Fresh, // 0
+        Migration // 1
+    }
+
+    /**
      * @notice The type of the generated key.
      */
     enum KeyType {
         Server, // 0
-        Public // 1
+        Public, // 1
+        /// @dev Reserved by KMS Core's signing enum; no digest uses it yet.
+        CompressedPublic, // 2
+        /// @dev Digest over a CompressedXofKeySet blob (RFC-029 migration; RFC-028 flows).
+        CompressedKeyset // 3
     }
 
     /**
@@ -48,12 +60,28 @@ interface IKMSGeneration {
     }
 
     /**
+     * @notice One published material record for a key.
+     * @param kmsNodeStorageUrls The KMS node storage URLs associated with the consensus record.
+     * @param keyDigests The typed digests signed for the record.
+     */
+    struct KeyMaterial {
+        string[] kmsNodeStorageUrls;
+        KeyDigest[] keyDigests;
+    }
+
+    /**
      * @notice Emitted to trigger an FHE key generation preprocessing.
      * @param prepKeygenId The ID of the preprocessing keygen request.
      * @param paramsType The type of the parameters to use.
      * @param extraData Additional context data (0x01 || contextId, or 0x02 || contextId || epochId).
      */
-    event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
+    event PrepKeygenRequest(
+        uint256 prepKeygenId,
+        ParamsType paramsType,
+        KeygenRequestKind requestKind,
+        uint256 keyId,
+        bytes extraData
+    );
 
     /**
      * @notice Emitted when a KMS node has responded to a preprocessing keygen request.
@@ -66,10 +94,19 @@ interface IKMSGeneration {
     /**
      * @notice Emitted to trigger an FHE key generation.
      * @param prepKeygenId The ID of the preprocessing keygen request.
-     * @param keyId The ID of the key to generate.
+     * @param requestId The ID of the keygen request.
+     * @param keyId The durable key identity. For fresh keygen this is equal to `requestId`.
+     * For migration this is the existing key whose material is being augmented.
+     * @param requestKind Whether this is a fresh keygen or a migration material request.
      * @param extraData Additional context data.
      */
-    event KeygenRequest(uint256 prepKeygenId, uint256 keyId, bytes extraData);
+    event KeygenRequest(
+        uint256 prepKeygenId,
+        uint256 requestId,
+        KeygenRequestKind requestKind,
+        uint256 keyId,
+        bytes extraData
+    );
 
     /**
      * @notice Emitted when a KMS node has responded to a keygen request.
@@ -81,12 +118,31 @@ interface IKMSGeneration {
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
     /**
+     * @notice Emitted when a KMS node has responded to a migration material request.
+     * @param migrationRequestId The ID of the migration request.
+     * @param keyDigests The digests of the migrated key material.
+     * @param signature The signature of the KMS node that has responded.
+     * @param kmsTxSender The transaction sender of the KMS node that has called the function.
+     */
+    event MigrationResponse(uint256 migrationRequestId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
+
+    /**
      * @notice Emitted when the key is activated.
      * @param keyId The ID of the activated key.
      * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in the consensus.
      * @param keyDigests The digests of the generated keys.
      */
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+
+    /**
+     * @notice Emitted when KMS consensus is reached on the re-materialized compressed key
+     * material for an existing key. Does not activate anything: the active key is unchanged
+     * and worker activation is handled by the blue-green upgrade protocol.
+     * @param keyId The ID of the existing key.
+     * @param kmsNodeStorageUrls The KMS nodes' storage URLs that participated in the consensus.
+     * @param keyDigests The digests of the compressed key material.
+     */
+    event CompressedKeyMaterialAdded(uint256 indexed keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     /**
      * @notice Emitted to trigger a CRS (Common Reference String) generation.
@@ -267,10 +323,41 @@ interface IKMSGeneration {
     error AbortCrsgenAlreadyDone(uint256 crsId);
 
     /**
+     * @notice Error thrown when compressed key materials already exist for the key.
+     * @param keyId The ID of the key.
+     */
+    error CompressedKeyMaterialsAlreadyAdded(uint256 keyId);
+
+    /**
+     * @notice Error thrown when compressed key materials do not exist (yet) for the key.
+     * @param keyId The ID of the key.
+     */
+    error CompressedKeyMaterialsNotAdded(uint256 keyId);
+
+    /**
+     * @notice Error thrown when the migrated key is not the active key.
+     * @param keyId The ID of the key.
+     */
+    error NotActiveKey(uint256 keyId);
+
+    /**
+     * @notice Error thrown when a compressed-key materials response carries no
+     * CompressedKeyset-typed digest.
+     * @param migrationRequestId The migration keygen request ID.
+     */
+    error MissingCompressedKeysetDigest(uint256 migrationRequestId);
+
+    /**
      * @notice Trigger an FHE key generation.
      * @param paramsType The type of FHE parameters to use.
      */
     function keygen(ParamsType paramsType) external;
+
+    /**
+     * @notice Trigger compressed material production for an existing active key.
+     * @param keyId The durable key identity whose material is being augmented.
+     */
+    function migrateKey(uint256 keyId) external;
 
     /**
      * @notice Handle the response of a preprocessing keygen request.
@@ -286,6 +373,32 @@ interface IKMSGeneration {
      * @param signature The signature of the KMS node that has responded.
      */
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
+
+    /**
+     * @notice Handle the response of a migration material request.
+     * @param migrationRequestId The ID of the migration request.
+     * @param keyDigests The digests of the migrated key material.
+     * @param signature The signature of the KMS node that has responded.
+     */
+    function migrationResponse(
+        uint256 migrationRequestId,
+        KeyDigest[] calldata keyDigests,
+        bytes calldata signature
+    ) external;
+
+    /**
+     * @notice Get the compressed key materials published for a given key ID.
+     * @param keyId The ID of the key.
+     * @return The compressed key materials (storage URLs, key digests).
+     */
+    function getCompressedKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
+
+    /**
+     * @notice Get all published material records for a given key ID.
+     * @param keyId The ID of the key.
+     * @return The material records, each grouping storage URLs with the digests signed for them.
+     */
+    function getAllKeyMaterials(uint256 keyId) external view returns (KeyMaterial[] memory);
 
     /**
      * @notice Trigger a CRS generation.
