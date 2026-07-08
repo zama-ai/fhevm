@@ -672,7 +672,7 @@ mod tests {
     /// The event-resolved output handle is UNTRUSTED. If the emitted event
     /// carries the wrong `result`, the reconstructed public leaf differs from
     /// chain, the peaks diverge, and the proof fails closed (DD-035) rather than
-    /// mis-serving a proof for a handle that was never made public.
+    /// serving a wrong proof for a handle that was never made public.
     #[tokio::test]
     async fn inline_born_public_fhe_eval_supersede_with_wrong_event_handle_fails_closed() {
         let program_id = pk(0x99);

@@ -2284,7 +2284,7 @@ impl DiscloseFixture {
 /// Builds a lineage carrying a public-decrypt leaf (leaf 0) for `pinned`, and the inclusion
 /// proof for it. With `supersede_to = Some(h2)` the lineage is grown into a post-supersession
 /// state (public(pinned)@0, hist(pinned,subj0)@1, hist(pinned,subj1)@2, public(h2)@3, current
-/// handle h2), modelling the pinned handle becoming historical after the request. `subjects`
+/// handle h2), modeling the pinned handle becoming historical after the request. `subjects`
 /// must hold at least two entries when superseding.
 fn public_leaf_lineage(
     account: Pubkey,

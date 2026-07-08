@@ -65,7 +65,7 @@ pub enum DecodedInstruction {
         /// op event this transaction emitted. `None` otherwise — the output
         /// handle is derived on-chain from slot entropy and appears in no
         /// instruction arg, so without the event it stays unresolved and any
-        /// born-public leaf fails closed at proof time rather than mis-serving.
+        /// born-public leaf fails closed at proof time rather than serving a wrong result.
         make_public_handle: Option<[u8; 32]>,
     },
     FheEvalUpdateEncryptedValue {
@@ -316,7 +316,7 @@ fn decode_fhe_eval_durable_outputs(
     // count matches the plan exactly; a mismatch means the events for this
     // instruction were not captured whole (e.g. log-transported large frames we
     // do not yet read), so resolve no handles and let born-public leaves fail
-    // closed rather than risk a mis-correlation. A wrong-but-well-formed handle
+    // closed rather than risk a wrong correlation. A wrong-but-well-formed handle
     // is still caught by the on-chain peak cross-check at proof time (DD-035).
     let output_handles = (op_event_results.len() == plan.steps.len()).then_some(op_event_results);
     let mut out = Vec::new();
