@@ -57,7 +57,7 @@ pub struct ConsumerConfig {
     pub dependent_ops_max_per_chain: u32,
     pub chain_id: String,
     pub gcs_mode: bool,
-    pub ethereum_chain_id: Option<u64>,
+    pub canonical_protocol_config_chain_id: Option<u64>,
 }
 
 pub fn collect_logs(payload: &BlockPayload) -> Vec<Log> {
@@ -324,7 +324,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let chain_id = ChainId::try_from(chain_id)?;
     let is_protocol_config_listener =
         crate::protocol_config::resolve_protocol_config_listener(
-            config.ethereum_chain_id,
+            config.canonical_protocol_config_chain_id,
             chain_id.as_u64(),
         )?;
 
