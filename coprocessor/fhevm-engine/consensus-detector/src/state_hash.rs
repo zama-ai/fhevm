@@ -43,14 +43,23 @@ async fn compute_and_insert_gcs(
     // table, so these must never resolve anywhere but the GCS schema — and a
     // missing GCS schema errors loudly rather than silently writing to public.
     // Runtime `sqlx::query` (not the `query!` macro) because the schema name is
-    // only known at runtime. `bool_and` treats a block as empty iff every row
-    // reports zero FHE events.
+    // only known at runtime.
+    //
+    // `host_chain_blocks_valid` is keyed by (chain_id, block_hash), so a fork
+    // leaves several rows at the same (chain_id, block_number). We restrict to
+    // `block_status = 'finalized'`: finalization orphans every sibling fork and
+    // leaves exactly one canonical row per height, so the emptiness verdict
+    // (`bool_and(fhe_event_count = 0)`) reflects only the canonical block and is
+    // never contaminated by orphaned branches. Blocks not yet finalized are
+    // simply skipped and picked up on a later notify-driven pass — the same
+    // "retry until ready" model as `compute_gcs_hash` returning `None`.
     let pending_sql = format!(
         r#"
         SELECT b.chain_id, b.block_number,
                bool_and(b.fhe_event_count = 0) AS is_empty
           FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid b
          WHERE b.block_number BETWEEN $1 AND $2
+           AND b.block_status = 'finalized'
            AND NOT EXISTS (
                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.state_hash sh
                 WHERE sh.chain_id = b.chain_id AND sh.block_number = b.block_number)
@@ -142,6 +151,13 @@ async fn compute_gcs_hash(
 /// Uploads GCS `state_hash` rows with `s3_uploaded_at IS NULL`, attaching the
 /// host-chain block_hash as S3 object metadata. Stamps `NOW()` on success;
 /// failures stay NULL and retry next sweep.
+///
+/// The block_hash join is constrained to `block_status = 'finalized'`: since
+/// `host_chain_blocks_valid` is keyed by (chain_id, block_hash), an unqualified
+/// join would match every fork row at that height and PUT the same object under
+/// the same S3 key repeatedly with whichever branch's `block-hash` metadata the
+/// planner happened to pick. Finalization leaves exactly one canonical row per
+/// height, so the join now yields a single deterministic block_hash per upload.
 async fn upload_pending_state_hashes(
     pool: &Pool<Postgres>,
     s3: &aws_sdk_s3::Client,
@@ -155,6 +171,7 @@ async fn upload_pending_state_hashes(
           FROM state_hash sh
           JOIN host_chain_blocks_valid b
             ON b.chain_id = sh.chain_id AND b.block_number = sh.block_number
+           AND b.block_status = 'finalized'
          WHERE sh.s3_uploaded_at IS NULL
          ORDER BY sh.chain_id, sh.block_number
          LIMIT $1
