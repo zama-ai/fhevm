@@ -17,7 +17,11 @@ product-open
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
 
-Status: adopted
+Status: **superseded** — the keyed-nonce `AclRecord` was replaced by the stable
+`EncryptedValue` + MMR lineage (DD-032), and the `nonce_sequence` (leaf-count)
+component was **deleted from durable-output handle derivation** (DD-015): a
+durable output handle is now bound by the `value_key` alone, with no per-update
+sequence. The description below is retained for historical context only.
 
 Context:
 
@@ -500,13 +504,16 @@ leaving ~168 bits of keccak digest → roughly 2^84 birthday collision resistanc
 grind offline for an extreme adversary. Computed handles therefore mix per-block entropy into the
 digest (`previous_bank_hash` + `clock.unix_timestamp` on Solana). EVM does the identical thing via
 `blockhash(block.number - 1)` (and `block.timestamp`) in `FHEVMExecutor._binaryOp` /
-`_ternaryOp` / `_mulDivOp` / `_naryOp`. Durable outputs are additionally bound to
-`(output_nonce_key, output_nonce_sequence)` (DD-001).
+`_ternaryOp` / `_mulDivOp` / `_naryOp`. Durable outputs are additionally bound to the
+`output_nonce_key` (= the lineage `value_key`). The former per-update
+`output_nonce_sequence` (the lineage's MMR `leaf_count` read at execution) was
+**removed** from the durable-output binding — see "Sequence removal" below.
 
 Decision:
 
 Keep the per-block-entropy-seeded derivation. The alternative — widening `bytes32` → `bytes` (full
-hash) to remove the collision concern without entropy — was rejected.
+hash) to remove the collision concern without entropy — was rejected. Bind durable outputs by the
+`value_key` only; do not mix a per-output sequence into the handle.
 
 Why:
 
@@ -527,6 +534,49 @@ Consequences:
 Handle byte layout remains stable; handle birth is not idempotent across slots/blocks. The
 `PreviousBankHashUnavailable` fail-closed surface (real chains) and the chain-id-confined zero-entropy
 fallback (PoC chain only, DD-014) remain as designed.
+
+Sequence removal (durable-output leaf-count nonce deleted):
+
+The durable-output binding used to fold a second component, `output_nonce_sequence` — the lineage's
+MMR `leaf_count` read at execution — into the handle hash alongside the `value_key`. It was a vestige
+of the retired keyed-nonce `AclRecord` (DD-001) and the sole root of the off-chain reconstruction
+complexity (leaf-count tracking + "hints"). It was **deleted**. A durable output handle is now
+`bind(base_handle, value_key)` where `base_handle = computed_eval_handle(op, operands, scalar,
+fhe_type, chain_id, previous_bank_hash, unix_timestamp, context_id, op_index)` — identical to the
+transient (unbound) handle plus the `value_key` domain separation.
+
+This cannot introduce a new collision between two *distinct* ciphertexts. A handle collision that
+matters is two different ciphertext materials sharing one handle; material is fully determined by
+`(op / plaintext / rand-seed, operands, fhe_type)`, all of which live in `base_handle`. So two
+outputs with different material already differ in `base_handle` (birthday resistance made
+non-grindable by per-block entropy, unchanged by this deletion). The sequence only made *repeated
+identical* computations of the same lineage produce distinct handles; removing it means an identical
+recomputation now yields the identical handle — which is exactly EVM's behavior (`FHEVMExecutor`
+binds **no** per-output nonce for binary/ternary/trivial/unary/cast; its only counter is the global
+`counterRand` folded into the rand *seed*), so the deletion **improves** EVM parity. The recorded
+collision-case analysis:
+
+```text
+case                                             prevented by
+different slot                                   previous_bank_hash (+ unix_timestamp) block entropy
+same slot, same eval frame, different steps      op_index (+ the FheEvalDuplicateHandle guard)
+same slot, different txs, same op/operands/ctx   Solana write-lock serializes the two mut writes to
+                                                 the one EncryptedValue PDA (single-writer-per-value,
+                                                 DD-036); a supersede must match previous_handle, so
+                                                 the 2nd is a distinct state transition. If it does
+                                                 recompute byte-identically, the material is identical
+                                                 (deterministic) → sharing a handle is correct, not a
+                                                 distinct-material collision (= EVM same-block behavior)
+cross-lineage, same computation, same slot       value_key binding (KEPT)
+fhe_rand / trivial / ternary outputs             same as above; rand within-slot distinctness comes
+                                                 from context_id + op_index + entropy (as it already
+                                                 did for transient rand), never from the sequence
+```
+
+Verdict: SAFE-TO-DELETE. The `value_key` binding is kept; only the sequence is gone. The IDL/wire is
+unchanged — the sequence was never an instruction argument (it was the on-chain `leaf_count` read at
+execution), so `FheEvalArgs` and the durable-output args (including Option-2 `make_public`) are
+unaffected.
 
 ## DD-016: Confidential Balances Use The Immediate-Available-Balance Profile
 
@@ -1128,7 +1178,8 @@ invoke them via CPI — rather than subscribing to emitted events. `update_encry
 `previous_handle`/`previous_subjects` args are self-describing: verified against account state
 on-chain (redundant there) specifically so every transaction is independently interpretable off-chain,
 letting indexers reconstruct MMR leaves statelessly from instruction data alone, in replay order,
-without reading account state first. Compute-step (`fhe_eval`) events are unchanged by this decision.
+without reading account state first. Compute-step (`fhe_eval`) events remain (they carry the
+block-entropy output handle), but their transport was later narrowed to `emit_cpi!`-only — see DD-037.
 
 Rationale:
 
@@ -1214,6 +1265,93 @@ only once a deployment's `solana_proof` config section is present (`relayer/src/
 it conditionally). The `FileLeafStore` backing it is a rebuildable cache: safe to delete, since a full
 RPC re-replay reconstructs it from `start_signature`/`start_slot`.
 
+## DD-036: Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle
+
+Status: adopted
+
+Context:
+
+`burned_amount` is one stable `EncryptedValue` lineage per token account (DD-019/DD-032),
+superseded in place on every burn to that burn's own delta handle. The secp redeem path
+(`redeem_burned_amount_secp`) required `current_handle == burned_handle`. That stranded funds: a
+redemption requested against handle `H1` (still `PENDING`, awaiting the off-chain KMS round-trip)
+becomes unredeemable the moment a second burn supersedes the lineage to `H2` — the redeem reverts
+forever even though `H1`'s public-decrypt leaf and KMS cert are still valid. The lineage was reusing
+one shared, in-place-superseded slot as an implicit "pending operation" record.
+
+Decision:
+
+The consume authorizes the *pinned* handle by an MMR public-decrypt proof rather than by live-handle
+equality. `redeem_burned_amount_secp` gains a `proof` argument and calls
+`zama_solana_acl::authorize_public(encrypted_value_account, value, burned_handle, proof)` against the
+lineage's current peaks (the same primitive and leaf commitments the KMS connector re-verifies,
+DD-032/DD-035). A redemption therefore stays valid after later burns supersede the lineage. The
+`request` path is unchanged — it still requires the live handle, because that is where the
+public-decrypt leaf is appended (while the handle is current). Double-redeem is still prevented by the
+per-handle `burn-redemption` marker PDA (DD-022), independent of the dropped equality check. The proof
+rides in as `MmrInclusionProof`, an Anchor-native mirror of `zama_solana_acl::MmrProof` (the shared ACL
+crate is deliberately Anchor-free, so it cannot carry Anchor IDL metadata).
+
+Why tactical, not structural: the design-idiomaticity audit confirmed the write model is
+single-writer-per-value (Solana's write-lock scheduler serializes `mut` access), so this is a
+sequential cross-transaction TOCTOU, not a race. Per-operation escrow accounts would double-provision
+history for no soundness gain; the MMR is the mechanism this system already built for exactly this
+"prove a past/public state after supersession" need. This is the first on-chain consumer of the
+`authorize_*` MMR API.
+
+Addendum (Vector 2 closed — born-public eval output):
+
+The second vector is now closed by making the burn's delta *born* publicly decryptable inside the
+same `fhe_eval` CPI that produces it, rather than by a separate `make_handle_public` CPI after the
+eval. `FheEvalOutput::AllowedDurable` gains a `make_public: bool` (carried in instruction data, like
+`previous_handle`/`previous_subjects`, so indexers reconstruct the leaf without reading the account).
+When set, `bind_eval_output` — after writing the new `current_handle` — appends a public-decrypt leaf
+for that NEW handle using the exact same `public_decrypt_leaf_commitment` + `mmr_append` as
+`make_handle_public` (byte-identical). Leaf order on a supersede-with-`make_public`: the outgoing
+handle's historical-access leaves (one per current subject) FIRST, then the new handle's
+public-decrypt leaf LAST; on a create-with-`make_public`, just the new handle's public-decrypt leaf.
+
+This mirrors EVM `unwrap`'s `makePubliclyDecryptable(unwrapAmount)` happening inside the burn's own
+state transition, and — critically — it drops the second CPI that overflowed Solana's fixed 32 KiB
+bump heap on every supersede burn (the production OOM). `confidential_burn` sets `make_public: true`
+on the burned-delta output only; balance/total-supply outputs stay `make_public: false`.
+`request_burn_redemption` now pins a (possibly historical) burned handle and appends no leaf — the
+burn owns the public-decrypt leaf. Authorization: the output binder already authorizes the
+app-account-authority to bind the output; that same authority is what authorizes making it public
+(the binder is *creating* the value), so no separate subject check is required — consistent with, and
+gated by the same deny-list path as, the rest of the binding. This is the opt-in relaxation of the
+"created lineages cannot be born public-decryptable" invariant: it holds for all outputs except those
+that explicitly set `make_public`.
+
+Addendum (disclose consume mirrors redeem):
+
+The same live-handle TOCTOU existed on the disclosure consume path and is closed the same way.
+`disclose_amount_secp` / `disclose_balance_secp` previously authorized by live-handle equality
+(`amount_value.current_handle == handle`, and a live `balance_value.current_handle` read), so a
+`DisclosureRequest` pinned to `H1` stranded the instant its lineage was superseded during the
+off-chain KMS round-trip. Balance mode was third-party griefable: any inbound transfer rotates the
+balance lineage, unilaterally breaking a pending disclosure. The public-decrypt leaf is sealed
+permanently at request time and the KMS honors historical public leaves, so the live gate bought no
+privacy — only breakage — and it contradicted EVM (public-decryptability is permanent).
+
+Both instructions now take a trailing `proof: MmrInclusionProof` and authorize the
+**witness-pinned** handle via `authorize_disclosed_handle` →
+`zama_solana_acl::authorize_public(encrypted_value_account, value, request.handle, proof)` — the
+disclose twin of `authorize_burned_amount_redeem`. The authorized handle is taken from the witness
+(`DisclosureRequest.handle`) and the lineage from `DisclosureRequest.encrypted_value`; the witness
+assert already binds the passed `EncryptedValue` account to `request.encrypted_value`, and all other
+witness validation (mode, requester, host_config/chain_id, expiry, PENDING status, `kms_context_id`,
+`request_hash` recompute, consume-once CONSUMED flip) is retained. Consume-once is unchanged (the
+witness status flip). Unlike the redeem path, the disclose consume needs **no** lineage-binding
+assert beyond `authorize_public`: the request witness is a canonical PDA whose recomputed
+`request_hash` froze the canonical lineage + handle validated at request time (by
+`assert_token_amount_encrypted_value` / `assert_current_balance_encrypted_value`), the request PDA is
+derived from `(mint, requester, handle, nonce)`, and disclosure moves no funds — so the witness
+binding plus the proof against the pinned handle is the complete authorization. (Redeem re-derives
+the canonical burned-amount address at consume only because it binds the lineage to the live
+mint/token-account/owner accounts used for the SPL vault transfer.) The production IDL gains the
+`proof` arg on both `disclose_*_secp` instructions; `zama_host` is unchanged.
+
 ## Open Product Decisions
 
 Not settled by the decisions above. Forward requirements and the finality/reorg debate are detailed
@@ -1256,3 +1394,55 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   deferred; there is no overflow/paging account yet.
 - Listener-core integration for the new event-free `EncryptedValue` instruction decoding (DD-033) is
   deferred; today decoding lives in the Solana-specific host-listener path.
+
+## DD-037: `fhe_eval` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)
+
+Status: adopted
+
+Context:
+
+DD-033 kept compute-step (`fhe_eval`) events while making the ACL lifecycle event-free. Those
+compute events used a size-based transport switch: `emit_cpi!` for frames of `≤ MAX_CPI_EVAL_EVENTS`
+(8) events, falling back to plain `emit!` logs for larger frames (the self-CPI frames would otherwise
+overflow the 32KiB bump heap). Two consumers exist: the host-listener indexer and the relayer MMR
+proof service (DD-035).
+
+Decision:
+
+Delete the `emit!` log-transport half. `fhe_eval` events are emitted **only** via `emit_cpi!`, and a
+frame with more than `MAX_CPI_EVAL_EVENTS` events carries **no** on-chain event at all. To keep this
+safe, a born-public (`make_public`, DD-036) durable output is **rejected at write time** if its frame
+is too large for CPI transport (`ZamaHostError::FheEvalBornPublicFrameTooLarge`,
+`assert_born_public_frame_transportable`), because a born-public handle is derived from block entropy
+(DD-015) and lives in no instruction argument, so its `emit_cpi!` event is the only way an off-chain
+proof builder can recover it. The host-listener runs reconstruction-only (Yellowstone gRPC, DD-003):
+it never needed these events and derives every handle from instruction data + sysvar-streamed block
+entropy. The `emit_cpi!` path and the relayer's op-event resolution are retained as a transitional
+indexing ABI until the relayer migrates to a Geyser datasource (fhevm-internal#1665).
+
+Rationale:
+
+No consumer reads `emit!` logs: the relayer proof builder reads only inner-instruction `emit_cpi!`
+results, and a `> 8`-step born-public frame already failed closed (its handle was unresolvable). So
+the log fallback was dead weight that also hid a latent stranding case; deleting it and adding the
+fail-closed frame guard turns "silently unrecoverable later" into "rejected now." Non-born-public
+durable handles are unaffected — they reconstruct from the `update_encrypted_value` arguments and need
+no event. `emit_cpi!` cannot yet be removed entirely: the relayer, still on RPC polling
+(`getSignaturesForAddress`/`getTransaction`, DD-035), cannot recover `previous_bank_hash` from RPC
+(the bank hash lives in the SlotHashes sysvar, retained only ~512 slots, and `≠` the block's PoH
+`blockhash`), so the op event is its sole source of born-public handles until #1665's Carbon/Geyser
+ingestion (with SlotHashes+Clock sysvar subscriptions and a historical-bankhash backfill policy)
+lands.
+
+Consequences:
+
+- `event_budget.rs` loses the log-byte budget machinery; it keeps `MAX_CPI_EVAL_EVENTS` (now a hard
+  cap, not a transport switch), `eval_event_capacity`, and `should_emit_eval_events_as_cpi`, and gains
+  `assert_born_public_frame_transportable`.
+- `event_transport.rs` emits `emit_cpi!` only; oversized frames return without emitting.
+- The `FheEvalEventLogBudgetExceeded` error was renamed in place to `FheEvalBornPublicFrameTooLarge`
+  (same discriminant; no error-code shift).
+- No IDL/wire change: `make_public` was already an `AllowedDurable` field (DD-036); the guard adds a
+  validation, not an argument.
+- #1665 must remove the op event only after migrating the relayer off it — treat the event as an ABI
+  surface whose last consumer must move first.
