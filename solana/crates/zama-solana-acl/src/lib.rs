@@ -283,7 +283,10 @@ mod tests {
     /// here must update that section (and the liveness audit) in the same PR.
     #[test]
     fn resource_bounds_match_liveness_doc() {
-        assert_eq!(MAX_ENCRYPTED_VALUE_SUBJECTS, 8, "MMR_ACL_MVP.md liveness section");
+        assert_eq!(
+            MAX_ENCRYPTED_VALUE_SUBJECTS, 8,
+            "MMR_ACL_MVP.md liveness section"
+        );
         assert_eq!(MAX_MMR_PEAKS, 64, "MMR_ACL_MVP.md liveness section");
         // account_size = 153 + 32·subjects + 32·peaks; max = 2457 bytes, forever.
         assert_eq!(EncryptedValue::account_size(0, 0), 153);

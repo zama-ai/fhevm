@@ -41,10 +41,17 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `plan_contracts.rs`): vendored IDLs and the
    Borsh golden manifest must match the freshly-built Anchor IDLs; EVENT_VERSION consistency across
    zama-host / confidential-token / host-listener is asserted (a mismatch would silently drop events).
-7. **End-to-end** (`.github/workflows/solana-e2e.yml`): matrix `reconstruct: [false, true]`.
+7. **End-to-end** (`.github/workflows/solana-e2e.yml`, `full-vertical.sh`): matrix `reconstruct: [false, true]`.
    `false` = zama-host emits events, host-listener decodes them. `true` = zama-host EMITLESS, coprocessor
-   fed purely by Yellowstone gRPC reconstruction. Both arms exercise the token flows against a local
-   validator + coprocessor, proving the reconstruct path is behavior-equivalent to the emit path.
+   fed purely by Yellowstone gRPC reconstruction. Both arms drive the **decrypt vertical** against a local
+   validator + full coprocessor/KMS stack — compute → public-decrypt (relayer MMR proof) → user-decrypt
+   (current) → historical-user-decrypt (superseded handle + live MMR proof) — exercising all three
+   authorization paths and proving the reconstruct path is behavior-equivalent to the emit path.
+   **Coverage boundary:** the token *consume* flows (burn→redeem, disclose) are NOT yet in the CI e2e —
+   they are covered by `token_mollusk` (real `.so`, incl. after-supersession / consume-once / foreign-proof)
+   and driven on a live stack by `adversarial-l4.sh`, which is currently local-only. Their shared
+   proof/reconstruction/KMS integration IS e2e-covered via the public-decrypt leg (same `authorize_public`
+   mechanism); wiring the consume flows themselves into CI e2e is a tracked follow-up.
 
 ## Reconstruction parity strategy
 

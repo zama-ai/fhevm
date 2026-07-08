@@ -30,10 +30,10 @@ pub use constants::*;
 pub use errors::*;
 /// Re-export events and instruction argument enums for generated clients and tests.
 pub use events::*;
+pub use instructions::common::MmrInclusionProof;
 /// The random-amount PoC helper account context (gated behind `poc`, see below).
 #[cfg(feature = "poc")]
 pub use instructions::CreateRandomAmount;
-pub use instructions::common::MmrInclusionProof;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{

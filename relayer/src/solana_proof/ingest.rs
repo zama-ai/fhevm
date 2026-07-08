@@ -891,9 +891,15 @@ mod tests {
         let reopened = FileLeafStore::open(&path).await.unwrap();
 
         assert_eq!(
-            poll_once(&chain, &reopened, program_id, 100, MAX_POLL_BACKLOG_PER_CYCLE)
-                .await
-                .unwrap(),
+            poll_once(
+                &chain,
+                &reopened,
+                program_id,
+                100,
+                MAX_POLL_BACKLOG_PER_CYCLE
+            )
+            .await
+            .unwrap(),
             1
         );
         assert_eq!(

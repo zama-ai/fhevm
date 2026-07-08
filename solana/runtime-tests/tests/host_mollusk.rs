@@ -2646,7 +2646,13 @@ fn mollusk_set_hcu_block_cap_rejects_wrong_admin() {
     let admin = Pubkey::new_unique();
     let wrong_admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account), (wrong_admin, funded_system_account())]);
+    let context = mollusk_eval_context(
+        admin,
+        vec![
+            (host_config, account),
+            (wrong_admin, funded_system_account()),
+        ],
+    );
 
     context.process_and_validate_instruction(
         &set_hcu_block_cap_per_app_ix(program_id, wrong_admin, host_config, 500_000),
@@ -2791,7 +2797,13 @@ fn mollusk_set_hcu_app_trusted_rejects_wrong_admin() {
     let wrong_admin = Pubkey::new_unique();
     let app = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_eval_context(admin, vec![(host_config, account), (wrong_admin, funded_system_account())]);
+    let context = mollusk_eval_context(
+        admin,
+        vec![
+            (host_config, account),
+            (wrong_admin, funded_system_account()),
+        ],
+    );
 
     context.process_and_validate_instruction(
         &set_hcu_app_trusted_ix(program_id, wrong_admin, wrong_admin, host_config, app, true),
@@ -2889,10 +2901,20 @@ impl EvalFixture {
         let output_label = label("output-hcu-fixture");
         let balance_handle = handle_for_chain(151, 5);
         let amount_handle = handle_for_chain(152, 5);
-        let (balance_value, balance_ev) =
-            new_lineage(authority, app_account, balance_label, balance_handle, &[authority]);
-        let (amount_value, amount_ev) =
-            new_lineage(authority, app_account, amount_label, amount_handle, &[authority]);
+        let (balance_value, balance_ev) = new_lineage(
+            authority,
+            app_account,
+            balance_label,
+            balance_handle,
+            &[authority],
+        );
+        let (amount_value, amount_ev) = new_lineage(
+            authority,
+            app_account,
+            amount_label,
+            amount_handle,
+            &[authority],
+        );
         let output_value_key = zama_solana_acl::derive_value_key(
             authority.to_bytes(),
             app_account.to_bytes(),
@@ -2985,7 +3007,9 @@ impl EvalFixture {
                     output_acl_domain_key: self.authority,
                     output_app_account: self.app_account,
                     output_encrypted_value_label: self.output_label,
-                    output_subjects: vec![host::AclSubjectEntry { pubkey: self.authority }],
+                    output_subjects: vec![host::AclSubjectEntry {
+                        pubkey: self.authority,
+                    }],
                     previous_handle: None,
                     previous_subjects: None,
                     make_public: false,
@@ -3125,7 +3149,9 @@ fn mollusk_fhe_eval_unsigned_hcu_authority_is_rejected() {
     }
     let result = fixture.context.process_and_validate_instruction(
         &ix,
-        &[anchor_error(anchor_lang::error::ErrorCode::AccountNotSigner)],
+        &[anchor_error(
+            anchor_lang::error::ErrorCode::AccountNotSigner,
+        )],
     );
     fixture.assert_no_output(&result);
 }
@@ -3160,7 +3186,9 @@ fn mollusk_fhe_eval_ban_cap_zero_untrusted_no_meter_is_rejected() {
     let fixture = EvalFixture::with_block_cap(0);
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(None, None),
-        &[custom_error(host::errors::ZamaHostError::HcuBlockLimitExceeded)],
+        &[custom_error(
+            host::errors::ZamaHostError::HcuBlockLimitExceeded,
+        )],
     );
     fixture.assert_no_output(&result);
 }
@@ -3175,7 +3203,9 @@ fn mollusk_fhe_eval_ban_cap_zero_untrusted_with_meter_is_rejected_unchanged() {
 
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(Some(meter_pda), None),
-        &[custom_error(host::errors::ZamaHostError::HcuBlockLimitExceeded)],
+        &[custom_error(
+            host::errors::ZamaHostError::HcuBlockLimitExceeded,
+        )],
     );
     assert_eq!(
         read_hcu_block_meter(&fixture.context, meter_pda)
@@ -3209,7 +3239,9 @@ fn mollusk_fhe_eval_untrusted_missing_meter_fails_closed() {
     let fixture = EvalFixture::with_block_cap(500_000);
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(None, None),
-        &[custom_error(host::errors::ZamaHostError::HcuBlockMeterMissing)],
+        &[custom_error(
+            host::errors::ZamaHostError::HcuBlockMeterMissing,
+        )],
     );
     fixture.assert_no_output(&result);
 }
@@ -3235,13 +3267,14 @@ fn mollusk_fhe_eval_untrusted_false_witness_requires_meter() {
     // A well-formed record with trusted == false is not a bypass — it falls through to the
     // metering path, so a missing meter still fails closed.
     let fixture = EvalFixture::with_block_cap(500_000);
-    let (trust_pda, trust_account) =
-        hcu_trusted_app_record_account(fixture.block_cap_app(), false);
+    let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), false);
     fixture.seed_account(trust_pda, trust_account);
 
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(None, Some(trust_pda)),
-        &[custom_error(host::errors::ZamaHostError::HcuBlockMeterMissing)],
+        &[custom_error(
+            host::errors::ZamaHostError::HcuBlockMeterMissing,
+        )],
     );
     fixture.assert_no_output(&result);
 }
@@ -3301,7 +3334,9 @@ fn mollusk_fhe_eval_wrong_app_meter_is_rejected() {
 
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(Some(other_meter_pda), None),
-        &[custom_error(host::errors::ZamaHostError::HcuBlockMeterMismatch)],
+        &[custom_error(
+            host::errors::ZamaHostError::HcuBlockMeterMismatch,
+        )],
     );
     fixture.assert_no_output(&result);
 }
@@ -3327,7 +3362,9 @@ fn mollusk_fhe_eval_squatted_meter_with_data_is_rejected() {
 
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(Some(meter_pda), None),
-        &[custom_error(host::errors::ZamaHostError::PdaCreationMismatch)],
+        &[custom_error(
+            host::errors::ZamaHostError::PdaCreationMismatch,
+        )],
     );
     fixture.assert_no_output(&result);
 }
@@ -3360,7 +3397,8 @@ fn mollusk_fhe_eval_prefunded_empty_meter_is_created_not_griefed() {
         .lamports;
     assert!(
         lamports
-            >= anchor_lang::prelude::Rent::default().minimum_balance(8 + host::HcuBlockMeter::SPACE)
+            >= anchor_lang::prelude::Rent::default()
+                .minimum_balance(8 + host::HcuBlockMeter::SPACE)
     );
     read_encrypted_value_from_context(&fixture.context, fixture.output_value);
 }
@@ -3419,7 +3457,9 @@ fn mollusk_fhe_eval_trust_pda_supplied_as_meter_is_rejected() {
 
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(Some(trust_pda), None),
-        &[custom_error(host::errors::ZamaHostError::HcuBlockMeterMismatch)],
+        &[custom_error(
+            host::errors::ZamaHostError::HcuBlockMeterMismatch,
+        )],
     );
     fixture.assert_no_output(&result);
 }
@@ -3435,7 +3475,9 @@ fn mollusk_fhe_eval_over_cap_trips_in_admission_without_output_or_mutation() {
 
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(Some(meter_pda), None),
-        &[custom_error(host::errors::ZamaHostError::HcuBlockLimitExceeded)],
+        &[custom_error(
+            host::errors::ZamaHostError::HcuBlockLimitExceeded,
+        )],
     );
     assert_eq!(
         read_hcu_block_meter(&fixture.context, meter_pda)
@@ -3452,8 +3494,7 @@ fn mollusk_fhe_eval_charge_accumulates_onto_prior_slot_usage() {
     // (monotonic; the meter is reused, not reset).
     let fixture = EvalFixture::with_block_cap(500_000);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
-    let (meter_pda, meter_account) =
-        hcu_block_meter_account(fixture.block_cap_app(), slot, 50_000);
+    let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 50_000);
     fixture.seed_account(meter_pda, meter_account);
 
     fixture.context.process_and_validate_instruction(
@@ -3477,7 +3518,9 @@ fn mollusk_fhe_eval_over_cap_with_prior_usage_is_rejected_unchanged() {
 
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(Some(meter_pda), None),
-        &[custom_error(host::errors::ZamaHostError::HcuBlockLimitExceeded)],
+        &[custom_error(
+            host::errors::ZamaHostError::HcuBlockLimitExceeded,
+        )],
     );
     assert_eq!(
         read_hcu_block_meter(&fixture.context, meter_pda)
@@ -3580,7 +3623,9 @@ fn mollusk_fhe_eval_extra_remaining_account_still_rejected_with_block_cap() {
         .push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
     fixture.context.process_and_validate_instruction(
         &ix,
-        &[custom_error(host::errors::ZamaHostError::InvalidFheEvalAccount)],
+        &[custom_error(
+            host::errors::ZamaHostError::InvalidFheEvalAccount,
+        )],
     );
 }
 
@@ -3618,7 +3663,9 @@ fn mollusk_fhe_eval_meter_accumulation_overflow_fails_closed() {
 
     let result = fixture.context.process_and_validate_instruction(
         &fixture.block_cap_instruction(Some(meter_pda), None),
-        &[custom_error(host::errors::ZamaHostError::HcuBlockLimitExceeded)],
+        &[custom_error(
+            host::errors::ZamaHostError::HcuBlockLimitExceeded,
+        )],
     );
     assert_eq!(
         read_hcu_block_meter(&fixture.context, meter_pda)

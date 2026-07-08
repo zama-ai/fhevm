@@ -264,7 +264,10 @@ mod tests {
             handle: pk(0x11),
         };
         let events = apply_instruction(&mut state, &make_public).unwrap();
-        assert_eq!(events, vec![LineageEvent::MarkedPublic { handle: pk(0x11) }]);
+        assert_eq!(
+            events,
+            vec![LineageEvent::MarkedPublic { handle: pk(0x11) }]
+        );
     }
 
     #[test]

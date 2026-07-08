@@ -734,8 +734,8 @@ pub fn computed_bound_eval_handle(
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &keccak_hashv(&[b"FHE_bound_eval_output", &base_result, &output_nonce_key])
-            .to_bytes()[..21],
+        &keccak_hashv(&[b"FHE_bound_eval_output", &base_result, &output_nonce_key]).to_bytes()
+            [..21],
     );
     result
 }
@@ -769,8 +769,7 @@ pub fn computed_bound_eval_ternary_handle(
     );
     let mut result = base_result;
     result[..21].copy_from_slice(
-        &hashv(&[b"FHE_bound_eval_output", &base_result, &output_nonce_key])
-            .to_bytes()[..21],
+        &hashv(&[b"FHE_bound_eval_output", &base_result, &output_nonce_key]).to_bytes()[..21],
     );
     result
 }

@@ -614,7 +614,9 @@ mod tests {
             "sig1",
             1,
             &[lineage],
-            vec![born_public_create_ix(program_id, lineage, old_handle, owner, compute)],
+            vec![born_public_create_ix(
+                program_id, lineage, old_handle, owner, compute,
+            )],
         );
 
         // The burn: an fhe_eval durable supersede output, born public inline,
@@ -708,7 +710,9 @@ mod tests {
             "sig1",
             1,
             &[lineage],
-            vec![born_public_create_ix(program_id, lineage, old_handle, owner, compute)],
+            vec![born_public_create_ix(
+                program_id, lineage, old_handle, owner, compute,
+            )],
         );
         // The event carries a handle that does not match the on-chain leaf.
         chain.push_tx(

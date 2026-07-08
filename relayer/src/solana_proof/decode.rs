@@ -402,8 +402,9 @@ pub fn decode_program_instructions(
             // born-public output handles for this frame.
             let mut op_event_results = Vec::new();
             let mut next = index + 1;
-            while let Some(result) =
-                instructions.get(next).and_then(|ev| op_event_result(ev, program_id))
+            while let Some(result) = instructions
+                .get(next)
+                .and_then(|ev| op_event_result(ev, program_id))
             {
                 op_event_results.push(result);
                 next += 1;
@@ -739,7 +740,8 @@ mod tests {
         };
         let eval_ix = ix_with_anchor_data(fhe_eval_accounts(&[ev]), "fhe_eval", plan);
         let decoded =
-            decode_program_instructions(program_id(), &[eval_ix, op_event_ix(burn_handle)]).unwrap();
+            decode_program_instructions(program_id(), &[eval_ix, op_event_ix(burn_handle)])
+                .unwrap();
         assert_eq!(
             decoded,
             vec![DecodedInstruction::FheEvalUpdateEncryptedValue {

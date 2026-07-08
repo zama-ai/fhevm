@@ -1496,7 +1496,12 @@ fn kms_public_decrypt_cert(handle: [u8; 32], cleartext_amount: u64) -> (Vec<[u8;
     let mut decrypted = [0u8; 32];
     decrypted[24..].copy_from_slice(&cleartext_amount.to_be_bytes());
     let digest = host::eip712::typed_data_digest(
-        &host::eip712::domain_separator(b"Decryption", b"1", GATEWAY_CHAIN_ID, &DECRYPTION_CONTRACT),
+        &host::eip712::domain_separator(
+            b"Decryption",
+            b"1",
+            GATEWAY_CHAIN_ID,
+            &DECRYPTION_CONTRACT,
+        ),
         &host::eip712::public_decrypt_struct_hash(&[handle], &decrypted, &extra_data),
     );
     (vec![secp_sign(&kms_signing_key(), &digest)], extra_data)
@@ -1852,8 +1857,7 @@ fn run_burn(
     amount_seed: u8,
 ) -> [u8; 32] {
     let amount_handle = handle_for_chain(amount_seed, BALANCE_FHE_TYPE);
-    let attestation =
-        amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+    let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
     let ix = confidential_burn_ix(fixture, attestation);
     context.process_and_validate_instruction(&ix, &[Check::success()]);
     read_encrypted_value(context, fixture.burned_amount_value).current_handle
@@ -1870,7 +1874,10 @@ fn mollusk_confidential_burn_makes_burned_amount_publicly_decryptable() {
     // public-decrypt leaf for the just-bound burned handle.
     let lineage = read_encrypted_value(&context, fixture.burned_amount_value);
     assert_eq!(lineage.current_handle, burned_handle);
-    assert_eq!(lineage.subjects, vec![fixture.owner, fixture.compute_signer]);
+    assert_eq!(
+        lineage.subjects,
+        vec![fixture.owner, fixture.compute_signer]
+    );
     assert_eq!(lineage.leaf_count, 1);
     let public_leaf = zama_solana_acl::public_decrypt_leaf_commitment(
         fixture.burned_amount_value.to_bytes(),
@@ -1942,7 +1949,10 @@ fn mollusk_request_and_redeem_historical_burned_handle_after_supersession() {
     );
     lineage.leaf_count = 4;
     lineage.peaks = expected_peaks.clone();
-    accounts.insert(fixture.burned_amount_value, encrypted_value_account(&lineage));
+    accounts.insert(
+        fixture.burned_amount_value,
+        encrypted_value_account(&lineage),
+    );
     let context = burn_redeem_mollusk().with_context(accounts);
 
     // request(H1) SUCCEEDS even though H1 is historical (lineage current handle is H2).
@@ -2053,7 +2063,10 @@ fn mollusk_redeem_rejects_foreign_public_decrypt_proof() {
     );
     lineage.leaf_count = 4;
     lineage.peaks = expected_peaks;
-    accounts.insert(fixture.burned_amount_value, encrypted_value_account(&lineage));
+    accounts.insert(
+        fixture.burned_amount_value,
+        encrypted_value_account(&lineage),
+    );
     let context = burn_redeem_mollusk().with_context(accounts);
 
     let request_nonce = [0x99u8; 32];
@@ -2069,7 +2082,13 @@ fn mollusk_redeem_rejects_foreign_public_decrypt_proof() {
         .borrow_mut()
         .insert(redemption_request, system_account(0));
     context.process_and_validate_instruction(
-        &request_burn_redemption_ix(&fixture, first_handle, request_nonce, 200, redemption_request),
+        &request_burn_redemption_ix(
+            &fixture,
+            first_handle,
+            request_nonce,
+            200,
+            redemption_request,
+        ),
         &[Check::success()],
     );
 
@@ -2139,7 +2158,13 @@ fn mollusk_e2e_vector2_burn_supersede_request_redeem() {
         .borrow_mut()
         .insert(redemption_request, system_account(0));
     context.process_and_validate_instruction(
-        &request_burn_redemption_ix(&fixture, first_handle, request_nonce, 200, redemption_request),
+        &request_burn_redemption_ix(
+            &fixture,
+            first_handle,
+            request_nonce,
+            200,
+            redemption_request,
+        ),
         &[Check::success()],
     );
 
@@ -2271,7 +2296,9 @@ fn public_leaf_lineage(
     supersede_to: Option<[u8; 32]>,
 ) -> (host::EncryptedValue, token::MmrInclusionProof) {
     let acct = account.to_bytes();
-    let mut leaves = vec![zama_solana_acl::public_decrypt_leaf_commitment(acct, 0, pinned)];
+    let mut leaves = vec![zama_solana_acl::public_decrypt_leaf_commitment(
+        acct, 0, pinned,
+    )];
     let current = match supersede_to {
         Some(h2) => {
             leaves.push(zama_solana_acl::historical_access_leaf_commitment(
@@ -2611,7 +2638,13 @@ fn mollusk_disclose_amount_consume_happy_path() {
     let (signatures, extra_data) = kms_public_decrypt_cert(pinned, 500);
     context.process_and_validate_instruction(
         &disclose_amount_secp_ix(
-            &fixture, request_addr, pinned, 500, signatures, extra_data, proof,
+            &fixture,
+            request_addr,
+            pinned,
+            500,
+            signatures,
+            extra_data,
+            proof,
         ),
         &[Check::success()],
     );
@@ -2722,7 +2755,13 @@ fn mollusk_disclose_amount_consume_once_rejects_second() {
     // Second consume of the same (now CONSUMED) witness is rejected.
     context.process_and_validate_instruction(
         &disclose_amount_secp_ix(
-            &fixture, request_addr, pinned, 500, signatures, extra_data, proof,
+            &fixture,
+            request_addr,
+            pinned,
+            500,
+            signatures,
+            extra_data,
+            proof,
         ),
         &[token_error(
             token::ConfidentialTokenError::RequestWitnessUnavailable,
@@ -2769,7 +2808,13 @@ fn mollusk_disclose_amount_rejects_expired_at_consume() {
     let (signatures, extra_data) = kms_public_decrypt_cert(pinned, 500);
     context.process_and_validate_instruction(
         &disclose_amount_secp_ix(
-            &fixture, request_addr, pinned, 500, signatures, extra_data, proof,
+            &fixture,
+            request_addr,
+            pinned,
+            500,
+            signatures,
+            extra_data,
+            proof,
         ),
         &[token_error(
             token::ConfidentialTokenError::RequestWitnessUnavailable,
@@ -2819,7 +2864,13 @@ fn mollusk_disclose_amount_rejects_foreign_public_decrypt_proof() {
     let (signatures, extra_data) = kms_public_decrypt_cert(pinned, 500);
     context.process_and_validate_instruction(
         &disclose_amount_secp_ix(
-            &fixture, request_addr, pinned, 500, signatures, extra_data, proof,
+            &fixture,
+            request_addr,
+            pinned,
+            500,
+            signatures,
+            extra_data,
+            proof,
         ),
         &[token_error(
             token::ConfidentialTokenError::PublicDecryptProofInvalid,
@@ -2831,7 +2882,10 @@ fn mollusk_disclose_amount_rejects_foreign_public_decrypt_proof() {
     );
 }
 
-fn close_expired_disclosure_request_ix(requester: Pubkey, disclosure_request: Pubkey) -> Instruction {
+fn close_expired_disclosure_request_ix(
+    requester: Pubkey,
+    disclosure_request: Pubkey,
+) -> Instruction {
     anchor_ix(
         token::id(),
         token::accounts::CloseExpiredDisclosureRequest {
@@ -2842,7 +2896,10 @@ fn close_expired_disclosure_request_ix(requester: Pubkey, disclosure_request: Pu
     )
 }
 
-fn close_consumed_disclosure_request_ix(requester: Pubkey, disclosure_request: Pubkey) -> Instruction {
+fn close_consumed_disclosure_request_ix(
+    requester: Pubkey,
+    disclosure_request: Pubkey,
+) -> Instruction {
     anchor_ix(
         token::id(),
         token::accounts::CloseConsumedDisclosureRequest {
@@ -3007,7 +3064,9 @@ fn mollusk_confidential_transfer_block_cap_ban_is_enforced_through_cpi() {
 
     context.process_and_validate_instruction(
         &ix,
-        &[host_error(host::errors::ZamaHostError::HcuBlockLimitExceeded)],
+        &[host_error(
+            host::errors::ZamaHostError::HcuBlockLimitExceeded,
+        )],
     );
 
     // Atomic revert: both balances are unchanged.
@@ -3106,8 +3165,9 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     assert_eq!(meter.last_seen_slot, context.mollusk.sysvars.clock.slot);
     // Regression guard on the metering granularity: nothing accrues to the sender token
     // account's key — a sybil minting fresh token accounts gets no fresh budget.
-    assert!(
-        read_hcu_block_meter(&context, host::hcu_block_meter_address(fixture.alice_token).0)
-            .is_none()
-    );
+    assert!(read_hcu_block_meter(
+        &context,
+        host::hcu_block_meter_address(fixture.alice_token).0
+    )
+    .is_none());
 }
