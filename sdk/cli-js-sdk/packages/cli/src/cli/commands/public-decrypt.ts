@@ -13,19 +13,58 @@ import {
 } from "../parsers";
 import { createProgressReporter } from "../progress";
 
-/** Registers public decrypt commands for cached, fresh, and make-public flows. */
+/** Registers public decrypt commands for direct, stored, fresh, and make-public flows. */
 export const registerPublicDecryptCommands = (program: Command): void => {
   const supportedValueTypes = FHE_VALUE_TYPES.join(", ");
   const publicDecryptCommand = program
     .command("public-decrypt")
     .description(
-      `Public decrypt flows. Supported types: ${supportedValueTypes}`,
-    );
+      `Public decrypt existing ciphertext handles from any contract. Supported types: ${supportedValueTypes}`,
+    )
+    .option(
+      "--handle <handle>",
+      "encrypted handle to decrypt directly; repeat for multiple",
+      collectHandle,
+      [],
+    )
+    .option(
+      "--contract <address>",
+      "contract address paired with the handles for ACL verification; defaults to the FHETest contract",
+      parseAddress,
+    )
+    .option(
+      "--private-key <privateKey>",
+      "wallet private key; falls back to PRIVATE_KEY",
+      parsePrivateKey,
+    )
+    .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
+    .action(async (options, command) => {
+      if (options.handle.length === 0) {
+        command.help();
+        return;
+      }
+      const { publicDecrypt } = await import(
+        "@cli-fhevm-sdk/toolkit/flows/public-decrypt/direct"
+      );
+      const globals = getGlobalOptions(command);
+      const result = await publicDecrypt({
+        network: globals.network,
+        relayerUrl: globals.relayerUrl,
+        rpcUrl: globals.rpcUrl,
+        contractAddress: options.contract,
+        handles: options.handle,
+        privateKey: options.privateKey,
+        mnemonic: options.mnemonic,
+        onProgress: createProgressReporter(),
+      });
+
+      printJson(result);
+    });
 
   publicDecryptCommand
-    .command("cached")
+    .command("stored")
     .description(
-      "Public decrypt FHETest handles from account/type slots, or direct handles",
+      "Demo: public decrypt FHETest handles stored in an account's type slots",
     )
     .option(
       "-t, --type <type>",
@@ -43,28 +82,23 @@ export const registerPublicDecryptCommands = (program: Command): void => {
       parseAddress,
     )
     .option(
-      "--handle <handle>",
-      "encrypted handle to decrypt directly; repeat for multiple",
-      collectHandle,
-      [],
-    )
-    .option(
       "--private-key <privateKey>",
       "wallet private key; falls back to PRIVATE_KEY",
       parsePrivateKey,
     )
     .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
     .action(async (options, command) => {
-      const { publicDecrypt } = await import("@cli-fhevm-sdk/toolkit/flows/public-decrypt/cached");
+      const { storedPublicDecrypt } = await import(
+        "@cli-fhevm-sdk/toolkit/flows/public-decrypt/stored"
+      );
       const globals = getGlobalOptions(command);
-      const result = await publicDecrypt({
+      const result = await storedPublicDecrypt({
         network: globals.network,
         relayerUrl: globals.relayerUrl,
         rpcUrl: globals.rpcUrl,
         types: options.type,
         contractAddress: options.contract,
         account: options.account,
-        handles: options.handle,
         privateKey: options.privateKey,
         mnemonic: options.mnemonic,
         onProgress: createProgressReporter(),
@@ -76,7 +110,7 @@ export const registerPublicDecryptCommands = (program: Command): void => {
   publicDecryptCommand
     .command("fresh")
     .description(
-      "Encrypt a new value, store it in FHETest as public, then public decrypt it",
+      "Demo: encrypt a new value, store it in FHETest as public, then public decrypt it",
     )
     .option(
       "-t, --type <type>",
@@ -132,7 +166,7 @@ export const registerPublicDecryptCommands = (program: Command): void => {
   publicDecryptCommand
     .command("make-public")
     .description(
-      "Make the caller's stored FHETest handle public, then decrypt it",
+      "Demo: make the caller's stored FHETest handle public, then decrypt it",
     )
     .option(
       "-t, --type <type>",

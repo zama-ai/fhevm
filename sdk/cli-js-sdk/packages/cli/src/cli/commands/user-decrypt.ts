@@ -16,31 +16,24 @@ import { createProgressReporter } from "../progress";
 
 const DEFAULT_PERMIT_DURATION_DAYS = 1;
 
-/** Registers owner-signed user decrypt commands for cached and fresh handles. */
+/** Registers owner-signed user decrypt commands. */
 export const registerUserDecryptCommands = (program: Command): void => {
   const supportedValueTypes = FHE_VALUE_TYPES.join(", ");
   const userDecryptCommand = program
     .command("user-decrypt")
-    .description(`User decrypt flows. Supported types: ${supportedValueTypes}`);
-
-  userDecryptCommand
-    .command("cached")
-    .description("User decrypt FHETest handles from wallet/type slots, or direct handles")
-    .option(
-      "-t, --type <type>",
-      `stored value type to read; repeat for multiple (${supportedValueTypes})`,
-      collectValueType,
-    )
-    .option(
-      "--contract <address>",
-      "FHETest contract address override",
-      parseAddress,
+    .description(
+      `Decrypt existing private handles as the signing wallet, from any contract. Supported types: ${supportedValueTypes}`,
     )
     .option(
       "--handle <handle>",
       "encrypted handle to decrypt directly; repeat for multiple",
       collectHandle,
       [],
+    )
+    .option(
+      "--contract <address>",
+      "contract address paired with the handles for ACL verification; defaults to the FHETest contract",
+      parseAddress,
     )
     .option(
       "--duration-days <days>",
@@ -59,13 +52,18 @@ export const registerUserDecryptCommands = (program: Command): void => {
     )
     .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
     .action(async (options, command) => {
-      const { userDecrypt } = await import("@cli-fhevm-sdk/toolkit/flows/user-decrypt/cached");
+      if (options.handle.length === 0) {
+        command.help();
+        return;
+      }
+      const { userDecrypt } = await import(
+        "@cli-fhevm-sdk/toolkit/flows/user-decrypt/direct"
+      );
       const globals = getGlobalOptions(command);
       const result = await userDecrypt({
         network: globals.network,
         relayerUrl: globals.relayerUrl,
         rpcUrl: globals.rpcUrl,
-        types: options.type,
         contractAddress: options.contract,
         handles: options.handle,
         durationDays: options.durationDays,
@@ -83,8 +81,64 @@ export const registerUserDecryptCommands = (program: Command): void => {
     });
 
   userDecryptCommand
+    .command("stored")
+    .description(
+      "Demo: user decrypt FHETest handles stored in the wallet's type slots",
+    )
+    .option(
+      "-t, --type <type>",
+      `stored value type to read; repeat for multiple (${supportedValueTypes})`,
+      collectValueType,
+    )
+    .option(
+      "--contract <address>",
+      "FHETest contract address override",
+      parseAddress,
+    )
+    .option(
+      "--duration-days <days>",
+      "decryption permit duration in days",
+      parsePositiveInteger,
+      DEFAULT_PERMIT_DURATION_DAYS,
+    )
+    .option(
+      "--artifact <path>",
+      "write a sensitive user-decrypt validation artifact",
+    )
+    .option(
+      "--private-key <privateKey>",
+      "wallet private key; falls back to PRIVATE_KEY",
+      parsePrivateKey,
+    )
+    .option("--mnemonic <mnemonic>", "wallet mnemonic; falls back to MNEMONIC")
+    .action(async (options, command) => {
+      const { storedUserDecrypt } = await import(
+        "@cli-fhevm-sdk/toolkit/flows/user-decrypt/stored"
+      );
+      const globals = getGlobalOptions(command);
+      const result = await storedUserDecrypt({
+        network: globals.network,
+        relayerUrl: globals.relayerUrl,
+        rpcUrl: globals.rpcUrl,
+        types: options.type,
+        contractAddress: options.contract,
+        durationDays: options.durationDays,
+        privateKey: options.privateKey,
+        mnemonic: options.mnemonic,
+        includeValidationArtifact: options.artifact !== undefined,
+        onProgress: createProgressReporter(),
+      });
+
+      if (options.artifact !== undefined) {
+        await writeJsonFile(options.artifact, result.validationArtifact);
+      }
+      const { validationArtifact: _validationArtifact, ...publicResult } = result;
+      printJson(publicResult);
+    });
+
+  userDecryptCommand
     .command("fresh")
-    .description("Encrypt a new value, store it in FHETest, then user decrypt it")
+    .description("Demo: encrypt a new value, store it in FHETest, then user decrypt it")
     .option(
       "-t, --type <type>",
       `value type to encrypt (${supportedValueTypes})`,

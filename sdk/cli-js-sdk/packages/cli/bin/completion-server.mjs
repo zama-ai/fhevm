@@ -81,23 +81,26 @@ const root = command(
     ]),
     command(
       "public-decrypt",
-      `Public decrypt flows. Supported types: ${FHE_VALUE_TYPES.join(", ")}`,
-      [],
+      `Public decrypt existing ciphertext handles from any contract. Supported types: ${FHE_VALUE_TYPES.join(", ")}`,
       [
-        command("cached", "Public decrypt FHETest handles from account/type slots, or direct handles", [
+        opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
+        opt("--contract", "contract address paired with the handles for ACL verification; defaults to the FHETest contract"),
+        ...walletOptions,
+      ],
+      [
+        command("stored", "Demo: public decrypt FHETest handles stored in an account's type slots", [
           valueTypeOption("stored value type to read; repeat for multiple"),
           opt("--account", "account used for FHETest.getHandleOf"),
           contractOption,
-          opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
           ...walletOptions,
         ]),
-        command("fresh", "Encrypt a new value, store it in FHETest as public, then public decrypt it", [
+        command("fresh", "Demo: encrypt a new value, store it in FHETest as public, then public decrypt it", [
           valueTypeOption("value type to encrypt"),
           opt("--value", "clear value to encrypt; defaults to random"),
           contractOption,
           ...walletOptions,
         ]),
-        command("make-public", "Make the caller's stored FHETest handle public, then decrypt it", [
+        command("make-public", "Demo: make the caller's stored FHETest handle public, then decrypt it", [
           valueTypeOption("value type"),
           contractOption,
           ...walletOptions,
@@ -106,18 +109,23 @@ const root = command(
     ),
     command(
       "user-decrypt",
-      `User decrypt flows. Supported types: ${FHE_VALUE_TYPES.join(", ")}`,
-      [],
+      `Decrypt existing private handles as the signing wallet, from any contract. Supported types: ${FHE_VALUE_TYPES.join(", ")}`,
       [
-        command("cached", "User decrypt FHETest handles from wallet/type slots, or direct handles", [
+        opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
+        opt("--contract", "contract address paired with the handles for ACL verification; defaults to the FHETest contract"),
+        opt("--duration-days", "decryption permit duration in days"),
+        opt("--artifact", "write a sensitive user-decrypt validation artifact"),
+        ...walletOptions,
+      ],
+      [
+        command("stored", "Demo: user decrypt FHETest handles stored in the wallet's type slots", [
           valueTypeOption("stored value type to read; repeat for multiple"),
           contractOption,
-          opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
           opt("--duration-days", "decryption permit duration in days"),
           opt("--artifact", "write a sensitive user-decrypt validation artifact"),
           ...walletOptions,
         ]),
-        command("fresh", "Encrypt a new value, store it in FHETest, then user decrypt it", [
+        command("fresh", "Demo: encrypt a new value, store it in FHETest, then user decrypt it", [
           valueTypeOption("value type to encrypt"),
           opt("--value", "clear value to encrypt; defaults to random"),
           contractOption,
@@ -129,14 +137,24 @@ const root = command(
     ),
     command(
       "delegated-user-decrypt",
-      `Delegated user decrypt flows. Supported types: ${FHE_VALUE_TYPES.join(", ")}`,
-      [],
+      `Decrypt existing handles as a delegate, from any contract. Supported types: ${FHE_VALUE_TYPES.join(", ")}`,
       [
-        command("cached", "Delegated user decrypt FHETest handles from delegator/type slots, or direct handles", [
+        opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
+        opt("--contract", "contract address paired with the handles for ACL verification; defaults to the FHETest contract"),
+        opt("--delegator", "encrypted data owner"),
+        opt("--duration-days", "decryption permit duration in days"),
+        opt("--delegation-duration-days", "ACL delegation duration in days when creating delegation"),
+        opt("--artifact", "write a sensitive user-decrypt validation artifact"),
+        opt("--private-key", "delegate private key; falls back to PRIVATE_KEY"),
+        opt("--mnemonic", "delegate mnemonic; falls back to MNEMONIC"),
+        opt("--delegator-private-key", "delegator private key; falls back to DELEGATOR_PRIVATE_KEY"),
+        opt("--delegator-mnemonic", "delegator mnemonic; falls back to DELEGATOR_MNEMONIC"),
+      ],
+      [
+        command("stored", "Demo: delegated user decrypt FHETest handles stored in the delegator's type slots", [
           valueTypeOption("stored value type to read; repeat for multiple"),
           contractOption,
           opt("--delegator", "encrypted data owner"),
-          opt("--handle", "encrypted handle to decrypt directly; repeat for multiple"),
           opt("--duration-days", "decryption permit duration in days"),
           opt("--delegation-duration-days", "ACL delegation duration in days when creating delegation"),
           opt("--artifact", "write a sensitive user-decrypt validation artifact"),
@@ -145,7 +163,7 @@ const root = command(
           opt("--delegator-private-key", "delegator private key; falls back to DELEGATOR_PRIVATE_KEY"),
           opt("--delegator-mnemonic", "delegator mnemonic; falls back to DELEGATOR_MNEMONIC"),
         ]),
-        command("fresh", "Encrypt a new delegator value, store it in FHETest, then delegated user decrypt it", [
+        command("fresh", "Demo: encrypt a new delegator value, store it in FHETest, then delegated user decrypt it", [
           valueTypeOption("value type to encrypt"),
           opt("--value", "clear value to encrypt; defaults to random"),
           contractOption,
