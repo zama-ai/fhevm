@@ -6,6 +6,7 @@ import { Command, Option } from "@commander-js/extra-typings";
 import { consola } from "consola";
 
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
+import { registerPublicDecryptCommands } from "./src/cli/commands/public-decrypt";
 import { DEFAULT_NETWORK, NETWORKS } from "@cli-fhevm-sdk/toolkit/types";
 
 const program = new Command()
@@ -24,6 +25,7 @@ const program = new Command()
   .option("--rpc-url <url>", "host chain RPC URL override");
 
 registerInputProofCommand(program);
+registerPublicDecryptCommands(program);
 
 program.parseAsync().catch((error: unknown) => {
   consola.error(error instanceof Error ? (error.stack ?? error.message) : error);
