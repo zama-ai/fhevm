@@ -1,7 +1,10 @@
 //! Shared account contexts and validation helpers for instruction modules.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
+use anchor_lang::solana_program::{
+    program::{invoke, invoke_signed},
+    system_instruction,
+};
 
 use crate::{
     errors::ZamaHostError,
@@ -86,8 +89,22 @@ pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
         grant_deny_list_enabled: config.grant_deny_list_enabled,
         max_hcu_per_tx: config.max_hcu_per_tx,
         max_hcu_depth_per_tx: config.max_hcu_depth_per_tx,
+        hcu_block_cap_per_app: config.hcu_block_cap_per_app,
         updated_slot: config.updated_slot,
     });
+}
+
+/// Enforces the per-app block-cap ordering guard: a metering-band cap (`0 < value < u64::MAX`)
+/// must be at least `max_hcu_per_tx`, so a single legal max-per-tx frame always fits on a fresh
+/// meter. The two sentinels are exempt: `value == u64::MAX` (unrestricted) and `value == 0`
+/// (deliberate ban of untrusted apps). `max_hcu_per_tx == 0` means the per-frame cap is unlimited,
+/// so the guard is vacuous.
+pub(super) fn check_block_cap_ordering(value: u64, max_hcu_per_tx: u64) -> Result<()> {
+    require!(
+        value == 0 || value == u64::MAX || max_hcu_per_tx == 0 || value >= max_hcu_per_tx,
+        ZamaHostError::HcuBlockCapBelowMaxPerTx
+    );
+    Ok(())
 }
 
 /// Enforces the HCU limit ordering invariant `max_hcu_per_tx >= max_hcu_depth_per_tx`, treating `0`
@@ -233,6 +250,17 @@ pub(super) fn is_absent_deny_record(info: &AccountInfo) -> Result<bool> {
     Ok(false)
 }
 
+/// True when a PDA slot is still uninitialized: system-owned and empty. A system-owned empty
+/// account can never be executable, so that combination fails closed. Used by the HCU block-cap
+/// paths to treat an absent optional record as benign (untrusted / not-yet-created).
+pub(super) fn is_uninitialized_pda_account(info: &AccountInfo) -> Result<bool> {
+    if info.owner == &System::id() && info.data_is_empty() {
+        require!(!info.executable, ZamaHostError::PdaCreationMismatch);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 pub(super) fn create_pda_if_needed<'info>(
     payer: &AccountInfo<'info>,
     account: &AccountInfo<'info>,
@@ -250,12 +278,7 @@ pub(super) fn create_pda_if_needed<'info>(
     );
     require!(account.data_is_empty(), ZamaHostError::PdaCreationMismatch);
     require!(!account.executable, ZamaHostError::PdaCreationMismatch);
-    let rent = Rent::get()?.minimum_balance(space);
-    invoke_signed(
-        &system_instruction::create_account(payer.key, account.key, rent, space as u64, &crate::ID),
-        &[payer.clone(), account.clone(), system_program.clone()],
-        &[seeds],
-    )?;
+    let rent = fund_allocate_assign(payer, account, system_program, space, seeds)?;
     require_keys_eq!(
         *account.owner,
         crate::ID,
@@ -271,6 +294,48 @@ pub(super) fn create_pda_if_needed<'info>(
         ZamaHostError::PdaCreationMismatch
     );
     Ok(())
+}
+
+/// Creates a program-owned PDA at `account` in a way that tolerates a pre-existing lamport balance.
+///
+/// The seeds are predictable for several PDAs (the HCU block meter, ACL permission/record accounts),
+/// so a third party can pre-fund the address with a bare `transfer` before the program first creates
+/// it. `system_instruction::create_account` refuses any non-zero-lamport target (`AccountAlreadyInUse`),
+/// which would let that donation permanently block creation — a griefing DoS. Splitting the fused
+/// primitive into transfer-shortfall + `allocate` + `assign` sidesteps it: an attacker can only add
+/// lamports (they cannot sign for the PDA to `allocate`/`assign` it), and `allocate`/`assign` ignore
+/// the balance. Returns the rent-exempt minimum so callers can assert `lamports() >= rent`.
+fn fund_allocate_assign<'info>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    space: usize,
+    seeds: &[&[u8]],
+) -> Result<u64> {
+    let rent = Rent::get()?.minimum_balance(space);
+    // Top up only the shortfall. A donation of `rent` or more makes this a no-op; the surplus is
+    // harmless (the account is simply more-than-rent-exempt). The transfer is authorized by `payer`,
+    // already a transaction signer, so no PDA seeds are needed for it.
+    let balance = account.lamports();
+    if balance < rent {
+        invoke(
+            &system_instruction::transfer(payer.key, account.key, rent - balance),
+            &[payer.clone(), account.clone(), system_program.clone()],
+        )?;
+    }
+    // Both allocate and assign are indifferent to the lamport balance; each requires the PDA to
+    // "sign", which only this program can do via `seeds`, so a squatter cannot perform them.
+    invoke_signed(
+        &system_instruction::allocate(account.key, space as u64),
+        &[account.clone(), system_program.clone()],
+        &[seeds],
+    )?;
+    invoke_signed(
+        &system_instruction::assign(account.key, &crate::ID),
+        &[account.clone(), system_program.clone()],
+        &[seeds],
+    )?;
+    Ok(rent)
 }
 
 pub(super) fn create_pda_strict<'info>(
@@ -294,12 +359,10 @@ pub(super) fn create_pda_strict<'info>(
         !account.executable,
         ZamaHostError::FheEvalOutputAlreadyInitialized
     );
-    let rent = Rent::get()?.minimum_balance(space);
-    invoke_signed(
-        &system_instruction::create_account(payer.key, account.key, rent, space as u64, &crate::ID),
-        &[payer.clone(), account.clone(), system_program.clone()],
-        &[seeds],
-    )?;
+    // Predictable output-ACL addresses are equally pre-fundable, so create tolerant of a donated
+    // balance (see `fund_allocate_assign`); a lamport donation is not "initialization", so the
+    // strict system-owned/empty entry guards above still hold the real no-overwrite invariant.
+    let rent = fund_allocate_assign(payer, account, system_program, space, seeds)?;
     require_keys_eq!(
         *account.owner,
         crate::ID,
@@ -438,7 +501,34 @@ mod tests {
             grant_deny_list_enabled: false,
             max_hcu_per_tx: 20_000_000,
             max_hcu_depth_per_tx: 5_000_000,
+            hcu_block_cap_per_app: u64::MAX,
             updated_slot: 42,
         };
+    }
+
+    // ---- block-cap ordering guard: sentinels exempt, band must be >= max_hcu_per_tx ----
+
+    #[test]
+    fn check_block_cap_ordering_sentinels_always_ok() {
+        // 0 (ban) and u64::MAX (unrestricted) bypass the ordering guard at any max_hcu_per_tx.
+        assert!(check_block_cap_ordering(0, 20_000_000).is_ok());
+        assert!(check_block_cap_ordering(u64::MAX, 20_000_000).is_ok());
+    }
+
+    #[test]
+    fn check_block_cap_ordering_band_respects_max_per_tx() {
+        // Band value at/above max_hcu_per_tx is accepted; below is rejected.
+        assert!(check_block_cap_ordering(20_000_000, 20_000_000).is_ok()); // boundary
+        assert!(check_block_cap_ordering(25_000_000, 20_000_000).is_ok());
+        assert_eq!(
+            check_block_cap_ordering(19_000_000, 20_000_000).unwrap_err(),
+            error!(ZamaHostError::HcuBlockCapBelowMaxPerTx)
+        );
+    }
+
+    #[test]
+    fn check_block_cap_ordering_unlimited_per_tx_is_vacuous() {
+        // max_hcu_per_tx == 0 (per-frame cap off) accepts even a tiny band value.
+        assert!(check_block_cap_ordering(1, 0).is_ok());
     }
 }

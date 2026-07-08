@@ -16,6 +16,10 @@ use super::set_host_pause::HostAdmin;
 /// - Rejects any trailing accounts (`assert_no_remaining_accounts`).
 /// - Preserves the `max_hcu_per_tx >= max_hcu_depth_per_tx` ordering, with `0` = unlimited
 ///   (`check_hcu_ordering`).
+/// - Preserves the block-cap ordering from the other side: a metering-band
+///   `hcu_block_cap_per_app` must stay at or above the new total, so raising the per-frame
+///   limit cannot silently make a single legal frame exceed the block cap
+///   (`check_block_cap_ordering`).
 /// - Advances `updated_slot` and emits the config-updated event carrying the new limits.
 pub fn set_max_hcu_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
@@ -27,6 +31,8 @@ pub fn set_max_hcu_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
     let config = &mut ctx.accounts.host_config;
     // The new total must not fall below the current depth limit (0 = unlimited on either side).
     check_hcu_ordering(value, config.max_hcu_depth_per_tx)?;
+    // And a metering-band block cap must not fall below the new total (sentinels exempt).
+    check_block_cap_ordering(config.hcu_block_cap_per_app, value)?;
     config.max_hcu_per_tx = value;
     config.updated_slot = Clock::get()?.slot;
     emit_config_updated(config, admin);

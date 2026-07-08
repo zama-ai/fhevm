@@ -516,7 +516,9 @@
         {
           "name": "host_config",
           "docs": [
-            "Singleton config PDA."
+            "Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot",
+            "counter is the separate `hcu_block_meter`, never this singleton — so the hot path takes no",
+            "write lock on the config."
           ],
           "pda": {
             "seeds": [
@@ -545,6 +547,36 @@
             "System program used for durable output ACL creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "hcu_authority",
+          "docs": [
+            "The app identity the HCU block cap meters and trusts. Both HCU PDAs (`hcu_block_meter`,",
+            "`hcu_trusted_app_record`) are derived from this key — never from `payer` or",
+            "`app_account_authority`. A `Signer` so the identity is unforgeable: a program can only",
+            "sign its own PDAs via CPI seeds, so no caller can spend another app's meter or steal its",
+            "trusted bypass. Always required — even under the unrestricted default — so activating",
+            "the cap never changes the instruction's account shape."
+          ],
+          "signer": true
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "Per-app HCU block meter (written once in the execution `charge`). Untrusted apps in the",
+            "metering band MUST supply it; trusted apps and the unrestricted default omit it. An",
+            "`UncheckedAccount` because it may be uninitialized (lazy-created) and is validated manually."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "Trust witness (read-only). Present + program-owned + `trusted == true` ⇒ bypass the cap;",
+            "absent (`None`) ⇒ untrusted, fall through to the meter; present-but-malformed ⇒ reject."
+          ],
+          "optional": true
         },
         {
           "name": "event_authority"
@@ -959,6 +991,144 @@
       ]
     },
     {
+      "name": "set_hcu_app_trusted",
+      "docs": [
+        "Registers or clears an app's block-cap bypass in the HCU trust registry (admin-only)."
+      ],
+      "discriminator": [
+        66,
+        58,
+        250,
+        86,
+        164,
+        125,
+        252,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Pays rent if the trust-registry PDA must be created."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "app",
+          "type": "pubkey"
+        },
+        {
+          "name": "trusted",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "set_hcu_block_cap_per_app",
+      "docs": [
+        "Sets the per-app, per-slot HCU block cap enforced in `fhe_eval`."
+      ],
+      "discriminator": [
+        54,
+        153,
+        58,
+        82,
+        50,
+        16,
+        6,
+        207
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "set_host_pause",
       "discriminator": [
         119,
@@ -1317,6 +1487,19 @@
         166,
         182,
         95
+      ]
+    },
+    {
+      "name": "HcuAppTrustUpdatedEvent",
+      "discriminator": [
+        40,
+        238,
+        55,
+        32,
+        149,
+        159,
+        238,
+        19
       ]
     },
     {
@@ -1723,6 +1906,31 @@
       "code": 6064,
       "name": "EncryptedValueMmrPeakCapacityExceeded",
       "msg": "encrypted value MMR peak capacity exceeded"
+    },
+    {
+      "code": 6065,
+      "name": "HcuBlockLimitExceeded",
+      "msg": "per-app in-slot HCU exceeds the block cap"
+    },
+    {
+      "code": 6066,
+      "name": "HcuBlockMeterMissing",
+      "msg": "HCU block meter account is required for a metered app"
+    },
+    {
+      "code": 6067,
+      "name": "HcuBlockMeterMismatch",
+      "msg": "HCU block meter account does not match the canonical PDA"
+    },
+    {
+      "code": 6068,
+      "name": "HcuTrustedAppRecordMismatch",
+      "msg": "HCU trusted-app record does not match the canonical PDA"
+    },
+    {
+      "code": 6069,
+      "name": "HcuBlockCapBelowMaxPerTx",
+      "msg": "HCU block cap is below max_hcu_per_tx"
     }
   ],
   "types": [
@@ -2704,6 +2912,52 @@
       }
     },
     {
+      "name": "HcuAppTrustUpdatedEvent",
+      "docs": [
+        "Emitted when an app's HCU block-cap trust registry entry is updated."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "hcu_trusted_app_record",
+            "docs": [
+              "Canonical trust-registry record PDA."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "app",
+            "docs": [
+              "The app authority governed by the record."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "trusted",
+            "docs": [
+              "Whether the app bypasses the per-app block cap."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "updated_slot",
+            "docs": [
+              "Slot in which this update was applied."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "HostConfig",
       "docs": [
         "Singleton host configuration and authority surface.",
@@ -2844,6 +3098,15 @@
             "name": "max_hcu_depth_per_tx",
             "docs": [
               "Max critical-path (depth) HCU within one `fhe_eval` plan. `0` = unlimited."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "hcu_block_cap_per_app",
+            "docs": [
+              "Per-app HCU budget per slot, enforced in `fhe_eval`. `u64::MAX` = unrestricted (the ship",
+              "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still bypass);",
+              "any other value is the metering band (must be `>= max_hcu_per_tx` unless that is `0`)."
             ],
             "type": "u64"
           },
@@ -2992,6 +3255,13 @@
             "name": "max_hcu_depth_per_tx",
             "docs": [
               "Current max critical-path HCU per `fhe_eval` plan (`0` = unlimited)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "hcu_block_cap_per_app",
+            "docs": [
+              "Current per-app HCU block cap (`u64::MAX` = unrestricted, `0` = ban untrusted apps)."
             ],
             "type": "u64"
           },

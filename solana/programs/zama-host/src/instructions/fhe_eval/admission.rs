@@ -10,12 +10,15 @@ use super::*;
 /// operand resolvers (see [`walk`]) but performs no mutation. It tracks the
 /// planned durable outputs in memory so the whole frame is checked before
 /// execution touches any account.
+///
+/// Returns the per-frame HCU total computed by the walk, so the caller can run the read-only
+/// block-cap `check` before execution.
 pub(super) fn admit_eval_frame<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     args: &FheEvalArgs,
     subject: Pubkey,
     handle_context: &EvalHandleContext<'_>,
-) -> Result<()> {
+) -> Result<u64> {
     let mut admission = AdmissionState::new(
         ctx.remaining_accounts,
         args.steps.len(),

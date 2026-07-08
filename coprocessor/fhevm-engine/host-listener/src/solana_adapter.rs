@@ -418,6 +418,7 @@ fn decode_solana_host_events(event: ZamaHostEvent) -> Vec<SolanaHostEvent> {
             vec![SolanaHostEvent::FheRandBounded(event)]
         }
         ZamaHostEvent::DenySubjectUpdated(_)
+        | ZamaHostEvent::HcuAppTrustUpdated(_)
         | ZamaHostEvent::HostConfigInitialized(_)
         | ZamaHostEvent::HostConfigUpdated(_)
         | ZamaHostEvent::NewKmsContext(_)
@@ -553,6 +554,7 @@ fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
         ZamaHostEvent::FheRand(event) => event.version,
         ZamaHostEvent::FheRandBounded(event) => event.version,
         ZamaHostEvent::FheTernaryOp(event) => event.version,
+        ZamaHostEvent::HcuAppTrustUpdated(event) => event.version,
         ZamaHostEvent::HostConfigInitialized(event) => event.version,
         ZamaHostEvent::HostConfigUpdated(event) => event.version,
         ZamaHostEvent::KmsContextDestroyed(event) => event.version,

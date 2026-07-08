@@ -194,6 +194,12 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
             )
             .0,
             system_program: system_program::ID,
+            // Block-cap optional accounts: default cap is unrestricted, so existing flows
+            // pass None/None and behave exactly as before the feature. The mandatory HCU
+            // authority is the payer for this wallet-driven test frame.
+            hcu_authority: fixture.payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
             event_authority: event_authority(fixture.host_program_id),
             program: fixture.host_program_id,
         }
@@ -739,6 +745,9 @@ fn seed_host_config(
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: 0,
                 max_hcu_depth_per_tx: 0,
+                // Unrestricted (the ship default): the block cap short-circuits without
+                // requiring the optional meter/trust accounts.
+                hcu_block_cap_per_app: u64::MAX,
                 updated_slot: 0,
                 bump,
             }),
@@ -817,6 +826,9 @@ fn token_fixture_with_initial_balances(
                 zama_program: host_program_id,
                 host_config,
                 system_program: system_program::ID,
+                hcu_authority: hcu_authority_address(token_program_id, mint.pubkey()),
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
                 event_authority: event_authority(token_program_id),
                 program: token_program_id,
             }
@@ -915,6 +927,9 @@ fn initialize_token_account(svm: &mut LiteSVM, owner: &Keypair, init: TokenAccou
                 zama_program: init.host_program_id,
                 host_config: init.host_config,
                 system_program: system_program::ID,
+                hcu_authority: hcu_authority_address(init.token_program_id, init.mint),
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
                 event_authority: event_authority(init.token_program_id),
                 program: init.token_program_id,
             }
@@ -952,6 +967,11 @@ fn transfer_ix(
     Instruction {
         program_id: fixture.token_program_id,
         accounts: token::accounts::ConfidentialTransfer {
+            // Block-cap optional accounts threaded through the transfer CPI; the default
+            // unrestricted cap means None/None here. The mint's HCU authority is mandatory.
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            hcu_authority: hcu_authority_address(fixture.token_program_id, fixture.mint.pubkey()),
             owner: fixture.alice.pubkey(),
             payer: fixture.alice.pubkey(),
             mint: fixture.mint.pubkey(),
@@ -1481,6 +1501,10 @@ fn token_account_address(program_id: Pubkey, mint: Pubkey, owner: Pubkey) -> Pub
         &program_id,
     )
     .0
+}
+
+fn hcu_authority_address(program_id: Pubkey, mint: Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[b"hcu-authority", mint.as_ref()], &program_id).0
 }
 
 fn send(svm: &mut LiteSVM, payer: &Keypair, ix: Instruction) {

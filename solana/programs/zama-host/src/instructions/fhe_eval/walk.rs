@@ -115,13 +115,13 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
     ctx: &Context<'info, FheEval<'info>>,
     args: &FheEvalArgs,
     handle_context: &EvalHandleContext<'_>,
-) -> Result<()> {
+) -> Result<u64> {
     // HCU metering: pure pass over the plan, enforcing the per-frame total + in-frame depth caps
     // against the canonical host_config limits (0 = unlimited). Runs in both the admission and
     // execution phases (both call this walk), so they compute and trip identically; a trip
     // in admission — which runs first — reverts before execution mutates any account.
     let host_config = &ctx.accounts.host_config;
-    super::hcu::meter_eval_plan(
+    let frame = super::hcu::meter_eval_plan(
         &args.steps,
         host_config.max_hcu_per_tx,
         host_config.max_hcu_depth_per_tx,
@@ -281,5 +281,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
             }
         }
     }
-    Ok(())
+    // Return the per-frame total so the block-cap check/charge accumulate exactly the same HCU the
+    // per-frame cap measured — reused, never independently recomputed.
+    Ok(frame.total)
 }

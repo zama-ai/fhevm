@@ -561,7 +561,9 @@ mod tests {
         };
         let steps = vec![FheEvalStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheEvalOperand::VerifiedInput { attestation },
+            lhs: FheEvalOperand::VerifiedInput {
+                attestation: Box::new(attestation),
+            },
             rhs: FheEvalOperand::Scalar([0u8; 32]),
             output_fhe_type: EU64,
             output: FheEvalOutput::AllowedLocal,

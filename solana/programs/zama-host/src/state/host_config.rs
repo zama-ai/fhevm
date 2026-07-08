@@ -46,6 +46,10 @@ pub struct HostConfig {
     pub max_hcu_per_tx: u64,
     /// Max critical-path (depth) HCU within one `fhe_eval` plan. `0` = unlimited.
     pub max_hcu_depth_per_tx: u64,
+    /// Per-app HCU budget per slot, enforced in `fhe_eval`. `u64::MAX` = unrestricted (the ship
+    /// default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still bypass);
+    /// any other value is the metering band (must be `>= max_hcu_per_tx` unless that is `0`).
+    pub hcu_block_cap_per_app: u64,
     /// Slot in which the config was initialized or last changed.
     pub updated_slot: u64,
     /// PDA bump for `PDA("host-config")`.
@@ -54,8 +58,9 @@ pub struct HostConfig {
 
 impl HostConfig {
     // + max_hcu_per_tx (8) + max_hcu_depth_per_tx (8): 225 -> 241.
+    // + hcu_block_cap_per_app (8): 241 -> 249.
     pub const SPACE: usize =
-        32 + 8 + 32 + 8 + 20 + 20 + 20 + 8 + 32 + 32 + 1 + 1 + 1 + 1 + 8 + 8 + 8 + 1;
+        32 + 8 + 32 + 8 + 20 + 20 + 20 + 8 + 32 + 32 + 1 + 1 + 1 + 1 + 8 + 8 + 8 + 8 + 1;
 
     /// True only for the local PoC sentinel chain id.
     ///
@@ -80,14 +85,17 @@ mod tests {
     use super::*;
     use anchor_lang::AccountSerialize;
 
+    // Adding the per-app block cap grows `HostConfig` by exactly one u64 (8 bytes): SPACE goes
+    // 241 -> 249. There is no separate enable flag — the cap value itself encodes "unrestricted"
+    // and "ban", so no extra bool byte. A serialized account must be exactly `8 + SPACE`; a short
+    // SPACE would truncate the singleton.
     #[test]
-    fn host_config_space_grows_by_sixteen() {
-        // The pre-HCU SPACE was 225 (sum of existing fields); +16 for two u64s => 241.
-        const PRIOR_SPACE: usize = 225;
-        assert_eq!(HostConfig::SPACE, PRIOR_SPACE + 16);
+    fn host_config_space_grows_to_249_for_block_cap() {
+        // The prior SPACE was 241 (all fields through the two per-frame HCU limits).
+        const PRIOR_SPACE: usize = 241;
+        assert_eq!(HostConfig::SPACE, PRIOR_SPACE + 8);
+        assert_eq!(HostConfig::SPACE, 249);
 
-        // Serialized account (8-byte discriminator + data) must be exactly 8 + SPACE, the size
-        // `assert_host_config_shape` requires — a short SPACE would truncate the account.
         let cfg = HostConfig {
             admin: Pubkey::new_unique(),
             chain_id: 1,
@@ -105,6 +113,9 @@ mod tests {
             grant_deny_list_enabled: false,
             max_hcu_per_tx: 0,
             max_hcu_depth_per_tx: 0,
+            // Ships unrestricted (u64::MAX). A `0` default would instead ban every untrusted app
+            // on deploy — the strictest state, not a neutral one.
+            hcu_block_cap_per_app: u64::MAX,
             updated_slot: 0,
             bump: 0,
         };

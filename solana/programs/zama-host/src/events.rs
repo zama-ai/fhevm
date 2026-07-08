@@ -48,6 +48,8 @@ pub struct HostConfigUpdatedEvent {
     pub max_hcu_per_tx: u64,
     /// Current max critical-path HCU per `fhe_eval` plan (`0` = unlimited).
     pub max_hcu_depth_per_tx: u64,
+    /// Current per-app HCU block cap (`u64::MAX` = unrestricted, `0` = ban untrusted apps).
+    pub hcu_block_cap_per_app: u64,
     /// Slot in which this update was applied.
     pub updated_slot: u64,
 }
@@ -87,6 +89,21 @@ pub struct DenySubjectUpdatedEvent {
     pub subject: Pubkey,
     /// Whether the subject is denied for grant-authority use.
     pub denied: bool,
+    /// Slot in which this update was applied.
+    pub updated_slot: u64,
+}
+
+/// Emitted when an app's HCU block-cap trust registry entry is updated.
+#[event]
+pub struct HcuAppTrustUpdatedEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Canonical trust-registry record PDA.
+    pub hcu_trusted_app_record: Pubkey,
+    /// The app authority governed by the record.
+    pub app: Pubkey,
+    /// Whether the app bypasses the per-app block cap.
+    pub trusted: bool,
     /// Slot in which this update was applied.
     pub updated_slot: u64,
 }
