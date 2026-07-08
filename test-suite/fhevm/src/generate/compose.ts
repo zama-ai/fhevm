@@ -158,7 +158,7 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   },
   "test-suite": {
     "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile", {
-      args: { RELAYER_SDK_VERSION: "${RELAYER_SDK_VERSION}" },
+      args: { RELAYER_SDK_VERSION: "${RELAYER_SDK_VERSION}", FHEVM_SDK_VERSION: "${FHEVM_SDK_VERSION}" },
     }),
   },
 };

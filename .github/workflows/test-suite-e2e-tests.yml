@@ -77,6 +77,10 @@ on:
         description: "Test suite version"
         default: ""
         type: string
+      fhevm-sdk-version:
+        description: "Published @fhevm/sdk version to build the e2e image against (requires build: true)"
+        default: ""
+        type: string
       relayer-migrate-version:
         description: "Relayer migrate version"
         default: ""
@@ -160,6 +164,7 @@ jobs:
       CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector-kms-worker-version }}
       CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector-tx-sender-version }}
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
+      FHEVM_SDK_VERSION: ${{ inputs.fhevm-sdk-version }}
       RELAYER_MIGRATE_VERSION: ${{ inputs.relayer-migrate-version }}
       RELAYER_VERSION: ${{ inputs.relayer-version }}
       CORE_VERSION: ${{ inputs.kms-core-version }}

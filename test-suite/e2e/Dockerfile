@@ -1,9 +1,11 @@
 ARG NODE_VERSION=22.22.2-alpine3.22
 ARG RELAYER_SDK_VERSION=""
+ARG FHEVM_SDK_VERSION=""
 
 # --- Builder Stage ---
 FROM node:${NODE_VERSION} AS builder
 ARG RELAYER_SDK_VERSION=""
+ARG FHEVM_SDK_VERSION=""
 
 WORKDIR /app
 
@@ -35,14 +37,27 @@ COPY sdk/js-sdk ./sdk/js-sdk
 # Install dependencies. Normal builds stay locked; rollout hotswap builds first
 # update the e2e workspace manifest in the image, then let npm resolve one
 # coherent dependency graph for that requested SDK version.
-RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
-      npm pkg set -w test-suite/e2e "dependencies.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}" && \
+#
+# @fhevm/sdk is also a local workspace (sdk/js-sdk/src): npm always links a
+# same-named workspace package over the registry regardless of the version
+# range requested, so pinning FHEVM_SDK_VERSION alone would silently keep
+# resolving to local source. Dropping "sdk/js-sdk/src" from the root
+# workspaces list is what actually makes npm fetch the published version.
+RUN if [ -n "$RELAYER_SDK_VERSION" ] || [ -n "$FHEVM_SDK_VERSION" ]; then \
+      if [ -n "$RELAYER_SDK_VERSION" ]; then \
+        npm pkg set -w test-suite/e2e "dependencies.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}"; \
+      fi && \
+      if [ -n "$FHEVM_SDK_VERSION" ]; then \
+        npm pkg set -w test-suite/e2e "dependencies.@fhevm/sdk=${FHEVM_SDK_VERSION}" && \
+        node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.workspaces=p.workspaces.filter(w=>w!=='sdk/js-sdk/src');fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"; \
+      fi && \
       npm install && \
       npm prune; \
     else \
       npm ci && \
       npm prune; \
-    fi
+    fi && \
+    node -e "const p=require.resolve('@fhevm/sdk/package.json',{paths:['test-suite/e2e']});console.log('Resolved @fhevm/sdk -> '+p);console.log('@fhevm/sdk version: '+require(p).version)"
 
 # Compile js-sdk
 WORKDIR /app/sdk/js-sdk
