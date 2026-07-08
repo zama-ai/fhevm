@@ -38,7 +38,7 @@ pub struct IngestOptions {
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
     /// Resolved once at startup from the listener's own `chain_id` and the
-    /// configured `--ethereum-chain-id`. When false, the listener silently
+    /// configured `--canonical-protocol-config-chain-id`. When false, the listener silently
     /// skips `ProtocolConfig.CoprocessorUpgradeProposed` events.
     pub is_protocol_config_listener: bool,
 }
@@ -240,7 +240,7 @@ pub async fn ingest_block_logs(
         .execute(&mut *tx)
         .await?;
 
-    // Only the listener watching the configured Ethereum host chain decodes
+    // Only the listener watching the configured canonical chain decodes
     // `CoprocessorUpgradeProposed`; every other listener skips the channel.
     let is_protocol_config_listener = options.is_protocol_config_listener;
 
