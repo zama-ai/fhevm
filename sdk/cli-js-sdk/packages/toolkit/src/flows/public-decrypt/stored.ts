@@ -8,53 +8,40 @@ import type {
   FheValueType,
   PublicDecryptResult,
 } from "../../types";
+import { readStoredFheTestHandles } from "../handles";
 import { describeHandle } from "../progress";
-import {
-  readCachedFheTestHandles,
-  reportProvidedHandles,
-  resolveCachedDecryptSelection,
-} from "../handles";
 import { resolveAccountAddress } from "./account";
 
 /**
- * Public-decrypt options for existing ciphertext handles.
+ * Options for public-decrypting FHETest handles stored in account/type slots.
  *
- * `handles` and `types` are mutually exclusive modes. Direct handles are
- * decrypted as-is. Without direct handles, the flow reads FHETest handles for
- * `account` and each selected type; `account` may be inferred from wallet
- * credentials by the CLI layer.
+ * The flow reads FHETest handles for `account` and each selected type,
+ * defaulting to the bool slot when no `types` are given. `account` may be
+ * inferred from wallet credentials.
  */
-export type PublicDecryptOptions = ClientOptions &
+export type StoredPublicDecryptOptions = ClientOptions &
   Readonly<{
     types?: readonly FheValueType[];
     contractAddress?: Hex;
     account?: Hex;
-    handles?: readonly Hex[];
     privateKey?: Hex;
     mnemonic?: string;
     onProgress?: ProgressReporter;
   }>;
 
-/** Reads existing public handles and requests relayer-backed public decryption. */
-export const publicDecrypt = async (
-  options: PublicDecryptOptions,
-): Promise<PublicDecryptResult & { handles?: readonly FheTestHandle[] }> => {
-  const { handles, types } = resolveCachedDecryptSelection(options);
-
+/** Reads FHETest handles for account/type slots and public-decrypts them. */
+export const storedPublicDecrypt = async (
+  options: StoredPublicDecryptOptions,
+): Promise<PublicDecryptResult & { handles: readonly FheTestHandle[] }> => {
   options.onProgress?.("Creating FHEVM client");
   const { contractAddress, fhevm, publicClient } = createClientContext(options);
 
-  if (handles.length > 0) {
-    reportProvidedHandles(handles, options.onProgress);
-    return readPublicValues(fhevm, handles, options.onProgress);
-  }
-
   const account = resolveAccountAddress(options);
-  const storedHandles = await readCachedFheTestHandles(
+  const storedHandles = await readStoredFheTestHandles(
     { contractAddress, publicClient },
     {
       account,
-      types,
+      types: options.types ?? [],
       describeStoredHandle: (type, handle) =>
         `Using stored public ${type} handle: ${describeHandle(handle)}`,
       onProgress: options.onProgress,

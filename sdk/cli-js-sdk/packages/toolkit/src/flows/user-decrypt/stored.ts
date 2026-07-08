@@ -4,25 +4,19 @@ import { createWalletContext, type ClientOptions } from "../../config";
 import { decryptUserValues } from "../../fhevm/user-decrypt";
 import type { ProgressReporter } from "../../shared/progress";
 import type { FheTestHandle, FheValueType, UserDecryptResult } from "../../types";
+import { readStoredFheTestHandles } from "../handles";
 import { describeHandle } from "../progress";
-import {
-  readCachedFheTestHandles,
-  reportProvidedHandles,
-  resolveCachedDecryptSelection,
-} from "../handles";
 
 /**
- * User-decrypt options for existing private handles.
+ * Options for decrypting FHETest handles stored in wallet/type slots.
  *
- * `handles` and `types` are mutually exclusive modes. Direct handles are
- * decrypted as-is. Without direct handles, the flow reads FHETest handles stored
- * for the signer wallet and each selected type.
+ * The flow reads the FHETest handles stored for the signer wallet and each
+ * selected type, defaulting to the bool slot when no `types` are given.
  */
-export type UserDecryptOptions = ClientOptions &
+export type StoredUserDecryptOptions = ClientOptions &
   Readonly<{
     types?: readonly FheValueType[];
     contractAddress?: Hex;
-    handles?: readonly Hex[];
     privateKey?: Hex;
     mnemonic?: string;
     durationDays: number;
@@ -30,37 +24,19 @@ export type UserDecryptOptions = ClientOptions &
     onProgress?: ProgressReporter;
   }>;
 
-/** Decrypts private handles owned by the signing wallet. */
-export const userDecrypt = async (
-  options: UserDecryptOptions,
-): Promise<UserDecryptResult & { handles?: readonly FheTestHandle[] }> => {
-  const { handles, types } = resolveCachedDecryptSelection(options);
-
+/** Decrypts FHETest handles stored for the signer wallet and selected types. */
+export const storedUserDecrypt = async (
+  options: StoredUserDecryptOptions,
+): Promise<UserDecryptResult & { handles: readonly FheTestHandle[] }> => {
   options.onProgress?.("Loading wallet and creating clients");
   const { account, contractAddress, publicClient, ...context } =
     createWalletContext(options);
 
-  if (handles.length > 0) {
-    reportProvidedHandles(handles, options.onProgress);
-    return decryptUserValues(
-      { ...context, contractAddress, publicClient },
-      {
-        encryptedValues: handles,
-        signer: account,
-        ownerAddress: account.address,
-        durationDays: options.durationDays,
-        network: options.network,
-        includeValidationArtifact: options.includeValidationArtifact,
-        onProgress: options.onProgress,
-      },
-    );
-  }
-
-  const storedHandles = await readCachedFheTestHandles(
+  const storedHandles = await readStoredFheTestHandles(
     { contractAddress, publicClient },
     {
       account: account.address,
-      types,
+      types: options.types ?? [],
       describeStoredHandle: (type, handle) =>
         `Using stored ${type} handle: ${describeHandle(handle)}`,
       onProgress: options.onProgress,

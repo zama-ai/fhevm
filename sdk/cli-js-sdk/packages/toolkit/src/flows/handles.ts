@@ -20,27 +20,9 @@ import { describeValue } from "./progress";
 
 type HandleReadContext = Pick<ClientContext, "contractAddress" | "publicClient">;
 
-export const DEFAULT_CACHED_TYPES: readonly FheValueType[] = ["bool"];
+export const DEFAULT_STORED_TYPES: readonly FheValueType[] = ["bool"];
 
-/** Validates cached decrypt mode selection and normalizes repeated flags. */
-export const resolveCachedDecryptSelection = (options: {
-  handles?: readonly Hex[];
-  types?: readonly FheValueType[];
-}): Readonly<{
-  handles: readonly Hex[];
-  types: readonly FheValueType[];
-}> => {
-  const handles = options.handles ?? [];
-  const types = options.types ?? [];
-
-  if (handles.length > 0 && types.length > 0) {
-    throw new Error("Use either --handle or --type for cached decrypt, not both.");
-  }
-
-  return { handles, types };
-};
-
-/** Reports direct handles supplied by cached decrypt commands. */
+/** Reports direct handles supplied to a decrypt family root command. */
 export const reportProvidedHandles = (
   handles: readonly Hex[],
   onProgress: ProgressReporter | undefined,
@@ -49,8 +31,8 @@ export const reportProvidedHandles = (
   onProgress?.(`Provided handle(s): ${handles.join(", ")}`);
 };
 
-/** Reads FHETest handles for selected cached types, defaulting to bool. */
-export const readCachedFheTestHandles = async (
+/** Reads FHETest handles for selected stored types, defaulting to bool. */
+export const readStoredFheTestHandles = async (
   context: HandleReadContext,
   options: {
     account: Hex;
@@ -60,7 +42,7 @@ export const readCachedFheTestHandles = async (
   },
 ): Promise<readonly FheTestHandle[]> => {
   const selectedTypes =
-    options.types.length > 0 ? options.types : DEFAULT_CACHED_TYPES;
+    options.types.length > 0 ? options.types : DEFAULT_STORED_TYPES;
   const storedHandles: FheTestHandle[] = [];
 
   for (const type of selectedTypes) {

@@ -5,13 +5,7 @@ import {
   createWalletContext,
   createWalletContextForAccount,
 } from "../../config";
-import type { FheTestHandle } from "../../types";
-import { describeHandle } from "../progress";
-import {
-  readCachedFheTestHandles,
-  reportProvidedHandles,
-  resolveCachedDecryptSelection,
-} from "../handles";
+import { reportProvidedHandles } from "../handles";
 import {
   loadOptionalDelegatorAccount,
   resolveDelegatorAddress,
@@ -23,15 +17,18 @@ import type {
   DelegatedUserDecryptResult,
 } from "./types";
 
-type DelegatedValueType = DelegatedUserDecryptBaseOptions["type"];
-
+/**
+ * Options for decrypting existing handles as a delegate.
+ *
+ * The supplied `handles` are decrypted as-is on behalf of the delegator.
+ * `contractAddress` is the ACL pairing contract and defaults to FHETest.
+ */
 export type DelegatedUserDecryptOptions = Omit<
   DelegatedUserDecryptBaseOptions,
   "type"
 > &
   Readonly<{
-    types?: readonly DelegatedValueType[];
-    handles?: readonly Hex[];
+    handles: readonly Hex[];
   }>;
 
 /**
@@ -42,9 +39,7 @@ export type DelegatedUserDecryptOptions = Omit<
  */
 export const delegatedUserDecrypt = async (
   options: DelegatedUserDecryptOptions,
-): Promise<DelegatedUserDecryptResult & { handles?: readonly FheTestHandle[] }> => {
-  const { handles, types } = resolveCachedDecryptSelection(options);
-
+): Promise<DelegatedUserDecryptResult> => {
   options.onProgress?.("Loading delegate wallet and creating clients");
   const delegateContext = createWalletContext(options);
   const delegatorAccount = loadOptionalDelegatorAccount(options);
@@ -67,56 +62,19 @@ export const delegatedUserDecrypt = async (
     onProgress: options.onProgress,
   });
 
-  if (handles.length > 0) {
-    reportProvidedHandles(handles, options.onProgress);
-    const decrypted = await decryptDelegatedHandles(delegateContext, {
-      encryptedValues: handles,
-      delegatorAddress,
-      durationDays: options.durationDays,
-      network: options.network,
-      includeValidationArtifact: options.includeValidationArtifact,
-      onProgress: options.onProgress,
-    });
-    return {
-      ...decrypted,
-      delegatorAddress,
-      delegateAddress: delegateContext.account.address,
-      delegation,
-    };
-  }
-
-  const storedHandles = await readCachedFheTestHandles(delegateContext, {
-    account: delegatorAddress,
-    types,
-    describeStoredHandle: (type, handle) =>
-      `Using stored delegator ${type} handle: ${describeHandle(handle)}`,
-    onProgress: options.onProgress,
-  });
+  reportProvidedHandles(options.handles, options.onProgress);
   const decrypted = await decryptDelegatedHandles(delegateContext, {
-    encryptedValues: storedHandles.map((handle) => handle.handle),
+    encryptedValues: options.handles,
     delegatorAddress,
     durationDays: options.durationDays,
     network: options.network,
     includeValidationArtifact: options.includeValidationArtifact,
     onProgress: options.onProgress,
   });
-
   return {
     ...decrypted,
-    handles: storedHandles,
     delegatorAddress,
     delegateAddress: delegateContext.account.address,
     delegation,
-    validationArtifact: decrypted.validationArtifact
-      ? {
-          ...decrypted.validationArtifact,
-          expectedClearValues: storedHandles
-            .filter((handle) => handle.clearText !== undefined)
-            .map((handle) => ({
-              type: handle.type,
-              value: handle.clearText as string,
-            })),
-        }
-      : undefined,
   };
 };
