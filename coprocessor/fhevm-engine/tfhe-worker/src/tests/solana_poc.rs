@@ -21,8 +21,7 @@ use host_listener::{
     solana_adapter::{
         decode_anchor_cpi_events, decode_anchor_log_events, decode_solana_transaction_events,
         insert_solana_events, normalize_solana_events_for_db, solana_transaction_id,
-        SolanaAclAllowedEvent, SolanaBlockMeta, SolanaFinalizedAccountFetch,
-        SolanaFinalizedAccountFetchKind, SolanaHostEvent,
+        SolanaAclAllowedEvent, SolanaBlockMeta, SolanaFinalizedAccountFetchKind, SolanaHostEvent,
     },
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
@@ -512,15 +511,18 @@ async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts
     ];
     let (meta, account_keys, signature) =
         send_many_with_meta(&mut fixture.svm, &fixture.alice, initial_ixs);
-    let mut initial_events = host_events(&meta, &account_keys, fixture.host_program_id);
+    let initial_events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&initial_events), 3);
     assert_eq!(count_acl_events(&initial_events), 3);
-    add_allow_fetches(
-        &mut initial_events,
-        &[fixture.alice_initial, fixture.bob_initial, amount_handle],
-    );
 
-    insert_host_events(&harness.listener_db, initial_events, signature, 1).await?;
+    insert_host_events_and_mark_allowed(
+        &harness.listener_db,
+        initial_events,
+        signature,
+        1,
+        &[fixture.alice_initial, fixture.bob_initial, amount_handle],
+    )
+    .await?;
     wait_until_computed(&harness.app).await?;
 
     let output = transfer_output_accounts(&fixture, 1);
@@ -603,12 +605,12 @@ async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn
     ];
     let (meta, account_keys, signature) =
         send_many_with_meta(&mut fixture.svm, &fixture.payer, ixs);
-    let mut events = host_events(&meta, &account_keys, fixture.host_program_id);
+    let events = host_events(&meta, &account_keys, fixture.host_program_id);
     assert_eq!(count_tfhe_events(&events), 1);
     assert_eq!(count_acl_events(&events), 1);
-    add_allow_fetches(&mut events, &[rand_handle]);
 
-    insert_host_events(&harness.listener_db, events, signature, 1).await?;
+    insert_host_events_and_mark_allowed(&harness.listener_db, events, signature, 1, &[rand_handle])
+        .await?;
     wait_until_computed(&harness.app).await?;
 
     let decrypted = decrypt_handles(&harness.pool, &[Handle::from(rand_handle)]).await?;
@@ -1280,6 +1282,17 @@ async fn insert_host_events(
     signature: Signature,
     block_number: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    insert_host_events_and_mark_allowed(listener_db, host_events, signature, block_number, &[])
+        .await
+}
+
+async fn insert_host_events_and_mark_allowed(
+    listener_db: &host_listener::database::tfhe_event_propagate::Database,
+    host_events: Vec<SolanaHostEvent>,
+    signature: Signature,
+    block_number: u64,
+    allowed_handles: &[[u8; 32]],
+) -> Result<(), Box<dyn std::error::Error>> {
     let transaction_id = solana_transaction_id(signature.as_ref());
     let block = SolanaBlockMeta {
         block_number,
@@ -1290,6 +1303,11 @@ async fn insert_host_events(
     };
     let mut db_tx = listener_db.new_transaction().await?;
     insert_solana_events(listener_db, &mut db_tx, host_events, transaction_id, block).await?;
+    for handle in allowed_handles {
+        listener_db
+            .mark_solana_computation_allowed(&mut db_tx, handle.as_slice())
+            .await?;
+    }
     db_tx.commit().await?;
     Ok(())
 }
@@ -1368,19 +1386,6 @@ fn count_acl_events(events: &[SolanaHostEvent]) -> usize {
         .iter()
         .filter(|event| matches!(event, SolanaHostEvent::AclAllowed(_)))
         .count()
-}
-
-fn add_allow_fetches(events: &mut Vec<SolanaHostEvent>, handles: &[[u8; 32]]) {
-    events.extend(handles.iter().copied().map(|handle| {
-        SolanaHostEvent::FinalizedAccountFetch(SolanaFinalizedAccountFetch {
-            account_key: handle,
-            kind: SolanaFinalizedAccountFetchKind::AclRecord,
-            reason: "acl_record_bound",
-            handle: Some(Handle::from(handle)),
-            related_account: None,
-            subject: None,
-        })
-    }));
 }
 
 fn signed_user_decrypt_request(
