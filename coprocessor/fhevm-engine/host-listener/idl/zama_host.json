@@ -305,7 +305,9 @@
         {
           "name": "host_config",
           "docs": [
-            "Singleton host config PDA."
+            "Singleton host config PDA. Boxed: `try_accounts` deserializes this struct on the",
+            "SBF stack, and the per-app HCU block cap pushed the frame 8 bytes past the 4096",
+            "limit; heap-allocating the config keeps the frame under it."
           ],
           "pda": {
             "seeds": [
