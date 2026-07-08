@@ -5,6 +5,7 @@ import "./src/env";
 import { Command, Option } from "@commander-js/extra-typings";
 import { consola } from "consola";
 
+import { registerCompletionCommands } from "./src/cli/commands/completion";
 import { registerDelegatedUserDecryptCommands } from "./src/cli/commands/delegated-user-decrypt";
 import { registerFheTestCommands } from "./src/cli/commands/fhe-test";
 import { registerInputProofCommand } from "./src/cli/commands/input-proof";
@@ -34,6 +35,7 @@ registerUserDecryptCommands(program);
 registerDelegatedUserDecryptCommands(program);
 registerRelayerResultCommands(program);
 registerFheTestCommands(program);
+registerCompletionCommands(program);
 
 program.parseAsync().catch((error: unknown) => {
   consola.error(error instanceof Error ? (error.stack ?? error.message) : error);
