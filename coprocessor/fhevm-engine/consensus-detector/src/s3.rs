@@ -46,9 +46,8 @@ where
 
     /// Resolve `s3BucketUrl` for one coprocessor, populating the cache on miss.
     ///
-    /// Returns `Err` for RPC failures. Returns `Ok("")` (and warns) when the
-    /// contract has no S3 URL registered for `copro_addr` — matches the
-    /// kms-worker behaviour so the bulk caller can decide what to do.
+    /// Returns `Err` for RPC failures and when the contract has no S3 URL
+    /// registered for `copro_addr`.
     pub async fn get_coprocessor_s3_url(&self, copro_addr: Address) -> anyhow::Result<String> {
         log_cache(&self.cache, "S3 cache state before S3 URL fetching");
         if let Some(url) = self.cache.get(&copro_addr) {
@@ -74,6 +73,9 @@ where
 
         if s3_bucket_url.is_empty() {
             warn!(copro = %copro_addr, "no S3 bucket URL registered for coprocessor");
+            return Err(anyhow!(
+                "no S3 bucket URL registered for coprocessor {copro_addr}"
+            ));
         }
 
         self.cache.insert(copro_addr, s3_bucket_url.clone());
@@ -86,14 +88,13 @@ where
         Ok(s3_bucket_url)
     }
 
-    /// Resolve S3 URLs for the supplied address list. Per-address failures and
-    /// empty URLs are logged and skipped — the returned vec may be shorter
-    /// than `coprocessor_addresses`. Mirrors kms-worker's
-    /// `get_all_coprocessors_s3_urls`.
+    /// Resolve S3 URLs for the supplied address list. Fails if any address
+    /// cannot be resolved (RPC failure or no registered URL). Mirrors
+    /// kms-worker's `get_all_coprocessors_s3_urls`.
     pub async fn get_all_coprocessors_s3_urls(
         &self,
         coprocessor_addresses: &[Address],
-    ) -> Vec<String> {
+    ) -> anyhow::Result<Vec<String>> {
         info!(
             count = coprocessor_addresses.len(),
             "COPRO S3 URL FETCH START"
@@ -101,17 +102,10 @@ where
 
         let mut s3_urls = Vec::with_capacity(coprocessor_addresses.len());
         for address in coprocessor_addresses.iter() {
-            match self.get_coprocessor_s3_url(*address).await {
-                Ok(url) if url.is_empty() => {
-                    // Empty already warned in get_coprocessor_s3_url.
-                }
-                Ok(url) => s3_urls.push(url),
-                Err(e) => {
-                    warn!(copro = %address, error = %e, "failed to fetch S3 bucket URL");
-                }
-            }
+            let url = self.get_coprocessor_s3_url(*address).await?;
+            s3_urls.push(url);
         }
-        s3_urls
+        Ok(s3_urls)
     }
 
     /// Convenience: fetch the signer set, then resolve every signer's URL.
@@ -123,7 +117,7 @@ where
     /// `S3_BUCKET_CACHE` semantics) once the on-chain mapping is confirmed.
     pub async fn refresh_signer_urls(&self) -> anyhow::Result<Vec<String>> {
         let signers = self.get_coprocessor_signers().await?;
-        Ok(self.get_all_coprocessors_s3_urls(&signers).await)
+        self.get_all_coprocessors_s3_urls(&signers).await
     }
 }
 
