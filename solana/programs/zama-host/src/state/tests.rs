@@ -293,11 +293,10 @@ fn assert_sum_operand_types_enforces_uniform_declared_type() {
         assert_sum_operand_types(&[a, typed_handle(3, 4)], 5),
         ZamaHostError::BinaryOperandTypeMismatch,
     );
-    // Fewer than two operands, and non-uint declared types, are rejected.
-    assert_error(
-        assert_sum_operand_types(&[a], 5),
-        ZamaHostError::InvalidFheEvalAccount,
-    );
+    // EVM/coprocessor enforce no minimum: single-operand and empty sums are valid.
+    assert!(assert_sum_operand_types(&[a], 5).is_ok());
+    assert!(assert_sum_operand_types(&[], 5).is_ok());
+    // Non-uint declared types are still rejected.
     assert_error(
         assert_sum_operand_types(&[typed_handle(1, 0), typed_handle(2, 0)], 0),
         ZamaHostError::UnsupportedFheType,
@@ -325,11 +324,9 @@ fn assert_is_in_operand_types_enforces_uniform_declared_type() {
         assert_is_in_operand_types(value, &[typed_handle(2, 4), typed_handle(3, 5)], 4),
         ZamaHostError::BinaryOperandTypeMismatch,
     );
-    // Empty set, and the excluded ebool type, are rejected.
-    assert_error(
-        assert_is_in_operand_types(value, &[], 4),
-        ZamaHostError::InvalidFheEvalAccount,
-    );
+    // EVM/coprocessor enforce no minimum: an empty set is valid (membership is trivially false).
+    assert!(assert_is_in_operand_types(value, &[], 4).is_ok());
+    // The excluded ebool type is still rejected.
     assert_error(
         assert_is_in_operand_types(typed_handle(1, 0), &[typed_handle(2, 0)], 0),
         ZamaHostError::UnsupportedFheType,
@@ -377,6 +374,22 @@ fn assert_unary_operand_type_rejects_same_type_cast() {
     assert!(assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 5), 4).is_ok());
     assert_error(
         assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 5), 5),
+        ZamaHostError::UnsupportedFheType,
+    );
+    // EVM cast type sets: bool input casts (bool -> Uint32), and Uint256 both ways, are allowed...
+    assert!(assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 0), 4).is_ok());
+    assert!(assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 8), 5).is_ok());
+    // ...but casting TO ebool (0) or eaddress/Uint160 (7), or FROM eaddress (7), is rejected.
+    assert_error(
+        assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 5), 0),
+        ZamaHostError::UnsupportedFheType,
+    );
+    assert_error(
+        assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 5), 7),
+        ZamaHostError::UnsupportedFheType,
+    );
+    assert_error(
+        assert_unary_operand_type(FheUnaryOpCode::Cast, typed_handle(1, 7), 5),
         ZamaHostError::UnsupportedFheType,
     );
     // Neg/Not require operand type == output type; Not additionally accepts ebool, Neg does not.

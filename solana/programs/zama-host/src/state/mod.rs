@@ -630,7 +630,8 @@ pub fn assert_supported_unary_output_type(op: FheUnaryOpCode, fhe_type: u8) -> R
     let valid = match op {
         FheUnaryOpCode::Neg => matches!(fhe_type, 2..=6 | 8),
         FheUnaryOpCode::Not => matches!(fhe_type, 0 | 2..=6 | 8),
-        FheUnaryOpCode::Cast => is_supported_fhe_type(fhe_type),
+        // EVM `cast` output set: Uint8..Uint128 | Uint256 (no ebool, no eaddress/Uint160).
+        FheUnaryOpCode::Cast => matches!(fhe_type, 2..=6 | 8),
     };
     require!(valid, ZamaHostError::UnsupportedFheType);
     Ok(())
@@ -669,6 +670,11 @@ pub fn assert_unary_operand_type(
             );
         }
         FheUnaryOpCode::Cast => {
+            // EVM `cast` input set: Bool | Uint8..Uint128 | Uint256 (no eaddress/Uint160).
+            require!(
+                matches!(operand_type, 0 | 2..=6 | 8),
+                ZamaHostError::UnsupportedFheType
+            );
             // Cast reinterprets to a different type; a same-type cast is rejected (EVM InvalidType).
             require!(
                 operand_type != output_fhe_type,
@@ -679,12 +685,10 @@ pub fn assert_unary_operand_type(
     Ok(())
 }
 
-/// Requires at least two operands whose resolved handle types all equal the declared uint type (2..=6), matching the discipline binary/unary/ternary enforce.
+/// Requires every operand's resolved handle type to equal the declared uint type (2..=6). Like EVM
+/// `fheSum` and the coprocessor, only the maximum operand count is bounded — a zero/single-operand
+/// sum is valid (EVM enforces no minimum).
 pub fn assert_sum_operand_types(operand_handles: &[[u8; 32]], fhe_type: u8) -> Result<()> {
-    require!(
-        operand_handles.len() >= 2,
-        ZamaHostError::InvalidFheEvalAccount
-    );
     require!(matches!(fhe_type, 2..=6), ZamaHostError::UnsupportedFheType);
     // Cap the operand count at the coprocessor's FheSum limit (transient operands use no accounts).
     require!(
@@ -700,16 +704,14 @@ pub fn assert_sum_operand_types(operand_handles: &[[u8; 32]], fhe_type: u8) -> R
     Ok(())
 }
 
-/// Requires a non-empty set whose members and the value all share the declared uint type (Uint8..Uint256, 2..=8) — matching EVM `fheIsIn` and the coprocessor's FheIsIn type gate; `ebool` is excluded.
+/// Requires the value and every set member to share the declared uint type (Uint8..Uint256, 2..=8) —
+/// matching EVM `fheIsIn` and the coprocessor's FheIsIn type gate; `ebool` is excluded. Like EVM,
+/// only the maximum set size is bounded — an empty set is valid (membership is trivially false).
 pub fn assert_is_in_operand_types(
     value_handle: [u8; 32],
     set_handles: &[[u8; 32]],
     fhe_type: u8,
 ) -> Result<()> {
-    require!(
-        !set_handles.is_empty(),
-        ZamaHostError::InvalidFheEvalAccount
-    );
     require!(matches!(fhe_type, 2..=8), ZamaHostError::UnsupportedFheType);
     // Cap the set size at the coprocessor's FheIsIn limit (its `set_size` bound excludes the value).
     require!(

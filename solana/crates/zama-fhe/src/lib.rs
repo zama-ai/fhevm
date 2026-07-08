@@ -82,10 +82,6 @@ pub enum EvalBuildError {
     InvalidRemainingAccountReference,
     /// A verified-input operand referenced an attestation not registered with the builder.
     MissingVerifiedInput,
-    /// `sum` was called with fewer than 2 operands; the host rejects it.
-    SumTooFewOperands,
-    /// `is_in` was called with an empty set; the host rejects it.
-    IsInEmptySet,
     /// `sum`/`is_in` exceeded the coprocessor's max operand count for the type.
     TooManyReductionOperands,
     /// `mul_div` was given a zero divisor; the host rejects it (EVM DivisionByZero parity).
@@ -1950,10 +1946,8 @@ impl EvalBuilder {
         operands: impl IntoIterator<Item = Encrypted<T>>,
         output: Output,
     ) -> Result<Encrypted<T>> {
+        // EVM `fheSum` and the coprocessor enforce no minimum: a zero/single-operand sum is valid.
         let operand_ops: Vec<Operand> = operands.into_iter().map(|e| e.operand()).collect();
-        if operand_ops.len() < 2 {
-            return Err(EvalBuildError::SumTooFewOperands);
-        }
         for op in &operand_ops {
             if matches!(op.0, OperandKind::Scalar(_)) {
                 return Err(EvalBuildError::ScalarEncryptedOperand);
@@ -2001,10 +1995,8 @@ impl EvalBuilder {
         set: impl IntoIterator<Item = Encrypted<T>>,
         output: Output,
     ) -> Result<Encrypted<Bool>> {
+        // EVM `fheIsIn` and the coprocessor enforce no minimum: an empty set is valid (false result).
         let set_ops: Vec<Operand> = set.into_iter().map(|e| e.operand()).collect();
-        if set_ops.is_empty() {
-            return Err(EvalBuildError::IsInEmptySet);
-        }
         let value_op = value.operand();
         if matches!(value_op.0, OperandKind::Scalar(_)) {
             return Err(EvalBuildError::ScalarEncryptedOperand);
@@ -2459,7 +2451,8 @@ where
     let valid_output = match op {
         FheUnaryOpCode::Neg => matches!(output_fhe_type, 2..=6 | 8),
         FheUnaryOpCode::Not => matches!(output_fhe_type, 0 | 2..=6 | 8),
-        FheUnaryOpCode::Cast => true,
+        // EVM `cast` output set: Uint8..Uint128 | Uint256 (no ebool, no eaddress/Uint160).
+        FheUnaryOpCode::Cast => matches!(output_fhe_type, 2..=6 | 8),
     };
     if !valid_output {
         return Err(EvalBuildError::UnsupportedFheType);
@@ -2491,6 +2484,10 @@ where
             }
         }
         FheUnaryOpCode::Cast => {
+            // EVM `cast` input set: Bool | Uint8..Uint128 | Uint256 (no eaddress/Uint160).
+            if !matches!(operand_type, 0 | 2..=6 | 8) {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
             // Same-type cast is rejected (EVM InvalidType parity).
             if operand_type == output_fhe_type {
                 return Err(EvalBuildError::UnsupportedFheType);
@@ -4095,6 +4092,52 @@ mod tests {
                 .unary_op(
                     FheUnaryOpCode::Cast,
                     Operand::durable(balance_handle(1), Pubkey::new_unique()),
+                    FheType::UINT64,
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::UnsupportedFheType
+        );
+        // EVM cast type sets: a Bool input casts to a uint (Bool -> Uint32) is accepted...
+        assert!(builder
+            .unary_op(
+                FheUnaryOpCode::Cast,
+                Operand::durable(typed_handle(2, FheType::BOOL.byte()), Pubkey::new_unique()),
+                FheType::UINT32,
+                Output::transient(),
+            )
+            .is_ok());
+        // ...but casting TO ebool, TO eaddress, or FROM eaddress is rejected.
+        assert_eq!(
+            builder
+                .unary_op(
+                    FheUnaryOpCode::Cast,
+                    Operand::durable(balance_handle(1), Pubkey::new_unique()),
+                    FheType::BOOL,
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::UnsupportedFheType
+        );
+        assert_eq!(
+            builder
+                .unary_op(
+                    FheUnaryOpCode::Cast,
+                    Operand::durable(balance_handle(1), Pubkey::new_unique()),
+                    FheType::ADDRESS,
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::UnsupportedFheType
+        );
+        assert_eq!(
+            builder
+                .unary_op(
+                    FheUnaryOpCode::Cast,
+                    Operand::durable(
+                        typed_handle(3, FheType::ADDRESS.byte()),
+                        Pubkey::new_unique()
+                    ),
                     FheType::UINT64,
                     Output::transient(),
                 )
