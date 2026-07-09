@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO kms_epoch(id, is_valid, created_at, updated_at)\n        VALUES ($1, FALSE, $2, $2)\n        ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de43fd098bf01015060515719b78a0e9926ea7b6711b24ec91ce46cdf3949cf2"
+}
