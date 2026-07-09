@@ -1,0 +1,66 @@
+name: test-suite-e2e-threshold-post-merge
+
+# Post-merge burn-in of the threshold-KMS scenarios against the images published for
+# main. These legs used to run inside the merge-queue orchestration, where they were
+# non-gating but competed with the gating e2e shards for the same `large_ubuntu_32`
+# runner pool (observed adding 25+ min of runner-wait to the merge-critical path).
+# Running them here keeps the same per-merge coverage cadence without blocking the
+# queue. They remain available pre-merge for release branches and PRs labeled
+# `e2e orchestrate test` via test-suite-orchestrate-e2e-tests.yml.
+#
+# Image freshness: the stack resolves `latest-main`, i.e. the newest published
+# main-tagged bundle. The push-triggered docker builds for this same commit may still
+# be in flight, in which case the run exercises the previous main bundle — acceptable
+# for a non-gating burn-in signal (the merge-queue already validated this commit's
+# images on the gating shards).
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions: {}
+
+# One burn-in per scenario at a time; a newer main push replaces a queued (not yet
+# started) run rather than piling up.
+concurrency:
+  group: test-suite-e2e-threshold-post-merge-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  threshold-kms-generation:
+    uses: ./.github/workflows/test-suite-e2e-tests.yml
+    permissions: &e2e_permissions
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC authentication
+      packages: 'read' # Required to read GitHub packages/container registry
+    secrets: &e2e_secrets
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    with:
+      orchestrated: false
+      build: false
+      scenario: four-party-threshold-kms
+      test-profile: kms-generation
+
+  threshold-kms-context-switch:
+    uses: ./.github/workflows/test-suite-e2e-tests.yml
+    permissions: *e2e_permissions
+    secrets: *e2e_secrets
+    with:
+      orchestrated: false
+      build: false
+      scenario: four-party-threshold-kms
+      test-profile: kms-context-switch
+
+  threshold-kms-node-swap:
+    uses: ./.github/workflows/test-suite-e2e-tests.yml
+    permissions: *e2e_permissions
+    secrets: *e2e_secrets
+    with:
+      orchestrated: false
+      build: false
+      scenario: swap-threshold-kms
+      test-profile: kms-context-switch

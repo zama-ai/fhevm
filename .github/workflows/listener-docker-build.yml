@@ -103,6 +103,9 @@ jobs:
       image-name: "fhevm/listener/listener-core"
       docker-file: "listener/Dockerfile.ci"
       app-cache-dir: "fhevm-listener"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
       rust-toolchain-file-path: listener/rust-toolchain.toml
 
   re-tag-image:

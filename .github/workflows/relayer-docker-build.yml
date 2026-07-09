@@ -104,7 +104,9 @@ jobs:
   ########################################################################
   build-decisions:
     name: build-decisions
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    # github-script only — a GitHub-hosted runner starts in seconds, while a
+    # provisioned runner adds minutes of spin-up variance ahead of every build job.
+    runs-on: ubuntu-latest
     if: always()
     needs:
       - is-latest-commit
@@ -179,6 +181,9 @@ jobs:
       image-name: "fhevm/relayer-migrate"
       docker-file: "relayer/docker/relayer-migrate/Dockerfile"
       app-cache-dir: "fhevm-relayer-relayer-migrate"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
       rust-toolchain-file-path: relayer/rust-toolchain.toml
 
   re-tag-relayer-migrate-image:
@@ -210,6 +215,9 @@ jobs:
       image-name: "fhevm/relayer"
       docker-file: "relayer/docker/relayer/Dockerfile"
       app-cache-dir: "fhevm-relayer"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
       rust-toolchain-file-path: relayer/rust-toolchain.toml
 
   re-tag-relayer-image:
