@@ -399,9 +399,10 @@ Gateway V2 path (RFC-016) rather than a parallel native stack:
   UserDecryptionRequestSolanaPayload)` + a `UserDecryptionRequestSolana` event — rather than smuggling
   Solana auth through `extraData`. The payload carries `bytes32 userIdentity`, `bytes32[]
   allowedAclDomainKeys`, `bytes32 nonce` as typed fields (plus shared publicKey, requestValidity,
-  signature); `extraData` is context-only (`0x01 ‖ contextId`). A chain-aware validator branches on
+  signature). `extraData` carries either the context-only `0x01 ‖ contextId` form or the versioned
+  `0x03` MMR-proof tail for a named ACL lineage. A chain-aware validator branches on
   `contracts_chain_id` (see DD-027) so EVM stays strict and Solana is relaxed. The bytes32 handle
-  surface still admits both EVM and Solana. (See DD-026 for the typed-vs-extraData history.)
+  surface still admits both EVM and Solana. (See DD-026 for the typed-vs-extraData boundary.)
 - **Public-decrypt** certificates are verified **on-chain** via secp256k1: `zama_host` recovers EVM
   KMS signers from the cert and threshold-checks them, mirroring the EVM `KMSVerifier`
   (`verifyDecryptionEIP712KMSSignatures`). See DD-021.
@@ -944,7 +945,7 @@ Decision:
   is NOT, and never was, the `0x03` Solana user-decrypt blob. The input identity itself is a plain
   bytes32 host address (no version-byte blob).
 
-**User-decrypt path (now TYPED — was the `0x03` blob):**
+**User-decrypt path (typed identity/auth fields with a versioned MMR-proof tail):**
 
 - PREVIOUSLY a Solana user-decrypt packed its ed25519 auth into an `extraData` blob with version byte
   `0x03` (`0x03 ‖ context_id(32) ‖ ed25519(32) ‖ nonce(32) ‖ key_count(4) ‖ keys`), forwarded opaquely
@@ -952,16 +953,15 @@ Decision:
 - NOW the gateway has a dedicated typed entrypoint `userDecryptionRequestSolana(HandleEntry[],
   UserDecryptionRequestSolanaPayload)` with a `UserDecryptionRequestSolana` event. The payload carries
   `bytes32 userIdentity`, `bytes32[] allowedAclDomainKeys`, `bytes32 nonce` as TYPED fields (plus shared
-  publicKey, requestValidity, signature). `extraData` now carries ONLY the KMS context
-  (`0x01 ‖ contextId(32)`). **No Solana auth data rides in `extraData` anywhere on the protocol or
-  client surface.**
+  publicKey, requestValidity, signature). The context-only form remains `0x01 ‖ contextId(32)`.
+  A current, historical, or public ACL decrypt instead uses the versioned `0x03` form:
+  `0x03 ‖ contextId(32) ‖ aclValueKey(32) ‖ proofSlot(8) ‖ proofLength(4) ‖ mmrProof`.
+  The signed user-decrypt preimage commits to that tail verbatim, so the relayer cannot substitute
+  lineage or proof data.
 - The relayer builds the typed call (`SolanaUnifiedV1` core variant → `userDecryptionRequestSolanaCall`);
-  the js-sdk `buildSolanaUserDecryptRequest` emits typed fields + context-only extraData (the signed
-  ed25519 preimage is unchanged).
-- INTERNAL connector transport detail: the KMS connector's gw-listener normalizes the typed event back
-  into its existing internal `UserDecryptionV2` + `0x03` extraData representation at the decode boundary
-  (the worker still routes to its Solana path on `extraData[0]==0x03`). This is internal to the
-  connector; the gateway/protocol interface is typed.
+  the js-sdk `buildSolanaUserDecryptRequest` emits the typed identity/auth fields and the matching
+  `0x01` or `0x03` extraData form. The KMS connector routes Solana requests by their typed event and
+  verifies the signed tail before using it.
 - `Decryption.sol` version bumped MINOR 6→7 (reinitializer 7→8, reinitializeV6→V7).
 - KMS-cert context: `extract_kms_context_id` (DD-021) handles `extra_data` versions 0 and 1 (the
   public-decrypt cert) — a *different* extraData from either path above.
@@ -969,17 +969,16 @@ Decision:
 Why:
 
 A bytes32 identity + high-bit chain id keeps one input ABI for EVM and non-EVM hosts. For user-decrypt,
-typed gateway fields make the Solana request a proper request type instead of an opaque blob, so the
-protocol surface is self-describing and no longer overloads `extraData`.
+typed gateway fields make the Solana identity/auth request self-describing. The signed, versioned
+`extraData` tail remains the current transport for optional lineage and MMR proof evidence.
 
 Decision history (RESOLVED):
 
-The 2026/06/12 Solana guild weekly (Manoranjith + Jad) objected that `extraData` was being misused to
-smuggle Solana-specific data and should be a proper request type. RESOLVED by adding the typed
-`userDecryptionRequestSolana` / `UserDecryptionRequestSolanaPayload` gateway entrypoint and reducing
-`extraData` to context-only. The earlier uncertainty about whether `0x03` was an input or a user-decrypt
-blob is settled: it was ALWAYS the user-decrypt auth blob (RFC-021), now removed from the wire in favor
-of typed fields.
+The 2026/06/12 Solana guild weekly (Manoranjith + Jad) objected that identity and authorization scope
+were being smuggled through `extraData` and should be a proper request type. That is resolved by the
+typed `userDecryptionRequestSolana` / `UserDecryptionRequestSolanaPayload` entrypoint. `0x03` remains
+on the wire only as a versioned, signed transport for lineage/MMR evidence; it is not used for identity,
+nonce, or allowed-domain-key authorization.
 
 ## DD-027: Chain-Aware V2 User-Decrypt Validation (didn't-work-then-fixed)
 
