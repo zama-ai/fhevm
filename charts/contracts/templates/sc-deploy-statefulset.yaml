@@ -3,6 +3,12 @@
 {{- if not (has $mountMode (list "readOnly" "readWrite")) }}
 {{- fail (printf "scDebug.mountMode must be 'readOnly' or 'readWrite', got %q" $mountMode) }}
 {{- end }}
+{{- $jobs := fromYamlArray (include "scAllJobs" .) }}
+{{- if eq (len $jobs) 0 }}
+{{- fail "scDebug.enabled requires at least one enabled scJobs entry: the debug pod reuses the last entry's image and env" }}
+{{- end }}
+{{- $job := last $jobs }}
+{{- $persistence := mergeOverwrite (deepCopy .Values.persistence) (default dict $job.persistence) }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -28,7 +34,7 @@ spec:
       {{- end }}
     spec:
       securityContext:
-        {{- toYaml .Values.scDeploy.securityContext | nindent 8 }}
+        {{- toYaml .Values.securityContext | nindent 8 }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -41,46 +47,52 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if $job.oldImage }}
       initContainers:
         - name: copy-old-contracts
-          image: {{ .Values.scUpgrade.oldContracts.image.name }}:{{ .Values.scUpgrade.oldContracts.image.tag }}
+          image: {{ $job.oldImage.name }}:{{ $job.oldImage.tag }}
           command: ["cp", "-r", "/app/contracts/.", "/app/oldContracts"]
           volumeMounts:
             - mountPath: /app/oldContracts
               name: old-contracts
+      {{- end }}
       containers:
         - name: debug
-          image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}
+          image: {{ $job.image.name }}:{{ $job.image.tag }}
           command: [ "/bin/bash", "-c", "tail -f /dev/null" ]
           env:
             {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
             - name: MANIFEST_DEFAULT_DIR
-              value: "{{ .Values.persistence.mountPath }}/.openzeppelin"
-          {{- with .Values.scDeploy.env }}
+              value: "{{ $persistence.mountPath }}/.openzeppelin"
+          {{- with $job.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
+            {{- if $job.oldImage }}
             - mountPath: /app/oldContracts
               name: old-contracts
-            {{- if .Values.persistence.enabled }}
-            - mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
+            {{- if $persistence.enabled }}
+            - mountPath: {{ $persistence.mountPath }}
               name: addresses
               readOnly: {{ eq $mountMode "readOnly" }}
             {{- end }}
           resources:
             requests:
-              cpu: {{ .Values.scDeploy.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.scDeploy.resources.requests.memory | default "256Mi" }}
+              cpu: {{ .Values.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.resources.requests.memory | default "256Mi" }}
             limits:
-              cpu: {{ .Values.scDeploy.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.scDeploy.resources.limits.memory | default "512Mi" }}
+              cpu: {{ .Values.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.resources.limits.memory | default "512Mi" }}
       volumes:
+        {{- if $job.oldImage }}
         - name: old-contracts
           emptyDir: {}
-        {{- if .Values.persistence.enabled }}
+        {{- end }}
+        {{- if $persistence.enabled }}
         - name: addresses
           persistentVolumeClaim:
-            claimName: {{ include "scVolumeName" . }}
+            claimName: {{ default .Release.Name $persistence.volumeClaim.name }}
         {{- end }}
       imagePullSecrets:
         - name: registry-credentials

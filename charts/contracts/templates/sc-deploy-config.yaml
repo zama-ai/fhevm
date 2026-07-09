@@ -20,7 +20,7 @@ data:
       if ! kubectl get configmap "${cm}" >/dev/null 2>&1; then
         kubectl create configmap "${cm}"
       fi
-      {{- range $k, $v := $.Values.scDeploy.configmap.annotations }}
+      {{- range $k, $v := $.Values.configmap.annotations }}
       kubectl annotate --overwrite configmap "${cm}" {{ $k }}={{ $v | quote }}
       {{- end }}
     }
@@ -41,7 +41,7 @@ data:
       kubectl patch configmap "${cm}" -p="{\"data\": {\"${name}\": \"${value}\"}}"
     }
 
-    CONFIGMAP_NAME="{{ $.Values.scDeploy.configmap.name }}"
+    CONFIGMAP_NAME="{{ (default dict $job.configmap).name | default $.Values.configmap.name }}"
     JOB_KIND="{{ $job.kind }}"
     JOB_VERSION="{{ $job.image.tag }}"
 
@@ -53,7 +53,7 @@ data:
     {{ . | nindent 4 }}
     {{- end }}
 
-    for envfile in addresses/.env.*; do
+    for envfile in {{ $job.envFile | default "addresses/.env.*" }}; do
       echo "---"
       echo "Updating ${CONFIGMAP_NAME} from ${envfile}"
       while IFS= read -r line || [[ -n "$line" ]]; do
@@ -67,9 +67,5 @@ data:
         fi
       done < "${envfile}"
     done
-
-    {{- if and (eq $job.kind "deploy") (default false $job.verifyContracts) }}
-    npx --no-install hardhat verify:verify || true
-    {{- end }}
 {{- end }}
 {{- end }}

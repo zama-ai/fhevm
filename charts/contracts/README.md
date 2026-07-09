@@ -22,13 +22,17 @@ Each entry renders to a `Job` named `<release>-<kind>-<name>-<tagSlug>`. Jobs
 share a single PVC (`/app/addresses`) so the OpenZeppelin `.openzeppelin/`
 manifest persists across runs.
 
-After commands finish, the runner script parses `addresses/.env.*` files and
-patches the addresses ConfigMap:
+After commands finish, the runner script parses the entry's `envFile` (a path
+or glob, default `addresses/.env.*`) and patches the addresses ConfigMap:
 
 - `<contract>.address`: written once, never overwritten (proxy addresses are
   immutable across upgrades).
 - `<contract>.version`: overwritten with the Job's `image.tag` for `deploy`
   and `upgrade` kinds only.
+
+If jobs for different contract families share a PVC, set `envFile` to the file
+each image family writes (`addresses/.env.host`, `addresses/.env.gateway`, …)
+so a job never re-stamps another family's `.version` keys with its own tag.
 
 ## Job kinds
 
@@ -66,8 +70,10 @@ ArgoCD considerations:
 
 ## Debugging
 
-Set `scDebug.enabled: true` to spawn a long-running pod with the contracts
-image and the deploy PVC mounted. Use `scDebug.mountMode`:
+Set `scDebug.enabled: true` to spawn a long-running pod with the deploy PVC
+mounted. The pod reuses the image, env, `oldImage` and persistence settings of
+the last enabled `scJobs` entry, so at least one entry is required. Use
+`scDebug.mountMode`:
 
 - `readOnly` (default): live view of the PVC, no write access.
 - `readWrite`: direct read-write mount; reserve for manually fixing PVC contents.
@@ -80,9 +86,3 @@ Exec into the scDebug pod to troubleshoot the contract deployment environment:
 ```bash
 kubectl exec -it sc-deploy-0 -- sh
  ```
-
-## Backward compatibility
-
-Legacy `scDeploy.deployCommands` / `scUpgrade.upgradeCommands` still work,
-synthesized into a single `default` entry (upgrade wins over deploy). Prefer
-`scJobs:` for new configs.

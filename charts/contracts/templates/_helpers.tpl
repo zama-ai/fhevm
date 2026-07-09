@@ -13,8 +13,8 @@
 
 {{- /*
   scAllJobs: consolidated Job list emitted as YAML; consumers parse via
-  fromYamlArray. Legacy scDeploy / scUpgrade get synthesized into entries
-  for back-compat, then any explicit .Values.scJobs entries are appended.
+  fromYamlArray. Entries come from .Values.scJobs, skipping any with
+  enabled: false (default true if omitted).
 
   Job entry schema:
     enabled:         bool, default true; set to false to skip the entry
@@ -24,40 +24,22 @@
     oldImage:        { name, tag } source for old contracts (kind=upgrade)
     env:             list of env entries
     commands:        shell commands run in order
-    verifyContracts: bool (deploy only)
+    envFile:         path or glob of address env files to record after the
+                     commands, default "addresses/.env.*"; set it to the file
+                     the job's image family writes (e.g. addresses/.env.host)
+                     so jobs sharing a PVC never re-stamp each other's keys
+    configmap:       { name } overrides the global configmap.name for this job
+    persistence:     merged over the global persistence block for this job
+                     (enabled, mountPath, volumeClaim.name)
 */ -}}
 {{- define "scAllJobs" -}}
 {{- $jobs := list -}}
-{{- if .Values.scUpgrade.enabled -}}
-{{- $jobs = append $jobs (dict
-  "name" "default"
-  "kind" "upgrade"
-  "image" .Values.scDeploy.image
-  "oldImage" .Values.scUpgrade.oldContracts.image
-  "env" (.Values.scDeploy.env | default list)
-  "commands" (.Values.scUpgrade.upgradeCommands | default list)
-) -}}
-{{- else if .Values.scDeploy.enabled -}}
-{{- $jobs = append $jobs (dict
-  "name" "default"
-  "kind" "deploy"
-  "image" .Values.scDeploy.image
-  "env" (.Values.scDeploy.env | default list)
-  "commands" (.Values.scDeploy.deployCommands | default list)
-  "verifyContracts" (.Values.scDeploy.verifyContracts | default false)
-) -}}
-{{- end -}}
-{{- range (.Values.scJobs | default list) -}}
-{{- $jobs = append $jobs . -}}
-{{- end -}}
-{{- /* Filter out entries with enabled: false (default true if omitted) */ -}}
-{{- $filtered := list -}}
-{{- range $j := $jobs -}}
+{{- range $j := (.Values.scJobs | default list) -}}
 {{-   $enabled := true -}}
 {{-   if hasKey $j "enabled" -}}{{- $enabled = $j.enabled -}}{{- end -}}
-{{-   if $enabled -}}{{- $filtered = append $filtered $j -}}{{- end -}}
+{{-   if $enabled -}}{{- $jobs = append $jobs $j -}}{{- end -}}
 {{- end -}}
-{{- $filtered | toYaml -}}
+{{- $jobs | toYaml -}}
 {{- end -}}
 
 {{- /* Job resource name: <release>-<kind>-<name>-<tagSlug>, capped at 63 chars */ -}}

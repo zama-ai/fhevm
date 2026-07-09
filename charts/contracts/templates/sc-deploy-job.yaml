@@ -3,6 +3,7 @@
 {{- range $index, $job := $jobs }}
 {{- $jobName := include "scJobResourceName" (dict "ctx" $ "job" $job) }}
 {{- $scriptKey := include "scJobScriptKey" (dict "job" $job) }}
+{{- $persistence := mergeOverwrite (deepCopy $.Values.persistence) (default dict $job.persistence) }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -24,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        {{- if $.Values.persistence.enabled }}
+        {{- if $persistence.enabled }}
         checksum/pvc: {{ include (print $.Template.BasePath "/sc-deploy-pvc.yaml") $ | sha256sum }}
         {{- end }}
         {{- with $.Values.podAnnotations }}
@@ -39,7 +40,7 @@ spec:
     spec:
       serviceAccountName: {{ $.Release.Name }}-config-writer
       securityContext:
-        {{- toYaml $.Values.scDeploy.securityContext | nindent 8 }}
+        {{- toYaml $.Values.securityContext | nindent 8 }}
       {{- with $.Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -68,7 +69,7 @@ spec:
           env:
             {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
             - name: MANIFEST_DEFAULT_DIR
-              value: "{{ $.Values.persistence.mountPath }}/.openzeppelin"
+              value: "{{ $persistence.mountPath }}/.openzeppelin"
           {{- with $job.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -80,26 +81,26 @@ spec:
             - mountPath: /app/oldContracts
               name: old-contracts
             {{- end }}
-            {{- if $.Values.persistence.enabled }}
-            - mountPath: {{ $.Values.persistence.mountPath }}
+            {{- if $persistence.enabled }}
+            - mountPath: {{ $persistence.mountPath }}
               name: persistence
             {{- end }}
           resources:
             requests:
-              cpu: {{ $.Values.scDeploy.resources.requests.cpu | default "100m" }}
-              memory: {{ $.Values.scDeploy.resources.requests.memory | default "256Mi" }}
+              cpu: {{ $.Values.resources.requests.cpu | default "100m" }}
+              memory: {{ $.Values.resources.requests.memory | default "256Mi" }}
             limits:
-              cpu: {{ $.Values.scDeploy.resources.limits.cpu | default "500m" }}
-              memory: {{ $.Values.scDeploy.resources.limits.memory | default "512Mi" }}
+              cpu: {{ $.Values.resources.limits.cpu | default "500m" }}
+              memory: {{ $.Values.resources.limits.memory | default "512Mi" }}
       volumes:
         - name: config
           configMap:
             name: {{ $.Release.Name }}-config
             defaultMode: 0755
-        {{- if $.Values.persistence.enabled }}
+        {{- if $persistence.enabled }}
         - name: persistence
           persistentVolumeClaim:
-            claimName: {{ include "scVolumeName" $ }}
+            claimName: {{ default $.Release.Name $persistence.volumeClaim.name }}
         {{- end }}
         {{- if eq $job.kind "upgrade" }}
         - name: old-contracts
