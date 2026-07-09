@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE kms_context SET is_valid = FALSE, updated_at = $2 WHERE epoch_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dc1fbb24221e4cad7fb28fe211f83dce921ace1705cf50235c6b9a16df7aa5a6"
+}
