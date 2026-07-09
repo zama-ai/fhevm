@@ -13,7 +13,11 @@ fn eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
         | FheEvalStep::Ternary { output, .. }
         | FheEvalStep::TrivialEncrypt { output, .. }
         | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::RandBounded { output, .. } => output,
+        | FheEvalStep::Unary { output, .. }
+        | FheEvalStep::RandBounded { output, .. }
+        | FheEvalStep::Sum { output, .. }
+        | FheEvalStep::IsIn { output, .. }
+        | FheEvalStep::MulDiv { output, .. } => output,
     }
 }
 
@@ -64,12 +68,43 @@ const FHE_RAND_EVENT_BYTES: usize = EVENT_VERSION_BYTES
     + EVENT_SEED_BYTES
     + EVENT_U8_BYTES
     + EVENT_HANDLE_BYTES;
+const FHE_UNARY_OP_EVENT_BYTES: usize = EVENT_VERSION_BYTES
+    + EVENT_ENUM_BYTES   // op
+    + EVENT_PUBKEY_BYTES // subject
+    + EVENT_HANDLE_BYTES // operand
+    + EVENT_HANDLE_BYTES; // result
+
 const FHE_RAND_BOUNDED_EVENT_BYTES: usize = EVENT_VERSION_BYTES
-    + EVENT_PUBKEY_BYTES
-    + EVENT_HANDLE_BYTES
-    + EVENT_SEED_BYTES
-    + EVENT_U8_BYTES
-    + EVENT_HANDLE_BYTES;
+    + EVENT_PUBKEY_BYTES  // subject
+    + EVENT_HANDLE_BYTES  // upper_bound
+    + EVENT_SEED_BYTES    // seed
+    + EVENT_U8_BYTES      // fhe_type
+    + EVENT_HANDLE_BYTES; // result
+fn fhe_sum_event_bytes(operand_count: usize) -> usize {
+    EVENT_VERSION_BYTES
+        + EVENT_PUBKEY_BYTES           // subject
+        + 4 + operand_count * EVENT_HANDLE_BYTES // Vec<[u8;32]> (4-byte length prefix)
+        + EVENT_U8_BYTES               // fhe_type
+        + EVENT_HANDLE_BYTES // result
+}
+
+fn fhe_is_in_event_bytes(set_count: usize) -> usize {
+    EVENT_VERSION_BYTES
+        + EVENT_PUBKEY_BYTES           // subject
+        + EVENT_HANDLE_BYTES           // value
+        + 4 + set_count * EVENT_HANDLE_BYTES // Vec<[u8;32]>
+        + EVENT_U8_BYTES               // fhe_type
+        + EVENT_HANDLE_BYTES // result
+}
+
+const FHE_MUL_DIV_EVENT_BYTES: usize = EVENT_VERSION_BYTES
+    + EVENT_PUBKEY_BYTES  // subject
+    + EVENT_HANDLE_BYTES  // factor1
+    + EVENT_HANDLE_BYTES  // factor2
+    + EVENT_HANDLE_BYTES  // divisor
+    + EVENT_BOOL_BYTES    // scalar
+    + EVENT_HANDLE_BYTES; // result
+
 const ACL_RECORD_BOUND_EVENT_BYTES: usize = EVENT_VERSION_BYTES
     + EVENT_PUBKEY_BYTES
     + EVENT_HANDLE_BYTES
@@ -140,7 +175,11 @@ fn eval_step_event_payload_bytes(step: &FheEvalStep) -> usize {
         FheEvalStep::Ternary { .. } => FHE_TERNARY_OP_EVENT_BYTES,
         FheEvalStep::TrivialEncrypt { .. } => TRIVIAL_ENCRYPT_EVENT_BYTES,
         FheEvalStep::Rand { .. } => FHE_RAND_EVENT_BYTES,
+        FheEvalStep::Unary { .. } => FHE_UNARY_OP_EVENT_BYTES,
         FheEvalStep::RandBounded { .. } => FHE_RAND_BOUNDED_EVENT_BYTES,
+        FheEvalStep::Sum { operands, .. } => fhe_sum_event_bytes(operands.len()),
+        FheEvalStep::IsIn { set, .. } => fhe_is_in_event_bytes(set.len()),
+        FheEvalStep::MulDiv { .. } => FHE_MUL_DIV_EVENT_BYTES,
     }
 }
 

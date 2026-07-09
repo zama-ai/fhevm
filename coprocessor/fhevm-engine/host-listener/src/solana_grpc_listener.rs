@@ -708,6 +708,10 @@ fn compute_result_handle(
         E::TrivialEncrypt(e) => Some(e.result),
         E::FheRand(e) => Some(e.result),
         E::FheRandBounded(e) => Some(e.result),
+        E::FheUnaryOp(e) => Some(e.result),
+        E::FheSum(e) => Some(e.result),
+        E::FheIsIn(e) => Some(e.result),
+        E::FheMulDiv(e) => Some(e.result),
         E::FinalizedAccountFetch(_) | E::AclAllowed(_) => None,
     }
 }

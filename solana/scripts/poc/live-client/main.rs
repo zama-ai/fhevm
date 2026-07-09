@@ -105,6 +105,68 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // FHE_EVAL_BINARY drives a single binary fhe_eval step. BINARY_OP names the op (Sub/Mul/…);
+    // BINARY_A and BINARY_B are the u64 operands (defaults 10/5); BINARY_FHE_TYPE is the input
+    // FHE type byte (default 5 = euint64). BINARY_B_SCALAR=1 passes rhs as a plaintext scalar.
+    // Output FHE type is auto-derived: 0 (ebool) for comparison ops, else BINARY_FHE_TYPE.
+    // BINARY_ALLOW marks the result publicly decryptable.
+    if std::env::var("FHE_EVAL_BINARY").is_ok() {
+        fhe_eval_binary(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
+    // FHE_EVAL_UNARY drives a single unary fhe_eval step. UNARY_OP names the op (Neg/Not/Cast);
+    // UNARY_A is the u64 operand (default 42); UNARY_IN_FHE_TYPE is the input type (default 2 =
+    // euint8); UNARY_OUT_FHE_TYPE is the output type (defaults to UNARY_IN_FHE_TYPE). UNARY_ALLOW
+    // marks the result publicly decryptable.
+    if std::env::var("FHE_EVAL_UNARY").is_ok() {
+        fhe_eval_unary(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
+    // FHE_EVAL_TERNARY drives a ternary IfThenElse fhe_eval step. TERNARY_CTRL (0 or 1, default 1)
+    // selects the branch; TERNARY_TRUE/TERNARY_FALSE are the euint64 branch values (defaults 42/99);
+    // TERNARY_FHE_TYPE selects the branch FHE type (default 5). TERNARY_ALLOW marks the result
+    // publicly decryptable.
+    if std::env::var("FHE_EVAL_TERNARY").is_ok() {
+        fhe_eval_ternary(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
+    // FHE_EVAL_RAND_BOUNDED drives a bounded random fhe_eval step. RAND_UPPER is the exclusive
+    // u64 upper bound (default 100); RAND_FHE_TYPE is the output FHE type (default 5 = euint64).
+    // RAND_ALLOW marks the result publicly decryptable.
+    if std::env::var("FHE_EVAL_RAND_BOUNDED").is_ok() {
+        fhe_eval_rand_bounded(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
+    // FHE_EVAL_SUM drives a multi-step fhe_eval: two TrivialEncrypt steps (AllowedLocal) followed
+    // by a Sum step (AllowedDurable). SUM_A/SUM_B select the euint64 addends (defaults 10/20);
+    // SUM_ALLOW makes the result publicly decryptable. Expected cleartext: SUM_A + SUM_B.
+    if std::env::var("FHE_EVAL_SUM").is_ok() {
+        fhe_eval_sum(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
+    // FHE_EVAL_IS_IN drives a multi-step fhe_eval: TrivialEncrypt steps for value and set elements
+    // (all AllowedLocal) followed by an IsIn step (AllowedDurable → ebool). ISIN_VALUE selects the
+    // euint64 value (default 42); the set is hardcoded as [10, 42, 100]. ISIN_ALLOW makes the
+    // result publicly decryptable. Expected cleartext: 1 (true) when ISIN_VALUE is in the set.
+    if std::env::var("FHE_EVAL_IS_IN").is_ok() {
+        fhe_eval_is_in(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
+    // FHE_EVAL_MUL_DIV drives a multi-step fhe_eval: TrivialEncrypt(factor1, AllowedLocal) then
+    // MulDiv(factor1, scalar_factor2, divisor, AllowedDurable). MULDIV_A/MULDIV_B/MULDIV_D select
+    // the euint64 operands (defaults 6/7/3); MULDIV_ALLOW makes the result publicly decryptable.
+    // Expected cleartext: MULDIV_A * MULDIV_B / MULDIV_D (integer division).
+    if std::env::var("FHE_EVAL_MUL_DIV").is_ok() {
+        fhe_eval_mul_div(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
     ensure_host_config(&host, &payer, host_config)?;
     initialize_mint(&token, &payer, host_config)?;
     Ok(())
@@ -1265,6 +1327,1037 @@ fn ensure_host_config(
         })
         .send()?;
     println!("OK initialize_host_config: {sig}");
+    Ok(())
+}
+
+fn parse_binary_op(s: &str) -> Result<zama_host::FheBinaryOpCode, String> {
+    match s {
+        "Add"  => Ok(zama_host::FheBinaryOpCode::Add),
+        "Sub"  => Ok(zama_host::FheBinaryOpCode::Sub),
+        "Mul"  => Ok(zama_host::FheBinaryOpCode::Mul),
+        "Div"  => Ok(zama_host::FheBinaryOpCode::Div),
+        "Rem"  => Ok(zama_host::FheBinaryOpCode::Rem),
+        "And"  => Ok(zama_host::FheBinaryOpCode::And),
+        "Or"   => Ok(zama_host::FheBinaryOpCode::Or),
+        "Xor"  => Ok(zama_host::FheBinaryOpCode::Xor),
+        "Shl"  => Ok(zama_host::FheBinaryOpCode::Shl),
+        "Shr"  => Ok(zama_host::FheBinaryOpCode::Shr),
+        "Rotl" => Ok(zama_host::FheBinaryOpCode::Rotl),
+        "Rotr" => Ok(zama_host::FheBinaryOpCode::Rotr),
+        "Eq"   => Ok(zama_host::FheBinaryOpCode::Eq),
+        "Ne"   => Ok(zama_host::FheBinaryOpCode::Ne),
+        "Ge"   => Ok(zama_host::FheBinaryOpCode::Ge),
+        "Gt"   => Ok(zama_host::FheBinaryOpCode::Gt),
+        "Le"   => Ok(zama_host::FheBinaryOpCode::Le),
+        "Lt"   => Ok(zama_host::FheBinaryOpCode::Lt),
+        "Min"  => Ok(zama_host::FheBinaryOpCode::Min),
+        "Max"  => Ok(zama_host::FheBinaryOpCode::Max),
+        _ => Err(format!("unknown binary op: {s}")),
+    }
+}
+
+fn parse_unary_op(s: &str) -> Result<zama_host::FheUnaryOpCode, String> {
+    match s {
+        "Neg"  => Ok(zama_host::FheUnaryOpCode::Neg),
+        "Not"  => Ok(zama_host::FheUnaryOpCode::Not),
+        "Cast" => Ok(zama_host::FheUnaryOpCode::Cast),
+        _ => Err(format!("unknown unary op: {s}")),
+    }
+}
+
+fn is_comparison_op(op: zama_host::FheBinaryOpCode) -> bool {
+    matches!(
+        op,
+        zama_host::FheBinaryOpCode::Eq
+            | zama_host::FheBinaryOpCode::Ne
+            | zama_host::FheBinaryOpCode::Ge
+            | zama_host::FheBinaryOpCode::Gt
+            | zama_host::FheBinaryOpCode::Le
+            | zama_host::FheBinaryOpCode::Lt
+    )
+}
+
+/// Creates a durable, publicly-decryptable operand (TrivialEncrypt → AllowedDurable, `user` subject).
+/// Consumed as an `AllowedDurable` operand it propagates public-decrypt to a derived output;
+/// transient `AllowedLocal` operands don't and trip 6063. Returns (acl_record, handle).
+fn create_durable_public_decrypt_operand(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+    value: u64,
+    fhe_type: u8,
+    label: [u8; 32],
+) -> Result<(Pubkey, [u8; 32]), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::AccountMeta;
+    let mut plaintext = [0u8; 32];
+    plaintext[24..32].copy_from_slice(&value.to_be_bytes());
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    let nonce_key = zama_host::acl_nonce_key(acl_domain_key, app_account, label);
+    let nonce_sequence: u64 = 0;
+    let (acl_record, _) = zama_host::acl_record_address(nonce_key, nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0x0a;
+    context_id[1..9].copy_from_slice(&label[0..8]);
+    let args = zama_host::FheEvalArgs {
+        context_id,
+        steps: vec![zama_host::FheEvalStep::TrivialEncrypt {
+            plaintext,
+            fhe_type,
+            output: zama_host::FheEvalOutput::AllowedDurable {
+                output_acl_record_index: 0,
+                output_app_account_authority_index: None,
+                output_nonce_key: nonce_key,
+                output_nonce_sequence: nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
+            },
+        }],
+    };
+    host.request()
+        .accounts(zama_host::accounts::FheEval {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        .accounts(vec![AccountMeta::new(acl_record, false)])
+        .args(zama_host::instruction::FheEval { args })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    let record: zama_host::AclRecord = host.account(acl_record)?;
+    Ok((acl_record, record.handle))
+}
+
+/// Generic binary fhe_eval: encrypted operands become durable public-decrypt handles (so
+/// public-decrypt propagates to the output); scalar-RHS ops create only the LHS.
+/// Env: BINARY_OP, BINARY_A, BINARY_B, BINARY_B_SCALAR (flag), BINARY_FHE_TYPE, BINARY_ALLOW.
+/// Comparison ops (Eq/Ne/Ge/Gt/Le/Lt) automatically set output_fhe_type=0 (ebool).
+fn fhe_eval_binary(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::AccountMeta;
+
+    let op_name = std::env::var("BINARY_OP").unwrap_or_else(|_| "Add".into());
+    let op = parse_binary_op(&op_name).map_err(|e| e)?;
+    let a: u64 = std::env::var("BINARY_A").ok().and_then(|s| s.parse().ok()).unwrap_or(10);
+    let b: u64 = std::env::var("BINARY_B").ok().and_then(|s| s.parse().ok()).unwrap_or(5);
+    let b_scalar = std::env::var("BINARY_B_SCALAR").is_ok();
+    let in_fhe_type: u8 = std::env::var("BINARY_FHE_TYPE").ok().and_then(|s| s.parse().ok()).unwrap_or(5);
+    let output_fhe_type: u8 = if is_comparison_op(op) { 0 } else { in_fhe_type };
+
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    let mut encrypted_value_label = [7u8; 32];
+    encrypted_value_label[1] = op.as_u8();
+    encrypted_value_label[2] = in_fhe_type;
+    encrypted_value_label[3] = if b_scalar { 1 } else { 0 };
+    encrypted_value_label[8..16].copy_from_slice(&a.to_be_bytes());
+    encrypted_value_label[16..24].copy_from_slice(&b.to_be_bytes());
+    let output_nonce_key =
+        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_nonce_sequence: u64 = 0;
+    let (output_acl_record, _) =
+        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0xb0;
+    context_id[1] = op.as_u8();
+    context_id[2] = in_fhe_type;
+    context_id[3] = if b_scalar { 1 } else { 0 };
+    context_id[8..16].copy_from_slice(&a.to_be_bytes());
+    context_id[16..24].copy_from_slice(&b.to_be_bytes());
+
+    // Operand A. Label = marker 0x0a|op|type|pos|value → distinct PDA per operand/op (no collisions).
+    let mut operand_label_a = [0x0au8; 32];
+    operand_label_a[1] = op.as_u8();
+    operand_label_a[2] = in_fhe_type;
+    operand_label_a[3] = 0;
+    operand_label_a[8..16].copy_from_slice(&a.to_be_bytes());
+    let (acl_record_a, handle_a) =
+        create_durable_public_decrypt_operand(host, payer, host_config, a, in_fhe_type, operand_label_a)?;
+
+    // remaining_accounts: [operand A, (operand B), output] — indices below map to this order.
+    let mut operand_records = vec![acl_record_a];
+    let rhs_operand = if b_scalar {
+        let mut scalar_b = [0u8; 32];
+        scalar_b[24..32].copy_from_slice(&b.to_be_bytes());
+        zama_host::FheEvalOperand::Scalar(scalar_b)
+    } else {
+        let mut operand_label_b = [0x0au8; 32];
+        operand_label_b[1] = op.as_u8();
+        operand_label_b[2] = in_fhe_type;
+        operand_label_b[3] = 1;
+        operand_label_b[8..16].copy_from_slice(&b.to_be_bytes());
+        let (acl_record_b, handle_b) =
+            create_durable_public_decrypt_operand(host, payer, host_config, b, in_fhe_type, operand_label_b)?;
+        operand_records.push(acl_record_b);
+        zama_host::FheEvalOperand::AllowedDurable {
+            handle: handle_b,
+            acl_record_index: 1,
+            permission_index: None,
+        }
+    };
+
+    let output_index = operand_records.len() as u16;
+    let steps = vec![zama_host::FheEvalStep::Binary {
+        op,
+        lhs: zama_host::FheEvalOperand::AllowedDurable {
+            handle: handle_a,
+            acl_record_index: 0,
+            permission_index: None,
+        },
+        rhs: rhs_operand,
+        output_fhe_type,
+        output: zama_host::FheEvalOutput::AllowedDurable {
+            output_acl_record_index: output_index,
+            output_app_account_authority_index: None,
+            output_nonce_key,
+            output_nonce_sequence,
+            output_acl_domain_key: acl_domain_key,
+            output_app_account: app_account,
+            output_encrypted_value_label: encrypted_value_label,
+            output_subjects: subjects,
+            output_public_decrypt: false,
+        },
+    }];
+
+    // Operand records are read-only (role/handle checks); the output record is writable (created).
+    let mut remaining: Vec<AccountMeta> = operand_records
+        .iter()
+        .map(|record| AccountMeta::new_readonly(*record, false))
+        .collect();
+    remaining.push(AccountMeta::new(output_acl_record, false));
+
+    let b_desc = if b_scalar { format!("scalar({b})") } else { format!("enc({b})") };
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::FheEval {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        .accounts(remaining)
+        .args(zama_host::instruction::FheEval { args: zama_host::FheEvalArgs { context_id, steps } })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK fhe_eval binary {op_name}(enc({a}), {b_desc}) fhe_type={in_fhe_type} out_type={output_fhe_type}: {sig}");
+
+    let record: zama_host::AclRecord = host.account(output_acl_record)?;
+    let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  output ACL record {output_acl_record}");
+    println!("  result handle 0x{handle_hex}");
+
+    if std::env::var("BINARY_ALLOW").is_ok() {
+        let allow_sig = host
+            .request()
+            .accounts(zama_host::accounts::AllowForDecryption {
+                authority: payer.pubkey(),
+                authority_permission_record: None,
+                acl_record: output_acl_record,
+                host_config,
+                deny_subject_record: None,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::AllowForDecryption {
+                handle: record.handle,
+            })
+            .send()?;
+        println!("OK allow_for_decryption (public): {allow_sig}");
+    }
+    Ok(())
+}
+
+/// Generic unary fhe_eval: TrivialEncrypt(operand) → Unary(op, AllowedDurable).
+/// Env: UNARY_OP (Neg/Not/Cast), UNARY_A, UNARY_IN_FHE_TYPE (default 2=euint8),
+/// UNARY_OUT_FHE_TYPE (default = UNARY_IN_FHE_TYPE), UNARY_ALLOW.
+fn fhe_eval_unary(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::AccountMeta;
+
+    let op_name = std::env::var("UNARY_OP").unwrap_or_else(|_| "Neg".into());
+    let op = parse_unary_op(&op_name).map_err(|e| e)?;
+    let a: u64 = std::env::var("UNARY_A").ok().and_then(|s| s.parse().ok()).unwrap_or(42);
+    let in_fhe_type: u8 = std::env::var("UNARY_IN_FHE_TYPE").ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+    let out_fhe_type: u8 = std::env::var("UNARY_OUT_FHE_TYPE").ok().and_then(|s| s.parse().ok()).unwrap_or(in_fhe_type);
+
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    let mut encrypted_value_label = [8u8; 32];
+    encrypted_value_label[1] = op.as_u8();
+    encrypted_value_label[2] = in_fhe_type;
+    encrypted_value_label[3] = out_fhe_type;
+    encrypted_value_label[24..32].copy_from_slice(&a.to_be_bytes());
+    let output_nonce_key =
+        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_nonce_sequence: u64 = 0;
+    let (output_acl_record, _) =
+        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0xb1;
+    context_id[1] = op.as_u8();
+    context_id[2] = in_fhe_type;
+    context_id[3] = out_fhe_type;
+    context_id[24..32].copy_from_slice(&a.to_be_bytes());
+
+    // Encrypted operand as a durable public-decrypt handle (propagates to output; AllowedLocal → 6063).
+    let mut operand_label_a = [0x0bu8; 32];
+    operand_label_a[1] = op.as_u8();
+    operand_label_a[2] = in_fhe_type;
+    operand_label_a[3] = out_fhe_type;
+    operand_label_a[8..16].copy_from_slice(&a.to_be_bytes());
+    let (acl_record_a, handle_a) =
+        create_durable_public_decrypt_operand(host, payer, host_config, a, in_fhe_type, operand_label_a)?;
+
+    let args = zama_host::FheEvalArgs {
+        context_id,
+        steps: vec![zama_host::FheEvalStep::Unary {
+            op,
+            operand: zama_host::FheEvalOperand::AllowedDurable {
+                handle: handle_a,
+                acl_record_index: 0,
+                permission_index: None,
+            },
+            output_fhe_type: out_fhe_type,
+            output: zama_host::FheEvalOutput::AllowedDurable {
+                output_acl_record_index: 1,
+                output_app_account_authority_index: None,
+                output_nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
+            },
+        }],
+    };
+
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::FheEval {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        .accounts(vec![
+            AccountMeta::new_readonly(acl_record_a, false),
+            AccountMeta::new(output_acl_record, false),
+        ])
+        .args(zama_host::instruction::FheEval { args })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK fhe_eval unary {op_name}(enc({a})) in_type={in_fhe_type} out_type={out_fhe_type}: {sig}");
+
+    let record: zama_host::AclRecord = host.account(output_acl_record)?;
+    let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  output ACL record {output_acl_record}");
+    println!("  result handle 0x{handle_hex}");
+
+    if std::env::var("UNARY_ALLOW").is_ok() {
+        let allow_sig = host
+            .request()
+            .accounts(zama_host::accounts::AllowForDecryption {
+                authority: payer.pubkey(),
+                authority_permission_record: None,
+                acl_record: output_acl_record,
+                host_config,
+                deny_subject_record: None,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::AllowForDecryption {
+                handle: record.handle,
+            })
+            .send()?;
+        println!("OK allow_for_decryption (public): {allow_sig}");
+    }
+    Ok(())
+}
+
+/// Ternary fhe_eval: TrivialEncrypt(ctrl as ebool) + TrivialEncrypt(if_true) +
+/// TrivialEncrypt(if_false) → Ternary(IfThenElse, AllowedDurable).
+/// Env: TERNARY_CTRL (0|1, default 1), TERNARY_TRUE/TERNARY_FALSE (u64 defaults 42/99),
+/// TERNARY_FHE_TYPE (default 5=euint64), TERNARY_ALLOW.
+fn fhe_eval_ternary(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::AccountMeta;
+
+    let ctrl: u64 = std::env::var("TERNARY_CTRL").ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+    let if_true: u64 = std::env::var("TERNARY_TRUE").ok().and_then(|s| s.parse().ok()).unwrap_or(42);
+    let if_false: u64 = std::env::var("TERNARY_FALSE").ok().and_then(|s| s.parse().ok()).unwrap_or(99);
+    let fhe_type: u8 = std::env::var("TERNARY_FHE_TYPE").ok().and_then(|s| s.parse().ok()).unwrap_or(5);
+
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    let mut encrypted_value_label = [9u8; 32];
+    encrypted_value_label[1] = ctrl as u8;
+    encrypted_value_label[2] = fhe_type;
+    encrypted_value_label[8..16].copy_from_slice(&if_true.to_be_bytes());
+    encrypted_value_label[16..24].copy_from_slice(&if_false.to_be_bytes());
+    let output_nonce_key =
+        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_nonce_sequence: u64 = 0;
+    let (output_acl_record, _) =
+        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0xb2;
+    context_id[1] = ctrl as u8;
+    context_id[2] = fhe_type;
+    context_id[8..16].copy_from_slice(&if_true.to_be_bytes());
+    context_id[16..24].copy_from_slice(&if_false.to_be_bytes());
+
+    let expected = if ctrl != 0 { if_true } else { if_false };
+
+    // Each operand a durable public-decrypt handle. remaining_accounts: [control, if_true, if_false, output].
+    let mut label_ctrl = [0x0cu8; 32];
+    label_ctrl[1] = ctrl as u8;
+    label_ctrl[3] = 0; // control is ebool (type 0)
+    label_ctrl[8..16].copy_from_slice(&ctrl.to_be_bytes());
+    let (rec_ctrl, h_ctrl) = create_durable_public_decrypt_operand(host, payer, host_config, ctrl, 0, label_ctrl)?;
+
+    let mut label_true = [0x0cu8; 32];
+    label_true[2] = fhe_type;
+    label_true[3] = 1;
+    label_true[8..16].copy_from_slice(&if_true.to_be_bytes());
+    let (rec_true, h_true) =
+        create_durable_public_decrypt_operand(host, payer, host_config, if_true, fhe_type, label_true)?;
+
+    let mut label_false = [0x0cu8; 32];
+    label_false[2] = fhe_type;
+    label_false[3] = 2;
+    label_false[8..16].copy_from_slice(&if_false.to_be_bytes());
+    let (rec_false, h_false) =
+        create_durable_public_decrypt_operand(host, payer, host_config, if_false, fhe_type, label_false)?;
+
+    let args = zama_host::FheEvalArgs {
+        context_id,
+        steps: vec![zama_host::FheEvalStep::Ternary {
+            op: zama_host::FheTernaryOpCode::IfThenElse,
+            control: zama_host::FheEvalOperand::AllowedDurable {
+                handle: h_ctrl,
+                acl_record_index: 0,
+                permission_index: None,
+            },
+            if_true: zama_host::FheEvalOperand::AllowedDurable {
+                handle: h_true,
+                acl_record_index: 1,
+                permission_index: None,
+            },
+            if_false: zama_host::FheEvalOperand::AllowedDurable {
+                handle: h_false,
+                acl_record_index: 2,
+                permission_index: None,
+            },
+            output_fhe_type: fhe_type,
+            output: zama_host::FheEvalOutput::AllowedDurable {
+                output_acl_record_index: 3,
+                output_app_account_authority_index: None,
+                output_nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
+            },
+        }],
+    };
+
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::FheEval {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        .accounts(vec![
+            AccountMeta::new_readonly(rec_ctrl, false),
+            AccountMeta::new_readonly(rec_true, false),
+            AccountMeta::new_readonly(rec_false, false),
+            AccountMeta::new(output_acl_record, false),
+        ])
+        .args(zama_host::instruction::FheEval { args })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK fhe_eval ternary select(ctrl={ctrl}, true={if_true}, false={if_false}) -> {expected}: {sig}");
+
+    let record: zama_host::AclRecord = host.account(output_acl_record)?;
+    let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  output ACL record {output_acl_record}");
+    println!("  result handle 0x{handle_hex}  (expected cleartext={expected})");
+
+    if std::env::var("TERNARY_ALLOW").is_ok() {
+        let allow_sig = host
+            .request()
+            .accounts(zama_host::accounts::AllowForDecryption {
+                authority: payer.pubkey(),
+                authority_permission_record: None,
+                acl_record: output_acl_record,
+                host_config,
+                deny_subject_record: None,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::AllowForDecryption {
+                handle: record.handle,
+            })
+            .send()?;
+        println!("OK allow_for_decryption (public): {allow_sig}");
+    }
+    Ok(())
+}
+
+/// Bounded random fhe_eval: RandBounded(upper_bound, AllowedDurable).
+/// Env: RAND_UPPER (u64 exclusive upper bound, default 100), RAND_FHE_TYPE (default 5=euint64),
+/// RAND_ALLOW. Expected: cleartext in [0, RAND_UPPER).
+fn fhe_eval_rand_bounded(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::AccountMeta;
+
+    let upper: u64 = std::env::var("RAND_UPPER").ok().and_then(|s| s.parse().ok()).unwrap_or(100);
+    let fhe_type: u8 = std::env::var("RAND_FHE_TYPE").ok().and_then(|s| s.parse().ok()).unwrap_or(5);
+
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    let mut encrypted_value_label = [0x0au8; 32];
+    encrypted_value_label[1] = fhe_type;
+    encrypted_value_label[24..32].copy_from_slice(&upper.to_be_bytes());
+    let output_nonce_key =
+        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_nonce_sequence: u64 = 0;
+    let (output_acl_record, _) =
+        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0xb3;
+    context_id[1] = fhe_type;
+    context_id[24..32].copy_from_slice(&upper.to_be_bytes());
+
+    let mut upper_bound = [0u8; 32];
+    upper_bound[24..32].copy_from_slice(&upper.to_be_bytes());
+
+    let args = zama_host::FheEvalArgs {
+        context_id,
+        steps: vec![zama_host::FheEvalStep::RandBounded {
+            upper_bound,
+            fhe_type,
+            output: zama_host::FheEvalOutput::AllowedDurable {
+                output_acl_record_index: 0,
+                output_app_account_authority_index: None,
+                output_nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
+            },
+        }],
+    };
+
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::FheEval {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        .accounts(vec![AccountMeta::new(output_acl_record, false)])
+        .args(zama_host::instruction::FheEval { args })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK fhe_eval rand_bounded(upper={upper}) fhe_type={fhe_type}: {sig}");
+
+    let record: zama_host::AclRecord = host.account(output_acl_record)?;
+    let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  output ACL record {output_acl_record}");
+    println!("  result handle 0x{handle_hex}  (expected cleartext in [0, {upper}))");
+
+    if std::env::var("RAND_ALLOW").is_ok() {
+        let allow_sig = host
+            .request()
+            .accounts(zama_host::accounts::AllowForDecryption {
+                authority: payer.pubkey(),
+                authority_permission_record: None,
+                acl_record: output_acl_record,
+                host_config,
+                deny_subject_record: None,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::AllowForDecryption {
+                handle: record.handle,
+            })
+            .send()?;
+        println!("OK allow_for_decryption (public): {allow_sig}");
+    }
+    Ok(())
+}
+
+/// Multi-step fhe_eval Sum: two TrivialEncrypt(AllowedLocal) → Sum(AllowedDurable).
+/// SUM_A/SUM_B select the euint64 addends (defaults 10/20). Expected result: SUM_A + SUM_B.
+/// SUM_ALLOW marks the output publicly decryptable after the eval.
+fn fhe_eval_sum(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::AccountMeta;
+    let a: u64 = std::env::var("SUM_A").ok().and_then(|s| s.parse().ok()).unwrap_or(10);
+    let b: u64 = std::env::var("SUM_B").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
+    let fhe_type: u8 = 5; // euint64
+
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    let mut encrypted_value_label = [4u8; 32];
+    encrypted_value_label[16..24].copy_from_slice(&a.to_be_bytes());
+    encrypted_value_label[24..32].copy_from_slice(&b.to_be_bytes());
+    let output_nonce_key =
+        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_nonce_sequence: u64 = 0;
+    let (output_acl_record, _) =
+        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0xa0;
+    context_id[16..24].copy_from_slice(&a.to_be_bytes());
+    context_id[24..32].copy_from_slice(&b.to_be_bytes());
+
+    // Each addend a durable public-decrypt handle. remaining_accounts: [a, b, output].
+    let mut label_a = [0x0du8; 32];
+    label_a[2] = fhe_type;
+    label_a[3] = 0;
+    label_a[8..16].copy_from_slice(&a.to_be_bytes());
+    let (rec_a, h_a) = create_durable_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
+
+    let mut label_b = [0x0du8; 32];
+    label_b[2] = fhe_type;
+    label_b[3] = 1;
+    label_b[8..16].copy_from_slice(&b.to_be_bytes());
+    let (rec_b, h_b) = create_durable_public_decrypt_operand(host, payer, host_config, b, fhe_type, label_b)?;
+
+    let args = zama_host::FheEvalArgs {
+        context_id,
+        steps: vec![zama_host::FheEvalStep::Sum {
+            operands: vec![
+                zama_host::FheEvalOperand::AllowedDurable {
+                    handle: h_a,
+                    acl_record_index: 0,
+                    permission_index: None,
+                },
+                zama_host::FheEvalOperand::AllowedDurable {
+                    handle: h_b,
+                    acl_record_index: 1,
+                    permission_index: None,
+                },
+            ],
+            fhe_type,
+            output: zama_host::FheEvalOutput::AllowedDurable {
+                output_acl_record_index: 2,
+                output_app_account_authority_index: None,
+                output_nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
+            },
+        }],
+    };
+
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::FheEval {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        .accounts(vec![
+            AccountMeta::new_readonly(rec_a, false),
+            AccountMeta::new_readonly(rec_b, false),
+            AccountMeta::new(output_acl_record, false),
+        ])
+        .args(zama_host::instruction::FheEval { args })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK fhe_eval sum({a} + {b} as euint64): {sig}");
+
+    let record: zama_host::AclRecord = host.account(output_acl_record)?;
+    let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  output ACL record {output_acl_record}");
+    println!("  result handle 0x{handle_hex}  (tfhe-worker materializes sum({a} + {b}))");
+
+    if std::env::var("SUM_ALLOW").is_ok() {
+        let allow_sig = host
+            .request()
+            .accounts(zama_host::accounts::AllowForDecryption {
+                authority: payer.pubkey(),
+                authority_permission_record: None,
+                acl_record: output_acl_record,
+                host_config,
+                deny_subject_record: None,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::AllowForDecryption {
+                handle: record.handle,
+            })
+            .send()?;
+        println!("OK allow_for_decryption (public): {allow_sig}");
+    }
+    Ok(())
+}
+
+/// Multi-step fhe_eval IsIn: TrivialEncrypt(value) + TrivialEncrypt(set elements) (all AllowedLocal)
+/// → IsIn(AllowedDurable → ebool). ISIN_VALUE selects the euint64 value (default 42); the set is
+/// hardcoded as [10, 42, 100]. ISIN_ALLOW marks the output publicly decryptable. Expected result:
+/// 1 (true) when ISIN_VALUE is in the set, 0 (false) otherwise.
+fn fhe_eval_is_in(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::AccountMeta;
+    let value: u64 = std::env::var("ISIN_VALUE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(42);
+    let elem_fhe_type: u8 = 5; // euint64
+
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    let mut encrypted_value_label = [5u8; 32];
+    encrypted_value_label[24..32].copy_from_slice(&value.to_be_bytes());
+    let output_nonce_key =
+        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_nonce_sequence: u64 = 0;
+    let (output_acl_record, _) =
+        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0xa1;
+    context_id[24..32].copy_from_slice(&value.to_be_bytes());
+
+    // value + set as durable public-decrypt handles. remaining_accounts: [value, set.., output].
+    let set_values: [u64; 3] = [10, 42, 100];
+
+    let mut label_value = [0x0eu8; 32];
+    label_value[2] = elem_fhe_type;
+    label_value[3] = 0;
+    label_value[8..16].copy_from_slice(&value.to_be_bytes());
+    let (rec_value, h_value) =
+        create_durable_public_decrypt_operand(host, payer, host_config, value, elem_fhe_type, label_value)?;
+
+    let mut operand_records = vec![rec_value];
+    let mut set_operands: Vec<zama_host::FheEvalOperand> = Vec::with_capacity(set_values.len());
+    for (i, &v) in set_values.iter().enumerate() {
+        let mut label = [0x0eu8; 32];
+        label[2] = elem_fhe_type;
+        label[3] = (i as u8) + 1;
+        label[8..16].copy_from_slice(&v.to_be_bytes());
+        label[16..24].copy_from_slice(&value.to_be_bytes());
+        let (rec, handle) =
+            create_durable_public_decrypt_operand(host, payer, host_config, v, elem_fhe_type, label)?;
+        set_operands.push(zama_host::FheEvalOperand::AllowedDurable {
+            handle,
+            acl_record_index: operand_records.len() as u16,
+            permission_index: None,
+        });
+        operand_records.push(rec);
+    }
+    let output_index = operand_records.len() as u16;
+
+    let steps = vec![zama_host::FheEvalStep::IsIn {
+        value: zama_host::FheEvalOperand::AllowedDurable {
+            handle: h_value,
+            acl_record_index: 0,
+            permission_index: None,
+        },
+        set: set_operands,
+        fhe_type: elem_fhe_type,
+        output: zama_host::FheEvalOutput::AllowedDurable {
+            output_acl_record_index: output_index,
+            output_app_account_authority_index: None,
+            output_nonce_key,
+            output_nonce_sequence,
+            output_acl_domain_key: acl_domain_key,
+            output_app_account: app_account,
+            output_encrypted_value_label: encrypted_value_label,
+            output_subjects: subjects,
+            output_public_decrypt: false,
+        },
+    }];
+
+    let args = zama_host::FheEvalArgs { context_id, steps };
+    let in_set = set_values.contains(&value);
+
+    let mut remaining: Vec<AccountMeta> = operand_records
+        .iter()
+        .map(|record| AccountMeta::new_readonly(*record, false))
+        .collect();
+    remaining.push(AccountMeta::new(output_acl_record, false));
+
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::FheEval {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        .accounts(remaining)
+        .args(zama_host::instruction::FheEval { args })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK fhe_eval isIn({value} in {set_values:?} as euint64): {sig}");
+
+    let record: zama_host::AclRecord = host.account(output_acl_record)?;
+    let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  output ACL record {output_acl_record}");
+    println!("  result handle 0x{handle_hex}  (ebool; tfhe-worker materializes isIn -> {in_set})");
+
+    if std::env::var("ISIN_ALLOW").is_ok() {
+        let allow_sig = host
+            .request()
+            .accounts(zama_host::accounts::AllowForDecryption {
+                authority: payer.pubkey(),
+                authority_permission_record: None,
+                acl_record: output_acl_record,
+                host_config,
+                deny_subject_record: None,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::AllowForDecryption {
+                handle: record.handle,
+            })
+            .send()?;
+        println!("OK allow_for_decryption (public): {allow_sig}");
+    }
+    Ok(())
+}
+
+/// Multi-step fhe_eval MulDiv: TrivialEncrypt(factor1, AllowedLocal) → MulDiv(factor1, scalar_b,
+/// divisor, AllowedDurable). MULDIV_A/MULDIV_B/MULDIV_D select the euint64 operands (defaults
+/// 6/7/3). MULDIV_ALLOW marks the output publicly decryptable. Expected result: A * B / D.
+fn fhe_eval_mul_div(
+    host: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use anchor_lang::solana_program::instruction::AccountMeta;
+    let a: u64 = std::env::var("MULDIV_A").ok().and_then(|s| s.parse().ok()).unwrap_or(6);
+    let b: u64 = std::env::var("MULDIV_B").ok().and_then(|s| s.parse().ok()).unwrap_or(7);
+    let d: u64 = std::env::var("MULDIV_D").ok().and_then(|s| s.parse().ok()).unwrap_or(3);
+    let fhe_type: u8 = 5; // euint64
+
+    let app_account = payer.pubkey();
+    let acl_domain_key = payer.pubkey();
+    let mut encrypted_value_label = [6u8; 32];
+    encrypted_value_label[8..16].copy_from_slice(&a.to_be_bytes());
+    encrypted_value_label[16..24].copy_from_slice(&b.to_be_bytes());
+    encrypted_value_label[24..32].copy_from_slice(&d.to_be_bytes());
+    let output_nonce_key =
+        zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label);
+    let output_nonce_sequence: u64 = 0;
+    let (output_acl_record, _) =
+        zama_host::acl_record_address(output_nonce_key, output_nonce_sequence);
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let subjects = vec![zama_host::AclSubjectEntry::user(payer.pubkey())];
+
+    let mut context_id = [0u8; 32];
+    context_id[0] = 0xa2;
+    context_id[8..16].copy_from_slice(&a.to_be_bytes());
+    context_id[16..24].copy_from_slice(&b.to_be_bytes());
+    context_id[24..32].copy_from_slice(&d.to_be_bytes());
+
+    let mut scalar_b = [0u8; 32];
+    scalar_b[24..32].copy_from_slice(&b.to_be_bytes());
+    let mut divisor = [0u8; 32];
+    divisor[24..32].copy_from_slice(&d.to_be_bytes());
+
+    // factor1 as a durable public-decrypt handle (factor2/divisor are public scalars).
+    let mut label_a = [0x0fu8; 32];
+    label_a[2] = fhe_type;
+    label_a[8..16].copy_from_slice(&a.to_be_bytes());
+    let (rec_a, h_a) = create_durable_public_decrypt_operand(host, payer, host_config, a, fhe_type, label_a)?;
+
+    let args = zama_host::FheEvalArgs {
+        context_id,
+        steps: vec![zama_host::FheEvalStep::MulDiv {
+            factor1: zama_host::FheEvalOperand::AllowedDurable {
+                handle: h_a,
+                acl_record_index: 0,
+                permission_index: None,
+            },
+            factor2: zama_host::FheEvalOperand::Scalar(scalar_b),
+            divisor,
+            output_fhe_type: fhe_type,
+            output: zama_host::FheEvalOutput::AllowedDurable {
+                output_acl_record_index: 1,
+                output_app_account_authority_index: None,
+                output_nonce_key,
+                output_nonce_sequence,
+                output_acl_domain_key: acl_domain_key,
+                output_app_account: app_account,
+                output_encrypted_value_label: encrypted_value_label,
+                output_subjects: subjects,
+                output_public_decrypt: false,
+            },
+        }],
+    };
+
+    let expected = a * b / d;
+    let sig = host
+        .request()
+        .accounts(zama_host::accounts::FheEval {
+            payer: payer.pubkey(),
+            compute_subject: payer.pubkey(),
+            app_account_authority: payer.pubkey(),
+            host_config,
+            system_program: system_program::ID,
+            hcu_authority: payer.pubkey(),
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority: zama_event_authority,
+            program: zama_host::ID,
+        })
+        .accounts(vec![
+            AccountMeta::new_readonly(rec_a, false),
+            AccountMeta::new(output_acl_record, false),
+        ])
+        .args(zama_host::instruction::FheEval { args })
+        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..Default::default()
+        })?;
+    println!("OK fhe_eval mulDiv({a} * {b} / {d} = {expected} as euint64): {sig}");
+
+    let record: zama_host::AclRecord = host.account(output_acl_record)?;
+    let handle_hex: String = record.handle.iter().map(|b| format!("{b:02x}")).collect();
+    println!("  output ACL record {output_acl_record}");
+    println!("  result handle 0x{handle_hex}  (tfhe-worker materializes mulDiv -> {expected})");
+
+    if std::env::var("MULDIV_ALLOW").is_ok() {
+        let allow_sig = host
+            .request()
+            .accounts(zama_host::accounts::AllowForDecryption {
+                authority: payer.pubkey(),
+                authority_permission_record: None,
+                acl_record: output_acl_record,
+                host_config,
+                deny_subject_record: None,
+                event_authority: zama_event_authority,
+                program: zama_host::ID,
+            })
+            .args(zama_host::instruction::AllowForDecryption {
+                handle: record.handle,
+            })
+            .send()?;
+        println!("OK allow_for_decryption (public): {allow_sig}");
+    }
     Ok(())
 }
 

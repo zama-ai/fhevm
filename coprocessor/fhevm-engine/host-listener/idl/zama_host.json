@@ -1532,6 +1532,32 @@
       ]
     },
     {
+      "name": "FheIsInEvent",
+      "discriminator": [
+        103,
+        251,
+        249,
+        102,
+        211,
+        177,
+        130,
+        103
+      ]
+    },
+    {
+      "name": "FheMulDivEvent",
+      "discriminator": [
+        189,
+        13,
+        212,
+        163,
+        7,
+        98,
+        112,
+        86
+      ]
+    },
+    {
       "name": "FheRandBoundedEvent",
       "discriminator": [
         119,
@@ -1558,6 +1584,19 @@
       ]
     },
     {
+      "name": "FheSumEvent",
+      "discriminator": [
+        14,
+        171,
+        141,
+        52,
+        160,
+        184,
+        18,
+        66
+      ]
+    },
+    {
       "name": "FheTernaryOpEvent",
       "discriminator": [
         213,
@@ -1568,6 +1607,19 @@
         166,
         182,
         95
+      ]
+    },
+    {
+      "name": "FheUnaryOpEvent",
+      "discriminator": [
+        7,
+        254,
+        34,
+        59,
+        208,
+        172,
+        179,
+        159
       ]
     },
     {
@@ -2086,6 +2138,21 @@
       "code": 6076,
       "name": "HcuBlockCapBelowMaxPerTx",
       "msg": "HCU block cap is below max_hcu_per_tx"
+    },
+    {
+      "code": 6077,
+      "name": "MulDivDivisorZero",
+      "msg": "fheMulDiv divisor must be non-zero"
+    },
+    {
+      "code": 6078,
+      "name": "DivisorMustBeScalar",
+      "msg": "fheDiv/fheRem divisor must be a plaintext scalar"
+    },
+    {
+      "code": 6079,
+      "name": "DivisionByZero",
+      "msg": "fheDiv/fheRem divisor must be non-zero"
     }
   ],
   "types": [
@@ -2668,7 +2735,58 @@
             "name": "Sub"
           },
           {
+            "name": "Mul"
+          },
+          {
+            "name": "Div"
+          },
+          {
+            "name": "Rem"
+          },
+          {
+            "name": "And"
+          },
+          {
+            "name": "Or"
+          },
+          {
+            "name": "Xor"
+          },
+          {
+            "name": "Shl"
+          },
+          {
+            "name": "Shr"
+          },
+          {
+            "name": "Rotl"
+          },
+          {
+            "name": "Rotr"
+          },
+          {
+            "name": "Eq"
+          },
+          {
+            "name": "Ne"
+          },
+          {
             "name": "Ge"
+          },
+          {
+            "name": "Gt"
+          },
+          {
+            "name": "Le"
+          },
+          {
+            "name": "Lt"
+          },
+          {
+            "name": "Min"
+          },
+          {
+            "name": "Max"
           }
         ]
       }
@@ -3173,6 +3291,51 @@
             ]
           },
           {
+            "name": "Unary",
+            "fields": [
+              {
+                "name": "op",
+                "docs": [
+                  "Unary operator."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheUnaryOpCode"
+                  }
+                }
+              },
+              {
+                "name": "operand",
+                "docs": [
+                  "Encrypted operand."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "output_fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          },
+          {
             "name": "RandBounded",
             "fields": [
               {
@@ -3206,6 +3369,306 @@
                 }
               }
             ]
+          },
+          {
+            "name": "Sum",
+            "fields": [
+              {
+                "name": "operands",
+                "docs": [
+                  "Encrypted operands."
+                ],
+                "type": {
+                  "vec": {
+                    "defined": {
+                      "name": "FheEvalOperand"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "IsIn",
+            "fields": [
+              {
+                "name": "value",
+                "docs": [
+                  "Encrypted value to test."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "set",
+                "docs": [
+                  "Encrypted set operands."
+                ],
+                "type": {
+                  "vec": {
+                    "defined": {
+                      "name": "FheEvalOperand"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "fhe_type",
+                "docs": [
+                  "FHE type byte of the value and set elements."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "MulDiv",
+            "fields": [
+              {
+                "name": "factor1",
+                "docs": [
+                  "Left-hand encrypted factor."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "factor2",
+                "docs": [
+                  "Right-hand factor, encrypted or scalar bytes."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOperand"
+                  }
+                }
+              },
+              {
+                "name": "divisor",
+                "docs": [
+                  "Divisor encoded as a 256-bit big-endian integer."
+                ],
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              },
+              {
+                "name": "output_fhe_type",
+                "docs": [
+                  "FHE type byte embedded in the output handle."
+                ],
+                "type": "u8"
+              },
+              {
+                "name": "output",
+                "docs": [
+                  "Whether this output remains instruction-local or is bound into durable ACL state."
+                ],
+                "type": {
+                  "defined": {
+                    "name": "FheEvalOutput"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheIsInEvent",
+      "docs": [
+        "Emitted for an FHE is-in test accepted by the host."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "subject",
+            "docs": [
+              "Compute subject that passed ACL checks."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "value",
+            "docs": [
+              "Value handle being tested."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "set",
+            "docs": [
+              "Set of handles to test against."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "fhe_type",
+            "docs": [
+              "FHE type of value and set elements."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "result",
+            "docs": [
+              "Output handle (always ebool) verified by the host formula."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheMulDivEvent",
+      "docs": [
+        "Emitted for an FHE multiply-divide operation accepted by the host."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "subject",
+            "docs": [
+              "Compute subject that passed ACL checks."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "factor1",
+            "docs": [
+              "First factor handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "factor2",
+            "docs": [
+              "Second factor handle or scalar bytes."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "divisor",
+            "docs": [
+              "Divisor plaintext scalar bytes."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "scalar",
+            "docs": [
+              "Whether `factor2` is plaintext scalar bytes."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "result",
+            "docs": [
+              "Output handle verified by the host formula."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }
@@ -3345,6 +3808,69 @@
       }
     },
     {
+      "name": "FheSumEvent",
+      "docs": [
+        "Emitted for an FHE sum operation accepted by the host."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "subject",
+            "docs": [
+              "Compute subject that passed ACL checks."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "operands",
+            "docs": [
+              "Input operand handles."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "fhe_type",
+            "docs": [
+              "FHE type of all operands and the output."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "result",
+            "docs": [
+              "Output handle verified by the host formula."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "FheTernaryOpCode",
       "docs": [
         "Ternary FHE operators currently modeled by the PoC."
@@ -3424,6 +3950,91 @@
             "name": "if_false",
             "docs": [
               "Handle selected when `control` is false."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "result",
+            "docs": [
+              "Output handle verified by the host formula."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheUnaryOpCode",
+      "docs": [
+        "Unary FHE operators."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Neg"
+          },
+          {
+            "name": "Not"
+          },
+          {
+            "name": "Cast"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheUnaryOpEvent",
+      "docs": [
+        "Emitted for a unary FHE operation accepted by the host."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "op",
+            "docs": [
+              "Unary operator."
+            ],
+            "type": {
+              "defined": {
+                "name": "FheUnaryOpCode"
+              }
+            }
+          },
+          {
+            "name": "subject",
+            "docs": [
+              "Compute subject that passed ACL checks."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "operand",
+            "docs": [
+              "Operand handle."
             ],
             "type": {
               "array": [

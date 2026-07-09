@@ -33,7 +33,8 @@ use anchor_lang::{
 use zama_host::{
     acl_nonce_key, acl_record_address, role_flags_are_known, subject_has_role, AclSubjectEntry,
     CoprocessorInputAttestation, FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput,
-    FheEvalStep, FheTernaryOpCode, ACL_ROLE_USE, MAX_ACL_SUBJECTS, MAX_FHE_EVAL_OPS,
+    FheEvalStep, FheTernaryOpCode, FheUnaryOpCode, ACL_ROLE_USE, MAX_ACL_SUBJECTS,
+    MAX_FHE_EVAL_OPS,
 };
 
 /// Result type used by the builder helpers.
@@ -81,6 +82,14 @@ pub enum EvalBuildError {
     InvalidRemainingAccountReference,
     /// A verified-input operand referenced an attestation not registered with the builder.
     MissingVerifiedInput,
+    /// `sum`/`is_in` exceeded the coprocessor's max operand count for the type.
+    TooManyReductionOperands,
+    /// `mul_div` was given a zero divisor; the host rejects it (EVM DivisionByZero parity).
+    MulDivDivisorZero,
+    /// `div`/`rem` require a plaintext scalar divisor (EVM `IsNotScalar`).
+    DivisorMustBeScalar,
+    /// `div`/`rem` divisor is zero once truncated to the operand type (EVM `DivisionByZero`).
+    DivisionByZero,
 }
 
 /// Typed FHE handle tag used by the host ABI.
@@ -132,6 +141,12 @@ mod sealed {
     pub trait FheTypedSeal {}
     pub trait FheUintSeal {}
     pub trait FheRandomSeal {}
+    pub trait FheNotSeal {}
+    pub trait FheBitwiseSeal {}
+    pub trait FheShiftSeal {}
+    pub trait FheEqSeal {}
+    pub trait FheNegSeal {}
+    pub trait FheIsInSeal {}
 
     impl FheTypedSeal for Bool {}
     impl FheTypedSeal for Uint<8> {}
@@ -155,6 +170,57 @@ mod sealed {
     impl FheRandomSeal for Uint<64> {}
     impl FheRandomSeal for Uint<128> {}
     impl FheRandomSeal for Bytes256 {}
+
+    // NOT / bitwise: Bool + Uint8..Uint128 + Uint256 (host `0 | 2..=6 | 8`).
+    impl FheNotSeal for Bool {}
+    impl FheNotSeal for Uint<8> {}
+    impl FheNotSeal for Uint<16> {}
+    impl FheNotSeal for Uint<32> {}
+    impl FheNotSeal for Uint<64> {}
+    impl FheNotSeal for Uint<128> {}
+    impl FheNotSeal for Bytes256 {}
+
+    impl FheBitwiseSeal for Bool {}
+    impl FheBitwiseSeal for Uint<8> {}
+    impl FheBitwiseSeal for Uint<16> {}
+    impl FheBitwiseSeal for Uint<32> {}
+    impl FheBitwiseSeal for Uint<64> {}
+    impl FheBitwiseSeal for Uint<128> {}
+    impl FheBitwiseSeal for Bytes256 {}
+
+    // Shifts/rotations and Neg: Uint8..Uint128 + Uint256 (host `2..=6 | 8`).
+    impl FheShiftSeal for Uint<8> {}
+    impl FheShiftSeal for Uint<16> {}
+    impl FheShiftSeal for Uint<32> {}
+    impl FheShiftSeal for Uint<64> {}
+    impl FheShiftSeal for Uint<128> {}
+    impl FheShiftSeal for Bytes256 {}
+
+    impl FheNegSeal for Uint<8> {}
+    impl FheNegSeal for Uint<16> {}
+    impl FheNegSeal for Uint<32> {}
+    impl FheNegSeal for Uint<64> {}
+    impl FheNegSeal for Uint<128> {}
+    impl FheNegSeal for Bytes256 {}
+
+    // Eq/Ne: Bool + Uint8..Uint128 + Uint160 + Uint256 (host `0 | 2..=8`).
+    impl FheEqSeal for Bool {}
+    impl FheEqSeal for Uint<8> {}
+    impl FheEqSeal for Uint<16> {}
+    impl FheEqSeal for Uint<32> {}
+    impl FheEqSeal for Uint<64> {}
+    impl FheEqSeal for Uint<128> {}
+    impl FheEqSeal for Address {}
+    impl FheEqSeal for Bytes256 {}
+
+    // IsIn: Uint8..Uint128 + Uint160 + Uint256 (host/EVM/coprocessor `2..=8`; no ebool).
+    impl FheIsInSeal for Uint<8> {}
+    impl FheIsInSeal for Uint<16> {}
+    impl FheIsInSeal for Uint<32> {}
+    impl FheIsInSeal for Uint<64> {}
+    impl FheIsInSeal for Uint<128> {}
+    impl FheIsInSeal for Address {}
+    impl FheIsInSeal for Bytes256 {}
 }
 
 /// Compile-time FHE type tag for typed encrypted handles.
@@ -213,6 +279,71 @@ impl FheRandom for Uint<32> {}
 impl FheRandom for Uint<64> {}
 impl FheRandom for Uint<128> {}
 impl FheRandom for Bytes256 {}
+
+/// Marker trait for FHE values accepted by bitwise NOT: Bool, Uint8..Uint128, Uint256.
+pub trait FheNot: FheTyped + sealed::FheNotSeal {}
+
+impl FheNot for Bool {}
+impl FheNot for Uint<8> {}
+impl FheNot for Uint<16> {}
+impl FheNot for Uint<32> {}
+impl FheNot for Uint<64> {}
+impl FheNot for Uint<128> {}
+impl FheNot for Bytes256 {}
+
+/// Marker trait for values accepted by bitwise And/Or/Xor: Bool, Uint8..Uint128, Uint256.
+pub trait FheBitwise: FheTyped + sealed::FheBitwiseSeal {}
+
+impl FheBitwise for Bool {}
+impl FheBitwise for Uint<8> {}
+impl FheBitwise for Uint<16> {}
+impl FheBitwise for Uint<32> {}
+impl FheBitwise for Uint<64> {}
+impl FheBitwise for Uint<128> {}
+impl FheBitwise for Bytes256 {}
+
+/// Marker trait for values accepted by shifts/rotations: Uint8..Uint128, Uint256.
+pub trait FheShift: FheTyped + sealed::FheShiftSeal {}
+
+impl FheShift for Uint<8> {}
+impl FheShift for Uint<16> {}
+impl FheShift for Uint<32> {}
+impl FheShift for Uint<64> {}
+impl FheShift for Uint<128> {}
+impl FheShift for Bytes256 {}
+
+/// Marker trait for values accepted by arithmetic negation: Uint8..Uint128, Uint256.
+pub trait FheNeg: FheTyped + sealed::FheNegSeal {}
+
+impl FheNeg for Uint<8> {}
+impl FheNeg for Uint<16> {}
+impl FheNeg for Uint<32> {}
+impl FheNeg for Uint<64> {}
+impl FheNeg for Uint<128> {}
+impl FheNeg for Bytes256 {}
+
+/// Marker trait for values accepted by Eq/Ne: Bool, Uint8..Uint128, Uint160, Uint256.
+pub trait FheEq: FheTyped + sealed::FheEqSeal {}
+
+impl FheEq for Bool {}
+impl FheEq for Uint<8> {}
+impl FheEq for Uint<16> {}
+impl FheEq for Uint<32> {}
+impl FheEq for Uint<64> {}
+impl FheEq for Uint<128> {}
+impl FheEq for Address {}
+impl FheEq for Bytes256 {}
+
+/// Marker trait for values accepted by IsIn: Uint8..Uint128, Uint160, Uint256.
+pub trait FheIsIn: FheTyped + sealed::FheIsInSeal {}
+
+impl FheIsIn for Uint<8> {}
+impl FheIsIn for Uint<16> {}
+impl FheIsIn for Uint<32> {}
+impl FheIsIn for Uint<64> {}
+impl FheIsIn for Uint<128> {}
+impl FheIsIn for Address {}
+impl FheIsIn for Bytes256 {}
 
 /// Typed encrypted eval value.
 ///
@@ -1502,6 +1633,531 @@ impl EvalBuilder {
         )))
     }
 
+    // --- Binary ops not yet exposed as named methods ---
+
+    pub fn mul<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Mul,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn div<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Div,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn rem<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Rem,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn and<T: FheBitwise>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::And,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn or<T: FheBitwise>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Or,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn xor<T: FheBitwise>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Xor,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn shl<T: FheShift>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Shl,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn shr<T: FheShift>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Shr,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn rotl<T: FheShift>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Rotl,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn rotr<T: FheShift>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Rotr,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn eq<T: FheEq>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        self.binary_op(
+            FheBinaryOpCode::Eq,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            FheType::BOOL,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn ne<T: FheEq>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        self.binary_op(
+            FheBinaryOpCode::Ne,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            FheType::BOOL,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn gt<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        self.binary_op(
+            FheBinaryOpCode::Gt,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            FheType::BOOL,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn le<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        self.binary_op(
+            FheBinaryOpCode::Le,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            FheType::BOOL,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn lt<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        self.binary_op(
+            FheBinaryOpCode::Lt,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            FheType::BOOL,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn min<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Min,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn max<T: FheUint>(
+        &mut self,
+        lhs: Encrypted<T>,
+        rhs: impl Into<BinaryRhs<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.binary_op(
+            FheBinaryOpCode::Max,
+            lhs.operand(),
+            binary_rhs_operand(rhs),
+            T::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    // --- Unary ops ---
+
+    pub fn neg<T: FheNeg>(
+        &mut self,
+        operand: Encrypted<T>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.unary_op(FheUnaryOpCode::Neg, operand.operand(), T::FHE_TYPE, output)
+            .map(Encrypted::from_operand)
+    }
+
+    pub fn not<T: FheNot>(
+        &mut self,
+        operand: Encrypted<T>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        self.unary_op(FheUnaryOpCode::Not, operand.operand(), T::FHE_TYPE, output)
+            .map(Encrypted::from_operand)
+    }
+
+    pub fn cast<FROM: FheTyped, TO: FheTyped>(
+        &mut self,
+        operand: Encrypted<FROM>,
+        output: Output,
+    ) -> Result<Encrypted<TO>> {
+        self.unary_op(
+            FheUnaryOpCode::Cast,
+            operand.operand(),
+            TO::FHE_TYPE,
+            output,
+        )
+        .map(Encrypted::from_operand)
+    }
+
+    pub fn sum<T: FheUint>(
+        &mut self,
+        operands: impl IntoIterator<Item = Encrypted<T>>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        // EVM `fheSum` and the coprocessor enforce no minimum: a zero/single-operand sum is valid.
+        let operand_ops: Vec<Operand> = operands.into_iter().map(|e| e.operand()).collect();
+        for op in &operand_ops {
+            if matches!(op.0, OperandKind::Scalar(_)) {
+                return Err(EvalBuildError::ScalarEncryptedOperand);
+            }
+        }
+        if self.steps.len() >= MAX_FHE_EVAL_OPS {
+            return Err(EvalBuildError::TooManyOps);
+        }
+        let fhe_type = T::FHE_TYPE.byte();
+        validate_uint_fhe_type(fhe_type)?;
+        if operand_ops.len() > max_reduction_operands(fhe_type) {
+            return Err(EvalBuildError::TooManyReductionOperands);
+        }
+        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let mut remaining_accounts = self.remaining_accounts.clone();
+        let mut lowered: Vec<FheEvalOperand> = Vec::with_capacity(operand_ops.len());
+        for op in operand_ops {
+            lowered.push(lower_operand(
+                &mut remaining_accounts,
+                self.steps.len(),
+                self.context_id,
+                self.scope,
+                &self.verified_inputs,
+                op,
+            )?);
+        }
+        let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
+        self.remaining_accounts = remaining_accounts;
+        self.steps.push(FheEvalStep::Sum {
+            operands: lowered,
+            fhe_type,
+            output,
+        });
+        self.produced_types.push(fhe_type);
+        Ok(Encrypted::from_operand(Operand::transient(
+            step_index,
+            self.context_id,
+            self.scope,
+        )))
+    }
+
+    pub fn is_in<T: FheIsIn>(
+        &mut self,
+        value: Encrypted<T>,
+        set: impl IntoIterator<Item = Encrypted<T>>,
+        output: Output,
+    ) -> Result<Encrypted<Bool>> {
+        // EVM `fheIsIn` and the coprocessor enforce no minimum: an empty set is valid (false result).
+        let set_ops: Vec<Operand> = set.into_iter().map(|e| e.operand()).collect();
+        let value_op = value.operand();
+        if matches!(value_op.0, OperandKind::Scalar(_)) {
+            return Err(EvalBuildError::ScalarEncryptedOperand);
+        }
+        for op in &set_ops {
+            if matches!(op.0, OperandKind::Scalar(_)) {
+                return Err(EvalBuildError::ScalarEncryptedOperand);
+            }
+        }
+        if self.steps.len() >= MAX_FHE_EVAL_OPS {
+            return Err(EvalBuildError::TooManyOps);
+        }
+        let fhe_type = T::FHE_TYPE.byte();
+        validate_supported_fhe_type(fhe_type)?;
+        if set_ops.len() > max_reduction_operands(fhe_type) {
+            return Err(EvalBuildError::TooManyReductionOperands);
+        }
+        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let mut remaining_accounts = self.remaining_accounts.clone();
+        let value_lowered = lower_operand(
+            &mut remaining_accounts,
+            self.steps.len(),
+            self.context_id,
+            self.scope,
+            &self.verified_inputs,
+            value_op,
+        )?;
+        let mut set_lowered: Vec<FheEvalOperand> = Vec::with_capacity(set_ops.len());
+        for op in set_ops {
+            set_lowered.push(lower_operand(
+                &mut remaining_accounts,
+                self.steps.len(),
+                self.context_id,
+                self.scope,
+                &self.verified_inputs,
+                op,
+            )?);
+        }
+        let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
+        self.remaining_accounts = remaining_accounts;
+        let bool_type = FheType::BOOL.byte();
+        self.steps.push(FheEvalStep::IsIn {
+            value: value_lowered,
+            set: set_lowered,
+            fhe_type,
+            output,
+        });
+        self.produced_types.push(bool_type);
+        Ok(Encrypted::from_operand(Operand::transient(
+            step_index,
+            self.context_id,
+            self.scope,
+        )))
+    }
+
+    pub fn mul_div<T: FheUint>(
+        &mut self,
+        factor1: Encrypted<T>,
+        factor2: impl Into<BinaryRhs<T>>,
+        divisor: Scalar<T>,
+        output: Output,
+    ) -> Result<Encrypted<T>> {
+        let lhs = factor1.operand();
+        let rhs = binary_rhs_operand(factor2);
+        if matches!(lhs.0, OperandKind::Scalar(_)) {
+            return Err(EvalBuildError::ScalarLhsOperand);
+        }
+        if self.steps.len() >= MAX_FHE_EVAL_OPS {
+            return Err(EvalBuildError::TooManyOps);
+        }
+        let fhe_type = T::FHE_TYPE.byte();
+        validate_uint_fhe_type(fhe_type)?;
+        // fheMulDiv factor1 caps at Uint64 (EVM + coprocessor); reject Uint128.
+        if !matches!(fhe_type, 2..=5) {
+            return Err(EvalBuildError::UnsupportedFheType);
+        }
+        // Divisor must be non-zero once truncated to the operand type (EVM DivisionByZero parity).
+        let divisor_bytes = divisor.bytes();
+        if scalar_is_zero_for_type(divisor_bytes, fhe_type) {
+            return Err(EvalBuildError::MulDivDivisorZero);
+        }
+        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let mut remaining_accounts = self.remaining_accounts.clone();
+        let factor1 = lower_operand(
+            &mut remaining_accounts,
+            self.steps.len(),
+            self.context_id,
+            self.scope,
+            &self.verified_inputs,
+            lhs,
+        )?;
+        let factor2 = lower_operand(
+            &mut remaining_accounts,
+            self.steps.len(),
+            self.context_id,
+            self.scope,
+            &self.verified_inputs,
+            rhs,
+        )?;
+        let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
+        self.remaining_accounts = remaining_accounts;
+        self.steps.push(FheEvalStep::MulDiv {
+            factor1,
+            factor2,
+            divisor: divisor_bytes,
+            output_fhe_type: fhe_type,
+            output,
+        });
+        self.produced_types.push(fhe_type);
+        Ok(Encrypted::from_operand(Operand::transient(
+            step_index,
+            self.context_id,
+            self.scope,
+        )))
+    }
+
+    fn unary_op(
+        &mut self,
+        op: FheUnaryOpCode,
+        operand: Operand,
+        output_fhe_type: FheType,
+        output: Output,
+    ) -> Result<Operand> {
+        let output_fhe_type = output_fhe_type.byte();
+        if matches!(operand.0, OperandKind::Scalar(_)) {
+            return Err(EvalBuildError::ScalarEncryptedOperand);
+        }
+        if self.steps.len() >= MAX_FHE_EVAL_OPS {
+            return Err(EvalBuildError::TooManyOps);
+        }
+        validate_unary_step(
+            op,
+            &operand,
+            output_fhe_type,
+            self.steps.len(),
+            self.context_id,
+            self.scope,
+            |index| self.produced_types.get(index as usize).copied(),
+        )?;
+        let step_index = u16::try_from(self.steps.len()).map_err(|_| EvalBuildError::TooManyOps)?;
+        let mut remaining_accounts = self.remaining_accounts.clone();
+        let operand = lower_operand(
+            &mut remaining_accounts,
+            self.steps.len(),
+            self.context_id,
+            self.scope,
+            &self.verified_inputs,
+            operand,
+        )?;
+        let output = lower_output(&mut remaining_accounts, self.app_authority, output)?;
+        self.remaining_accounts = remaining_accounts;
+        self.steps.push(FheEvalStep::Unary {
+            op,
+            operand,
+            output_fhe_type,
+            output,
+        });
+        self.produced_types.push(output_fhe_type);
+        Ok(Operand::transient(step_index, self.context_id, self.scope))
+    }
+
     fn encrypted_operand_type(
         &self,
         operand: &Operand,
@@ -1605,6 +2261,39 @@ fn validate_lowered_step(
         | FheEvalStep::RandBounded { output, .. } => {
             validate_lowered_output(output, used_accounts)?
         }
+        FheEvalStep::Unary {
+            operand, output, ..
+        } => {
+            validate_lowered_encrypted_operand(operand, step_index, used_accounts)?;
+            validate_lowered_output(output, used_accounts)?;
+        }
+        FheEvalStep::Sum {
+            operands, output, ..
+        } => {
+            for operand in operands {
+                validate_lowered_encrypted_operand(operand, step_index, used_accounts)?;
+            }
+            validate_lowered_output(output, used_accounts)?;
+        }
+        FheEvalStep::IsIn {
+            value, set, output, ..
+        } => {
+            validate_lowered_encrypted_operand(value, step_index, used_accounts)?;
+            for operand in set {
+                validate_lowered_encrypted_operand(operand, step_index, used_accounts)?;
+            }
+            validate_lowered_output(output, used_accounts)?;
+        }
+        FheEvalStep::MulDiv {
+            factor1,
+            factor2,
+            output,
+            ..
+        } => {
+            validate_lowered_encrypted_operand(factor1, step_index, used_accounts)?;
+            validate_lowered_rhs_operand(factor2, step_index, used_accounts)?;
+            validate_lowered_output(output, used_accounts)?;
+        }
     }
     Ok(())
 }
@@ -1698,11 +2387,53 @@ where
         &produced_type,
     )?
     .ok_or(EvalBuildError::ScalarLhsOperand)?;
-    if !matches!(lhs_type, 2..=6) {
-        return Err(EvalBuildError::UnsupportedFheType);
-    }
-    if matches!(op, FheBinaryOpCode::Add | FheBinaryOpCode::Sub) && lhs_type != output_fhe_type {
-        return Err(EvalBuildError::BinaryOperandTypeMismatch);
+    match op {
+        // Eq/Ne accept the widest operand set (Bool..Uint256); ordered comparisons Uint8..Uint128.
+        FheBinaryOpCode::Eq | FheBinaryOpCode::Ne => {
+            if !matches!(lhs_type, 0 | 2..=8) {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
+        }
+        FheBinaryOpCode::Ge | FheBinaryOpCode::Gt | FheBinaryOpCode::Le | FheBinaryOpCode::Lt => {
+            if !matches!(lhs_type, 2..=6) {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
+        }
+        // Div/Rem: divisor must be a plaintext scalar (EVM `IsNotScalar`), non-zero after truncation.
+        FheBinaryOpCode::Div | FheBinaryOpCode::Rem => {
+            if lhs_type != output_fhe_type {
+                return Err(EvalBuildError::BinaryOperandTypeMismatch);
+            }
+            match &rhs.0 {
+                OperandKind::Scalar(value) => {
+                    if scalar_is_zero_for_type(*value, output_fhe_type) {
+                        return Err(EvalBuildError::DivisionByZero);
+                    }
+                }
+                OperandKind::Durable(_)
+                | OperandKind::Transient { .. }
+                | OperandKind::VerifiedInput { .. } => {
+                    return Err(EvalBuildError::DivisorMustBeScalar)
+                }
+            }
+        }
+        // Remaining ops: operand type must equal the (op-gated) output type.
+        FheBinaryOpCode::Add
+        | FheBinaryOpCode::Sub
+        | FheBinaryOpCode::Mul
+        | FheBinaryOpCode::And
+        | FheBinaryOpCode::Or
+        | FheBinaryOpCode::Xor
+        | FheBinaryOpCode::Shl
+        | FheBinaryOpCode::Shr
+        | FheBinaryOpCode::Rotl
+        | FheBinaryOpCode::Rotr
+        | FheBinaryOpCode::Min
+        | FheBinaryOpCode::Max => {
+            if lhs_type != output_fhe_type {
+                return Err(EvalBuildError::BinaryOperandTypeMismatch);
+            }
+        }
     }
     if let Some(rhs_type) = operand_fhe_type(
         rhs,
@@ -1713,6 +2444,69 @@ where
     )? {
         if rhs_type != lhs_type {
             return Err(EvalBuildError::BinaryOperandTypeMismatch);
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_unary_step<F>(
+    op: FheUnaryOpCode,
+    operand: &Operand,
+    output_fhe_type: u8,
+    produced_count: usize,
+    context_id: EvalContextId,
+    builder_scope: EvalBuilderScope,
+    produced_type: F,
+) -> Result<()>
+where
+    F: Fn(u16) -> Option<u8>,
+{
+    validate_supported_fhe_type(output_fhe_type)?;
+    let valid_output = match op {
+        FheUnaryOpCode::Neg => matches!(output_fhe_type, 2..=6 | 8),
+        FheUnaryOpCode::Not => matches!(output_fhe_type, 0 | 2..=6 | 8),
+        // EVM `cast` output set: Uint8..Uint128 | Uint256 (no ebool, no eaddress/Uint160).
+        FheUnaryOpCode::Cast => matches!(output_fhe_type, 2..=6 | 8),
+    };
+    if !valid_output {
+        return Err(EvalBuildError::UnsupportedFheType);
+    }
+    let operand_type = operand_fhe_type(
+        operand,
+        produced_count,
+        context_id,
+        builder_scope,
+        &produced_type,
+    )?
+    .ok_or(EvalBuildError::ScalarEncryptedOperand)?;
+    validate_supported_fhe_type(operand_type)?;
+    match op {
+        FheUnaryOpCode::Neg => {
+            if !matches!(operand_type, 2..=6 | 8) {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
+            if operand_type != output_fhe_type {
+                return Err(EvalBuildError::BinaryOperandTypeMismatch);
+            }
+        }
+        FheUnaryOpCode::Not => {
+            if !matches!(operand_type, 0 | 2..=6 | 8) {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
+            if operand_type != output_fhe_type {
+                return Err(EvalBuildError::BinaryOperandTypeMismatch);
+            }
+        }
+        FheUnaryOpCode::Cast => {
+            // EVM `cast` input set: Bool | Uint8..Uint128 | Uint256 (no eaddress/Uint160).
+            if !matches!(operand_type, 0 | 2..=6 | 8) {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
+            // Same-type cast is rejected (EVM InvalidType parity).
+            if operand_type == output_fhe_type {
+                return Err(EvalBuildError::UnsupportedFheType);
+            }
         }
     }
     Ok(())
@@ -1800,8 +2594,26 @@ where
 fn validate_supported_binary_output_type(op: FheBinaryOpCode, output_fhe_type: u8) -> Result<()> {
     validate_supported_fhe_type(output_fhe_type)?;
     let valid = match op {
-        FheBinaryOpCode::Add | FheBinaryOpCode::Sub => matches!(output_fhe_type, 2..=6),
-        FheBinaryOpCode::Ge => output_fhe_type == 0,
+        FheBinaryOpCode::Add
+        | FheBinaryOpCode::Sub
+        | FheBinaryOpCode::Mul
+        | FheBinaryOpCode::Div
+        | FheBinaryOpCode::Rem
+        | FheBinaryOpCode::Min
+        | FheBinaryOpCode::Max => matches!(output_fhe_type, 2..=6),
+        FheBinaryOpCode::And | FheBinaryOpCode::Or | FheBinaryOpCode::Xor => {
+            matches!(output_fhe_type, 0 | 2..=6 | 8)
+        }
+        FheBinaryOpCode::Shl
+        | FheBinaryOpCode::Shr
+        | FheBinaryOpCode::Rotl
+        | FheBinaryOpCode::Rotr => matches!(output_fhe_type, 2..=6 | 8),
+        FheBinaryOpCode::Eq
+        | FheBinaryOpCode::Ne
+        | FheBinaryOpCode::Ge
+        | FheBinaryOpCode::Gt
+        | FheBinaryOpCode::Le
+        | FheBinaryOpCode::Lt => output_fhe_type == 0,
     };
     if !valid {
         return Err(EvalBuildError::UnsupportedBinaryOutputType);
@@ -1811,6 +2623,35 @@ fn validate_supported_binary_output_type(op: FheBinaryOpCode, output_fhe_type: u
 
 fn validate_supported_fhe_type(fhe_type: u8) -> Result<()> {
     if matches!(fhe_type, 0 | 2 | 3 | 4 | 5 | 6 | 7 | 8) {
+        Ok(())
+    } else {
+        Err(EvalBuildError::UnsupportedFheType)
+    }
+}
+
+/// Mirrors the host `scalar_is_zero_for_type` (EVM `_isScalarZeroForType`): zero after width truncation.
+fn scalar_is_zero_for_type(scalar: [u8; 32], fhe_type: u8) -> bool {
+    let width = match fhe_type {
+        2 => 1,
+        3 => 2,
+        4 => 4,
+        5 => 8,
+        6 => 16,
+        _ => 32,
+    };
+    scalar[32 - width..].iter().all(|byte| *byte == 0)
+}
+
+/// Coprocessor max operand count for FheSum / FheIsIn: 100 for narrow types, 60 for wider ones.
+fn max_reduction_operands(fhe_type: u8) -> usize {
+    match fhe_type {
+        2..=4 => 100,
+        _ => 60,
+    }
+}
+
+fn validate_uint_fhe_type(fhe_type: u8) -> Result<()> {
+    if matches!(fhe_type, 2..=6) {
         Ok(())
     } else {
         Err(EvalBuildError::UnsupportedFheType)
@@ -3227,7 +4068,9 @@ mod tests {
                 Output::transient(),
             )
             .unwrap_err();
-        assert_eq!(error, EvalBuildError::UnsupportedFheType);
+        // Add gates its output to uint types, and the operand must equal that output type, so a
+        // Bool lhs against a Uint64 output is a type mismatch (host + client agree).
+        assert_eq!(error, EvalBuildError::BinaryOperandTypeMismatch);
 
         let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
         let error = builder
@@ -3243,6 +4086,200 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(error, EvalBuildError::BinaryOperandTypeMismatch);
+    }
+
+    #[test]
+    fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
+        let primary_authority = Pubkey::new_unique();
+        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        // A cast to a different type is accepted.
+        assert!(builder
+            .unary_op(
+                FheUnaryOpCode::Cast,
+                Operand::durable(balance_handle(1), Pubkey::new_unique()),
+                FheType::UINT32,
+                Output::transient(),
+            )
+            .is_ok());
+        // A same-type cast is rejected (EVM InvalidType parity).
+        assert_eq!(
+            builder
+                .unary_op(
+                    FheUnaryOpCode::Cast,
+                    Operand::durable(balance_handle(1), Pubkey::new_unique()),
+                    FheType::UINT64,
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::UnsupportedFheType
+        );
+        // EVM cast type sets: a Bool input casts to a uint (Bool -> Uint32) is accepted...
+        assert!(builder
+            .unary_op(
+                FheUnaryOpCode::Cast,
+                Operand::durable(typed_handle(2, FheType::BOOL.byte()), Pubkey::new_unique()),
+                FheType::UINT32,
+                Output::transient(),
+            )
+            .is_ok());
+        // ...but casting TO ebool, TO eaddress, or FROM eaddress is rejected.
+        assert_eq!(
+            builder
+                .unary_op(
+                    FheUnaryOpCode::Cast,
+                    Operand::durable(balance_handle(1), Pubkey::new_unique()),
+                    FheType::BOOL,
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::UnsupportedFheType
+        );
+        assert_eq!(
+            builder
+                .unary_op(
+                    FheUnaryOpCode::Cast,
+                    Operand::durable(balance_handle(1), Pubkey::new_unique()),
+                    FheType::ADDRESS,
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::UnsupportedFheType
+        );
+        assert_eq!(
+            builder
+                .unary_op(
+                    FheUnaryOpCode::Cast,
+                    Operand::durable(
+                        typed_handle(3, FheType::ADDRESS.byte()),
+                        Pubkey::new_unique()
+                    ),
+                    FheType::UINT64,
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::UnsupportedFheType
+        );
+        // Neg rejects a Bool operand (EVM fheNeg supportedTypes = Uint8..Uint128 + Uint256).
+        assert_eq!(
+            builder
+                .unary_op(
+                    FheUnaryOpCode::Neg,
+                    Operand::durable(typed_handle(1, FheType::BOOL.byte()), Pubkey::new_unique()),
+                    FheType::BOOL,
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::UnsupportedFheType
+        );
+    }
+
+    #[test]
+    fn mul_div_rejects_zero_divisor() {
+        let primary_authority = Pubkey::new_unique();
+        let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
+        let balance =
+            Uint64Handle::durable(balance_handle(1), durable_slot(primary_authority, 1)).unwrap();
+        assert_eq!(
+            builder
+                .mul_div(
+                    balance,
+                    Scalar::<Uint<64>>::u64(3),
+                    Scalar::<Uint<64>>::u64(0),
+                    Output::transient(),
+                )
+                .unwrap_err(),
+            EvalBuildError::MulDivDivisorZero
+        );
+    }
+
+    #[test]
+    fn div_rem_require_nonzero_scalar_divisor() {
+        let auth = Pubkey::new_unique();
+        let mut builder = EvalBuilder::new(context_id(9), app_authority(auth));
+        // Encrypted divisor is rejected — division is scalar-only (EVM `IsNotScalar`).
+        let lhs = Uint64Handle::durable(balance_handle(1), durable_slot(auth, 1)).unwrap();
+        let enc_divisor = Uint64Handle::durable(balance_handle(2), durable_slot(auth, 2)).unwrap();
+        assert_eq!(
+            builder
+                .div(lhs, enc_divisor, Output::transient())
+                .unwrap_err(),
+            EvalBuildError::DivisorMustBeScalar
+        );
+        // A zero scalar divisor is rejected.
+        let lhs2 = Uint64Handle::durable(balance_handle(1), durable_slot(auth, 1)).unwrap();
+        assert_eq!(
+            builder
+                .rem(lhs2, Scalar::<Uint<64>>::u64(0), Output::transient())
+                .unwrap_err(),
+            EvalBuildError::DivisionByZero
+        );
+        // A non-zero scalar divisor is accepted.
+        let lhs3 = Uint64Handle::durable(balance_handle(1), durable_slot(auth, 1)).unwrap();
+        assert!(builder
+            .div(lhs3, Scalar::<Uint<64>>::u64(3), Output::transient())
+            .is_ok());
+    }
+
+    #[test]
+    fn builder_exposes_the_host_operator_type_surface() {
+        // The typed builder must express the host's type matrix: bitwise on Bool/Uint256, neg on Uint256, eq on Bool, is_in on Uint160.
+        let auth = Pubkey::new_unique();
+        let mut builder = EvalBuilder::new(context_id(9), app_authority(auth));
+
+        let bool_a = Encrypted::<Bool>::durable(
+            typed_handle(1, FheType::BOOL.byte()),
+            durable_slot(auth, 1),
+        )
+        .unwrap();
+        let bool_b = Encrypted::<Bool>::durable(
+            typed_handle(2, FheType::BOOL.byte()),
+            durable_slot(auth, 2),
+        )
+        .unwrap();
+        assert!(builder.and(bool_a, bool_b, Output::transient()).is_ok());
+
+        let u256_a = Encrypted::<Bytes256>::durable(
+            typed_handle(3, FheType::BYTES256.byte()),
+            durable_slot(auth, 3),
+        )
+        .unwrap();
+        let u256_b = Encrypted::<Bytes256>::durable(
+            typed_handle(4, FheType::BYTES256.byte()),
+            durable_slot(auth, 4),
+        )
+        .unwrap();
+        assert!(builder.xor(u256_a, u256_b, Output::transient()).is_ok());
+
+        let u256_c = Encrypted::<Bytes256>::durable(
+            typed_handle(5, FheType::BYTES256.byte()),
+            durable_slot(auth, 5),
+        )
+        .unwrap();
+        assert!(builder.neg(u256_c, Output::transient()).is_ok());
+
+        let bool_c = Encrypted::<Bool>::durable(
+            typed_handle(6, FheType::BOOL.byte()),
+            durable_slot(auth, 6),
+        )
+        .unwrap();
+        let bool_d = Encrypted::<Bool>::durable(
+            typed_handle(7, FheType::BOOL.byte()),
+            durable_slot(auth, 7),
+        )
+        .unwrap();
+        assert!(builder.eq(bool_c, bool_d, Output::transient()).is_ok());
+
+        let addr_v = Encrypted::<Address>::durable(
+            typed_handle(8, FheType::ADDRESS.byte()),
+            durable_slot(auth, 8),
+        )
+        .unwrap();
+        let addr_s = Encrypted::<Address>::durable(
+            typed_handle(9, FheType::ADDRESS.byte()),
+            durable_slot(auth, 9),
+        )
+        .unwrap();
+        assert!(builder.is_in(addr_v, [addr_s], Output::transient()).is_ok());
     }
 
     #[test]
