@@ -16,6 +16,15 @@ RUN npm install && \
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
 ARG CARGO_PROFILE=release
+ARG SCCACHE_BUCKET
+ARG SCCACHE_REGION=eu-west-3
+ARG SCCACHE_S3_PREFIX
+ENV RUSTC_WRAPPER=${SCCACHE_BUCKET:+sccache}
+ENV SCCACHE_IDLE_TIMEOUT=0
+ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
+ENV SCCACHE_REGION=${SCCACHE_REGION}
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
+ENV AWS_REGION=${SCCACHE_REGION}
 
 USER root
 
@@ -39,6 +48,12 @@ WORKDIR /app/coprocessor/fhevm-engine
 # to a non-mounted path (/tmp) during the same RUN instruction for COPY --from to work.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
+    --mount=type=secret,id=sccache_aws_access_key_id \
+    --mount=type=secret,id=sccache_aws_secret_access_key \
+    if [ -n "${SCCACHE_BUCKET}" ]; then \
+      export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
+      export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
+    fi && \
     cargo fetch && \
     SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p gw-listener && \
     cp target/${CARGO_PROFILE}/gw_listener /tmp/gw_listener

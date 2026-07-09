@@ -7,6 +7,15 @@ FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 # The profile used to run `cargo build`
 ARG CARGO_PROFILE=release
+ARG SCCACHE_BUCKET
+ARG SCCACHE_REGION=eu-west-3
+ARG SCCACHE_S3_PREFIX
+ENV RUSTC_WRAPPER=${SCCACHE_BUCKET:+sccache}
+ENV SCCACHE_IDLE_TIMEOUT=0
+ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
+ENV SCCACHE_REGION=${SCCACHE_REGION}
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
+ENV AWS_REGION=${SCCACHE_REGION}
 
 # Use root user for build stage
 USER root
@@ -26,6 +35,12 @@ COPY kms-connector ./kms-connector
 WORKDIR /app/kms-connector
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/kms-connector/target,sharing=locked \
+    --mount=type=secret,id=sccache_aws_access_key_id \
+    --mount=type=secret,id=sccache_aws_secret_access_key \
+    if [ -n "${SCCACHE_BUCKET}" ]; then \
+      export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
+      export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
+    fi && \
     git config --global --add safe.directory /app && \
     cargo fetch && \
     cargo build --profile=${CARGO_PROFILE} -p kms-worker && \

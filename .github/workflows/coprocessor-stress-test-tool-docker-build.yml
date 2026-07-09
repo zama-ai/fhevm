@@ -41,7 +41,7 @@ jobs:
       needs.check-changes.outputs.changes-coprocessor-stress-test-tool == 'true'
       || github.event_name == 'release'
       || github.event_name == 'workflow_dispatch'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@c763bfd499267cc33c2d68054e2d2b13f47ff6b0 # v1.0.10
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
