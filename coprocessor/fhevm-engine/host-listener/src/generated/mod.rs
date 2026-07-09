@@ -33,9 +33,10 @@ pub use solana_abi_schema_hashes::{
 };
 pub use zama_host_events::{
     anchor_event_discriminator, decode_anchor_cpi_event, decode_anchor_event,
-    FheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent, FheRandEvent,
-    FheTernaryOpCode, FheTernaryOpEvent, TrivialEncryptEvent, ZamaHostEvent,
-    ANCHOR_EVENT_IX_TAG_LE, EVENT_VERSION,
+    FheBinaryOpCode, FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent,
+    FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
+    FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, TrivialEncryptEvent,
+    ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE, EVENT_VERSION,
 };
 pub use zama_host_instructions::{
     decode_zama_host_instruction, ZamaHostInstruction,

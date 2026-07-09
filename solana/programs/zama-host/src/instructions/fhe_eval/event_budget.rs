@@ -48,7 +48,11 @@ fn step_output(step: &FheEvalStep) -> &FheEvalOutput {
         | FheEvalStep::Ternary { output, .. }
         | FheEvalStep::TrivialEncrypt { output, .. }
         | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::RandBounded { output, .. } => output,
+        | FheEvalStep::Unary { output, .. }
+        | FheEvalStep::RandBounded { output, .. }
+        | FheEvalStep::Sum { output, .. }
+        | FheEvalStep::IsIn { output, .. }
+        | FheEvalStep::MulDiv { output, .. } => output,
     }
 }
 

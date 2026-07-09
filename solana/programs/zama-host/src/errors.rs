@@ -225,4 +225,16 @@ pub enum ZamaHostError {
     /// Analog of EVM `HCUPerBlockBelowMaxPerTx`.
     #[msg("HCU block cap is below max_hcu_per_tx")]
     HcuBlockCapBelowMaxPerTx,
+
+    /// `fheMulDiv` divisor is a plaintext scalar that must never be zero (EVM parity).
+    #[msg("fheMulDiv divisor must be non-zero")]
+    MulDivDivisorZero,
+
+    /// `fheDiv`/`fheRem` require a plaintext scalar divisor (EVM `IsNotScalar`).
+    #[msg("fheDiv/fheRem divisor must be a plaintext scalar")]
+    DivisorMustBeScalar,
+
+    /// `fheDiv`/`fheRem` divisor is zero once truncated to the operand type (EVM `DivisionByZero`).
+    #[msg("fheDiv/fheRem divisor must be non-zero")]
+    DivisionByZero,
 }

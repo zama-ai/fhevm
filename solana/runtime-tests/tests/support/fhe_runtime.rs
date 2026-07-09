@@ -129,7 +129,49 @@ impl CleartextBackend {
                 lhs.fhe_type,
                 wrapping_sub(lhs_value, rhs_value, lhs.fhe_type)?,
             ),
+            FheBinaryOpCode::Mul => (
+                lhs.fhe_type,
+                wrapping_mul(lhs_value, rhs_value, lhs.fhe_type)?,
+            ),
+            FheBinaryOpCode::Div => {
+                if rhs_value == 0 {
+                    return Err("division by zero in cleartext reference".to_string());
+                }
+                (lhs.fhe_type, mask(lhs_value / rhs_value, lhs.fhe_type)?)
+            }
+            FheBinaryOpCode::Rem => {
+                if rhs_value == 0 {
+                    return Err("remainder by zero in cleartext reference".to_string());
+                }
+                (lhs.fhe_type, mask(lhs_value % rhs_value, lhs.fhe_type)?)
+            }
+            FheBinaryOpCode::And => (lhs.fhe_type, mask(lhs_value & rhs_value, lhs.fhe_type)?),
+            FheBinaryOpCode::Or => (lhs.fhe_type, mask(lhs_value | rhs_value, lhs.fhe_type)?),
+            FheBinaryOpCode::Xor => (lhs.fhe_type, mask(lhs_value ^ rhs_value, lhs.fhe_type)?),
+            FheBinaryOpCode::Shl => (
+                lhs.fhe_type,
+                shift_left(lhs_value, rhs_value, lhs.fhe_type)?,
+            ),
+            FheBinaryOpCode::Shr => (
+                lhs.fhe_type,
+                shift_right(lhs_value, rhs_value, lhs.fhe_type)?,
+            ),
+            FheBinaryOpCode::Rotl => (
+                lhs.fhe_type,
+                rotate_left(lhs_value, rhs_value, lhs.fhe_type)?,
+            ),
+            FheBinaryOpCode::Rotr => (
+                lhs.fhe_type,
+                rotate_right(lhs_value, rhs_value, lhs.fhe_type)?,
+            ),
+            FheBinaryOpCode::Eq => (0, u128::from(lhs_value == rhs_value)),
+            FheBinaryOpCode::Ne => (0, u128::from(lhs_value != rhs_value)),
             FheBinaryOpCode::Ge => (0, u128::from(lhs_value >= rhs_value)),
+            FheBinaryOpCode::Gt => (0, u128::from(lhs_value > rhs_value)),
+            FheBinaryOpCode::Le => (0, u128::from(lhs_value <= rhs_value)),
+            FheBinaryOpCode::Lt => (0, u128::from(lhs_value < rhs_value)),
+            FheBinaryOpCode::Min => (lhs.fhe_type, lhs_value.min(rhs_value)),
+            FheBinaryOpCode::Max => (lhs.fhe_type, lhs_value.max(rhs_value)),
         };
 
         self.values.insert(
@@ -237,6 +279,54 @@ fn wrapping_sub(lhs: u128, rhs: u128, fhe_type: u8) -> Result<u128, String> {
     }
     let modulus = modulus(fhe_type)?;
     Ok(((lhs % modulus) + modulus - (rhs % modulus)) % modulus)
+}
+
+/// Truncates `value` to the width of `fhe_type` (identity for the full-width 128-bit type).
+fn mask(value: u128, fhe_type: u8) -> Result<u128, String> {
+    if fhe_type == 6 {
+        return Ok(value);
+    }
+    Ok(value % modulus(fhe_type)?)
+}
+
+fn wrapping_mul(lhs: u128, rhs: u128, fhe_type: u8) -> Result<u128, String> {
+    mask(lhs.wrapping_mul(rhs), fhe_type)
+}
+
+/// Left shift by `amount mod width`, truncated to the type width (matches FHE shift semantics).
+fn shift_left(lhs: u128, amount: u128, fhe_type: u8) -> Result<u128, String> {
+    let bits = fhe_type_width_bits(fhe_type)?;
+    let shift = (amount % u128::from(bits)) as u32;
+    mask(lhs.wrapping_shl(shift), fhe_type)
+}
+
+/// Right shift by `amount mod width` of the width-truncated operand.
+fn shift_right(lhs: u128, amount: u128, fhe_type: u8) -> Result<u128, String> {
+    let bits = fhe_type_width_bits(fhe_type)?;
+    let shift = (amount % u128::from(bits)) as u32;
+    Ok(mask(lhs, fhe_type)?.wrapping_shr(shift))
+}
+
+/// Rotate-left within the type width.
+fn rotate_left(value: u128, amount: u128, fhe_type: u8) -> Result<u128, String> {
+    let bits = fhe_type_width_bits(fhe_type)?;
+    let value = mask(value, fhe_type)?;
+    let shift = (amount % u128::from(bits)) as u32;
+    if shift == 0 {
+        return Ok(value);
+    }
+    mask((value << shift) | (value >> (bits - shift)), fhe_type)
+}
+
+/// Rotate-right within the type width.
+fn rotate_right(value: u128, amount: u128, fhe_type: u8) -> Result<u128, String> {
+    let bits = fhe_type_width_bits(fhe_type)?;
+    let value = mask(value, fhe_type)?;
+    let shift = (amount % u128::from(bits)) as u32;
+    if shift == 0 {
+        return Ok(value);
+    }
+    mask((value >> shift) | (value << (bits - shift)), fhe_type)
 }
 
 fn random_value(seed: [u8; 16], fhe_type: u8) -> Result<u128, String> {

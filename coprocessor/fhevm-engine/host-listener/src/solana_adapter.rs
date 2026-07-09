@@ -19,9 +19,10 @@ use crate::generated::{
     decode_anchor_event as decode_zama_host_anchor_event,
     decode_confidential_token_anchor_cpi_event,
     decode_confidential_token_anchor_event, ConfidentialTokenEvent,
-    FheBinaryOpCode, FheBinaryOpEvent, FheRandBoundedEvent, FheRandEvent,
-    FheTernaryOpCode, FheTernaryOpEvent, TrivialEncryptEvent, ZamaHostEvent,
-    CONFIDENTIAL_TOKEN_EVENT_VERSION, EVENT_VERSION,
+    FheBinaryOpCode, FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent,
+    FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
+    FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, TrivialEncryptEvent,
+    ZamaHostEvent, CONFIDENTIAL_TOKEN_EVENT_VERSION, EVENT_VERSION,
 };
 
 use crate::cmd::block_history::BlockSummary;
@@ -117,6 +118,10 @@ pub enum SolanaHostEvent {
     TrivialEncrypt(TrivialEncryptEvent),
     FheRand(FheRandEvent),
     FheRandBounded(FheRandBoundedEvent),
+    FheUnaryOp(FheUnaryOpEvent),
+    FheSum(FheSumEvent),
+    FheIsIn(FheIsInEvent),
+    FheMulDiv(FheMulDivEvent),
     FinalizedAccountFetch(SolanaFinalizedAccountFetch),
 }
 
@@ -291,6 +296,10 @@ fn needs_ordered_db_log_index(event: &SolanaHostEvent) -> bool {
             | SolanaHostEvent::TrivialEncrypt(_)
             | SolanaHostEvent::FheRand(_)
             | SolanaHostEvent::FheRandBounded(_)
+            | SolanaHostEvent::FheUnaryOp(_)
+            | SolanaHostEvent::FheSum(_)
+            | SolanaHostEvent::FheIsIn(_)
+            | SolanaHostEvent::FheMulDiv(_)
     )
 }
 
@@ -416,6 +425,18 @@ fn decode_solana_host_events(event: ZamaHostEvent) -> Vec<SolanaHostEvent> {
         ZamaHostEvent::FheRand(event) => vec![SolanaHostEvent::FheRand(event)],
         ZamaHostEvent::FheRandBounded(event) => {
             vec![SolanaHostEvent::FheRandBounded(event)]
+        }
+        ZamaHostEvent::FheUnaryOp(event) => {
+            vec![SolanaHostEvent::FheUnaryOp(event)]
+        }
+        ZamaHostEvent::FheSum(event) => {
+            vec![SolanaHostEvent::FheSum(event)]
+        }
+        ZamaHostEvent::FheIsIn(event) => {
+            vec![SolanaHostEvent::FheIsIn(event)]
+        }
+        ZamaHostEvent::FheMulDiv(event) => {
+            vec![SolanaHostEvent::FheMulDiv(event)]
         }
         ZamaHostEvent::DenySubjectUpdated(_)
         | ZamaHostEvent::HcuAppTrustUpdated(_)
@@ -554,6 +575,10 @@ fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
         ZamaHostEvent::FheRand(event) => event.version,
         ZamaHostEvent::FheRandBounded(event) => event.version,
         ZamaHostEvent::FheTernaryOp(event) => event.version,
+        ZamaHostEvent::FheUnaryOp(event) => event.version,
+        ZamaHostEvent::FheSum(event) => event.version,
+        ZamaHostEvent::FheIsIn(event) => event.version,
+        ZamaHostEvent::FheMulDiv(event) => event.version,
         ZamaHostEvent::HcuAppTrustUpdated(event) => event.version,
         ZamaHostEvent::HostConfigInitialized(event) => event.version,
         ZamaHostEvent::HostConfigUpdated(event) => event.version,
@@ -580,6 +605,18 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
         }
         SolanaHostEvent::FheRandBounded(event) => {
             SolanaMappedEvent::Tfhe(to_fhe_rand_bounded_event(event))
+        }
+        SolanaHostEvent::FheUnaryOp(event) => {
+            SolanaMappedEvent::Tfhe(to_fhe_unary_event(event))
+        }
+        SolanaHostEvent::FheSum(event) => {
+            SolanaMappedEvent::Tfhe(to_fhe_sum_event(event))
+        }
+        SolanaHostEvent::FheIsIn(event) => {
+            SolanaMappedEvent::Tfhe(to_fhe_is_in_event(event))
+        }
+        SolanaHostEvent::FheMulDiv(event) => {
+            SolanaMappedEvent::Tfhe(to_fhe_mul_div_event(event))
         }
         SolanaHostEvent::FinalizedAccountFetch(fetch) => {
             SolanaMappedEvent::FinalizedAccountFetch(fetch)
@@ -1084,6 +1121,110 @@ pub fn to_tfhe_event(event: FheBinaryOpEvent) -> Log<TfheContractEvents> {
                 result: Handle::from(event.result),
             })
         }
+        FheBinaryOpCode::Mul => {
+            TfheContractEvents::FheMul(TfheContract::FheMul {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Div => {
+            TfheContractEvents::FheDiv(TfheContract::FheDiv {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Rem => {
+            TfheContractEvents::FheRem(TfheContract::FheRem {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::And => {
+            TfheContractEvents::FheBitAnd(TfheContract::FheBitAnd {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Or => {
+            TfheContractEvents::FheBitOr(TfheContract::FheBitOr {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Xor => {
+            TfheContractEvents::FheBitXor(TfheContract::FheBitXor {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Shl => {
+            TfheContractEvents::FheShl(TfheContract::FheShl {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Shr => {
+            TfheContractEvents::FheShr(TfheContract::FheShr {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Rotl => {
+            TfheContractEvents::FheRotl(TfheContract::FheRotl {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Rotr => {
+            TfheContractEvents::FheRotr(TfheContract::FheRotr {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Eq => TfheContractEvents::FheEq(TfheContract::FheEq {
+            caller,
+            lhs: Handle::from(event.lhs),
+            rhs: Handle::from(event.rhs),
+            scalarByte: scalar_byte,
+            result: Handle::from(event.result),
+        }),
+        FheBinaryOpCode::Ne => TfheContractEvents::FheNe(TfheContract::FheNe {
+            caller,
+            lhs: Handle::from(event.lhs),
+            rhs: Handle::from(event.rhs),
+            scalarByte: scalar_byte,
+            result: Handle::from(event.result),
+        }),
         FheBinaryOpCode::Ge => TfheContractEvents::FheGe(TfheContract::FheGe {
             caller,
             lhs: Handle::from(event.lhs),
@@ -1091,6 +1232,45 @@ pub fn to_tfhe_event(event: FheBinaryOpEvent) -> Log<TfheContractEvents> {
             scalarByte: scalar_byte,
             result: Handle::from(event.result),
         }),
+        FheBinaryOpCode::Gt => TfheContractEvents::FheGt(TfheContract::FheGt {
+            caller,
+            lhs: Handle::from(event.lhs),
+            rhs: Handle::from(event.rhs),
+            scalarByte: scalar_byte,
+            result: Handle::from(event.result),
+        }),
+        FheBinaryOpCode::Le => TfheContractEvents::FheLe(TfheContract::FheLe {
+            caller,
+            lhs: Handle::from(event.lhs),
+            rhs: Handle::from(event.rhs),
+            scalarByte: scalar_byte,
+            result: Handle::from(event.result),
+        }),
+        FheBinaryOpCode::Lt => TfheContractEvents::FheLt(TfheContract::FheLt {
+            caller,
+            lhs: Handle::from(event.lhs),
+            rhs: Handle::from(event.rhs),
+            scalarByte: scalar_byte,
+            result: Handle::from(event.result),
+        }),
+        FheBinaryOpCode::Min => {
+            TfheContractEvents::FheMin(TfheContract::FheMin {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
+        FheBinaryOpCode::Max => {
+            TfheContractEvents::FheMax(TfheContract::FheMax {
+                caller,
+                lhs: Handle::from(event.lhs),
+                rhs: Handle::from(event.rhs),
+                scalarByte: scalar_byte,
+                result: Handle::from(event.result),
+            })
+        }
     };
 
     Log {
@@ -1166,6 +1346,81 @@ pub fn to_fhe_rand_bounded_event(
                 result: Handle::from(event.result),
             },
         ),
+    }
+}
+
+pub fn to_fhe_unary_event(event: FheUnaryOpEvent) -> Log<TfheContractEvents> {
+    let caller = Address::ZERO;
+    let ct = Handle::from(event.operand);
+    let result = Handle::from(event.result);
+    let data = match event.op {
+        FheUnaryOpCode::Neg => {
+            TfheContractEvents::FheNeg(TfheContract::FheNeg {
+                caller,
+                ct,
+                result,
+            })
+        }
+        FheUnaryOpCode::Not => {
+            TfheContractEvents::FheNot(TfheContract::FheNot {
+                caller,
+                ct,
+                result,
+            })
+        }
+        FheUnaryOpCode::Cast => TfheContractEvents::Cast(TfheContract::Cast {
+            caller,
+            ct,
+            toType: event.result[30],
+            result,
+        }),
+    };
+    Log {
+        address: caller,
+        data,
+    }
+}
+
+pub fn to_fhe_sum_event(event: FheSumEvent) -> Log<TfheContractEvents> {
+    let caller = Address::ZERO;
+    Log {
+        address: caller,
+        data: TfheContractEvents::FheSum(TfheContract::FheSum {
+            caller,
+            values: event.operands.into_iter().map(Handle::from).collect(),
+            result: Handle::from(event.result),
+        }),
+    }
+}
+
+pub fn to_fhe_is_in_event(event: FheIsInEvent) -> Log<TfheContractEvents> {
+    let caller = Address::ZERO;
+    Log {
+        address: caller,
+        data: TfheContractEvents::FheIsIn(TfheContract::FheIsIn {
+            caller,
+            value: Handle::from(event.value),
+            values: event.set.into_iter().map(Handle::from).collect(),
+            result: Handle::from(event.result),
+        }),
+    }
+}
+
+pub fn to_fhe_mul_div_event(event: FheMulDivEvent) -> Log<TfheContractEvents> {
+    let caller = Address::ZERO;
+    Log {
+        address: caller,
+        data: TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
+            caller,
+            factor1: Handle::from(event.factor1),
+            factor2: Handle::from(event.factor2),
+            divisor: FixedBytes::<32>::from(event.divisor),
+            // fheMulDiv scalarByte bitmask (EVM parity): bit0 divisor (always) | bit1 factor2-scalar → 0x01 enc, 0x03 scalar.
+            scalarByte: FixedBytes::<1>::from([
+                0x01 | (u8::from(event.scalar) << 1)
+            ]),
+            result: Handle::from(event.result),
+        }),
     }
 }
 
@@ -1559,20 +1814,43 @@ mod tests {
                 payload.extend_from_slice(&[8; 32]);
                 payload
             }),
-            anchor_event(
-                "AclAllowedEvent",
-                acl_allowed_payload([7; 32], [8; 32]),
-            ),
-            anchor_event("AclSubjectAllowedEvent", {
+            anchor_event("FheUnaryOpEvent", {
+                let mut payload = vec![EVENT_VERSION, 0];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&[1; 32]);
+                payload.extend_from_slice(&[2; 32]);
+                payload
+            }),
+            anchor_event("FheSumEvent", {
                 let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&3_u32.to_le_bytes());
                 payload.extend_from_slice(&[1; 32]);
                 payload.extend_from_slice(&[2; 32]);
                 payload.extend_from_slice(&[3; 32]);
-                payload.extend_from_slice(&[4; 32]);
                 payload.push(5);
-                payload.extend_from_slice(&[6; 32]);
-                payload.push(u8::MAX);
-                payload.extend_from_slice(&7_u64.to_le_bytes());
+                payload.extend_from_slice(&[4; 32]);
+                payload
+            }),
+            anchor_event("FheIsInEvent", {
+                let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&[1; 32]);
+                payload.extend_from_slice(&2_u32.to_le_bytes());
+                payload.extend_from_slice(&[2; 32]);
+                payload.extend_from_slice(&[3; 32]);
+                payload.push(5);
+                payload.extend_from_slice(&[4; 32]);
+                payload
+            }),
+            anchor_event("FheMulDivEvent", {
+                let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&[1; 32]);
+                payload.extend_from_slice(&[2; 32]);
+                payload.extend_from_slice(&[3; 32]);
+                payload.push(false.into());
+                payload.extend_from_slice(&[4; 32]);
                 payload
             }),
         ];
@@ -2132,13 +2410,6 @@ mod tests {
         assert_eq!(fetch.handle, None);
         assert_eq!(fetch.related_account, None);
         assert_eq!(fetch.subject, None);
-    }
-
-    fn acl_allowed_payload(handle: [u8; 32], subject: [u8; 32]) -> Vec<u8> {
-        let mut payload = vec![EVENT_VERSION];
-        payload.extend_from_slice(&handle);
-        payload.extend_from_slice(&subject);
-        payload
     }
 
     fn token_payload() -> Vec<u8> {

@@ -18,14 +18,43 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::ZamaHostError;
-use crate::state::{FheBinaryOpCode, FheEvalOperand, FheEvalStep, FheTernaryOpCode};
+use crate::state::{
+    FheBinaryOpCode, FheEvalOperand, FheEvalStep, FheTernaryOpCode, FheUnaryOpCode,
+};
 
 /// Cost of a binary op producing `fhe_type`. `scalar` is true when the RHS is a plaintext scalar.
 pub(super) fn binary_op_hcu(op: FheBinaryOpCode, fhe_type: u8, scalar: bool) -> Result<u64> {
     // No `_ =>` arm: a new FheBinaryOpCode variant must break the build here.
     match op {
         FheBinaryOpCode::Add | FheBinaryOpCode::Sub => arithmetic_hcu(fhe_type, scalar),
-        FheBinaryOpCode::Ge => comparison_hcu(fhe_type, scalar),
+        FheBinaryOpCode::Mul | FheBinaryOpCode::Div | FheBinaryOpCode::Rem => {
+            mul_div_rem_hcu(fhe_type, scalar)
+        }
+        FheBinaryOpCode::And | FheBinaryOpCode::Or | FheBinaryOpCode::Xor => {
+            bitwise_hcu(fhe_type, scalar)
+        }
+        FheBinaryOpCode::Shl
+        | FheBinaryOpCode::Shr
+        | FheBinaryOpCode::Rotl
+        | FheBinaryOpCode::Rotr => shift_hcu(fhe_type, scalar),
+        // Comparisons produce an `ebool` (fhe_type 0).
+        FheBinaryOpCode::Eq
+        | FheBinaryOpCode::Ne
+        | FheBinaryOpCode::Ge
+        | FheBinaryOpCode::Gt
+        | FheBinaryOpCode::Le
+        | FheBinaryOpCode::Lt => comparison_hcu(fhe_type, scalar),
+        // Min/Max: a comparison plus a select.
+        FheBinaryOpCode::Min | FheBinaryOpCode::Max => select_hcu(fhe_type),
+    }
+}
+
+/// Cost of a unary op producing `fhe_type`.
+pub(super) fn unary_op_hcu(op: FheUnaryOpCode, fhe_type: u8) -> Result<u64> {
+    // No `_ =>` arm: a new FheUnaryOpCode variant must break the build here.
+    match op {
+        FheUnaryOpCode::Neg | FheUnaryOpCode::Not => unary_transform_hcu(fhe_type),
+        FheUnaryOpCode::Cast => cast_hcu(fhe_type),
     }
 }
 
@@ -104,6 +133,107 @@ fn select_hcu(fhe_type: u8) -> Result<u64> {
         8 => Ok(75_000),
         _ => Err(error!(ZamaHostError::HcuUnknownCost)),
     }
+}
+
+/// Mul/Div/Rem: heaviest binary ops; monotonic in width; scalar form is cheaper.
+fn mul_div_rem_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    let base: u64 = match fhe_type {
+        2 => 150_000, // euint8
+        3 => 180_000, // euint16
+        4 => 220_000, // euint32
+        5 => 290_000, // euint64
+        6 => 480_000, // euint128
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    };
+    Ok(if scalar { base - base / 8 } else { base })
+}
+
+/// fheMulDiv: a dedicated cost mirroring EVM `HCULimit.checkHCUForFheMulDiv` — a single calibrated
+/// opHCU per result type and `factor2` scalar-ness (NOT a mul+div sum), since the coprocessor runs
+/// the fused op as an unoptimized 2N-wide chained mul+div. EVM caps mulDiv at Uint64.
+fn mul_div_hcu(fhe_type: u8, factor2_scalar: bool) -> Result<u64> {
+    let cost = match (fhe_type, factor2_scalar) {
+        (2, true) => 495_000,    // euint8, scalar factor2
+        (3, true) => 703_000,    // euint16
+        (4, true) => 1_080_000,  // euint32
+        (5, true) => 1_921_000,  // euint64
+        (2, false) => 524_000,   // euint8, encrypted factor2
+        (3, false) => 766_000,   // euint16
+        (4, false) => 1_311_000, // euint32
+        (5, false) => 2_911_000, // euint64
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    };
+    Ok(cost)
+}
+
+/// And/Or/Xor: bitwise, cheaper than arithmetic (no carry propagation); scalar form is cheaper.
+fn bitwise_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    let base: u64 = match fhe_type {
+        0 => 16_000, // ebool
+        2 => 20_000, // euint8
+        3 => 22_000, // euint16
+        4 => 24_000, // euint32
+        5 => 27_000, // euint64
+        6 => 32_000, // euint128
+        8 => 40_000, // euint256
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    };
+    Ok(if scalar { base - base / 8 } else { base })
+}
+
+/// Shl/Shr/Rotl/Rotr: shift/rotate, between bitwise and arithmetic; scalar form is cheaper.
+fn shift_hcu(fhe_type: u8, scalar: bool) -> Result<u64> {
+    let base: u64 = match fhe_type {
+        2 => 25_000, // euint8
+        3 => 28_000, // euint16
+        4 => 31_000, // euint32
+        5 => 35_000, // euint64
+        6 => 42_000, // euint128
+        8 => 55_000, // euint256
+        _ => return Err(error!(ZamaHostError::HcuUnknownCost)),
+    };
+    Ok(if scalar { base - base / 8 } else { base })
+}
+
+/// Neg/Not: single-operand transform; cheaper than a binary op. `Not` also applies to `ebool` (0).
+fn unary_transform_hcu(fhe_type: u8) -> Result<u64> {
+    match fhe_type {
+        0 => Ok(15_000), // ebool (Not)
+        2 => Ok(18_000), // euint8
+        3 => Ok(20_000), // euint16
+        4 => Ok(23_000), // euint32
+        5 => Ok(27_000), // euint64
+        6 => Ok(33_000), // euint128
+        8 => Ok(42_000), // euint256
+        _ => Err(error!(ZamaHostError::HcuUnknownCost)),
+    }
+}
+
+/// Cast: reinterpret/resize to `fhe_type`; cheap relative to arithmetic. Covers every type Cast's
+/// output validation accepts (`is_supported_fhe_type`: 0 | 2..=8), including Address (7) and
+/// Uint256 (8), so metering never rejects a cast the on-chain/client validation admitted.
+fn cast_hcu(fhe_type: u8) -> Result<u64> {
+    match fhe_type {
+        0 | 2 | 3 | 4 | 5 | 6 | 7 | 8 => Ok(5_000),
+        _ => Err(error!(ZamaHostError::HcuUnknownCost)),
+    }
+}
+
+/// Sum of `operand_count` ciphertexts ≈ `(operand_count - 1)` additions of `fhe_type`.
+fn sum_hcu(fhe_type: u8, operand_count: usize) -> Result<u64> {
+    let per_add = arithmetic_hcu(fhe_type, false)?;
+    let adds = operand_count.max(1) as u64 - 1;
+    per_add
+        .checked_mul(adds)
+        .ok_or_else(|| error!(ZamaHostError::HcuUnknownCost))
+}
+
+/// IsIn: one equality per set member (select-cost proxy, spanning the full Uint8..Uint256 range), OR-reduced to `ebool`.
+fn is_in_hcu(fhe_type: u8, set_len: usize) -> Result<u64> {
+    let per_member = select_hcu(fhe_type)?;
+    per_member
+        .checked_mul(set_len.max(1) as u64)
+        .ok_or_else(|| error!(ZamaHostError::HcuUnknownCost))
 }
 
 /// `0 = unlimited`: a no-op when `limit == 0`, otherwise `used <= limit` or `err`.
@@ -199,8 +329,58 @@ pub(super) fn meter_eval_plan(
                 (cost, depth)
             }
             FheEvalStep::TrivialEncrypt { fhe_type, .. } => (trivial_encrypt_hcu(*fhe_type)?, 0),
-            FheEvalStep::Rand { fhe_type, .. } | FheEvalStep::RandBounded { fhe_type, .. } => {
-                (rand_hcu(*fhe_type)?, 0)
+            FheEvalStep::Rand { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0),
+            FheEvalStep::Unary {
+                op,
+                operand,
+                output_fhe_type,
+                ..
+            } => {
+                let cost = unary_op_hcu(*op, *output_fhe_type)?;
+                let depth = operand_depth(operand, &step_depths);
+                (cost, depth)
+            }
+            // Bounded randomness is a fresh birth (no operands), like Rand.
+            FheEvalStep::RandBounded { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0),
+            FheEvalStep::Sum {
+                operands, fhe_type, ..
+            } => {
+                let cost = sum_hcu(*fhe_type, operands.len())?;
+                let depth = operands
+                    .iter()
+                    .map(|operand| operand_depth(operand, &step_depths))
+                    .max()
+                    .unwrap_or(0);
+                (cost, depth)
+            }
+            FheEvalStep::IsIn {
+                value,
+                set,
+                fhe_type,
+                ..
+            } => {
+                let cost = is_in_hcu(*fhe_type, set.len())?;
+                let depth = operand_depth(value, &step_depths).max(
+                    set.iter()
+                        .map(|operand| operand_depth(operand, &step_depths))
+                        .max()
+                        .unwrap_or(0),
+                );
+                (cost, depth)
+            }
+            FheEvalStep::MulDiv {
+                factor1,
+                factor2,
+                output_fhe_type,
+                ..
+            } => {
+                let cost = mul_div_hcu(
+                    *output_fhe_type,
+                    matches!(factor2, FheEvalOperand::Scalar(_)),
+                )?;
+                let depth =
+                    operand_depth(factor1, &step_depths).max(operand_depth(factor2, &step_depths));
+                (cost, depth)
             }
         };
 
@@ -299,6 +479,23 @@ mod tests {
         }
         assert!(binary_op_hcu(FheBinaryOpCode::Ge, EBOOL, false).unwrap() > 0);
         assert!(binary_op_hcu(FheBinaryOpCode::Ge, EBOOL, true).unwrap() > 0);
+    }
+
+    #[test]
+    fn unary_op_hcu_covers_every_validated_output_type() {
+        // Metering must define a cost for every output type the unary validation accepts, or a
+        // validated op fails mid-frame with HcuUnknownCost. Cast accepts the full supported set
+        // (is_supported_fhe_type: 0 | 2..=8, including Address=7 and Uint256=8).
+        for ty in [EBOOL, EU8, 3, 4, EU64, EU128, 7, 8] {
+            assert!(unary_op_hcu(FheUnaryOpCode::Cast, ty).unwrap() > 0);
+        }
+        // Neg accepts 2..=6 | 8; Not additionally accepts ebool.
+        for ty in [EU8, 3, 4, EU64, EU128, 8] {
+            assert!(unary_op_hcu(FheUnaryOpCode::Neg, ty).unwrap() > 0);
+        }
+        for ty in [EBOOL, EU8, 3, 4, EU64, EU128, 8] {
+            assert!(unary_op_hcu(FheUnaryOpCode::Not, ty).unwrap() > 0);
+        }
     }
 
     #[test]

@@ -10,7 +10,8 @@ use super::input_verification::{verify_input_attestation, InputVerifierParams};
 use crate::{
     errors::ZamaHostError,
     events::{
-        FheBinaryOpEvent, FheRandBoundedEvent, FheRandEvent, FheTernaryOpEvent, TrivialEncryptEvent,
+        FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent, FheRandBoundedEvent, FheRandEvent,
+        FheSumEvent, FheTernaryOpEvent, FheUnaryOpEvent, TrivialEncryptEvent,
     },
     state::*,
 };
