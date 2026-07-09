@@ -2499,6 +2499,7 @@ mod tests {
             log_level: Level::INFO,
             health_check_port: 0,
             metric_fhe_batch_latency: MetricsConfig::default(),
+            stack_version: false,
             drift_revert_watcher_timeouts: WatcherTimeouts {
                 poll_query_timeout: Duration::from_secs(5),
                 db_down_limit: Duration::from_secs(5),

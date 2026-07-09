@@ -172,7 +172,10 @@ async fn test_block_scoped_trivial_shift_cleans_carries(
     let sum_handle = next_handle_with_type(TYPE_FHE_UINT4);
     let transaction_id = next_handle();
 
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt(
         &listener_db,
         &mut tx,

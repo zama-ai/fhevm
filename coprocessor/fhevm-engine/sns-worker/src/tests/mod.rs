@@ -354,7 +354,7 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
 
     // Acquire the task the same way the worker does, then release the lock.
     let mut trx = pool.begin().await.unwrap();
-    let task = query_sns_tasks(&mut trx, 1, Order::Asc, &key_id_gw)
+    let task = query_sns_tasks(&mut trx, 1, 0, Order::Asc, &key_id_gw)
         .await
         .unwrap()
         .expect("one task")

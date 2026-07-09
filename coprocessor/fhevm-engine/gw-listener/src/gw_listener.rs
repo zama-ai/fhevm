@@ -540,63 +540,14 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         progress: ListenerProgress,
         number_of_last_processed_updates: &mut u64,
     ) -> anyhow::Result<()> {
-        let last_block_num = progress
-            .last_processed_block_num
-            .map(i64::try_from)
-            .transpose()?;
-        let earliest_open_ct_commits_block = progress
-            .earliest_open_ct_commits_block
-            .map(i64::try_from)
-            .transpose()?;
-        // Cutover safety: gate the watermark write (+ its notify) behind the
-        // shared cutover lock + retirement re-check, so a retired BCS listener
-        // stops advancing the watermark the instant a cutover flips the stack.
-        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+        update_listener_progress(
             db_pool,
+            &self.conf,
             self.stack_mode.gcs_mode(),
+            progress,
+            number_of_last_processed_updates,
         )
-        .await?
-        else {
-            info!("Cutover completed — gw-listener skipping watermark update (retired stack)");
-            return Ok(());
-        };
-        sqlx::query(
-            "INSERT into gw_listener_last_block (dummy_id, last_block_num, earliest_open_ct_commits_block)
-            VALUES (true, $1, $2)
-            ON CONFLICT (dummy_id) DO UPDATE SET
-                last_block_num = EXCLUDED.last_block_num,
-                earliest_open_ct_commits_block = EXCLUDED.earliest_open_ct_commits_block",
-        )
-        .bind(last_block_num)
-        .bind(earliest_open_ct_commits_block)
-        .execute(tx.as_mut())
-        .await?;
-
-        // Wake the upgrade-controller's Gateway-side readiness task so it can
-        // re-check whether the GCS gw-listener has reached `gw_start_block`.
-        // The payload carries the new tip purely for observability; the
-        // controller re-reads the `gw_listener_last_block` watermark itself. In
-        // GCS mode this notify (and the progress row above) target the `gcs`
-        // schema's watermark via the connection's `search_path`.
-        if let Some(last_block_num) = last_block_num {
-            sqlx::query("SELECT pg_notify($1, $2)")
-                .bind(EVENT_GW_NEW_BLOCK)
-                .bind(last_block_num.to_string())
-                .execute(tx.as_mut())
-                .await?;
-        }
-        tx.commit().await?;
-
-        *number_of_last_processed_updates += 1;
-        if (*number_of_last_processed_updates)
-            .is_multiple_of(self.conf.log_last_processed_every_number_of_updates)
-        {
-            info!(
-                last_block_num,
-                earliest_open_ct_commits_block, "Updated listener progress"
-            );
-        }
-        Ok(())
+        .await
     }
 
     pub async fn health_check(&self) -> HealthStatus {
@@ -669,6 +620,69 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
     }
 }
 
+async fn update_listener_progress(
+    db_pool: &Pool<Postgres>,
+    conf: &ConfigSettings,
+    gcs_mode: bool,
+    progress: ListenerProgress,
+    number_of_last_processed_updates: &mut u64,
+) -> anyhow::Result<()> {
+    let last_block_num = progress
+        .last_processed_block_num
+        .map(i64::try_from)
+        .transpose()?;
+    let earliest_open_ct_commits_block = progress
+        .earliest_open_ct_commits_block
+        .map(i64::try_from)
+        .transpose()?;
+    // Cutover safety: gate the watermark write (+ its notify) behind the
+    // shared cutover lock + retirement re-check, so a retired BCS listener
+    // stops advancing the watermark the instant a cutover flips the stack.
+    let Some(mut tx) =
+        fhevm_engine_common::versioning::begin_write_guarded(db_pool, gcs_mode).await?
+    else {
+        info!("Cutover completed — gw-listener skipping watermark update (retired stack)");
+        return Ok(());
+    };
+    sqlx::query(
+        "INSERT into gw_listener_last_block (dummy_id, last_block_num, earliest_open_ct_commits_block)
+        VALUES (true, $1, $2)
+        ON CONFLICT (dummy_id) DO UPDATE SET
+            last_block_num = EXCLUDED.last_block_num,
+            earliest_open_ct_commits_block = EXCLUDED.earliest_open_ct_commits_block",
+    )
+    .bind(last_block_num)
+    .bind(earliest_open_ct_commits_block)
+    .execute(tx.as_mut())
+    .await?;
+
+    // Wake the upgrade-controller's Gateway-side readiness task so it can
+    // re-check whether the GCS gw-listener has reached `gw_start_block`.
+    // The payload carries the new tip purely for observability; the
+    // controller re-reads the `gw_listener_last_block` watermark itself. In
+    // GCS mode this notify (and the progress row above) target the `gcs`
+    // schema's watermark via the connection's `search_path`.
+    if let Some(last_block_num) = last_block_num {
+        sqlx::query("SELECT pg_notify($1, $2)")
+            .bind(EVENT_GW_NEW_BLOCK)
+            .bind(last_block_num.to_string())
+            .execute(tx.as_mut())
+            .await?;
+    }
+    tx.commit().await?;
+
+    *number_of_last_processed_updates += 1;
+    if (*number_of_last_processed_updates)
+        .is_multiple_of(conf.log_last_processed_every_number_of_updates)
+    {
+        info!(
+            last_block_num,
+            earliest_open_ct_commits_block, "Updated listener progress"
+        );
+    }
+    Ok(())
+}
+
 async fn get_listener_progress(db_pool: &Pool<Postgres>) -> anyhow::Result<ListenerProgress> {
     let row = sqlx::query!(
         r#"
@@ -725,6 +739,7 @@ mod tests {
         update_listener_progress(
             &db_pool,
             &conf,
+            conf.gcs_mode,
             ListenerProgress {
                 last_processed_block_num: Some(42),
                 earliest_open_ct_commits_block: Some(17),
@@ -744,6 +759,7 @@ mod tests {
         update_listener_progress(
             &db_pool,
             &conf,
+            conf.gcs_mode,
             ListenerProgress {
                 last_processed_block_num: Some(43),
                 earliest_open_ct_commits_block: None,

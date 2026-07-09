@@ -177,7 +177,10 @@ async fn test_fork_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
     let tx_2b = next_handle();
 
     // Block 1A: TrivialEncrypt(10) → H
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt_in_block(
         &listener_db,
         &mut tx,
@@ -195,7 +198,10 @@ async fn test_fork_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Block 1B: TrivialEncrypt(20) → H (same handle, different value, different branch)
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt_in_block(
         &listener_db,
         &mut tx,
@@ -231,7 +237,10 @@ async fn test_fork_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Block 2A: H + H = out_A  (on branch A)
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_fhe_add_in_block(
         &listener_db,
         &mut tx,
@@ -250,7 +259,10 @@ async fn test_fork_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Block 2B: H + H = out_B  (on branch B)
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_fhe_add_in_block(
         &listener_db,
         &mut tx,
@@ -344,7 +356,10 @@ async fn test_fork_finalization_cleanup() -> Result<(), Box<dyn std::error::Erro
     let tx_2b = next_handle();
 
     // Block 1A: TrivialEncrypt(10) → H
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt_in_block(
         &listener_db,
         &mut tx,
@@ -362,7 +377,10 @@ async fn test_fork_finalization_cleanup() -> Result<(), Box<dyn std::error::Erro
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Block 1B: TrivialEncrypt(20) → H
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt_in_block(
         &listener_db,
         &mut tx,
@@ -380,7 +398,10 @@ async fn test_fork_finalization_cleanup() -> Result<(), Box<dyn std::error::Erro
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Block 2B (descendant of 1B): H + H = desc_handle
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_fhe_add_in_block(
         &listener_db,
         &mut tx,
@@ -421,7 +442,8 @@ async fn test_fork_finalization_cleanup() -> Result<(), Box<dyn std::error::Erro
     let mut db_tx = pool.begin().await?;
     let orphaned = listener_db
         .update_block_as_finalized(&mut db_tx, 1, &hash_1a)
-        .await?;
+        .await?
+        .expect("finalization passes the parent-linkage check for an ingested block");
     listener_db
         .cleanup_orphaned_branch_state(&mut db_tx, &orphaned)
         .await?;
@@ -570,7 +592,10 @@ async fn test_restart_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
 
-        let mut tx = listener_db.new_transaction().await?;
+        let mut tx = listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
         insert_trivial_encrypt_in_block(
             &listener_db,
             &mut tx,
@@ -587,7 +612,10 @@ async fn test_restart_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
         tx.commit().await?;
         wait_until_all_allowed_handles_computed(&app).await?;
 
-        let mut tx = listener_db.new_transaction().await?;
+        let mut tx = listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
         insert_trivial_encrypt_in_block(
             &listener_db,
             &mut tx,
@@ -615,7 +643,10 @@ async fn test_restart_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
         } = setup_event_harness().await?;
 
         // Block 2A: H + H = out_A (branch A)
-        let mut tx = listener_db.new_transaction().await?;
+        let mut tx = listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
         insert_fhe_add_in_block(
             &listener_db,
             &mut tx,
@@ -634,7 +665,10 @@ async fn test_restart_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
         wait_until_all_allowed_handles_computed(&app).await?;
 
         // Block 2B: H + H = out_B (branch B)
-        let mut tx = listener_db.new_transaction().await?;
+        let mut tx = listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
         insert_fhe_add_in_block(
             &listener_db,
             &mut tx,

@@ -1251,7 +1251,11 @@ impl Database {
         finalized_block_hash: &[u8],
         orphaned_hashes: &[Vec<u8>],
     ) -> Result<(), SqlxError> {
-        let mut tx = self.new_transaction().await?;
+        let Some(mut tx) = self.new_transaction().await? else {
+            // Write-guarded (GCS drain): leave the job pending; the poller
+            // retries it once writes are allowed again.
+            return Ok(());
+        };
         self.cleanup_orphaned_branch_state(&mut tx, orphaned_hashes)
             .await?;
         sqlx::query!(

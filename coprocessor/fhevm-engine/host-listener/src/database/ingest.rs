@@ -1055,7 +1055,11 @@ mod tests {
         )
         .await;
 
-        let mut tx = db.new_transaction().await.expect("settlement tx");
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
         let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
             .await
             .expect("read settlement");
@@ -1203,7 +1207,11 @@ mod tests {
             "finalization should not run heavy cleanup inline"
         );
 
-        let mut tx = db.new_transaction().await.expect("settlement tx");
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
         let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
             .await
             .expect("read settlement");
@@ -1258,7 +1266,11 @@ mod tests {
         )
         .await;
 
-        let mut tx = db.new_transaction().await.expect("settlement tx");
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
         let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
             .await
             .expect("read settlement");

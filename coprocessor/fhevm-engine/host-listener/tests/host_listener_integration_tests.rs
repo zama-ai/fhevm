@@ -1910,7 +1910,10 @@ async fn test_settlement_blocks_on_pbs_event_block_hash(
     .execute(&pool)
     .await?;
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let settled_height = advance_settled_height(
         &mut tx,
         chain_id.as_i64(),
@@ -2014,7 +2017,10 @@ async fn test_quarantined_cleanup_job_blocks_settlement(
     .await?;
     assert_eq!(status, "quarantined");
 
-    let mut tx = db.new_transaction().await?;
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let settled_height =
         advance_settled_height(&mut tx, chain_id.as_i64(), 1, 0).await?;
     tx.rollback().await?;

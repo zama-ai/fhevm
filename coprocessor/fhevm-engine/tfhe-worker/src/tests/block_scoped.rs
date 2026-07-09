@@ -256,7 +256,10 @@ async fn test_block_scoped_simple_add() -> Result<(), Box<dyn std::error::Error>
     let output_handle = next_handle();
     let transaction_id = next_handle();
 
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     // FheUint32 = type 4
     insert_trivial_encrypt(
         &listener_db,
@@ -357,7 +360,10 @@ async fn test_block_scoped_boundary_handle_multi_use() -> Result<(), Box<dyn std
     let tx2_id = next_handle();
 
     // Block 1: TrivialEncrypt(5) -> input_handle
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt_in_block(
         &listener_db,
         &mut tx,
@@ -377,7 +383,10 @@ async fn test_block_scoped_boundary_handle_multi_use() -> Result<(), Box<dyn std
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Block 2: h + h = out1, h + 2(scalar) = out2
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_fhe_add_in_block(
         &listener_db,
         &mut tx,
@@ -451,7 +460,10 @@ async fn test_block_scoped_inter_tx_reuse() -> Result<(), Box<dyn std::error::Er
     let tx2_id = next_handle();
 
     // Tx1: TrivialEncrypt(4) -> a, a + a = b
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt(&listener_db, &mut tx, tx1_id, 4, 4, a_handle, true).await?;
     allow_handle(&listener_db, &mut tx, &a_handle).await?;
     insert_event(
@@ -474,7 +486,10 @@ async fn test_block_scoped_inter_tx_reuse() -> Result<(), Box<dyn std::error::Er
     // Tx2: b + b = c (depends on tx1's output). Same-block producer/consumer
     // edges must share a dependence chain (ingest assigns chains as
     // same-block connected components), so tx2 joins tx1's chain.
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_event_in_chain(
         &listener_db,
         &mut tx,
@@ -527,7 +542,10 @@ async fn test_cross_chain_same_block_closure() -> Result<(), Box<dyn std::error:
     let tx2_id = next_handle();
 
     // Tx1 (chain = tx1_id): TrivialEncrypt(6) -> a, a + a = b
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt(&listener_db, &mut tx, tx1_id, 6, 4, a_handle, true).await?;
     allow_handle(&listener_db, &mut tx, &a_handle).await?;
     insert_event(
@@ -625,7 +643,10 @@ async fn test_cross_block_reuse_materializes() -> Result<(), Box<dyn std::error:
     // Block 1: TrivialEncrypt(6) -> a_handle
     // Must complete before block 2 is inserted, because the worker resolves
     // cross-block dependencies from the ciphertexts table at query time.
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt_in_block(
         &listener_db,
         &mut tx,
@@ -646,7 +667,10 @@ async fn test_cross_block_reuse_materializes() -> Result<(), Box<dyn std::error:
 
     // Block 2: a_handle + a_handle = output_handle
     // Now a_handle's ciphertext is in the DB, so block 2 can resolve it.
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_fhe_add_in_block(
         &listener_db,
         &mut tx,
@@ -730,7 +754,10 @@ async fn test_cross_partition_boundary_reuse() -> Result<(), Box<dyn std::error:
     let tx2_id = next_handle();
 
     // Block 1: TrivialEncrypt(5) -> input_handle
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt_in_block(
         &listener_db,
         &mut tx,
@@ -750,7 +777,10 @@ async fn test_cross_partition_boundary_reuse() -> Result<(), Box<dyn std::error:
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Block 2, Tx1: input_handle + input_handle = out1 (independent)
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_fhe_add_in_block(
         &listener_db,
         &mut tx,
@@ -769,7 +799,10 @@ async fn test_cross_partition_boundary_reuse() -> Result<(), Box<dyn std::error:
     mark_test_dcid_ready(&pool, &tx1_id, 2, &block_2_hash).await?;
 
     // Block 2, Tx2: input_handle + 3(scalar) = out2 (independent)
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     let scalar_3 = {
         let mut out = [0_u8; 32];
         out[31] = 3;
@@ -847,7 +880,10 @@ async fn test_multi_producer_same_handle_bit_identity() -> Result<(), Box<dyn st
         let tid_a = next_handle();
         let tid_b = next_handle();
 
-        let mut tx = listener_db.new_transaction().await?;
+        let mut tx = listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
         insert_trivial_encrypt(&listener_db, &mut tx, tid_a, 9, 4, lhs, true).await?;
         allow_handle(&listener_db, &mut tx, &lhs).await?;
         insert_trivial_encrypt(&listener_db, &mut tx, tid_a, 1, 4, rhs, true).await?;
@@ -1035,7 +1071,10 @@ async fn test_same_block_split_across_cycles_bit_identity() -> Result<(), Box<dy
         // Producer: TrivialEncrypt(5) -> src. Allowed so it is persisted to
         // ciphertexts_branch -- this is the byte-image the regressed boundary
         // path would wrongly re-fetch and re-randomize for the consumer.
-        let mut tx = listener_db.new_transaction().await?;
+        let mut tx = listener_db
+            .new_transaction()
+            .await?
+            .expect("new_transaction() returns Some on a live stack");
         insert_trivial_encrypt_in_block(
             &listener_db,
             &mut tx,
@@ -1087,7 +1126,10 @@ async fn test_same_block_split_across_cycles_bit_identity() -> Result<(), Box<dy
                 "producer output must be persisted to ciphertexts_branch before \
                  the consumer is inserted, so the invalid same-block DB fetch path is reachable"
             );
-            let mut tx = listener_db.new_transaction().await?;
+            let mut tx = listener_db
+                .new_transaction()
+                .await?
+                .expect("new_transaction() returns Some on a live stack");
             insert_fhe_add_in_block(
                 &listener_db,
                 &mut tx,
@@ -1174,7 +1216,10 @@ async fn test_branchless_dependency_resolves() -> Result<(), Box<dyn std::error:
     let tx2_id = next_handle();
 
     // Block 1: produce real ciphertext bytes for input_handle.
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt_in_block(
         &listener_db,
         &mut tx,
@@ -1213,7 +1258,10 @@ async fn test_branchless_dependency_resolves() -> Result<(), Box<dyn std::error:
         .await?;
 
     // Block 2: consume the branchless input.
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_fhe_add_in_block(
         &listener_db,
         &mut tx,
@@ -1280,7 +1328,10 @@ async fn test_legacy_ciphertext_fallback_resolves() -> Result<(), Box<dyn std::e
     let tx2_id = next_handle();
 
     // Block 1: produce real ciphertext bytes for input_handle.
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_trivial_encrypt_in_block(
         &listener_db,
         &mut tx,
@@ -1326,7 +1377,10 @@ async fn test_legacy_ciphertext_fallback_resolves() -> Result<(), Box<dyn std::e
     .await?;
 
     // Block 2: consume the legacy input.
-    let mut tx = listener_db.new_transaction().await?;
+    let mut tx = listener_db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
     insert_fhe_add_in_block(
         &listener_db,
         &mut tx,
