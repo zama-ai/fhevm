@@ -59,6 +59,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     git config --global --add safe.directory /app && \
     cargo fetch && \
     cargo build --profile=${CARGO_PROFILE} -p kms-worker && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     cp target/${CARGO_PROFILE}/kms-worker /tmp/kms-worker
 
 # Stage 2: Runtime image

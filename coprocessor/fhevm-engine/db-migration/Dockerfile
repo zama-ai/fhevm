@@ -39,7 +39,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo install sqlx-cli --version 0.7.2 \
-    --no-default-features --features postgres,rustls --locked
+    --no-default-features --features postgres,rustls --locked && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi
 
 # Install AWS CLI v2 (self-contained bundle) for RDS IAM auth token generation.
 # prepare_database_url.sh shells out to `aws rds generate-db-auth-token`. The bundle
@@ -87,6 +88,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo build --release -p fhevm-engine-common --bin resolve_database_url && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
     cp target/release/resolve_database_url /out/
 

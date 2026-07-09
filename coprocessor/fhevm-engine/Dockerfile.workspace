@@ -121,6 +121,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     fi && \
     cargo fetch && \
     SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
     cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \
     cp target/${CARGO_PROFILE}/host_listener /out/ && \
@@ -174,7 +175,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo install sqlx-cli --version 0.7.2 \
-    --no-default-features --features postgres,rustls --locked
+    --no-default-features --features postgres,rustls --locked && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi
 
 # =============================================================================
 # Stage 2a: tfhe-worker runtime

@@ -46,7 +46,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
-    cargo build --profile=${LTO_RELEASE}
+    cargo build --profile=${LTO_RELEASE} && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi
 
 # Stage 2: Runtime image
 FROM cgr.dev/chainguard/busybox:latest-glibc AS prod

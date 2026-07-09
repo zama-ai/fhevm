@@ -53,6 +53,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     fi && \
     cargo fetch && \
     SQLX_OFFLINE=true cargo build --profile=${CARGO_PROFILE} -p tfhe-worker && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     cp target/${CARGO_PROFILE}/tfhe_worker /tmp/tfhe_worker
 
 # Stage 2: Runtime image

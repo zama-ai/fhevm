@@ -40,7 +40,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
-    cargo install sqlx-cli --version 0.8.6 --no-default-features --features postgres --locked
+    cargo install sqlx-cli --version 0.8.6 --no-default-features --features postgres --locked && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi
 
 COPY kms-connector/connector-db/init_db.sh ./init_db.sh
 COPY kms-connector/connector-db/migrations ./migrations
