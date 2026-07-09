@@ -1,7 +1,7 @@
 {
   "name": "@fhevm/sdk",
   "description": "TypeScript Interface for FHEVM",
-  "version": "1.1.0-alpha.7",
+  "version": "1.1.0-alpha.8",
   "type": "module",
   "main": "./_cjs/index.js",
   "module": "./_esm/index.js",
