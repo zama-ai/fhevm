@@ -1,7 +1,7 @@
 # MMR ACL MVP
 
 This is the canonical reviewer map for the Solana `EncryptedValue` + MMR ACL MVP. The detailed
-rationale lives in DD-031 through DD-035 in [`DESIGN_DECISIONS.md`](./DESIGN_DECISIONS.md);
+rationale lives in DD-031 through DD-037 in [`DESIGN_DECISIONS.md`](./DESIGN_DECISIONS.md);
 this note records the operational model in one place.
 
 ## Identity And Authority
@@ -22,7 +22,9 @@ this note records the operational model in one place.
   ordinary transient handle over `(op / plaintext / rand-seed, operands, fhe_type, chain_id,
   previous_bank_hash, unix_timestamp, context_id, op_index)` and `value_key` is the output lineage's
   identity. The `value_key` binding domain-separates the output from the unbound base and from other
-  lineages.
+  lineages. In plain terms: `base_handle` is *what* was computed (op, operands, block entropy);
+  `value_key` is *which* stored value the result becomes; binding the two makes a stored ciphertext's
+  handle unique to both.
 - There is **no per-output sequence** in the handle. The earlier leaf-count nonce
   (`output_nonce_sequence`) was removed (DD-015): per-block entropy plus the operands/op/type already
   distinguish distinct ciphertexts, and this matches EVM `FHEVMExecutor`, which binds no per-output
@@ -64,9 +66,12 @@ this note records the operational model in one place.
   facts, including live `EncryptedValue` state or MMR proof validity, before releasing plaintext.
 - Materiality is not Solana host state. DD-031 moved ciphertext material commitments to the gateway
   `CiphertextCommits`; Solana ACL state answers only who may use or decrypt a handle.
-- The relayer-colocated MMR proof service is an untrusted helper (DD-035). Current limitation: the
-  relayer's Solana user-decrypt path does not yet call the proof builder in-process; proofs are
-  attached out of band through the interim proof-service path.
+- The relayer-colocated MMR proof service is an untrusted helper (DD-035). The end-to-end decrypt flow
+  fetches historical and public MMR proofs from this service (`GET /internal/solana/mmr-proof`); the
+  KMS re-verifies each proof against finalized on-chain peaks before releasing plaintext. One case is
+  still built by the test client rather than the service: the amount burned during an unwrap, whose
+  handle comes from block randomness and appears only in an event, so the events-off build has nothing
+  for the service to read (tracked in fhevm-internal#1675).
 
 ## Flow Diagrams
 
@@ -161,6 +166,12 @@ flowchart TD
     relayer -.->|"migrate to Carbon/Geyser,<br/>then drop op-event ABI"| followup["fhevm-internal#1665"]
 ```
 
+Ingestion is Yellowstone-only: the host-listener always rebuilds events from instruction data and never
+consumes emitted events. `emit_cpi!` is kept for one reason — the relayer proof service reads it over
+RPC to recover the handles of values made public at creation (those handles come from block randomness
+and appear in no instruction argument). Both the on-chain events and the now-unused emit-decode listener
+code are removed once Carbon indexing lands (fhevm-internal#1665, #1676).
+
 ## Resource Bounds And Liveness
 
 No lineage can be stranded by resource limits. The peak-based MMR decouples per-transaction cost from
@@ -189,6 +200,7 @@ to a follow-up.
 - DD-031: deleted host-owned `HandleMaterialCommitment`; materiality lives in `CiphertextCommits`.
 - DD-032: introduced stable `EncryptedValue` lineages, single allowed-subject ACL, and MMR leaves.
 - DD-033: lifecycle instructions emit no events; indexers replay instruction data.
+- DD-034: Solana compute is scheduled eagerly (`is_allowed` is a scheduling gate, not decrypt auth).
 - DD-035: proof building is relayer-colocated and untrusted; KMS re-verifies proofs against finalized
   chain state.
 - DD-036: burn-redemption consume authorizes by MMR public-decrypt proof (born-public delta), not the
