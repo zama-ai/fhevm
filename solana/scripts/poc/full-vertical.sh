@@ -35,6 +35,9 @@ pub_field() {
 }
 LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"
 PUBLIC_DECRYPT_JSON=""
+# Mode-byte-free borsh(MmrInclusionProof) for the last handle proved — the PROOF the on-chain
+# consume steps (redeem_burned_amount_secp / disclose_*_secp) borsh-decode. Set by run_public_decrypt_with_proof.
+PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES=""
 
 run_public_decrypt_with_proof() {
   local label="$1"
@@ -58,10 +61,13 @@ run_public_decrypt_with_proof() {
   pub_leaf_index="$(pub_field "$proof" leafIndex)"
   pub_siblings="$(pub_field "$proof" siblings)"
   pub_mmr_proof_bytes="$(pub_field "$proof" mmrProofBytes)"
-  for required in pub_h pub_encrypted_value_account pub_acl_value_key pub_leaf_count pub_proof_slot pub_leaf_index pub_mmr_proof_bytes; do
+  local pub_mmr_inclusion_proof_bytes
+  pub_mmr_inclusion_proof_bytes="$(pub_field "$proof" mmrInclusionProofBytes)"
+  for required in pub_h pub_encrypted_value_account pub_acl_value_key pub_leaf_count pub_proof_slot pub_leaf_index pub_mmr_proof_bytes pub_mmr_inclusion_proof_bytes; do
     [ -n "${!required}" ] || fail "$label public proof missing $required: $proof"
   done
   [ "$pub_h" = "$handle" ] || fail "$label public proof handle $pub_h != $handle"
+  PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES="$pub_mmr_inclusion_proof_bytes"
 
   local result
   if [ -n "$expected" ]; then
@@ -346,6 +352,10 @@ echo "    disclosure request witness created (KMS context pinned); handle releas
 # Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert.
 run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL"
 cr="$PUBLIC_DECRYPT_JSON"
+# The burned handle's public-decrypt MMR proof (DD-036): both the redeem and disclose consume
+# steps authorize by verifying it against the lineage's on-chain peaks. request_burn_redemption
+# appends no leaf, so this proof stays valid through both consumes.
+BURNED_PROOF_BYTES="$PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES"
 CLEARTEXT="$(echo "$cr" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 KMS_SIG="0x$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
 CEXTRA="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','$EXTRA'))")"
@@ -361,14 +371,14 @@ echo "    burn-redemption request witness created (KMS context pinned)"
 # Redeem: bind the redemption witness + on-chain secp256k1 verify of the KMS cert against the
 # witness-pinned KMS context + SPL vault release.
 redout="$(lc CONSUME_REDEEM=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
-   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1)" || true
+   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 PROOF="$BURNED_PROOF_BYTES")" || true
 echo "$redout" | grep -q 'OK redeem_burned_amount_secp' || fail "redeem_burned_amount_secp: $(echo "$redout" | tail -3)"
 echo "    redeem_burned_amount_secp OK -- witness-bound secp256k1 KMS-cert verify released $CLEARTEXT USDC base units"
 
 # Disclose: bind the disclosure witness + on-chain secp256k1 verify of the same KMS cert against the
 # witness-pinned KMS context + emit the cleartext on-chain.
 disout="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
-   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1)" || true
+   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 PROOF="$BURNED_PROOF_BYTES")" || true
 echo "$disout" | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp: $(echo "$disout" | tail -3)"
 echo "    disclose_amount_secp OK -- witness-bound secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
 

@@ -682,6 +682,10 @@ fn public_decrypt_proof_step(
     println!("PUB leafIndex {}", proof.leaf_index);
     println!("PUB siblings {}", hex_csv(&proof.siblings));
     println!("PUB mmrProofBytes 0x{}", hex(&proof_bytes));
+    // Same proof, mode-byte stripped: proof_blob prepends a 1-byte MMR_MODE tag, but the
+    // on-chain consume steps (redeem_burned_amount_secp / disclose_*_secp, PROOF env) borsh-decode
+    // a bare MmrInclusionProof, whose wire shape == borsh(MmrProof). So this is proof_bytes[1..].
+    println!("PUB mmrInclusionProofBytes 0x{}", hex(&proof_bytes[1..]));
     Ok(())
 }
 
