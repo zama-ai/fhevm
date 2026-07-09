@@ -22,6 +22,9 @@ import {
   LIGHT_TEST_PROFILES,
   POSTGRES_HOST,
   ROLLOUT_STANDARD_TEST_PROFILES,
+  STANDARD_SHARD_COMPUTE_TEST_PROFILES,
+  STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
+  STANDARD_SHARD_STATEFUL_TEST_PROFILES,
   STANDARD_TEST_PROFILES,
   TEST_GREP,
   TEST_PARALLEL,
@@ -66,6 +69,9 @@ const TEST_PROFILE_NAMES = [
   "light",
   "rollout-standard",
   "standard",
+  "standard-shard-compute",
+  "standard-shard-decryption",
+  "standard-shard-stateful",
 ].sort();
 // The below-quorum probe is expected to hang waiting for KMS responses, so it is killed after
 // this bound. Only a timeout — or a run that demonstrably executed the tests and failed — is
@@ -1276,17 +1282,17 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     return runGrep();
   };
 
-  const runStandardSuite = async () => {
+  const runStandardProfiles = async (label: string, profiles: readonly string[]) => {
     if (options.grep) {
-      throw new PreflightError("`fhevm-cli test standard` does not accept `--grep`; run a named profile instead");
+      throw new PreflightError(`\`fhevm-cli test ${label}\` does not accept \`--grep\`; run a named profile instead`);
     }
     if (options.parallel === true) {
-      throw new PreflightError("`fhevm-cli test standard` does not accept `--parallel`; suite members choose their own mode");
+      throw new PreflightError(`\`fhevm-cli test ${label}\` does not accept \`--parallel\`; suite members choose their own mode`);
     }
-    console.log(`[test] standard (${options.network})`);
+    console.log(`[test] ${label} (${options.network})`);
     const started = Date.now();
-    await runLogged("standard", started, async () => {
-      for (const profile of STANDARD_TEST_PROFILES) {
+    await runLogged(label, started, async () => {
+      for (const profile of profiles) {
         if (profile === "multi-chain-isolation" || profile === "confidential-bridge") {
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {
@@ -1313,8 +1319,20 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     });
   };
 
+  // CI shards of the standard suite — see layout.ts for the split rationale.
+  const STANDARD_SHARDS: Record<string, readonly string[]> = {
+    "standard-shard-stateful": STANDARD_SHARD_STATEFUL_TEST_PROFILES,
+    "standard-shard-decryption": STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
+    "standard-shard-compute": STANDARD_SHARD_COMPUTE_TEST_PROFILES,
+  };
+
   if (testName === "standard") {
-    await runStandardSuite();
+    await runStandardProfiles("standard", STANDARD_TEST_PROFILES);
+    return;
+  }
+
+  if (testName && STANDARD_SHARDS[testName]) {
+    await runStandardProfiles(testName, STANDARD_SHARDS[testName]);
     return;
   }
 
