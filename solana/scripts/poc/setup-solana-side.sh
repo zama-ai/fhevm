@@ -245,7 +245,14 @@ if [ "$RECONSTRUCT" = 1 ]; then
       --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
       --host-chain-id="$SID_I64" --reconstruct
 else
-  ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
+  # Emit-decode (RPC) transport. Compute events arrive via emit_cpi!, but the RFC-024 ACL/allow
+  # lifecycle is EVENT-FREE in EVERY transport — allow signals come only from decoding the
+  # EncryptedValue instructions, which is compiled in under `solana-reconstruct`. Without it the
+  # listener ingests compute yet emits no allow-signal, so no finalized-account fetch is queued and
+  # the SnS worker never runs (ciphertext128 never lands → decrypt/compute wait hangs). Build with
+  # the same feature pair as the reconstruct arm (the CI-tested combination); --transport defaults
+  # to RPC, so the gRPC code stays dormant.
+  ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --features solana-grpc,solana-reconstruct --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
     || { echo "[setup] host-listener build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
   run_logged_background /tmp/solana-host-listener.log \
     "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \

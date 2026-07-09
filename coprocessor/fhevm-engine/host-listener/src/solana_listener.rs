@@ -296,15 +296,21 @@ async fn ingest_signature(
 /// Decodes the `zama-host` events carried by a confirmed transaction and derives
 /// its block metadata.
 ///
-/// A host event reaches us by one of two transports, chosen per emitting frame:
-/// `emit_cpi!` puts the event bytes in an inner instruction that self-invokes the
-/// program, while `emit!` writes them as a `Program data:` log line. A large
-/// `fhe_eval` frame (event count above the CPI cap, e.g. `confidential_burn`)
-/// uses log transport, so a CPI-only decoder silently drops its whole compute
-/// graph. We gather both the inner instructions and the log messages and hand
-/// them to [`decode_solana_transaction_events`], the shared decoder that strips
-/// the CPI/Anchor discriminators, scopes log lines to this program, and rejects a
-/// transaction that mixes the two transports.
+/// Compute (`fhe_eval`) events arrive via `emit_cpi!`: the event bytes live in an
+/// inner instruction that self-invokes the program. (DD-037 removed the old `emit!`
+/// `Program data:` log fallback for frames above the CPI cap, so oversized frames
+/// now emit nothing; we still gather log messages for compatibility, but the live
+/// source is the inner instructions.) Both are handed to
+/// [`decode_solana_transaction_events`], which strips the CPI/Anchor discriminators,
+/// scopes log lines to this program, and rejects a transaction mixing the two.
+///
+/// Separately, the RFC-024 ACL/allow lifecycle is EVENT-FREE: allow signals
+/// (public-decrypt / made-public / disclose+redeem requests) are recovered by
+/// decoding the `EncryptedValue` instructions via
+/// [`crate::solana_reconstruct::decode_encrypted_value_fetch_events`], compiled in
+/// under `solana-reconstruct`. That decode is required in EVERY transport (RPC
+/// included) — without the feature the listener ingests compute but drives no
+/// decrypts, so builds that need decrypts must enable it.
 pub fn extract_host_events(
     confirmed: &EncodedConfirmedTransactionWithStatusMeta,
     program_id: &Pubkey,
