@@ -1,4 +1,3 @@
-#![recursion_limit = "256"]
 use tx_sender::{
     core::{Config, TransactionSender},
     monitoring::{
