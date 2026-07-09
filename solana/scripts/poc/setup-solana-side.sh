@@ -33,17 +33,14 @@ DEPLOYER_KEYPAIR="$HOME/.config/solana/id.json"
 SID_U64=9223372036854788153
 SID_I64=-9223372036854763463
 
-# Reconstruct mode (adjacent CI run, see solana-e2e.yml). When 1, deploy an EMITLESS
-# zama-host (no `emit-events`) and feed the coprocessor purely via the gRPC Yellowstone
-# transport with off-chain event RECONSTRUCTION — no on-chain emit-decode. That needs the
-# geyser plugin on the validator, so the host is a native solana-test-validator (agave 2.1.21,
-# multi-arch incl. Apple Silicon) loading the external Yellowstone plugin via
-# --geyser-plugin-config (RPC 8899 + gRPC 10000) — the same real validator as the default path,
-# just with the plugin. It binds 0.0.0.0 so the dockerized KMS worker reaches RPC over
-# host.docker.internal:8899 — the rest of the fhevm-cli stack is unaffected. (surfpool was
-# evaluated and rejected: its LiteSVM does not stream the SlotHashes/Clock sysvar accounts over
-# geyser, which reconstruction needs.) Default 0 = unchanged native/emit path.
-RECONSTRUCT="${RECONSTRUCT:-0}"
+# Yellowstone-only ingestion (DD-037): deploy an EMITLESS zama-host (no `emit-events`) and feed
+# the coprocessor purely via the gRPC Yellowstone transport with off-chain event RECONSTRUCTION —
+# no on-chain emit-decode. That needs the geyser plugin on the validator, so the host is a native
+# solana-test-validator (agave 2.1.21, multi-arch incl. Apple Silicon) loading the external
+# Yellowstone plugin via --geyser-plugin-config (RPC 8899 + gRPC 10000). It binds 0.0.0.0 so the
+# dockerized KMS worker reaches RPC over host.docker.internal:8899 — the rest of the fhevm-cli
+# stack is unaffected. (surfpool was evaluated and rejected: its LiteSVM does not stream the
+# SlotHashes/Clock sysvar accounts over geyser, which reconstruction needs.)
 GRPC_URL="${GRPC_URL:-http://127.0.0.1:10000}"
 # Yellowstone plugin cdylib for the validator's --geyser-plugin-config. Prebuilt/built on demand
 # by geyser/build-yellowstone-plugin.sh; CI may set PLUGIN_LIB to a prefetched artifact.
@@ -58,7 +55,7 @@ KMS_SIGNERS="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getKmsSigners()(address[])' 
 echo "    gateway_chain_id=$GATEWAY_CHAIN_ID input_verification=$INPUT_VERIFICATION_ADDRESS"
 echo "    decryption=$DECRYPTION_ADDRESS coprocessor_signer=$COPROCESSOR_SIGNER kms_signers=$KMS_SIGNERS"
 
-echo "==> [2/5] fresh validator + program deploy (reconstruct=$RECONSTRUCT)"
+echo "==> [2/5] fresh validator (Yellowstone geyser) + EMITLESS program deploy"
 # Seed the committed well-known PoC program keypairs so the build reuses them and the deployed
 # program IDs match each `declare_id!` (see scripts/poc/test-keypairs/README.md). `-n` keeps any
 # pre-existing local keypair; on a fresh checkout it seeds the committed test keys.
@@ -75,80 +72,49 @@ mkdir -p "$(dirname "$DEPLOYER_KEYPAIR")"
 # it so the SBF toolchain can self-provision. Harmless where it already exists (dev machines).
 mkdir -p "$HOME/.cache/solana"
 
-if [ "$RECONSTRUCT" = 1 ]; then
-  # Host = native solana-test-validator (agave 2.1.21, pinned in solana-e2e.yml) with the
-  # Yellowstone geyser plugin (gRPC :10000) loaded via --geyser-plugin-config. Replaces the baked
-  # amd64 geyser image: the real validator runs on the host arch directly (multi-arch incl. Apple
-  # Silicon) and — unlike surfpool's LiteSVM — streams the SlotHashes/Clock sysvar accounts the
-  # reconstruction needs per slot. The matching plugin cdylib is resolved by
-  # geyser/build-yellowstone-plugin.sh (prebuilt x86 release in CI; built from source on arm64).
-  # Bind 0.0.0.0 so the dockerized KMS worker reaches RPC over host.docker.internal:8899. Local
-  # only — no mainnet exposure.
-  pkill -f solana-test-validator 2>/dev/null || true
-  sleep 2
-  [ -n "$PLUGIN_LIB" ] || PLUGIN_LIB="$("$SOLANA/geyser/build-yellowstone-plugin.sh")"
-  [ -f "$PLUGIN_LIB" ] || { echo "[setup] Yellowstone plugin not found (PLUGIN_LIB=$PLUGIN_LIB)" >&2; exit 1; }
-  GEYSER_CONFIG="$SOLANA/target/yellowstone-config.runtime.json"
-  mkdir -p "$SOLANA/target"
-  sed "s#@LIBPATH@#$PLUGIN_LIB#" "$SOLANA/geyser/yellowstone-config.json" > "$GEYSER_CONFIG"
-  echo "    geyser host: solana-test-validator + Yellowstone plugin $PLUGIN_LIB"
-  LEDGER="$ROOT/.solana-test-ledger"
-  rm -rf "$LEDGER"
-  solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" \
-    --geyser-plugin-config "$GEYSER_CONFIG" >/tmp/solana-validator.log 2>&1 &
-  until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do
-    pgrep -f solana-test-validator >/dev/null \
-      || { echo "[setup] geyser validator died:" >&2; tail -20 /tmp/solana-validator.log >&2; exit 1; }
-    sleep 1
-  done
-  solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
-  # EMITLESS build: drop the default `emit-events` feature on zama-host so the deployed
-  # program emits NOTHING — off-chain reconstruction from instructions is the sole event
-  # source. anchor build gives per-crate feature control (cargo build-sbf builds the whole
-  # workspace, so it can't disable defaults for just one crate); anchor-cli is installed by
-  # the workflow. The other programs keep their defaults, matching the emit-decode run.
-  echo "    building EMITLESS zama_host (--no-default-features) + default-feature deps"
-  # confidential_token is built with `--features poc`: the e2e drives the create_random_amount
-  # demo helper, which is gated out of production builds.
-  ( cd "$SOLANA" \
-      && anchor build --ignore-keys --no-idl -p zama_host -- --no-default-features \
-      && anchor build --ignore-keys --no-idl -p confidential_token -- --features poc ) \
-    || { echo "[setup] emitless anchor build failed" >&2; exit 1; }
-  # --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
-  for p in zama_host confidential_token; do
-    solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" --use-rpc \
-      --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
-  done
-else
-  pkill -f solana-test-validator 2>/dev/null || true
-  sleep 2
-  LEDGER="$ROOT/.solana-test-ledger"
-  rm -rf "$LEDGER"
-  # Bind 0.0.0.0 so the dockerized KMS worker can read ACL records from the validator over RPC
-  # (via host.docker.internal); host-side clients still target 127.0.0.1:8899. Local only — no
-  # mainnet exposure.
-  solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" >/tmp/solana-validator.log 2>&1 &
-  until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do sleep 1; done
-  solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
-  # SKIP_BUILD reuses the already-built program .so (SBF bytecode is portable across
-  # validator versions); useful when the active build toolchain differs from the
-  # validator (e.g. building under one Agave release, running the validator on another).
-  # But a fresh machine (CI) has no prebuilt .so, so build anyway when it is absent —
-  # SKIP_BUILD is an optimization, not a reason to deploy a nonexistent program.
-  if [ "${SKIP_BUILD:-0}" != "1" ] || [ ! -f "$SOLANA/target/deploy/zama_host.so" ]; then
-    # Rebuild confidential_token with `--features poc` so the deployed program exposes the
-    # create_random_amount demo helper the e2e drives (gated out of production builds).
-    ( cd "$SOLANA" \
-        && cargo build-sbf --tools-version v1.52 \
-        && cargo build-sbf --tools-version v1.52 -- -p confidential-token --features poc )
-  fi
-  for p in zama_host confidential_token; do
-    solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" \
-      --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
-  done
-fi
+# Host = native solana-test-validator (agave 2.1.21, pinned in solana-e2e.yml) with the
+# Yellowstone geyser plugin (gRPC :10000) loaded via --geyser-plugin-config. The real validator
+# runs on the host arch directly (multi-arch incl. Apple Silicon) and — unlike surfpool's LiteSVM
+# — streams the SlotHashes/Clock sysvar accounts the reconstruction needs per slot. The matching
+# plugin cdylib is resolved by geyser/build-yellowstone-plugin.sh (prebuilt x86 release in CI;
+# built from source on arm64). Bind 0.0.0.0 so the dockerized KMS worker reaches RPC over
+# host.docker.internal:8899. Local only — no mainnet exposure.
+pkill -f solana-test-validator 2>/dev/null || true
+sleep 2
+[ -n "$PLUGIN_LIB" ] || PLUGIN_LIB="$("$SOLANA/geyser/build-yellowstone-plugin.sh")"
+[ -f "$PLUGIN_LIB" ] || { echo "[setup] Yellowstone plugin not found (PLUGIN_LIB=$PLUGIN_LIB)" >&2; exit 1; }
+GEYSER_CONFIG="$SOLANA/target/yellowstone-config.runtime.json"
+mkdir -p "$SOLANA/target"
+sed "s#@LIBPATH@#$PLUGIN_LIB#" "$SOLANA/geyser/yellowstone-config.json" > "$GEYSER_CONFIG"
+echo "    geyser host: solana-test-validator + Yellowstone plugin $PLUGIN_LIB"
+LEDGER="$ROOT/.solana-test-ledger"
+rm -rf "$LEDGER"
+solana-test-validator --reset --rpc-port 8899 --bind-address 0.0.0.0 --ledger "$LEDGER" \
+  --geyser-plugin-config "$GEYSER_CONFIG" >/tmp/solana-validator.log 2>&1 &
+until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' 2>/dev/null | grep -q '"ok"'; do
+  pgrep -f solana-test-validator >/dev/null \
+    || { echo "[setup] geyser validator died:" >&2; tail -20 /tmp/solana-validator.log >&2; exit 1; }
+  sleep 1
+done
+solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
+# EMITLESS build: drop the default `emit-events` feature on zama-host so the deployed
+# program emits NOTHING — off-chain reconstruction from instructions is the sole event
+# source. anchor build gives per-crate feature control (cargo build-sbf builds the whole
+# workspace, so it can't disable defaults for just one crate); anchor-cli is installed by
+# the workflow. The other programs keep their defaults.
+echo "    building EMITLESS zama_host (--no-default-features) + default-feature deps"
+# confidential_token is built with `--features poc`: the e2e drives the create_random_amount
+# demo helper, which is gated out of production builds.
+( cd "$SOLANA" \
+    && anchor build --ignore-keys --no-idl -p zama_host -- --no-default-features \
+    && anchor build --ignore-keys --no-idl -p confidential_token -- --features poc ) \
+  || { echo "[setup] emitless anchor build failed" >&2; exit 1; }
+# --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
+for p in zama_host confidential_token; do
+  solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" --use-rpc \
+    --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
+done
 ZAMA_HOST_ID="$(solana address -k "$SOLANA/target/deploy/zama_host-keypair.json")"
 echo "    zama_host=$ZAMA_HOST_ID deployed"
 
@@ -232,33 +198,17 @@ run_logged_background() {
 # events when the program's event layout has moved (it drops every event whose generated struct
 # no longer matches), leaving the coprocessor with no work and the vertical hanging at SNS commit.
 : >/tmp/solana-host-listener.log
-if [ "$RECONSTRUCT" = 1 ]; then
-  # gRPC transport + off-chain reconstruction: the listener INGESTS events rebuilt from
-  # the tx instructions (the program emits nothing), so this leg stands in for the whole
-  # Yellowstone effort end-to-end. Handle-derivation params are auto-detected from the
-  # on-chain HostConfig PDA at startup — no --chain-id / --zero-birth-entropy flags.
-  ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --features solana-grpc,solana-reconstruct --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
-    || { echo "[setup] host-listener (grpc,reconstruct) build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
-  run_logged_background /tmp/solana-host-listener.log \
-    "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
-      --transport grpc --grpc-url "$GRPC_URL" \
-      --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
-      --host-chain-id="$SID_I64" --reconstruct
-else
-  # Emit-decode (RPC) transport. Compute events arrive via emit_cpi!, but the RFC-024 ACL/allow
-  # lifecycle is EVENT-FREE in EVERY transport — allow signals come only from decoding the
-  # EncryptedValue instructions, which is compiled in under `solana-reconstruct`. Without it the
-  # listener ingests compute yet emits no allow-signal, so no finalized-account fetch is queued and
-  # the SnS worker never runs (ciphertext128 never lands → decrypt/compute wait hangs). Build with
-  # the same feature pair as the reconstruct arm (the CI-tested combination); --transport defaults
-  # to RPC, so the gRPC code stays dormant.
-  ( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --features solana-grpc,solana-reconstruct --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
-    || { echo "[setup] host-listener build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
-  run_logged_background /tmp/solana-host-listener.log \
-    "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
-      --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
-      --host-chain-id="$SID_I64"
-fi
+# gRPC transport + off-chain reconstruction: the listener INGESTS events rebuilt from the tx
+# instructions (the program emits nothing), so this stands in for the whole Yellowstone effort
+# end-to-end. Handle-derivation params are auto-detected from the on-chain HostConfig PDA at
+# startup — no --chain-id / --zero-birth-entropy flags.
+( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --features solana-grpc,solana-reconstruct --bin solana_host_listener >/tmp/solana-host-listener-build.log 2>&1 ) \
+  || { echo "[setup] host-listener (grpc,reconstruct) build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
+run_logged_background /tmp/solana-host-listener.log \
+  "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
+    --transport grpc --grpc-url "$GRPC_URL" \
+    --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
+    --host-chain-id="$SID_I64" --reconstruct
 
 # The Solana decrypt pipeline is two-stage: the host-listener ingests events and, for
 # PublicDecryptAllowed / disclose+redeem request events, QUEUES a finalized-account fetch rather
