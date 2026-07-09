@@ -776,7 +776,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
         uint256 currentId = protocolConfig.getCurrentKmsContextId();
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.CurrentKmsContextCannotBeDestroyed.selector, currentId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfig.LatestActiveKmsContextCannotBeDestroyed.selector, currentId)
+        );
         protocolConfig.destroyKmsContext(currentId);
     }
 
@@ -961,19 +963,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertTrue(protocolConfig.isValidEpochForContext(contextId, newEpochId));
     }
 
-    function test_isValidEpochForContext_falseForAbortedPendingEpoch() public {
-        _setupEpochLifecycle();
-        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        uint256 abortedEpochId = EPOCH_COUNTER_BASE + 2;
-
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-        vm.prank(owner);
-        protocolConfig.abortPendingEpoch(abortedEpochId);
-
-        assertFalse(protocolConfig.isValidEpochForContext(contextId, abortedEpochId));
-    }
-
     function test_isValidEpochForContext_falseForPendingEpochUnderPendingContext() public {
         _setupEpochLifecycle();
         uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
@@ -1032,119 +1021,83 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertFalse(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
     }
 
-    function test_abortPendingEpochForCurrentKmsContext() public {
+    function test_destroyEpoch() public {
         _setupEpochLifecycle();
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        uint256 oldContextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        uint256 oldEpochId = EPOCH_COUNTER_BASE + 1;
+        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        uint256 newEpochId = EPOCH_COUNTER_BASE + 2;
 
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-
-        vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.PendingEpochAborted(KMS_CONTEXT_COUNTER_BASE + 1, epochId);
-        vm.prank(owner);
-        protocolConfig.abortPendingEpoch(epochId);
-
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-        (, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
-        assertEq(activeEpochId, EPOCH_COUNTER_BASE + 1);
-    }
-
-    function test_revertAbortPendingEpochForPendingContext() public {
-        _setupEpochLifecycle();
-
+        // Switch to a newer context+epoch so the old epoch is a superseded (non-current) Active epoch.
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
-        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        _activatePendingContextWithTwoKmsNodes(newContextId, newEpochId);
+        assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
 
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.KmsEpochDestroyed(oldEpochId);
+        vm.prank(owner);
+        protocolConfig.destroyKmsEpoch(oldEpochId);
+
+        assertFalse(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+    }
+
+    function test_revertDestroyCurrentEpoch() public {
+        _setupEpochLifecycle();
+        (, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.EpochNotUnderActiveContext.selector, epochId, contextId)
+            abi.encodeWithSelector(IProtocolConfig.LatestActiveKmsEpochCannotBeDestroyed.selector, currentEpochId)
         );
-        protocolConfig.abortPendingEpoch(epochId);
+        protocolConfig.destroyKmsEpoch(currentEpochId);
     }
 
-    function test_abortPendingContextClearsStateAndAllowsRedefine() public {
+    function testFuzz_revertDestroyInvalidKmsEpoch(uint256 invalidEpochId) public {
         _setupEpochLifecycle();
-        uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
-        (uint256 activeContextBefore, uint256 activeEpochBefore) = protocolConfig.getCurrentKmsContextAndEpoch();
-
+        (, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+        vm.assume(invalidEpochId != currentEpochId);
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-
-        vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.PendingContextAborted(pendingContextId);
-        vm.prank(owner);
-        protocolConfig.abortPendingContext(pendingContextId);
-
-        // Active context/epoch are untouched.
-        (uint256 activeContextAfter, uint256 activeEpochAfter) = protocolConfig.getCurrentKmsContextAndEpoch();
-        assertEq(activeContextAfter, activeContextBefore);
-        assertEq(activeEpochAfter, activeEpochBefore);
-        assertFalse(protocolConfig.isValidKmsContext(pendingContextId));
-
-        // The aborted context can no longer be confirmed.
-        vm.prank(vm.addr(kmsPk0));
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, pendingContextId));
-        protocolConfig.confirmKmsContextCreation(pendingContextId);
-
-        // The pending slot is released, so a fresh pending context can be defined.
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, invalidEpochId));
+        protocolConfig.destroyKmsEpoch(invalidEpochId);
     }
 
-    function test_revertAbortPendingContextWhenActive() public {
+    function test_revertDestroyPendingEpoch() public {
         _setupEpochLifecycle();
-        uint256 activeContextId = protocolConfig.getCurrentKmsContextId();
+        uint256 pendingEpochId = EPOCH_COUNTER_BASE + 2;
+
+        // In-flight (Pending) epochs are not destroyable: destroy is Active-only.
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, activeContextId));
-        protocolConfig.abortPendingContext(activeContextId);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, pendingEpochId));
+        protocolConfig.destroyKmsEpoch(pendingEpochId);
     }
 
-    function test_revertAbortPendingContextWhenCreated() public {
+    function test_revertDestroyEpochNotOwner() public {
         _setupEpochLifecycle();
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        uint256 createdContextId = KMS_CONTEXT_COUNTER_BASE + 2;
-        _confirmContextCreationWithTwoSigners(createdContextId);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, createdContextId));
-        protocolConfig.abortPendingContext(createdContextId);
-    }
-
-    function test_revertAbortPendingContextWhenAlreadyAborted() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
-
-        vm.prank(owner);
-        protocolConfig.abortPendingContext(pendingContextId);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, pendingContextId));
-        protocolConfig.abortPendingContext(pendingContextId);
-    }
-
-    function testFuzz_revertAbortPendingContextInvalidId(uint256 invalidContextId) public {
-        _setupEpochLifecycle();
-        vm.assume(invalidContextId != protocolConfig.getCurrentKmsContextId());
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotPending.selector, invalidContextId));
-        protocolConfig.abortPendingContext(invalidContextId);
-    }
-
-    function test_revertAbortPendingContextNotOwner() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
-
+        (, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         vm.prank(address(0x999));
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        protocolConfig.abortPendingContext(pendingContextId);
+        protocolConfig.destroyKmsEpoch(currentEpochId);
+    }
+
+    function test_revertDestroyAlreadyDestroyedEpoch() public {
+        _setupEpochLifecycle();
+        uint256 oldEpochId = EPOCH_COUNTER_BASE + 1;
+        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        uint256 newEpochId = EPOCH_COUNTER_BASE + 2;
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        _activatePendingContextWithTwoKmsNodes(newContextId, newEpochId);
+
+        vm.prank(owner);
+        protocolConfig.destroyKmsEpoch(oldEpochId);
+
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, oldEpochId));
+        protocolConfig.destroyKmsEpoch(oldEpochId);
     }
 
     function test_defineNewKmsContextAndEpochDoesNotActivateImmediately() public {
@@ -1802,7 +1755,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidEpoch.selector, invalidEpochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, invalidEpochId));
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             impl,
             abi.encodeCall(
@@ -2491,7 +2444,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     // -----------------------------------------------------------------------
-    // confirmEpochActivation / abortPendingEpoch negative branches
+    // confirmEpochActivation negative branches
     // -----------------------------------------------------------------------
 
     /// @dev Reaching the `!_isLiveKmsContext` guard requires the epoch's context to be destroyed
@@ -2543,35 +2496,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.destroyKmsContext(thirdContextId);
 
         // The pending epoch was cleared with the context, so confirming activation now reverts on the
-        // epoch state guard (InvalidEpoch) — the context is no longer live for it.
+        // epoch state guard (InvalidKmsEpoch) — the context is no longer live for it.
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
         vm.prank(kmsTxSender0);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidEpoch.selector, thirdEpochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, thirdEpochId));
         protocolConfig.confirmEpochActivation(thirdEpochId, keys, crsList);
-    }
-
-    function test_revertAbortPendingEpochNotOwner() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
-
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        protocolConfig.abortPendingEpoch(epochId);
-    }
-
-    function testFuzz_revertAbortPendingEpochUnknownEpoch(uint256 unknownEpochId) public {
-        _setupEpochLifecycle();
-        // The active epoch (EPOCH_COUNTER_BASE + 1) is Active, not Pending, so it is also rejected.
-        vm.assume(unknownEpochId != EPOCH_COUNTER_BASE + 2);
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidEpoch.selector, unknownEpochId));
-        protocolConfig.abortPendingEpoch(unknownEpochId);
     }
 
     /// @dev Partial quorum (one of two new signers confirming context creation) must not advance the
