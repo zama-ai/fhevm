@@ -44,9 +44,16 @@ run_public_decrypt_with_proof() {
   local handle="$2"
   local acl="$3"
   local expected="${4:-}"
+  # Proof source (5th arg, default relayer): the e2e sources the MMR proof from the running relayer
+  # proof service. `local` is reserved for the born-public burned leg (unresolvable over RPC in the
+  # emitless arm — see follow-up) and drives the in-process PoC builder instead. The client retries
+  # a transient `503 lagging` internally (re-invoking here would be unsafe for stateful steps).
+  local proof_source="${5:-relayer}"
   local proof
   proof="$(cd "$ROOT/solana/scripts/poc/live-client" && \
-    PUBLIC_DECRYPT_PROOF=1 PUB_HANDLE="$handle" PUB_ACL="$acl" ./target/debug/poc-live-client 2>&1)" \
+    PUBLIC_DECRYPT_PROOF=1 PUB_HANDLE="$handle" PUB_ACL="$acl" \
+    PROOF_SOURCE="$proof_source" RELAYER_URL=http://127.0.0.1:3000 \
+    ./target/debug/poc-live-client 2>&1)" \
     || fail "$label public proof: $proof"
   echo "$proof" | grep -E 'PUB H|PUB mmrProofBytes' >/dev/null || fail "$label public proof missing fields: $proof"
 
@@ -205,7 +212,12 @@ for i in $(seq 1 30); do
   [ "$i" = 30 ] && fail "historical old-handle SNS commit timed out"; sleep 6
 done
 
-hist_proof="$(cd "$ROOT/solana/scripts/poc/live-client" && HISTORICAL_STEP=supersede TE_VALUE="$VALUE" ./target/debug/poc-live-client 2>&1)"
+# Sole-sourced from the relayer proof service (leaf_index 0). The supersede tx runs exactly once
+# here; the client retries a transient `503 lagging` internally, so this is not re-invoked on lag.
+hist_proof="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  HISTORICAL_STEP=supersede TE_VALUE="$VALUE" \
+  PROOF_SOURCE=relayer RELAYER_URL=http://127.0.0.1:3000 \
+  ./target/debug/poc-live-client 2>&1)"
 echo "$hist_proof" | grep -E 'HIST H_new|HIST mmrProofBytes' || fail "historical supersede/proof: $hist_proof"
 HIST_H_OLD2="$(hist_field "$hist_proof" H_old)"
 HIST_H_NEW="$(hist_field "$hist_proof" H_new)"
@@ -350,7 +362,12 @@ echo "$relout" | grep -q 'OK request_disclose_amount' || fail "request_disclose_
 echo "    disclosure request witness created (KMS context pinned); handle released for public decrypt"
 
 # Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert.
-run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL"
+# PROOF_SOURCE=local: unlike the compute/input-flow/historical legs (relayer-sourced), the
+# born-public burned handle is derived on-chain from slot entropy and carried in NO instruction
+# arg, so in the emitless arm the relayer cannot resolve it over RPC (no op event). This leg stays
+# on the in-process PoC builder pending the relayer follow-up (Carbon sysvar reconstruction or an
+# untrusted verified handle-hint) — see fhevm-internal issue.
+run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL" "" local
 cr="$PUBLIC_DECRYPT_JSON"
 # The burned handle's public-decrypt MMR proof (DD-036): both the redeem and disclose consume
 # steps authorize by verifying it against the lineage's on-chain peaks. request_burn_redemption
