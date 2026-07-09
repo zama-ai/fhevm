@@ -30,17 +30,6 @@ pub(super) trait EvalStepVisitor {
         encrypted_value_index: u16,
     ) -> Result<ResolvedOperand>;
 
-    /// Resolves the handle-binding parameters for a durable output: the
-    /// lineage's value key plus its current MMR leaf count (0 when the PDA does
-    /// not exist yet). `None` for instruction-local outputs. Reading the leaf
-    /// count keeps bound handles unique across successive supersessions of the
-    /// same lineage within one eval frame.
-    fn resolve_output_binding<'info>(
-        &mut self,
-        ctx: &Context<'info, FheEval<'info>>,
-        output: &FheEvalOutput,
-    ) -> Result<Option<OutputBinding>>;
-
     /// Resolves an external input verified in-frame via the coprocessor attestation. Admission
     /// resolves it structurally (the handle is known from the operand data); execution re-runs the
     /// secp256k1 attestation authoritatively. Instruction-local — no account, no PDA.
@@ -147,7 +136,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     rhs.scalar,
                     *output_fhe_type,
                 )?;
-                let binding = visitor.resolve_output_binding(ctx, output)?;
                 let result = expected_binary_eval_result(
                     *op,
                     lhs.handle,
@@ -156,7 +144,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     *output_fhe_type,
                     handle_context,
                     op_index,
-                    binding.as_ref(),
                 );
                 visitor.record_op_event(EvalEvent::Binary(FheBinaryOpEvent {
                     version: EVENT_VERSION,
@@ -191,7 +178,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     if_false.handle,
                     *output_fhe_type,
                 )?;
-                let binding = visitor.resolve_output_binding(ctx, output)?;
                 let result = expected_ternary_eval_result(
                     *op,
                     control.handle,
@@ -200,7 +186,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     *output_fhe_type,
                     handle_context,
                     op_index,
-                    binding.as_ref(),
                 );
                 visitor.record_op_event(EvalEvent::Ternary(FheTernaryOpEvent {
                     version: EVENT_VERSION,
@@ -224,14 +209,8 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 output,
             } => {
                 assert_supported_fhe_type(*fhe_type)?;
-                let binding = visitor.resolve_output_binding(ctx, output)?;
-                let result = expected_trivial_eval_result(
-                    *plaintext,
-                    *fhe_type,
-                    handle_context,
-                    op_index,
-                    binding.as_ref(),
-                );
+                let result =
+                    expected_trivial_eval_result(*plaintext, *fhe_type, handle_context, op_index);
                 visitor.record_op_event(EvalEvent::Trivial(TrivialEncryptEvent {
                     version: EVENT_VERSION,
                     subject: subject.to_bytes(),
@@ -243,8 +222,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
             }
             FheEvalStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
-                let binding = visitor.resolve_output_binding(ctx, output)?;
-                let seed = expected_rand_eval_seed(handle_context, op_index, binding.as_ref());
+                let seed = expected_rand_eval_seed(handle_context, op_index);
                 let result = computed_rand_handle(seed, *fhe_type, handle_context.chain_id);
                 visitor.record_op_event(EvalEvent::Rand(FheRandEvent {
                     version: EVENT_VERSION,
@@ -261,8 +239,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 output,
             } => {
                 assert_valid_bounded_rand_upper_bound(*upper_bound, *fhe_type)?;
-                let binding = visitor.resolve_output_binding(ctx, output)?;
-                let seed = expected_rand_eval_seed(handle_context, op_index, binding.as_ref());
+                let seed = expected_rand_eval_seed(handle_context, op_index);
                 let result = computed_rand_bounded_handle(
                     *upper_bound,
                     seed,

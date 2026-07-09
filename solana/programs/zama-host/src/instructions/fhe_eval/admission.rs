@@ -149,31 +149,6 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         self.resolve_durable(handle, encrypted_value_index)
     }
 
-    fn resolve_output_binding<'info>(
-        &mut self,
-        _ctx: &Context<'info, FheEval<'info>>,
-        output: &FheEvalOutput,
-    ) -> Result<Option<OutputBinding>> {
-        let FheEvalOutput::AllowedDurable {
-            output_encrypted_value_index,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            ..
-        } = output
-        else {
-            return Ok(None);
-        };
-        let output_info = account_at(self.remaining_accounts, *output_encrypted_value_index)?;
-        super::output_binding_from_account(
-            output_info,
-            *output_acl_domain_key,
-            *output_app_account,
-            *output_encrypted_value_label,
-        )
-        .map(Some)
-    }
-
     fn resolve_verified_input_operand(
         &mut self,
         attestation: &CoprocessorInputAttestation,

@@ -220,31 +220,6 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         Ok(ResolvedOperand::encrypted(handle, false))
     }
 
-    fn resolve_output_binding<'info>(
-        &mut self,
-        _ctx: &Context<'info, FheEval<'info>>,
-        output: &FheEvalOutput,
-    ) -> Result<Option<OutputBinding>> {
-        let FheEvalOutput::AllowedDurable {
-            output_encrypted_value_index,
-            output_acl_domain_key,
-            output_app_account,
-            output_encrypted_value_label,
-            ..
-        } = output
-        else {
-            return Ok(None);
-        };
-        let output_info = self.remaining_account(*output_encrypted_value_index)?;
-        output_binding_from_account(
-            output_info,
-            *output_acl_domain_key,
-            *output_app_account,
-            *output_encrypted_value_label,
-        )
-        .map(Some)
-    }
-
     #[inline(never)]
     fn resolve_verified_input_operand(
         &mut self,
@@ -606,34 +581,6 @@ pub(super) fn validate_durable_output_previous_state(
         ZamaHostError::PreviousStateMismatch
     );
     Ok(())
-}
-
-/// Handle-binding parameters for one durable eval output.
-pub(super) struct OutputBinding {
-    pub(super) value_key: [u8; 32],
-}
-
-/// Derives the output lineage's value key and pins the PDA. The bound handle is
-/// domain-separated by this `value_key` alone (the per-update leaf-count sequence
-/// was removed, DD-015), so no account read is needed here.
-pub(super) fn output_binding_from_account(
-    output_info: &AccountInfo,
-    output_acl_domain_key: Pubkey,
-    output_app_account: Pubkey,
-    output_encrypted_value_label: [u8; 32],
-) -> Result<OutputBinding> {
-    let value_key = zama_solana_acl::derive_value_key(
-        output_acl_domain_key.to_bytes(),
-        output_app_account.to_bytes(),
-        output_encrypted_value_label,
-    );
-    let (expected, _) = encrypted_value_address(value_key);
-    require_keys_eq!(
-        output_info.key(),
-        expected,
-        ZamaHostError::EncryptedValuePdaMismatch
-    );
-    Ok(OutputBinding { value_key })
 }
 
 fn remaining_account<'a, 'info>(

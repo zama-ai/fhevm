@@ -18,10 +18,12 @@ product-open
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
 
 Status: **superseded** — the keyed-nonce `AclRecord` was replaced by the stable
-`EncryptedValue` + MMR lineage (DD-032), and the `nonce_sequence` (leaf-count)
-component was **deleted from durable-output handle derivation** (DD-015): a
-durable output handle is now bound by the `value_key` alone, with no per-update
-sequence. The description below is retained for historical context only.
+`EncryptedValue` + MMR lineage (DD-032), and both handle-binding components (the
+`nonce_sequence` leaf-count and the `value_key`) were **deleted from
+durable-output handle derivation** (DD-015): a durable output handle is now the
+plain base handle, matching EVM `FHEVMExecutor` (no per-slot/per-caller/per-lineage
+binding). `value_key` survives only as the `EncryptedValue` PDA seed. The
+description below is retained for historical context only.
 
 Context:
 
@@ -504,16 +506,16 @@ leaving ~168 bits of keccak digest → roughly 2^84 birthday collision resistanc
 grind offline for an extreme adversary. Computed handles therefore mix per-block entropy into the
 digest (`previous_bank_hash` + `clock.unix_timestamp` on Solana). EVM does the identical thing via
 `blockhash(block.number - 1)` (and `block.timestamp`) in `FHEVMExecutor._binaryOp` /
-`_ternaryOp` / `_mulDivOp` / `_naryOp`. Durable outputs are additionally bound to the
-`output_nonce_key` (= the lineage `value_key`). The former per-update
-`output_nonce_sequence` (the lineage's MMR `leaf_count` read at execution) was
-**removed** from the durable-output binding — see "Sequence removal" below.
+`_ternaryOp` / `_mulDivOp` / `_naryOp`. Durable outputs derive **the same base handle** as transient
+outputs — no per-output binding. The former durable-output binding (the lineage `value_key`, plus an
+even earlier per-update `output_nonce_sequence` = the lineage's MMR `leaf_count` read at execution)
+was **removed** entirely — see "Binding removal" below.
 
 Decision:
 
 Keep the per-block-entropy-seeded derivation. The alternative — widening `bytes32` → `bytes` (full
-hash) to remove the collision concern without entropy — was rejected. Bind durable outputs by the
-`value_key` only; do not mix a per-output sequence into the handle.
+hash) to remove the collision concern without entropy — was rejected. Durable outputs derive the
+plain base handle; do not mix a per-output sequence or a per-lineage `value_key` into the handle.
 
 Why:
 
@@ -535,26 +537,28 @@ Handle byte layout remains stable; handle birth is not idempotent across slots/b
 `PreviousBankHashUnavailable` fail-closed surface (real chains) and the chain-id-confined zero-entropy
 fallback (PoC chain only, DD-014) remain as designed.
 
-Sequence removal (durable-output leaf-count nonce deleted):
+Binding removal (durable-output handle binding deleted entirely):
 
-The durable-output binding used to fold a second component, `output_nonce_sequence` — the lineage's
-MMR `leaf_count` read at execution — into the handle hash alongside the `value_key`. It was a vestige
-of the retired keyed-nonce `AclRecord` (DD-001) and the sole root of the off-chain reconstruction
-complexity (leaf-count tracking + "hints"). It was **deleted**. A durable output handle is now
-`bind(base_handle, value_key)` where `base_handle = computed_eval_handle(op, operands, scalar,
-fhe_type, chain_id, previous_bank_hash, unix_timestamp, context_id, op_index)` — identical to the
-transient (unbound) handle plus the `value_key` domain separation.
+The durable-output binding once folded two components into the handle hash: `output_nonce_sequence`
+(the lineage's MMR `leaf_count` read at execution) and the `value_key` (the lineage identity). Both
+were vestiges of the retired keyed-nonce `AclRecord` (DD-001) and the root of the off-chain
+reconstruction complexity (leaf-count tracking + "hints"). Both are now **deleted**. A durable output
+handle is now the plain `base_handle = computed_eval_handle(op, operands, scalar, fhe_type, chain_id,
+previous_bank_hash, unix_timestamp, context_id, op_index)` — byte-identical to the transient (local)
+handle. A Fable analysis confirmed the `value_key` binding was defense-in-depth: strictly *stricter*
+than EVM, never required for collision safety, so removing it makes Solana match EVM's handle shape
+exactly rather than weakening it.
 
 This cannot introduce a new collision between two *distinct* ciphertexts. A handle collision that
 matters is two different ciphertext materials sharing one handle; material is fully determined by
 `(op / plaintext / rand-seed, operands, fhe_type)`, all of which live in `base_handle`. So two
 outputs with different material already differ in `base_handle` (birthday resistance made
-non-grindable by per-block entropy, unchanged by this deletion). The sequence only made *repeated
-identical* computations of the same lineage produce distinct handles; removing it means an identical
-recomputation now yields the identical handle — which is exactly EVM's behavior (`FHEVMExecutor`
-binds **no** per-output nonce for binary/ternary/trivial/unary/cast; its only counter is the global
-`counterRand` folded into the rand *seed*), so the deletion **improves** EVM parity. The recorded
-collision-case analysis:
+non-grindable by per-block entropy, unchanged by this deletion). The binding only made *repeated
+identical* computations produce distinct handles; removing it means an identical recomputation now
+yields the identical handle — which is exactly EVM's behavior (`FHEVMExecutor` binds **no**
+per-output nonce, and **no** per-slot/per-caller/per-lineage value, for
+binary/ternary/trivial/unary/cast; its only counter is the global `counterRand` folded into the rand
+*seed*), so the deletion **improves** EVM parity. The recorded collision-case analysis:
 
 ```text
 case                                             prevented by
@@ -567,16 +571,22 @@ same slot, different txs, same op/operands/ctx   Solana write-lock serializes th
                                                  recompute byte-identically, the material is identical
                                                  (deterministic) → sharing a handle is correct, not a
                                                  distinct-material collision (= EVM same-block behavior)
-cross-lineage, same computation, same slot       value_key binding (KEPT)
+cross-lineage, same computation, same slot       not a collision: identical op/operands/type/ctx is
+                                                 identical ciphertext material, so a shared handle is
+                                                 correct (exactly EVM's behavior). The lineages are
+                                                 still distinct on-chain accounts (distinct value_key
+                                                 PDA seed); only the handle is shared, as on EVM
 fhe_rand / trivial / ternary outputs             same as above; rand within-slot distinctness comes
                                                  from context_id + op_index + entropy (as it already
-                                                 did for transient rand), never from the sequence
+                                                 did for transient rand), never from a binding
 ```
 
-Verdict: SAFE-TO-DELETE. The `value_key` binding is kept; only the sequence is gone. The IDL/wire is
-unchanged — the sequence was never an instruction argument (it was the on-chain `leaf_count` read at
-execution), so `FheEvalArgs` and the durable-output args (including Option-2 `make_public`) are
-unaffected.
+Verdict: SAFE-TO-DELETE. Both handle-binding components (the `value_key` and the sequence) are gone;
+the durable handle is the plain base handle, matching EVM's shape. `value_key` remains only as the
+`EncryptedValue` PDA seed, so lineages are still distinct accounts. The IDL/wire is unchanged — the
+binding was never an instruction argument (the sequence was the on-chain `leaf_count` read at
+execution; the `value_key` is derived from args already present), so `FheEvalArgs` and the
+durable-output args (including Option-2 `make_public`) are unaffected.
 
 ## DD-016: Confidential Balances Use The Immediate-Available-Balance Profile
 

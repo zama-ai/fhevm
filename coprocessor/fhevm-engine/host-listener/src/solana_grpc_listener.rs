@@ -1129,13 +1129,12 @@ mod fhe_eval_acl_tests {
     }
 
     /// The durable `Add` output handle the fhe_eval fixtures produce, derived
-    /// exactly as the program does (DD-015: value-key-bound, no leaf-count
-    /// sequence). Matches `config()` (chain_id 12345, zero_birth_entropy →
-    /// previous_bank_hash [0;32]), slot 42's clock ts, op_index 0, scalar rhs,
-    /// and the fixture's output lineage coordinates (acl_domain [8;32],
-    /// app_account [9;32], label [10;32]).
+    /// exactly as the program does: the base handle, no per-output binding
+    /// (durable == instruction-local, matching EVM). Matches `config()`
+    /// (chain_id 12345, zero_birth_entropy → previous_bank_hash [0;32]), slot
+    /// 42's clock ts, op_index 0, scalar rhs.
     fn derived_add_output_handle() -> [u8; 32] {
-        zama_host::state::computed_bound_eval_handle(
+        zama_host::state::computed_eval_handle(
             PgmBinaryOpCode::Add,
             [3; 32],
             [1; 32],
@@ -1146,7 +1145,6 @@ mod fhe_eval_acl_tests {
             1_700_000_000,
             [1; 32],
             0,
-            zama_solana_acl::derive_value_key([8; 32], [9; 32], [10; 32]),
         )
     }
 

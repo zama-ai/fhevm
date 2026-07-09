@@ -18,19 +18,19 @@ this note records the operational model in one place.
 
 ## Handle Derivation
 
-- A durable `fhe_eval` output handle is `bind(base_handle, value_key)`, where `base_handle` is the
-  ordinary transient handle over `(op / plaintext / rand-seed, operands, fhe_type, chain_id,
-  previous_bank_hash, unix_timestamp, context_id, op_index)` and `value_key` is the output lineage's
-  identity. The `value_key` binding domain-separates the output from the unbound base and from other
-  lineages. In plain terms: `base_handle` is *what* was computed (op, operands, block entropy);
-  `value_key` is *which* stored value the result becomes; binding the two makes a stored ciphertext's
-  handle unique to both.
-- There is **no per-output sequence** in the handle. The earlier leaf-count nonce
-  (`output_nonce_sequence`) was removed (DD-015): per-block entropy plus the operands/op/type already
-  distinguish distinct ciphertexts, and this matches EVM `FHEVMExecutor`, which binds no per-output
-  nonce. An identical recomputation therefore yields an identical handle (deterministic, EVM-parity).
-- Off-chain indexers recompute durable output handles from the instruction args' `value_key` + block
-  entropy alone — no lineage leaf-count tracking and no handle hints.
+- A durable `fhe_eval` output handle **is the base handle** — identical to the transient handle over
+  `(op / plaintext / rand-seed, operands, fhe_type, chain_id, previous_bank_hash, unix_timestamp,
+  context_id, op_index)`. There is no per-output binding: a durable output and an instruction-local
+  output over the same material derive the same handle. This matches EVM `FHEVMExecutor`, which binds
+  no per-slot / per-caller / per-lineage value into a computed handle. `value_key` is still the
+  `EncryptedValue` PDA seed (`derive_value_key(acl_domain_key, app_account, encrypted_value_label)`) —
+  it addresses *which* stored value the result becomes — but it is **not** mixed into the handle.
+- There is **no per-output sequence and no lineage binding** in the handle (DD-015). Per-block entropy
+  plus the operands/op/type already distinguish distinct ciphertexts. An identical recomputation
+  yields an identical handle (deterministic, EVM-parity).
+- Off-chain indexers (host-listener, relayer) obtain durable output handles the same way as transient
+  ones — the base-handle derivation over instruction args + block entropy, byte-identical to the
+  program — with no lineage leaf-count tracking and no handle hints.
 
 ## Allowed Subjects
 
@@ -111,13 +111,12 @@ flowchart LR
     peaks --> verify["off-chain: reconstruct leaves → build MMR proof<br/>→ KMS verifies inclusion vs finalized peaks"]
 ```
 
-### Handle derivation (no per-output sequence — DD-015)
+### Handle derivation (no per-output binding — DD-015)
 
 ```mermaid
 flowchart TD
     base["base_handle = H(op / plaintext / rand-seed,<br/>operands, fhe_type, chain_id,<br/>previous_bank_hash, unix_timestamp,<br/>context_id, op_index)"]
-    base -->|"durable output only"| bind["bind = H(&quot;FHE_bound_eval_output&quot;,<br/>base_handle, value_key)"]
-    bind --> dh["durable handle<br/>(domain-separated per lineage)"]
+    base -->|"durable output"| dh["durable handle = base_handle"]
     base -->|"transient output"| th["transient handle = base_handle"]
 ```
 
