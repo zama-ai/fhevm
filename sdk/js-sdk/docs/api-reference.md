@@ -144,13 +144,17 @@ readonly protocolVersion: ProtocolVersionResolution;
 | `encryptValue` / `encryptValues`    |      |   ✅    |         |  ✅  |
 | `decryptValue` / `decryptValues` / `decryptValuesFromPairs` |  |  |  ✅  | ✅ |
 | `generateTransportKeyPair`          |      |         |   ✅    |  ✅  |
-| `canDecryptValue(s)` / `…FromPairs` |      |         |   ✅    |  ✅  |
 | `decryptPublicValue(s)`             |  ✅  |   ✅    |   ✅    |  ✅  |
 | `decryptPublicValuesWithSignatures` |  ✅  |   ✅    |   ✅    |  ✅  |
-| `canDecryptPublicValue(s)`          |  ✅  |   ✅    |   ✅    |  ✅  |
 | `signDecryptionPermit`              |  ✅  |   ✅    |   ✅    |  ✅  |
 | `serialize`/`parse` permit + key    |  ✅  |   ✅    |   ✅    |  ✅  |
 | `fetchFheEncryptionKeyBytes`        |  ✅  |   ✅    |   ✅    |  ✅  |
+
+The `canDecrypt*` permission checks are not client methods. `canDecryptValue`,
+`canDecryptValues`, and `canDecryptValuesFromPairs` come from
+[`@fhevm/sdk/actions/decrypt`](actions.md); `canDecryptPublicValue` and
+`canDecryptPublicValues` come from [`@fhevm/sdk/actions/base`](actions.md). Import
+them and pass the client as the first argument.
 
 ## Encryption methods
 
@@ -207,8 +211,11 @@ decryptValuesFromPairs(parameters: {
 
 ### Permission checks
 
+Standalone actions from [`@fhevm/sdk/actions/decrypt`](actions.md), not client
+methods — pass the client as the first argument.
+
 ```ts
-canDecryptValue(parameters:
+canDecryptValue(fhevm, parameters:
   | { readonly encryptedValue: EncryptedValueLike; readonly contractAddress: string; readonly userAddress: string }
   | { readonly encryptedValue: EncryptedValueLike; readonly contractAddress: string; readonly signedPermit: SignedDecryptionPermit; readonly transportKeyPair?: TransportKeyPair }
 ): Promise<{ readonly allowed: boolean; readonly details: { readonly contractAllowed: boolean; readonly userAllowed: boolean } }>;
@@ -243,9 +250,15 @@ decryptPublicValuesWithSignatures(parameters: {
     readonly decryptionProof: BytesHex;
   };
 }>;
+```
 
-canDecryptPublicValue(parameters: { readonly encryptedValue: EncryptedValueLike }): Promise<boolean>;
-canDecryptPublicValues(parameters: { readonly encryptedValues: readonly EncryptedValueLike[] }): Promise<readonly boolean[]>;
+`canDecryptPublicValue` and `canDecryptPublicValues` are standalone actions from
+[`@fhevm/sdk/actions/base`](actions.md), not client methods — pass the client as
+the first argument.
+
+```ts
+canDecryptPublicValue(fhevm, parameters: { readonly encryptedValue: EncryptedValueLike }): Promise<boolean>;
+canDecryptPublicValues(fhevm, parameters: { readonly encryptedValues: readonly EncryptedValueLike[] }): Promise<readonly boolean[]>;
 ```
 
 ## Permit and key methods
@@ -289,7 +302,8 @@ fetchFheEncryptionKeyBytes(parameters?: {
 
 ## Actions
 
-Each action is the corresponding method with the client as its first argument.
+Each action takes the client as its first argument. Most mirror a client method;
+the `canDecrypt*` checks are available only as actions.
 See [Actions](actions.md) for import paths and examples.
 
 ```ts

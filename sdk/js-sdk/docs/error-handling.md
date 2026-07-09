@@ -106,10 +106,13 @@ try {
 
 **Prefer `canDecrypt*` over catching ACL errors.** To decide whether to _offer_
 decryption, check permission up front instead of catching
-`AclUserDecryptionError`:
+`AclUserDecryptionError`. `canDecryptValue` is a standalone action, not a client
+method, so import it and pass the client as the first argument:
 
 ```ts
-const { allowed } = await client.canDecryptValue({ encryptedValue, contractAddress, signedPermit });
+import { canDecryptValue } from '@fhevm/sdk/actions/decrypt';
+
+const { allowed } = await canDecryptValue(client, { encryptedValue, contractAddress, signedPermit });
 if (allowed) {
   // safe to call decryptValue
 }
