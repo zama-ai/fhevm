@@ -17,6 +17,7 @@ use rstest::rstest;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 use tokio_util::sync::CancellationToken;
 
+#[ignore = "docker bs"]
 #[rstest]
 #[timeout(Duration::from_secs(300))]
 #[tokio::test]

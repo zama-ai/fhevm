@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 use kms_worker::{
     core::{Config, KmsWorker},
     monitoring::health::HealthStatus,
