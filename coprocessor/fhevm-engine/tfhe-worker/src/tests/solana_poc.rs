@@ -304,7 +304,7 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
 }
 
 #[test]
-fn solana_worker_replay_shape_preserves_eval_dependencies_and_ignores_same_tx_acl_allowance() {
+fn solana_worker_replay_shape_preserves_eval_dependencies_and_eager_schedules_compute() {
     let comparison = typed_handle(0x60, 0);
     let alice_balance = typed_balance_handle(0x61);
     let transfer_amount = typed_balance_handle(0x62);
@@ -367,12 +367,18 @@ fn solana_worker_replay_shape_preserves_eval_dependencies_and_ignores_same_tx_ac
             .collect::<Vec<_>>(),
         vec![Some(0), Some(1), Some(2), Some(3)]
     );
+    // Eager compute (RFC-024 Q11 option A): every compute log is schedulable the moment the
+    // compute confirms — `is_allowed` is the tfhe-worker's scheduling gate, decoupled from any
+    // same-tx ACL allow-signal. It is NOT decrypt authorization: release stays gated on the
+    // finalized on-chain ACL via `solana_finalized_account_fetcher`, so eager scheduling can never
+    // cause a wrong decrypt. Hence all four are `is_allowed = true` (matches the adapter-level
+    // sibling tests). This retires the earlier "compute alone must not grant is_allowed" contract.
     assert_eq!(
         tfhe_logs
             .iter()
             .map(|log| log.is_allowed)
             .collect::<Vec<_>>(),
-        vec![false, false, false, false]
+        vec![true, true, true, true]
     );
     assert_eq!(
         tfhe_logs
