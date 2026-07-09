@@ -125,7 +125,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
   "kms-context-switch":
-    "Drive the NewKmsContext + NewKmsEpoch lifecycle on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each, with the input-proof app smoke at baseline, while the switch is pending, and after each transition. On a cluster with a spare core (e.g. --scenario swap-threshold-kms) the NewKmsContext step is a genuine node swap — drop a committee node, promote the spare, and force it into the 2t+1 quorum (threshold-mode KMS).",
+    "Drive the NewKmsContext + NewKmsEpoch lifecycle on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each, with the input-proof app smoke at baseline, while the switch is pending, and after each transition. On a cluster with a spare core (e.g. --scenario swap-threshold-kms) the NewKmsContext step is a genuine node swap — stop a committee node's tx-sender before the switch so it cannot confirm on-chain, promote the spare, and force it into the 2t+1 quorum (threshold-mode KMS).",
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */

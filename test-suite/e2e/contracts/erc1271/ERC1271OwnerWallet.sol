@@ -30,6 +30,16 @@ contract ERC1271OwnerWallet is IERC1271, E2ECoprocessorConfig {
         FHE.allowThis(value); // isAllowed(value, address(this)) == true
     }
 
+    /// @notice Rotate the owner key. For delegated handles this re-points any
+    ///         delegation granted TO this wallet at a different EOA without the
+    ///         delegator's involvement — the wallet's signature policy, not the
+    ///         on-chain delegation, decides who can act as the wallet.
+    function transferOwnership(address newOwner) external {
+        require(msg.sender == owner, "only owner");
+        require(newOwner != address(0), "owner cannot be zero address");
+        owner = newOwner;
+    }
+
     /// @inheritdoc IERC1271
     /// @dev Returns the ERC-1271 magic value iff `signature` is a valid ECDSA
     ///      signature over `hash` produced by `owner`; otherwise a non-magic value.

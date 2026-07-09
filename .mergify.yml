@@ -24,7 +24,7 @@ queue_rules:
     queue_conditions:
       - base = main
       - label!=do-not-merge
-      - -files~=^(?!\.mergify\.yml$|\.github/)
+      - -files~=^(?!\.mergify\.yml$)
 
   - name: charts-only
     batch_size: 1
@@ -39,14 +39,9 @@ queue_rules:
       - -files~=^(?!charts/)
 
   - name: main
-    # Batching amortizes the ~45-60 min image-build + e2e cycle over several PRs:
-    # the queue validates the combined result once instead of once per PR, tripling
-    # peak throughput (~14 merges/day at batch_size 1, near saturation). On a batch
-    # failure Mergify bisects the batch, so a red PR still cannot land — identical
-    # protection, extra CI only on the failure path.
     batch_size: 3
-    batch_max_wait_time: 2m
-    checks_timeout: 12h
+    batch_max_wait_time: 1h
+    checks_timeout: 5h
     merge_method: squash
     update_method: rebase
     merge_conditions:
