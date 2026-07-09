@@ -29,7 +29,9 @@ use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
         AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
     },
-    protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
+    protocol_config::ProtocolConfig::{
+        KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
+    },
 };
 
 use gw_listener::core::{Config, EthereumListener, EventListener, GatewayListener};
@@ -258,6 +260,30 @@ pub async fn mock_event_on_gw(
                 .await?;
             (tx, event.into())
         }
+        TestEventType::KmsContextDestroyed => {
+            let rand_context_id = rand_u256();
+            let event = KmsContextDestroyed {
+                kmsContextId: rand_context_id,
+            };
+            let tx = test_instance
+                .protocol_config_contract()
+                .destroyKmsContext(rand_context_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
+        TestEventType::KmsEpochDestroyed => {
+            let rand_epoch_id = rand_u256();
+            let event = KmsEpochDestroyed {
+                epochId: rand_epoch_id,
+            };
+            let tx = test_instance
+                .protocol_config_contract()
+                .destroyKmsEpoch(rand_epoch_id)
+                .send()
+                .await?;
+            (tx, event.into())
+        }
     };
     let receipt = pending_tx.get_receipt().await?;
     let block_number = test_instance
@@ -287,6 +313,8 @@ pub async fn fetch_from_db(
         TestEventType::AbortCrsgen => "SELECT * FROM abort_crsgen_requests",
         TestEventType::NewKmsContext => "SELECT * FROM new_kms_context",
         TestEventType::NewKmsEpoch => "SELECT * FROM new_kms_epoch",
+        TestEventType::KmsContextDestroyed => "SELECT * FROM kms_context_destroyed",
+        TestEventType::KmsEpochDestroyed => "SELECT * FROM kms_epoch_destroyed",
     };
     sqlx::query(query).fetch_all(db).await
 }
@@ -390,6 +418,20 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
         ProtocolEventKind::NewKmsEpoch(e) => {
             if matches_context_epoch(rows, e.kmsContextId, e.epochId)? {
                 return Ok(());
+            }
+        }
+        ProtocolEventKind::KmsContextDestroyed(e) => {
+            for r in rows {
+                if e.kmsContextId == U256::from_le_bytes(r.try_get::<[u8; 32], _>("context_id")?) {
+                    return Ok(());
+                }
+            }
+        }
+        ProtocolEventKind::KmsEpochDestroyed(e) => {
+            for r in rows {
+                if e.epochId == U256::from_le_bytes(r.try_get::<[u8; 32], _>("epoch_id")?) {
+                    return Ok(());
+                }
             }
         }
     };
