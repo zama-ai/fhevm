@@ -1,13 +1,14 @@
 import type { RelayerPublicDecryptOptions } from '../types/relayer.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
-import type { BytesHex, ChecksummedAddress, Uint64BigInt } from '../types/primitives.js';
+import type { ChecksummedAddress, Uint64BigInt } from '../types/primitives.js';
 import type { PublicDecryptionProof } from '../types/publicDecryptionProof-p.js';
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
+import type { KmsExtraData } from '../types/kms-p.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
 import { assertKmsDecryptionBitLimit } from '../kms/utils.js';
-import { readKmsSignersContext, reconcileKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
+import { readCurrentKmsSignersContext, reconcileKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
 import { createPublicDecryptionProof } from '../kms/PublicDecryptionProof-p.js';
 import { checkAllowedForDecryption } from '../host-contracts/checkAllowedForDecryption.js';
@@ -38,12 +39,12 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
   // Contrary to the userDecrypt flow, the publicDecrypt doesn't require for an
   // EIP-712 signature from the user, so the SDK can safely fetch the current
   // context ID and build the extraData transparently to the user.
-  const requestedKmsSignersContext = await readKmsSignersContext(context, {
+  const requestedKmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   });
 
-  const requestedExtraData: BytesHex = kmsSignersContextToExtraData(requestedKmsSignersContext);
+  const requestedExtraData: KmsExtraData = kmsSignersContextToExtraData(requestedKmsSignersContext);
 
   const orderedHandles = handles;
 
@@ -74,11 +75,11 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
   const {
     orderedAbiEncodedClearValues,
     kmsPublicDecryptEip712Signatures,
-    extraData: relayerExtraData,
+    extraData: relayerExtraDataBytesHex,
   } = await context.runtime.relayer.fetchPublicDecrypt(context, {
     payload: {
       orderedHandles,
-      extraData: requestedExtraData,
+      extraData: requestedExtraData.toBytesHex(),
     },
     options: relayerOptions,
   });
@@ -87,7 +88,7 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
   const reconciledKmsSignersContext: KmsSignersContext = await reconcileKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-    relayerExtraData,
+    relayerKmsExtraDataBytesHex: relayerExtraDataBytesHex,
     requestedKmsSignersContext: requestedKmsSignersContext,
     mode: 'loose',
   });

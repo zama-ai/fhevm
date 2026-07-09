@@ -6,11 +6,6 @@ const Configuration = {
    */
   extends: ['@commitlint/config-conventional'],
   /*
-   * Resolve and load conventional-changelog-atom from node_modules.
-   * Referenced packages must be installed
-   */
-  parserPreset: 'conventional-changelog-conventionalcommits',
-  /*
    * Resolve and load @commitlint/format from node_modules.
    * Referenced package must be installed
    */

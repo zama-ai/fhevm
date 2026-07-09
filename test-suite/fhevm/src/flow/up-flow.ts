@@ -658,7 +658,16 @@ export const runStep = async (state: State, step: StepName) => {
       if (!defaultHostChain(state)) {
         throw new PreflightError("Missing default host chain");
       }
-      await stepComposeTask("host-sc", state, ["host-sc-deploy"]);
+      // Multi-chain scenarios run the bridge-deploy step (deploys the LZ endpoint + upgrades the
+      // bridge). Provision the empty bridge proxy here via PROVISION_BRIDGE_PROXY so the ACL bakes
+      // its deterministic address before that later upgrade.
+      const provisionBridgeProxy = hostChainsForState(state).length >= 2;
+      await stepComposeTask(
+        "host-sc",
+        state,
+        ["host-sc-deploy"],
+        provisionBridgeProxy ? { env: { PROVISION_BRIDGE_PROXY: "true" } } : undefined,
+      );
       await waitForContainer("host-sc-deploy", "complete");
       await ensureGeneratedAddressFile(hostChainAddressesPath(defaultHostChain(state)!.key), "host-sc-deploy", [
         "ACL_CONTRACT_ADDRESS",
@@ -675,10 +684,15 @@ export const runStep = async (state: State, step: StepName) => {
       const canonicalSeedingArgs = await canonicalProtocolConfigSeedingArgs(state);
       for (const chain of extraHostChains(state)) {
         const scKey = chain.sc;
-        if (canonicalSeedingArgs) {
+        if (canonicalSeedingArgs || provisionBridgeProxy) {
           const scEnvPath = envPath(scKey);
           const scEnv = await readEnvFile(scEnvPath);
-          scEnv.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = canonicalSeedingArgs;
+          if (canonicalSeedingArgs) {
+            scEnv.HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = canonicalSeedingArgs;
+          }
+          if (provisionBridgeProxy) {
+            scEnv.PROVISION_BRIDGE_PROXY = "true";
+          }
           await writeEnvFile(scEnvPath, scEnv);
         }
         await timed(`[multi-chain] ${scKey}-deploy`, async () => {

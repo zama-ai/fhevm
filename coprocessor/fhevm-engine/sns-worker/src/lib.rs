@@ -1,9 +1,12 @@
 mod aws_upload;
 mod executor;
 mod keyset;
+mod s3_migration;
+mod s3_migration_dry_run;
 mod squash_noise;
 
 pub mod metrics;
+pub use crate::s3_migration::{S3MigrationMode, DEFAULT_S3_MIGRATION_MAX_RETRIES};
 
 #[cfg(test)]
 mod tests;
@@ -11,7 +14,7 @@ mod tests;
 use std::{
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
         Arc,
     },
     time::Duration,
@@ -28,11 +31,13 @@ use fhevm_engine_common::{
     chain_id::ChainId,
     db_keys::DbKeyId,
     drift_revert,
+    gcs_activation::{run_gcs_activation_watcher, GCS_NOT_ACTIVATED},
     healthz_server::{self},
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
     types::{CoproSigner, FhevmError, SignerType},
     utils::{to_hex, DatabaseURL},
+    versioning::{run_stack_version_listener, StackMode},
 };
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
@@ -44,19 +49,24 @@ use tokio::{
     },
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, Level};
+use tracing::{error, info, warn, Level};
 
 use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
     executor::SwitchNSquashService,
     metrics::spawn_gauge_update_routine,
+    s3_migration::{run_startup_migrations, S3MigrationConfig},
+    s3_migration_dry_run::run_startup_migration_dry_run,
 };
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
-pub(crate) const S3_FORMAT_VERSION_LEGACY: i16 = 0;
+
+pub(crate) const CLEAN_OLD_S3_FORMAT_VERSION: i16 = 0;
+pub(crate) const S3_FORMAT_VERSION_V0: i16 = 0;
 pub(crate) const S3_FORMAT_VERSION_V1: i16 = 1;
 pub(crate) const CURRENT_S3_FORMAT_VERSION: i16 = S3_FORMAT_VERSION_V1;
+pub(crate) const S3_FORMAT_VERSION_LEGACY: i16 = S3_FORMAT_VERSION_V0;
 pub type InternalEvents = Option<tokio::sync::mpsc::Sender<&'static str>>;
 
 #[cfg(feature = "gpu")]
@@ -131,8 +141,16 @@ pub struct Config {
     pub enable_compression: bool,
     pub schedule_policy: SchedulePolicy,
     pub pg_auto_explain_with_min_duration: Option<Duration>,
+    /// When true, the sns-worker runs in GCS mode. It connects with
+    /// `search_path = gcs,public` so writes (`ciphertexts128`,
+    /// `pbs_computations`) land in the `gcs` schema, and it pauses until
+    /// `event_upgrade_activated` is received before processing any work.
+    pub gcs_mode: bool,
     pub signer_type: SignerType,
     pub private_key: Option<String>,
+    pub s3_migration: S3MigrationMode,
+    pub s3_migration_sleep_duration: Duration,
+    pub s3_migration_max_retries: i32,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -157,8 +175,12 @@ impl std::fmt::Display for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "db_url: {},  db_listen_channel: {:?}, db_notify_channel: {}, db_batch_limit: {}",
-            self.db.url, self.db.listen_channels, self.db.notify_channel, self.db.batch_limit
+            "db_url: {},  db_listen_channel: {:?}, db_notify_channel: {}, db_batch_limit: {}, gcs_mode: {}",
+            self.db.url,
+            self.db.listen_channels,
+            self.db.notify_channel,
+            self.db.batch_limit,
+            self.gcs_mode
         )
     }
 }
@@ -292,13 +314,64 @@ impl HandleItem {
     ///
     /// If inserted into the `ciphertext_digest` table means that the both (ct64 and ct128)
     /// ciphertexts are ready to be uploaded to S3.
+    ///
+    /// Returns `false` (and inserts nothing) when the handle's provenance is
+    /// gone: reorg cleanup deletes the `pbs_computations` row of handles that
+    /// lived solely on an orphaned fork, and bridge retraction deletes the
+    /// copied `ciphertexts` row of a retracted bridged handle — both also
+    /// delete the digest row, so an unguarded insert here would resurrect it
+    /// and drive a phantom `addCiphertextMaterial` publication. Both witness
+    /// rows are locked FOR KEY SHARE, and both deleters remove their witness
+    /// BEFORE the digest row, so whichever transaction commits first, the
+    /// other observes it: the deleter's digest DELETE (a later statement)
+    /// removes a just-committed insert, and a later witness read sees the
+    /// deletion and skips. The mirror triggers' advisory stripe locks make a
+    /// deadlock between this transaction and a concurrent cleanup possible
+    /// instead of a clean block; that is safe — the victim rolls back whole
+    /// (an aborted finalization pass re-runs from scratch, an aborted sns
+    /// batch is re-fetched) and the retry converges. What can never happen
+    /// is a silent resurrection.
     pub(crate) async fn enqueue_upload_task(
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<bool, ExecutionError> {
+        let provenance_alive = sqlx::query_scalar::<_, i32>(
+            "SELECT 1 FROM pbs_computations
+             WHERE handle = $1 AND host_chain_id = $2
+             FOR KEY SHARE",
+        )
+        .bind(&self.handle)
+        .bind(self.host_chain_id.as_i64())
+        .fetch_optional(db_txn.as_mut())
+        .await?
+        .is_some();
+
+        let ciphertext_alive = sqlx::query_scalar::<_, i32>(
+            "SELECT 1 FROM ciphertexts
+             WHERE handle = $1
+             LIMIT 1
+             FOR KEY SHARE",
+        )
+        .bind(&self.handle)
+        .fetch_optional(db_txn.as_mut())
+        .await?
+        .is_some();
+
+        if !provenance_alive || !ciphertext_alive {
+            warn!(
+                handle = %to_hex(&self.handle),
+                host_chain_id = self.host_chain_id.as_i64(),
+                provenance_alive,
+                ciphertext_alive,
+                "Skipping upload enqueue: provenance gone (reorg cleanup or bridge retraction)"
+            );
+            return Ok(false);
+        }
+
         if self.ct128.is_empty() {
             sqlx::query(
-                "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, transaction_id)
+                "INSERT INTO ciphertext_digest
+                    (host_chain_id, key_id_gw, handle, transaction_id)
                 VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
             )
             .bind(self.host_chain_id.as_i64())
@@ -333,7 +406,7 @@ impl HandleItem {
             .await?;
         }
 
-        Ok(())
+        Ok(true)
     }
 
     pub(crate) async fn mark_ciphertexts_uploaded(
@@ -361,6 +434,17 @@ impl HandleItem {
         .execute(trx.as_mut())
         .await?;
 
+        if result.rows_affected() == 0 {
+            // The digest row was deleted by reorg cleanup while the upload
+            // was in flight: the handle lived solely on an orphaned fork and
+            // its publication is cancelled. The uploaded S3 objects are
+            // unreferenced garbage, not a correctness problem.
+            warn!(
+                handle = %to_hex(&self.handle),
+                "ciphertext_digest row gone (reorg cleanup); publication cancelled"
+            );
+            return Ok(());
+        }
         if result.rows_affected() != 1 {
             return Err(ExecutionError::InternalError(format!(
                 "expected to mark exactly one ciphertext_digest row as uploaded for handle {}, updated {}",
@@ -465,6 +549,7 @@ impl UploadJob {
 }
 
 /// Runs the uploader loop
+#[allow(clippy::too_many_arguments)]
 pub async fn run_uploader_loop(
     pool_mngr: &PostgresPoolManager,
     conf: &Config,
@@ -472,9 +557,25 @@ pub async fn run_uploader_loop(
     tx: Sender<UploadJob>,
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
+    mode: Arc<StackMode>,
+    token: CancellationToken,
     signer: CoproSigner,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let (is_ready_res, _) = check_is_ready(&client, conf).await;
+    // Park until uploads are enabled. A blue (live) worker has `gcs_mode == false`
+    // and proceeds immediately; a green worker parks for the whole dry-run
+    // window and only begins uploading after cutover flips the mode (on
+    // `event_stack_version_upgraded`), at which point it drains the accumulated
+    // `ciphertext_digest` backlog via the resubmit loop.
+    while mode.gcs_mode() {
+        if token.is_cancelled() {
+            info!("Uploader cancelled before activation");
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    info!("uploads enabled — starting S3 uploader and resubmit loops");
+
+    let (is_ready_res, _) = check_is_ready(&client, &conf.s3).await;
     is_ready.store(is_ready_res, Ordering::Release);
 
     let mut handle_resubmit = spawn_resubmit_task(
@@ -526,7 +627,7 @@ pub async fn create_s3_client(conf: &Config) -> (Arc<aws_sdk_s3::Client>, bool) 
         .build();
 
     let client = Arc::new(Client::from_conf(config));
-    let (is_ready, is_connected) = check_is_ready(&client, conf).await;
+    let (is_ready, is_connected) = check_is_ready(&client, &conf.s3).await;
     if is_connected {
         info!(is_ready = is_ready, "Connected to S3");
     }
@@ -554,18 +655,23 @@ pub async fn run_all(
     let token = parent_token.child_token();
     let tx = uploads_tx.clone();
     // Initialize the S3 uploader
-    let (client, is_ready) = create_s3_client(&conf).await;
-    let is_ready = Arc::new(AtomicBool::new(is_ready));
+    let (client, is_ready_bool) = create_s3_client(&conf).await;
+    let is_ready = Arc::new(AtomicBool::new(is_ready_bool));
     let s3 = client.clone();
     let jobs_rx: Arc<RwLock<mpsc::Receiver<UploadJob>>> = Arc::new(RwLock::new(uploads_rx));
 
-    let Some(pool_mngr) = PostgresPoolManager::connect_pool(
+    // In --gcs-mode the pool is pinned to `search_path = gcs,public` so
+    // unqualified writes (`ciphertexts128`, `pbs_computations`) land in the
+    // `gcs` schema; shared read-only tables (keys, crs, host_chains,
+    // upgrade_state, …) still resolve from `public` via fallback.
+    let Some(pool_mngr) = PostgresPoolManager::connect_pool_with_gcs_mode(
         token.child_token(),
         conf.db.url.as_str(),
         conf.db.timeout,
         conf.db.max_connections,
         Duration::from_secs(2),
         conf.pg_auto_explain_with_min_duration,
+        conf.gcs_mode,
     )
     .await
     else {
@@ -574,6 +680,57 @@ pub async fn run_all(
     };
 
     let pg_mngr = pool_mngr.clone();
+
+    // Shared blue-green stack mode, seeded from the startup-resolved gcs_mode.
+    // The version-upgrade listener flips it out of GCS mode when the cutover
+    // commits (on `event_stack_version_upgraded`); that transition is what
+    // re-enables S3 uploads + GC for the now-live green worker. A blue (live)
+    // worker starts with `gcs_mode == false`, so uploads run immediately.
+    let stack_mode = StackMode::new(conf.gcs_mode);
+    {
+        let listener_pool = pool_mngr.pool();
+        let listener_mode = stack_mode.clone();
+        let listener_token = token.child_token();
+        spawn(async move {
+            if let Err(err) =
+                run_stack_version_listener(listener_pool, listener_mode, listener_token).await
+            {
+                error!(error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
+
+    // GCS gating: spawn the activation watcher and pause until it observes
+    // `upgrade_state.start_block` for stack_role='GCS'. In BCS mode this is
+    // a no-op — the loop falls through immediately.
+    let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
+    if conf.gcs_mode {
+        let watcher_pool = pool_mngr.pool();
+        let watcher_state = start_block_state.clone();
+        spawn(async move {
+            loop {
+                if let Err(err) = run_gcs_activation_watcher(&watcher_pool, &watcher_state).await {
+                    error!(error = %err, "GCS activation watcher errored; restarting in 5s");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            }
+        });
+
+        info!("sns-worker in --gcs-mode (paused, not yet activated). Waiting for event_upgrade_activated.");
+        loop {
+            if token.is_cancelled() {
+                return Ok(());
+            }
+            if start_block_state.load(Ordering::SeqCst) != GCS_NOT_ACTIVATED {
+                break;
+            }
+            tokio::select! {
+                _ = token.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+            }
+        }
+        info!("sns-worker observed GCS activation; resuming.");
+    }
 
     // Start metrics server
     metrics_server::spawn(conf.metrics.addr.clone(), token.child_token());
@@ -615,8 +772,9 @@ pub async fn run_all(
             conf.clone(),
             uploads_tx,
             token.child_token(),
-            client,
+            client.clone(),
             events_tx.clone(),
+            stack_mode.clone(),
         )
         .await?,
     );
@@ -648,12 +806,91 @@ pub async fn run_all(
     )
     .await?;
 
-    // Keep the uploader's handle so its failure exits the process too.
+    let migration_config = S3MigrationConfig {
+        batch_size: 16,
+        signer: signer.clone(),
+        s3: conf.s3.clone(),
+        mode: conf.s3_migration,
+        sleep_duration: conf.s3_migration_sleep_duration,
+        max_retries: conf.s3_migration_max_retries,
+    };
+
+    let not_ready_error = Err(ExecutionError::BucketNotFound(conf.s3.bucket_ct128.clone()).into());
+    let mut concurrent_migration = None;
+    match migration_config.mode {
+        S3MigrationMode::No => {
+            info!("S3 migration is disabled");
+        }
+        S3MigrationMode::Before | S3MigrationMode::BeforeAndQuit | S3MigrationMode::DryRun => {
+            info!("S3 migration is enabled: {}", conf.s3_migration);
+            if !is_ready_bool {
+                error!("S3 is not ready, migration cannot be done");
+                return not_ready_error;
+            };
+            let db_pool = pool_mngr.pool();
+            if matches!(migration_config.mode, S3MigrationMode::DryRun) {
+                run_startup_migration_dry_run(&migration_config, &db_pool, &client).await?;
+            } else {
+                run_startup_migrations(&migration_config, &token, &db_pool, &client).await?;
+            }
+        }
+        S3MigrationMode::Concurrent => {
+            let token = token.clone();
+            let db_pool = pool_mngr.pool();
+            let client = client.clone();
+            let task = spawn(async move {
+                info!("S3 migration is enabled: {}", conf.s3_migration);
+                if !is_ready_bool {
+                    error!("S3 is not ready but will start when ready");
+                };
+                if let Err(err) =
+                    run_startup_migrations(&migration_config, &token, &db_pool, &client).await
+                {
+                    error!(
+                        error = %err,
+                        "Failed to run concurrent S3 format migration"
+                    );
+                }
+            });
+            concurrent_migration = Some(task)
+        }
+    }
+
+    if matches!(
+        conf.s3_migration,
+        S3MigrationMode::BeforeAndQuit | S3MigrationMode::DryRun
+    ) {
+        info!("SNS worker stopped after S3 migration-only run");
+        token.cancel();
+        return Ok(());
+    }
+
+    // Spawns a task to handle S3 uploads. In GCS mode the loop parks until the
+    // cutover flips `stack_mode` out of GCS mode, so nothing is uploaded during
+    // the dry-run window. Keep the uploader's handle so its failure exits the
+    // process too.
+    let uploader_mode = stack_mode.clone();
+    let uploader_token = token.child_token();
     let uploader = spawn(async move {
-        run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready, signer).await
+        run_uploader_loop(
+            &pg_mngr,
+            &conf,
+            jobs_rx,
+            tx,
+            s3,
+            is_ready,
+            uploader_mode,
+            uploader_token,
+            signer,
+        )
+        .await
     });
 
-    // Exit if either the service loop or the uploader fails.
+    // Exit if either the service loop or the uploader fails. Propagate the
+    // uploader's own error (`Ok(inner)`), not just a JoinError — otherwise a
+    // persistent upload failure would return `Ok(())` here and the process
+    // would exit 0, skipping the fatal log, telemetry::flush(), and exit(1)
+    // that alerting keys on.
     let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = tokio::select! {
         res = service.run(&pool_mngr) => res.map_err(Into::into),
         res = uploader => match res {
@@ -666,6 +903,13 @@ pub async fn run_all(
     if let Err(err) = result {
         error!(error = %err, "SNS worker exited with a fatal error");
         return Err(err);
+    }
+
+    if let Some(migration_task) = concurrent_migration {
+        if let Err(join_err) = migration_task.await {
+            error!(error = %join_err, "SNS worker, S3 migration exited with a fatal error");
+            return Err(join_err.into());
+        }
     }
 
     info!("Worker stopped");

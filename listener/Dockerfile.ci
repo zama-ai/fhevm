@@ -4,7 +4,7 @@
 ARG RUST_IMAGE_VERSION=1.91.1
 
 # ── Builder (self-contained Chainguard dev image + inlined Rust setup) ──
-FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS builder
+FROM cgr.dev/zama.ai/glibc-dynamic:16-dev AS builder
 
 ARG RUST_IMAGE_VERSION
 
@@ -37,7 +37,7 @@ ENV SQLX_OFFLINE=true
 # Build with BuildKit caches for cargo registry and target directory
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/target,sharing=locked \
-    cargo build --release -p listener_core && \
+    cargo build --release -p listener_core --features iam-auth && \
     cp target/release/listener_core /tmp/listener_core
 
 # ── Runtime (minimal Chainguard glibc) ──────────────────────────────────

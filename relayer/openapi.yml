@@ -115,7 +115,7 @@ info:
   license:
     name: BSD-3-Clause-Clear
     url: https://opensource.org/licenses/BSD-3-Clause-Clear
-  version: 0.9.0-rc.3
+  version: 0.14.0
 servers:
 - url: /
   description: Current server
@@ -1266,9 +1266,8 @@ components:
         signature:
           type: string
           description: |-
-            Attestation signature. Opaque to the relayer — forwarded verbatim
-            to the gateway, where the KMS Connector verifies it.
-            `0x` + arbitrary hex.
+            Attestation signature: `0x`-hex, or empty for the ERC-1271
+            empty-signature path.
           example: '0xaabbccddeeff'
       additionalProperties: false
     ChainId:
@@ -1322,7 +1321,9 @@ components:
           example: '1'
         extraData:
           type: string
-          description: Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
+          description: |-
+            Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
+            (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId).
           example: '0x00'
         handleContractPairs:
           type: array
@@ -1367,9 +1368,9 @@ components:
         extraData:
           type: string
           description: |-
-            Extra data forwarded to the gateway contract. Always `"0x00"` in
-            the current protocol version (versioned formats reserved for
-            future extensions).
+            Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`,
+            version `0x01` (`0x01` + 32-byte contextId), or version `0x02`
+            (`0x02` + 32-byte contextId + 32-byte epochId).
           example: '0x00'
         handles:
           type: array
@@ -1568,13 +1569,13 @@ components:
       properties:
         dataId:
           type: string
-          example: fhe_public_key_v1
+          description: On-chain key/CRS identifier, as a decimal string.
+          example: '3'
         urls:
           type: array
           items:
             type: string
-          example:
-          - https://keys.fhevm.io/v1/fhe_public_key_v1
+          description: Storage URLs for the key/CRS material.
     KeyUrlResponseJson:
       type: object
       required:
@@ -1633,7 +1634,9 @@ components:
           minItems: 1
         extraData:
           type: string
-          description: Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
+          description: |-
+            Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
+            (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId).
           example: '0x00'
     PublicDecryptResponseJson:
       type: object
@@ -1795,7 +1798,9 @@ components:
           $ref: '#/components/schemas/ChainId'
         extraData:
           type: string
-          description: Extra data forwarded to the gateway contract. Always `"0x00"` in the current protocol version.
+          description: |-
+            Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
+            (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId).
           example: '0x00'
         handleContractPairs:
           type: array
@@ -1968,7 +1973,7 @@ components:
           example: fhevm-relayer
         version:
           type: string
-          example: 0.9.0
+          example: 0.14.0
   securitySchemes:
     ApiKeyAuth:
       type: apiKey

@@ -15,7 +15,10 @@ import { localstack_v13 } from '../chains/localstack_v13.js';
 import { localstack_v14 } from '../chains/localstack_v14.js';
 import { devnet } from '../chains/devnet.js';
 import { polygon_devnet } from '../chains/polygon_devnet.js';
+import { ingen_trex_cleartext } from '../chains/ingen_trex_cleartext.js';
+import { hoodi_cleartext } from '../chains/hoodi_cleartext.js';
 import { mainnet, sepolia, sepolia as testnet } from '@fhevm/sdk/chains';
+import { localcleartext_legacy } from '../chains/localcleartext_legacy.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,6 +30,7 @@ export const FHE_TEST_CHAIN_NAMES = [
   'mainnet',
   'devnet',
   'localcleartext',
+  'localcleartext_legacy',
   'localcleartext_v12',
   'localcleartext_v13',
   'localstack',
@@ -35,6 +39,8 @@ export const FHE_TEST_CHAIN_NAMES = [
   'localstack_v13',
   'localstack_v14',
   'polygon_devnet',
+  'ingen_trex_cleartext',
+  'hoodi_cleartext',
 ] as const;
 
 export type FheTestChainName = (typeof FHE_TEST_CHAIN_NAMES)[number];
@@ -59,7 +65,7 @@ export type FheTestBaseEnv = {
 // ---------------------------------------------------------------------------
 
 export function isCleartext(chainName: FheTestChainName) {
-  return chainName === 'localcleartext' || chainName.startsWith('localcleartext_');
+  return chainName === 'localcleartext' || chainName.startsWith('localcleartext_') || chainName.endsWith('_cleartext');
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +77,7 @@ const PROTOCOL_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, ProtocolVersi
   testnet: '0.13.0',
   mainnet: '0.11.0',
   localcleartext: '0.13.0',
+  localcleartext_legacy: '0.12.0',
   localcleartext_v12: '0.12.0',
   localcleartext_v13: '0.13.0',
   localstack: '0.14.0',
@@ -80,6 +87,8 @@ const PROTOCOL_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, ProtocolVersi
   localstack_v14: '0.14.0',
   devnet: '0.13.0',
   polygon_devnet: '0.13.0',
+  ingen_trex_cleartext: '0.12.0',
+  hoodi_cleartext: '0.11.0',
 };
 
 export function getExpectedProtocolVersion(chainName: FheTestChainName): ProtocolVersion {
@@ -97,12 +106,15 @@ const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | und
   testnet: '1.5.3', // alias for sepolia
   mainnet: '1.5.3',
   localcleartext: undefined,
+  localcleartext_legacy: undefined,
   localcleartext_v12: undefined,
   localcleartext_v13: undefined,
   localstack_v11: '1.5.3',
   localstack_v12: '1.5.3',
   devnet: '1.6.2',
   polygon_devnet: '1.6.2',
+  ingen_trex_cleartext: undefined,
+  hoodi_cleartext: undefined,
   localstack: '1.6.2',
   localstack_v13: '1.6.2',
   localstack_v14: '1.6.2',
@@ -117,11 +129,13 @@ const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestC
   sepolia: '1.4.0-alpha.3',
   testnet: '1.4.0-alpha.3',
   localcleartext: 'cleartext',
+  localcleartext_legacy: 'cleartext',
   localcleartext_v12: 'cleartext',
   localcleartext_v13: 'cleartext',
   localstack_v11: '1.5.1',
   localstack_v12: '1.5.4',
   localstack_v13: '1.6.1',
+  ingen_trex_cleartext: 'cleartext',
 };
 
 export function getFheEncryptionKeyTfheVersion(chainName: FheTestChainName): string {
@@ -492,10 +506,13 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     localstack_v12,
     localstack_v13,
     localstack_v14,
+    localcleartext_legacy,
     localcleartext,
     localcleartext_v12: localcleartext,
     localcleartext_v13: localcleartext,
     polygon_devnet,
+    ingen_trex_cleartext,
+    hoodi_cleartext,
     sepolia,
     mainnet,
     devnet,

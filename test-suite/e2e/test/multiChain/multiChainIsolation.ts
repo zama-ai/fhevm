@@ -51,8 +51,9 @@ describe('Multi-Chain State Isolation', function () {
   afterEach(async function () {
     try {
       await ethers.provider.send('evm_setAutomine', [true]);
+      await ethers.provider.send('evm_setIntervalMining', [1]);
     } catch {
-      // automine may already be enabled
+      // automine may already be enabled, or the network may not support it
     }
   });
 
@@ -321,6 +322,10 @@ describe('Multi-Chain State Isolation', function () {
       expect(await erc20A.totalSupply()).to.eq(supplyABefore);
       expect(await erc20B.totalSupply()).to.eq(supplyBBefore);
       expect(await providerB.getBlockNumber()).to.be.greaterThanOrEqual(chainBBlockDuring);
+      // The transfer mined on Chain B during the snapshot window must still be
+      // canonical — a leaked revert would have dropped it or changed its block.
+      const receiptBAfter = await providerB.getTransactionReceipt(transferB.hash);
+      expect(receiptBAfter?.blockHash).to.eq(receiptB!.blockHash);
     });
   });
 
@@ -353,6 +358,12 @@ describe('Multi-Chain State Isolation', function () {
         expect(await providerB.getBlockNumber()).to.be.greaterThan(chainBBlockBefore);
       } finally {
         await ethers.provider.send('evm_setAutomine', [true]);
+        // Restore interval mining (the node boots with --block-time 1). Leaving it
+        // off makes the chain mine only on transactions, so an idle chain's head
+        // freezes and the coprocessor's head-lag finality never advances — which
+        // starves everything gated on finalized blocks (e.g. bridge association)
+        // for the rest of the suite.
+        await ethers.provider.send('evm_setIntervalMining', [1]);
       }
     });
   });

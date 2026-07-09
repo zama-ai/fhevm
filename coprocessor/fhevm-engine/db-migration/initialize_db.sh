@@ -143,17 +143,65 @@ run_remove_tenants_prerequisites() {
     "CREATE UNIQUE INDEX CONCURRENTLY idx_pbs_computations_no_tenant ON pbs_computations (handle);"
 }
 
+run_block_scope_materialization_wave1_prerequisites() {
+  # Pre-upgrade step for the block-scope materialization (wave1) rollout.
+  #
+  # The wave1 migration 20260610130000 builds idx_host_chain_blocks_valid_parent_hash
+  # on the populated, monotonically-growing host_chain_blocks_valid table. A plain
+  # CREATE INDEX takes a SHARE lock that blocks block ingestion for the whole build.
+  # Build it CONCURRENTLY here, while existing services keep running, so the
+  # in-migration CREATE INDEX IF NOT EXISTS later no-ops.
+  echo "Pre-creating block-scope materialization (wave1) ancestry index concurrently..."
+
+  # parent_hash is metadata-only (constant NULL default) and must exist before
+  # the concurrent index build. Idempotent: no-op if the column already exists.
+  run_sql "ALTER TABLE host_chain_blocks_valid
+           ADD COLUMN IF NOT EXISTS parent_hash BYTEA NULL DEFAULT NULL;"
+
+  precreate_index "idx_host_chain_blocks_valid_parent_hash" \
+    "CREATE INDEX CONCURRENTLY idx_host_chain_blocks_valid_parent_hash \
+     ON host_chain_blocks_valid (chain_id, parent_hash);"
+}
+
 echo "-------------- Start database initilaization --------------"
 
 echo "Creating database..."
 sqlx database create || { echo "Failed to create database."; exit 1; }
+
+# The wave1 squash (#2848) shipped an in-place edit of the already-applied
+# migration 20260616120000_bridge_tables.sql; this tree restores the original
+# file and carries the delta in 20260704100000 instead. A database whose FIRST
+# migration run used the edited file recorded its checksum and would now fail
+# `sqlx migrate run` with VersionMismatch before applying anything newer.
+# Rewrite exactly that known checksum (SHA-384 of the edited file) to the
+# restored file's; a strict no-op everywhere else, including fresh databases
+# and databases that applied the original #2734 file.
+repair_bridge_tables_migration_checksum() {
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+    DO \$\$
+    BEGIN
+      IF to_regclass('_sqlx_migrations') IS NOT NULL THEN
+        UPDATE _sqlx_migrations
+        SET checksum = decode('36eee489f352fbd4f2c05c3a696b2aa144a7a1c314cbaf814402c49a22b8d166fbdd7e26cb8f996691517df3fde1f6e8', 'hex')
+        WHERE version = 20260616120000
+          AND checksum = decode('7f80a69bd35610c02950bbc253ac1c34c006217d242f17cd23f23e4fb990d94009587c4fc3fbd8b5ba042f17f0d09810', 'hex');
+      END IF;
+    END
+    \$\$;" || { echo "Failed to repair bridge_tables migration checksum."; exit 1; }
+}
 
 echo "Running migrations..."
 if [ "${RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS:-}" = "true" ]; then
   # Partial migrations — the host_chains table doesn't exist yet on this path,
   # so do not attempt to seed.
   run_remove_tenants_prerequisites
+elif [ "${RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES:-}" = "true" ]; then
+  # Pre-upgrade pass: build the wave1 ancestry index CONCURRENTLY against the
+  # live DB before `helm upgrade` applies the rest of the wave1 migrations.
+  # Does not run the remaining migrations and does not seed.
+  run_block_scope_materialization_wave1_prerequisites
 else
+  repair_bridge_tables_migration_checksum
   sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }
   seed_host_chains
 fi

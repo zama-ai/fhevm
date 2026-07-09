@@ -197,6 +197,18 @@ export function isVersionStrictlyBefore(
 }
 
 /**
+ * Returns `true` if the version equals `major.minor.patch` exactly.
+ */
+export function isVersionEqual(
+  version: HostContractVersion,
+  otherVersion: { readonly major: number; readonly minor: number; readonly patch: number },
+): boolean {
+  return (
+    version.major === otherVersion.major && version.minor === otherVersion.minor && version.patch === otherVersion.patch
+  );
+}
+
+/**
  * Asserts that a {@link HostContractVersion} belongs to a specific contract.
  * Narrows the type to `HostContractVersion<name>` on success.
  *

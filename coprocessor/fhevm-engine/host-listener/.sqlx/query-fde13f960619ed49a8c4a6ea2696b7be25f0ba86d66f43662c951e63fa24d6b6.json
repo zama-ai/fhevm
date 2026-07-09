@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE kms_crs_activation_events\n        SET last_error = $1, last_updated_at = NOW(), retry_count = COALESCE(retry_count, 0) + 1\n        WHERE chain_id = $2 AND block_hash = $3 AND crs_id = $4\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fde13f960619ed49a8c4a6ea2696b7be25f0ba86d66f43662c951e63fa24d6b6"
+}
