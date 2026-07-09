@@ -203,15 +203,20 @@ mod tests {
         }
     }
 
+    /// The 10 named `fhe_eval` accounts followed by `remaining_accounts`, matching
+    /// the real anchor layout (see `decode::FHE_EVAL_REMAINING_BASE`).
     fn fhe_eval_accounts(program_id: [u8; 32], remaining: &[[u8; 32]]) -> Vec<[u8; 32]> {
         let mut accounts = vec![
-            pk(0xA0),
-            pk(0xA1),
-            pk(0xA2),
-            pk(0xA3),
-            pk(0xA4),
-            pk(0xA5),
-            program_id,
+            pk(0xA0),   // 0 payer
+            pk(0xA1),   // 1 compute_subject
+            pk(0xA2),   // 2 app_account_authority
+            pk(0xA3),   // 3 host_config
+            pk(0xA4),   // 4 system_program
+            pk(0xA5),   // 5 hcu_authority
+            program_id, // 6 hcu_block_meter (None placeholder)
+            program_id, // 7 hcu_trusted_app_record (None placeholder)
+            pk(0xA8),   // 8 event_authority
+            program_id, // 9 program (event_cpi)
         ];
         accounts.extend_from_slice(remaining);
         accounts
@@ -486,6 +491,89 @@ mod tests {
         assert_eq!(result.proof_slot, 1);
         assert_eq!(proof_bytes[0], 0x02);
         authorize_public(lineage, &acl, handle, proof).unwrap();
+        assert_eq!(
+            store.get_events(lineage).await.unwrap(),
+            vec![LineageEvent::MarkedPublic { handle }]
+        );
+    }
+
+    /// Regression for the compute-flow "instruction referenced a lineage that was
+    /// never created" bug: a lineage is created INLINE by a (non-born-public)
+    /// `fhe_eval` durable output (`previous_handle: None`), then `allow_subjects`
+    /// and `make_handle_public` reference it in later transactions. Program-wide
+    /// `poll_once` must decode the `fhe_eval` durable output to the SAME lineage PDA
+    /// (`FHE_EVAL_REMAINING_BASE`) so the create registers state and the later
+    /// references resolve. A stale account-base offset keyed the create to the wrong
+    /// pubkey, so `allow_subjects` hit `UnknownLineage`.
+    #[tokio::test]
+    async fn eval_created_lineage_then_allow_and_make_public_ingests_and_verifies() {
+        use crate::solana_proof::ingest::{poll_once, MAX_POLL_BACKLOG_PER_CYCLE};
+
+        let program_id = pk(0x99);
+        let lineage = pk(0x0A);
+        let owner = pk(0x30);
+        let compute = pk(0x31);
+        let handle = pk(0x44);
+        let chain = FakeChain::new(program_id);
+
+        // On-chain: the single public-decrypt leaf `make_handle_public` appends.
+        let leaf = public_decrypt_leaf_commitment(lineage, 0, handle);
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
+        chain.set_lineage_state(
+            lineage,
+            OnChainLineageState {
+                peaks: peaks.clone(),
+                leaf_count,
+            },
+        );
+
+        // tx1: fhe_eval create (previous_handle None, make_public false) — the
+        // durable output is remaining_accounts[0] at absolute index 10.
+        let eval_ix = make_ix(
+            program_id,
+            fhe_eval_accounts(program_id, &[lineage]),
+            "fhe_eval",
+            eval_create_output(owner),
+        );
+        chain.push_tx("sig1", 1, &[lineage], vec![eval_ix]);
+
+        // tx2: allow_subjects on the same lineage (encrypted_value at account index 2).
+        let allow_ix = make_ix(
+            program_id,
+            vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
+            "allow_subjects",
+            vec![SubjectGrant { subject: compute }],
+        );
+        chain.push_tx("sig2", 2, &[lineage], vec![allow_ix]);
+
+        // tx3: make_handle_public on the same lineage.
+        let make_public_ix = make_ix(
+            program_id,
+            vec![pk(0xA), pk(0xB), lineage, pk(0xC), pk(0xD)],
+            "make_handle_public",
+            handle,
+        );
+        chain.push_tx("sig3", 3, &[lineage], vec![make_public_ix]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        // Program-wide ingest must not raise UnknownLineage: the inline create
+        // registers the lineage so the later allow/make-public resolve.
+        let processed = poll_once(&chain, &store, program_id, 100, MAX_POLL_BACKLOG_PER_CYCLE)
+            .await
+            .unwrap();
+        assert_eq!(processed, 3);
+
+        let result = build_proof(&chain, &store, program_id, lineage, 0, 1000)
+            .await
+            .unwrap();
+        assert!(result.verified);
+        assert_eq!(result.leaf_count, 1);
         assert_eq!(
             store.get_events(lineage).await.unwrap(),
             vec![LineageEvent::MarkedPublic { handle }]
