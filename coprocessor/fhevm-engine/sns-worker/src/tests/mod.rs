@@ -366,18 +366,20 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
     assert!(task.enqueue_upload_task(&mut trx).await.unwrap());
     trx.commit().await.unwrap();
     let digest_rows = || async {
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1")
-            .bind(&handle)
-            .fetch_one(&pool)
-            .await
-            .unwrap()
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM ciphertext_digest_branch WHERE handle = $1",
+        )
+        .bind(&handle)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
     };
     assert_eq!(digest_rows().await, 1);
 
     // Simulate the reorg cleanup for an orphan-only handle.
     for sql in [
-        "DELETE FROM pbs_computations WHERE handle = $1",
-        "DELETE FROM ciphertext_digest WHERE handle = $1",
+        "DELETE FROM pbs_computations_branch WHERE handle = $1",
+        "DELETE FROM ciphertext_digest_branch WHERE handle = $1",
     ] {
         sqlx::query(sql).bind(&handle).execute(&pool).await.unwrap();
     }
@@ -402,7 +404,7 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
     test_harness::db_utils::insert_into_pbs_computations(&pool, host_chain_id, &handle)
         .await
         .unwrap();
-    sqlx::query("DELETE FROM ciphertexts WHERE handle = $1")
+    sqlx::query("DELETE FROM ciphertexts_branch WHERE handle = $1")
         .bind(&handle)
         .execute(&pool)
         .await

@@ -1440,7 +1440,7 @@ async fn fetch_pending_canonical_repairs(
                d.block_number,
                d.ciphertext,
                d.ciphertext128,
-               d.ciphertext128_format,
+               d.ciphertext128_format AS "ciphertext128_format?",
                d.s3_format_version,
                d.transaction_id,
                d.host_chain_id,
@@ -1534,13 +1534,13 @@ async fn fetch_pending_canonical_repairs(
         let ct128_format = if !has_ct128_ciphertext {
             Ciphertext128Format::Unknown
         } else {
-            match Ciphertext128Format::from_i16(ciphertext128_format) {
+            match ciphertext128_format.and_then(Ciphertext128Format::from_i16) {
                 Some(format) => format,
                 None => {
                     error!(
                         handle = to_hex(&handle),
-                        format_id = ciphertext128_format,
-                        "Invalid ciphertext128 format for S3 canonical repair"
+                        format_id = ?ciphertext128_format,
+                        "Missing or invalid ciphertext128 format for S3 canonical repair"
                     );
                     continue;
                 }
@@ -1710,7 +1710,7 @@ async fn reconcile_verified_settled_publications(
                d.block_number,
                d.ciphertext AS "ciphertext!",
                d.ciphertext128,
-               d.ciphertext128_format,
+               d.ciphertext128_format AS "ciphertext128_format?",
                d.s3_format_version,
                d.transaction_id
           FROM ciphertext_digest_branch d
@@ -1773,12 +1773,12 @@ async fn reconcile_verified_settled_publications(
         let ct128_format = if ct128_digest.as_slice() == NO_SNS_CIPHERTEXT_DIGEST.as_slice() {
             Ciphertext128Format::Unknown
         } else {
-            match Ciphertext128Format::from_i16(ciphertext128_format) {
+            match ciphertext128_format.and_then(Ciphertext128Format::from_i16) {
                 Some(format) => format,
                 None => {
                     warn!(
                         handle = to_hex(&handle),
-                        "Skipping S3 reconciliation for row with invalid ct128 format"
+                        "Skipping S3 reconciliation for row with missing or invalid ct128 format"
                     );
                     continue;
                 }
