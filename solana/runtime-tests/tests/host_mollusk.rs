@@ -3,9 +3,9 @@
 //! Migrated from the old keyed-nonce `AclRecord`/`AclPermission` model (deleted
 //! along with `assert_acl_record`, `allow_acl_subjects`, `commit_handle_material`,
 //! and the single-op `fhe_*` instructions) to the new stateless-indexing
-//! `EncryptedValue` lineage: `create_encrypted_value`, `allow_subjects`,
-//! `update_encrypted_value`, `make_handle_public`, and durable outputs bound
-//! through `fhe_eval`. See `zama-host/src/state/encrypted_value.rs` and
+//! `EncryptedValue` lineage: durable outputs bound through `fhe_eval`,
+//! `allow_subjects`, and `make_handle_public`; raw create/update are covered as
+//! fail-closed ABI stubs. See `zama-host/src/state/encrypted_value.rs` and
 //! `zama_solana_acl` for the model this exercises.
 //!
 //! Scope note: this migration focuses the suite on the ACL/MMR surface that
@@ -259,6 +259,111 @@ fn read_encrypted_value_from_context(
         .clone();
     let mut data: &[u8] = &account.data;
     EncryptedValue::try_deserialize(&mut data).expect("valid EncryptedValue account")
+}
+
+fn supersede_with_fhe_eval(
+    payer: Pubkey,
+    compute_subject: Pubkey,
+    host_config: Pubkey,
+    host_config_account: Account,
+    address: Pubkey,
+    value: &EncryptedValue,
+    context_id_tag: u8,
+) -> EncryptedValue {
+    let args = FheEvalArgs {
+        context_id: [context_id_tag; 32],
+        steps: vec![FheEvalStep::TrivialEncrypt {
+            plaintext: [context_id_tag; 32],
+            fhe_type: 5,
+            output: FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index: 0,
+                output_app_account_authority_index: None,
+                output_acl_domain_key: value.acl_domain_key,
+                output_app_account: value.app_account,
+                output_encrypted_value_label: value.encrypted_value_label,
+                output_subjects: value
+                    .subjects
+                    .iter()
+                    .copied()
+                    .map(|pubkey| host::AclSubjectEntry { pubkey })
+                    .collect(),
+                previous_handle: Some(value.current_handle),
+                previous_subjects: Some(value.subjects.clone()),
+                make_public: false,
+            },
+        }],
+    };
+    let ix = fhe_eval_ix(
+        payer,
+        compute_subject,
+        value.app_account,
+        host_config,
+        args,
+        vec![writable(address)],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (payer, funded_system_account()),
+        (compute_subject, funded_system_account()),
+        (value.app_account, funded_system_account()),
+        (address, encrypted_value_account(value)),
+        (host_config, host_config_account),
+        (event_authority(host::id()), Account::default()),
+    ];
+    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+    read_encrypted_value(&result, address)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn expect_fhe_eval_supersede_error(
+    payer: Pubkey,
+    compute_subject: Pubkey,
+    host_config: Pubkey,
+    host_config_account: Account,
+    address: Pubkey,
+    value: &EncryptedValue,
+    previous_handle: [u8; 32],
+    previous_subjects: Vec<Pubkey>,
+    output_subjects: Vec<host::AclSubjectEntry>,
+    context_id_tag: u8,
+    expected: Check<'static>,
+) {
+    let args = FheEvalArgs {
+        context_id: [context_id_tag; 32],
+        steps: vec![FheEvalStep::TrivialEncrypt {
+            plaintext: [context_id_tag; 32],
+            fhe_type: 5,
+            output: FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index: 0,
+                output_app_account_authority_index: None,
+                output_acl_domain_key: value.acl_domain_key,
+                output_app_account: value.app_account,
+                output_encrypted_value_label: value.encrypted_value_label,
+                output_subjects,
+                previous_handle: Some(previous_handle),
+                previous_subjects: Some(previous_subjects),
+                make_public: false,
+            },
+        }],
+    };
+    let ix = fhe_eval_ix(
+        payer,
+        compute_subject,
+        value.app_account,
+        host_config,
+        args,
+        vec![writable(address)],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (payer, funded_system_account()),
+        (compute_subject, funded_system_account()),
+        (value.app_account, funded_system_account()),
+        (address, encrypted_value_account(value)),
+        (host_config, host_config_account),
+        (event_authority(host::id()), Account::default()),
+    ];
+    mollusk().process_and_validate_instruction(&ix, &accounts, &[expected]);
 }
 
 fn custom_error(error: host::errors::ZamaHostError) -> Check<'static> {
@@ -567,11 +672,11 @@ fn readonly_signer(pubkey: Pubkey) -> AccountMeta {
 }
 
 // ---------------------------------------------------------------------------
-// create_encrypted_value
+// disabled raw create_encrypted_value
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_create_encrypted_value_succeeds_and_stores_subjects() {
+fn mollusk_create_encrypted_value_rejects_raw_handle_without_provenance() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let acl_domain_key = Pubkey::new_unique();
@@ -602,127 +707,11 @@ fn mollusk_create_encrypted_value_succeeds_and_stores_subjects() {
         (host_config, host_config_account),
     ];
 
-    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let value = read_encrypted_value(&result, encrypted_value);
-    assert_eq!(value.current_handle, handle);
-    assert_eq!(value.subjects, vec![subject]);
-    assert_eq!(value.leaf_count, 0);
-    assert!(value.peaks.is_empty());
-}
-
-#[test]
-fn mollusk_create_encrypted_value_rejects_empty_subjects() {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
-    let acl_domain_key = Pubkey::new_unique();
-    let lbl = label("balance");
-    let value_key =
-        zama_solana_acl::derive_value_key(acl_domain_key.to_bytes(), authority.to_bytes(), lbl);
-    let (encrypted_value, _bump) = host::encrypted_value_address(value_key);
-
-    let ix = create_encrypted_value_ix(
-        authority,
-        authority,
-        encrypted_value,
-        host_config,
-        acl_domain_key,
-        authority,
-        lbl,
-        handle_for_chain(1, 5),
-        vec![],
-    );
-    let accounts = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (encrypted_value, empty_system_account()),
-        (host_config, host_config_account),
-    ];
     mollusk().process_and_validate_instruction(
         &ix,
         &accounts,
         &[custom_error(
-            host::errors::ZamaHostError::EncryptedValueEmptySubjects,
-        )],
-    );
-}
-
-#[test]
-fn mollusk_create_encrypted_value_rejects_duplicate_subjects() {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
-    let acl_domain_key = Pubkey::new_unique();
-    let lbl = label("balance");
-    let value_key =
-        zama_solana_acl::derive_value_key(acl_domain_key.to_bytes(), authority.to_bytes(), lbl);
-    let (encrypted_value, _bump) = host::encrypted_value_address(value_key);
-    let dup = Pubkey::new_unique();
-
-    let ix = create_encrypted_value_ix(
-        authority,
-        authority,
-        encrypted_value,
-        host_config,
-        acl_domain_key,
-        authority,
-        lbl,
-        handle_for_chain(1, 5),
-        vec![
-            EncryptedValueSubjectGrant { subject: dup },
-            EncryptedValueSubjectGrant { subject: dup },
-        ],
-    );
-    let accounts = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (encrypted_value, empty_system_account()),
-        (host_config, host_config_account),
-    ];
-    mollusk().process_and_validate_instruction(
-        &ix,
-        &accounts,
-        &[custom_error(host::errors::ZamaHostError::SubjectNotAllowed)],
-    );
-}
-
-#[test]
-fn mollusk_create_encrypted_value_rejects_over_cap_subjects_at_birth() {
-    let payer = Pubkey::new_unique();
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
-    let acl_domain_key = Pubkey::new_unique();
-    let lbl = label("balance");
-    let value_key =
-        zama_solana_acl::derive_value_key(acl_domain_key.to_bytes(), authority.to_bytes(), lbl);
-    let (encrypted_value, _bump) = host::encrypted_value_address(value_key);
-    let subjects = (0..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
-        .map(|_| EncryptedValueSubjectGrant {
-            subject: Pubkey::new_unique(),
-        })
-        .collect();
-
-    let ix = create_encrypted_value_ix(
-        payer,
-        authority,
-        encrypted_value,
-        host_config,
-        acl_domain_key,
-        authority,
-        lbl,
-        handle_for_chain(1, 5),
-        subjects,
-    );
-    let accounts = vec![
-        (system_program::ID, system_program_account()),
-        (payer, funded_system_account()),
-        (authority, funded_system_account()),
-        (encrypted_value, empty_system_account()),
-        (host_config, host_config_account),
-    ];
-    mollusk().process_and_validate_instruction(
-        &ix,
-        &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::EncryptedValueSubjectCapacityExceeded,
+            host::errors::ZamaHostError::RawEncryptedValueLifecycleDisabled,
         )],
     );
 }
@@ -813,32 +802,21 @@ fn mollusk_allow_subjects_rejects_ninth_distinct_subject() {
     let payer = Pubkey::new_unique();
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
-    let acl_domain_key = Pubkey::new_unique();
-    let lbl = label("balance");
     let handle = handle_for_chain(2, 5);
-    let value_key =
-        zama_solana_acl::derive_value_key(acl_domain_key.to_bytes(), authority.to_bytes(), lbl);
-    let (encrypted_value, _bump) = host::encrypted_value_address(value_key);
+    let (encrypted_value, value) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        handle,
+        &[authority],
+    );
     let context = mollusk().with_context(HashMap::from([
         (system_program::ID, system_program_account()),
         (payer, funded_system_account()),
         (authority, funded_system_account()),
-        (encrypted_value, empty_system_account()),
+        (encrypted_value, encrypted_value_account(&value)),
         (host_config, host_config_account),
     ]));
-
-    let create_ix = create_encrypted_value_ix(
-        payer,
-        authority,
-        encrypted_value,
-        host_config,
-        acl_domain_key,
-        authority,
-        lbl,
-        handle,
-        vec![EncryptedValueSubjectGrant { subject: authority }],
-    );
-    context.process_and_validate_instruction(&create_ix, &[Check::success()]);
 
     let new_subjects = (0..zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
         .map(|_| Pubkey::new_unique())
@@ -1009,7 +987,6 @@ fn mollusk_removed_subject_gets_no_historical_leaf_when_later_superseded() {
     let owner = Pubkey::new_unique();
     let removed = Pubkey::new_unique();
     let handle0 = handle_for_chain(7, 5);
-    let handle1 = handle_for_chain(8, 5);
     let (address, value0) = new_lineage(
         Pubkey::new_unique(),
         authority,
@@ -1029,24 +1006,15 @@ fn mollusk_removed_subject_gets_no_historical_leaf_when_later_superseded() {
     let value_after_remove = read_encrypted_value(&result0, address);
     assert_eq!(value_after_remove.subjects, vec![owner]);
 
-    let update_ix = update_encrypted_value_ix(
+    let updated = supersede_with_fhe_eval(
         authority,
-        authority,
-        address,
+        owner,
         host_config,
-        handle1,
-        handle0,
-        value_after_remove.subjects.clone(),
+        host_config_account,
+        address,
+        &value_after_remove,
+        8,
     );
-    let accounts1 = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (address, encrypted_value_account(&value_after_remove)),
-        (host_config, host_config_account),
-    ];
-    let result1 =
-        mollusk().process_and_validate_instruction(&update_ix, &accounts1, &[Check::success()]);
-    let updated = read_encrypted_value(&result1, address);
     assert_eq!(updated.leaf_count, 1);
 
     let expected_leaf = zama_solana_acl::historical_access_leaf_commitment(
@@ -1098,7 +1066,6 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
     let owner = Pubkey::new_unique();
     let removed = Pubkey::new_unique();
     let handle0 = handle_for_chain(9, 5);
-    let handle1 = handle_for_chain(10, 5);
     let (address, value0) = new_lineage(
         Pubkey::new_unique(),
         authority,
@@ -1107,24 +1074,15 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
         &[owner, removed],
     );
 
-    let update_ix = update_encrypted_value_ix(
+    let value1 = supersede_with_fhe_eval(
         authority,
-        authority,
-        address,
+        owner,
         host_config,
-        handle1,
-        handle0,
-        value0.subjects.clone(),
+        host_config_account.clone(),
+        address,
+        &value0,
+        10,
     );
-    let accounts0 = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (address, encrypted_value_account(&value0)),
-        (host_config, host_config_account.clone()),
-    ];
-    let result0 =
-        mollusk().process_and_validate_instruction(&update_ix, &accounts0, &[Check::success()]);
-    let value1 = read_encrypted_value(&result0, address);
     assert_eq!(value1.leaf_count, 2);
 
     let remove_ix = remove_subject_ix(owner, address, host_config, removed);
@@ -1162,17 +1120,16 @@ fn mollusk_subject_retains_historical_access_sealed_before_removal() {
 }
 
 // ---------------------------------------------------------------------------
-// update_encrypted_value: supersession + previous-state mismatch (item 2c/2d)
+// Durable supersession + disabled raw update_encrypted_value (item 2c/2d)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_update_encrypted_value_supersedes_and_appends_allowed_subject_leaves() {
+fn mollusk_fhe_eval_supersedes_and_appends_allowed_subject_leaves() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let subject_a = Pubkey::new_unique();
     let subject_b = Pubkey::new_unique();
     let old_handle = handle_for_chain(3, 5);
-    let new_handle = handle_for_chain(4, 5);
     let (address, value) = new_lineage(
         Pubkey::new_unique(),
         authority,
@@ -1180,26 +1137,17 @@ fn mollusk_update_encrypted_value_supersedes_and_appends_allowed_subject_leaves(
         old_handle,
         &[subject_a, subject_b],
     );
-    let previous_subjects = value.subjects.clone();
 
-    let ix = update_encrypted_value_ix(
+    let updated = supersede_with_fhe_eval(
         authority,
-        authority,
-        address,
+        subject_a,
         host_config,
-        new_handle,
-        old_handle,
-        previous_subjects,
+        host_config_account,
+        address,
+        &value,
+        4,
     );
-    let accounts = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (address, encrypted_value_account(&value)),
-        (host_config, host_config_account),
-    ];
-    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let updated = read_encrypted_value(&result, address);
-    assert_eq!(updated.current_handle, new_handle);
+    assert_ne!(updated.current_handle, old_handle);
     assert_eq!(updated.leaf_count, 2);
 
     let mut expected_peaks = Vec::new();
@@ -1218,8 +1166,7 @@ fn mollusk_update_encrypted_value_supersedes_and_appends_allowed_subject_leaves(
 }
 
 #[test]
-fn mollusk_update_encrypted_value_rejects_stale_previous_subjects() {
-    // Item 2c: submitting stale previous_subjects through the real instruction path.
+fn mollusk_update_encrypted_value_rejects_raw_handle_without_provenance() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
@@ -1239,43 +1186,6 @@ fn mollusk_update_encrypted_value_rejects_stale_previous_subjects() {
         host_config,
         handle_for_chain(4, 5),
         old_handle,
-        vec![Pubkey::new_unique()], // stale/wrong previous_subjects
-    );
-    let accounts = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (address, encrypted_value_account(&value)),
-        (host_config, host_config_account),
-    ];
-    mollusk().process_and_validate_instruction(
-        &ix,
-        &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::PreviousStateMismatch,
-        )],
-    );
-}
-
-#[test]
-fn mollusk_update_encrypted_value_rejects_stale_previous_handle() {
-    let authority = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_account(authority);
-    let subject = Pubkey::new_unique();
-    let old_handle = handle_for_chain(3, 5);
-    let (address, value) = new_lineage(
-        Pubkey::new_unique(),
-        authority,
-        label("balance"),
-        old_handle,
-        &[subject],
-    );
-    let ix = update_encrypted_value_ix(
-        authority,
-        authority,
-        address,
-        host_config,
-        handle_for_chain(4, 5),
-        handle_for_chain(99, 5), // wrong previous_handle
         value.subjects.clone(),
     );
     let accounts = vec![
@@ -1288,8 +1198,76 @@ fn mollusk_update_encrypted_value_rejects_stale_previous_handle() {
         &ix,
         &accounts,
         &[custom_error(
-            host::errors::ZamaHostError::PreviousStateMismatch,
+            host::errors::ZamaHostError::RawEncryptedValueLifecycleDisabled,
         )],
+    );
+}
+
+#[test]
+fn mollusk_fhe_eval_rejects_stale_previous_subjects() {
+    // Item 2c: submitting stale previous_subjects through the real durable-output path.
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let subject = Pubkey::new_unique();
+    let old_handle = handle_for_chain(3, 5);
+    let (address, value) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        old_handle,
+        &[subject],
+    );
+
+    expect_fhe_eval_supersede_error(
+        authority,
+        subject,
+        host_config,
+        host_config_account,
+        address,
+        &value,
+        old_handle,
+        vec![Pubkey::new_unique()], // stale/wrong previous_subjects
+        value
+            .subjects
+            .iter()
+            .copied()
+            .map(|pubkey| host::AclSubjectEntry { pubkey })
+            .collect(),
+        5,
+        custom_error(host::errors::ZamaHostError::PreviousStateMismatch),
+    );
+}
+
+#[test]
+fn mollusk_fhe_eval_rejects_stale_previous_handle() {
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let subject = Pubkey::new_unique();
+    let old_handle = handle_for_chain(3, 5);
+    let (address, value) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        old_handle,
+        &[subject],
+    );
+    expect_fhe_eval_supersede_error(
+        authority,
+        subject,
+        host_config,
+        host_config_account,
+        address,
+        &value,
+        handle_for_chain(99, 5), // wrong previous_handle
+        value.subjects.clone(),
+        value
+            .subjects
+            .iter()
+            .copied()
+            .map(|pubkey| host::AclSubjectEntry { pubkey })
+            .collect(),
+        6,
+        custom_error(host::errors::ZamaHostError::PreviousStateMismatch),
     );
 }
 
@@ -1429,7 +1407,9 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     mollusk().process_and_validate_instruction(
         &create_ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[custom_error(
+            host::errors::ZamaHostError::RawEncryptedValueLifecycleDisabled,
+        )],
     );
 
     let (allow_address, allow_value) = new_lineage(
@@ -1535,7 +1515,9 @@ fn mollusk_denied_caller_cannot_mutate_acl_update_or_eval_output() {
     mollusk().process_and_validate_instruction(
         &update_ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::AclSubjectDenied)],
+        &[custom_error(
+            host::errors::ZamaHostError::RawEncryptedValueLifecycleDisabled,
+        )],
     );
 
     let output_label = label("deny-eval");
@@ -1743,7 +1725,9 @@ fn mollusk_paused_state_blocks_acl_update_and_eval_output() {
     mollusk().process_and_validate_instruction(
         &update_ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
+        &[custom_error(
+            host::errors::ZamaHostError::RawEncryptedValueLifecycleDisabled,
+        )],
     );
 
     let output_label = label("pause-eval");
@@ -1802,8 +1786,6 @@ fn mollusk_supersession_lineage_matches_offchain_reconstruction() {
     let subject_a = Pubkey::new_unique();
     let subject_b = Pubkey::new_unique();
     let handle0 = handle_for_chain(10, 5);
-    let handle1 = handle_for_chain(11, 5);
-    let handle2 = handle_for_chain(12, 5);
     let (address, value0) = new_lineage(
         Pubkey::new_unique(),
         authority,
@@ -1812,41 +1794,25 @@ fn mollusk_supersession_lineage_matches_offchain_reconstruction() {
         &[subject_a, subject_b],
     );
 
-    let ix1 = update_encrypted_value_ix(
+    let value1 = supersede_with_fhe_eval(
         authority,
-        authority,
-        address,
+        subject_a,
         host_config,
-        handle1,
-        handle0,
-        value0.subjects.clone(),
+        host_config_account.clone(),
+        address,
+        &value0,
+        11,
     );
-    let accounts1 = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (address, encrypted_value_account(&value0)),
-        (host_config, host_config_account.clone()),
-    ];
-    let result1 = mollusk().process_and_validate_instruction(&ix1, &accounts1, &[Check::success()]);
-    let value1 = read_encrypted_value(&result1, address);
 
-    let ix2 = update_encrypted_value_ix(
+    let value2 = supersede_with_fhe_eval(
         authority,
-        authority,
-        address,
+        subject_a,
         host_config,
-        handle2,
-        handle1,
-        value1.subjects.clone(),
+        host_config_account,
+        address,
+        &value1,
+        12,
     );
-    let accounts2 = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (address, encrypted_value_account(&value1)),
-        (host_config, host_config_account),
-    ];
-    let result2 = mollusk().process_and_validate_instruction(&ix2, &accounts2, &[Check::success()]);
-    let value2 = read_encrypted_value(&result2, address);
 
     // Rebuild the HandleSuperseded events purely from the two instructions' own
     // previous_handle/previous_subjects args, exactly as an off-chain indexer would.
@@ -1860,7 +1826,7 @@ fn mollusk_supersession_lineage_matches_offchain_reconstruction() {
                 .collect::<Vec<_>>(),
         ),
         zama_solana_acl::lineage::LineageEvent::handle_superseded(
-            handle1,
+            value1.current_handle,
             &value1
                 .subjects
                 .iter()
@@ -1884,8 +1850,6 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
     let subject = Pubkey::new_unique();
     let other_subject = Pubkey::new_unique();
     let handle0 = handle_for_chain(20, 5);
-    let handle1 = handle_for_chain(21, 5);
-    let handle2 = handle_for_chain(22, 5);
     let (address, value0) = new_lineage(
         Pubkey::new_unique(),
         authority,
@@ -1894,41 +1858,25 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
         &[subject],
     );
 
-    let ix1 = update_encrypted_value_ix(
+    let value1 = supersede_with_fhe_eval(
         authority,
-        authority,
-        address,
+        subject,
         host_config,
-        handle1,
-        handle0,
-        value0.subjects.clone(),
+        host_config_account.clone(),
+        address,
+        &value0,
+        21,
     );
-    let accounts1 = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (address, encrypted_value_account(&value0)),
-        (host_config, host_config_account.clone()),
-    ];
-    let result1 = mollusk().process_and_validate_instruction(&ix1, &accounts1, &[Check::success()]);
-    let value1 = read_encrypted_value(&result1, address);
 
-    let ix2 = update_encrypted_value_ix(
+    let value2 = supersede_with_fhe_eval(
         authority,
-        authority,
-        address,
+        subject,
         host_config,
-        handle2,
-        handle1,
-        value1.subjects.clone(),
+        host_config_account,
+        address,
+        &value1,
+        22,
     );
-    let accounts2 = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (address, encrypted_value_account(&value1)),
-        (host_config, host_config_account),
-    ];
-    let result2 = mollusk().process_and_validate_instruction(&ix2, &accounts2, &[Check::success()]);
-    let value2 = read_encrypted_value(&result2, address);
 
     let events = [
         zama_solana_acl::lineage::LineageEvent::handle_superseded(
@@ -1940,7 +1888,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
                 .collect::<Vec<_>>(),
         ),
         zama_solana_acl::lineage::LineageEvent::handle_superseded(
-            handle1,
+            value1.current_handle,
             &value1
                 .subjects
                 .iter()
@@ -1980,7 +1928,7 @@ fn mollusk_historical_proof_round_trip_after_two_supersessions() {
     assert!(zama_solana_acl::authorize_historical(
         address.to_bytes(),
         &shared_value2,
-        handle1,
+        value1.current_handle,
         subject.to_bytes(),
         &proof0,
     )
@@ -1993,7 +1941,6 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
     let (host_config, host_config_account) = host_config_account(authority);
     let subject = Pubkey::new_unique();
     let handle0 = handle_for_chain(30, 5);
-    let handle1 = handle_for_chain(31, 5);
     let (address, value0) = new_lineage(
         Pubkey::new_unique(),
         authority,
@@ -2017,24 +1964,15 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
     );
     let value_public = read_encrypted_value(&result0, address);
 
-    let update_ix = update_encrypted_value_ix(
+    let final_value = supersede_with_fhe_eval(
         authority,
-        authority,
-        address,
+        subject,
         host_config,
-        handle1,
-        handle0,
-        value_public.subjects.clone(),
+        host_config_account,
+        address,
+        &value_public,
+        31,
     );
-    let accounts1 = vec![
-        (system_program::ID, system_program_account()),
-        (authority, funded_system_account()),
-        (address, encrypted_value_account(&value_public)),
-        (host_config, host_config_account),
-    ];
-    let result1 =
-        mollusk().process_and_validate_instruction(&update_ix, &accounts1, &[Check::success()]);
-    let final_value = read_encrypted_value(&result1, address);
 
     let events = [
         zama_solana_acl::lineage::LineageEvent::MarkedPublic { handle: handle0 },
@@ -2061,10 +1999,13 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
             .is_ok()
     );
     // A proof built for the old handle never authorizes the newer handle: no roll-forward.
-    assert!(
-        zama_solana_acl::authorize_public(address.to_bytes(), &shared_final, handle1, &proof)
-            .is_err()
-    );
+    assert!(zama_solana_acl::authorize_public(
+        address.to_bytes(),
+        &shared_final,
+        final_value.current_handle,
+        &proof
+    )
+    .is_err());
 }
 
 // ---------------------------------------------------------------------------

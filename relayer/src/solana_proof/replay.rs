@@ -2,15 +2,17 @@
 //! chronological instruction replay, turning `DecodedInstruction`s into the
 //! `zama_solana_acl::lineage::LineageEvent`s the shared crate's MMR math consumes.
 //!
-//! `create_encrypted_value` and `allow_subjects` mutate state but append no MMR
-//! leaf (mirrors the host program). `update_encrypted_value` supersedes the
-//! current handle and appends one historical-access leaf per allowed subject.
-//! `make_handle_public` carries the exact public handle on-chain, so replay can
-//! reconstruct public-decrypt leaves even after `fhe_eval` output handles whose
-//! slot entropy is unavailable to this service. A born-public `fhe_eval` output
-//! resolves that output handle from the op event `decode` correlated with it, so
-//! its supersede emits `HandleSuperseded` (old handle) followed by `MarkedPublic`
-//! (new output handle) — matching the on-chain leaf append order.
+//! Active lineage birth/supersession comes from durable `fhe_eval` outputs.
+//! `allow_subjects` mutates current subjects but appends no MMR leaf. Raw
+//! `create_encrypted_value` / `update_encrypted_value` are retained here only
+//! for already-finalized legacy PoC data; current failed raw transactions are
+//! skipped before replay. `make_handle_public` carries the exact public handle
+//! on-chain, so replay can reconstruct public-decrypt leaves even after
+//! `fhe_eval` output handles whose slot entropy is unavailable to this service.
+//! A born-public `fhe_eval` output resolves that output handle from the op event
+//! `decode` correlated with it, so its supersede emits `HandleSuperseded` (old
+//! handle) followed by `MarkedPublic` (new output handle) — matching the
+//! on-chain leaf append order.
 
 use zama_solana_acl::lineage::LineageEvent;
 
@@ -18,7 +20,7 @@ use crate::solana_proof::decode::DecodedInstruction;
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 pub enum ReplayError {
-    #[error("update_encrypted_value's previous_handle/previous_subjects do not match tracked state for lineage {0:x?}")]
+    #[error("supersession previous_handle/previous_subjects do not match tracked state for lineage {0:x?}")]
     PreviousStateMismatch([u8; 32]),
     #[error("instruction referenced a lineage that was never created: {0:x?}")]
     UnknownLineage([u8; 32]),

@@ -52,8 +52,8 @@ Rand / RandBounded** (no `Input` step — DD-007/DD-023). Binary scratch results
 produced earlier in the eval can be referenced as transient operands by later operations.
 Durable operands must still be authorized by a live or historically-proven `EncryptedValue`. Transient
 outputs create no `EncryptedValue` state at all. Only outputs marked durable create (first bind) or
-supersede (subsequent binds) an `EncryptedValue`, carrying the same `previous_handle`/`previous_subjects`
-attestation as `update_encrypted_value` so every transaction stays independently interpretable
+supersede (subsequent binds) an `EncryptedValue`, carrying `previous_handle`/`previous_subjects`
+attestation on supersession so every transaction stays independently interpretable
 (`docs/DESIGN_DECISIONS.md` DD-032/DD-033).
 
 This is the supported replacement for the older `execute_frame` prototype, not a port of that ABI.
@@ -84,9 +84,9 @@ Admission invariants for `fhe_eval`:
   (the EVM `fromExternal` / `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is
   checked at input consumption (`attestation.contract_address == compute_subject`); derived outputs are
   unconstrained. The redundant standalone `verify_coprocessor_input` instruction was removed (DD-007).
-- Durable outputs are born with an allowed-subject set only. Public decrypt is never a live flag or
-  subject attribute; it is granted later by `make_handle_public`, which appends an exact-handle
-  `PublicDecryptLeaf` to the lineage MMR.
+- Durable outputs are born with an allowed-subject set. Public decrypt is never a live flag or subject
+  attribute; it is granted by `make_handle_public`, or at durable-output birth when `make_public=true`,
+  which appends an exact-handle `PublicDecryptLeaf` to the lineage MMR.
 
 ## External Inputs
 

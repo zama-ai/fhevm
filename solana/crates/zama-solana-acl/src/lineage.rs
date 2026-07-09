@@ -34,18 +34,18 @@ pub enum LineageError {
 /// Only the two instructions that append MMR leaves appear here;
 /// `allow_subjects` appends none, so it has no leaf to log — its effect on
 /// membership is captured by the next [`LineageEvent::HandleSuperseded`]'s
-/// `previous_subjects` snapshot. Because `update_encrypted_value` carries
+/// `previous_subjects` snapshot. Because durable-output supersession carries
 /// `previous_handle`/`previous_subjects` as verified instruction args, both
 /// variants are decodable from a single transaction with no prior state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LineageEvent {
-    /// An `update_encrypted_value`: appends one historical-access leaf per
+    /// A durable-output supersession: appends one historical-access leaf per
     /// subject of the outgoing handle, in `previous_subjects` order.
     HandleSuperseded {
-        /// The handle being superseded (the lineage's handle before this update).
+        /// The handle being superseded (the lineage's handle before this supersession).
         previous_handle: [u8; 32],
         /// The exact `subjects` snapshot (order preserved, index 0 first) as it
-        /// stood immediately before this update executed, after any prior
+        /// stood immediately before this supersession executed, after any prior
         /// `allow_subjects`. Callers must NOT sort or dedup it.
         previous_subjects: Vec<[u8; 32]>,
     },
@@ -58,14 +58,14 @@ pub enum LineageEvent {
 
 impl LineageEvent {
     /// Builds a [`LineageEvent::HandleSuperseded`] from the `subjects` snapshot
-    /// taken immediately before the update executed on-chain.
+    /// taken immediately before the supersession executed on-chain.
     ///
     /// `previous_subjects` is load-bearing and silent to get wrong: it must be
     /// the live `subjects` in insertion order, including every subject added by
     /// prior `allow_subjects` calls. A stale snapshot (e.g. the pre-`allow` set,
-    /// or the post-update set) yields leaves that hash differently from the
-    /// chain, so the reconstructed peaks silently diverge. When decoding
-    /// `update_encrypted_value` instructions, use its verified args directly.
+    /// or the post-supersession set) yields leaves that hash differently from the
+    /// chain, so the reconstructed peaks silently diverge. When decoding a
+    /// durable-output supersession, use its verified args directly.
     pub fn handle_superseded(previous_handle: [u8; 32], previous_subjects: &[[u8; 32]]) -> Self {
         LineageEvent::HandleSuperseded {
             previous_handle,
@@ -87,7 +87,7 @@ pub struct ReconstructedLineage {
 /// Mirrors the host program's append order exactly: each
 /// [`LineageEvent::HandleSuperseded`] appends one
 /// `historical_access_leaf_commitment` per subject in slice order
-/// (`update_encrypted_value`), each [`LineageEvent::MarkedPublic`] appends one
+/// (durable-output supersession), each [`LineageEvent::MarkedPublic`] appends one
 /// `public_decrypt_leaf_commitment` (`make_handle_public`). The leaf index bound
 /// into every commitment comes from a single running counter — the
 /// authoritative source, exactly as the on-chain handler uses `leaf_count`
@@ -365,9 +365,9 @@ mod tests {
         }
     }
 
-    /// On-chain lifecycle `create_encrypted_value([s1])` → `allow_subjects([s2])`
-    /// → `update_encrypted_value`: the supersession snapshot must be the
-    /// post-`allow` set `[s1, s2]`, so the chain appends two leaves. Supplying the
+    /// On-chain lifecycle durable creation `[s1]` → `allow_subjects([s2])` →
+    /// durable supersession: the supersession snapshot must be the post-`allow`
+    /// set `[s1, s2]`, so the chain appends two leaves. Supplying the
     /// stale pre-`allow` set `[s1]` is the most plausible ingestion bug; this
     /// asserts it produces different peaks and the correct snapshot's peaks match
     /// an independent append.

@@ -334,8 +334,7 @@ pub enum FheEvalOutput {
     /// Output stays allowed only inside the current `fhe_eval` scope; no durable ACL record.
     AllowedLocal,
     /// Output is bound into durable ACL state: the `EncryptedValue` lineage PDA
-    /// is created when absent, or superseded (`update_encrypted_value`
-    /// semantics) when it exists.
+    /// is created when absent, or superseded when it exists.
     AllowedDurable {
         /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
         output_encrypted_value_index: u16,

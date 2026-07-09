@@ -22,7 +22,7 @@ pub(super) fn should_emit_eval_events_as_cpi(event_count: usize) -> bool {
 /// carries no event, which would strand that lineage's public-decrypt proof — so
 /// reject a born-public output in such a frame at write time (fail-closed).
 /// Non-born-public durable outputs are unaffected: their handles reconstruct from
-/// the `update_encrypted_value` arguments, needing no event.
+/// the `fhe_eval` arguments, needing no event.
 pub(super) fn assert_born_public_frame_transportable(args: &FheEvalArgs) -> Result<()> {
     let has_born_public = args.steps.iter().any(step_output_is_born_public);
     require!(
@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn large_frame_without_born_public_is_allowed() {
         // A max-size frame is fine as long as no output is born public: regular
-        // durable-output handles reconstruct from `update_encrypted_value` args.
+        // durable-output handles reconstruct from `fhe_eval` args.
         let args = FheEvalArgs {
             context_id: [1; 32],
             steps: (0..MAX_FHE_EVAL_OPS)

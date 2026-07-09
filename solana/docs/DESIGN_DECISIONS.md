@@ -1133,9 +1133,10 @@ authorization set, and the former parallel role byte vector is not part of the a
 allowed subject can use the current handle in compute, add another subject, request user decrypt, and
 mark the exact current handle public. Public decrypt is an exact-handle `PublicDecryptLeaf`, so
 publicness never survives a handle update (there is no live public flag to leak across updates — see
-the connector-side rationale in the kms-connector/sdk commit message). New instructions:
-`create_encrypted_value`, `allow_subjects`, `update_encrypted_value(new_handle, previous_handle,
-previous_subjects)`, `make_handle_public`. Deleted:
+the connector-side rationale in the kms-connector/sdk commit message). Active lifecycle changes are
+performed by `fhe_eval` durable outputs, `allow_subjects`, and `make_handle_public`. The raw
+`create_encrypted_value` and `update_encrypted_value` ABI entries are fail-closed stubs because they
+would otherwise accept caller-chosen handles without proving ciphertext provenance. Deleted:
 `AclRecord`/`AclPermission` and their nonce-sequence machinery, the legacy single-op instructions
 (`fhe_binary_op*`, `fhe_ternary_op*`, `fhe_rand*`, `trivial_encrypt_and_bind` — `fhe_eval` is now the
 only compute path), and `allow_for_decryption`.
@@ -1145,8 +1146,8 @@ Rationale:
 Stable addressing means indexers, apps, and CPI callers reference one PDA for a logical value's whole
 lifetime instead of re-deriving a new one per birth. The MMR gives historical/public decrypt a
 verifiable, compact (peaks-only) proof of past authorization state without keeping every past ACL
-record alive. The `previous_handle`/`previous_subjects` args on `update_encrypted_value` are verified
-against account state — redundant on-chain, but they make every transaction independently
+record alive. The `previous_handle`/`previous_subjects` args on durable `fhe_eval` outputs are
+verified against account state — redundant on-chain, but they make every transaction independently
 interpretable, so indexers reconstruct MMR leaves statelessly from instruction data alone (see DD-033).
 The shared `zama_solana_acl` crate (byte-identical MMR math and account codec) is the single source of
 truth used by `zama-host`, the relayer proof service (DD-035), and the KMS connector, so host↔KMS
@@ -1175,17 +1176,17 @@ Status: adopted
 
 Context:
 
-The four `EncryptedValue` instructions could emit Anchor events (`emit!`/`emit_cpi!`) the way
-compute-step events do, or stay event-free and let consumers decode instruction data instead.
+`EncryptedValue` lifecycle changes could emit Anchor events (`emit!`/`emit_cpi!`) the way compute-step
+events do, or stay event-free and let consumers decode instruction data instead.
 
 Decision:
 
-The four `EncryptedValue` instructions (`create_encrypted_value`, `allow_subjects`,
-`update_encrypted_value`, `make_handle_public`) emit no Anchor events by design. The host-listener
-(coprocessor) and the relayer's MMR proof service both decode them directly from transaction
-instruction data — including inner/CPI instructions, since confidential-token and other app programs
-invoke them via CPI — rather than subscribing to emitted events. `update_encrypted_value`'s
-`previous_handle`/`previous_subjects` args are self-describing: verified against account state
+State-changing `EncryptedValue` lifecycle paths (`fhe_eval` durable outputs, `allow_subjects`, and
+`make_handle_public`) emit no ACL lifecycle Anchor events by design. The host-listener (coprocessor)
+and the relayer's MMR proof service decode them directly from transaction instruction data —
+including inner/CPI instructions, since confidential-token and other app programs invoke them via CPI
+— rather than subscribing to emitted ACL events. Durable `fhe_eval` outputs carry
+`previous_handle`/`previous_subjects` args that are self-describing: verified against account state
 on-chain (redundant there) specifically so every transaction is independently interpretable off-chain,
 letting indexers reconstruct MMR leaves statelessly from instruction data alone, in replay order,
 without reading account state first. Compute-step (`fhe_eval`) events remain (they carry the
@@ -1436,8 +1437,8 @@ No consumer reads `emit!` logs: the relayer proof builder reads only inner-instr
 results, and a `> 8`-step born-public frame already failed closed (its handle was unresolvable). So
 the log fallback was dead weight that also hid a latent stranding case; deleting it and adding the
 fail-closed frame guard turns "silently unrecoverable later" into "rejected now." Non-born-public
-durable handles are unaffected — they reconstruct from the `update_encrypted_value` arguments and need
-no event. `emit_cpi!` cannot yet be removed entirely: the relayer, still on RPC polling
+durable handles are unaffected — they reconstruct from the `fhe_eval` durable-output arguments and
+need no event. `emit_cpi!` cannot yet be removed entirely: the relayer, still on RPC polling
 (`getSignaturesForAddress`/`getTransaction`, DD-035), cannot recover `previous_bank_hash` from RPC
 (the bank hash lives in the SlotHashes sysvar, retained only ~512 slots, and `≠` the block's PoH
 `blockhash`), so the op event is its sole source of born-public handles until #1665's Carbon/Geyser

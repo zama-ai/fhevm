@@ -54,6 +54,18 @@ pub fn reconstruct_acl_record_bound_fetch(
     acl_record_fetch(acl_record, bound_handle, "acl_record_bound")
 }
 
+/// The `handle_superseded` allow-fetch produced when a durable `fhe_eval`
+/// output supersedes an existing lineage. The newly bound handle and the
+/// outgoing handle both remain decrypt-relevant: the new handle is current, and
+/// the old handle is historically authorized through the MMR leaves appended by
+/// the bind.
+pub fn reconstruct_handle_superseded_fetch(
+    acl_record: [u8; 32],
+    handle: [u8; 32],
+) -> SolanaFinalizedAccountFetch {
+    acl_record_fetch(acl_record, handle, "handle_superseded")
+}
+
 /// The `handle_made_public` allow-fetch a born-public durable `fhe_eval` output
 /// produces: the newly bound handle is publicly decryptable because the bind
 /// appended a public-decrypt leaf for it inline (`make_public: true`), identical
@@ -82,12 +94,13 @@ pub fn decode_fhe_eval_args(instruction_data: &[u8]) -> Option<FheEvalArgs> {
 // --- RFC-024 `EncryptedValue` instruction decode -----------------------------
 //
 // `EncryptedValue` is event-free by design (see zama-host's
-// `instructions/encrypted_value.rs` module doc): the program does not
-// `emit!`/`emit_cpi!` for `create_encrypted_value` / `update_encrypted_value` /
-// `make_handle_public` / `allow_subjects` / `remove_subject`. There is therefore no event to
-// decode — the instructions themselves ARE the allow signal, and must be
-// decoded directly from instruction data (top-level AND inner/CPI, since an
-// app program may invoke these via CPI) by their Anchor discriminator
+// `instructions/encrypted_value.rs` module doc): active ACL changes are carried
+// by `fhe_eval` durable outputs, `make_handle_public`, `allow_subjects`, and
+// `remove_subject`; raw create/update ABI stubs are decoded only as legacy
+// finalized data if encountered. There is no ACL event to decode — instruction
+// data is the allow signal and must be decoded directly (top-level AND
+// inner/CPI, since an app program may invoke these via CPI) by Anchor
+// discriminator
 // (`sha256("global:<name>")[..8]`).
 
 /// One subject grant, matching `zama_host::instructions::encrypted_value::
@@ -209,7 +222,7 @@ pub fn decode_encrypted_value_instruction(
     }
 }
 
-fn encrypted_value_account_index(
+pub(crate) fn encrypted_value_account_index(
     instruction: &EncryptedValueInstruction,
 ) -> usize {
     match instruction {
@@ -232,8 +245,8 @@ fn encrypted_value_account_index(
 /// transaction is only confirmed, not finalized, so the fetcher hasn't run
 /// yet and re-fetching mid-decode would make decode async/fallible on RPC
 /// availability. The handle is fully determined by the most recent
-/// create/update this tracker has seen for the same `encrypted_value` PDA —
-/// exactly the on-chain precondition `update_encrypted_value` itself enforces
+/// creation/supersession this tracker has seen for the same `encrypted_value` PDA —
+/// exactly the on-chain precondition durable supersession enforces
 /// (`current_handle == previous_handle`) — so a listener that processes
 /// instructions in order can reconstruct it for free. Persist one tracker
 /// across the whole listener run (keyed by the `encrypted_value` account
@@ -270,11 +283,11 @@ impl EncryptedValueLineageTracker {
 /// resolve correctly). `encrypted_value_account` is
 /// `accounts[ENCRYPTED_VALUE_ACCOUNT_INDEX]`, resolved by the caller.
 ///
-/// `update_encrypted_value`'s `previous_handle` is included as its own fetch
-/// (reason `handle_superseded` is reused for the new handle; the previous
-/// handle keeps its historical decrypt path alive via the SAME reason on the
-/// old handle) so a still-outstanding decrypt of the superseded handle is not
-/// silently dropped just because the lineage moved on.
+/// A raw legacy `update_encrypted_value` instruction's `previous_handle` is
+/// included as its own fetch (reason `handle_superseded` is reused for the new
+/// handle; the previous handle keeps its historical decrypt path alive via the
+/// SAME reason on the old handle) so a still-outstanding decrypt of the
+/// superseded handle is not silently dropped just because the lineage moved on.
 pub fn encrypted_value_instruction_fetches(
     instruction: &EncryptedValueInstruction,
     encrypted_value_account: [u8; 32],
@@ -677,7 +690,7 @@ pub fn reconstruct_fhe_eval_steps(
                 op,
                 operand,
                 output_fhe_type,
-                output,
+                output: _,
             } => {
                 let operand_handle = resolve_operand(operand, &produced)?;
                 let result = computed_eval_unary_handle(
@@ -730,7 +743,7 @@ pub fn reconstruct_fhe_eval_steps(
             FheEvalStep::Sum {
                 operands,
                 fhe_type,
-                output,
+                output: _,
             } => {
                 let operand_handles: Vec<[u8; 32]> = operands
                     .iter()
@@ -758,7 +771,7 @@ pub fn reconstruct_fhe_eval_steps(
                 value,
                 set,
                 fhe_type,
-                output,
+                output: _,
             } => {
                 let value_handle = resolve_operand(value, &produced)?;
                 let set_handles: Vec<[u8; 32]> = set
@@ -790,7 +803,7 @@ pub fn reconstruct_fhe_eval_steps(
                 factor2,
                 divisor,
                 output_fhe_type,
-                output,
+                output: _,
             } => {
                 let factor1_handle = resolve_operand(factor1, &produced)?;
                 let (factor2_handle, scalar) = resolve_rhs(factor2, &produced)?;
@@ -823,6 +836,7 @@ pub fn reconstruct_fhe_eval_steps(
             durable_encrypted_value_index: fhe_eval_step_durable_output_index(
                 step,
             ),
+            previous_handle: fhe_eval_step_previous_handle(step),
             make_public: fhe_eval_step_make_public(step),
         });
     }
@@ -837,6 +851,11 @@ pub fn reconstruct_fhe_eval_steps(
 pub struct ReconstructedEvalStep {
     pub event: SolanaHostEvent,
     pub durable_encrypted_value_index: Option<u16>,
+    /// Present when the durable output supersedes an existing lineage. The
+    /// transport mirrors the host's historical-authorization update by emitting
+    /// finalized fetches for the outgoing handle and updating its lineage
+    /// tracker to the reconstructed output handle.
+    pub previous_handle: Option<[u8; 32]>,
     /// The durable output was born publicly decryptable (`make_public: true`):
     /// on-chain the bind appended a public-decrypt leaf for the newly bound
     /// handle (byte-identical to `make_handle_public`), so the transport must
@@ -851,6 +870,16 @@ pub fn fhe_eval_step_durable_output_index(step: &FheEvalStep) -> Option<u16> {
             output_encrypted_value_index,
             ..
         } => Some(*output_encrypted_value_index),
+        FheEvalOutput::AllowedLocal => None,
+    }
+}
+
+/// The outgoing handle when a durable output supersedes an existing lineage.
+pub fn fhe_eval_step_previous_handle(step: &FheEvalStep) -> Option<[u8; 32]> {
+    match fhe_eval_step_output(step) {
+        FheEvalOutput::AllowedDurable {
+            previous_handle, ..
+        } => *previous_handle,
         FheEvalOutput::AllowedLocal => None,
     }
 }

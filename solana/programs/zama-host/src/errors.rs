@@ -173,6 +173,9 @@ pub enum ZamaHostError {
     /// The attested `contract_chain_id` does not match the host chain id (EVM `contractChainId == block.chainid`).
     #[msg("attested contract chain id does not match the host chain id")]
     AttestationChainIdMismatch,
+    /// Raw `EncryptedValue` create/update would accept caller-chosen handles without provenance.
+    #[msg("raw encrypted value lifecycle is disabled; use fhe_eval durable outputs")]
+    RawEncryptedValueLifecycleDisabled,
 
     // ---- RFC-024 EncryptedValue ACL model ----
     /// An `EncryptedValue` account is not the canonical PDA for its value key.
@@ -196,7 +199,7 @@ pub enum ZamaHostError {
     /// The caller subject is not a current member of the encrypted value.
     #[msg("encrypted value subject is not a current member")]
     SubjectNotFound,
-    /// `create_encrypted_value` was called with an empty subject list.
+    /// Durable `EncryptedValue` creation was requested with an empty subject list.
     #[msg("encrypted value must be created with at least one subject")]
     EncryptedValueEmptySubjects,
     /// `remove_subject` would leave the encrypted value with no current subjects.

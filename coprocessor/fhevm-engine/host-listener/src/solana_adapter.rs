@@ -633,9 +633,10 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
 // gate: every Solana
 // computation is inserted eager (`is_allowed = TRUE` unconditionally), so the
 // tfhe-worker schedules it immediately regardless of ACL/allow state. Allow
-// signals (`create_encrypted_value`, `allow_subjects`, `remove_subject`, `update_encrypted_value`,
-// `make_handle_public`) still matter for DECRYPT availability (SNS/ct128 prep,
-// `allowed_handles`) — they are not needed to unblock computation.
+// signals (active `fhe_eval` durable outputs plus `allow_subjects`, `remove_subject`,
+// `make_handle_public`; raw create/update only for legacy finalized data) still matter for
+// DECRYPT availability (SNS/ct128 prep, `allowed_handles`) — they are not needed to unblock
+// computation.
 //
 // Reorg unwind for eagerly-scheduled computations remains unimplemented: a
 // computation whose containing block loses a fork race is wasted work, not a
@@ -683,16 +684,16 @@ pub fn normalize_solana_events_for_db(
 ///
 /// `encrypted_value_created` / `handle_superseded` / `handle_made_public` /
 /// `subject_allowed` name the RFC-024 positive `EncryptedValue` instruction-derived
-/// signals (`create_encrypted_value`, `update_encrypted_value`,
-/// `make_handle_public`, `allow_subjects`); the legacy
+/// signals (active durable-output supersession plus `make_handle_public` and
+/// `allow_subjects`; raw create/update only for legacy finalized data); the legacy
 /// `public_decrypt_allowed` / `acl_subject_allowed` / `acl_record_bound` reasons are kept for the
 /// still-IDL-driven decode path pending its RFC-024 instruction-decode rewrite
 /// (tracked separately — see host-listener README/TODO).
 ///
 /// TODO(RFC-024 instruction decode): currently unreferenced because nothing
 /// yet emits `SolanaFinalizedAccountFetch::reason` from the new
-/// `EncryptedValue` instructions (`create_encrypted_value`/`allow_subjects`/
-/// `update_encrypted_value`/`make_handle_public`/`remove_subject`) — see the host-listener
+/// `EncryptedValue` instructions (`fhe_eval` durable outputs/`allow_subjects`/
+/// `make_handle_public`/`remove_subject`, plus legacy raw create/update if encountered) — see the host-listener
 /// section of the RFC-024 rollout notes. Once that decode lands, this becomes
 /// the finalized-fetcher's filter again.
 #[allow(dead_code)]

@@ -840,8 +840,10 @@ async fn reconstruct_events_for_insert(
     use crate::solana_adapter::SolanaHostEvent;
     use crate::solana_reconstruct::{
         decode_encrypted_value_instruction, decode_fhe_eval_args,
+        encrypted_value_account_index, encrypted_value_instruction_fetches,
         reconstruct_acl_record_bound_fetch, reconstruct_fhe_eval_steps,
         reconstruct_handle_made_public_fetch,
+        reconstruct_handle_superseded_fetch,
     };
 
     // compute_subject is the 2nd named fhe_eval account. (Durable EncryptedValue
@@ -878,12 +880,7 @@ async fn reconstruct_events_for_insert(
         return Ok(ReconstructionOutcome::Complete(events));
     };
 
-    let mut events =
-        crate::solana_reconstruct::decode_encrypted_value_fetch_events(
-            instructions,
-            &config.program_id,
-            encrypted_value_tracker,
-        );
+    let mut events = Vec::new();
 
     for ix in instructions.iter() {
         if ix.program != config.program_id {
@@ -907,6 +904,7 @@ async fn reconstruct_events_for_insert(
             for step in steps {
                 let handle = compute_result_handle(&step.event);
                 let make_public = step.make_public;
+                let previous_handle = step.previous_handle;
                 events.push(step.event);
                 if let (Some(index), Some(handle)) =
                     (step.durable_encrypted_value_index, handle)
@@ -914,12 +912,31 @@ async fn reconstruct_events_for_insert(
                     if let Some(encrypted_value) =
                         fhe_eval_durable_encrypted_value(&ix.accounts, index)
                     {
+                        encrypted_value_tracker.record(encrypted_value, handle);
                         events.push(SolanaHostEvent::FinalizedAccountFetch(
                             reconstruct_acl_record_bound_fetch(
                                 encrypted_value,
                                 handle,
                             ),
                         ));
+                        if let Some(previous_handle) = previous_handle {
+                            events.push(
+                                SolanaHostEvent::FinalizedAccountFetch(
+                                    reconstruct_handle_superseded_fetch(
+                                        encrypted_value,
+                                        handle,
+                                    ),
+                                ),
+                            );
+                            events.push(
+                                SolanaHostEvent::FinalizedAccountFetch(
+                                    reconstruct_handle_superseded_fetch(
+                                        encrypted_value,
+                                        previous_handle,
+                                    ),
+                                ),
+                            );
+                        }
                         // Born-public output: the bind appended a public-decrypt
                         // leaf for the newly bound handle inline (make_public),
                         // after any superseded-handle leaves. Mirror it so the
@@ -944,6 +961,26 @@ async fn reconstruct_events_for_insert(
                         );
                     }
                 }
+            }
+            continue;
+        }
+
+        if let Some(instruction) = decode_encrypted_value_instruction(&ix.data)
+        {
+            let encrypted_value_index =
+                encrypted_value_account_index(&instruction);
+            if let Some(encrypted_value) =
+                ix.accounts.get(encrypted_value_index).copied()
+            {
+                events.extend(
+                    encrypted_value_instruction_fetches(
+                        &instruction,
+                        encrypted_value,
+                        encrypted_value_tracker,
+                    )
+                    .into_iter()
+                    .map(SolanaHostEvent::FinalizedAccountFetch),
+                );
             }
         }
     }
@@ -1028,7 +1065,7 @@ mod fhe_eval_acl_tests {
     use crate::solana_reconstruct::{
         AllowSubjectsArgs, DecodedInstruction, EncryptedValueLineageTracker,
         EncryptedValueSubjectGrant, MakeHandlePublicArgs,
-        UpdateEncryptedValueArgs, ENCRYPTED_VALUE_ACCOUNT_INDEX,
+        ENCRYPTED_VALUE_ACCOUNT_INDEX,
     };
     use zama_host::state::AclSubjectEntry;
 
@@ -1250,18 +1287,9 @@ mod fhe_eval_acl_tests {
                 },
             }],
         };
-        // The fhe_eval output handle is derived (DD-015), so the inner
-        // update's new_handle and the make_handle_public target are that
-        // derived value — matching what reconstruction recomputes.
+        // The fhe_eval output handle is derived (DD-015), so the subsequent
+        // lifecycle instructions target the same handle reconstruction computes.
         let output_handle = derived_add_output_handle();
-        let update_data = encode_instruction(
-            "update_encrypted_value",
-            UpdateEncryptedValueArgs {
-                new_handle: output_handle,
-                previous_handle: [8; 32],
-                previous_subjects: vec![SUBJECT],
-            },
-        );
         let allow_data = encode_instruction(
             "allow_subjects",
             AllowSubjectsArgs {
@@ -1276,7 +1304,6 @@ mod fhe_eval_acl_tests {
                 0,
                 false,
             ),
-            decoded_ix(update_data, encrypted_value_accounts(), 0, true),
             decoded_ix(allow_data, encrypted_value_accounts(), 1, false),
             decoded_ix(
                 encode_instruction(
@@ -1316,6 +1343,19 @@ mod fhe_eval_acl_tests {
         .expect("emit event should decode");
         let mut tracker = EncryptedValueLineageTracker::new();
         tracker.record(ENCRYPTED_VALUE, [8; 32]);
+        events.push(SolanaHostEvent::FinalizedAccountFetch(
+            crate::solana_reconstruct::reconstruct_handle_superseded_fetch(
+                ENCRYPTED_VALUE,
+                output_handle,
+            ),
+        ));
+        events.push(SolanaHostEvent::FinalizedAccountFetch(
+            crate::solana_reconstruct::reconstruct_handle_superseded_fetch(
+                ENCRYPTED_VALUE,
+                [8; 32],
+            ),
+        ));
+        tracker.record(ENCRYPTED_VALUE, output_handle);
         events.extend(
             crate::solana_reconstruct::decode_encrypted_value_fetch_events(
                 instructions,
@@ -1418,11 +1458,10 @@ mod fhe_eval_acl_tests {
     }
 
     /// A superseding durable `fhe_eval` output recomputes its handle directly
-    /// from the plan's `value_key` + block entropy (DD-015) — no inner
-    /// `update_encrypted_value` handle hint and no lineage leaf count. The
-    /// reconstructed compute result and its `acl_record_bound` fetch must equal
-    /// the program primitive's output, and the inner update still emits its own
-    /// `handle_superseded` fetch for the outgoing handle.
+    /// from the plan's output material + block entropy (DD-015) — no raw update
+    /// handle hint and no lineage leaf count. The
+    /// reconstructed compute result, bound-handle fetch, and superseded-handle
+    /// fetches must all come from the `fhe_eval` instruction itself.
     #[tokio::test]
     async fn superseding_fhe_eval_derives_output_handle_without_hint() {
         let expected = derived_add_output_handle();
@@ -1453,20 +1492,8 @@ mod fhe_eval_acl_tests {
             }],
         };
         let fhe_eval_data = encode_instruction("fhe_eval", plan);
-        // The on-chain supersede CPIs update_encrypted_value with new_handle set
-        // to the derived output handle; the reconstruction no longer reads it.
-        let update_data = encode_instruction(
-            "update_encrypted_value",
-            UpdateEncryptedValueArgs {
-                new_handle: expected,
-                previous_handle: [8; 32],
-                previous_subjects: vec![],
-            },
-        );
-        let instructions = vec![
-            decoded_ix(fhe_eval_data, fhe_eval_accounts(), 0, false),
-            decoded_ix(update_data, encrypted_value_accounts(), 0, true),
-        ];
+        let instructions =
+            vec![decoded_ix(fhe_eval_data, fhe_eval_accounts(), 0, false)];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
         let rpc = RpcClient::new("http://127.0.0.1:1".to_owned());
         let mut tracker = EncryptedValueLineageTracker::new();

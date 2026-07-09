@@ -11,10 +11,13 @@ this note records the operational model in one place.
   authority check.
 - `compute_signer` is separate from identity. In confidential-token it is a mint-scoped PDA and must
   be present in the value's allowed-subject set when token compute needs to use that value.
-- Only the app-account authority can update `current_handle`. Being an allowed subject is enough to
-  compute/use, grant, request user decrypt, or make the exact current handle public, but it is not
-  enough to supersede the lineage. `update_encrypted_value` checks `previous_handle` and
-  `previous_subjects` against current account state so stale off-chain state cannot rotate a handle.
+- Only `fhe_eval` durable outputs can create or supersede an `EncryptedValue` handle. The raw
+  `create_encrypted_value` / `update_encrypted_value` instructions remain in the ABI but fail closed:
+  they would otherwise accept caller-chosen handles without proving ciphertext provenance. Being an
+  allowed subject is enough to compute/use, grant, request user decrypt, or make the exact current
+  handle public, but it is not enough to supersede the lineage. Durable-output supersession checks
+  `previous_handle` and `previous_subjects` against current account state so stale off-chain state
+  cannot rotate a handle.
 
 ## Handle Derivation
 
@@ -36,9 +39,9 @@ this note records the operational model in one place.
 
 - The ACL is one allowed-subject set. There are no role bits in the MVP account layout. Allowed means
   compute/use, grant another subject, request user decrypt, and make the exact current handle public.
-- Creation requires at least one subject and at most `MAX_ENCRYPTED_VALUE_SUBJECTS = 8`. Subject-list
-  overflow and MMR peak overflow fail explicitly instead of relying on implicit vector or arithmetic
-  limits.
+- Durable-output creation requires at least one subject and at most
+  `MAX_ENCRYPTED_VALUE_SUBJECTS = 8`. Subject-list overflow and MMR peak overflow fail explicitly
+  instead of relying on implicit vector or arithmetic limits.
 - Subject removal changes only current and future authorization. No new historical leaf is written for
   the removed subject after removal; access sealed before removal remains valid.
 
@@ -58,9 +61,9 @@ this note records the operational model in one place.
 
 ## Gates And Trust Boundary
 
-- Pause gates ACL mutations plus update/eval output paths. The deny-list gates the acting
-  caller/authority for grant/update/eval flows; it blocks new action and is not an erasure mechanism
-  for already sealed history.
+- Pause gates ACL mutations plus `fhe_eval` output paths. The deny-list gates the acting
+  caller/authority for grant and eval flows; it blocks new action and is not an erasure mechanism for
+  already sealed history.
 - Solana programs enforce authorization. The relayer, proof builder, host-listener ingestion, and
   coprocessor scheduling are untrusted for authorization. KMS release must verify finalized on-chain
   facts, including live `EncryptedValue` state or MMR proof validity, before releasing plaintext.
@@ -82,10 +85,10 @@ ever grows (append-only), so historical and public-decrypt authorizations are pe
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Live : create_encrypted_value<br/>(≥1 subject, leaf_count=0)
+    [*] --> Live : fhe_eval durable output<br/>(≥1 subject, leaf_count=0)
     Live --> Live : allow_subjects<br/>(add subject, NO leaf)
     Live --> Live : make_handle_public<br/>(+1 PublicDecryptLeaf for current handle)
-    Live --> Live : update_encrypted_value / fhe_eval durable output<br/>(supersede: +1 HistoricalAccessLeaf per then-subject,<br/>then rewrite current_handle)
+    Live --> Live : fhe_eval durable output<br/>(supersede: +1 HistoricalAccessLeaf per then-subject,<br/>then rewrite current_handle)
     Live --> Live : fhe_eval durable output with make_public=true<br/>(supersede leaves, rewrite handle,<br/>then +1 PublicDecryptLeaf for the NEW handle — DD-036)
     note right of Live
         Account ≤ 2457 bytes for all time
@@ -96,8 +99,9 @@ stateDiagram-v2
 
 ### MMR leaf types + append order
 
-`update_encrypted_value` appends one `HistoricalAccessLeaf{account, leaf_index, handle, subject}` per
-then-allowed subject; `make_handle_public` (or a born-public output) appends one
+`fhe_eval` durable-output supersession appends one
+`HistoricalAccessLeaf{account, leaf_index, handle, subject}` per then-allowed subject;
+`make_handle_public` (or a born-public output) appends one
 `PublicDecryptLeaf{account, leaf_index, handle}`. A single running `leaf_count` assigns `leaf_index`,
 so replay order alone reproduces the leaf list — the reconstruction invariant (DD-033).
 
@@ -159,7 +163,7 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     prog["zama-host fhe_eval"] -->|"emit_cpi! (≤8-event frames only;<br/>no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
-    prog -->|"instruction data (args)"| ix["update_encrypted_value / create / make_public args"]
+    prog -->|"instruction data (args)"| ix["fhe_eval durable-output / make_public args"]
     ev --> relayer["relayer proof service (RPC polling today):<br/>resolves born-public handle from op-event,<br/>reconstructs MMR, cross-checks vs finalized peaks"]
     ix --> listener["host-listener indexer:<br/>Yellowstone gRPC reconstruction-only<br/>(SlotHashes+Clock sysvar streams → block entropy;<br/>never reads events)"]
     relayer -.->|"migrate to Carbon/Geyser,<br/>then drop op-event ABI"| followup["fhevm-internal#1665"]

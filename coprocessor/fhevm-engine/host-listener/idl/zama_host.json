@@ -1906,96 +1906,101 @@
     },
     {
       "code": 6054,
+      "name": "RawEncryptedValueLifecycleDisabled",
+      "msg": "raw encrypted value lifecycle is disabled; use fhe_eval durable outputs"
+    },
+    {
+      "code": 6055,
       "name": "EncryptedValuePdaMismatch",
       "msg": "encrypted value account does not match the canonical PDA"
     },
     {
-      "code": 6055,
+      "code": 6056,
       "name": "EncryptedValueAccountInvalid",
       "msg": "encrypted value account is not a valid EncryptedValue account"
     },
     {
-      "code": 6056,
+      "code": 6057,
       "name": "EncryptedValueSubjectCapacityExceeded",
       "msg": "encrypted value subject capacity exceeded"
     },
     {
-      "code": 6057,
+      "code": 6058,
       "name": "PreviousStateMismatch",
       "msg": "encrypted value previous state does not match the account"
     },
     {
-      "code": 6058,
+      "code": 6059,
       "name": "EncryptedValuePublicHandleMismatch",
       "msg": "encrypted value public handle does not match the account"
     },
     {
-      "code": 6059,
+      "code": 6060,
       "name": "SubjectNotAllowed",
       "msg": "encrypted value subject is not allowed"
     },
     {
-      "code": 6060,
+      "code": 6061,
       "name": "SubjectNotFound",
       "msg": "encrypted value subject is not a current member"
     },
     {
-      "code": 6061,
+      "code": 6062,
       "name": "EncryptedValueEmptySubjects",
       "msg": "encrypted value must be created with at least one subject"
     },
     {
-      "code": 6062,
+      "code": 6063,
       "name": "EncryptedValueLastSubject",
       "msg": "encrypted value must retain at least one subject"
     },
     {
-      "code": 6063,
+      "code": 6064,
       "name": "EncryptedValueMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
     },
     {
-      "code": 6064,
+      "code": 6065,
       "name": "EncryptedValueMmrPeakCapacityExceeded",
       "msg": "encrypted value MMR peak capacity exceeded"
     },
     {
-      "code": 6065,
+      "code": 6066,
       "name": "HcuBlockLimitExceeded",
       "msg": "per-app in-slot HCU exceeds the block cap"
     },
     {
-      "code": 6066,
+      "code": 6067,
       "name": "HcuBlockMeterMissing",
       "msg": "HCU block meter account is required for a metered app"
     },
     {
-      "code": 6067,
+      "code": 6068,
       "name": "HcuBlockMeterMismatch",
       "msg": "HCU block meter account does not match the canonical PDA"
     },
     {
-      "code": 6068,
+      "code": 6069,
       "name": "HcuTrustedAppRecordMismatch",
       "msg": "HCU trusted-app record does not match the canonical PDA"
     },
     {
-      "code": 6069,
+      "code": 6070,
       "name": "HcuBlockCapBelowMaxPerTx",
       "msg": "HCU block cap is below max_hcu_per_tx"
     },
     {
-      "code": 6070,
+      "code": 6071,
       "name": "MulDivDivisorZero",
       "msg": "fheMulDiv divisor must be non-zero"
     },
     {
-      "code": 6071,
+      "code": 6072,
       "name": "DivisorMustBeScalar",
       "msg": "fheDiv/fheRem divisor must be a plaintext scalar"
     },
     {
-      "code": 6072,
+      "code": 6073,
       "name": "DivisionByZero",
       "msg": "fheDiv/fheRem divisor must be non-zero"
     }

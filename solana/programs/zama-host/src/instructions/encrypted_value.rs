@@ -1,7 +1,8 @@
-//! RFC-024 `EncryptedValue` lifecycle: create, extend subjects, supersede the
-//! current handle, and mark a handle publicly decryptable. Event-free by
-//! design — indexers reconstruct MMR leaves from instruction data, using the
-//! shared `zama_solana_acl` crate, not from emitted events.
+//! RFC-024 `EncryptedValue` ACL mutation. Raw create/update ABI entries fail
+//! closed because durable handle birth and supersession must come from
+//! `fhe_eval` output provenance. Event-free by design — indexers reconstruct
+//! MMR leaves from instruction data, using the shared `zama_solana_acl` crate,
+//! not from emitted events.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
@@ -15,7 +16,7 @@ pub struct EncryptedValueSubjectGrant {
     pub subject: Pubkey,
 }
 
-/// Accounts shared by every `EncryptedValue` instruction that pays for growth.
+/// Accounts for the disabled raw `create_encrypted_value` ABI entry.
 #[derive(Accounts)]
 pub struct CreateEncryptedValue<'info> {
     /// Pays rent for the new account.
@@ -35,63 +36,14 @@ pub struct CreateEncryptedValue<'info> {
 }
 
 pub fn create_encrypted_value(
-    ctx: Context<CreateEncryptedValue>,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-    subjects: Vec<EncryptedValueSubjectGrant>,
+    _ctx: Context<CreateEncryptedValue>,
+    _acl_domain_key: Pubkey,
+    _app_account: Pubkey,
+    _encrypted_value_label: [u8; 32],
+    _handle: [u8; 32],
+    _subjects: Vec<EncryptedValueSubjectGrant>,
 ) -> Result<()> {
-    assert_not_paused(&ctx.accounts.host_config)?;
-    require_keys_eq!(
-        ctx.accounts.app_account_authority.key(),
-        app_account,
-        ZamaHostError::AppAccountAuthorityMismatch
-    );
-    assert_valid_new_subjects(&subjects)?;
-    check_grant_not_denied(
-        &ctx.accounts.host_config,
-        app_account,
-        ctx.accounts.deny_subject_record.as_ref(),
-    )?;
-
-    let value_key = zama_solana_acl::derive_value_key(
-        acl_domain_key.to_bytes(),
-        app_account.to_bytes(),
-        encrypted_value_label,
-    );
-    let (expected, bump) = encrypted_value_address(value_key);
-    require_keys_eq!(
-        ctx.accounts.encrypted_value.key(),
-        expected,
-        ZamaHostError::EncryptedValuePdaMismatch
-    );
-
-    let space = 8 + EncryptedValue::space(subjects.len(), 0);
-    create_pda_strict(
-        &ctx.accounts.payer.to_account_info(),
-        &ctx.accounts.encrypted_value.to_account_info(),
-        &ctx.accounts.system_program.to_account_info(),
-        space,
-        &[
-            zama_solana_acl::ENCRYPTED_VALUE_SEED,
-            value_key.as_ref(),
-            &[bump],
-        ],
-    )?;
-
-    let account = EncryptedValue {
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        current_handle: handle,
-        subjects: subjects.iter().map(|s| s.subject).collect(),
-        leaf_count: 0,
-        peaks: Vec::new(),
-        bump,
-    };
-    write_account(&ctx.accounts.encrypted_value.to_account_info(), &account)?;
-    Ok(())
+    err!(ZamaHostError::RawEncryptedValueLifecycleDisabled)
 }
 
 /// Accounts for `allow_subjects`.
@@ -153,7 +105,7 @@ pub fn allow_subjects(
     Ok(())
 }
 
-/// Accounts for `update_encrypted_value`.
+/// Accounts for the disabled raw `update_encrypted_value` ABI entry.
 #[derive(Accounts)]
 pub struct UpdateEncryptedValue<'info> {
     #[account(mut)]
@@ -170,45 +122,17 @@ pub struct UpdateEncryptedValue<'info> {
 }
 
 pub fn update_encrypted_value(
-    ctx: Context<UpdateEncryptedValue>,
-    new_handle: [u8; 32],
-    previous_handle: [u8; 32],
-    previous_subjects: Vec<Pubkey>,
+    _ctx: Context<UpdateEncryptedValue>,
+    _new_handle: [u8; 32],
+    _previous_handle: [u8; 32],
+    _previous_subjects: Vec<Pubkey>,
 ) -> Result<()> {
-    assert_not_paused(&ctx.accounts.host_config)?;
-    let info = ctx.accounts.encrypted_value.to_account_info();
-    let mut value = read_canonical_encrypted_value(&info)?;
-    require_keys_eq!(
-        ctx.accounts.app_account_authority.key(),
-        value.app_account,
-        ZamaHostError::AppAccountAuthorityMismatch
-    );
-    check_grant_not_denied(
-        &ctx.accounts.host_config,
-        ctx.accounts.app_account_authority.key(),
-        ctx.accounts.deny_subject_record.as_ref(),
-    )?;
-    require!(
-        value.current_handle == previous_handle && value.subjects == previous_subjects,
-        ZamaHostError::PreviousStateMismatch
-    );
-
-    supersede_current_handle(&info, &mut value, new_handle)?;
-
-    let space = 8 + EncryptedValue::space(value.subjects.len(), value.peaks.len());
-    grow_account_if_needed(
-        &ctx.accounts.payer.to_account_info(),
-        &info,
-        &ctx.accounts.system_program.to_account_info(),
-        space,
-    )?;
-    write_account(&info, &value)?;
-    Ok(())
+    err!(ZamaHostError::RawEncryptedValueLifecycleDisabled)
 }
 
 /// Appends one historical-access leaf per allowed subject for the outgoing
-/// handle, then overwrites `current_handle`. Shared by `update_encrypted_value`
-/// and by `fhe_eval`'s output-binding path.
+/// handle, then overwrites `current_handle`. Used by `fhe_eval`'s durable
+/// output-binding path.
 pub(super) fn supersede_current_handle(
     info: &AccountInfo,
     value: &mut EncryptedValue,
@@ -446,8 +370,8 @@ mod tests {
         let subjects = vec![Pubkey::new_unique()];
         let v = value([1; 32], &subjects);
 
-        // Mirrors update_encrypted_value's inline require!: exact equality on
-        // both the handle and the full subject vector (order-sensitive).
+        // Durable-output supersession requires exact equality on both the
+        // handle and the full subject vector (order-sensitive).
         assert!(v.current_handle == [1; 32] && v.subjects == subjects);
         assert!(!(v.current_handle == [2; 32] && v.subjects == subjects));
         let wrong_subjects = vec![Pubkey::new_unique()];
