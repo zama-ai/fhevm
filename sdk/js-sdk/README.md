@@ -1,11 +1,11 @@
 # @fhevm/sdk
 
-The JavaScript/TypeScript SDK for building applications on **FHEVM** chains. Encrypt values in the browser, send encrypted inputs to your smart contracts, and decrypt results — all without exposing plaintext to the blockchain.
+The JavaScript/TypeScript SDK for building applications on **FHEVM** chains. Encrypt values client-side, send encrypted inputs to your smart contracts, and decrypt results — all without exposing plaintext to the blockchain.
 
 ## Features
 
 - **Encrypt** plaintext values client-side using TFHE (Fully Homomorphic Encryption)
-- **Decrypt** private values with end-to-end encrypted transport — plaintext never leaves the browser
+- **Decrypt** private values with end-to-end encrypted transport — plaintext never leaves your application
 - **Read public values** that contracts have marked as publicly decryptable
 - **Dual adapter support** — identical API for both ethers.js v6 and viem
 - **Tree-shakable** — only load the WASM modules you need (encrypt-only, decrypt-only, or both)
@@ -63,7 +63,7 @@ The `type` field uses Solidity value-type names (`'uint32'`, `'bool'`, `'address
 ### 3. Decrypt private values
 
 ```ts
-// Generate a transport key pair (private key never leaves the browser)
+// Generate a transport key pair (private key never leaves your application)
 const transportKeyPair = await client.generateTransportKeyPair();
 
 // Create and sign a decrypt permit in one step

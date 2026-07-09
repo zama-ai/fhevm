@@ -18,7 +18,7 @@ Reading a private value takes three ingredients:
 
 1. A **transport key pair** — generated in your app. The Key Management System (KMS) encrypts the result
    under its public half so only you can reconstruct the plaintext. The private
-   half never leaves the browser.
+   half never leaves your application (your browser or Node process).
 2. A **signed decryption permit** — an EIP-712 message signed by the value's
    owner, authorizing decryption of a specific set of contracts for a limited
    time window.
@@ -59,7 +59,7 @@ const signedPermit = await client.signDecryptionPermit({
 | ------------------ | ------------------- | --------------------------------------------------------- |
 | `transportKeyPair` | `TransportKeyPair`  | From step 1; its public key is bound into the permit.     |
 | `contractAddresses`| `readonly string[]` | Every contract this permit authorizes decryption for.     |
-| `startTimestamp`   | `number`            | Unix seconds. When the permit becomes valid.              |
+| `startTimestamp`   | `number`            | Unix time in seconds (since 1970-01-01). When the permit becomes valid. |
 | `durationSeconds`  | `number`            | Validity window length, in **seconds**.                   |
 | `signerAddress`    | `string`            | The address that signs — normally the value's owner.      |
 | `signer`           | native signer       | ethers `Signer` / viem `Account` or `WalletClient`.       |

@@ -57,7 +57,7 @@ holds the full decryption key. When you request decryption:
 1. The SDK sends the request (with the signed permit) to the Zama Protocol.
 2. Multiple independent nodes each produce a **decryption share** — a partial
    decryption encrypted with your transport public key.
-3. The shares are sent back to your browser.
+3. The shares are sent back to your application.
 4. The SDK reconstructs the plaintext locally using your transport private key
    (TKMS WASM).
 

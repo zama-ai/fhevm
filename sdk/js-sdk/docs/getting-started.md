@@ -157,7 +157,7 @@ takes two pieces:
 - A **transport key pair** — a throwaway key pair generated in your app. The
   Key Management System (KMS) encrypts the result under its public half so only
   you can reconstruct the
-  plaintext. The private half never leaves the browser.
+  plaintext. The private half never leaves your application.
 - A **signed decryption permit** — an EIP-712 message, signed by the value's
   owner, authorizing decryption of a specific set of contracts for a limited
   time.

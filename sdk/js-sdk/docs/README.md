@@ -3,7 +3,7 @@
 **Welcome to the FHEVM SDK!**
 
 `@fhevm/sdk` is the JavaScript/TypeScript SDK for building apps on **FHEVM**
-chains. It lets you encrypt values in the browser, send encrypted inputs to your
+chains. It lets you encrypt values client-side, send encrypted inputs to your
 confidential smart contracts, and decrypt results — without plaintext ever
 touching the blockchain. It powers this end-to-end flow using **Fully Homomorphic
 Encryption (FHE)**, so your contracts compute directly on encrypted data.
@@ -23,7 +23,7 @@ Requires **Node.js 22** or newer.
 - **Encrypt** plaintext client-side and produce an input proof your contract can
   verify.
 - **Decrypt** private results — the plaintext is reconstructed locally and never
-  leaves the browser.
+  leaves your application.
 - **Read public values** a contract has made publicly readable.
 - **Use one API for ethers and viem** — pick an adapter; the methods are
   identical.

@@ -2,7 +2,7 @@
 
 Encryption turns plaintext values into opaque encrypted values plus a proof that
 your contract can verify. Everything happens client-side — the plaintext never
-leaves the browser.
+leaves your application.
 
 Encryption is available on `createFhevmClient` and `createFhevmEncryptClient`.
 
