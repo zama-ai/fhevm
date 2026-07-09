@@ -2,10 +2,8 @@
 //! KMS `PublicDecryptVerification` EIP-712 certificate on-chain via `secp256k1_recover`
 //! (the gateway-compatible path, #1494 Phase 3 cert-secp).
 //!
-//! Mirrors `redeem_burned_amount` but trusts the gateway-level KMS context signer set
-//! (EVM secp256k1 EIP-712) instead of the per-mint Ed25519 verifier — the same cert the
-//! `disclose_*_secp` instructions verify. This is the secp256k1-parity counterpart of the
-//! disclose path; the legacy Ed25519 redeem stays until the secp path is adopted.
+//! Uses the gateway-level KMS context signer set (EVM secp256k1 EIP-712), the same cert shape the
+//! `disclose_*_secp` instructions verify.
 
 use super::*;
 

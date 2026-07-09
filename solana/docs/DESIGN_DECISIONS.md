@@ -597,15 +597,15 @@ Context:
 `acl_storage_rationale.md` Part 5 describes two Solana token profiles: a staged inbound-credit profile
 (recommended default for public-receivable tokens, where the recipient applies pending funds under
 their own transaction timing) and an immediate available-balance profile (EVM-style, where the sender
-updates the recipient's balance directly). The latter lets a sender force a write into the recipient's
-balance handle and ACL record, which can invalidate a transaction the recipient already built against
-their prior balance record.
+updates the recipient's balance directly). The latter lets a sender force a supersede of the recipient's
+stable balance `EncryptedValue`, which can invalidate a transaction the recipient already built against
+the prior `current_handle`.
 
 Decision:
 
 The PoC uses the immediate available-balance profile: `execute_transfer` credits the recipient by
-rotating `to.balance_handle` / `to.balance_acl_record` and advancing `to.next_balance_nonce_sequence`
-inside the sender's transaction, with no recipient participation in the base transfer.
+superseding `to.balance_encrypted_value` inside the sender's transaction, with no recipient
+participation in the base transfer.
 
 Rationale:
 
@@ -616,7 +616,7 @@ Consequences:
 
 This is an explicitly accepted tradeoff, not the recommended production default. A production
 public-receivable token should evaluate the staged inbound-credit profile (pending → available under
-recipient timing) or otherwise predeclare/lock the recipient's next balance ACL sequence so the
+recipient timing) or otherwise predeclare/lock the recipient's next balance transition so the
 inbound-write surface is bounded.
 
 ## DD-017: Role-Aware `fhe_eval` And Per-Op Bind Instructions Supersede The RFC-024 execute_frame Frame

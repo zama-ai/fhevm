@@ -131,15 +131,19 @@ fn event_discriminator(name: &str) -> [u8; 8] {
 /// host-listener's `ANCHOR_EVENT_IX_TAG_LE`.
 const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes();
 
-/// The five `fhe_eval` op events, one emitted per plan step in step order. Every
+/// The `fhe_eval` op events, one emitted per plan step in step order. Every
 /// one carries its verified output handle as the final `result: [u8; 32]` field
 /// (see `zama_host::events`), so the handle is the last 32 bytes of the payload.
-const OP_EVENT_NAMES: [&str; 5] = [
+const OP_EVENT_NAMES: [&str; 9] = [
     "FheBinaryOpEvent",
     "FheTernaryOpEvent",
     "TrivialEncryptEvent",
     "FheRandEvent",
     "FheRandBoundedEvent",
+    "FheUnaryOpEvent",
+    "FheSumEvent",
+    "FheIsInEvent",
+    "FheMulDivEvent",
 ];
 
 /// Extracts the verified output handle (`result`) from an `emit_cpi!` op-event
@@ -377,7 +381,11 @@ fn fhe_eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
         | FheEvalStep::Ternary { output, .. }
         | FheEvalStep::TrivialEncrypt { output, .. }
         | FheEvalStep::Rand { output, .. }
-        | FheEvalStep::RandBounded { output, .. } => output,
+        | FheEvalStep::Unary { output, .. }
+        | FheEvalStep::RandBounded { output, .. }
+        | FheEvalStep::Sum { output, .. }
+        | FheEvalStep::IsIn { output, .. }
+        | FheEvalStep::MulDiv { output, .. } => output,
     }
 }
 
@@ -430,7 +438,7 @@ mod tests {
     use anchor_lang::prelude::Pubkey;
     use anchor_lang::AnchorSerialize;
     use borsh::BorshSerialize;
-    use zama_host::state::{AclSubjectEntry, FheEvalOutput, FheEvalStep};
+    use zama_host::state::{AclSubjectEntry, FheEvalOperand, FheEvalOutput, FheEvalStep};
 
     fn program_id() -> [u8; 32] {
         [7u8; 32]
@@ -540,17 +548,110 @@ mod tests {
     /// Builds the `emit_cpi!` op-event inner instruction the host emits per step,
     /// carrying the verified output `result` handle (here a `TrivialEncryptEvent`).
     fn op_event_ix(result: [u8; 32]) -> RawInstruction {
-        use zama_host::events::TrivialEncryptEvent;
-        let event = TrivialEncryptEvent {
-            version: 1,
-            subject: pk(0x30),
-            plaintext: pk(0x02),
-            fhe_type: 5,
-            result,
+        op_event_ix_named("TrivialEncryptEvent", result)
+    }
+
+    fn op_event_ix_named(event_name: &str, result: [u8; 32]) -> RawInstruction {
+        use zama_host::events::{
+            FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent, FheRandBoundedEvent, FheRandEvent,
+            FheSumEvent, FheTernaryOpEvent, FheUnaryOpEvent, TrivialEncryptEvent,
         };
+        use zama_host::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
+
         let mut data = ANCHOR_EVENT_IX_TAG_LE.to_vec();
-        data.extend_from_slice(&event_discriminator("TrivialEncryptEvent"));
-        event.serialize(&mut data).unwrap();
+        data.extend_from_slice(&event_discriminator(event_name));
+        match event_name {
+            "FheBinaryOpEvent" => FheBinaryOpEvent {
+                version: 1,
+                op: FheBinaryOpCode::Add,
+                subject: pk(0x30),
+                lhs: pk(0x10),
+                rhs: pk(0x11),
+                scalar: false,
+                result,
+            }
+            .serialize(&mut data)
+            .unwrap(),
+            "FheTernaryOpEvent" => FheTernaryOpEvent {
+                version: 1,
+                op: FheTernaryOpCode::IfThenElse,
+                subject: pk(0x30),
+                control: pk(0x10),
+                if_true: pk(0x11),
+                if_false: pk(0x12),
+                result,
+            }
+            .serialize(&mut data)
+            .unwrap(),
+            "TrivialEncryptEvent" => TrivialEncryptEvent {
+                version: 1,
+                subject: pk(0x30),
+                plaintext: pk(0x02),
+                fhe_type: 5,
+                result,
+            }
+            .serialize(&mut data)
+            .unwrap(),
+            "FheRandEvent" => FheRandEvent {
+                version: 1,
+                subject: pk(0x30),
+                seed: [0x44; 16],
+                fhe_type: 5,
+                result,
+            }
+            .serialize(&mut data)
+            .unwrap(),
+            "FheRandBoundedEvent" => FheRandBoundedEvent {
+                version: 1,
+                subject: pk(0x30),
+                upper_bound: pk(0x13),
+                seed: [0x44; 16],
+                fhe_type: 5,
+                result,
+            }
+            .serialize(&mut data)
+            .unwrap(),
+            "FheUnaryOpEvent" => FheUnaryOpEvent {
+                version: 1,
+                op: FheUnaryOpCode::Neg,
+                subject: pk(0x30),
+                operand: pk(0x10),
+                result,
+            }
+            .serialize(&mut data)
+            .unwrap(),
+            "FheSumEvent" => FheSumEvent {
+                version: 1,
+                subject: pk(0x30),
+                operands: vec![pk(0x10), pk(0x11)],
+                fhe_type: 5,
+                result,
+            }
+            .serialize(&mut data)
+            .unwrap(),
+            "FheIsInEvent" => FheIsInEvent {
+                version: 1,
+                subject: pk(0x30),
+                value: pk(0x10),
+                set: vec![pk(0x11), pk(0x12)],
+                fhe_type: 5,
+                result,
+            }
+            .serialize(&mut data)
+            .unwrap(),
+            "FheMulDivEvent" => FheMulDivEvent {
+                version: 1,
+                subject: pk(0x30),
+                factor1: pk(0x10),
+                factor2: pk(0x11),
+                divisor: pk(0x12),
+                scalar: true,
+                result,
+            }
+            .serialize(&mut data)
+            .unwrap(),
+            other => panic!("unhandled test event type: {other}"),
+        };
         RawInstruction {
             program_id: program_id(),
             accounts: vec![pk(0xEE), program_id()],
@@ -725,6 +826,18 @@ mod tests {
     }
 
     #[test]
+    fn op_event_result_accepts_all_fhe_eval_event_kinds() {
+        for event_name in OP_EVENT_NAMES {
+            let ix = op_event_ix_named(event_name, pk(0x21));
+            assert_eq!(
+                op_event_result(&ix, program_id()),
+                Some(pk(0x21)),
+                "{event_name} should carry a decodable result handle"
+            );
+        }
+    }
+
+    #[test]
     fn op_event_result_ignores_non_event_and_foreign_program_instructions() {
         // A zama-host instruction that is not an emit_cpi event.
         let not_event = ix_with_data(vec![], "make_handle_public", pk(0x20));
@@ -841,5 +954,96 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn born_public_output_handle_is_resolved_for_new_operator_variants() {
+        let ev = pk(0xE0);
+        let burn_handle = pk(0x21);
+        let operators = [
+            (
+                "unary",
+                FheEvalStep::Unary {
+                    op: zama_host::state::FheUnaryOpCode::Neg,
+                    operand: FheEvalOperand::AllowedDurable {
+                        handle: pk(0x10),
+                        encrypted_value_index: 1,
+                    },
+                    output_fhe_type: 5,
+                    output: make_public_durable_output(0, &[0x30], Some(pk(0x20)), Some(&[0x30])),
+                },
+                "FheUnaryOpEvent",
+            ),
+            (
+                "sum",
+                FheEvalStep::Sum {
+                    operands: vec![FheEvalOperand::AllowedDurable {
+                        handle: pk(0x10),
+                        encrypted_value_index: 1,
+                    }],
+                    fhe_type: 5,
+                    output: make_public_durable_output(0, &[0x30], Some(pk(0x20)), Some(&[0x30])),
+                },
+                "FheSumEvent",
+            ),
+            (
+                "is_in",
+                FheEvalStep::IsIn {
+                    value: FheEvalOperand::AllowedDurable {
+                        handle: pk(0x10),
+                        encrypted_value_index: 1,
+                    },
+                    set: vec![FheEvalOperand::AllowedDurable {
+                        handle: pk(0x11),
+                        encrypted_value_index: 2,
+                    }],
+                    fhe_type: 5,
+                    output: make_public_durable_output(0, &[0x30], Some(pk(0x20)), Some(&[0x30])),
+                },
+                "FheIsInEvent",
+            ),
+            (
+                "mul_div",
+                FheEvalStep::MulDiv {
+                    factor1: FheEvalOperand::AllowedDurable {
+                        handle: pk(0x10),
+                        encrypted_value_index: 1,
+                    },
+                    factor2: FheEvalOperand::Scalar(pk(0x11)),
+                    divisor: pk(0x12),
+                    output_fhe_type: 5,
+                    output: make_public_durable_output(0, &[0x30], Some(pk(0x20)), Some(&[0x30])),
+                },
+                "FheMulDivEvent",
+            ),
+        ];
+
+        for (name, step, event_name) in operators {
+            let plan = FheEvalArgs {
+                context_id: pk(0x01),
+                steps: vec![step],
+            };
+            let eval_ix = ix_with_anchor_data(
+                fhe_eval_accounts(&[ev, pk(0xD1), pk(0xD2)]),
+                "fhe_eval",
+                plan,
+            );
+            let decoded = decode_program_instructions(
+                program_id(),
+                &[eval_ix, op_event_ix_named(event_name, burn_handle)],
+            )
+            .unwrap();
+            assert_eq!(
+                decoded,
+                vec![DecodedInstruction::FheEvalUpdateEncryptedValue {
+                    encrypted_value: ev,
+                    previous_handle: pk(0x20),
+                    previous_subjects: vec![pk(0x30)],
+                    output_subjects: vec![pk(0x30)],
+                    make_public_handle: Some(burn_handle),
+                }],
+                "{name} born-public output should resolve from its op event"
+            );
+        }
     }
 }

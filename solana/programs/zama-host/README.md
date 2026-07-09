@@ -62,12 +62,12 @@ per-output authority account in `remaining_accounts`) preserves the membership-b
 public-decrypt rules enforced by the current host without reviving unsigned
 `authorized_app_accounts`.
 
-For small frames, worker-replay (compute-step) events are emitted through Anchor event CPI. Larger
-frames emit the same replay payloads through Anchor `Program data` logs to avoid self-CPI heap
-pressure. The `EncryptedValue` ACL lifecycle itself emits **no events at all, by design**: indexers
-reconstruct MMR leaves and durable-output binds from instruction data alone, including inner/CPI
-instructions (`docs/DESIGN_DECISIONS.md` DD-033). The listener accepts one compute-event replay
-transport per transaction and rejects mixed host CPI/log replay events.
+Worker-replay (compute-step) events are emitted through Anchor event CPI only while the frame stays
+within the CPI event cap. Larger non-born-public frames emit no replay payloads; indexers reconstruct
+their compute events, MMR leaves, and durable-output binds from instruction data alone
+(`docs/DESIGN_DECISIONS.md` DD-033/DD-037). Born-public durable outputs need the CPI op event to
+recover the new handle, so oversized born-public frames are rejected fail-closed. The
+`EncryptedValue` ACL lifecycle itself emits **no events at all, by design**.
 
 Admission invariants for `fhe_eval`:
 
