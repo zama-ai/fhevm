@@ -8,6 +8,7 @@ import { addressToChecksummedAddress, assertIsAddress } from '../../base/address
 import { toArray } from '../../base/object.js';
 import { createTypedValue } from '../../base/typedValue.js';
 import { encrypt as encrypt_ } from '../../coprocessor/encrypt.js';
+import { resolveRawValueTypeName } from '../../handle/FheType.js';
 import { asFhevmWithTfheVersion } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -33,7 +34,9 @@ export async function encryptValue(
   const { contractAddress, userAddress, options } = parameters;
 
   // Validates `value`
-  const values = toArray(parameters.value).map(createTypedValue);
+  const values = toArray(parameters.value).map((v) =>
+    createTypedValue({ type: resolveRawValueTypeName(v.type), value: v.value }),
+  );
 
   assertIsAddress(contractAddress, {});
   assertIsAddress(userAddress, {});
