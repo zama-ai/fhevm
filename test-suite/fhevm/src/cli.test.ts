@@ -18,6 +18,9 @@ import {
   DEFAULT_HOST_RPC_PORT,
   MINIO_PORT,
   ROLLOUT_STANDARD_TEST_PROFILES,
+  STANDARD_SHARD_COMPUTE_TEST_PROFILES,
+  STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
+  STANDARD_SHARD_STATEFUL_TEST_PROFILES,
   STANDARD_TEST_PROFILES,
   TEST_SUITE_CONTAINER,
 } from "./layout";
@@ -154,6 +157,16 @@ describe("cli", () => {
 
   test("standard suite includes multi-chain isolation coverage", () => {
     expect(STANDARD_TEST_PROFILES).toContain("multi-chain-isolation");
+  });
+
+  test("CI shards partition the standard suite exactly", () => {
+    const sharded = [
+      ...STANDARD_SHARD_STATEFUL_TEST_PROFILES,
+      ...STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
+      ...STANDARD_SHARD_COMPUTE_TEST_PROFILES,
+    ];
+    expect(new Set(sharded).size).toBe(sharded.length);
+    expect([...sharded].sort()).toEqual([...STANDARD_TEST_PROFILES].sort());
   });
 
   test("rollout-standard keeps write coverage but excludes disruptive profiles", () => {
