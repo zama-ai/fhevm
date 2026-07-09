@@ -581,6 +581,93 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn eval_created_lineage_then_eval_supersede_builds_verified_historical_proof() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x0B);
+        let owner = pk(0x30);
+        let old_handle = pk(0x44);
+        let chain = FakeChain::new(program_id);
+
+        let leaf =
+            zama_solana_acl::historical_access_leaf_commitment(lineage, 0, old_handle, owner);
+        let mut peaks = Vec::new();
+        let mut leaf_count = 0u64;
+        mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
+        chain.set_lineage_state(
+            lineage,
+            OnChainLineageState {
+                peaks: peaks.clone(),
+                leaf_count,
+            },
+        );
+
+        chain.push_tx(
+            "sig1",
+            1,
+            &[lineage],
+            vec![make_ix(
+                program_id,
+                fhe_eval_accounts(program_id, &[lineage]),
+                "fhe_eval",
+                eval_create_output(owner),
+            )],
+        );
+
+        let supersede_plan = FheEvalArgs {
+            context_id: pk(0x02),
+            steps: vec![FheEvalStep::TrivialEncrypt {
+                plaintext: pk(0x03),
+                fhe_type: 5,
+                output: FheEvalOutput::AllowedDurable {
+                    output_encrypted_value_index: 0,
+                    output_app_account_authority_index: None,
+                    output_acl_domain_key: pubkey(0x40),
+                    output_app_account: pubkey(0x41),
+                    output_encrypted_value_label: pk(0x42),
+                    output_subjects: vec![AclSubjectEntry {
+                        pubkey: Pubkey::new_from_array(owner),
+                    }],
+                    previous_handle: Some(old_handle),
+                    previous_subjects: Some(vec![Pubkey::new_from_array(owner)]),
+                    make_public: false,
+                },
+            }],
+        };
+        chain.push_tx(
+            "sig2",
+            2,
+            &[lineage],
+            vec![make_ix(
+                program_id,
+                fhe_eval_accounts(program_id, &[lineage]),
+                "fhe_eval",
+                supersede_plan,
+            )],
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        let result = build_proof(&chain, &store, program_id, lineage, 0, 1000)
+            .await
+            .unwrap();
+        let proof = result.mmr_proof.as_ref().unwrap();
+
+        assert!(result.verified);
+        assert_eq!(result.leaf_count, 1);
+        assert_eq!(result.proof_slot, 1);
+        assert!(zama_solana_acl::mmr::mmr_verify(
+            &peaks, leaf_count, leaf, proof
+        ));
+        assert_eq!(
+            store.get_events(lineage).await.unwrap(),
+            vec![LineageEvent::handle_superseded(old_handle, &[owner])]
+        );
+    }
+
+    #[tokio::test]
     async fn returns_lagging_when_catch_up_budget_is_exhausted() {
         let program_id = pk(0x99);
         let lineage = pk(0x04);

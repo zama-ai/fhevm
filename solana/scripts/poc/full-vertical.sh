@@ -217,7 +217,7 @@ done
 hist_proof="$(cd "$ROOT/solana/scripts/poc/live-client" && \
   HISTORICAL_STEP=supersede TE_VALUE="$VALUE" \
   PROOF_SOURCE=relayer RELAYER_URL=http://127.0.0.1:3000 \
-  ./target/debug/poc-live-client 2>&1)"
+  ./target/debug/poc-live-client 2>&1)" || fail "historical supersede/proof command failed: $hist_proof"
 echo "$hist_proof" | grep -E 'HIST H_new|HIST mmrProofBytes' || fail "historical supersede/proof: $hist_proof"
 HIST_H_OLD2="$(hist_field "$hist_proof" H_old)"
 HIST_H_NEW="$(hist_field "$hist_proof" H_new)"
