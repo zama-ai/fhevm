@@ -84,13 +84,22 @@ pub fn decrypt_enqueue_for_fetch(
         return None;
     }
     let allow_event = match job.reason.as_str() {
-        "public_decrypt_allowed" | "handle_made_public" => {
-            AllowEvents::AllowedForDecryption
+        // Public and historical access are MMR-backed. This fetch job contains
+        // no inclusion proof, so the finalized account alone cannot prove the
+        // queued handle has the corresponding leaf. KMS verifies those proofs
+        // at the decrypt boundary; do not approximate that authorization here.
+        "public_decrypt_allowed"
+        | "handle_made_public"
+        | "handle_superseded" => {
+            warn!(
+                reason = %job.reason,
+                "finalized fetch has no MMR proof; refusing public or historical decrypt release"
+            );
+            return None;
         }
         "acl_subject_allowed"
         | "acl_record_bound"
         | "encrypted_value_created"
-        | "handle_superseded"
         | "subject_allowed" => AllowEvents::AllowedAccount,
         // handle_material_sealed also emits an EncryptedValue-account fetch, but
         // the allow it confirms already arrived via its own subject/public-decrypt
@@ -910,21 +919,15 @@ mod tests {
     }
 
     #[test]
-    fn public_decrypt_allowed_releases_handle_for_public_decryption() {
+    fn public_decrypt_allowed_without_mmr_proof_is_refused() {
         let handle = Handle::from([5; 32]);
         let job = acl_record_job("public_decrypt_allowed", Some(handle));
-        let enqueue = decrypt_enqueue_for_fetch(
+        assert!(decrypt_enqueue_for_fetch(
             &job,
             &witness_owned_by(HOST_PROGRAM, [5; 32], 0),
             Some(HOST_PROGRAM),
         )
-        .expect("public decrypt allow must enqueue");
-        assert_eq!(enqueue.handle, handle);
-        assert_eq!(
-            enqueue.allow_event as i16,
-            AllowEvents::AllowedForDecryption as i16
-        );
-        assert_eq!(enqueue.account_address, "");
+        .is_none());
     }
 
     #[test]
@@ -949,8 +952,8 @@ mod tests {
 
     #[test]
     fn handle_less_current_handle_fetch_resolves_from_finalized_account() {
-        // Decode-time tracker miss: allow_subjects/make_handle_public
-        // queue without a handle; the finalized account's current_handle is released.
+        // A decode-time tracker miss for allow_subjects queues without a
+        // handle; the finalized account's current_handle is released.
         let subject_job =
             acl_record_job_with_subject("subject_allowed", None, Some([6; 32]));
         let enqueue = decrypt_enqueue_for_fetch(
@@ -970,18 +973,12 @@ mod tests {
         );
 
         let public_job = acl_record_job("handle_made_public", None);
-        let enqueue = decrypt_enqueue_for_fetch(
+        assert!(decrypt_enqueue_for_fetch(
             &public_job,
             &witness_owned_by(HOST_PROGRAM, [9; 32], 0),
             Some(HOST_PROGRAM),
         )
-        .expect("handle-less handle_made_public must enqueue");
-        assert_eq!(enqueue.handle, Handle::from([9; 32]));
-        assert_eq!(
-            enqueue.allow_event as i16,
-            AllowEvents::AllowedForDecryption as i16
-        );
-        assert_eq!(enqueue.account_address, "");
+        .is_none());
 
         // Reasons whose handle is always carried in the instruction args stay
         // rejected without one.
@@ -995,25 +992,23 @@ mod tests {
 
     #[test]
     fn encrypted_value_instruction_reasons_release_the_expected_allow_kind() {
-        // RFC-024 EncryptedValue instruction-decode reasons (create/update/
-        // allow_subjects -> durable account allow; make_handle_public -> public
-        // decrypt), same trust guard as the legacy finalized-account reasons above.
-        for reason in ["encrypted_value_created", "handle_superseded"] {
-            let handle = Handle::from([6; 32]);
-            let job = acl_record_job(reason, Some(handle));
-            let enqueue = decrypt_enqueue_for_fetch(
-                &job,
-                &witness_owned_by(HOST_PROGRAM, [6; 32], 1),
-                Some(HOST_PROGRAM),
-            )
-            .unwrap_or_else(|| panic!("{reason} must enqueue"));
-            assert_eq!(enqueue.handle, handle);
-            assert_eq!(
-                enqueue.allow_event as i16,
-                AllowEvents::AllowedAccount as i16
-            );
-            assert_eq!(enqueue.account_address, "");
-        }
+        // RFC-024 current-account reasons use the finalized account directly.
+        // MMR-backed public/historical reasons are covered below and refused
+        // without an inclusion proof.
+        let handle = Handle::from([6; 32]);
+        let job = acl_record_job("encrypted_value_created", Some(handle));
+        let enqueue = decrypt_enqueue_for_fetch(
+            &job,
+            &witness_owned_by(HOST_PROGRAM, [6; 32], 1),
+            Some(HOST_PROGRAM),
+        )
+        .expect("encrypted_value_created must enqueue");
+        assert_eq!(enqueue.handle, handle);
+        assert_eq!(
+            enqueue.allow_event as i16,
+            AllowEvents::AllowedAccount as i16
+        );
+        assert_eq!(enqueue.account_address, "");
 
         let handle = Handle::from([6; 32]);
         let job = acl_record_job_with_subject(
@@ -1039,18 +1034,12 @@ mod tests {
 
         let handle = Handle::from([7; 32]);
         let job = acl_record_job("handle_made_public", Some(handle));
-        let enqueue = decrypt_enqueue_for_fetch(
+        assert!(decrypt_enqueue_for_fetch(
             &job,
             &witness_owned_by(HOST_PROGRAM, [7; 32], 0),
             Some(HOST_PROGRAM),
         )
-        .expect("handle_made_public must enqueue");
-        assert_eq!(enqueue.handle, handle);
-        assert_eq!(
-            enqueue.allow_event as i16,
-            AllowEvents::AllowedForDecryption as i16
-        );
-        assert_eq!(enqueue.account_address, "");
+        .is_none());
     }
 
     #[test]
@@ -1134,19 +1123,13 @@ mod tests {
     }
 
     #[test]
-    fn historical_superseded_claim_requires_advanced_leaf_count() {
+    fn historical_superseded_claim_without_mmr_proof_is_refused() {
         let job =
             acl_record_job("handle_superseded", Some(Handle::from([6; 32])));
 
         assert!(decrypt_enqueue_for_fetch(
             &job,
             &witness_owned_by(HOST_PROGRAM, [9; 32], 1),
-            Some(HOST_PROGRAM),
-        )
-        .is_some());
-        assert!(decrypt_enqueue_for_fetch(
-            &job,
-            &witness_owned_by(HOST_PROGRAM, [9; 32], 0),
             Some(HOST_PROGRAM),
         )
         .is_none());
