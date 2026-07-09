@@ -1195,10 +1195,8 @@ mod tests {
     fn wrong_owner_is_refused_when_program_id_is_configured() {
         // A finalized account at the right address but owned by another program
         // (e.g. an attacker-funded look-alike) must not release the handle.
-        let job = acl_record_job(
-            "public_decrypt_allowed",
-            Some(Handle::from([5; 32])),
-        );
+        let job =
+            acl_record_job("acl_record_bound", Some(Handle::from([5; 32])));
         assert!(decrypt_enqueue_for_fetch(
             &job,
             &witness_owned_by([9; 32], [5; 32], 0),
@@ -1209,10 +1207,8 @@ mod tests {
 
     #[test]
     fn owner_check_is_skipped_when_no_program_id_is_configured() {
-        let job = acl_record_job(
-            "public_decrypt_allowed",
-            Some(Handle::from([5; 32])),
-        );
+        let job =
+            acl_record_job("acl_record_bound", Some(Handle::from([5; 32])));
         assert!(decrypt_enqueue_for_fetch(
             &job,
             &witness_owned_by([9; 32], [5; 32], 0),
