@@ -137,6 +137,7 @@ impl From<KeyDigestDbItem> for KeyDigest {
 
 /// Enum of all the events monitored by the KMS Connector.
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
+#[repr(u8)]
 pub enum EventType {
     PublicDecryptionRequest,
     UserDecryptionRequest,
@@ -205,6 +206,11 @@ impl TryFrom<PgNotification> for EventType {
 }
 
 impl EventType {
+    /// Returns this variant's ordinal position.
+    pub fn as_index(&self) -> usize {
+        *self as usize
+    }
+
     pub fn pg_notification(&self) -> &'static str {
         match self {
             Self::PublicDecryptionRequest => PUBLIC_DECRYPT_REQUEST_NOTIFICATION,
