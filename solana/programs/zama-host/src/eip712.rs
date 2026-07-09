@@ -144,10 +144,10 @@ pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: u64) -> Opt
 /// Recover the EVM signer address from a 65-byte `r||s||v` signature over `digest`.
 pub fn recover_evm_address(digest: &[u8; 32], signature: &[u8; 65]) -> Option<[u8; 20]> {
     // EVM EIP-712 signatures use v = 27/28 (recovery id 0/1).
-    let recovery_id = signature[64].checked_sub(27)?;
-    if recovery_id > 3 {
+    if !matches!(signature[64], 27 | 28) {
         return None;
     }
+    let recovery_id = signature[64] - 27;
     // Reject high-s (malleable) signatures for EVM parity with OpenZeppelin ECDSA.
     if signature[32..64] > SECP256K1_HALF_ORDER[..] {
         return None;
@@ -321,6 +321,19 @@ mod tests {
         );
         // A signer cannot be double-counted toward a threshold by pairing a sig with its sibling.
         assert!(!verify_threshold(&digest, &[low, high], &[signer], 2));
+    }
+
+    #[test]
+    fn rejects_non_evm_recovery_ids() {
+        let key = SigningKey::from_bytes(&[0x45u8; 32].into()).expect("valid signing key");
+        let digest = [0x11u8; 32];
+        let signature = sign(&key, &digest);
+
+        for v in [0, 1, 26, 29, 30] {
+            let mut invalid = signature;
+            invalid[64] = v;
+            assert_eq!(recover_evm_address(&digest, &invalid), None, "v={v}");
+        }
     }
 
     #[test]

@@ -83,7 +83,8 @@ where
                 Err(ProcessingError::Recoverable(e)),
                 ProtocolEventKind::PublicDecryption(_)
                 | ProtocolEventKind::UserDecryption(_)
-                | ProtocolEventKind::UserDecryptionV2(_),
+                | ProtocolEventKind::UserDecryptionV2(_)
+                | ProtocolEventKind::UserDecryptionSolana(_),
             ) if event.error_counter as u16 >= self.max_decryption_attempts => {
                 error!(
                     "{}. Maximum number of decryption attempts reached: {}",

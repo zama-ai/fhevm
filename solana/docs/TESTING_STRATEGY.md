@@ -41,12 +41,11 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `plan_contracts.rs`): vendored IDLs and the
    Borsh golden manifest must match the freshly-built Anchor IDLs; EVENT_VERSION consistency across
    zama-host / confidential-token / host-listener is asserted (a mismatch would silently drop events).
-7. **End-to-end** (`.github/workflows/solana-e2e.yml`, `full-vertical.sh`): matrix `reconstruct: [false, true]`.
-   `false` = zama-host emits events, host-listener decodes them. `true` = zama-host EMITLESS, coprocessor
-   fed purely by Yellowstone gRPC reconstruction. Both arms drive the **decrypt vertical** against a local
-   validator + full coprocessor/KMS stack — compute → public-decrypt (relayer MMR proof) → user-decrypt
-   (current) → historical-user-decrypt (superseded handle + live MMR proof) — exercising all three
-   authorization paths and proving the reconstruct path is behavior-equivalent to the emit path.
+7. **End-to-end** (`.github/workflows/solana-e2e.yml`, `full-vertical.sh`): the Yellowstone-only
+   `reconstruct=true` arm runs zama-host EMITLESS and feeds the coprocessor through Yellowstone gRPC
+   reconstruction. It drives the **decrypt vertical** against a local validator + full coprocessor/KMS
+   stack — compute → public-decrypt (relayer MMR proof) → user-decrypt (current) → historical-user-decrypt
+   (superseded handle + live MMR proof) — exercising all three authorization paths.
    **Coverage boundary:** the token *consume* flows (burn→redeem, disclose) are NOT yet in the CI e2e —
    they are covered by `token_mollusk` (real `.so`, incl. after-supersession / consume-once / foreign-proof)
    and driven on a live stack by `adversarial-l4.sh`, which is currently local-only. Their shared
@@ -56,10 +55,10 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 ## Reconstruction parity strategy
 
 The rewrite's central correctness bet is that off-chain consumers reproduce on-chain MMR state exactly.
-Two independent guards enforce it: the e2e `reconstruct=true` arm (host-listener reconstruction must
-produce the same allow-signals as the emit path), and `build_verified_proof`'s peak cross-check (any
-reconstruction divergence fails closed rather than yielding a wrong proof, which the KMS would then
-re-verify against finalized peaks anyway — DD-035).
+The e2e `reconstruct=true` arm exercises host-listener reconstruction against the full stack, while
+`build_verified_proof` cross-checks reconstructed peaks against final chain state. A divergence fails
+closed rather than yielding a wrong proof, which the KMS then re-verifies against finalized peaks anyway
+(DD-035).
 
 ## Deliberately deferred (filed as follow-ups, not gaps in the merge)
 

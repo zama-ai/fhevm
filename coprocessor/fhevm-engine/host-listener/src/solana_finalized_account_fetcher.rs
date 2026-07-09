@@ -624,6 +624,19 @@ where
     let mut terminal = 0usize;
     for (job, account) in jobs.iter().zip(accounts) {
         match account {
+            Some(account)
+                if !finalized_slot_covers_job(job, account.observed_slot) =>
+            {
+                retry_finalized_account_fetch(
+                    &mut tx,
+                    job,
+                    &format!(
+                        "finalized account context slot {} predates job block {}; awaiting finalization",
+                        account.observed_slot, job.block_number
+                    ),
+                )
+                .await?;
+            }
             Some(account) => {
                 let witness = SolanaFinalizedAccountWitness {
                     account_key: job.account_key,
@@ -701,6 +714,13 @@ where
     tx.commit().await?;
 
     Ok(terminal)
+}
+
+fn finalized_slot_covers_job(
+    job: &SolanaFinalizedAccountFetchJob,
+    observed_slot: u64,
+) -> bool {
+    observed_slot >= job.block_number
 }
 
 async fn retry_jobs(
@@ -873,6 +893,20 @@ mod tests {
         data.extend_from_slice(&0_u32.to_le_bytes()); // peaks
         data.push(255); // bump
         data
+    }
+
+    #[test]
+    fn finalized_account_before_job_block_must_retry() {
+        let mut job = acl_record_job(
+            "encrypted_value_created",
+            Some(Handle::from([6; 32])),
+        );
+        job.block_number = 43;
+        let account = witness_owned_by(HOST_PROGRAM, [6; 32], 0);
+
+        assert!(!finalized_slot_covers_job(&job, account.observed_slot));
+        job.block_number = account.observed_slot;
+        assert!(finalized_slot_covers_job(&job, account.observed_slot));
     }
 
     #[test]

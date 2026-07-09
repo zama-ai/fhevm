@@ -1391,8 +1391,8 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - Production role and governance names for public-decrypt and grant authority.
 - Reorg unwind is unimplemented on the Solana listener path (DD-028/DD-034); decrypt-release finality
   (re-reading `EncryptedValue` accounts) is the stated safety net today.
-- `fhe_eval` has no `RandBounded` step; `create_random_bounded_amount`/bounded-rand eval were removed
-  with the old model and are not yet rebuilt on `EncryptedValue` (DD-032).
+- `fhe_eval` supports `RandBounded`; the superseded standalone bounded-random instructions were
+  removed with the old model (DD-032).
 - The relayer's own Solana user-decrypt path does not yet call the MMR proof service in-process
   (DD-035) — only the interim internal HTTP endpoint exists today. When it lands, the user-decrypt
   dedup hash must also cover the proof fields (`acl_value_key`, `proof_slot`, proof bytes).

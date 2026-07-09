@@ -57,6 +57,13 @@ pub async fn build_proof<C: ChainFetcher, S: LeafStore>(
         leaf_count: on_chain.leaf_count,
     };
 
+    // The caller can request a historical leaf immediately after submitting its
+    // superseding transaction. Until that transaction is finalized, the live
+    // lineage has not yet advanced to the requested index.
+    if leaf_index >= on_chain.leaf_count {
+        return Err(lagging());
+    }
+
     match try_build(
         store,
         lineage,
@@ -711,6 +718,30 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, ProofError::Lagging { leaf_count: 2 }));
         assert!(store.get_events(lineage).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn returns_lagging_until_requested_leaf_is_finalized() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x04);
+        let chain = FakeChain::new(program_id);
+        chain.set_lineage_state(
+            lineage,
+            OnChainLineageState {
+                peaks: vec![],
+                leaf_count: 0,
+            },
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        let error = build_proof(&chain, &store, program_id, lineage, 0, 1000)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ProofError::Lagging { leaf_count: 0 }));
     }
 
     #[tokio::test]
