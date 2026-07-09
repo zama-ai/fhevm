@@ -234,6 +234,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             ProtocolEventKind::KmsContextDestroyed(req) => {
                 // TODO: the `epoch_ids` field is left empty for now, as the gRPC interface of
                 // the KMS Core for context/epoch destruction is about to change.
+                // Remove once https://github.com/zama-ai/kms-internal/issues/3079 is done.
                 Ok(KmsGrpcRequest::DestroyMpcContext(
                     DestroyMpcContextRequest {
                         context_id: Some(u256_to_request_id(req.kmsContextId)),
