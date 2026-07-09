@@ -289,13 +289,18 @@ async fn test_validate_context_fallback_caches_valid_pair() -> anyhow::Result<()
     context_manager.validate_context(&extra_data).await?;
     context_manager.validate_context(&extra_data).await?;
 
-    let cached: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM kms_context WHERE id = $1 AND epoch_id = $2")
-            .bind(context_id.as_le_slice())
+    let context_cached: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM kms_context WHERE id = $1")
+        .bind(context_id.as_le_slice())
+        .fetch_one(test_instance.db())
+        .await?;
+    assert_eq!(context_cached, 1);
+    let epoch_cached: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM kms_epoch WHERE id = $1 AND context_id = $2")
             .bind(epoch_id.as_le_slice())
+            .bind(context_id.as_le_slice())
             .fetch_one(test_instance.db())
             .await?;
-    assert_eq!(cached, 1);
+    assert_eq!(epoch_cached, 1);
     Ok(())
 }
 
@@ -334,12 +339,13 @@ async fn test_validate_context_pending_epoch_is_recoverable() -> anyhow::Result<
     Ok(())
 }
 
-/// Destroyed context → Irrecoverable error, even for an epoch unknown locally, without falling
-/// back to any RPC call (the asserter queue is empty).
+/// Destroyed context → Irrecoverable error for any epoch, even one unknown locally, without
+/// falling back to any RPC call (the asserter queue is empty): the context invalidation alone
+/// concludes.
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_validate_context_destroyed_rejects_unknown_epoch() -> anyhow::Result<()> {
+async fn test_validate_context_destroyed_rejects_any_epoch() -> anyhow::Result<()> {
     let (test_instance, context_manager) = setup_context_manager(Asserter::new()).await?;
 
     sqlx::query!(
@@ -349,12 +355,50 @@ async fn test_validate_context_destroyed_rejects_unknown_epoch() -> anyhow::Resu
     .execute(test_instance.db())
     .await?;
 
-    let extra_data = ExtraData {
-        context_id: Some(TESTING_KMS_CONTEXT),
-        epoch_id: Some(U256::from(99)), // epoch unknown locally
-    };
+    for epoch_id in [Some(DEFAULT_EPOCH_ID), Some(U256::from(99)), None] {
+        let extra_data = ExtraData {
+            context_id: Some(TESTING_KMS_CONTEXT),
+            epoch_id,
+        };
+        let err = context_manager
+            .validate_context(&extra_data)
+            .await
+            .map_err(RequestCheckError::record)
+            .unwrap_err();
+        assert!(
+            matches!(err, ProcessingError::Irrecoverable(_)),
+            "unexpected error for epoch {epoch_id:?}: {err}"
+        );
+    }
+    Ok(())
+}
+
+/// A destroyed epoch → Irrecoverable error for requests referencing it, while the other epochs
+/// of the same context keep validating from the DB alone, without falling back to any RPC call
+/// (the asserter queue is empty).
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_validate_context_destroyed_epoch_leaves_siblings_valid() -> anyhow::Result<()> {
+    let (test_instance, context_manager) = setup_context_manager(Asserter::new()).await?;
+
+    // Invalidate an epoch of the testing context, mirroring what the gw-listener does on
+    // `KmsEpochDestroyed`. The `context_id` is left NULL, as the event does not carry it: the
+    // epoch may not even be cached when the destruction event arrives.
+    let destroyed_epoch_id = U256::from(42);
+    sqlx::query(
+        "INSERT INTO kms_epoch(id, is_valid, created_at, updated_at)
+        VALUES ($1, FALSE, NOW(), NOW())",
+    )
+    .bind(destroyed_epoch_id.as_le_slice())
+    .execute(test_instance.db())
+    .await?;
+
     let err = context_manager
-        .validate_context(&extra_data)
+        .validate_context(&ExtraData {
+            context_id: Some(TESTING_KMS_CONTEXT),
+            epoch_id: Some(destroyed_epoch_id),
+        })
         .await
         .map_err(RequestCheckError::record)
         .unwrap_err();
@@ -362,6 +406,106 @@ async fn test_validate_context_destroyed_rejects_unknown_epoch() -> anyhow::Resu
         matches!(err, ProcessingError::Irrecoverable(_)),
         "unexpected error: {err}"
     );
+
+    // The sibling epoch seeded by `DbInstance::setup` must remain valid, from the DB alone.
+    context_manager
+        .validate_context(&ExtraData {
+            context_id: Some(TESTING_KMS_CONTEXT),
+            epoch_id: Some(DEFAULT_EPOCH_ID),
+        })
+        .await?;
+    Ok(())
+}
+
+/// An epoch cached as valid under another context does not conclude locally (the cached
+/// association is not authoritative): the pair falls back to on-chain validation, which
+/// rejects it → Recoverable error, and the cached association is left untouched.
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_validate_context_epoch_of_other_context_falls_back_on_chain() -> anyhow::Result<()> {
+    let asserter = Asserter::new();
+    asserter.push_success(&true.abi_encode()); // isValidKmsContext
+    asserter.push_success(&false.abi_encode()); // isValidEpochForContext
+    let (test_instance, context_manager) = setup_context_manager(asserter).await?;
+
+    // A second valid context, requested with the epoch seeded for `TESTING_KMS_CONTEXT`.
+    let other_context_id = U256::from(34);
+    sqlx::query(
+        "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
+        VALUES ($1, TRUE, NOW(), NOW())",
+    )
+    .bind(other_context_id.as_le_slice())
+    .execute(test_instance.db())
+    .await?;
+
+    let err = context_manager
+        .validate_context(&ExtraData {
+            context_id: Some(other_context_id),
+            epoch_id: Some(DEFAULT_EPOCH_ID),
+        })
+        .await
+        .map_err(RequestCheckError::record)
+        .unwrap_err();
+    assert!(
+        matches!(err, ProcessingError::Recoverable(_)),
+        "unexpected error: {err}"
+    );
+
+    let cached_context: Vec<u8> =
+        sqlx::query_scalar("SELECT context_id FROM kms_epoch WHERE id = $1")
+            .bind(DEFAULT_EPOCH_ID.as_le_slice())
+            .fetch_one(test_instance.db())
+            .await?;
+    assert_eq!(
+        cached_context,
+        TESTING_KMS_CONTEXT.as_le_slice(),
+        "a rejected pair should not alter the cached association"
+    );
+    Ok(())
+}
+
+/// An epoch cached as valid under another context, but whose requested pair the chain confirms
+/// (e.g. the cached association went stale after a reorg) → Valid, and the cached association
+/// is repaired: the second validation must succeed from the DB alone (the asserter queue is
+/// then empty, so any other RPC call would fail).
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_validate_context_stale_epoch_association_self_heals() -> anyhow::Result<()> {
+    let asserter = Asserter::new();
+    asserter.push_success(&true.abi_encode()); // isValidKmsContext
+    asserter.push_success(&true.abi_encode()); // isValidEpochForContext
+    let (test_instance, context_manager) = setup_context_manager(asserter).await?;
+
+    // A second valid context, requested with the epoch seeded for `TESTING_KMS_CONTEXT`.
+    let other_context_id = U256::from(34);
+    sqlx::query(
+        "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
+        VALUES ($1, TRUE, NOW(), NOW())",
+    )
+    .bind(other_context_id.as_le_slice())
+    .execute(test_instance.db())
+    .await?;
+
+    let extra_data = ExtraData {
+        context_id: Some(other_context_id),
+        epoch_id: Some(DEFAULT_EPOCH_ID),
+    };
+    context_manager.validate_context(&extra_data).await?;
+
+    let cached_context: Vec<u8> =
+        sqlx::query_scalar("SELECT context_id FROM kms_epoch WHERE id = $1")
+            .bind(DEFAULT_EPOCH_ID.as_le_slice())
+            .fetch_one(test_instance.db())
+            .await?;
+    assert_eq!(
+        cached_context,
+        other_context_id.as_le_slice(),
+        "the cached association should be repaired from the on-chain result"
+    );
+
+    context_manager.validate_context(&extra_data).await?;
     Ok(())
 }
 

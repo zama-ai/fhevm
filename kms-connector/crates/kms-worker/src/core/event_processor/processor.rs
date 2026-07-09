@@ -11,6 +11,7 @@ use connector_utils::types::{
     KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
     u256_to_request_id,
 };
+use kms_grpc::kms::v1::{DestroyMpcContextRequest, DestroyMpcEpochRequest};
 use sqlx::{Pool, Postgres};
 use tracing::{error, info, warn};
 
@@ -229,6 +230,21 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 self.protocol_config_processor
                     .prepare_new_kms_epoch_request(req)
                     .await
+            }
+            ProtocolEventKind::KmsContextDestroyed(req) => {
+                // TODO: the `epoch_ids` field is left empty for now, as the gRPC interface of
+                // the KMS Core for context/epoch destruction is about to change.
+                Ok(KmsGrpcRequest::DestroyMpcContext(
+                    DestroyMpcContextRequest {
+                        context_id: Some(u256_to_request_id(req.kmsContextId)),
+                        epoch_ids: vec![],
+                    },
+                ))
+            }
+            ProtocolEventKind::KmsEpochDestroyed(req) => {
+                Ok(KmsGrpcRequest::DestroyMpcEpoch(DestroyMpcEpochRequest {
+                    epoch_id: Some(u256_to_request_id(req.epochId)),
+                }))
             }
         }
     }
