@@ -291,7 +291,7 @@ jobs:
   build-db-migration:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.db_migration == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef57ddc1252553c309d517c3df1785b2b55e539d # test: remove arm and dev images
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
     secrets: &docker_secrets
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -333,7 +333,7 @@ jobs:
   build-gw-listener:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.gw_listener == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef57ddc1252553c309d517c3df1785b2b55e539d # test: remove arm and dev images
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -360,7 +360,7 @@ jobs:
   build-host-listener:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.host_listener == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef57ddc1252553c309d517c3df1785b2b55e539d # test: remove arm and dev images
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -387,7 +387,7 @@ jobs:
   build-sns-worker:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.sns_worker == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef57ddc1252553c309d517c3df1785b2b55e539d # test: remove arm and dev images
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -414,7 +414,7 @@ jobs:
   build-tfhe-worker:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.tfhe_worker == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef57ddc1252553c309d517c3df1785b2b55e539d # test: remove arm and dev images
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -441,7 +441,7 @@ jobs:
   build-tx-sender:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.tx_sender == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef57ddc1252553c309d517c3df1785b2b55e539d # test: remove arm and dev images
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -468,7 +468,7 @@ jobs:
   build-zkproof-worker:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.zkproof_worker == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@ef57ddc1252553c309d517c3df1785b2b55e539d # test: remove arm and dev images
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
