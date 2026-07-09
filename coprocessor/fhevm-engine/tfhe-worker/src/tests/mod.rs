@@ -1,7 +1,7 @@
 pub(crate) mod block_scoped;
 mod branch_handling;
 mod bridge;
-mod carry_cleaning;
+mod carry_residue;
 mod db_key_cache;
 mod dependence_chain;
 mod drift_revert;

@@ -543,35 +543,6 @@ fn try_execute_node(
     }
 }
 
-/// Compresses an operation result; when the compression keys reject carry
-/// residue (left by levelled no-PBS paths, e.g. ops taking tfhe's trivial
-/// fast path on raw-forwarded operands), the ciphertext is re-encoded
-/// through the deterministic, value-preserving `clean_carries` and
-/// compressed again. The cleaned ciphertext is returned so it also replaces
-/// the forwarded working value — persisted bytes and in-memory propagation
-/// must stay identical.
-fn compress_or_clean_carries(
-    working: SupportedFheCiphertexts,
-) -> (
-    SupportedFheCiphertexts,
-    std::result::Result<Vec<u8>, fhevm_engine_common::types::FhevmError>,
-) {
-    match working.compress() {
-        Err(fhevm_engine_common::types::FhevmError::CiphertextCompressionRequiresEmptyCarries) => {
-            match working.clean_carries() {
-                Ok(cleaned) => {
-                    info!(target: "scheduler", { ct_type = cleaned.type_name() },
-                          "Cleaned carry residue before compressing operation result");
-                    let compressed = cleaned.compress();
-                    (cleaned, compressed)
-                }
-                Err(error) => (working, Err(error)),
-            }
-        }
-        other => (working, other),
-    }
-}
-
 type OpResult = Result<ComputationOutput>;
 fn run_computation(
     operation: i32,
@@ -600,7 +571,7 @@ fn run_computation(
                 .next()
                 .expect("FheGetCiphertext requires one input");
             let ct_type = working.type_num();
-            let (working, compressed) = compress_or_clean_carries(working);
+            let compressed = working.compress();
             match compressed {
                 Ok(ct_bytes) => {
                     tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
@@ -648,7 +619,7 @@ fn run_computation(
                     )
                     .entered();
                     let ct_type = working.type_num();
-                    let (working, compressed) = compress_or_clean_carries(working);
+                    let compressed = working.compress();
                     match compressed {
                         Ok(ct_bytes) => {
                             tracing::Span::current()

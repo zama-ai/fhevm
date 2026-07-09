@@ -561,38 +561,6 @@ impl SupportedFheCiphertexts {
         }
     }
 
-    /// Re-encodes the ciphertext through a value-preserving `x & x`, whose
-    /// default-op carry propagation clears residue left by levelled (no-PBS)
-    /// execution paths — e.g. a shift taking tfhe's trivial-operand fast
-    /// path, whose degree bookkeeping can leave value bits in the carry
-    /// space. Reachable only where working ciphertexts are forwarded raw
-    /// (block-scoped execution); decompressed operands are always
-    /// metadata-canonical. On trivial inputs tfhe evaluates the `&` as a
-    /// plaintext re-encode (the output stays trivial); on encrypted inputs
-    /// it is a classical-PBS re-encode. Both are byte-deterministic under
-    /// our parameters, so persisted bytes stay consensus-stable across
-    /// coprocessors.
-    #[allow(clippy::eq_op)]
-    pub fn clean_carries(&self) -> std::result::Result<Self, FhevmError> {
-        Ok(match self {
-            SupportedFheCiphertexts::Scalar(_) => {
-                return Err(FhevmError::CannotCompressScalar);
-            }
-            SupportedFheCiphertexts::FheBool(c) => SupportedFheCiphertexts::FheBool(c & c),
-            SupportedFheCiphertexts::FheUint4(c) => SupportedFheCiphertexts::FheUint4(c & c),
-            SupportedFheCiphertexts::FheUint8(c) => SupportedFheCiphertexts::FheUint8(c & c),
-            SupportedFheCiphertexts::FheUint16(c) => SupportedFheCiphertexts::FheUint16(c & c),
-            SupportedFheCiphertexts::FheUint32(c) => SupportedFheCiphertexts::FheUint32(c & c),
-            SupportedFheCiphertexts::FheUint64(c) => SupportedFheCiphertexts::FheUint64(c & c),
-            SupportedFheCiphertexts::FheUint128(c) => SupportedFheCiphertexts::FheUint128(c & c),
-            SupportedFheCiphertexts::FheUint160(c) => SupportedFheCiphertexts::FheUint160(c & c),
-            SupportedFheCiphertexts::FheUint256(c) => SupportedFheCiphertexts::FheUint256(c & c),
-            SupportedFheCiphertexts::FheBytes64(c) => SupportedFheCiphertexts::FheBytes64(c & c),
-            SupportedFheCiphertexts::FheBytes128(c) => SupportedFheCiphertexts::FheBytes128(c & c),
-            SupportedFheCiphertexts::FheBytes256(c) => SupportedFheCiphertexts::FheBytes256(c & c),
-        })
-    }
-
     pub fn compress(&self) -> std::result::Result<Vec<u8>, FhevmError> {
         let mut builder = CompressedCiphertextListBuilder::new();
         match self {
