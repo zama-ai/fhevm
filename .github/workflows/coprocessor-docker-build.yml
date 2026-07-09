@@ -315,7 +315,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-db-migration"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-db-migration-image:
@@ -349,7 +349,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-gw-listener"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-gw-listener-image:
@@ -379,7 +379,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-host-listener"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-host-listener-image:
@@ -409,7 +409,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-sns-worker"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-sns-worker-image:
@@ -439,7 +439,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-tfhe-worker"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-tfhe-worker-image:
@@ -469,7 +469,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-tx-sender"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-tx-sender-image:
@@ -499,7 +499,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-zkproof-worker"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-zkproof-worker-image:
