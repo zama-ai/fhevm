@@ -1,7 +1,6 @@
 FROM cgr.dev/zama.ai/glibc-dynamic:16-dev AS prod
 
 ARG RUST_IMAGE_VERSION
-ARG SCCACHE_VERSION=v0.15.0
 
 USER root
 
@@ -29,18 +28,6 @@ RUN apk add --no-cache \
     postgresql-client \
     vim && \
     rm -rf /var/cache/apk/*
-
-RUN set -eux; \
-    arch="$(uname -m)"; \
-    case "$arch" in \
-        x86_64)  triple=x86_64-unknown-linux-musl ;; \
-        aarch64) triple=aarch64-unknown-linux-musl ;; \
-        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
-        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
-    chmod +x /usr/local/bin/sccache; \
-    sccache --version
 
 # Install Rust in a location accessible to all users
 ENV RUSTUP_HOME=/usr/local/rustup \
