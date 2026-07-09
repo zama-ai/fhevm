@@ -2410,11 +2410,26 @@ where
                         return Err(EvalBuildError::DivisionByZero);
                     }
                 }
-                _ => return Err(EvalBuildError::DivisorMustBeScalar),
+                OperandKind::Durable(_)
+                | OperandKind::Transient { .. }
+                | OperandKind::VerifiedInput { .. } => {
+                    return Err(EvalBuildError::DivisorMustBeScalar)
+                }
             }
         }
-        // Non-comparison ops: operand type must equal the (op-gated) output type.
-        _ => {
+        // Remaining ops: operand type must equal the (op-gated) output type.
+        FheBinaryOpCode::Add
+        | FheBinaryOpCode::Sub
+        | FheBinaryOpCode::Mul
+        | FheBinaryOpCode::And
+        | FheBinaryOpCode::Or
+        | FheBinaryOpCode::Xor
+        | FheBinaryOpCode::Shl
+        | FheBinaryOpCode::Shr
+        | FheBinaryOpCode::Rotl
+        | FheBinaryOpCode::Rotr
+        | FheBinaryOpCode::Min
+        | FheBinaryOpCode::Max => {
             if lhs_type != output_fhe_type {
                 return Err(EvalBuildError::BinaryOperandTypeMismatch);
             }

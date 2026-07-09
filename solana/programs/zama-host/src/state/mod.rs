@@ -579,8 +579,19 @@ pub fn assert_binary_operand_types(
                 ZamaHostError::DivisionByZero
             );
         }
-        // Non-comparison ops: the operand type must equal the (op-gated) output type.
-        _ => {
+        // Remaining ops: the operand type must equal the (op-gated) output type.
+        FheBinaryOpCode::Add
+        | FheBinaryOpCode::Sub
+        | FheBinaryOpCode::Mul
+        | FheBinaryOpCode::And
+        | FheBinaryOpCode::Or
+        | FheBinaryOpCode::Xor
+        | FheBinaryOpCode::Shl
+        | FheBinaryOpCode::Shr
+        | FheBinaryOpCode::Rotl
+        | FheBinaryOpCode::Rotr
+        | FheBinaryOpCode::Min
+        | FheBinaryOpCode::Max => {
             require!(
                 lhs_type == output_fhe_type,
                 ZamaHostError::BinaryOperandTypeMismatch
