@@ -1914,7 +1914,8 @@ async fn build_transaction_graph_and_execute<'a>(
         let block_hash = batch_context.producer_block_hash.clone();
         let cpk = keys.pks.clone();
         #[cfg(feature = "gpu")]
-        let materialization_gpu_idx = next_gpu_index(keys.gpu_sks.len())?;
+        let materialization_gpu_idx = next_gpu_index(keys.gpu_sks.len())
+            .map_err(|err| CoprocessorError::Other(err.into()))?;
         #[cfg(not(feature = "gpu"))]
         let materialization_gpu_idx = 0;
         let materialized: MaterializedInputs = tokio::task::spawn_blocking({

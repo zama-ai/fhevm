@@ -46,6 +46,9 @@ use tokio::{
 use tracing::{info, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
+// The uploader permits a 120-second S3 retry window; leave margin for the
+// database recovery pass that follows a failed direct upload.
+const S3_UPLOAD_STATE_RETRIES: u64 = 1_800;
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
 
 mod s3_migration;
@@ -1816,14 +1819,7 @@ async fn setup_localstack(
 
     tracing::info!("LocalStack started on port: {}", host_port);
 
-    let endpoint_url = format!("http://127.0.0.1:{}", host_port);
-    std::env::set_var("AWS_ENDPOINT_URL", endpoint_url.clone());
-    std::env::set_var("AWS_REGION", "us-east-1");
-    std::env::set_var("AWS_ACCESS_KEY_ID", "test");
-    std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
-
-    let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
-    let client: aws_sdk_s3::Client = aws_sdk_s3::Client::new(&aws_conf);
+    let client = test_harness::localstack::create_localstack_s3_client(host_port).await;
 
     recreate_bucket(&client, &conf.s3.bucket_ct128).await?;
     recreate_bucket(&client, &conf.s3.bucket_ct64).await?;
@@ -2139,7 +2135,8 @@ async fn assert_ciphertext_uploaded(
     use crate::S3_FORMAT_VERSION_V1;
 
     let (ciphertext_digest, sns_ciphertext_digest, s3_format_version) =
-        wait_for_ciphertext_digest_upload_state(&test_env.pool, handle, 100).await?;
+        wait_for_ciphertext_digest_upload_state(&test_env.pool, handle, S3_UPLOAD_STATE_RETRIES)
+            .await?;
 
     s3_utils::assert_key_exists(
         test_env.s3_client.to_owned(),

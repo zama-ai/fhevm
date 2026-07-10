@@ -2711,13 +2711,12 @@ mod tests {
     use super::*;
     use crate::S3RetryPolicy;
     use alloy::signers::local::PrivateKeySigner;
-    use aws_config::BehaviorVersion;
     use serial_test::serial;
     use sqlx::Row;
     use std::time::Duration;
     use test_harness::{
         instance::{setup_test_db, ImportMode},
-        localstack,
+        localstack::{self, create_localstack_s3_client},
     };
 
     fn sample_handle_item() -> HandleItem {
@@ -3035,14 +3034,7 @@ mod tests {
             .await?;
 
         let localstack = localstack::start_localstack().await?;
-        let endpoint_url = format!("http://127.0.0.1:{}", localstack.host_port);
-        std::env::set_var("AWS_ENDPOINT_URL", endpoint_url);
-        std::env::set_var("AWS_REGION", "us-east-1");
-        std::env::set_var("AWS_ACCESS_KEY_ID", "test");
-        std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
-
-        let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
-        let client = aws_sdk_s3::Client::new(&aws_conf);
+        let client = create_localstack_s3_client(localstack.host_port).await;
         let bucket_ct64 = "legacy-partial-ct64";
         let bucket_ct128 = "legacy-partial-ct128-not-created";
         client.create_bucket().bucket(bucket_ct64).send().await?;
@@ -3078,6 +3070,25 @@ mod tests {
         .bind(&ct128_digest)
         .bind(ct128_format)
         .bind(S3_FORMAT_VERSION_LEGACY)
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
+            "INSERT INTO pbs_computations_branch (
+                handle,
+                host_chain_id,
+                block_number,
+                producer_block_hash,
+                block_hash,
+                is_completed
+            )
+            VALUES ($1, $2, $3, $4, $5, TRUE)",
+        )
+        .bind(&handle)
+        .bind(1_i64)
+        .bind(1_i64)
+        .bind(&producer_block_hash)
+        .bind(&block_hash)
         .execute(&pool)
         .await?;
 
@@ -3164,14 +3175,7 @@ mod tests {
     #[cfg(not(feature = "gpu"))]
     async fn ct128_pair_repair_copies_only_valid_attested_existing_object() -> anyhow::Result<()> {
         let localstack = localstack::start_localstack().await?;
-        let endpoint_url = format!("http://127.0.0.1:{}", localstack.host_port);
-        std::env::set_var("AWS_ENDPOINT_URL", endpoint_url);
-        std::env::set_var("AWS_REGION", "us-east-1");
-        std::env::set_var("AWS_ACCESS_KEY_ID", "test");
-        std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
-
-        let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
-        let client = aws_sdk_s3::Client::new(&aws_conf);
+        let client = create_localstack_s3_client(localstack.host_port).await;
         let bucket = "ct128-copy-repair";
         client.create_bucket().bucket(bucket).send().await?;
 
