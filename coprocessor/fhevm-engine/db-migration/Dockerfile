@@ -30,6 +30,10 @@ RUN set -eux; \
 WORKDIR /app
 
 # Install sqlx-cli
+# NOTE: the `rustls` feature is mandatory. Without a TLS backend compiled in,
+# `sqlx database create` / `sqlx migrate run` fail against any RDS that requires
+# TLS ("TLS upgrade required by connect options but SQLx was built without TLS
+# support enabled"), e.g. when sslmode=require or rds.force_ssl=1.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=secret,id=sccache_aws_access_key_id \
     --mount=type=secret,id=sccache_aws_secret_access_key \
@@ -66,6 +70,17 @@ RUN set -eux; \
     unzip -q /tmp/awscliv2.zip -d /tmp; \
     /tmp/aws/install --install-dir /usr/local/aws-cli --bin-dir /usr/local/aws-cli-bin; \
     rm -rf /tmp/aws /tmp/awscliv2.zip
+
+# Guard: fail the build early if the sqlx CLI was compiled without a TLS
+# backend. rustls (and its webpki dependency) leave their crate names in the
+# binary; their absence means TLS support was dropped and migrations would
+# break against TLS-requiring databases.
+RUN if grep -aqE 'rustls|webpki' /usr/local/cargo/bin/sqlx; then \
+        echo "sqlx TLS (rustls) support: OK"; \
+    else \
+        echo "ERROR: sqlx built without rustls TLS support" >&2; \
+        exit 1; \
+    fi
 
 # Copy migrations and initialization script
 COPY listener ./listener
