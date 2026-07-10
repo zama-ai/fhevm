@@ -1160,8 +1160,6 @@ fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::convert::TryFrom;
-    use std::str::FromStr;
 
     // Constants for the test strings.
     const CHAIN_ID: &str = "123456";
@@ -1170,32 +1168,6 @@ mod tests {
     const CIPHERTEXT: &str =
         "12B06C1cc05e9493856a1D637a74FAb30999D17FAAB8c95B2eCD500cFeFc8f658f15dB8453e944bE";
     const EXTRA_DATA: &str = "0x00";
-
-    #[test]
-    #[ignore]
-    fn test_input_proof_request_conversion_() -> Result<(), Box<dyn std::error::Error>> {
-        let json = InputProofRequestJson {
-            contract_chain_id: CHAIN_ID.to_string(),
-            contract_address: CONTRACT_ADDRESS.to_string(),
-            user_address: USER_ADDRESS.to_string(),
-            ciphertext_with_input_verification: CIPHERTEXT.to_string(),
-            extra_data: EXTRA_DATA.to_string(),
-        };
-
-        let request = InputProofRequest::try_from(json)?;
-
-        assert_eq!(request.contract_chain_id, CHAIN_ID.parse::<u64>()?);
-        assert_eq!(
-            request.contract_address,
-            Address::from_str(CONTRACT_ADDRESS)?
-        );
-        assert_eq!(request.user_address, Address::from_str(USER_ADDRESS)?);
-
-        let expected_bytes = hex::decode(CIPHERTEXT)?;
-        assert_eq!(request.ciphetext_with_zk_proof, Bytes::from(expected_bytes));
-
-        Ok(())
-    }
 
     // Canonical 32-byte base58 Solana identities (Token program + wrapped-SOL mint).
     const SOLANA_CONTRACT: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -1238,21 +1210,33 @@ mod tests {
     }
 
     #[test]
-    fn evm_input_proof_request_leaves_solana_identities_unset() {
+    fn evm_input_proof_request_carries_evm_fields_and_leaves_solana_identities_unset() {
         let json = InputProofRequestJson {
-            contract_chain_id: "123456".to_string(),
-            contract_address: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d".to_string(),
-            user_address: "0x12B064FB845C1cc05e9493856a1D637a73e944bE".to_string(),
-            ciphertext_with_input_verification: "abcd".to_string(),
-            extra_data: "0x00".to_string(),
+            contract_chain_id: CHAIN_ID.to_string(),
+            contract_address: CONTRACT_ADDRESS.to_string(),
+            user_address: USER_ADDRESS.to_string(),
+            ciphertext_with_input_verification: CIPHERTEXT.to_string(),
+            extra_data: EXTRA_DATA.to_string(),
         };
 
         let request = InputProofRequest::try_from(json).expect("EVM request should parse");
 
         assert!(!request.is_solana(), "no high bit ⇒ EVM host");
+        assert_eq!(request.contract_chain_id, CHAIN_ID.parse::<u64>().unwrap());
+        assert_eq!(
+            request.contract_address,
+            CONTRACT_ADDRESS.parse::<Address>().unwrap()
+        );
+        assert_eq!(
+            request.user_address,
+            USER_ADDRESS.parse::<Address>().unwrap()
+        );
+        assert_eq!(
+            request.ciphetext_with_zk_proof,
+            Bytes::from(hex::decode(CIPHERTEXT).unwrap())
+        );
         assert_eq!(request.solana_contract_address, None);
         assert_eq!(request.solana_user_address, None);
-        assert_ne!(request.contract_address, Address::ZERO);
     }
 
     /// A Solana-attestationType v3 envelope routes to the `SolanaUnifiedV1` core variant (and hence
