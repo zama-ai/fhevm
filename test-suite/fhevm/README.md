@@ -341,6 +341,7 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli logs relayer
 ./fhevm-cli logs --no-follow relayer
 ./fhevm-cli test input-proof
+./fhevm-cli test operator-smoke
 ./fhevm-cli test erc20
 ./fhevm-cli test light
 ./fhevm-cli test standard
@@ -386,6 +387,31 @@ Supported groups:
 
 For `coprocessor`, this is also the shorthand local-dev scenario: one coprocessor instance, threshold `1`, source mode `local`.
 For `test-suite`, this is the explicit path that makes local e2e test edits take effect at runtime.
+
+### Representative operator feedback loop
+
+`operator-smoke` runs four serial-by-default, test-owned encrypted workflows: encrypted/encrypted addition,
+encrypted/scalar division, comparison, and unary negation. Each case creates an external input proof,
+executes the operator through the coprocessor, makes the result publicly decryptable, and asserts the
+decrypted value. It complements the generated operator catalog; it does not replace exhaustive operator
+coverage.
+
+For a cold run after changing the contract or test, rebuild the local test-suite image so the running
+container has the current checkout:
+
+```sh
+./fhevm-cli up --target latest-main --override test-suite
+./fhevm-cli test operator-smoke
+```
+
+For a warm run against that already-bootstrapped stack, reuse its compiled artifacts:
+
+```sh
+./fhevm-cli test operator-smoke --no-hardhat-compile
+```
+
+Use `time` with either command when measuring locally. No runtime target is claimed because cold image
+builds and warm coprocessor execution measure different work and vary with the active stack.
 
 ### Build the local workspace
 

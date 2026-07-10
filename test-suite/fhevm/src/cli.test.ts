@@ -16,9 +16,13 @@ import { resumeOptionConflicts, shouldShowResumeHint } from "./flow/up-flow";
 import {
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_HOST_RPC_PORT,
+  HEAVY_TEST_PROFILES,
+  LIGHT_TEST_PROFILES,
   MINIO_PORT,
   ROLLOUT_STANDARD_TEST_PROFILES,
   STANDARD_TEST_PROFILES,
+  TEST_GREP,
+  TEST_PARALLEL,
   TEST_SUITE_CONTAINER,
 } from "./layout";
 import { testDefaultScenario } from "./test-fixtures";
@@ -147,6 +151,7 @@ describe("cli", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("standard");
     expect(result.stdout).toContain("rollout-standard");
+    expect(result.stdout).toContain("operator-smoke - standard");
     expect(result.stdout).toContain("multi-chain-isolation");
     expect(result.stdout).toContain("ciphertext-drift - 2+ coprocessors");
     expect(result.stdout).toContain("ciphertext-drift-auto-recovery - standard");
@@ -154,6 +159,16 @@ describe("cli", () => {
 
   test("standard suite includes multi-chain isolation coverage", () => {
     expect(STANDARD_TEST_PROFILES).toContain("multi-chain-isolation");
+  });
+
+  test("operator smoke is an exact serial-by-default standard-only profile", () => {
+    expect(TEST_GREP["operator-smoke"]).toBe("representative operator smoke");
+    expect("representative operator smoke".match(new RegExp(TEST_GREP.operators))).toBeNull();
+    expect(TEST_PARALLEL["operator-smoke"]).toBeUndefined();
+    expect(STANDARD_TEST_PROFILES).toContain("operator-smoke");
+    expect(LIGHT_TEST_PROFILES).not.toContain("operator-smoke");
+    expect(ROLLOUT_STANDARD_TEST_PROFILES).not.toContain("operator-smoke");
+    expect(HEAVY_TEST_PROFILES).not.toContain("operator-smoke");
   });
 
   test("rollout-standard keeps write coverage but excludes disruptive profiles", () => {

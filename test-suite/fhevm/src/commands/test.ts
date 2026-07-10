@@ -95,6 +95,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "paused-gateway-contracts": "Run pause-mode checks with gateway contracts paused.",
   "input-proof": "Run basic user input proof coverage.",
   "input-proof-compute-decrypt": "Run compute-and-decrypt input proof coverage.",
+  "operator-smoke": "Run four representative encrypted operator workflows.",
   "priority-coprocessor": "Run input proof coverage with gateway priority-coprocessor mode enabled.",
   "user-decryption": "Run user decryption coverage.",
   "delegated-user-decryption": "Run delegated user decryption coverage.",

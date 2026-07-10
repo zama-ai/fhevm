@@ -292,6 +292,7 @@ export const TEST_GREP: Record<string, string> = {
   "random-subset":
     "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt",
   "operators": "test operator|FHEVM manual operations",
+  "operator-smoke": "representative operator smoke",
   "hcu-block-cap": "block cap scenarios",
   "erc20": "should transfer tokens between two users.",
   "negative-acl": "negative-acl",
@@ -324,6 +325,7 @@ export const STANDARD_TEST_PROFILES = [
   "coprocessor-db-state-revert",
   "input-proof",
   "input-proof-compute-decrypt",
+  "operator-smoke",
   "user-decryption",
   "delegated-user-decryption",
   "erc20",
