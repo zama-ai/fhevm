@@ -565,11 +565,9 @@ async fn fetch_and_execute_sns_tasks(
             process_tasks(
                 &mut tasks,
                 keys,
-                tx,
                 conf.enable_compression,
                 conf.schedule_policy,
                 token.clone(),
-                uploads_enabled,
             )
         })?;
         terminal_errors = failures.len();
@@ -596,21 +594,28 @@ async fn fetch_and_execute_sns_tasks(
             .await?;
             notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
 
-            // Try to enqueue the tasks for upload in the DB
-            // This is a best-effort attempt, as the upload worker might not be available
+            // Persist the upload rows before dispatch so recovery remains durable
+            // when the in-memory uploader is unavailable.
             enqueue_upload_tasks(trx, &tasks, &failed_task_keys, &skipped_settled_tasks).await?;
-            Ok::<(), ExecutionError>(())
+            Ok::<_, ExecutionError>(skipped_settled_tasks)
         };
-        if let Err(err) = batch_store.instrument(batch_store_span.clone()).await {
-            batch_store_span
-                .context()
-                .span()
-                .set_status(Status::error(err.to_string()));
-            return Err(err);
-        }
+        let skipped_settled_tasks = match batch_store.instrument(batch_store_span.clone()).await {
+            Ok(skipped_settled_tasks) => skipped_settled_tasks,
+            Err(err) => {
+                batch_store_span
+                    .context()
+                    .span()
+                    .set_status(Status::error(err.to_string()));
+                return Err(err);
+            }
+        };
         drop(batch_store_span);
 
         db_txn.commit().await?;
+
+        if uploads_enabled {
+            dispatch_upload_tasks(tx, &tasks, &failed_task_keys, &skipped_settled_tasks);
+        }
 
         for task in tasks.iter() {
             if let Some(transaction_id) = &task.transaction_id {
@@ -845,19 +850,46 @@ async fn enqueue_upload_tasks(
     Ok(())
 }
 
+fn dispatch_upload_tasks(
+    tx: &Sender<UploadJob>,
+    tasks: &[HandleItem],
+    failed_task_keys: &HashSet<SnsTaskKey>,
+    skipped_settled_tasks: &HashSet<(Vec<u8>, Vec<u8>)>,
+) {
+    for task in tasks {
+        if failed_task_keys.contains(&sns_task_key(task))
+            || skipped_settled_tasks
+                .contains(&(task.handle.clone(), task.producer_block_hash.clone()))
+        {
+            continue;
+        }
+
+        // Dispatch only after the transaction that marks SNS completion commits,
+        // so the uploader's provenance guard can observe the completed witness.
+        if let Err(err) = tx.try_send(UploadJob::Normal(task.clone())) {
+            // The digest row committed with the batch, so the resubmit loop is
+            // the durable fallback when the in-memory queue is unavailable.
+            error!(
+                action = "review",
+                error = %err,
+                handle = %to_hex(&task.handle),
+                "Failed to send task to upload worker"
+            );
+        }
+    }
+}
+
 /// Processes the tasks by decompressing and converting the ciphertexts.
 ///
 /// This uses the `rayon` to parallelize the squash_noise_and_serialize.
 ///
-/// The computed ciphertexts are sent to the upload worker via the provided channel.
+/// The caller dispatches computed ciphertexts after their database state commits.
 fn process_tasks(
     batch: &mut [HandleItem],
     keys: &KeySet,
-    tx: &Sender<UploadJob>,
     enable_compression: bool,
     policy: SchedulePolicy,
     token: CancellationToken,
-    uploads_enabled: bool,
 ) -> Result<Vec<SnsTaskFailure>, ExecutionError> {
     set_server_key(keys.server_key.clone());
 
@@ -865,15 +897,8 @@ fn process_tasks(
         SchedulePolicy::Sequential => batch
             .iter_mut()
             .filter_map(|task| {
-                compute_task(
-                    task,
-                    tx,
-                    enable_compression,
-                    token.clone(),
-                    &keys.client_key,
-                    uploads_enabled,
-                )
-                .map(|error| SnsTaskFailure::from_task(task, error))
+                compute_task(task, enable_compression, token.clone(), &keys.client_key)
+                    .map(|error| SnsTaskFailure::from_task(task, error))
             })
             .collect(),
         SchedulePolicy::RayonParallel => {
@@ -884,15 +909,8 @@ fn process_tasks(
             batch
                 .par_iter_mut()
                 .filter_map(|task| {
-                    compute_task(
-                        task,
-                        tx,
-                        enable_compression,
-                        token.clone(),
-                        &keys.client_key,
-                        uploads_enabled,
-                    )
-                    .map(|error| SnsTaskFailure::from_task(task, error))
+                    compute_task(task, enable_compression, token.clone(), &keys.client_key)
+                        .map(|error| SnsTaskFailure::from_task(task, error))
                 })
                 .collect()
         }
@@ -903,11 +921,9 @@ fn process_tasks(
 
 fn compute_task(
     task: &mut HandleItem,
-    tx: &Sender<UploadJob>,
     enable_compression: bool,
     token: CancellationToken,
     _client_key: &Option<ClientKey>,
-    uploads_enabled: bool,
 ) -> Option<String> {
     let started_at = SystemTime::now();
     let thread_id = format!("{:?}", std::thread::current().id());
@@ -972,46 +988,6 @@ fn compute_task(
             };
 
             task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
-
-            // In GCS (green) dry-run mode uploads are suppressed: the ct128 is
-            // persisted to `ciphertexts128` + `ciphertext_digest` (with NULL
-            // digests) only. The backfill happens after cutover, when the
-            // resubmit loop drains those rows. Skipping the dispatch here avoids
-            // filling the bounded upload channel (and the resulting error-log
-            // spam) for the whole evaluation window.
-            if !uploads_enabled {
-                let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
-                if elapsed > 0.0 {
-                    SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
-                }
-                return None;
-            }
-
-            // Start uploading the ciphertexts as soon as the ct128 is computed
-            //
-            // The service must continue running the squashed noise algorithm,
-            // regardless of the availability of the upload worker.
-            if let Err(err) = tx
-                .try_send(UploadJob::Normal(task.clone()))
-                .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
-            {
-                let send_task_span = tracing::error_span!("send_task");
-                let _send_task_enter = send_task_span.enter();
-                send_task_span
-                    .context()
-                    .span()
-                    .set_status(Status::error(err.to_string()));
-                // This could happen if either we are experiencing a burst of tasks
-                // or the upload worker cannot recover the connection to AWS S3
-                //
-                // In this case, we should log the error and rely on the retry mechanism.
-                //
-                // There are three levels of task buffering:
-                // 1. The spawned uploading tasks (size: conf.max_concurrent_uploads)
-                // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
-                // 3. The PostgresDB (size: unlimited)
-                error!({ action = "review", error = %err }, "Failed to send task to upload worker");
-            }
 
             let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
             if elapsed > 0.0 {

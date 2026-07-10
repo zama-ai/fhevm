@@ -1819,6 +1819,13 @@ async fn setup_localstack(
 
     tracing::info!("LocalStack started on port: {}", host_port);
 
+    // `run_all` constructs its own S3 client from the standard AWS environment.
+    // Keep that client on the same LocalStack instance as the explicit test client.
+    std::env::set_var("AWS_ENDPOINT_URL", format!("http://127.0.0.1:{host_port}"));
+    std::env::set_var("AWS_REGION", "us-east-1");
+    std::env::set_var("AWS_ACCESS_KEY_ID", "test");
+    std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
+
     let client = test_harness::localstack::create_localstack_s3_client(host_port).await;
 
     recreate_bucket(&client, &conf.s3.bucket_ct128).await?;
