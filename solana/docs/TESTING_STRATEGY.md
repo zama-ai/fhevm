@@ -30,10 +30,10 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    enforces the 1.4M CU budget, every passing test is also an implicit CU-fits assertion.
 3. **Handle-derivation / event-transport** (`zama-host` lib unit): `event_budget` born-public frame
    guard, `should_emit_eval_events_as_cpi` threshold, handle-derivation determinism.
-4. **Off-chain reconstruction — host-listener** (`coprocessor/fhevm-engine/host-listener`, features
-   `solana-grpc,solana-reconstruct`): reconstructs MMR leaves from instruction data + sysvar-streamed
-   block entropy (Yellowstone gRPC), with no dependence on emitted events. Derives supersede/born-public
-   handles directly; fails closed on incomplete plans.
+4. **Off-chain reconstruction — host-listener** (`coprocessor/fhevm-engine/host-listener`, feature
+   `solana-grpc`, which includes reconstruction): reconstructs MMR leaves from instruction data +
+   sysvar-streamed block entropy (Yellowstone gRPC), with no dependence on emitted events. Derives
+   supersede/born-public handles directly; fails closed on incomplete plans.
 5. **Off-chain proof service — relayer** (`relayer/src/solana_proof`): ingest (atomic, gap-free,
    fail-closed), decode (incl. `emit_cpi!` op-event resolution for born-public handles), replay, and
    `build_verified_proof` cross-check against finalized peaks (a wrong record surfaces as
@@ -42,7 +42,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    Borsh golden manifest must match the freshly-built Anchor IDLs; EVENT_VERSION consistency across
    zama-host / confidential-token / host-listener is asserted (a mismatch would silently drop events).
 7. **End-to-end** (`.github/workflows/solana-e2e.yml`, `full-vertical.sh`): the Yellowstone-only
-   `reconstruct=true` arm runs zama-host EMITLESS and feeds the coprocessor through Yellowstone gRPC
+   path runs zama-host EMITLESS and feeds the coprocessor through Yellowstone gRPC
    reconstruction. It drives the **decrypt vertical** against a local validator + full coprocessor/KMS
    stack — compute → public-decrypt (relayer MMR proof) → user-decrypt (current) → historical-user-decrypt
    (superseded handle + live MMR proof) — exercising all three authorization paths.
@@ -55,7 +55,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 ## Reconstruction parity strategy
 
 The rewrite's central correctness bet is that off-chain consumers reproduce on-chain MMR state exactly.
-The e2e `reconstruct=true` arm exercises host-listener reconstruction against the full stack, while
+The e2e Yellowstone path exercises host-listener reconstruction against the full stack, while
 `build_verified_proof` cross-checks reconstructed peaks against final chain state. A divergence fails
 closed rather than yielding a wrong proof, which the KMS then re-verifies against finalized peaks anyway
 (DD-035).

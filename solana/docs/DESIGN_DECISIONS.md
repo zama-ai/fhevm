@@ -528,9 +528,9 @@ roughly triples SSTORE/account-write cost and has no migration path for already-
 What this means plainly (state it in the debate):
 
 Handles are **block-bound and therefore reorg-unstable on EVERY chain** (EVM and Solana alike): a
-resubmitted or reorged transaction over the same inputs yields a *different* handle. This is reconciled
-by the listener's reorg handling on EVM (block-status machine, DD-025), and is an **open gap on
-Solana** because the Solana poller is not yet wired into that substrate (DD-025, Boundaries).
+resubmitted or reorged transaction over the same inputs yields a *different* handle. EVM reconciles
+this through its block-status reorg machine (DD-025). The Solana listener instead consumes finalized
+Yellowstone updates; any future move to lower-commitment ingestion requires explicit rollback handling.
 
 Consequences:
 
@@ -1370,8 +1370,8 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 
 - Coprocessor input trust: single `coprocessor_signer` at threshold 1 → registered n-of-m set
   (FUTURE_DESIGN §1).
-- Where the finality gate sits and the decrypt-release commitment level (DD-024/DD-025); wiring the
-  Solana poller into the EVM reorg substrate (DD-028).
+- Where the finality gate sits and the decrypt-release commitment level (DD-024/DD-025); whether
+  lower-commitment Solana ingestion is needed and, if so, its rollback design (DD-028).
 - Handle birth entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
   handles are accepted on every chain.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).

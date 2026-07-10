@@ -132,10 +132,10 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
   link** — a layout/seed/hash-domain/EVENT_VERSION change in zama-host requires editing the connector
   decoder, bumping listener event constants, and regenerating the coprocessor IDLs/ABI golden manifest.
 
-**Adapters are present and integrated at the PoC boundary.** Live transport (production Geyser
-provider, full KMS-connector wiring beyond the harness, wiring the Solana poller into the EVM reorg
-substrate, and calling the MMR proof service in-process from the relayer's user-decrypt flow) is
-PRODUCT-OPEN by design (DD-024/DD-025/DD-028/DD-035).
+**Adapters are present and integrated at the PoC boundary.** Operationalizing a production Geyser
+provider, full KMS-connector wiring beyond the harness, any lower-commitment ingestion/rollback design,
+and calling the MMR proof service in-process from the relayer's user-decrypt flow are PRODUCT-OPEN by
+design (DD-024/DD-025/DD-028/DD-035).
 
 ---
 
@@ -170,9 +170,10 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
    The listener persists finalized account fetch intents and exposes claim/store/complete helpers. The
    residual risk is off-chain integration: a deployed fetcher and KMS certificate publication path
    still need to be wired before the flow is end-to-end production ready.
-5. **The Solana poller is not wired into the EVM reorg substrate** (DD-025/DD-028): it polls at
-   `confirmed` and inserts directly, bypassing the block-status machine. Reorg correctness is an open
-   gap and the residual `native-v0` connector code is dead scaffolding to retire.
+5. **The Solana listener is not wired into the EVM reorg substrate** (DD-025/DD-028): it consumes
+   finalized Yellowstone updates and inserts directly, bypassing the block-status machine. Moving
+   ingestion to a lower commitment would require explicit rollback handling; the residual `native-v0`
+   connector code is dead scaffolding to retire.
 6. **Hand-mirrored, version-pinned ABI across repos with no compile-time link** (connector decoders +
    vendored coprocessor IDL). Lengths are checked, but a same-length field reorder in `EncryptedValue`
    would not be caught at build time. Event versions are now pinned by

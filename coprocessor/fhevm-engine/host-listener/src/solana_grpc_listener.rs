@@ -617,7 +617,7 @@ async fn ingest_transaction(
         ordered
     };
 
-    let events = match reconstruct_events_for_insert(
+    let events = reconstruct_events_for_insert(
         config,
         &all_instructions,
         slot,
@@ -629,10 +629,7 @@ async fn ingest_transaction(
     .await
     .map_err(|err| {
         IngestFailure::fatal(err).context("reconstruct Solana host events")
-    })? {
-        ReconstructionOutcome::Complete(events) => events,
-        ReconstructionOutcome::NotCovered => Vec::new(),
-    };
+    })?;
 
     if events.is_empty() {
         return Ok(());
@@ -713,12 +710,6 @@ fn reconstruct_context(
     })
 }
 
-#[derive(Debug)]
-enum ReconstructionOutcome {
-    Complete(Vec<crate::solana_adapter::SolanaHostEvent>),
-    NotCovered,
-}
-
 /// Rebuilds the ingestable event set off-chain from a transaction's instructions.
 /// Covers
 /// `fhe_eval`: one compute event per step, plus an `acl_record_bound` allow-fetch
@@ -738,7 +729,7 @@ async fn reconstruct_events_for_insert(
     slot_clock_ts: &HashMap<u64, i64>,
     _rpc: &RpcClient,
     encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
-) -> Result<ReconstructionOutcome> {
+) -> Result<Vec<crate::solana_adapter::SolanaHostEvent>> {
     use crate::solana_adapter::SolanaHostEvent;
     use crate::solana_reconstruct::{
         decode_encrypted_value_instruction, decode_fhe_eval_args,
@@ -762,7 +753,7 @@ async fn reconstruct_events_for_insert(
             && decode_fhe_eval_args(&ix.data).is_some()
     });
     if !has_lifecycle && !has_fhe_eval {
-        return Ok(ReconstructionOutcome::NotCovered);
+        return Ok(Vec::new());
     }
 
     let Some(ctx) =
@@ -779,7 +770,7 @@ async fn reconstruct_events_for_insert(
                 &config.program_id,
                 encrypted_value_tracker,
             );
-        return Ok(ReconstructionOutcome::Complete(events));
+        return Ok(events);
     };
 
     let mut events = Vec::new();
@@ -886,7 +877,7 @@ async fn reconstruct_events_for_insert(
             }
         }
     }
-    Ok(ReconstructionOutcome::Complete(events))
+    Ok(events)
 }
 
 fn compute_result_handle(
@@ -943,8 +934,7 @@ mod ingest_cursor_tests {
 mod fhe_eval_acl_tests {
     use super::{
         fhe_eval_durable_encrypted_value, reconstruct_events_for_insert,
-        validate_lineage_tracker_commitment, ReconstructionOutcome,
-        SolanaGrpcListenerConfig,
+        validate_lineage_tracker_commitment, SolanaGrpcListenerConfig,
     };
     use anchor_lang::AnchorSerialize;
     use sha2::{Digest, Sha256};
@@ -1146,15 +1136,6 @@ mod fhe_eval_acl_tests {
         facts
     }
 
-    fn complete_events(outcome: ReconstructionOutcome) -> Vec<SolanaHostEvent> {
-        match outcome {
-            ReconstructionOutcome::Complete(events) => events,
-            ReconstructionOutcome::NotCovered => {
-                panic!("expected reconstruction to cover transaction")
-            }
-        }
-    }
-
     fn multi_instruction_fhe_eval_allow_public_tx() -> Vec<DecodedInstruction> {
         let output_subject =
             anchor_lang::prelude::Pubkey::new_from_array(SUBJECT);
@@ -1331,19 +1312,17 @@ mod fhe_eval_acl_tests {
         let mut tracker = EncryptedValueLineageTracker::new();
         tracker.record(ENCRYPTED_VALUE, [4; 32]);
 
-        let events = complete_events(
-            reconstruct_events_for_insert(
-                &config(),
-                &instructions,
-                42,
-                &slot_bank_hash,
-                &slot_clock_ts,
-                &rpc,
-                &mut tracker,
-            )
-            .await
-            .expect("reconstruction should return lifecycle events"),
-        );
+        let events = reconstruct_events_for_insert(
+            &config(),
+            &instructions,
+            42,
+            &slot_bank_hash,
+            &slot_clock_ts,
+            &rpc,
+            &mut tracker,
+        )
+        .await
+        .expect("reconstruction should return lifecycle events");
 
         assert!(events.iter().any(|event| {
             matches!(
@@ -1399,21 +1378,17 @@ mod fhe_eval_acl_tests {
         let mut tracker = EncryptedValueLineageTracker::new();
         tracker.record(ENCRYPTED_VALUE, [8; 32]);
 
-        let events = complete_events(
-            reconstruct_events_for_insert(
-                &config(),
-                &instructions,
-                42,
-                &slot_bank_hash,
-                &slot_clock_ts,
-                &rpc,
-                &mut tracker,
-            )
-            .await
-            .expect(
-                "reconstruction should derive the supersede handle directly",
-            ),
-        );
+        let events = reconstruct_events_for_insert(
+            &config(),
+            &instructions,
+            42,
+            &slot_bank_hash,
+            &slot_clock_ts,
+            &rpc,
+            &mut tracker,
+        )
+        .await
+        .expect("reconstruction should derive the supersede handle directly");
 
         assert!(events.iter().any(|event| {
             matches!(
@@ -1482,19 +1457,17 @@ mod fhe_eval_acl_tests {
         let rpc = RpcClient::new("http://127.0.0.1:1".to_owned());
         let mut tracker = EncryptedValueLineageTracker::new();
 
-        let events = complete_events(
-            reconstruct_events_for_insert(
-                &config(),
-                &instructions,
-                42,
-                &slot_bank_hash,
-                &slot_clock_ts,
-                &rpc,
-                &mut tracker,
-            )
-            .await
-            .expect("born-public create reconstruction should succeed"),
-        );
+        let events = reconstruct_events_for_insert(
+            &config(),
+            &instructions,
+            42,
+            &slot_bank_hash,
+            &slot_clock_ts,
+            &rpc,
+            &mut tracker,
+        )
+        .await
+        .expect("born-public create reconstruction should succeed");
 
         // The handle the trivial-encrypt bind recomputed for this output.
         let bound_handle = events
@@ -1548,7 +1521,7 @@ mod fhe_eval_acl_tests {
         let mut tracker = EncryptedValueLineageTracker::new();
         tracker.record(ENCRYPTED_VALUE, [8; 32]);
 
-        let reconstructed = complete_events(reconstruct_events_for_insert(
+        let reconstructed = reconstruct_events_for_insert(
             &config(),
             &instructions,
             42,
@@ -1560,7 +1533,7 @@ mod fhe_eval_acl_tests {
         .await
         .expect(
             "reconstruction should produce the full multi-instruction fact set",
-        ));
+        );
         let reconstruct_facts = semantic_facts(&reconstructed);
 
         // The fhe_eval output handle is derived (DD-015), not the old update
