@@ -221,7 +221,9 @@ jobs:
   ########################################################################
   build-decisions:
     name: build-decisions
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    # github-script only — a GitHub-hosted runner starts in seconds, while a
+    # provisioned runner adds minutes of spin-up variance ahead of every build job.
+    runs-on: ubuntu-latest
     if: always()
     needs:
       - is-latest-commit
@@ -311,6 +313,9 @@ jobs:
       image-name: "fhevm/coprocessor/db-migration"
       docker-file: "coprocessor/fhevm-engine/db-migration/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-db-migration"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-db-migration-image:
@@ -342,6 +347,9 @@ jobs:
       image-name: "fhevm/coprocessor/gw-listener"
       docker-file: "./coprocessor/fhevm-engine/gw-listener/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-gw-listener"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-gw-listener-image:
@@ -369,6 +377,9 @@ jobs:
       image-name: "fhevm/coprocessor/host-listener"
       docker-file: "coprocessor/fhevm-engine/host-listener/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-host-listener"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-host-listener-image:
@@ -396,6 +407,9 @@ jobs:
       image-name: "fhevm/coprocessor/sns-worker"
       docker-file: "coprocessor/fhevm-engine/sns-worker/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-sns-worker"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-sns-worker-image:
@@ -423,6 +437,9 @@ jobs:
       image-name: "fhevm/coprocessor/tfhe-worker"
       docker-file: "coprocessor/fhevm-engine/tfhe-worker/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-tfhe-worker"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-tfhe-worker-image:
@@ -450,6 +467,9 @@ jobs:
       image-name: "fhevm/coprocessor/tx-sender"
       docker-file: "./coprocessor/fhevm-engine/transaction-sender/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-tx-sender"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-tx-sender-image:
@@ -477,6 +497,9 @@ jobs:
       image-name: "fhevm/coprocessor/zkproof-worker"
       docker-file: "coprocessor/fhevm-engine/zkproof-worker/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-zkproof-worker"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-zkproof-worker-image:

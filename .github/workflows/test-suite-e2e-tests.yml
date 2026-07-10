@@ -316,7 +316,9 @@ jobs:
           ./fhevm-cli test "${args[@]}"
 
       - name: Host listener consumer only test without drift-revert tests
-        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
+        # Runs with the full standard suite and with the decryption shard (the lightest
+        # shard, so these extras keep the sharded legs balanced).
+        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' || inputs.test-profile == 'standard-shard-decryption' }}
         working-directory: test-suite/fhevm
         run: |
           trap 'docker start coprocessor-host-listener coprocessor-host-listener-poller>/dev/null 2>&1 || true' EXIT
@@ -328,7 +330,7 @@ jobs:
           trap - EXIT
 
       - name: Host listener poller test
-        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
+        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' || inputs.test-profile == 'standard-shard-decryption' }}
         working-directory: test-suite/fhevm
         run: |
           trap 'docker start coprocessor-host-listener coprocessor-host-listener-consumer >/dev/null 2>&1 || true' EXIT
@@ -339,7 +341,7 @@ jobs:
           trap - EXIT
 
       - name: Priority coprocessor e2e
-        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' }}
+        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' || inputs.test-profile == 'standard-shard-decryption' }}
         working-directory: test-suite/fhevm
         run: |
           ./fhevm-cli test priority-coprocessor

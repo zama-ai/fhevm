@@ -141,14 +141,9 @@ describe('OnchainPublicDecrypt', function () {
       },
     ];
     const resetThresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
-    await activateNewKmsContext(
-      protocolConfig,
-      deployer,
-      resetNodes,
-      resetThresholds,
-      [accounts[2], accounts[3]],
-      [accounts[2]],
-    );
+    // accounts[2] alone completes the creation quorum: it is the only new tx-sender and its
+    // confirmation also covers the previous side's n - t = 1 target (3 nodes, mpc = 2).
+    await activateNewKmsContext(protocolConfig, deployer, resetNodes, resetThresholds, [accounts[2]], [accounts[2]]);
     expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(1);
     expect(await kmsVerifier.getKmsSigners()).to.deep.equal([signerAddresses[0]]);
   });

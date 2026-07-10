@@ -153,6 +153,7 @@ describe('ERC-1271 user decryption', function () {
 
     const { post } = await submitUnifiedRequest(cfg, req, { kind: 'empty' });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(post.jobId, JSON.stringify(post.raw)).to.be.a('string');
     const poll = await pollJob(cfg, post.jobId!, { timeoutMs: POSITIVE_TIMEOUT_MS });
     expect(poll.status, JSON.stringify(poll.raw)).to.equal('succeeded');
   });

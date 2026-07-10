@@ -342,6 +342,44 @@ export const STANDARD_TEST_PROFILES = [
   "ciphertext-drift-auto-recovery",
 ] as const;
 
+// CI shards of the standard suite. Together they must cover STANDARD_TEST_PROFILES
+// exactly (enforced by a unit test in cli.test.ts); each shard runs on its own
+// freshly booted stack so wall-clock time is bounded by the slowest shard, not the sum.
+//
+// Sharding rationale:
+// - "stateful" isolates the suites that mutate shared stack state (contract pauses,
+//   DB revert, deliberate ciphertext drift) and carry the largest polling budgets.
+//   Order within the shard preserves the standard-suite order, drift last.
+// - "decryption" groups the user/public decryption flows (read-only).
+// - "compute" groups input/compute flows plus the multi-chain-only suites.
+export const STANDARD_SHARD_STATEFUL_TEST_PROFILES = [
+  "paused-host-contracts",
+  "paused-gateway-contracts",
+  "coprocessor-db-state-revert",
+  "ciphertext-drift-auto-recovery",
+] as const;
+
+export const STANDARD_SHARD_DECRYPTION_TEST_PROFILES = [
+  "user-decryption",
+  "delegated-user-decryption",
+  "erc1271-user-decryption",
+  "unified-user-decryption",
+  "decryption-signature-invalidation",
+  "public-decrypt-http-ebool",
+  "public-decrypt-http-mixed",
+] as const;
+
+export const STANDARD_SHARD_COMPUTE_TEST_PROFILES = [
+  "input-proof",
+  "input-proof-compute-decrypt",
+  "erc20",
+  "negative-acl",
+  "random-subset",
+  "multi-chain-isolation",
+  "confidential-bridge",
+  "hcu-block-cap",
+] as const;
+
 /** Heavy suites are the slowest and most stateful CI checks. */
 export const HEAVY_TEST_PROFILES = [
   "operators",

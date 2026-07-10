@@ -9,7 +9,7 @@
  */
 import { PreflightError } from "../errors";
 import { castCall, dockerInspect, probeBootstrap, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
-import { kmsConnectorPrefix, kmsCoreName, reconstructionThreshold } from "../kms-party";
+import { kmsConnectorPrefix, kmsCoreName, kmsTxSenderName, reconstructionThreshold } from "../kms-party";
 import type { State } from "../types";
 import { withHexPrefix } from "../utils/fs";
 import { run } from "../utils/process";
@@ -20,7 +20,7 @@ export type DecryptionRunner = (label: string, opts?: { expectFailure?: boolean 
 /** Every container that belongs to one KMS party (its core + its connector tier). */
 export const partyContainers = (party: number) => {
   const connector = kmsConnectorPrefix(party);
-  return [kmsCoreName(party), `${connector}-gw-listener`, `${connector}-kms-worker`, `${connector}-tx-sender`];
+  return [kmsCoreName(party), `${connector}-gw-listener`, `${connector}-kms-worker`, kmsTxSenderName(party)];
 };
 
 /**
@@ -59,14 +59,19 @@ const waitForContainerStopped = async (container: string) => {
   );
 };
 
-/** Confirms every stopped party is genuinely down before a quorum verdict is read. `setRunning`
+/** Confirms every listed container is genuinely down before a verdict is read. `setRunning`
  * tolerates stop failures for idempotency, so without this check a silently no-op'd stop would
- * probe with too many live parties and misdiagnose "2t+1 not enforced". */
+ * probe with too many live containers and misdiagnose the scenario. */
+export const waitForContainersStopped = async (containers: string[]) => {
+  for (const container of containers) {
+    await waitForContainerStopped(container);
+  }
+};
+
+/** Confirms every stopped party is genuinely down before a quorum verdict is read. */
 export const waitForPartiesStopped = async (parties: number[]) => {
   for (const party of parties) {
-    for (const container of partyContainers(party)) {
-      await waitForContainerStopped(container);
-    }
+    await waitForContainersStopped(partyContainers(party));
   }
 };
 

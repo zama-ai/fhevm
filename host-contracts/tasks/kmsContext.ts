@@ -7,10 +7,11 @@ import { buildProtocolConfigContextArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 // This file defines tasks to drive a KMS context switch / epoch rotation on the canonical (Ethereum)
-// ProtocolConfig: build the `defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext`
-// governance proposal calldata (DAO path, never broadcasts) or broadcast it directly with the
-// deployer key (devnet / test-suite), plus a read-only status task that tracks an in-flight switch
-// from events. Inputs come from the `KMS_*` env vars (reusing `buildProtocolConfigContextArgs`).
+// ProtocolConfig: build the `defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext` /
+// `destroyKmsContext` / `destroyKmsEpoch` governance proposal calldata (DAO path, never broadcasts)
+// or broadcast it directly with the deployer key (devnet / test-suite), plus a read-only status task
+// that tracks an in-flight switch from events. Context/epoch definition inputs come from the `KMS_*`
+// env vars (reusing `buildProtocolConfigContextArgs`); the destroy tasks take the target id directly.
 
 const PROTOCOL_CONFIG_ADDRESS_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
 
@@ -74,6 +75,18 @@ export function encodeDefineNewEpochForCurrentKmsContext(iface: Interface): Enco
   const functionSignature = iface.getFunction('defineNewEpochForCurrentKmsContext')!.format('sighash');
   const calldata = iface.encodeFunctionData('defineNewEpochForCurrentKmsContext', []);
   return { functionSignature, calldata, decodedArgs: [] };
+}
+
+export function encodeDestroyKmsContext(iface: Interface, kmsContextId: bigint): EncodedCall {
+  const functionSignature = iface.getFunction('destroyKmsContext')!.format('sighash');
+  const calldata = iface.encodeFunctionData('destroyKmsContext', [kmsContextId]);
+  return { functionSignature, calldata, decodedArgs: [kmsContextId] };
+}
+
+export function encodeDestroyKmsEpoch(iface: Interface, epochId: bigint): EncodedCall {
+  const functionSignature = iface.getFunction('destroyKmsEpoch')!.format('sighash');
+  const calldata = iface.encodeFunctionData('destroyKmsEpoch', [epochId]);
+  return { functionSignature, calldata, decodedArgs: [epochId] };
 }
 
 // Broadcasts the byte-identical payload the DAO would sign, using the deployer key. On devnet / the
@@ -163,6 +176,72 @@ task(
     console.log(`Broadcast defineNewEpochForCurrentKmsContext on ${target} (tx: ${hash}). New epoch is now PENDING.`);
   });
 
+task(
+  'task:buildDestroyKmsContextCalldata',
+  'Builds Aragon proposal calldata for ProtocolConfig.destroyKmsContext (retires a non-current context; DAO path, never broadcasts)',
+)
+  .addParam('contextId', 'The KMS context ID to destroy', undefined, types.string)
+  .setAction(async function ({ contextId }, hre): Promise<void> {
+    const iface = await getProtocolConfigInterface(hre);
+    const encoded = encodeDestroyKmsContext(iface, BigInt(contextId));
+
+    console.log('ProtocolConfig.destroyKmsContext');
+    console.log('  contextId:', contextId);
+    console.log('  calldata:', encoded.calldata);
+  });
+
+task(
+  'task:destroyKmsContext',
+  'Broadcasts ProtocolConfig.destroyKmsContext with the deployer key (no-DAO path for devnet / test-suite)',
+)
+  .addParam('contextId', 'The KMS context ID to destroy', undefined, types.string)
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'Resolve the ProtocolConfig address from the /addresses directory instead of the environment',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ contextId, useInternalProxyAddress }, hre): Promise<void> {
+    const iface = await getProtocolConfigInterface(hre);
+    const { calldata } = encodeDestroyKmsContext(iface, BigInt(contextId));
+    const target = requireProtocolConfigAddress(useInternalProxyAddress);
+    const hash = await broadcast(hre, target, calldata);
+    console.log(`Broadcast destroyKmsContext(${contextId}) on ${target} (tx: ${hash}). Context is now DESTROYED.`);
+  });
+
+task(
+  'task:buildDestroyKmsEpochCalldata',
+  'Builds Aragon proposal calldata for ProtocolConfig.destroyKmsEpoch (retires a superseded epoch; DAO path, never broadcasts)',
+)
+  .addParam('epochId', 'The KMS epoch ID to destroy', undefined, types.string)
+  .setAction(async function ({ epochId }, hre): Promise<void> {
+    const iface = await getProtocolConfigInterface(hre);
+    const encoded = encodeDestroyKmsEpoch(iface, BigInt(epochId));
+
+    console.log('ProtocolConfig.destroyKmsEpoch');
+    console.log('  epochId:', epochId);
+    console.log('  calldata:', encoded.calldata);
+  });
+
+task(
+  'task:destroyKmsEpoch',
+  'Broadcasts ProtocolConfig.destroyKmsEpoch with the deployer key (no-DAO path for devnet / test-suite)',
+)
+  .addParam('epochId', 'The KMS epoch ID to destroy', undefined, types.string)
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'Resolve the ProtocolConfig address from the /addresses directory instead of the environment',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ epochId, useInternalProxyAddress }, hre): Promise<void> {
+    const iface = await getProtocolConfigInterface(hre);
+    const { calldata } = encodeDestroyKmsEpoch(iface, BigInt(epochId));
+    const target = requireProtocolConfigAddress(useInternalProxyAddress);
+    const hash = await broadcast(hre, target, calldata);
+    console.log(`Broadcast destroyKmsEpoch(${epochId}) on ${target} (tx: ${hash}). Epoch is now DESTROYED.`);
+  });
+
 ////////////////////////////////////////////////////////////////////////////////
 // Status task (event-indexing monitor)
 ////////////////////////////////////////////////////////////////////////////////
@@ -191,7 +270,7 @@ export interface KmsContextSwitchStatus {
   newTxSendersOutstanding?: string[];
   previousTxSendersConfirmed?: string[];
   previousConfirmationCount?: number;
-  previousTxSenderThreshold?: number; // the (n - t + 1) old-side quorum target
+  previousTxSenderThreshold?: number; // the (n - t) old-side quorum target
   contextCreationQuorumReached?: boolean;
   stuckBelowPreviousThreshold?: boolean;
 
@@ -214,7 +293,7 @@ function outstanding(expected: string[], confirmed: Set<string>): string[] {
 // plus the current active-context view. ProtocolConfig exposes no getter for the intermediate
 // `Created` state or the live confirmation tally, and the new (pending) context's signer set is not
 // readable via `getKmsSignersForContext` until it is `Active` — so the new set is taken from the
-// `NewKmsContext` event, while the old-side `(n - t + 1)` target is read from views on the still-
+// `NewKmsContext` event, while the old-side `(n - t)` target is read from views on the still-
 // active previous context.
 export async function inspectKmsContextSwitch(
   hre: HardhatRuntimeEnvironment,
@@ -294,14 +373,10 @@ async function fillContextSwitch(
   status.pendingContextId = pendingContextId;
   status.previousContextId = previousContextId;
 
-  // An abort/destroy of the pending context after it was issued means the switch is no longer in
+  // A destroy of the pending context after it was issued means the switch is no longer in
   // flight and must be re-proposed.
-  const contextAborted = await pc.queryFilter(pc.filters.PendingContextAborted(pendingContextId), fromBlock, toBlock);
   const contextDestroyed = await pc.queryFilter(pc.filters.KmsContextDestroyed(pendingContextId), fromBlock, toBlock);
-  if (contextAborted.length > 0) {
-    status.aborted = true;
-    status.abortReason = 'context-aborted';
-  } else if (contextDestroyed.length > 0) {
+  if (contextDestroyed.length > 0) {
     status.aborted = true;
     status.abortReason = 'context-destroyed';
   }
@@ -313,10 +388,10 @@ async function fillContextSwitch(
   const newTxSenders = newContextEvent.args.kmsNodeParams.map((node) => checksum(node.txSenderAddress));
   status.newTxSenders = newTxSenders;
 
-  // Old-side (n - t + 1) target: the previous context is still active, so its views are readable.
+  // Old-side (n - t) target (floored at 1): the previous context is still active, so its views are readable.
   const previousSigners: string[] = await pc.getKmsSignersForContext(previousContextId);
   const previousMpcThreshold: bigint = await pc.getMpcThresholdForContext(previousContextId);
-  status.previousTxSenderThreshold = previousSigners.length - Number(previousMpcThreshold) + 1;
+  status.previousTxSenderThreshold = Math.max(previousSigners.length - Number(previousMpcThreshold), 1);
 
   // Tally creation confirmations from events.
   const creationConfirmations = await pc.queryFilter(
@@ -381,16 +456,6 @@ async function fillEpochActivation(
   status.pendingEpochId = pendingEpochId;
   status.epochSigners = epochSigners;
 
-  const epochAborted = await pc.queryFilter(
-    pc.filters.PendingEpochAborted(undefined, pendingEpochId),
-    fromBlock,
-    toBlock,
-  );
-  if (epochAborted.length > 0 && !status.aborted) {
-    status.aborted = true;
-    status.abortReason = 'epoch-aborted';
-  }
-
   const activationConfirmations = await pc.queryFilter(
     pc.filters.EpochActivationConfirmation(pendingEpochId),
     fromBlock,
@@ -446,10 +511,10 @@ function printStatus(status: KmsContextSwitchStatus): void {
     }
     console.log(
       'previous tx senders confirmed:',
-      `${status.previousConfirmationCount} (need >= ${status.previousTxSenderThreshold} = n - t + 1)`,
+      `${status.previousConfirmationCount} (need >= ${status.previousTxSenderThreshold} = n - t)`,
     );
     if (status.stuckBelowPreviousThreshold) {
-      console.log('  ⚠ stuck below the (n - t + 1) old-side confirmation target');
+      console.log('  ⚠ stuck below the (n - t) old-side confirmation target');
     }
     console.log('creation quorum reached:', status.contextCreationQuorumReached);
   }
