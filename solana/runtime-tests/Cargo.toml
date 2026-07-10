@@ -23,3 +23,5 @@ zama-solana-acl = { path = "../crates/zama-solana-acl" }
 [dev-dependencies]
 # Signs coprocessor EIP-712 input attestations in the secp256k1 input-bind test.
 k256 = { version = "0.13.4", features = ["ecdsa"] }
+num-bigint = "0.4.6"
+rand = "0.9.4"

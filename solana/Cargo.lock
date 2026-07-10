@@ -4962,6 +4962,8 @@ dependencies = [
  "k256",
  "mollusk-svm",
  "mollusk-svm-programs-token",
+ "num-bigint 0.4.6",
+ "rand 0.9.4",
  "serde_json",
  "solana-compute-budget-interface",
  "solana-program",
