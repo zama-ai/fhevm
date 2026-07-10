@@ -383,6 +383,10 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         SOLANA_ABI_CHECK.contains("schema_hash") || SOLANA_ABI_CHECK.contains("golden"),
         "listener generated decode path must expose schema hashes or golden decode checks"
     );
+    assert!(
+        SOLANA_ABI_CHECK.contains("\"accounts\": instruction.get(\"accounts\", [])"),
+        "instruction schema hashes must include the complete ordered Anchor account tree"
+    );
 }
 
 fn parse_idl(json: &str) -> Value {

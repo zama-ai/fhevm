@@ -140,7 +140,7 @@
       "fixture_len": 8,
       "name": "close_consumed_burn_redemption_request",
       "program": "confidential_token",
-      "schema_hash": "38cbf36bec48f4dd45ce7d1ed99e68c51d155f8667153d517a22aec11c74aace"
+      "schema_hash": "4e43d15dc32003a909f462def5e296d296accf6f1dc4cf1f57000e5ced954bee"
     },
     {
       "category": "instruction_args",
@@ -148,7 +148,7 @@
       "fixture_len": 8,
       "name": "close_consumed_disclosure_request",
       "program": "confidential_token",
-      "schema_hash": "f9c95168d2dfb2ccc22b49ea3d483d752bfbacae262bec52faacd96e3f5fbc0f"
+      "schema_hash": "ec705c2ebc58f892de2f05e6de037a55adc37ef00f617705d7815163c56b84f7"
     },
     {
       "category": "instruction_args",
@@ -156,7 +156,7 @@
       "fixture_len": 8,
       "name": "close_expired_burn_redemption_request",
       "program": "confidential_token",
-      "schema_hash": "82725b034137c1771b6f452b3240bcf260e95be3620d24edb6d48bb8a29809bb"
+      "schema_hash": "bced9b4d414a237551cfd61c53c125de121a4801698f6bed4d6860a50e83f933"
     },
     {
       "category": "instruction_args",
@@ -164,7 +164,7 @@
       "fixture_len": 8,
       "name": "close_expired_disclosure_request",
       "program": "confidential_token",
-      "schema_hash": "2508bede2d369ca4ace859f06d749e7a4168fef51e0f3452c3080048b56c5f58"
+      "schema_hash": "749277984b3321f6b75ce51eefd95a552a43e39963a13fb81bb64241a6adfb9c"
     },
     {
       "category": "instruction_args",
@@ -172,7 +172,7 @@
       "fixture_len": 225,
       "name": "confidential_burn",
       "program": "confidential_token",
-      "schema_hash": "4ac2131a493a28993c101703e3bfe2a4e97ed919f714709b82ce31cc61dfcdd6"
+      "schema_hash": "4de543a8cf28e1b3dc78700ec898573318175bb35fa3434e7729e329c3bac85e"
     },
     {
       "category": "instruction_args",
@@ -180,7 +180,7 @@
       "fixture_len": 225,
       "name": "confidential_transfer",
       "program": "confidential_token",
-      "schema_hash": "0a9cbab2b2552c52dc8c55e1c3e7f2736558f0dd08c7f9fac3192722f9f6963c"
+      "schema_hash": "358c8114595bb757f374bffe5ecc67428c1f19c5cc910041913f9cbc40a4bc7c"
     },
     {
       "category": "instruction_args",
@@ -188,7 +188,7 @@
       "fixture_len": 168,
       "name": "disclose_amount_secp",
       "program": "confidential_token",
-      "schema_hash": "e7b43dc3fdb9472d6cbe1b02fba9542c52d2ce937e690dc11361412d7c825e18"
+      "schema_hash": "91c8271553aaaf194a4fe5d1fb13e33269d595f3848b8e968ec240929336ce9f"
     },
     {
       "category": "instruction_args",
@@ -196,7 +196,7 @@
       "fixture_len": 136,
       "name": "disclose_balance_secp",
       "program": "confidential_token",
-      "schema_hash": "430c736a70c87c61ab07abc3e253fc2d2da93bb126aa8104223ee2d7346f1b4f"
+      "schema_hash": "8505278bd5ea1f775eb78ee3b414100e48429b65c3278092db996a2d6d4fcf9b"
     },
     {
       "category": "instruction_args",
@@ -204,7 +204,7 @@
       "fixture_len": 8,
       "name": "initialize_mint",
       "program": "confidential_token",
-      "schema_hash": "6fe863790610460c858be870bded1b1dc057f1379d85068a75a7bba5867d73c0"
+      "schema_hash": "28ad2c2496edc485c1224d5d39cd2fcfc1734f685de064a61c8c32bb20c5888e"
     },
     {
       "category": "instruction_args",
@@ -212,7 +212,7 @@
       "fixture_len": 16,
       "name": "initialize_token_account",
       "program": "confidential_token",
-      "schema_hash": "9e857dd7f6971d8f45cc17d2e6a003ea4b7a44d799cc229701ad882b39e562cc"
+      "schema_hash": "3480cb720179c701975815a3152b1e2acb99f946ec7dbb90d84853feb173a9a9"
     },
     {
       "category": "instruction_args",
@@ -220,7 +220,7 @@
       "fixture_len": 168,
       "name": "redeem_burned_amount_secp",
       "program": "confidential_token",
-      "schema_hash": "968d885309935d1da5c1c7717d4ce3222e1eea5c7d5b7e25b759f49c66a30693"
+      "schema_hash": "fe711962c244b56c615aeab63cac1f3a1d63b3106e65d196d76b6b9c611a4025"
     },
     {
       "category": "instruction_args",
@@ -228,7 +228,7 @@
       "fixture_len": 80,
       "name": "request_burn_redemption",
       "program": "confidential_token",
-      "schema_hash": "eba7e577c1f0b3b85dba33dd903a3c64c4e4bfb3e53c86eddf2efc0cb3f72ec6"
+      "schema_hash": "822cdb3446f5cad76f9e5eed63a3b4f017080353458aa88219b18860b4b2f656"
     },
     {
       "category": "instruction_args",
@@ -236,7 +236,7 @@
       "fixture_len": 80,
       "name": "request_disclose_amount",
       "program": "confidential_token",
-      "schema_hash": "372f32544df49739c98a7b22ceff1ce40ee19e7085571562c9c5accd3e15241a"
+      "schema_hash": "21efc74ea1ed9e4169278cc54da8ae6d6fcc83dec1c5b7a6ffb8288bb8fcd1f3"
     },
     {
       "category": "instruction_args",
@@ -244,7 +244,7 @@
       "fixture_len": 48,
       "name": "request_disclose_balance",
       "program": "confidential_token",
-      "schema_hash": "9e83395a1d8b48c790154b9709a60fed292f2fbb10daa05540f30571293a5b0e"
+      "schema_hash": "a62d9d74faaad49719a37adeefd585e37e85c78b62c8f3b2b81cca65d0025198"
     },
     {
       "category": "instruction_args",
@@ -252,7 +252,7 @@
       "fixture_len": 16,
       "name": "wrap_usdc",
       "program": "confidential_token",
-      "schema_hash": "42f5923387d4a45f71b1295a51450d213b122ff414b19a95c63b6d3843d0a494"
+      "schema_hash": "6d8a122cc3e8b2d72f89e9133f9a7a1a1f88c44c6cd14fb0d606d2285003fe53"
     },
     {
       "category": "account",
@@ -404,7 +404,7 @@
       "fixture_len": 44,
       "name": "allow_subjects",
       "program": "zama_host",
-      "schema_hash": "49307f8be4ed3c94d2509a454709ce25b2b341fefc0754629eb35cb7882b5bb8"
+      "schema_hash": "90c0125c8507638be8bd62dd63578a806ffb97fffcb9cecf2a90f933726802e1"
     },
     {
       "category": "instruction_args",
@@ -412,7 +412,7 @@
       "fixture_len": 172,
       "name": "create_encrypted_value",
       "program": "zama_host",
-      "schema_hash": "9401dab11a9f4fb4f4d385ea43a06e0e7258cd869830318f84bf90460418fcc5"
+      "schema_hash": "c742c3e673693b94e87d3c902aca2d75eb8dfd36dc2f32bb40c516d4e9835184"
     },
     {
       "category": "instruction_args",
@@ -420,7 +420,7 @@
       "fixture_len": 118,
       "name": "fhe_eval",
       "program": "zama_host",
-      "schema_hash": "92e5053c30ac13961ba37d5ec0a36bd110bc5a62a21b0aed62d7a5291e7e7878"
+      "schema_hash": "d868a58bcd2c2072d3016d4b7f3f3911bacc97e9644cd021031ebd9eecc7d0f3"
     },
     {
       "category": "instruction_args",
@@ -428,7 +428,7 @@
       "fixture_len": 183,
       "name": "initialize_host_config",
       "program": "zama_host",
-      "schema_hash": "28ee7c26c9afab94dc09cbe4801c26c298dcb4f4451d37bd92b67879373cdc59"
+      "schema_hash": "e09039a78a6dec2c05a8fc48ee13da3c0569ce1d8453d947aeeb24b8b2a385e6"
     },
     {
       "category": "instruction_args",
@@ -436,7 +436,7 @@
       "fixture_len": 40,
       "name": "make_handle_public",
       "program": "zama_host",
-      "schema_hash": "d28b07064df1c00009f0fbbbd77f405c3c0169271aec6cea75e2b343d596a977"
+      "schema_hash": "dd40b2d5f65a96cc76e664c539bed35067f19629f869755a7bc65964b6d19773"
     },
     {
       "category": "instruction_args",
@@ -444,7 +444,7 @@
       "fixture_len": 40,
       "name": "remove_subject",
       "program": "zama_host",
-      "schema_hash": "e4de8f5c96b22d171dc5b11d60d06cb91b3ad5aeefb5d832c2ca6bfc05d2e024"
+      "schema_hash": "e2dd806027bdd49d3245091481c71bbe6399c42c9030cf4503c3f7a3809b2ce3"
     },
     {
       "category": "instruction_args",
@@ -452,7 +452,7 @@
       "fixture_len": 108,
       "name": "update_encrypted_value",
       "program": "zama_host",
-      "schema_hash": "22ba194254ff7045537c41994ee5bdbe00ffde81c5190472fc8d31162214146f"
+      "schema_hash": "82af334cd0b5150a9094cf49e1bcf9f4d52fbae6375b527c88c771cbc433a976"
     },
     {
       "category": "type",

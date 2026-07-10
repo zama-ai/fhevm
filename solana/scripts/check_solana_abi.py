@@ -238,6 +238,7 @@ def schema_for(idl: dict[str, Any], category: str, name: str) -> dict[str, Any] 
             "instruction": {
                 "name": instruction["name"],
                 "discriminator": instruction.get("discriminator"),
+                "accounts": instruction.get("accounts", []),
                 "args": instruction.get("args", []),
             }
         }
