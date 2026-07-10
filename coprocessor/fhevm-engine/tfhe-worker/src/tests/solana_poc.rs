@@ -592,8 +592,6 @@ fn current_handle(svm: &LiteSVM, address: Pubkey) -> [u8; 32] {
         .current_handle
 }
 
-/// Directly seeds a durable `EncryptedValue` lineage authorizing `subject` to use
-/// `handle`, bypassing `create_encrypted_value` (there is no test-emit shim for
 fn serialized_account<T: AccountSerialize>(account: T) -> Vec<u8> {
     let mut data = Vec::new();
     account.try_serialize(&mut data).unwrap();
