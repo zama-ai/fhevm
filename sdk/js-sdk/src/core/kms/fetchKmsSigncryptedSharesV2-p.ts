@@ -9,7 +9,7 @@ import type { SignedDecryptionPermit, SignedDecryptionPermitV2 } from '../types/
 import type { Handle } from '../types/encryptedTypes-p.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
 import { createKmsSigncryptedShares } from './KmsSigncryptedShares-p.js';
-import { readKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
+import { readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { assertIsSignedDecryptionPermit } from './SignedDecryptionPermit-p.js';
 import { assertKmsDecryptionBitLimit } from './utils.js';
 import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
@@ -130,7 +130,7 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
   // (e.g. a version change in the serialization scheme) will be rejected even
   // though the context ID matches. Consider comparing the decoded `kmsContextId`
   // instead of the raw `extraData` bytes.
-  const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContext(context, {
+  const requestedKmsSignersContext: KmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   });

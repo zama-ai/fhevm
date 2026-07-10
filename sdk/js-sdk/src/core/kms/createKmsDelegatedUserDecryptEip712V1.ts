@@ -1,19 +1,20 @@
 import type { KmsDelegatedUserDecryptEip712V1 } from '../types/kms.js';
 import type { BytesHex } from '../types/primitives.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
+import type { KmsExtraData } from '../types/kms-p.js';
 import {
   addressToChecksummedAddress,
   assertIsAddress,
   assertIsAddressArray,
   assertRecordChecksummedAddressProperty,
 } from '../base/address.js';
-import { asBytesHex, assertIsBytesHex, bytesToHexLarge } from '../base/bytes.js';
+import { asBytesHex, bytesToHexLarge } from '../base/bytes.js';
 import { ensure0x } from '../base/string.js';
 import { assertIsUintNumber } from '../base/uint.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
 import { _assertIsKmsUserDecryptEip712V1Base } from './createKmsUserDecryptEip712V1.js';
 import { kmsDelegatedUserDecryptEip712V1Types } from './kmsDelegatedUserDecryptEip712V1Types.js';
-import { assertIsKmsExtraData } from './kmsExtraData.js';
+import { assertIsKmsExtraData } from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -24,7 +25,7 @@ export type CreateKmsDelegatedUserDecryptEip712V1Parameters = {
   readonly contractAddresses: readonly string[];
   readonly startTimestamp: number;
   readonly durationDays: number;
-  readonly extraData: string;
+  readonly extraData: KmsExtraData;
   readonly delegatorAddress: string;
 };
 
@@ -50,7 +51,6 @@ export function createKmsDelegatedUserDecryptEip712V1(
   assertIsAddressArray(contractAddresses, {});
   assertIsUintNumber(startTimestamp, {});
   assertIsUintNumber(durationDays, {});
-  assertIsBytesHex(extraData, {});
   assertIsAddress(delegatorAddress, {});
   assertIsKmsExtraData(extraData, {});
 
@@ -75,7 +75,7 @@ export function createKmsDelegatedUserDecryptEip712V1(
       delegatorAddress: checksummedDelegatorAddress,
       startTimestamp: startTimestamp.toString(),
       durationDays: durationDays.toString(),
-      extraData,
+      extraData: extraData.toBytesHex(),
     },
   };
 

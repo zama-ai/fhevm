@@ -10,7 +10,7 @@ import { assertIsKmsEip712Domain } from '../../kms/createKmsEip712Domain.js';
 import { eip712Domain } from '../../host-contracts/eip712Domain-p.js';
 import { assertIsHostContractVersionOf } from '../../host-contracts/HostContractVersion-p.js';
 import { getHostContractVersion } from '../../host-contracts/HostContractVersion-p.js';
-import { readKmsSignersContext } from '../../host-contracts/readKmsSignersContext-p.js';
+import { readCurrentKmsSignersContext } from '../../host-contracts/readKmsSignersContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -44,7 +44,7 @@ export async function readKmsVerifierContractData(
   const rpcCalls = [
     () => getHostContractVersion(fhevm, parameters),
     () => eip712Domain(fhevm, parameters),
-    () => readKmsSignersContext(fhevm, { kmsVerifierAddress, protocolConfigAddress }),
+    () => readCurrentKmsSignersContext(fhevm, { kmsVerifierAddress, protocolConfigAddress }),
   ];
 
   const res = await executeWithBatching<unknown>(rpcCalls, fhevm.options.batchRpcCalls);

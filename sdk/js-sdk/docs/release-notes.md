@@ -64,10 +64,6 @@ imports any of these directly, switch to the higher-level actions listed:
   unrecognized errors: `not_allowed_on_host_acl` (400), and `insufficient_balance` /
   `insufficient_allowance` (503).
 
-> **Note:** `docs/decryption.md`, `docs/migration.md`, `docs/getting-started.md`, and
-> `docs/api-reference.md` still show the old `durationDays` / `SignedSelfDecryptionPermit` /
-> `SignedDelegatedDecryptionPermit` API and need to be updated separately.
-
 ### Internal
 
 - Implemented RFC-016 (unified EIP-712 decryption request): permit creation, EIP-712 typed

@@ -15,14 +15,16 @@ export function getCleartextEthersRuntime(): FhevmRuntime {
     throw new Error('Call setFhevmRuntimeConfig first.');
   }
 
-  const em = cleartextEthereumModule();
-  const rm = cleartextRelayerModule();
+  if (ethersFhevmRuntime === undefined) {
+    const em = cleartextEthereumModule();
+    const rm = cleartextRelayerModule();
 
-  ethersFhevmRuntime ??= createFhevmRuntime({
-    ethereum: em.ethereum,
-    relayer: rm.relayer,
-    config: getFhevmRuntimeConfig(),
-  });
+    ethersFhevmRuntime = createFhevmRuntime({
+      ethereum: em.ethereum,
+      relayer: rm.relayer,
+      config: getFhevmRuntimeConfig(),
+    });
+  }
 
   return ethersFhevmRuntime;
 }

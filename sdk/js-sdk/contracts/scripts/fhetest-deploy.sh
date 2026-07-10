@@ -70,7 +70,7 @@ fhevm_assert_chain "$chain"
 # - any localstack
 # - polygon_devnet
 case "$chain" in
-    localcleartext|localstack|localstack_*|polygon_devnet|devnet|mainnet) ;;
+    localcleartext|localstack|localstack_*|polygon_devnet|devnet|mainnet|ingen_trex_*|hoodi_*) ;;
     *)
         echo "❌ fhetest-deploy.sh only supports local chains 'localcleartext | localstack | localstack_* | polygon_devnet | devnet | mainnet'; got '$chain'" >&2
         exit 1
@@ -80,7 +80,7 @@ esac
 # Derive RPC URL from the resolved chain via fhevm-lib.
 rpc_url="$(resolve_chain_rpc_url "$chain")"
 
-if [[ "$chain" != "polygon_devnet" && "$chain" != "devnet" && "$chain" != "mainnet" ]]; then
+if [[ "$chain" != "polygon_devnet" && "$chain" != "devnet" && "$chain" != "mainnet" && "$chain" != "ingen_trex_cleartext" && "$chain" != "hoodi_cleartext" ]]; then
     assert_is_anvil "${rpc_url}"
 fi
 

@@ -8,11 +8,11 @@
 
 <hr/>
 <p align="center">
-  <a href="https://docs.zama.ai/protocol/zama-protocol-litepaper">📃 Read white paper</a> | <a href="https://docs.zama.ai/protocol/relayer-sdk-guides">📒 Read documentation</a> | <a href="https://zama.ai/community">💛 Community support</a>
+  <a href="https://docs.zama.ai/protocol/zama-protocol-litepaper">📃 Read white paper</a> | <a href="https://github.com/zama-ai/fhevm/tree/main/sdk/js-sdk/docs">📒 Read documentation</a> | <a href="https://zama.ai/community">💛 Community support</a>
 </p>
 <p align="center">
 <!-- Version badge using shields.io -->
-  <a href="https://github.com/zama-ai/relayer-sdk/releases"><img src="https://img.shields.io/github/v/release/zama-ai/relayer-sdk?style=flat-square"/></a>
+  <a href="https://github.com/zama-ai/fhevm/releases"><img src="https://img.shields.io/github/v/release/zama-ai/fhevm?style=flat-square"/></a>
 <!-- Zama Bounty Program -->
   <a href="https://github.com/zama-ai/bounty-program"><img src="https://img.shields.io/badge/Contribute-Zama%20Bounty%20Program-yellow?style=flat-square"/></a>
 </p>
@@ -24,13 +24,13 @@ fhevm SDK is a javascript library that enables developers to interact with block
 
 ```bash
 # Using npm
-npm install @zama-fhe/relayer-sdk
+npm install @fhevm/sdk
 
 # Using Yarn
-yarn add @zama-fhe/relayer-sdk
+yarn add @fhevm/sdk
 
 # Using pnpm
-pnpm add @zama-fhe/relayer-sdk
+pnpm add @fhevm/sdk
 ```
 
 This will download and install the fhevm Relayer SDK and its dependencies into your project.
