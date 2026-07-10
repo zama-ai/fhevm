@@ -40,7 +40,7 @@ export type SolanaUserDecryptContext = {
 };
 
 export type SolanaUserDecryptParameters = {
-  /** The ciphertext handles to decrypt (each a 32-byte handle). */
+  /** The single 32-byte ciphertext handle to decrypt, encoded as a one-element array. */
   readonly handles: readonly EncryptedValueLike[];
   /** Override the chain's ACL domain keys for this request (each a bytes32 0x-hex). */
   readonly allowedAclDomainKeys?: readonly Bytes32Hex[] | undefined;
@@ -118,9 +118,9 @@ type SolanaUserDecryptShare = {
 };
 
 /**
- * The decrypted clear values, one per requested handle, in request order. Mirrors the EVM
- * user-decrypt return: de-signcryption runs entirely in-SDK against the vendored Solana TKMS WASM
- * (no kms-core), differing from EVM only in the link digest (`compute_link_solana`).
+ * The decrypted clear value, encoded as a one-element array to mirror the EVM user-decrypt return.
+ * De-signcryption runs entirely in-SDK against the vendored Solana TKMS WASM (no kms-core),
+ * differing from EVM only in the link digest (`compute_link_solana`).
  */
 export type SolanaUserDecryptResult = readonly ClearValue[];
 
@@ -191,8 +191,8 @@ export async function userDecrypt(
 ): Promise<SolanaUserDecryptResult> {
   const { chain, runtime } = context;
 
-  if (parameters.handles.length === 0) {
-    throw new Error('At least one handle is required');
+  if (parameters.handles.length !== 1) {
+    throw new Error('Exactly one handle is required');
   }
 
   const identity = signer.publicKey;
@@ -214,12 +214,6 @@ export async function userDecrypt(
   const durationSeconds = parameters.validity?.durationSeconds ?? DEFAULT_DURATION_SECONDS;
 
   const mmrProof = parameters.mmrProof;
-  if (mmrProof !== undefined && handleBytes.length !== 1) {
-    // An MMR proof authorizes exactly one handle (see `proof.ts` / the connector's
-    // `require_single_handle`); a multi-handle request has no single handle for the proof to
-    // name, so refuse rather than silently ignoring the proof.
-    throw new Error('an MMR proof (`mmrProof`) can only be attached to a single-handle request');
-  }
   if (mmrProof !== undefined && parameters.aclValueKey !== undefined) {
     if (!bytesEqual(parameters.aclValueKey, mmrProof.aclValueKey)) {
       throw new Error('`aclValueKey` must match `mmrProof.aclValueKey` when both are provided');
@@ -357,7 +351,7 @@ export async function userDecrypt(
   }));
 
   // 4. De-signcrypt the aggregated shares to cleartext in-SDK, then reconstruct typed clear values
-  // with the same decoder as the EVM path (`bytesToClearValueType`), one per requested handle.
+  // with the same decoder as the EVM path (`bytesToClearValueType`).
   const plaintexts = await deSigncryptSolanaUserDecrypt({
     keyPair,
     shares,
