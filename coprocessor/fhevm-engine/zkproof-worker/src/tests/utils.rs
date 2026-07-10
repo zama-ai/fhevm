@@ -6,6 +6,8 @@ use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use fhevm_engine_common::utils::{safe_deserialize_conformant, safe_serialize};
+use sha3::Digest;
+use sha3::Keccak256;
 use sqlx::Row;
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
@@ -247,6 +249,53 @@ pub(crate) async fn compress_inputs_without_rerandomization(
     tokio::task::spawn_blocking(move || {
         tfhe::set_server_key(latest_key.sks);
         let expanded = verified_list.expand_without_verification()?;
+        let cts = extract_ct_list(&expanded)?;
+        cts.into_iter()
+            .map(|ct| ct.compress().map_err(anyhow::Error::from))
+            .collect()
+    })
+    .await?
+}
+
+/// Recomputes the ciphertexts the verifier is expected to store: re-randomize
+/// the verified compact list seeded from the blob hash, expand, then compress.
+/// Must stay in lockstep with `crate::verifier::verify_proof` — the test
+/// compares its output bitwise against the stored ciphertexts.
+pub(crate) async fn compress_inputs_with_compact_list_rerandomization(
+    material: &ProofMaterial,
+    raw_ct: &[u8],
+) -> anyhow::Result<Vec<Vec<u8>>> {
+    let latest_key = material.key.clone();
+    let latest_crs = material.crs.clone();
+
+    let verified_list: tfhe::ProvenCompactCiphertextList = safe_deserialize_conformant(
+        raw_ct,
+        &crate::verifier::proven_list_conformance_params(&latest_key.pks, &latest_crs),
+    )?;
+
+    if verified_list.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut hasher = Keccak256::new();
+    hasher.update(crate::verifier::RAW_CT_HASH_DOMAIN_SEPARATOR);
+    hasher.update(raw_ct);
+    let blob_hash = hasher.finalize().to_vec();
+
+    tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<Vec<u8>>> {
+        tfhe::set_server_key(latest_key.sks);
+
+        let mut re_rand_context = tfhe::ReRandomizationContext::new(
+            crate::verifier::RERANDOMISATION_DOMAIN_SEPARATOR,
+            [blob_hash.as_slice()],
+            crate::verifier::COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR,
+        );
+        re_rand_context.add_ciphertext(&verified_list);
+
+        let mut seed_gen = re_rand_context.finalize();
+        let expanded = verified_list
+            .re_randomize_and_expand_without_verification(&latest_key.pks, seed_gen.next_seed()?)?;
+
         let cts = extract_ct_list(&expanded)?;
         cts.into_iter()
             .map(|ct| ct.compress().map_err(anyhow::Error::from))
