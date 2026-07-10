@@ -393,7 +393,7 @@ printf 'KMS_NODE_CA_CERT hex: 0x%s\n' "$CERT_HEX"
 ```
 
 The `subject=` / `notBefore=` / `Fingerprint=` lines are for review (the script only
-fails if the cert is missing or unparseable):
+fails if the cert is missing or unparsable):
 
 - **subject** — typically embeds the party's MPC identity; compare it with the
   `mpc_identity` they pasted (do not _derive_ the identity from it; ask for the
