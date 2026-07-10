@@ -18,7 +18,8 @@ use connector_utils::{
 };
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        HandleEntry, PublicDecryptionRequest, UserDecryptionRequest_0 as UserDecryptionRequest,
+        HandleEntry, PublicDecryptionRequest_0 as PublicDecryptionRequest,
+        UserDecryptionRequest_0 as UserDecryptionRequest,
         UserDecryptionRequest_1 as UserDecryptionRequestV2,
     },
     IDecryption::{

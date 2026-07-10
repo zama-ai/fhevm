@@ -9,8 +9,8 @@ use alloy::{
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        DecryptionEvents, HandleEntry, PublicDecryptionRequest, SnsCiphertextMaterial,
-        UserDecryptionRequest_0 as UserDecryptionRequest,
+        DecryptionEvents, HandleEntry, PublicDecryptionRequest_0 as PublicDecryptionRequest,
+        SnsCiphertextMaterial, UserDecryptionRequest_0 as UserDecryptionRequest,
         UserDecryptionRequest_1 as UserDecryptionRequestV2,
     },
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
@@ -731,7 +731,7 @@ impl TryFrom<DecryptionEvents> for ProtocolEventKind {
         match value {
             // `UserDecryptionRequest_0` is the legacy event; `UserDecryptionRequest_1` is the
             // RFC016 overload.
-            DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
+            DecryptionEvents::PublicDecryptionRequest_0(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_0(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_1(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected Decryption event")),
