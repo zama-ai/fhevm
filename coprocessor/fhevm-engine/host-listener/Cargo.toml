@@ -7,7 +7,11 @@ license.workspace = true
 [features]
 default = []
 test_bypass_key_extraction = []
-solana-grpc = ["dep:yellowstone-grpc-proto", "dep:tonic"]
+solana-grpc = [
+    "dep:yellowstone-grpc-proto",
+    "dep:tonic",
+    "solana-reconstruct",
+]
 solana-reconstruct = ["dep:zama-host", "dep:anchor-lang", "dep:zama-solana-acl"]
 
 [[bin]]
@@ -74,8 +78,6 @@ url = "2.5.7"
 solana-client = "3.0"
 solana-commitment-config = "3.1"
 solana-sdk = "3.0"
-solana-transaction-status = "3.0"
-
 # Yellowstone gRPC transport (optional; enabled via the `solana-grpc` feature).
 tonic = { workspace = true, optional = true }
 # Pinned to the SAME tag as the baked plugin so client proto == server proto.

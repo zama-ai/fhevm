@@ -108,10 +108,10 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 ## 4. Coprocessor / KMS adapter integration
 
 - **Coprocessor host-listener** (`coprocessor/.../host-listener/src/solana_adapter.rs` +
-  `solana_reconstruct.rs`): decodes zama-host Anchor CPI compute-step events (codegen from vendored IDL
-  `idl/zama_host.json`) into TFHE DB rows, and separately decodes the four `EncryptedValue`
-  instructions directly from instruction data (they emit no events by design, DD-033) into new allow
-  reasons (`encrypted_value_created`, `handle_superseded`, `handle_made_public`, `subject_allowed`).
+  `solana_reconstruct.rs`): reconstructs zama-host compute steps from instruction data into TFHE DB
+  rows, and decodes the four `EncryptedValue` instructions (they emit no events by design, DD-033)
+  into allow reasons (`encrypted_value_created`, `handle_superseded`, `handle_made_public`,
+  `subject_allowed`).
   Solana computations are inserted eager/schedulable immediately — allow signals no longer gate
   scheduling, only decrypt availability (DD-034). `cargo check -p host-listener` → exit 0.
   The adapter maps the merged `fhe_eval` operator surface: binary catalog, ternary select, trivial,

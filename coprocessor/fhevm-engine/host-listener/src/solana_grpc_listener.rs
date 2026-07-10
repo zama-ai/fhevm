@@ -1,12 +1,7 @@
-//! Yellowstone gRPC transport for the Solana host listener (Phase 1).
+//! Yellowstone gRPC transport for the Solana host listener.
 //!
-//! Drop-in transport alternative to [`crate::solana_listener`]: instead of
-//! RPC-polling `getSignaturesForAddress`, it subscribes to a Yellowstone gRPC
-//! endpoint for transactions touching the tracked program, then feeds the SAME
-//! shared decoder ([`decode_solana_transaction_events`]) and inserter
-//! ([`insert_solana_events`]) the RPC path uses. On-chain events are still
-//! emitted (`emit_cpi!`/`emit!`); only the transport differs, so ingested rows
-//! match the RPC path by construction.
+//! Transactions touching the tracked program are reconstructed from their
+//! instructions and ingested without consuming on-chain event emissions.
 //!
 //! gRPC transaction updates do not carry block time, so we track a
 //! `slot -> block_time` map from `blocks_meta` updates and fall back to a single
@@ -34,8 +29,7 @@ use yellowstone_grpc_proto::prelude::{
 
 use crate::database::tfhe_event_propagate::Database;
 use crate::solana_adapter::{
-    decode_solana_transaction_events, insert_solana_events,
-    solana_transaction_id, SolanaBlockMeta,
+    insert_solana_events, solana_transaction_id, SolanaBlockMeta,
 };
 use crate::solana_slot_hashes::{
     clock_unix_timestamp, previous_bank_hash_from_slot_hashes, CLOCK_SYSVAR,
@@ -159,7 +153,7 @@ pub struct SolanaGrpcListenerConfig {
     pub x_token: Option<String>,
     /// RPC endpoint used only as a `getBlockTime` fallback for block timestamps.
     pub rpc_fallback_url: String,
-    /// Base58 program id whose CPI/log events are ingested (the zama-host id).
+    /// Base58 zama-host program id whose instructions are reconstructed.
     pub program_id: String,
     /// Commitment level for the subscription.
     pub commitment: CommitmentLevel,
@@ -169,14 +163,8 @@ pub struct SolanaGrpcListenerConfig {
     /// True when the on-chain HostConfig enables zero-birth entropy (test/PoC):
     /// derivation uses previous_bank_hash=[0;32] instead of the SlotHashes value.
     pub zero_birth_entropy: bool,
-    /// When true, ingest events REBUILT off-chain from instructions (compute
-    /// events + acl_record_bound fetches) instead of the emit-decoded events —
-    /// the swap that lets on-chain emits eventually be removed. When false, ingest
-    /// stays emit-based and reconstruction only runs as a shadow-compare.
-    pub reconstruct: bool,
 }
 
-#[cfg(feature = "solana-reconstruct")]
 fn validate_lineage_tracker_commitment(
     config: &SolanaGrpcListenerConfig,
 ) -> Result<()> {
@@ -202,7 +190,6 @@ pub async fn run(
         grpc_url = %config.grpc_url,
         "Starting Solana host listener (Yellowstone gRPC transport)"
     );
-    #[cfg(feature = "solana-reconstruct")]
     validate_lineage_tracker_commitment(config)?;
 
     // Confirmed is enough for block-time fallback reads; reconstruction state
@@ -223,7 +210,6 @@ pub async fn run(
     // `slot -> Clock.unix_timestamp` from the Clock sysvar stream (the value the
     // program uses in handle derivation, which differs from getBlockTime).
     let mut slot_clock_ts: HashMap<u64, i64> = HashMap::new();
-    #[cfg(feature = "solana-reconstruct")]
     let mut encrypted_value_tracker =
         crate::solana_reconstruct::EncryptedValueLineageTracker::new();
     let mut from_slot: Option<u64> = None;
@@ -239,7 +225,6 @@ pub async fn run(
             &mut slot_time,
             &mut slot_bank_hash,
             &mut slot_clock_ts,
-            #[cfg(feature = "solana-reconstruct")]
             &mut encrypted_value_tracker,
             &mut from_slot,
             &cancel,
@@ -277,7 +262,6 @@ pub async fn run(
 /// pair follows them, so they can never be truncated off the tail. Returns `None` when
 /// the index is out of range; the caller treats that as a hard problem, since the
 /// durable output would otherwise never be marked allowed and never materialize.
-#[cfg(feature = "solana-reconstruct")]
 fn fhe_eval_durable_encrypted_value(
     accounts: &[[u8; 32]],
     remaining_index: u16,
@@ -296,7 +280,6 @@ async fn subscribe_loop(
     slot_time: &mut HashMap<u64, PrimitiveDateTime>,
     slot_bank_hash: &mut HashMap<u64, [u8; 32]>,
     slot_clock_ts: &mut HashMap<u64, i64>,
-    #[cfg(feature = "solana-reconstruct")]
     encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
     from_slot: &mut Option<u64>,
     cancel: &CancellationToken,
@@ -394,7 +377,6 @@ async fn subscribe_loop(
                                 ingest_transaction(
                                     db, rpc, config, slot, &info, slot_time,
                                     &*slot_bank_hash, &*slot_clock_ts,
-                                    #[cfg(feature = "solana-reconstruct")]
                                     encrypted_value_tracker,
                                 ),
                             )
@@ -531,11 +513,8 @@ async fn ingest_transaction(
     slot_time: &mut HashMap<u64, PrimitiveDateTime>,
     slot_bank_hash: &HashMap<u64, [u8; 32]>,
     slot_clock_ts: &HashMap<u64, i64>,
-    #[cfg(feature = "solana-reconstruct")]
     encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
 ) -> std::result::Result<(), IngestFailure> {
-    #[cfg(not(feature = "solana-reconstruct"))]
-    let _ = (slot_bank_hash, slot_clock_ts); // only used by the shadow-compare
     let meta = info
         .meta
         .as_ref()
@@ -548,7 +527,7 @@ async fn ingest_transaction(
     })?;
 
     // Resolved account-key list: static keys ++ ALT writable ++ ALT readonly,
-    // the order `program_id_index` indexes into (matches solana_listener).
+    // the order `program_id_index` indexes into.
     let mut account_keys: Vec<String> = message
         .account_keys
         .iter()
@@ -565,26 +544,9 @@ async fn ingest_transaction(
             .map(|k| bs58::encode(k).into_string()),
     );
 
-    // Inner instructions == CPI frames carrying emit_cpi! event bytes.
-    let mut inner: Vec<(String, Vec<u8>)> = Vec::new();
-    for group in &meta.inner_instructions {
-        for ix in &group.instructions {
-            let program = account_keys
-                .get(ix.program_id_index as usize)
-                .ok_or_else(|| {
-                    IngestFailure::permanent(anyhow!(
-                        "program_id_index {} out of range",
-                        ix.program_id_index
-                    ))
-                })?;
-            inner.push((program.clone(), ix.data.clone()));
-        }
-    }
-
     // Reconstruction needs each instruction's RESOLVED accounts by address, so
     // build the account-key list in raw 32-byte form (same order as the base58
     // list: static keys ++ ALT writable ++ ALT readonly).
-    #[cfg(feature = "solana-reconstruct")]
     let account_keys_bytes: Vec<[u8; 32]> = message
         .account_keys
         .iter()
@@ -595,11 +557,8 @@ async fn ingest_transaction(
 
     // Top-level + inner instruction invocations with resolved accounts (a
     // zama-host instruction is called directly as top-level, or via CPI as inner
-    // for token flows); scanned by the reconstruction shadow-compare and ingest.
-    #[cfg(feature = "solana-reconstruct")]
-    let all_instructions: Vec<
-        crate::solana_reconstruct::DecodedInstruction,
-    > = {
+    // for token flows); scanned by reconstruction.
+    let all_instructions: Vec<crate::solana_reconstruct::DecodedInstruction> = {
         let resolve = |idxs: &[u8]| -> Vec<[u8; 32]> {
             idxs.iter()
                 .filter_map(|&i| account_keys_bytes.get(i as usize).copied())
@@ -658,76 +617,22 @@ async fn ingest_transaction(
         ordered
     };
 
-    // emit! events arrive as `Program data:` log lines.
-    let logs: Vec<String> = if meta.log_messages_none {
-        Vec::new()
-    } else {
-        meta.log_messages.clone()
-    };
-
-    let emit_events = decode_solana_transaction_events(
-        &logs,
-        inner.iter().map(|(p, d)| (p.as_str(), d.as_slice())),
-        &config.program_id,
+    let events = match reconstruct_events_for_insert(
+        config,
+        &all_instructions,
+        slot,
+        slot_bank_hash,
+        slot_clock_ts,
+        rpc,
+        encrypted_value_tracker,
     )
+    .await
     .map_err(|err| {
-        IngestFailure::permanent(err).context("decode host events")
-    })?;
-
-    // Choose the event set to ingest. In `--reconstruct` mode, rebuild it off-chain
-    // (compute events + acl_record_bound fetches) from the instructions and ingest
-    // THAT in place of emit-decode — the swap that lets on-chain emits be removed
-    // (#7). With emits off, emit-decode yields nothing, so reconstruction is decided
-    // here, BEFORE the empty gate below. Fall back to emit-decode only when the
-    // transaction has no instruction family covered by reconstruction; incomplete
-    // covered reconstruction is a fail-closed ingest error.
-    #[cfg(feature = "solana-reconstruct")]
-    let events = if config.reconstruct {
-        match reconstruct_events_for_insert(
-            config,
-            &all_instructions,
-            slot,
-            slot_bank_hash,
-            slot_clock_ts,
-            rpc,
-            encrypted_value_tracker,
-        )
-        .await
-        .map_err(|err| {
-            IngestFailure::fatal(err).context("reconstruct Solana host events")
-        })? {
-            ReconstructionOutcome::Complete(reconstructed) => {
-                info!(
-                    slot,
-                    reconstructed = reconstructed.len(),
-                    emit_decoded = emit_events.len(),
-                    "ingesting reconstructed events (emit-decode swapped out)"
-                );
-                reconstructed
-            }
-            ReconstructionOutcome::NotCovered => {
-                if !emit_events.is_empty() {
-                    warn!(
-                        slot,
-                        "reconstruction not covered for transaction; falling back to emit-decode"
-                    );
-                }
-                emit_events
-            }
-        }
-    } else {
-        let mut events = emit_events;
-        events.extend(
-            crate::solana_reconstruct::decode_encrypted_value_fetch_events(
-                &all_instructions,
-                &config.program_id,
-                encrypted_value_tracker,
-            ),
-        );
-        events
+        IngestFailure::fatal(err).context("reconstruct Solana host events")
+    })? {
+        ReconstructionOutcome::Complete(events) => events,
+        ReconstructionOutcome::NotCovered => Vec::new(),
     };
-    #[cfg(not(feature = "solana-reconstruct"))]
-    let events = emit_events;
 
     if events.is_empty() {
         return Ok(());
@@ -786,7 +691,6 @@ fn unix_to_pdt(ts: i64) -> Option<PrimitiveDateTime> {
 /// Builds the handle-derivation context for `slot` from the streamed sysvars,
 /// applying the zero-birth-entropy rule. Returns `None` until both the Clock and
 /// (in production mode) the SlotHashes value for the slot have been cached.
-#[cfg(feature = "solana-reconstruct")]
 fn reconstruct_context(
     config: &SolanaGrpcListenerConfig,
     slot: u64,
@@ -809,15 +713,14 @@ fn reconstruct_context(
     })
 }
 
-#[cfg(feature = "solana-reconstruct")]
 #[derive(Debug)]
 enum ReconstructionOutcome {
     Complete(Vec<crate::solana_adapter::SolanaHostEvent>),
     NotCovered,
 }
 
-/// Rebuilds the ingestable event set off-chain from a transaction's instructions,
-/// for `--reconstruct` mode (the swap that replaces emit-decoding). Covers
+/// Rebuilds the ingestable event set off-chain from a transaction's instructions.
+/// Covers
 /// `fhe_eval`: one compute event per step, plus an `acl_record_bound` allow-fetch
 /// for each `Durable` step (handle = the step result, EncryptedValue account =
 /// the step's `remaining_accounts` entry) — matching what the program's bind
@@ -827,7 +730,6 @@ enum ReconstructionOutcome {
 /// ordered instruction list and appended to the reconstructed event set. Missing
 /// slot derivation context only suppresses `fhe_eval` recomputation; lifecycle
 /// fetches do not need it.
-#[cfg(feature = "solana-reconstruct")]
 async fn reconstruct_events_for_insert(
     config: &SolanaGrpcListenerConfig,
     instructions: &[crate::solana_reconstruct::DecodedInstruction],
@@ -987,7 +889,6 @@ async fn reconstruct_events_for_insert(
     Ok(ReconstructionOutcome::Complete(events))
 }
 
-#[cfg(feature = "solana-reconstruct")]
 fn compute_result_handle(
     event: &crate::solana_adapter::SolanaHostEvent,
 ) -> Option<[u8; 32]> {
@@ -1038,7 +939,7 @@ mod ingest_cursor_tests {
     }
 }
 
-#[cfg(all(test, feature = "solana-reconstruct"))]
+#[cfg(test)]
 mod fhe_eval_acl_tests {
     use super::{
         fhe_eval_durable_encrypted_value, reconstruct_events_for_insert,
@@ -1082,7 +983,6 @@ mod fhe_eval_acl_tests {
             commitment: CommitmentLevel::Finalized,
             chain_id: 12345,
             zero_birth_entropy: true,
-            reconstruct: true,
         }
     }
 

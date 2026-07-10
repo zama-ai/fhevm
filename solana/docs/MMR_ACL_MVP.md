@@ -172,8 +172,8 @@ flowchart TD
 Ingestion is Yellowstone-only: the host-listener always rebuilds events from instruction data and never
 consumes emitted events. `emit_cpi!` is kept for one reason — the relayer proof service reads it over
 RPC to recover the handles of values made public at creation (those handles come from block randomness
-and appear in no instruction argument). Both the on-chain events and the now-unused emit-decode listener
-code are removed once Carbon indexing lands (fhevm-internal#1665, #1676).
+and appear in no instruction argument). The coprocessor emit-decode listener has been removed. The
+on-chain events can be removed once Carbon indexing lands (fhevm-internal#1665).
 
 ## Resource Bounds And Liveness
 

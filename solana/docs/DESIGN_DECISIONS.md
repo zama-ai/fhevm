@@ -897,8 +897,8 @@ gate can't activate the graph that produced the released handle.
 
 Separately, the EVM reorg substrate already implements the recommended shape: a block-status machine
 (`pending → finalized / orphaned` in the `host_chain_blocks_valid` table) plus ancestor catch-up in
-`cmd/block_history.rs`. The **Solana poller (`bin/solana_host_listener.rs`) polls at `confirmed` and
-inserts directly** — it is NOT wired into this substrate.
+`cmd/block_history.rs`. The Solana listener consumes Yellowstone transaction and sysvar updates at
+`finalized` and inserts directly; it is not wired into this substrate.
 
 Options considered:
 
@@ -1017,8 +1017,9 @@ Status: adopted (reconciliation) — stated so the debate doesn't assume more th
 
 - **KMS connector decrypt** is exercised in the harness, **not** full production KMS-connector wiring.
 - **Solana on-chain REORG handling is NOT wired** into the listener's block-status machine: the Solana
-  poller (`bin/solana_host_listener.rs`) polls at `confirmed` and inserts directly, bypassing the EVM
-  `host_chain_blocks_valid` / `block_history.rs` substrate. Reorg correctness is an **open gap** (DD-025).
+  listener consumes finalized Yellowstone updates and inserts directly, bypassing the EVM
+  `host_chain_blocks_valid` / `block_history.rs` substrate. Lower-commitment ingestion would still
+  require an explicit reorg design (DD-025).
 - **Single local validator** in the harness — real reorgs / finality lag are not exercised end-to-end.
 - **Input proof / transciphering** behind the coprocessor attestation is a PoC shortcut; real ZKPoK +
   transciphering is production work (DD-007).
