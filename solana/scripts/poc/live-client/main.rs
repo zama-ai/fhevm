@@ -613,38 +613,6 @@ fn trivial_encrypt_eval(
     Ok(())
 }
 
-fn build_historical_access_proof(
-    encrypted_value_account: [u8; 32],
-    peaks: &[[u8; 32]],
-    leaf_count: u64,
-    old_handle: [u8; 32],
-    subject: [u8; 32],
-) -> Result<(zama_solana_acl::MmrProof, Vec<u8>), Box<dyn std::error::Error>> {
-    let leaf = zama_solana_acl::historical_access_leaf_commitment(
-        encrypted_value_account,
-        0,
-        old_handle,
-        subject,
-    );
-    let leaves = [leaf];
-    let proof = zama_solana_acl::mmr_build_proof(&leaves, 0).ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "failed to build historical MMR proof for leaf 0",
-        )
-    })?;
-    if !zama_solana_acl::mmr_verify(peaks, leaf_count, leaf, &proof) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("historical MMR proof did not verify against live leaf_count={leaf_count}"),
-        )
-        .into());
-    }
-
-    let proof_bytes = proof_blob(MMR_MODE_HISTORICAL, &proof)?;
-    Ok((proof, proof_bytes))
-}
-
 fn proof_blob(
     mode: u8,
     proof: &zama_solana_acl::MmrProof,
@@ -652,95 +620,6 @@ fn proof_blob(
     let mut proof_bytes = vec![mode];
     proof_bytes.extend_from_slice(&borsh::to_vec(proof)?);
     Ok(proof_bytes)
-}
-
-fn locate_public_decrypt_leaf_index(
-    encrypted_value_account: [u8; 32],
-    leaves: &[[u8; 32]],
-    handle: [u8; 32],
-) -> Option<u64> {
-    leaves.iter().enumerate().find_map(|(index, leaf)| {
-        let index = index as u64;
-        let public_leaf =
-            zama_solana_acl::public_decrypt_leaf_commitment(encrypted_value_account, index, handle);
-        (*leaf == public_leaf).then_some(index)
-    })
-}
-
-fn build_public_decrypt_proof(
-    encrypted_value_account: [u8; 32],
-    value_account: &zama_host::EncryptedValue,
-    handle: [u8; 32],
-) -> Result<(zama_solana_acl::MmrProof, Vec<u8>), Box<dyn std::error::Error>> {
-    // The burned/disclosed lineage can hold MORE than one public-decrypt leaf for the
-    // SAME handle: a born-public burn (DD-036) seals one, and a later explicit
-    // `make_handle_public` seal appends another — the host has no live "already public"
-    // flag by design (lib.rs authorize_public docs), so it never dedups. Reconstruct one
-    // `MarkedPublic` per on-chain leaf so the reconstructed peaks/leaf_count match the
-    // live account. NOTE (PoC shortcut): this assumes the lineage is entirely
-    // same-handle public leaves, which holds for full-vertical's single-burn flow; a
-    // lineage that also carries supersede (historical) leaves cannot be rebuilt from the
-    // handle alone — route through the relayer proof service (`solana_proof::build_proof`)
-    // for that (tracked follow-up).
-    let events: Vec<zama_solana_acl::LineageEvent> =
-        std::iter::repeat(zama_solana_acl::LineageEvent::MarkedPublic { handle })
-            .take(value_account.leaf_count as usize)
-            .collect();
-    let reconstructed =
-        zama_solana_acl::reconstruct(encrypted_value_account, &events).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("failed to reconstruct public-decrypt lineage: {e:?}"),
-            )
-        })?;
-    let leaf_index =
-        locate_public_decrypt_leaf_index(encrypted_value_account, &reconstructed.leaves, handle)
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "failed to locate PublicDecryptLeaf in reconstructed lineage",
-                )
-            })?;
-    let proof = reconstructed
-        .build_verified_proof(&value_account.peaks, value_account.leaf_count, leaf_index)
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("public-decrypt lineage reconstruction diverged from live account: {e:?}"),
-            )
-        })?;
-    let shared = value_account.to_shared();
-    zama_solana_acl::authorize_public(encrypted_value_account, &shared, handle, &proof).map_err(
-        |e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("public-decrypt MMR proof did not verify against live lineage: {e:?}"),
-            )
-        },
-    )?;
-    let proof_bytes = proof_blob(MMR_MODE_PUBLIC, &proof)?;
-    Ok((proof, proof_bytes))
-}
-
-/// Proof source for the public + historical MMR proofs.
-/// - `Relayer` (default): fetch the inclusion proof from the running relayer proof service
-///   (`GET /internal/solana/mmr-proof`). This is what the e2e uses — the relayer, not the PoC,
-///   produces the accepted proof.
-/// - `Local`: synthesize the proof in-process by reconstructing the lineage from thin chain facts.
-///   Reserved for the born-public burned leg until the relayer consumes the host lifecycle batch,
-///   and for unit tests. Selected explicitly via `PROOF_SOURCE=local`.
-enum ProofSource {
-    Relayer,
-    Local,
-}
-
-fn proof_source() -> ProofSource {
-    match std::env::var("PROOF_SOURCE").ok().as_deref() {
-        Some("local") => ProofSource::Local,
-        // Anything else (unset or "relayer") is the relayer path: the e2e sources proofs from the
-        // relayer by construction, so the synthetic path is never reached without opting in.
-        _ => ProofSource::Relayer,
-    }
 }
 
 fn relayer_url() -> String {
@@ -766,9 +645,9 @@ struct RelayerMmrProofDto {
 
 /// Fetches a verified MMR inclusion proof from the relayer proof service, retrying a bounded number
 /// of times while the service's ingestion is still catching up to chain (`503 lagging`). REQUIRES
-/// `verified == true`; any other non-verified response fails loudly at once. Retrying HERE (not by
-/// re-invoking the client) keeps the caller idempotent — the historical `supersede` step appends
-/// on-chain leaves, so re-running it would corrupt the lineage.
+/// `verified == true`; every other response, including `500 corrupt_cache`, fails loudly at once.
+/// Retrying HERE (not by re-invoking the client) keeps the caller idempotent — the historical
+/// `supersede` step appends on-chain leaves, so re-running it would corrupt the lineage.
 fn fetch_relayer_mmr_proof(
     encrypted_value: &Pubkey,
     leaf_index: u64,
@@ -777,7 +656,10 @@ fn fetch_relayer_mmr_proof(
     for attempt in 1..=MAX_ATTEMPTS {
         match fetch_relayer_mmr_proof_once(encrypted_value, leaf_index) {
             Ok(proof) => return Ok(proof),
-            Err(e) if e.to_string().contains("lagging") && attempt < MAX_ATTEMPTS => {
+            Err(e)
+                if e.to_string().starts_with("relayer proof lagging:")
+                    && attempt < MAX_ATTEMPTS =>
+            {
                 eprintln!(
                     "relayer proof lagging (attempt {attempt}/{MAX_ATTEMPTS}); retrying in 2s"
                 );
@@ -803,8 +685,21 @@ fn fetch_relayer_mmr_proof_once(
     let body: RelayerMmrProofResponse = match ureq::get(&url).call() {
         Ok(resp) => resp.into_json()?,
         Err(ureq::Error::Status(code, resp)) => {
-            let status = resp.into_string().unwrap_or_default();
-            return Err(format!("relayer proof HTTP {code}: {status}").into());
+            let error_body: RelayerMmrProofResponse = resp.into_json().map_err(|e| {
+                format!("relayer proof HTTP {code} returned an invalid error body: {e}")
+            })?;
+            if code == 503 && error_body.status == "lagging" {
+                return Err(format!(
+                    "relayer proof lagging: HTTP {code}, leaf_count={}",
+                    error_body.leaf_count
+                )
+                .into());
+            }
+            return Err(format!(
+                "relayer proof HTTP {code}: status={}, leaf_count={}",
+                error_body.status, error_body.leaf_count
+            )
+            .into());
         }
         Err(e) => return Err(format!("relayer proof request to {url} failed: {e}").into()),
     };
@@ -816,6 +711,13 @@ fn fetch_relayer_mmr_proof_once(
         .into());
     }
     let dto = body.mmr_proof.expect("checked is_some above");
+    if dto.leaf_index != leaf_index {
+        return Err(format!(
+            "relayer proof leaf_index {} does not match requested {leaf_index}",
+            dto.leaf_index
+        )
+        .into());
+    }
     let siblings = dto
         .siblings
         .iter()
@@ -838,31 +740,23 @@ fn public_decrypt_proof_step(
     let encrypted_value = public_proof_encrypted_value_from_env()?;
     let value_account = fetch_encrypted_value(host, encrypted_value)?;
     let value_key = value_account.value_key();
-    let (proof, proof_bytes) = match proof_source() {
-        ProofSource::Local => {
-            build_public_decrypt_proof(encrypted_value.to_bytes(), &value_account, handle)?
-        }
-        ProofSource::Relayer => {
-            // Chain facts (peaks/leaf_count/current handle) come from the live account; the proof
-            // itself comes from the relayer. The public-decrypt leaf is the lineage's last leaf.
-            let leaf_index = value_account
-                .leaf_count
-                .checked_sub(1)
-                .ok_or("public-decrypt lineage has no leaves")?;
-            let proof = fetch_relayer_mmr_proof(&encrypted_value, leaf_index)?;
-            // Fail-fast: the relayer proof must authorize this handle against the live lineage
-            // before it is handed to the KMS / on-chain consume steps.
-            let shared = value_account.to_shared();
-            zama_solana_acl::authorize_public(encrypted_value.to_bytes(), &shared, handle, &proof)
-                .map_err(|e| {
-                    Box::<dyn std::error::Error>::from(format!(
-                        "relayer public-decrypt proof did not verify against live lineage: {e:?}"
-                    ))
-                })?;
-            let proof_bytes = proof_blob(MMR_MODE_PUBLIC, &proof)?;
-            (proof, proof_bytes)
-        }
-    };
+    // Chain facts (peaks/leaf_count/current handle) come from the live account; the proof itself
+    // comes from the relayer. The public-decrypt leaf is the lineage's last leaf.
+    let leaf_index = value_account
+        .leaf_count
+        .checked_sub(1)
+        .ok_or("public-decrypt lineage has no leaves")?;
+    let proof = fetch_relayer_mmr_proof(&encrypted_value, leaf_index)?;
+    // Fail-fast: the relayer proof must authorize this handle against the live lineage before it is
+    // handed to the KMS / on-chain consume steps.
+    let shared = value_account.to_shared();
+    zama_solana_acl::authorize_public(encrypted_value.to_bytes(), &shared, handle, &proof)
+        .map_err(|e| {
+            Box::<dyn std::error::Error>::from(format!(
+                "relayer public-decrypt proof did not verify against live lineage: {e:?}"
+            ))
+        })?;
+    let proof_bytes = proof_blob(MMR_MODE_PUBLIC, &proof)?;
 
     println!("PUB H 0x{}", hex(&handle));
     println!("PUB encryptedValueAccount {encrypted_value}");
@@ -936,41 +830,29 @@ fn historical_supersede_step(
             )?;
             let value_account = fetch_encrypted_value(host, target.encrypted_value)?;
             let subject = payer.pubkey().to_bytes();
-            let (proof, proof_bytes) = match proof_source() {
-                ProofSource::Local => build_historical_access_proof(
-                    target.encrypted_value.to_bytes(),
-                    &value_account.peaks,
-                    value_account.leaf_count,
-                    old_handle,
-                    subject,
-                )?,
-                ProofSource::Relayer => {
-                    // The e2e historical lineage has exactly one historical leaf, at index 0.
-                    let proof = fetch_relayer_mmr_proof(&target.encrypted_value, 0)?;
-                    // Fail-fast: the relayer proof must verify against the live peaks for the
-                    // historical-access leaf (old handle bound to this subject).
-                    let leaf = zama_solana_acl::historical_access_leaf_commitment(
-                        target.encrypted_value.to_bytes(),
-                        0,
-                        old_handle,
-                        subject,
-                    );
-                    if !zama_solana_acl::mmr_verify(
-                        &value_account.peaks,
-                        value_account.leaf_count,
-                        leaf,
-                        &proof,
-                    ) {
-                        return Err(format!(
-                            "relayer historical proof did not verify against live leaf_count={}",
-                            value_account.leaf_count
-                        )
-                        .into());
-                    }
-                    let proof_bytes = proof_blob(MMR_MODE_HISTORICAL, &proof)?;
-                    (proof, proof_bytes)
-                }
-            };
+            // The e2e historical lineage has exactly one historical leaf, at index 0.
+            let proof = fetch_relayer_mmr_proof(&target.encrypted_value, 0)?;
+            // Fail-fast: the relayer proof must verify against the live peaks for the
+            // historical-access leaf (old handle bound to this subject).
+            let leaf = zama_solana_acl::historical_access_leaf_commitment(
+                target.encrypted_value.to_bytes(),
+                0,
+                old_handle,
+                subject,
+            );
+            if !zama_solana_acl::mmr_verify(
+                &value_account.peaks,
+                value_account.leaf_count,
+                leaf,
+                &proof,
+            ) {
+                return Err(format!(
+                    "relayer historical proof did not verify against live leaf_count={}",
+                    value_account.leaf_count
+                )
+                .into());
+            }
+            let proof_bytes = proof_blob(MMR_MODE_HISTORICAL, &proof)?;
 
             println!("HIST H_old 0x{}", hex(&old_handle));
             println!("HIST H_new 0x{}", hex(&result.handle));
@@ -2887,162 +2769,4 @@ fn initialize_mint(
         acl.data.len()
     );
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn historical_proof_for_first_supersession_verifies() {
-        let encrypted_value_account = [0xAC; 32];
-        let old_handle = [0x10; 32];
-        let subject = [0x01; 32];
-        let leaf = zama_solana_acl::historical_access_leaf_commitment(
-            encrypted_value_account,
-            0,
-            old_handle,
-            subject,
-        );
-        let mut peaks = Vec::new();
-        let mut leaf_count = 0;
-        zama_solana_acl::mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
-
-        let (proof, proof_bytes) = build_historical_access_proof(
-            encrypted_value_account,
-            &peaks,
-            leaf_count,
-            old_handle,
-            subject,
-        )
-        .unwrap();
-
-        assert_eq!(proof.leaf_index, 0);
-        assert!(proof.siblings.is_empty());
-        assert_eq!(proof_bytes[0], MMR_MODE_HISTORICAL);
-        assert!(zama_solana_acl::mmr_verify(
-            &peaks, leaf_count, leaf, &proof
-        ));
-    }
-
-    #[test]
-    fn public_decrypt_proof_for_made_public_handle_verifies() {
-        let encrypted_value_account = [0xAC; 32];
-        let handle = [0x20; 32];
-        let events = [zama_solana_acl::LineageEvent::MarkedPublic { handle }];
-        let reconstructed = zama_solana_acl::reconstruct(encrypted_value_account, &events).unwrap();
-        let proof = reconstructed.build_proof(0).unwrap();
-        let mut value = zama_solana_acl::EncryptedValue {
-            current_handle: handle,
-            leaf_count: reconstructed.leaf_count,
-            peaks: reconstructed.peaks.clone(),
-            ..Default::default()
-        };
-        value.subjects = vec![[0x01; 32]];
-        let host_value = zama_host::EncryptedValue {
-            acl_domain_key: Pubkey::new_from_array(value.acl_domain_key),
-            app_account: Pubkey::new_from_array(value.app_account),
-            encrypted_value_label: value.encrypted_value_label,
-            current_handle: value.current_handle,
-            subjects: value
-                .subjects
-                .iter()
-                .copied()
-                .map(Pubkey::new_from_array)
-                .collect(),
-            leaf_count: value.leaf_count,
-            peaks: value.peaks.clone(),
-            bump: value.bump,
-        };
-
-        let (built, proof_bytes) =
-            build_public_decrypt_proof(encrypted_value_account, &host_value, handle).unwrap();
-        assert_eq!(built, proof);
-        assert_eq!(proof_bytes[0], MMR_MODE_PUBLIC);
-        assert!(
-            zama_solana_acl::authorize_public(encrypted_value_account, &value, handle, &built)
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn public_decrypt_proof_for_twice_public_handle_verifies() {
-        // Regression for the full-vertical born-public burned handle: it is made public
-        // TWICE (born-public burn per DD-036, then an explicit make_handle_public seal),
-        // so the on-chain lineage has leaf_count == 2 for the SAME handle. A single-event
-        // reconstruction yields leaf_count == 1 and diverges (PeaksDiverged); the proof
-        // builder must reconstruct one MarkedPublic per on-chain leaf.
-        let encrypted_value_account = [0xAC; 32];
-        let handle = [0x21; 32];
-        let events = [
-            zama_solana_acl::LineageEvent::MarkedPublic { handle },
-            zama_solana_acl::LineageEvent::MarkedPublic { handle },
-        ];
-        let reconstructed = zama_solana_acl::reconstruct(encrypted_value_account, &events).unwrap();
-        assert_eq!(reconstructed.leaf_count, 2);
-        let mut value = zama_solana_acl::EncryptedValue {
-            current_handle: handle,
-            leaf_count: reconstructed.leaf_count,
-            peaks: reconstructed.peaks.clone(),
-            ..Default::default()
-        };
-        value.subjects = vec![[0x01; 32]];
-        let host_value = zama_host::EncryptedValue {
-            acl_domain_key: Pubkey::new_from_array(value.acl_domain_key),
-            app_account: Pubkey::new_from_array(value.app_account),
-            encrypted_value_label: value.encrypted_value_label,
-            current_handle: value.current_handle,
-            subjects: value
-                .subjects
-                .iter()
-                .copied()
-                .map(Pubkey::new_from_array)
-                .collect(),
-            leaf_count: value.leaf_count,
-            peaks: value.peaks.clone(),
-            bump: value.bump,
-        };
-
-        // Regressed as PeaksDiverged before the leaf_count-aware reconstruction fix.
-        let (built, proof_bytes) =
-            build_public_decrypt_proof(encrypted_value_account, &host_value, handle).unwrap();
-        assert_eq!(proof_bytes[0], MMR_MODE_PUBLIC);
-        assert!(
-            zama_solana_acl::authorize_public(encrypted_value_account, &value, handle, &built)
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn historical_leaf_is_rejected_by_public_verify() {
-        let encrypted_value_account = [0xAC; 32];
-        let old_handle = [0x10; 32];
-        let subject = [0x01; 32];
-        let historical_leaf = zama_solana_acl::historical_access_leaf_commitment(
-            encrypted_value_account,
-            0,
-            old_handle,
-            subject,
-        );
-        let mut peaks = Vec::new();
-        let mut leaf_count = 0;
-        zama_solana_acl::mmr_append(&mut peaks, &mut leaf_count, historical_leaf).unwrap();
-        let proof = zama_solana_acl::mmr_build_proof(&[historical_leaf], 0).unwrap();
-        let proof_bytes = proof_blob(MMR_MODE_HISTORICAL, &proof).unwrap();
-        let value = zama_solana_acl::EncryptedValue {
-            current_handle: [0x11; 32],
-            leaf_count,
-            peaks,
-            ..Default::default()
-        };
-
-        assert_eq!(proof_bytes[0], MMR_MODE_HISTORICAL);
-        assert!(zama_solana_acl::authorize_public(
-            encrypted_value_account,
-            &value,
-            old_handle,
-            &proof
-        )
-        .is_err());
-    }
 }
