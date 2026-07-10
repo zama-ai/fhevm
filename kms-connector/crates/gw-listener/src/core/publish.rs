@@ -11,7 +11,8 @@ use connector_utils::{
     },
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest, UserDecryptionRequest_0 as UserDecryptionRequest,
+    PublicDecryptionRequest_0 as PublicDecryptionRequest,
+    UserDecryptionRequest_0 as UserDecryptionRequest,
     UserDecryptionRequest_1 as UserDecryptionRequestV2,
 };
 use fhevm_host_bindings::{
