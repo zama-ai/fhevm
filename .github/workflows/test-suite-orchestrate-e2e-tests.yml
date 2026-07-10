@@ -166,6 +166,8 @@ jobs:
       coprocessor-tfhe-worker-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
       coprocessor-tx-sender-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      coprocessor-consensus-detector-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
+      coprocessor-upgrade-controller-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       listener-core-version: ${{ steps.create-e2e-tests-input.outputs.listener-core-version }}
       connector-db-migration-version: ${{ steps.create-e2e-tests-input.outputs.connector-db-migration-version }}
       connector-gw-listener-version: ${{ steps.create-e2e-tests-input.outputs.connector-gw-listener-version }}
@@ -194,6 +196,8 @@ jobs:
               ["coprocessor-docker-build", "tfhe_worker_build_result", "coprocessor-tfhe-worker-version"],
               ["coprocessor-docker-build", "tx_sender_build_result", "coprocessor-tx-sender-version"],
               ["coprocessor-docker-build", "zkproof_worker_build_result", "coprocessor-zkproof-worker-version"],
+              ["coprocessor-docker-build", "consensus_detector_build_result", "coprocessor-consensus-detector-version"],
+              ["coprocessor-docker-build", "upgrade_controller_build_result", "coprocessor-upgrade-controller-version"],
               ["listener-docker-build", "build_result", "listener-core-version"],
               ["kms-connector-docker-build", "db_migration_build_result", "connector-db-migration-version"],
               ["kms-connector-docker-build", "gw_listener_build_result", "connector-gw-listener-version"],
@@ -250,6 +254,8 @@ jobs:
       coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
+      coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
       connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
@@ -360,6 +366,8 @@ jobs:
       coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
+      coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
       connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
