@@ -54,29 +54,6 @@ pub(super) fn assert_not_paused(config: &Account<HostConfig>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "poc")]
-pub(super) fn assert_test_shim_authority(
-    config: &Account<HostConfig>,
-    authority: Pubkey,
-) -> Result<()> {
-    assert_not_paused(config)?;
-    // Confine the `test_emit_*` event shims to the local PoC chain, matching the
-    // confinement already applied to the zero birth-entropy fallback
-    // (state.rs `zero_birth_entropy_allowed`). This prevents an admin on a
-    // deployed chain from emitting forged protocol events that a downstream
-    // host-listener/indexer could ingest as genuine.
-    require!(
-        config.test_shims_enabled && config.is_local_poc_chain(),
-        ZamaHostError::TestShimsDisabled
-    );
-    require_keys_eq!(
-        config.test_authority,
-        authority,
-        ZamaHostError::TestShimAuthorityMismatch
-    );
-    Ok(())
-}
-
 pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
     #[cfg(feature = "emit-events")]
     emit!(HostConfigUpdatedEvent {

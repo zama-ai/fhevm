@@ -47,11 +47,11 @@ pub struct InitializeHostConfigArgs {
     pub decryption_contract: [u8; 20],
     /// Authority allowed to commit ciphertext material readiness.
     pub material_authority: Pubkey,
-    /// Authority allowed to call `test_emit_*` event shims.
+    /// Reserved legacy test authority; retained for account-layout stability.
     pub test_authority: Pubkey,
     /// Whether the mock encrypted-input bind path is enabled.
     pub mock_input_enabled: bool,
-    /// Whether test event shims are enabled.
+    /// Whether the local zero-birth-entropy fallback is enabled.
     pub test_shims_enabled: bool,
     /// Whether persistent grants must include a deny-list witness.
     pub grant_deny_list_enabled: bool,

@@ -4,7 +4,8 @@
 //! `OUT_DIR`, so it is not reachable by rustfmt or Prettier. Consumers should
 //! import this module instead of parsing Anchor event bytes directly.
 
-pub mod zama_host_events {
+#[allow(dead_code)]
+mod zama_host_events {
     include!(concat!(env!("OUT_DIR"), "/zama_host_events.rs"));
 }
 
@@ -21,11 +22,10 @@ pub use solana_abi_schema_hashes::{
     SolanaAbiSchema, SOLANA_ABI_SCHEMAS, SOLANA_EVENT_VERSIONS,
 };
 pub use zama_host_events::{
-    anchor_event_discriminator, decode_anchor_cpi_event, decode_anchor_event,
     FheBinaryOpCode, FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent,
     FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
     FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, TrivialEncryptEvent,
-    ZamaHostEvent, ANCHOR_EVENT_IX_TAG_LE, EVENT_VERSION,
+    EVENT_VERSION,
 };
 pub use zama_host_instructions::{
     decode_zama_host_instruction, ZamaHostInstruction,
