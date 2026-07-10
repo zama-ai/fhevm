@@ -286,6 +286,8 @@ edv="$(echo "$er" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['
 # Usage: assert_decrypt LABEL HANDLE ACL EXPECTED_VALUE  (use "lt:N" to assert result < N)
 assert_decrypt() {
   local label="$1" handle="$2" acl="$3" expected="$4"
+  local public_decrypt_expected="$expected"
+  [[ "$expected" == lt:* ]] && public_decrypt_expected=""
   local hh="${handle#0x}"
   local i row r dv
   for i in $(seq 1 30); do
@@ -295,7 +297,7 @@ assert_decrypt() {
     [ "$i" = 30 ] && fail "$label SNS commit timed out"
     sleep 6
   done
-  run_public_decrypt_with_proof "$label" "$handle" "$acl" "$expected"
+  run_public_decrypt_with_proof "$label" "$handle" "$acl" "$public_decrypt_expected"
   r="$PUBLIC_DECRYPT_JSON"
   dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
   if [[ "$expected" == lt:* ]]; then
