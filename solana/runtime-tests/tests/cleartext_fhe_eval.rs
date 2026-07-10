@@ -455,6 +455,7 @@ fn malformed_plans_are_rejected() {
     let bool_handle = handle(0, BOOL);
     let u8_handle = handle(1, U8);
     let u16_handle = handle(2, U16);
+    let unsupported_handle = handle(3, 1);
     let valid_inputs = inputs([
         (bool_handle, BOOL, 1),
         (u8_handle, U8, 7),
@@ -521,6 +522,18 @@ fn malformed_plans_are_rejected() {
                 output: local(),
             }]),
             "invalid ternary operand types",
+        ),
+        (
+            "unsupported ternary output type",
+            args(vec![FheEvalStep::Ternary {
+                op: zama_host::FheTernaryOpCode::IfThenElse,
+                control: durable(bool_handle),
+                if_true: durable(unsupported_handle),
+                if_false: durable(unsupported_handle),
+                output_fhe_type: 1,
+                output: local(),
+            }]),
+            "invalid ternary operation",
         ),
         (
             "divisor truncates to zero",

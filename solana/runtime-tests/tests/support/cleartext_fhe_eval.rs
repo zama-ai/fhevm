@@ -102,6 +102,10 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 output_fhe_type,
                 ..
             } => {
+                canonical(
+                    assert_supported_fhe_type(*output_fhe_type),
+                    "ternary operation",
+                )?;
                 let control = resolve_encrypted(control, inputs, &produced)?;
                 let if_true = resolve_encrypted(if_true, inputs, &produced)?;
                 let if_false = resolve_encrypted(if_false, inputs, &produced)?;

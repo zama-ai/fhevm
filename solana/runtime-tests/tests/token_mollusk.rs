@@ -139,21 +139,18 @@ fn decode_fhe_eval_args(data: &[u8]) -> Option<host::FheEvalArgs> {
     host::FheEvalArgs::deserialize(&mut &*payload).ok()
 }
 
-fn decode_fhe_result_handle(data: &[u8]) -> Option<[u8; 32]> {
-    decode_anchor_event::<host::FheBinaryOpEvent>(data)
-        .map(|event| event.result)
-        .or_else(|| decode_anchor_event::<host::FheTernaryOpEvent>(data).map(|event| event.result))
-        .or_else(|| {
-            decode_anchor_event::<host::TrivialEncryptEvent>(data).map(|event| event.result)
-        })
-        .or_else(|| decode_anchor_event::<host::FheRandEvent>(data).map(|event| event.result))
-        .or_else(|| {
-            decode_anchor_event::<host::FheRandBoundedEvent>(data).map(|event| event.result)
-        })
-        .or_else(|| decode_anchor_event::<host::FheUnaryOpEvent>(data).map(|event| event.result))
-        .or_else(|| decode_anchor_event::<host::FheSumEvent>(data).map(|event| event.result))
-        .or_else(|| decode_anchor_event::<host::FheIsInEvent>(data).map(|event| event.result))
-        .or_else(|| decode_anchor_event::<host::FheMulDivEvent>(data).map(|event| event.result))
+fn eval_step_output(step: &host::FheEvalStep) -> &host::FheEvalOutput {
+    match step {
+        host::FheEvalStep::Binary { output, .. }
+        | host::FheEvalStep::Ternary { output, .. }
+        | host::FheEvalStep::TrivialEncrypt { output, .. }
+        | host::FheEvalStep::Rand { output, .. }
+        | host::FheEvalStep::Unary { output, .. }
+        | host::FheEvalStep::RandBounded { output, .. }
+        | host::FheEvalStep::Sum { output, .. }
+        | host::FheEvalStep::IsIn { output, .. }
+        | host::FheEvalStep::MulDiv { output, .. } => output,
+    }
 }
 
 fn host_config_account(admin: Pubkey, coprocessor_signer: [u8; 20]) -> Account {
@@ -1072,16 +1069,29 @@ fn mollusk_confidential_transfer_updates_lineages_and_cleartext_balances() {
             TypedClearValue::from_u64(BALANCE_FHE_TYPE, 500),
         ]
     );
-    let result_handles = result
-        .inner_instructions
+    // Durable cleartext binding comes from the canonical output descriptors and resulting account
+    // state, not optional compute events (valid frames above eight steps emit none).
+    let durable_handles_by_index = HashMap::from([
+        (0_u16, alice_balance.current_handle),
+        (1_u16, transferred.current_handle),
+        (2_u16, bob_balance.current_handle),
+    ]);
+    let cleartext_by_handle = eval_args[0]
+        .steps
         .iter()
-        .filter_map(|inner| decode_fhe_result_handle(&inner.instruction.data))
-        .collect::<Vec<_>>();
-    assert_eq!(result_handles.len(), clear_outputs.len());
-    let cleartext_by_handle = result_handles
-        .into_iter()
         .zip(clear_outputs)
+        .filter_map(|(step, value)| match eval_step_output(step) {
+            host::FheEvalOutput::AllowedLocal => None,
+            host::FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index,
+                ..
+            } => Some((
+                durable_handles_by_index[output_encrypted_value_index],
+                value,
+            )),
+        })
         .collect::<ClearInputs>();
+    assert_eq!(cleartext_by_handle.len(), 3);
     assert_eq!(
         cleartext_by_handle[&alice_balance.current_handle],
         TypedClearValue::from_u64(BALANCE_FHE_TYPE, 600)
