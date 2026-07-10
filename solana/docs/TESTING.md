@@ -50,6 +50,14 @@ cargo test --workspace
 cargo test -p zama-solana-runtime-tests --test host_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test token_mollusk -- --nocapture
 
+# Pure operator semantics and the explicit host support contract (no SBF, Mollusk, or TFHE):
+cargo test -p zama-solana-runtime-tests --test cleartext_fhe_eval
+cargo test -p zama-solana-runtime-tests --test operator_conformance
+
+# Select one operator/type/operand-shape contract with ordinary Cargo filtering:
+cargo test -p zama-solana-runtime-tests --test operator_conformance \
+  'binary::add::scalar::u128' -- --exact
+
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
