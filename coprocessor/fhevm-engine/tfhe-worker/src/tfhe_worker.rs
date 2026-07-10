@@ -1104,12 +1104,22 @@ async fn query_dependency_metadata<'a>(
         let Some(candidates) = computation_candidates.get(handle) else {
             continue;
         };
-        if let Some(resolved) = resolve_dependency_metadata(
+        let resolved = resolve_dependency_metadata(
             candidates,
             &ancestry,
             branch_cutover_block,
             settled_height,
-        )? {
+        )
+        .map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!(
+                    "failed to resolve computation dependency {}: {error}",
+                    hex::encode(handle)
+                ),
+            )
+        })?;
+        if let Some(resolved) = resolved {
             metadata.insert(handle.clone(), resolved);
         }
     }
@@ -1131,12 +1141,22 @@ async fn query_dependency_metadata<'a>(
         let Some(candidates) = allowed_handle_candidates.get(handle) else {
             continue;
         };
-        if let Some(resolved) = resolve_dependency_metadata(
+        let resolved = resolve_dependency_metadata(
             candidates,
             &ancestry,
             branch_cutover_block,
             settled_height,
-        )? {
+        )
+        .map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!(
+                    "failed to resolve ACL dependency {}: {error}",
+                    hex::encode(handle)
+                ),
+            )
+        })?;
+        if let Some(resolved) = resolved {
             metadata.insert(handle.clone(), resolved);
         }
     }
@@ -1258,18 +1278,44 @@ fn resolve_dependency_metadata(
                 })
         })
         .collect::<Vec<_>>();
-    let settled_candidate = settled_candidates
+    let newest_settled_height = settled_candidates
         .iter()
-        .copied()
-        .max_by_key(|candidate| candidate.block_number.unwrap_or(i64::MIN));
-    if let Some(candidate) = settled_candidate {
+        .filter_map(|candidate| candidate.block_number)
+        .max();
+    if let Some(newest_settled_height) = newest_settled_height {
+        let mut newest_producer_block_hashes = settled_candidates
+            .iter()
+            .filter(|candidate| candidate.block_number == Some(newest_settled_height))
+            .map(|candidate| candidate.producer_block_hash.as_slice())
+            .collect::<Vec<_>>();
+        newest_producer_block_hashes.sort_unstable();
+        newest_producer_block_hashes.dedup();
+        if newest_producer_block_hashes.len() != 1 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "multiple settled producers at block height {newest_settled_height}: {}",
+                    newest_producer_block_hashes
+                        .iter()
+                        .map(hex::encode)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ));
+        }
+
+        let producer_block_hash = newest_producer_block_hashes[0].to_vec();
+        let mut settled_producer_block_hashes = settled_candidates
+            .into_iter()
+            .map(|candidate| candidate.producer_block_hash.clone())
+            .collect::<Vec<_>>();
+        settled_producer_block_hashes.sort_unstable();
+        settled_producer_block_hashes.dedup();
+
         return Ok(Some(DependencyMetadata {
-            producer_block_hash: candidate.producer_block_hash.clone(),
-            block_number: candidate.block_number,
-            settled_producer_block_hashes: settled_candidates
-                .into_iter()
-                .map(|candidate| candidate.producer_block_hash.clone())
-                .collect(),
+            producer_block_hash,
+            block_number: Some(newest_settled_height),
+            settled_producer_block_hashes,
         }));
     }
 
@@ -4016,6 +4062,58 @@ mod tests {
         assert_eq!(metadata.producer_block_hash, vec![0xAA]);
         assert_eq!(metadata.block_number, Some(90));
         assert_eq!(metadata.settled_producer_block_hashes, vec![vec![0xAA]]);
+    }
+
+    #[test]
+    fn resolve_dependency_metadata_rejects_distinct_settled_producers_at_same_height() {
+        let candidates = vec![
+            ProducerCandidate {
+                block_number: Some(90),
+                producer_block_hash: vec![0xBB],
+            },
+            ProducerCandidate {
+                block_number: Some(90),
+                producer_block_hash: vec![0xAA],
+            },
+        ];
+
+        let error = resolve_dependency_metadata(&candidates, &HashMap::new(), 0, 100)
+            .expect_err("conflicting settled producers must fail closed");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(
+            error.to_string(),
+            "multiple settled producers at block height 90: aa, bb"
+        );
+    }
+
+    #[test]
+    fn resolve_dependency_metadata_deduplicates_equivalent_settled_metadata() {
+        let candidates = vec![
+            ProducerCandidate {
+                block_number: Some(80),
+                producer_block_hash: vec![0xCC],
+            },
+            ProducerCandidate {
+                block_number: Some(90),
+                producer_block_hash: vec![0xAA],
+            },
+            ProducerCandidate {
+                block_number: Some(90),
+                producer_block_hash: vec![0xAA],
+            },
+        ];
+
+        let metadata = resolve_dependency_metadata(&candidates, &HashMap::new(), 0, 100)
+            .expect("duplicate metadata should resolve")
+            .expect("settled candidate should resolve");
+
+        assert_eq!(metadata.producer_block_hash, vec![0xAA]);
+        assert_eq!(metadata.block_number, Some(90));
+        assert_eq!(
+            metadata.settled_producer_block_hashes,
+            vec![vec![0xAA], vec![0xCC]]
+        );
     }
 
     #[test]

@@ -104,8 +104,8 @@ pub async fn advance_settled_height(
 
     let first_post_cutover_block = branch_cutover_block.max(0);
     let first_block_to_check = current.saturating_add(1).max(first_post_cutover_block);
-    // `pbs_computations_branch` has no `is_error` terminal state; incomplete
-    // PBS rows are the only PBS rows that can block settlement.
+    // Terminal PBS errors are settled just like terminal computation errors:
+    // they remain auditable and recoverable, but cannot freeze the frontier.
     let rows = sqlx::query_scalar!(
         r#"
         SELECT b.block_number AS "block_number!"
@@ -130,6 +130,7 @@ pub async fn advance_settled_height(
                  AND p.block_number = b.block_number
                  AND p.block_hash = b.block_hash
                  AND p.is_completed = FALSE
+                 AND p.is_error = FALSE
                  AND NOT EXISTS (
                      SELECT 1
                      FROM computations_branch pc
@@ -307,6 +308,24 @@ pub async fn enqueue_s3_canonical_repair(
                   OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
                 THEN 0
                 ELSE s3_canonical_repair_queue.attempts
+            END,
+            status = CASE
+                WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                  OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                THEN 'pending'
+                ELSE s3_canonical_repair_queue.status
+            END,
+            last_error = CASE
+                WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                  OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                THEN NULL
+                ELSE s3_canonical_repair_queue.last_error
+            END,
+            last_error_at = CASE
+                WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                  OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                THEN NULL
+                ELSE s3_canonical_repair_queue.last_error_at
             END,
             locked_at = NULL,
             updated_at = NOW()

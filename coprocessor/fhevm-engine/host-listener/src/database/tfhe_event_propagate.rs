@@ -553,6 +553,36 @@ impl Database {
                               AND actual.column_name = required.column_name
                         )
                     )
+                    AND NOT EXISTS (
+                        SELECT required.column_name
+                        FROM (VALUES
+                            ('is_error'),
+                            ('error_message'),
+                            ('error_at')
+                        ) AS required(column_name)
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns actual
+                            WHERE actual.table_schema = 'public'
+                              AND actual.table_name = 'pbs_computations_branch'
+                              AND actual.column_name = required.column_name
+                        )
+                    )
+                    AND NOT EXISTS (
+                        SELECT required.column_name
+                        FROM (VALUES
+                            ('status'),
+                            ('last_error'),
+                            ('last_error_at')
+                        ) AS required(column_name)
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns actual
+                            WHERE actual.table_schema = 'public'
+                              AND actual.table_name = 's3_canonical_repair_queue'
+                              AND actual.column_name = required.column_name
+                        )
+                    )
                 ) AS "ready!"
                 "#,
             )
@@ -1409,12 +1439,9 @@ impl Database {
             return Ok(());
         }
 
-        // This cleanup is part of the same finalization transaction that marks
-        // blocks orphaned. Once host_chain_blocks_valid exposes an orphaned
-        // branch, branch-scoped rows for that branch should no longer be
-        // visible to readers. If the listener is down, finalization does not
-        // advance; catchup reruns this idempotent cleanup when it later marks
-        // the branch orphaned.
+        // Finalization exposes the orphan marker and enqueues this durable,
+        // idempotent cleanup before committing. Readers exclude orphan-marked
+        // rows immediately, while settlement waits for this job to complete.
         //
         // Capture producer tuples whose ciphertext bytes were actually
         // produced on an orphaned branch. ACL/PBS rows can now be orphaned by
@@ -1582,6 +1609,26 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
+        // The completed PBS row is the SNS worker's provenance witness for
+        // inserting a digest. Delete it first: an in-flight SNS transaction
+        // either commits its digest before this DELETE acquires the row lock,
+        // in which case the digest DELETE below removes it, or observes the
+        // missing witness and cannot resurrect the digest afterwards.
+        sqlx::query!(
+            r#"
+            DELETE FROM pbs_computations_branch
+             WHERE host_chain_id = $1
+               AND (
+                    block_hash = ANY($2::bytea[])
+                    OR producer_block_hash = ANY($2::bytea[])
+               )
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
         sqlx::query!(
             r#"
             DELETE FROM ciphertext_digest_branch
@@ -1597,7 +1644,7 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
-        // Keep queue and digest lock ordering aligned with the SNS uploader:
+        // Keep digest and queue lock ordering aligned with the SNS uploader:
         // digest first, queue second. The survivor repair pass below repoints
         // affected handles atomically before this cleanup transaction commits.
         sqlx::query!(
@@ -1618,21 +1665,6 @@ impl Database {
         sqlx::query!(
             r#"
             DELETE FROM allowed_handles_branch
-             WHERE host_chain_id = $1
-               AND (
-                    block_hash = ANY($2::bytea[])
-                    OR producer_block_hash = ANY($2::bytea[])
-               )
-            "#,
-            self.chain_id.as_i64(),
-            orphaned_block_hashes as _,
-        )
-        .execute(tx.deref_mut())
-        .await?;
-
-        sqlx::query!(
-            r#"
-            DELETE FROM pbs_computations_branch
              WHERE host_chain_id = $1
                AND (
                     block_hash = ANY($2::bytea[])
@@ -2050,12 +2082,12 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
-        // 2. Finalize this block or orphan the competing observed branch, then
-        // clean branch-scoped computations/ACL/PBS/digest/bytes for that
-        // orphan branch in the same transaction. This path just recorded the
-        // block it finalizes (ingestion of a finalized block), so a linkage
-        // refusal (None) means the recorded row genuinely contradicts the
-        // finalized predecessor: skip cleanup and leave it for the
+        // Finalize this block or orphan the competing observed branch, then
+        // enqueue destructive cleanup for the async worker. Keeping S3 and
+        // branch-table cleanup outside this ingestion transaction prevents
+        // uploader-held locks from stalling block ingestion. This path just
+        // recorded the block it finalizes, so a linkage refusal (None) means
+        // the row contradicts the finalized predecessor; leave it for the
         // finalization loop to sort out.
         if finalized {
             if let Some(orphaned_hashes) = self
@@ -2066,8 +2098,6 @@ impl Database {
                 )
                 .await?
             {
-                self.cleanup_orphaned_branch_state(tx, &orphaned_hashes)
-                    .await?;
                 self.enqueue_orphaned_branch_cleanup(
                     tx,
                     block_summary.number as i64,

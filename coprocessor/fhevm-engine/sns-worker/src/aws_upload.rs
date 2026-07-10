@@ -2,7 +2,8 @@ use crate::metrics::{
     AWS_UPLOAD_FAILURE_COUNTER, AWS_UPLOAD_SUCCESS_COUNTER,
     S3_CANONICAL_RECONCILER_MISMATCH_COUNTER, S3_CANONICAL_REPAIR_COMPLETED_COUNTER,
     S3_CANONICAL_REPAIR_ENQUEUED_COUNTER, S3_CANONICAL_REPAIR_FAILED_COUNTER,
-    S3_PUBLICATION_BLOCKS_SETTLEMENT_COUNTER, STALE_S3_UPLOAD_AFTER_CLEANUP_COUNTER,
+    S3_CANONICAL_REPAIR_QUARANTINED_COUNTER, S3_PUBLICATION_BLOCKS_SETTLEMENT_COUNTER,
+    STALE_S3_UPLOAD_AFTER_CLEANUP_COUNTER,
 };
 use crate::{
     BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, UploadJob,
@@ -33,7 +34,7 @@ use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
 use sha2::Sha256;
 use sha3::{Digest, Keccak256};
-use sqlx::{PgPool, Pool, Postgres, Transaction};
+use sqlx::{Executor, PgPool, Pool, Postgres, Transaction};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::select;
@@ -49,6 +50,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 // There might be pending uploads in the database
 // with sizes of 32MiB so the batch size is set to 10
 const DEFAULT_BATCH_SIZE: usize = 10;
+const S3_CANONICAL_REPAIR_MAX_ATTEMPTS: i32 = 10;
 pub(crate) const COPROCESSOR_CONTEXT_ID_1: U256 = U256::ONE;
 const NO_SNS_CIPHERTEXT_DIGEST: [u8; 32] = [0; 32];
 #[derive(Clone, Debug)]
@@ -345,6 +347,7 @@ async fn run_uploader_loop(
                     // that was captured when the upload item was created.
                     let upload_span = error_span!("upload_s3");
                     upload_span.set_parent(item.span.context());
+                    let retry_identity = item.clone();
                     // Enqueue deferred from the dispatch loop (see above). A
                     // dead witness means reorg cleanup cancelled the
                     // publication while this job was queued: drop it.
@@ -406,7 +409,7 @@ async fn run_uploader_loop(
                                 });
                             let is_fatal_db_error = is_fatal_upload_db_error(&err);
 
-                            preserve_upload_task_for_retry(trx, &err).await;
+                            preserve_upload_task_for_retry(trx, &retry_identity, &err).await;
 
                             if is_s3_transient_error {
                                 ready_flag.store(false, Ordering::Release);
@@ -504,10 +507,20 @@ async fn rollback_to_upload_task_savepoint(
 
 async fn preserve_upload_task_for_retry(
     mut trx: Transaction<'_, Postgres>,
+    task: &HandleItem,
     upload_error: &anyhow::Error,
 ) {
     if let Err(preserve_err) = async {
         rollback_to_upload_task_savepoint(&mut trx).await?;
+        record_canonical_repair_failure(
+            trx.as_mut(),
+            task.host_chain_id.as_i64(),
+            &task.handle,
+            &task.producer_block_hash,
+            &task.block_hash,
+            &upload_error.to_string(),
+        )
+        .await?;
         trx.commit().await?;
         anyhow::Ok(())
     }
@@ -519,6 +532,64 @@ async fn preserve_upload_task_for_retry(
             "Failed to preserve incomplete upload state",
         );
     }
+}
+
+async fn record_canonical_repair_failure<'e, E>(
+    executor: E,
+    host_chain_id: i64,
+    handle: &[u8],
+    producer_block_hash: &[u8],
+    block_hash: &[u8],
+    repair_error: &str,
+) -> Result<(), ExecutionError>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let row = sqlx::query_as::<_, (String, i32)>(
+        r#"
+        UPDATE s3_canonical_repair_queue
+           SET status = CASE
+                   WHEN attempts >= $6 THEN 'quarantined'
+                   ELSE 'pending'
+               END,
+               locked_at = NULL,
+               last_error = $5,
+               last_error_at = NOW(),
+               updated_at = NOW()
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND target_producer_block_hash = $3
+           AND target_block_hash = $4
+           AND status = 'pending'
+         RETURNING status, attempts
+        "#,
+    )
+    .bind(host_chain_id)
+    .bind(handle)
+    .bind(producer_block_hash)
+    .bind(block_hash)
+    .bind(repair_error)
+    .bind(S3_CANONICAL_REPAIR_MAX_ATTEMPTS)
+    .fetch_optional(executor)
+    .await?;
+
+    if let Some((status, attempts)) = row {
+        S3_CANONICAL_REPAIR_FAILED_COUNTER.inc();
+        if status == "quarantined" {
+            S3_CANONICAL_REPAIR_QUARANTINED_COUNTER.inc();
+            error!(
+                host_chain_id,
+                handle = %to_hex(handle),
+                producer_block_hash = %to_hex(producer_block_hash),
+                block_hash = %to_hex(block_hash),
+                attempts,
+                repair_error,
+                "Quarantined canonical S3 repair after bounded retries"
+            );
+        }
+    }
+
+    Ok(())
 }
 
 enum UploadResult {
@@ -1178,9 +1249,6 @@ async fn upload_ciphertexts(
     )
     .await
     {
-        if repair_attempt {
-            S3_CANONICAL_REPAIR_FAILED_COUNTER.inc();
-        }
         return Err(err.into());
     }
 
@@ -1507,6 +1575,40 @@ async fn fetch_pending_canonical_repairs(
         return Ok(vec![]);
     }
 
+    let quarantined = sqlx::query_scalar::<_, i64>(
+        r#"
+        WITH quarantined AS (
+            UPDATE s3_canonical_repair_queue
+               SET status = 'quarantined',
+                   locked_at = NULL,
+                   last_error = COALESCE(
+                       last_error,
+                       'repair lease expired after maximum attempts'
+                   ),
+                   last_error_at = COALESCE(last_error_at, NOW()),
+                   updated_at = NOW()
+             WHERE status = 'pending'
+               AND attempts >= $1
+               AND (
+                    locked_at IS NULL
+                    OR locked_at < NOW() - INTERVAL '5 minutes'
+               )
+             RETURNING 1
+        )
+        SELECT COUNT(*) FROM quarantined
+        "#,
+    )
+    .bind(S3_CANONICAL_REPAIR_MAX_ATTEMPTS)
+    .fetch_one(db_pool)
+    .await?;
+    if quarantined > 0 {
+        S3_CANONICAL_REPAIR_QUARANTINED_COUNTER.inc_by(quarantined as u64);
+        error!(
+            quarantined,
+            "Quarantined stale canonical S3 repairs after bounded claims"
+        );
+    }
+
     let rows = sqlx::query!(
         r#"
         WITH selected AS (
@@ -1518,7 +1620,9 @@ async fn fetch_pending_canonical_repairs(
                AND d.handle = q.handle
                AND d.producer_block_hash = q.target_producer_block_hash
                AND d.block_hash = q.target_block_hash
-             WHERE (
+             WHERE q.status = 'pending'
+               AND q.attempts < $2
+               AND (
                     q.locked_at IS NULL
                     OR q.locked_at < NOW() - INTERVAL '5 minutes'
                    )
@@ -1600,6 +1704,7 @@ async fn fetch_pending_canonical_repairs(
         LIMIT $1
         "#,
         limit,
+        S3_CANONICAL_REPAIR_MAX_ATTEMPTS,
     )
     .fetch_all(db_pool)
     .await?;
@@ -1636,11 +1741,21 @@ async fn fetch_pending_canonical_repairs(
         .await?;
 
         let Some(ct64_compressed) = ct64_compressed else {
+            let repair_error = "missing ct64 bytes for S3 canonical repair";
             error!(
                 handle = hex::encode(&handle),
                 producer_block_hash = %to_hex(&producer_block_hash),
-                "Missing ct64 bytes for S3 canonical repair"
+                "{repair_error}"
             );
+            record_canonical_repair_failure(
+                db_pool,
+                host_chain_id_raw,
+                &handle,
+                &producer_block_hash,
+                &block_hash,
+                repair_error,
+            )
+            .await?;
             continue;
         };
 
@@ -1661,11 +1776,21 @@ async fn fetch_pending_canonical_repairs(
             .await?
             .unwrap_or_default();
             if ct128.is_empty() {
+                let repair_error = "missing ct128 bytes for S3 canonical repair";
                 error!(
                     handle = hex::encode(&handle),
                     producer_block_hash = %to_hex(&producer_block_hash),
-                    "Missing ct128 bytes for S3 canonical repair"
+                    "{repair_error}"
                 );
+                record_canonical_repair_failure(
+                    db_pool,
+                    host_chain_id_raw,
+                    &handle,
+                    &producer_block_hash,
+                    &block_hash,
+                    repair_error,
+                )
+                .await?;
                 continue;
             }
         }
@@ -1676,21 +1801,42 @@ async fn fetch_pending_canonical_repairs(
         let requires_ct128_format = has_ct128_ciphertext || has_committed_ct128;
         let ct128_format = match ciphertext128_format.and_then(Ciphertext128Format::from_i16) {
             Some(Ciphertext128Format::Unknown) if requires_ct128_format => {
+                let repair_error = "unknown ciphertext128 format for S3 canonical repair";
                 error!(
                     handle = to_hex(&handle),
                     format_id = ?ciphertext128_format,
-                    "Unknown ciphertext128 format for S3 canonical repair"
+                    "{repair_error}"
                 );
+                record_canonical_repair_failure(
+                    db_pool,
+                    host_chain_id_raw,
+                    &handle,
+                    &producer_block_hash,
+                    &block_hash,
+                    repair_error,
+                )
+                .await?;
                 continue;
             }
             Some(format) => format,
             None if !requires_ct128_format => Ciphertext128Format::Unknown,
             None => {
+                let repair_error =
+                    "missing or invalid ciphertext128 format for S3 canonical repair";
                 error!(
                     handle = to_hex(&handle),
                     format_id = ?ciphertext128_format,
-                    "Missing or invalid ciphertext128 format for S3 canonical repair"
+                    "{repair_error}"
                 );
+                record_canonical_repair_failure(
+                    db_pool,
+                    host_chain_id_raw,
+                    &handle,
+                    &producer_block_hash,
+                    &block_hash,
+                    repair_error,
+                )
+                .await?;
                 continue;
             }
         };
@@ -1822,6 +1968,24 @@ pub(crate) async fn enqueue_unverified_settled_publications(
                       OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
                     THEN 0
                     ELSE s3_canonical_repair_queue.attempts
+                END,
+                status = CASE
+                    WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                      OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                    THEN 'pending'
+                    ELSE s3_canonical_repair_queue.status
+                END,
+                last_error = CASE
+                    WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                      OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                    THEN NULL
+                    ELSE s3_canonical_repair_queue.last_error
+                END,
+                last_error_at = CASE
+                    WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                      OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                    THEN NULL
+                    ELSE s3_canonical_repair_queue.last_error_at
                 END,
                 locked_at = NULL,
                 updated_at = NOW()
@@ -2039,6 +2203,30 @@ async fn enqueue_exact_s3_canonical_repair(
             target_block_hash = EXCLUDED.target_block_hash,
             target_block_number = EXCLUDED.target_block_number,
             reason = EXCLUDED.reason,
+            attempts = CASE
+                WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                  OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                THEN 0
+                ELSE s3_canonical_repair_queue.attempts
+            END,
+            status = CASE
+                WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                  OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                THEN 'pending'
+                ELSE s3_canonical_repair_queue.status
+            END,
+            last_error = CASE
+                WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                  OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                THEN NULL
+                ELSE s3_canonical_repair_queue.last_error
+            END,
+            last_error_at = CASE
+                WHEN s3_canonical_repair_queue.target_producer_block_hash IS DISTINCT FROM EXCLUDED.target_producer_block_hash
+                  OR s3_canonical_repair_queue.target_block_hash IS DISTINCT FROM EXCLUDED.target_block_hash
+                THEN NULL
+                ELSE s3_canonical_repair_queue.last_error_at
+            END,
             locked_at = NULL,
             updated_at = NOW()
         "#,
@@ -3087,6 +3275,117 @@ mod tests {
         assert!(
             matches!(missing, Err(SdkError::ServiceError(err)) if matches!(err.err(), HeadObjectError::NotFound(_))),
             "canonical key must remain absent when the only source is stale"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn canonical_repair_quarantines_and_only_new_target_requeues() -> anyhow::Result<()> {
+        let db = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url())
+            .await?;
+        let task = sample_handle_item();
+
+        sqlx::query(
+            "INSERT INTO s3_canonical_repair_queue(
+                host_chain_id, handle, target_producer_block_hash, target_block_hash,
+                target_block_number, reason, attempts, locked_at
+             ) VALUES ($1, $2, $3, $4, $5, 'test', $6, NOW())",
+        )
+        .bind(task.host_chain_id.as_i64())
+        .bind(&task.handle)
+        .bind(&task.producer_block_hash)
+        .bind(&task.block_hash)
+        .bind(task.block_number)
+        .bind(S3_CANONICAL_REPAIR_MAX_ATTEMPTS)
+        .execute(&pool)
+        .await?;
+
+        record_canonical_repair_failure(
+            &pool,
+            task.host_chain_id.as_i64(),
+            &task.handle,
+            &task.producer_block_hash,
+            &task.block_hash,
+            "permanent repair failure",
+        )
+        .await?;
+
+        let state: (String, i32, bool, Option<String>) = sqlx::query_as(
+            "SELECT status, attempts, locked_at IS NULL, last_error
+               FROM s3_canonical_repair_queue
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(task.host_chain_id.as_i64())
+        .bind(&task.handle)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(state.0, "quarantined");
+        assert_eq!(state.1, S3_CANONICAL_REPAIR_MAX_ATTEMPTS);
+        assert!(state.2);
+        assert_eq!(state.3.as_deref(), Some("permanent repair failure"));
+
+        enqueue_exact_s3_canonical_repair(&pool, &task, "same_target").await?;
+        let same_target: (String, i32) = sqlx::query_as(
+            "SELECT status, attempts FROM s3_canonical_repair_queue
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(task.host_chain_id.as_i64())
+        .bind(&task.handle)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(same_target.0, "quarantined");
+        assert_eq!(same_target.1, S3_CANONICAL_REPAIR_MAX_ATTEMPTS);
+
+        let mut replacement = task.clone();
+        replacement.producer_block_hash = vec![0xA1; 32];
+        replacement.block_hash = vec![0xA2; 32];
+        replacement.block_number = Some(2);
+        enqueue_exact_s3_canonical_repair(&pool, &replacement, "new_target").await?;
+
+        let new_target: (String, i32, Option<String>) = sqlx::query_as(
+            "SELECT status, attempts, last_error FROM s3_canonical_repair_queue
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(task.host_chain_id.as_i64())
+        .bind(&task.handle)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(new_target.0, "pending");
+        assert_eq!(new_target.1, 0);
+        assert!(new_target.2.is_none());
+
+        sqlx::query(
+            "UPDATE s3_canonical_repair_queue
+                SET attempts = $3, locked_at = NOW() - INTERVAL '6 minutes'
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(task.host_chain_id.as_i64())
+        .bind(&task.handle)
+        .bind(S3_CANONICAL_REPAIR_MAX_ATTEMPTS)
+        .execute(&pool)
+        .await?;
+
+        let jobs = fetch_pending_canonical_repairs(&pool, 1).await?;
+        assert!(jobs.is_empty());
+        let expired_lease: (String, Option<String>) = sqlx::query_as(
+            "SELECT status, last_error FROM s3_canonical_repair_queue
+              WHERE host_chain_id = $1 AND handle = $2",
+        )
+        .bind(task.host_chain_id.as_i64())
+        .bind(&task.handle)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(expired_lease.0, "quarantined");
+        assert_eq!(
+            expired_lease.1.as_deref(),
+            Some("repair lease expired after maximum attempts")
         );
 
         Ok(())

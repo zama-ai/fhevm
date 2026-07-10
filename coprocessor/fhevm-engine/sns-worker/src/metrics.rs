@@ -85,6 +85,15 @@ pub(crate) static S3_CANONICAL_REPAIR_FAILED_COUNTER: LazyLock<IntCounter> = Laz
     .unwrap()
 });
 
+pub(crate) static S3_CANONICAL_REPAIR_QUARANTINED_COUNTER: LazyLock<IntCounter> =
+    LazyLock::new(|| {
+        register_int_counter!(
+            "coprocessor_sns_worker_s3_canonical_repair_quarantined_total",
+            "Number of canonical S3 repairs quarantined after bounded retries"
+        )
+        .unwrap()
+    });
+
 pub(crate) static S3_CANONICAL_RECONCILER_MISMATCH_COUNTER: LazyLock<IntCounter> =
     LazyLock::new(|| {
         register_int_counter!(
@@ -111,6 +120,14 @@ pub(crate) static UNCOMPLETE_TASKS: LazyLock<IntGauge> = LazyLock::new(|| {
     .unwrap()
 });
 
+pub(crate) static SNS_TERMINAL_ERRORS: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "coprocessor_sns_worker_terminal_errors_gauge",
+        "Number of terminal PBS conversion errors requiring operator recovery"
+    )
+    .unwrap()
+});
+
 pub(crate) static UNCOMPLETE_AWS_UPLOADS: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
         "coprocessor_sns_worker_uncomplete_aws_uploads_gauge",
@@ -127,11 +144,19 @@ pub(crate) static S3_CANONICAL_REPAIR_QUEUE_DEPTH: LazyLock<IntGauge> = LazyLock
     .unwrap()
 });
 
+pub(crate) static S3_CANONICAL_REPAIR_QUARANTINED: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "coprocessor_sns_worker_s3_canonical_repair_quarantined_gauge",
+        "Number of canonical S3 repairs quarantined after bounded retries"
+    )
+    .unwrap()
+});
+
 pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             match sqlx::query_scalar::<Postgres, i64>(
-                "SELECT COUNT(*) FROM pbs_computations_branch WHERE is_completed = FALSE",
+                "SELECT COUNT(*) FROM pbs_computations_branch WHERE is_completed = FALSE AND is_error = FALSE",
             )
             .fetch_one(&db_pool)
             .await
@@ -142,6 +167,21 @@ pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) 
                 }
                 Err(e) => {
                     error!(error = %e, "Failed to fetch uncomplete tasks count");
+                }
+            }
+
+            match sqlx::query_scalar::<Postgres, i64>(
+                "SELECT COUNT(*) FROM pbs_computations_branch WHERE is_error = TRUE",
+            )
+            .fetch_one(&db_pool)
+            .await
+            {
+                Ok(count) => {
+                    info!(sns_terminal_errors = %count, "Fetched terminal SNS errors count");
+                    SNS_TERMINAL_ERRORS.set(count);
+                }
+                Err(e) => {
+                    error!(error = %e, "Failed to fetch terminal SNS errors count");
                 }
             }
 
@@ -192,6 +232,21 @@ pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) 
                 }
                 Err(e) => {
                     error!(error = %e, "Failed to fetch S3 canonical repair queue depth");
+                }
+            }
+
+            match sqlx::query_scalar::<Postgres, i64>(
+                "SELECT COUNT(*)::BIGINT FROM s3_canonical_repair_queue WHERE status = 'quarantined'",
+            )
+            .fetch_one(&db_pool)
+            .await
+            {
+                Ok(count) => {
+                    info!(s3_canonical_repair_quarantined = %count, "Fetched quarantined S3 canonical repair count");
+                    S3_CANONICAL_REPAIR_QUARANTINED.set(count);
+                }
+                Err(e) => {
+                    error!(error = %e, "Failed to fetch quarantined S3 canonical repair count");
                 }
             }
 

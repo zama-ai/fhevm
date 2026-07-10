@@ -82,6 +82,32 @@ struct SnsTaskRow {
     block_number: Option<i64>,
 }
 
+type SnsTaskKey = (i64, Vec<u8>, Vec<u8>, Vec<u8>);
+
+#[derive(Clone, Debug)]
+struct SnsTaskFailure {
+    key: SnsTaskKey,
+    error_message: String,
+}
+
+impl SnsTaskFailure {
+    fn from_task(task: &HandleItem, error_message: String) -> Self {
+        Self {
+            key: sns_task_key(task),
+            error_message,
+        }
+    }
+}
+
+fn sns_task_key(task: &HandleItem) -> SnsTaskKey {
+    (
+        task.host_chain_id.as_i64(),
+        task.handle.clone(),
+        task.producer_block_hash.clone(),
+        task.block_hash.clone(),
+    )
+}
+
 #[derive(Clone, Debug)]
 struct CiphertextBytesCandidate {
     producer_block_hash: Vec<u8>,
@@ -138,6 +164,36 @@ impl HealthCheckService for SwitchNSquashService {
 
         status.set_custom_check("s3_buckets", is_s3_ready, true);
         status.set_custom_check("s3_connection", is_s3_connected, true);
+
+        match sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM pbs_computations_branch WHERE is_error = TRUE",
+        )
+        .fetch_one(&self.pool)
+        .await
+        {
+            Ok(count) => status.set_custom_check("sns_terminal_errors", count == 0, true),
+            Err(err) => {
+                status.set_custom_check("sns_terminal_errors", false, true);
+                status.add_error_details(format!("Failed to query terminal SNS errors: {err}"));
+            }
+        }
+
+        match sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM s3_canonical_repair_queue WHERE status = 'quarantined'",
+        )
+        .fetch_one(&self.pool)
+        .await
+        {
+            Ok(count) => {
+                status.set_custom_check("s3_canonical_repair_quarantine", count == 0, true)
+            }
+            Err(err) => {
+                status.set_custom_check("s3_canonical_repair_quarantine", false, true);
+                status.add_error_details(format!(
+                    "Failed to query quarantined canonical S3 repairs: {err}"
+                ));
+            }
+        }
 
         status
     }
@@ -300,14 +356,16 @@ pub(crate) async fn run_loop(
         )
         .await
         .inspect(|res| {
-            if let Some((_, tasks_processed)) = res {
-                TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
+            if let Some((_, tasks_processed, terminal_errors)) = res {
+                TASK_EXECUTE_SUCCESS_COUNTER
+                    .inc_by(tasks_processed.saturating_sub(*terminal_errors) as u64);
+                TASK_EXECUTE_FAILURE_COUNTER.inc_by(*terminal_errors as u64);
             }
         })
         .inspect_err(|_| {
             TASK_EXECUTE_FAILURE_COUNTER.inc();
         })?;
-        let Some((maybe_remaining, _tasks_processed)) = result else {
+        let Some((maybe_remaining, _tasks_processed, _terminal_errors)) = result else {
             info!("Cutover completed — SnS BCS worker stopping");
             return Ok(());
         };
@@ -449,7 +507,7 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 }
 
 /// Fetch and process SnS tasks from the database.
-/// Returns (maybe_remaining, number_of_tasks_processed) on success.
+/// Returns (maybe_remaining, number_of_tasks_processed, terminal_errors) on success.
 /// Returns `Ok(None)` when a committed cutover has retired this BCS worker
 /// (caller should stop); `Ok(Some((maybe_remaining, tasks_processed)))` otherwise.
 async fn fetch_and_execute_sns_tasks(
@@ -460,7 +518,7 @@ async fn fetch_and_execute_sns_tasks(
     token: &CancellationToken,
     uploads_enabled: bool,
     gcs_mode: bool,
-) -> Result<Option<(bool, usize)>, ExecutionError> {
+) -> Result<Option<(bool, usize, usize)>, ExecutionError> {
     // Cutover safety (BCS only): begin a write tx fenced against cutover before
     // writing any ct128 / digest rows into the tables execute_cutover merges.
     // `None` means a committed cutover retired this stack. See
@@ -488,6 +546,7 @@ async fn fetch_and_execute_sns_tasks(
 
     let mut maybe_remaining = false;
     let tasks_processed;
+    let terminal_errors;
     if let Some(mut tasks) = query_sns_tasks(
         trx,
         conf.db.batch_limit,
@@ -502,7 +561,7 @@ async fn fetch_and_execute_sns_tasks(
 
         let batch_exec_span = tracing::info_span!("batch_execution", count = tasks.len());
 
-        batch_exec_span.in_scope(|| {
+        let failures = batch_exec_span.in_scope(|| {
             process_tasks(
                 &mut tasks,
                 keys,
@@ -513,21 +572,33 @@ async fn fetch_and_execute_sns_tasks(
                 uploads_enabled,
             )
         })?;
+        terminal_errors = failures.len();
+        let failed_task_keys = failures
+            .iter()
+            .map(|failure| failure.key.clone())
+            .collect::<HashSet<_>>();
 
         let batch_store_span = tracing::info_span!(
             parent: &batch_exec_span,
             "batch_store_ciphertext128"
         );
         let batch_store = async {
-            let skipped_settled_tasks = update_ciphertext128(trx, &tasks).await?;
-            update_computations_status(trx, &tasks, &skipped_settled_tasks)
-                .instrument(batch_exec_span.clone())
-                .await?;
+            let skipped_settled_tasks =
+                update_ciphertext128(trx, &tasks, &failed_task_keys).await?;
+            update_computations_status(
+                trx,
+                &tasks,
+                &failures,
+                &failed_task_keys,
+                &skipped_settled_tasks,
+            )
+            .instrument(batch_exec_span.clone())
+            .await?;
             notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
 
             // Try to enqueue the tasks for upload in the DB
             // This is a best-effort attempt, as the upload worker might not be available
-            enqueue_upload_tasks(trx, &tasks, &skipped_settled_tasks).await?;
+            enqueue_upload_tasks(trx, &tasks, &failed_task_keys, &skipped_settled_tasks).await?;
             Ok::<(), ExecutionError>(())
         };
         if let Err(err) = batch_store.instrument(batch_store_span.clone()).await {
@@ -548,10 +619,11 @@ async fn fetch_and_execute_sns_tasks(
         }
     } else {
         tasks_processed = 0;
+        terminal_errors = 0;
         db_txn.rollback().await?;
     }
 
-    Ok(Some((maybe_remaining, tasks_processed)))
+    Ok(Some((maybe_remaining, tasks_processed, terminal_errors)))
 }
 
 /// Queries the database for a fixed number of tasks.
@@ -611,6 +683,7 @@ pub async fn query_sns_tasks(
                 a.block_number
             FROM pbs_computations_branch a
             WHERE a.is_completed = FALSE
+              AND a.is_error = FALSE
               AND (
                 a.producer_block_hash = ''::BYTEA
                 OR a.block_number IS NULL
@@ -753,9 +826,13 @@ pub async fn query_sns_tasks(
 async fn enqueue_upload_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
+    failed_task_keys: &HashSet<SnsTaskKey>,
     skipped_settled_tasks: &HashSet<(Vec<u8>, Vec<u8>)>,
 ) -> Result<(), ExecutionError> {
     for task in tasks.iter() {
+        if failed_task_keys.contains(&sns_task_key(task)) {
+            continue;
+        }
         if skipped_settled_tasks.contains(&(task.handle.clone(), task.producer_block_hash.clone()))
         {
             continue;
@@ -781,12 +858,13 @@ fn process_tasks(
     policy: SchedulePolicy,
     token: CancellationToken,
     uploads_enabled: bool,
-) -> Result<(), ExecutionError> {
+) -> Result<Vec<SnsTaskFailure>, ExecutionError> {
     set_server_key(keys.server_key.clone());
 
-    match policy {
-        SchedulePolicy::Sequential => {
-            for task in batch.iter_mut() {
+    let failures = match policy {
+        SchedulePolicy::Sequential => batch
+            .iter_mut()
+            .filter_map(|task| {
                 compute_task(
                     task,
                     tx,
@@ -794,28 +872,33 @@ fn process_tasks(
                     token.clone(),
                     &keys.client_key,
                     uploads_enabled,
-                );
-            }
-        }
+                )
+                .map(|error| SnsTaskFailure::from_task(task, error))
+            })
+            .collect(),
         SchedulePolicy::RayonParallel => {
             rayon::broadcast(|_| {
                 tfhe::set_server_key(keys.server_key.clone());
             });
 
-            batch.par_iter_mut().for_each(|task| {
-                compute_task(
-                    task,
-                    tx,
-                    enable_compression,
-                    token.clone(),
-                    &keys.client_key,
-                    uploads_enabled,
-                );
-            });
+            batch
+                .par_iter_mut()
+                .filter_map(|task| {
+                    compute_task(
+                        task,
+                        tx,
+                        enable_compression,
+                        token.clone(),
+                        &keys.client_key,
+                        uploads_enabled,
+                    )
+                    .map(|error| SnsTaskFailure::from_task(task, error))
+                })
+                .collect()
         }
-    }
+    };
 
-    Ok(())
+    Ok(failures)
 }
 
 fn compute_task(
@@ -825,7 +908,7 @@ fn compute_task(
     token: CancellationToken,
     _client_key: &Option<ClientKey>,
     uploads_enabled: bool,
-) {
+) -> Option<String> {
     let started_at = SystemTime::now();
     let thread_id = format!("{:?}", std::thread::current().id());
     // Cross-boundary: compute_task runs on a thread-pool worker;
@@ -839,13 +922,13 @@ fn compute_task(
     // Check if the task is cancelled
     if token.is_cancelled() {
         warn!({ handle }, "Task processing cancelled");
-        return;
+        return None;
     }
 
     let ct64_compressed = task.ct64_compressed.as_ref();
     if ct64_compressed.is_empty() {
         error!({ handle }, "Empty ciphertext64, skipping task");
-        return; // Skip empty ciphertexts
+        return Some("empty ciphertext64".to_owned());
     }
 
     let decompress_span = tracing::info_span!("decompress_ct64");
@@ -857,7 +940,7 @@ fn compute_task(
                 .span()
                 .set_status(Status::error(err.to_string()));
             error!({ handle = handle, error = %err }, "Failed to decompress ct64");
-            return;
+            return Some(format!("failed to decompress ct64: {err}"));
         }
     };
 
@@ -901,7 +984,7 @@ fn compute_task(
                 if elapsed > 0.0 {
                     SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
                 }
-                return;
+                return None;
             }
 
             // Start uploading the ciphertexts as soon as the ct128 is computed
@@ -934,6 +1017,7 @@ fn compute_task(
             if elapsed > 0.0 {
                 SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
             }
+            None
         }
         Err(err) => {
             squash_span
@@ -941,8 +1025,9 @@ fn compute_task(
                 .span()
                 .set_status(Status::error(err.to_string()));
             error!({ handle = handle, error = %err }, "Failed to convert ct");
+            Some(format!("failed to convert ciphertext: {err}"))
         }
-    };
+    }
 }
 
 fn check_ct128_write_above_settled(
@@ -997,10 +1082,14 @@ fn ensure_ct128_write_above_settled(
 async fn update_ciphertext128(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
+    failed_task_keys: &HashSet<SnsTaskKey>,
 ) -> Result<HashSet<(Vec<u8>, Vec<u8>)>, ExecutionError> {
     let mut settled_heights = std::collections::HashMap::<i64, i64>::new();
     let mut skipped_settled_tasks = HashSet::new();
     for task in tasks {
+        if failed_task_keys.contains(&sns_task_key(task)) {
+            continue;
+        }
         if !task.ct128.is_empty() {
             let host_chain_id = task.host_chain_id.as_i64();
             let settled_height = if let Some(settled_height) = settled_heights.get(&host_chain_id) {
@@ -1074,9 +1163,38 @@ async fn update_ciphertext128(
 async fn update_computations_status(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
+    failures: &[SnsTaskFailure],
+    failed_task_keys: &HashSet<SnsTaskKey>,
     skipped_settled_tasks: &HashSet<(Vec<u8>, Vec<u8>)>,
 ) -> Result<(), ExecutionError> {
+    for failure in failures {
+        let (host_chain_id, handle, producer_block_hash, block_hash) = &failure.key;
+        sqlx::query!(
+            r#"
+            UPDATE pbs_computations_branch
+               SET is_error = TRUE,
+                   error_message = $5,
+                   error_at = NOW()
+             WHERE host_chain_id = $1
+               AND handle = $2
+               AND producer_block_hash = $3
+               AND block_hash = $4
+               AND is_completed = FALSE
+            "#,
+            *host_chain_id,
+            handle,
+            producer_block_hash,
+            block_hash,
+            &failure.error_message,
+        )
+        .execute(db_txn.as_mut())
+        .await?;
+    }
+
     for task in tasks {
+        if failed_task_keys.contains(&sns_task_key(task)) {
+            continue;
+        }
         if skipped_settled_tasks
             .contains(&(task.handle.to_vec(), task.producer_block_hash.to_vec()))
         {
@@ -1087,7 +1205,11 @@ async fn update_computations_status(
             sqlx::query!(
                 r#"
                 UPDATE pbs_computations_branch
-                SET is_completed = TRUE, completed_at = NOW()
+                SET is_completed = TRUE,
+                    completed_at = NOW(),
+                    is_error = FALSE,
+                    error_message = NULL,
+                    error_at = NULL
                 WHERE host_chain_id = $1
                   AND handle = $2
                   AND producer_block_hash = $3
@@ -1380,7 +1502,7 @@ mod tests {
         let task = computed_handle_item(vec![0xAA; 32], Some(10));
 
         let mut tx = pool.begin().await.expect("begin transaction");
-        let skipped = update_ciphertext128(&mut tx, &[task])
+        let skipped = update_ciphertext128(&mut tx, &[task], &HashSet::new())
             .await
             .expect("settled branch ct128 write should be skipped");
         tx.commit().await.expect("commit transaction");
@@ -1405,7 +1527,7 @@ mod tests {
         let skipped = HashSet::from([(task.handle.to_vec(), task.producer_block_hash.to_vec())]);
 
         let mut tx = pool.begin().await.expect("begin transaction");
-        update_computations_status(&mut tx, &[task], &skipped)
+        update_computations_status(&mut tx, &[task], &[], &HashSet::new(), &skipped)
             .await
             .expect("update computation status");
         tx.commit().await.expect("commit transaction");
@@ -1427,13 +1549,60 @@ mod tests {
 
     #[tokio::test]
     #[serial(db)]
+    async fn update_computations_status_marks_sns_failure_terminal() {
+        let (_test_instance, pool) = setup_pool().await;
+        let task = handle_item(vec![0xAA; 32], Some(11));
+        insert_sns_work_row(
+            &pool,
+            &task.handle,
+            &task.producer_block_hash,
+            &task.block_hash,
+            11,
+        )
+        .await;
+        let failure = SnsTaskFailure::from_task(&task, "deterministic conversion failure".into());
+        let failed_keys = HashSet::from([failure.key.clone()]);
+
+        let mut tx = pool.begin().await.expect("begin transaction");
+        update_computations_status(&mut tx, &[task], &[failure], &failed_keys, &HashSet::new())
+            .await
+            .expect("persist terminal SNS error");
+        tx.commit().await.expect("commit transaction");
+
+        let row = sqlx::query!(
+            r#"
+            SELECT is_completed AS "is_completed!",
+                   is_error AS "is_error!",
+                   error_message,
+                   error_at
+              FROM pbs_computations_branch
+             WHERE handle = $1 AND producer_block_hash = $2
+            "#,
+            vec![0x42_u8; 32],
+            vec![0xAA_u8; 32],
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch PBS error state");
+
+        assert!(!row.is_completed);
+        assert!(row.is_error);
+        assert_eq!(
+            row.error_message.as_deref(),
+            Some("deterministic conversion failure")
+        );
+        assert!(row.error_at.is_some());
+    }
+
+    #[tokio::test]
+    #[serial(db)]
     async fn update_ciphertext128_allows_future_branch_write_path() {
         let (_test_instance, pool) = setup_pool().await;
         set_settled_height(&pool, 10).await;
         let task = computed_handle_item(vec![0xAA; 32], Some(11));
 
         let mut tx = pool.begin().await.expect("begin transaction");
-        let skipped = update_ciphertext128(&mut tx, &[task])
+        let skipped = update_ciphertext128(&mut tx, &[task], &HashSet::new())
             .await
             .expect("future branch ct128 write should be accepted");
         tx.commit().await.expect("commit transaction");
