@@ -3,7 +3,9 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use crate::{errors::ZamaHostError, events::DenySubjectUpdatedEvent, state::*};
+#[cfg(feature = "emit-events")]
+use crate::events::DenySubjectUpdatedEvent;
+use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for creating or updating a deny-list record.
 #[derive(Accounts)]

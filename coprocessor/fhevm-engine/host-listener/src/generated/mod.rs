@@ -1,11 +1,11 @@
-//! Generated Solana protocol event decoders.
+//! Generated Solana protocol event value types.
 //!
 //! The Rust implementation is emitted by `host-listener/build.rs` into Cargo
-//! `OUT_DIR`, so it is not reachable by rustfmt or Prettier. Consumers should
-//! import this module instead of parsing Anchor event bytes directly.
+//! `OUT_DIR`, so it is not reachable by rustfmt or Prettier. Ingestion
+//! reconstructs these semantic values from instruction data; no emitted-event
+//! decoder is generated.
 
-#[allow(dead_code)]
-mod zama_host_events {
+pub mod zama_host_events {
     include!(concat!(env!("OUT_DIR"), "/zama_host_events.rs"));
 }
 

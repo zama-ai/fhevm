@@ -3,7 +3,9 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use crate::{errors::ZamaHostError, events::HostConfigInitializedEvent, state::*};
+#[cfg(feature = "emit-events")]
+use crate::events::HostConfigInitializedEvent;
+use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for initializing the singleton [`HostConfig`].
 #[derive(Accounts)]
@@ -34,6 +36,7 @@ pub fn initialize_host_config(
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_valid_host_config_args(&args)?;
     let updated_slot = Clock::get()?.slot;
+    #[cfg(feature = "emit-events")]
     let config_key = ctx.accounts.host_config.key();
     let config = &mut ctx.accounts.host_config;
     config.admin = ctx.accounts.admin.key();

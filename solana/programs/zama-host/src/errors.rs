@@ -84,10 +84,10 @@ pub enum ZamaHostError {
     /// No matching Ed25519 verifier pre-instruction was found for the input proof.
     #[msg("input proof Ed25519 signature is missing or malformed")]
     InputProofSignatureMissing,
-    /// A test event shim was called while test shims are disabled.
+    /// Reserved legacy test-shim error; retained to preserve error codes.
     #[msg("test event shims are disabled")]
     TestShimsDisabled,
-    /// The test event shim signer is not the configured test authority.
+    /// Reserved legacy test-authority error; retained to preserve error codes.
     #[msg("test shim authority does not match config")]
     TestShimAuthorityMismatch,
     /// The app account did not sign the ACL birth instruction.

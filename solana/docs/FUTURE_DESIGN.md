@@ -78,7 +78,7 @@ already being paid for). Until then they are inert and must not be reintroduced 
 Carried from `DESIGN_DECISIONS.md` "Open Product Decisions":
 
 - Reject the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID`) unconditionally in production builds; the
-  `poc` cargo feature already compiles out the test shims and confines the zero-birth-entropy fallback.
+  `poc` cargo feature already compiles out the local test controls and confines the zero-birth-entropy fallback.
 - Durable archival / compaction policy for ACL, material, delegation, and replay evidence (no
   `close_acl_record` today).
 - Confidential-balance profile: keep the immediate available-balance profile or move to staged

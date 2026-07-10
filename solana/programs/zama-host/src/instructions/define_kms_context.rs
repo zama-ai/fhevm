@@ -8,7 +8,9 @@
 use anchor_lang::prelude::*;
 
 use super::common::{assert_admin, assert_no_remaining_accounts};
-use crate::{errors::ZamaHostError, events::NewKmsContextEvent, state::*};
+#[cfg(feature = "emit-events")]
+use crate::events::NewKmsContextEvent;
+use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for defining a new KMS context.
 #[derive(Accounts)]
