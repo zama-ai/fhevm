@@ -538,13 +538,16 @@ export function createCoreFhevm<runtime extends FhevmRuntime>(
 
 export function createCoreFhevm<chain extends FhevmChain, runtime extends FhevmRuntime, client extends NativeClient>(
   ownerToken: symbol,
-  parameters: CreateCoreFhevmParameters<chain, runtime, client>,
+  parameters: CreateCoreFhevmParameters<chain, runtime, client> & {
+    readonly chain: chain;
+    readonly client: client;
+  },
 ): Fhevm<chain, runtime, client>;
 
 export function createCoreFhevm<chain extends FhevmChain, runtime extends FhevmRuntime, client extends NativeClient>(
   ownerToken: symbol,
   parameters: CreateCoreFhevmParameters<chain, runtime, client>,
-): Fhevm<chain, runtime, client> {
+): Fhevm<chain, runtime, client> | Fhevm<undefined, runtime, undefined> {
   // Pre-populate the global FheEncryptionKey cache if the caller provided one.
   // Avoids a 50MB fetch later when encrypt is first called.
   // No-op if an entry already exists for this relayerUrl (first write wins).
