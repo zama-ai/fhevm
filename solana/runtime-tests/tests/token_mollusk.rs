@@ -29,10 +29,11 @@
 //! and `mollusk_confidential_transfer_*` (same durable-output machinery); a follow-up pass should
 //! port them individually using the patterns established here and in `host_mollusk.rs`.
 //!
-//! Also dropped: the old file's `support::fhe_runtime` cleartext-arithmetic simulator, used only by
-//! the wrap/burn cleartext-value assertions above. The migrated tests assert lineage/ACL structure
-//! (addresses, subjects, handle changes) rather than replaying cleartext arithmetic, so it is no
-//! longer wired in (see `tests/support/mod.rs`).
+//! Also dropped: the old file's event-shaped, `u128`-limited `support::fhe_runtime` simulator.
+//! The confidential-transfer test below instead evaluates the canonical `FheEvalArgs` captured
+//! from the real token -> host CPI and binds those clear values to the handles emitted by the host.
+
+mod support;
 
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
@@ -49,6 +50,7 @@ use solana_sdk::{
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
+use support::cleartext_fhe_eval::{evaluate as evaluate_cleartext, ClearInputs, TypedClearValue};
 use zama_host as host;
 
 const BALANCE_FHE_TYPE: u8 = 5;
@@ -130,6 +132,25 @@ where
         .collect::<Vec<u8>>();
     let payload = data.strip_prefix(&event_prefix[..])?;
     T::deserialize(&mut &*payload).ok()
+}
+
+fn decode_fhe_eval_args(data: &[u8]) -> Option<host::FheEvalArgs> {
+    let payload = data.strip_prefix(host::instruction::FheEval::DISCRIMINATOR)?;
+    host::FheEvalArgs::deserialize(&mut &*payload).ok()
+}
+
+fn eval_step_output(step: &host::FheEvalStep) -> &host::FheEvalOutput {
+    match step {
+        host::FheEvalStep::Binary { output, .. }
+        | host::FheEvalStep::Ternary { output, .. }
+        | host::FheEvalStep::TrivialEncrypt { output, .. }
+        | host::FheEvalStep::Rand { output, .. }
+        | host::FheEvalStep::Unary { output, .. }
+        | host::FheEvalStep::RandBounded { output, .. }
+        | host::FheEvalStep::Sum { output, .. }
+        | host::FheEvalStep::IsIn { output, .. }
+        | host::FheEvalStep::MulDiv { output, .. } => output,
+    }
 }
 
 fn host_config_account(admin: Pubkey, coprocessor_signer: [u8; 20]) -> Account {
@@ -939,7 +960,7 @@ fn mollusk_confidential_transfer_self_transfer_is_no_op() {
 }
 
 #[test]
-fn mollusk_confidential_transfer_updates_balance_lineages_and_transferred_amount() {
+fn mollusk_confidential_transfer_updates_lineages_and_cleartext_balances() {
     let fixture = TokenFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
     let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
@@ -1012,6 +1033,77 @@ fn mollusk_confidential_transfer_updates_balance_lineages_and_transferred_amount
     assert!(transferred.has_subject(fixture.bob_owner));
     assert!(transferred.has_subject(fixture.compute_signer));
     assert_eq!(transferred.leaf_count, 0); // birth: no supersession yet.
+
+    // Apply cleartext semantics to the exact `fhe_eval` plan that crossed the token -> host CPI.
+    // The plaintext map is test-owned: production handles remain opaque and all program-side
+    // account, signer, attestation, ACL, HCU, handle-derivation, and persistence checks above ran
+    // unchanged under Mollusk.
+    let eval_args = result
+        .inner_instructions
+        .iter()
+        .filter_map(|inner| decode_fhe_eval_args(&inner.instruction.data))
+        .collect::<Vec<_>>();
+    assert_eq!(eval_args.len(), 1);
+    let clear_inputs = ClearInputs::from([
+        (
+            fixture.alice_initial,
+            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 1_000),
+        ),
+        (
+            fixture.bob_initial,
+            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 100),
+        ),
+        (
+            amount_handle,
+            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 400),
+        ),
+    ]);
+    let clear_outputs = evaluate_cleartext(&eval_args[0], &clear_inputs).unwrap();
+    assert_eq!(
+        clear_outputs,
+        vec![
+            TypedClearValue::from_u64(0, 1),
+            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 600),
+            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 600),
+            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 400),
+            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 500),
+        ]
+    );
+    // Durable cleartext binding comes from the canonical output descriptors and resulting account
+    // state, not optional compute events (valid frames above eight steps emit none).
+    let durable_handles_by_index = HashMap::from([
+        (0_u16, alice_balance.current_handle),
+        (1_u16, transferred.current_handle),
+        (2_u16, bob_balance.current_handle),
+    ]);
+    let cleartext_by_handle = eval_args[0]
+        .steps
+        .iter()
+        .zip(clear_outputs)
+        .filter_map(|(step, value)| match eval_step_output(step) {
+            host::FheEvalOutput::AllowedLocal => None,
+            host::FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index,
+                ..
+            } => Some((
+                durable_handles_by_index[output_encrypted_value_index],
+                value,
+            )),
+        })
+        .collect::<ClearInputs>();
+    assert_eq!(cleartext_by_handle.len(), 3);
+    assert_eq!(
+        cleartext_by_handle[&alice_balance.current_handle],
+        TypedClearValue::from_u64(BALANCE_FHE_TYPE, 600)
+    );
+    assert_eq!(
+        cleartext_by_handle[&transferred.current_handle],
+        TypedClearValue::from_u64(BALANCE_FHE_TYPE, 400)
+    );
+    assert_eq!(
+        cleartext_by_handle[&bob_balance.current_handle],
+        TypedClearValue::from_u64(BALANCE_FHE_TYPE, 500)
+    );
 
     let transfer_events: Vec<token::ConfidentialTransferEvent> = result
         .inner_instructions
