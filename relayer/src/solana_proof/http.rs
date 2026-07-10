@@ -1,12 +1,9 @@
 //! Internal HTTP endpoint exposing `proof::build_proof`.
 //!
-//! There is no existing Solana user-decrypt HTTP path in the relayer yet (the
-//! gateway/host modules are EVM-only today), so this stands alone as an
-//! internal route rather than plugging into an existing handler.
 //! `http/server.rs::run_http_server` mounts `router(service)` when the
-//! deployment's `solana_proof` config section is present. This is an interim
-//! internal endpoint until the Solana user-decrypt path lands and calls
-//! [`crate::solana_proof::build_proof`] in-process instead of over HTTP.
+//! deployment's `solana_proof` config section is present. A client discovers
+//! the proof through this internal route before encoding it in `extraData` and
+//! signing the Solana user-decrypt request submitted through the v3 endpoint.
 
 use std::sync::Arc;
 

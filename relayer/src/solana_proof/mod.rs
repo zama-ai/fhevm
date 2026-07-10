@@ -14,14 +14,8 @@
 //!   file-backed implementation.
 //! - [`ingest`]: the poll loop and targeted per-lineage catch-up.
 //! - [`proof`]: `build_proof`, the public entry point tying the above together.
-//! - [`http`]: an internal HTTP endpoint exposing `build_proof`, and the
-//!   in-process `SolanaProofService` handle used to construct it.
-//!
-//! **Integration point for the future Solana user-decrypt orchestrator**: once
-//! that path exists, call [`proof::build_proof`] directly in-process (it takes
-//! `&impl ChainFetcher, &impl LeafStore` — no HTTP round-trip needed) instead
-//! of routing through [`http::mmr_proof_handler`], which exists only so this
-//! service is independently reachable before that wiring lands.
+//! - [`http`]: an internal HTTP endpoint exposing `build_proof` so a client can
+//!   discover a proof before signing and submitting a Solana user-decrypt request.
 
 pub mod chain;
 pub mod config;

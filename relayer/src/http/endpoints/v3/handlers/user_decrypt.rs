@@ -1,4 +1,4 @@
-//! v3 `/v3/user-decrypt` handler (unified EIP-712 user-decryption).
+//! v3 `/v3/user-decrypt` handler (unified user-decryption).
 //!
 //! POST validates the typed-attestation envelope, converts it to the
 //! shared `UserDecryptRequest` with `UserDecryptPayload::Unified`, runs the
@@ -164,9 +164,7 @@ impl UserDecryptHandler {
             }
         };
 
-        // `TryFrom<AttestedUserDecryptRequestJson>` only constructs
-        // `Eip712UnifiedV1`; the downstream `UserDecryptReqData::Unified`
-        // tag relies on it.
+        // The attestation type selects the EVM or Solana unified request variant.
         let user_decrypt_request: UserDecryptRequest =
             match parse_and_validate::<AttestedUserDecryptRequestJson, UserDecryptRequest>(&body) {
                 Ok(request) => request,
