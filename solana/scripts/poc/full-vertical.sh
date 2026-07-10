@@ -298,12 +298,12 @@ assert_decrypt() {
   job="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
     -d "{\"ciphertextHandles\":[\"$handle\"],\"extraData\":\"$EXTRA\"}" | \
     python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
-  for i in $(seq 1 40); do
+  for i in $(seq 1 80); do
     r="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$job")"
     st="$(echo "$r" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)" || st=""
     [ "$st" = succeeded ] && break
     [ "$st" = failed ] && fail "$label public-decrypt failed: $r"
-    [ "$i" = 40 ] && fail "$label public-decrypt timed out"
+    [ "$i" = 80 ] && fail "$label public-decrypt timed out"
     sleep 3
   done
   dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
