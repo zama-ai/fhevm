@@ -4,9 +4,9 @@ Operator guide for the two governance-driven KMS-committee lifecycle operations 
 live environment, where KMS nodes are run by several external
 parties:
 
-| Operation                                         | What changes                                               | On-chain entrypoint                    | Party metadata needed        |
-| ------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------- | ---------------------------- |
-| **1. Key resharing (epoch rotation)**             | New key shares, same committee                             | `defineNewEpochForCurrentKmsContext()` | **None** (no-arg call)       |
+| Operation                                          | What changes                                               | On-chain entrypoint                    | Party metadata needed            |
+| -------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------- | -------------------------------- |
+| **1. Key resharing (epoch rotation)**              | New key shares, same committee                             | `defineNewEpochForCurrentKmsContext()` | **None** (no-arg call)           |
 | **2. Context switch (committee change/node swap)** | Committee membership and/or metadata; includes a resharing | `defineNewKmsContextAndEpoch(...)`     | Yes — the **new** committee (§2) |
 
 Audience: whoever coordinates the governance operation with the external KMS parties.
@@ -25,13 +25,13 @@ The reference release is [`v0.14.0-1`](https://github.com/zama-ai/fhevm/tree/v0.
 versions **before** scheduling any window; the standard decrypt path working proves
 nothing about the switch path.
 
-| Component                       | Minimum version                               | Artifact                                                                       | How to check the deployment                                                                            |
-| ------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| Host contracts (`ProtocolConfig`) | ProtocolConfig `>=0.2.0`   | `ghcr.io/zama-ai/fhevm/host-contracts:v0.14.0-1`                               | `cast call $PROTOCOL_CONFIG "getVersion()(string)"`                |
-| Gateway contracts (`GatewayConfig`) | GatewayConfig `>=0.7.0` | `ghcr.io/zama-ai/fhevm/gateway-contracts:v0.14.0-1`                            | `cast call $GATEWAY_CONFIG "getVersion()(string)"`                                                        |
-| KMS connector (all parties)     | fhevm `v0.14.0-1` (connector crates `0.14.0`) | `ghcr.io/zama-ai/fhevm/kms-connector/{gw-listener,kms-worker,tx-sender}:v0.14.0-1` | Confirm running parties image tag |
-| KMS core (all parties)          | kms `v0.14.0-1` or later (`v0.14.0-1` current) | `ghcr.io/zama-ai/kms/core-service:v0.14.0-1`                                             | Confirm running parties image |
-| Relayer                         | relayer `v0.14.0-1` or later                    | `ghcr.io/zama-ai/fhevm/relayer:v0.14.0-1`                                                | Confirm running image tag  |
+| Component                           | Minimum version                                | Artifact                                                                           | How to check the deployment                         |
+| ----------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Host contracts (`ProtocolConfig`)   | ProtocolConfig `>=0.2.0`                       | `ghcr.io/zama-ai/fhevm/host-contracts:v0.14.0-1`                                   | `cast call $PROTOCOL_CONFIG "getVersion()(string)"` |
+| Gateway contracts (`GatewayConfig`) | GatewayConfig `>=0.7.0`                        | `ghcr.io/zama-ai/fhevm/gateway-contracts:v0.14.0-1`                                | `cast call $GATEWAY_CONFIG "getVersion()(string)"`  |
+| KMS connector (all parties)         | fhevm `v0.14.0-1` (connector crates `0.14.0`)  | `ghcr.io/zama-ai/fhevm/kms-connector/{gw-listener,kms-worker,tx-sender}:v0.14.0-1` | Confirm running parties image tag                   |
+| KMS core (all parties)              | kms `v0.14.0-1` or later (`v0.14.0-1` current) | `ghcr.io/zama-ai/kms/core-service:v0.14.0-1`                                       | Confirm running parties image                       |
+| Relayer                             | relayer `v0.14.0-1` or later                   | `ghcr.io/zama-ai/fhevm/relayer:v0.14.0-1`                                          | Confirm running image tag                           |
 
 ## 2. Preparing the KMS node party metadata
 
@@ -40,8 +40,8 @@ per KMS node (struct in `host-contracts/contracts/shared/Structs.sol:31`). Each 
 full protocol identity — how the chain authenticates it, how the other parties'
 cores reach it, and where it publishes its public key material:
 
-- **two distinct wallets**: the *tx-sender* (pays gas, authenticates on-chain
-  confirmations) and the *signer* (the core's key that signs key-material
+- **two distinct wallets**: the _tx-sender_ (pays gas, authenticates on-chain
+  confirmations) and the _signer_ (the core's key that signs key-material
   attestations) — a common mistake is swapping them;
 - **network endpoints**: the core's MPC endpoint (peer-to-peer between parties) and
   the public vault (S3/MinIO) where the core publishes its verification address and
@@ -54,22 +54,22 @@ Most fields only the party itself can provide — collect them with the question
 assemble and validate the env file (Annex B.3).
 
 | Field             | Type            | Provided by                      | Source of truth                                                                            | Validation                                                                                                |
-| ----------------- | --------------- | -------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| ----------------- | --------------- | -------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | `txSenderAddress` | address         | **KMS party**                    | Their connector's tx-sender wallet address                                                 | Party signs a message with it, or sends a test tx; must be funded on the host chain **and** gateway chain |
-| `signerAddress`   | address         | **KMS party** (verifiable by us) | Their core's signing key; published at `<storageUrl>/<storagePrefix>/VerfAddress/<handle>` | Fetch from their public storage and compare (Annex B.2)                                                    |
+| `signerAddress`   | address         | **KMS party** (verifiable by us) | Their core's signing key; published at `<storageUrl>/<storagePrefix>/VerfAddress/<handle>` | Fetch from their public storage and compare (Annex B.2)                                                   |
 | `ipAddress`       | string          | **KMS party**                    | Their core's MPC endpoint, e.g. `http://kms.party.example:50001`                           | Reachable from every _other_ party's core (peer-to-peer, not from us)                                     |
-| `storageUrl`      | string          | **KMS party**                    | Their public vault (S3/MinIO) base URL                                                     | `curl` returns objects (Annex B.2)                                                                         |
-| `partyId`         | int32           | **Coordinator (us)**             | Assigned: contiguous `1..n`; a swap keeps the dropped node's id                            | Annex B.3 validator checks contiguity + duplicates                                                          |
+| `storageUrl`      | string          | **KMS party**                    | Their public vault (S3/MinIO) base URL                                                     | `curl` returns objects (Annex B.2)                                                                        |
+| `partyId`         | int32           | **Coordinator (us)**             | Assigned: contiguous `1..n`; a swap keeps the dropped node's id                            | Annex B.3 validator checks contiguity + duplicates                                                        |
 | `mpcIdentity`     | string          | **KMS party**                    | The `mpc_identity` value in their core config / the cluster peers roster                   | Must byte-match their config — ask them to paste it, do not derive it                                     |
-| `caCert`          | bytes (hex PEM) | **KMS party** (verifiable)       | Their TLS CA cert; published at `<storagePrefix>/CACert/<handle>`                          | Fetch + `openssl x509` parse (Annex B.2)                                                                    |
-| `storagePrefix`   | string          | **KMS party**                    | Their core's public-vault prefix (e.g. `PUB-p3`)                                           | The `VerfAddress`/`CACert` fetches above implicitly validate it                                            |
+| `caCert`          | bytes (hex PEM) | **KMS party** (verifiable)       | Their TLS CA cert; published at `<storagePrefix>/CACert/<handle>`                          | Fetch + `openssl x509` parse (Annex B.2)                                                                  |
+| `storagePrefix`   | string          | **KMS party**                    | Their core's public-vault prefix (e.g. `PUB-p3`)                                           | The `VerfAddress`/`CACert` fetches above implicitly validate it                                           |
 
 Committee-level values (set once, not per node):
 
-| Value            | Env var (host)                                                                                   | Notes                                                                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Thresholds       | `PUBLIC_DECRYPTION_THRESHOLD`, `USER_DECRYPTION_THRESHOLD`, `KMS_GEN_THRESHOLD`, `MPC_THRESHOLD` | Committee size must satisfy `n = 3 * MPC_THRESHOLD + 1`                                                                              |
-| Software version | `KMS_SOFTWARE_VERSION`                                                                           | The KMS core release version all parties run                                                                                         |
+| Value            | Env var (host)                                                                                   | Notes                                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Thresholds       | `PUBLIC_DECRYPTION_THRESHOLD`, `USER_DECRYPTION_THRESHOLD`, `KMS_GEN_THRESHOLD`, `MPC_THRESHOLD` | Committee size must satisfy `n = 3 * MPC_THRESHOLD + 1`                                                                             |
+| Software version | `KMS_SOFTWARE_VERSION`                                                                           | The KMS core release version all parties run                                                                                        |
 | PCR values       | `KMS_PCR_VALUES`                                                                                 | JSON `[{"pcr0":"0x…","pcr1":"0x…","pcr2":"0x…"}]`; enclave measurements from the KMS release (zeros only on non-enclave dev stacks) |
 
 ### 2.1 Questionnaire to send external KMS parties
@@ -119,7 +119,7 @@ receiver.
    key/CRS attestations; once the attestations are unanimous the contract emits
    `ActivateEpoch`.
 4. **Watch**: `task:kmsContextSwitchStatus` (Annex B.1) until "fully live". The
-   task labels what it sees on-chain — `same-set-rotation` is *this* flow (a new
+   task labels what it sees on-chain — `same-set-rotation` is _this_ flow (a new
    epoch issued under the same, still-active context), as opposed to
    `context-switch` (a pending context newer than the active one, §4) and `idle`
    (nothing in flight). Alternatively poll `getCurrentKmsContextAndEpoch` for the
@@ -175,6 +175,7 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
    step) can be prepared in parallel. The tx leaves both the context and its epoch
    **PENDING**.
 3. **Register the new committee on the Gateway — before host-side activation**:
+
    ```bash
    cd gateway-contracts
    export KMS_CONTEXT_ID=<the newContextId printed in step 2>   # must match the host
@@ -183,6 +184,7 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
    # Devnet/no-DAO path:
    npx hardhat task:updateKmsContext --network <network>
    ```
+
    This uses the **gateway** env spellings (`KMS_NODE_IP_ADDRESS_{i}`,
    `KMS_GENERATION_THRESHOLD` — see the trap note in Annex B.3).
    `--verify-context-id` pre-flights the on-chain guard: the id must strictly
@@ -197,13 +199,14 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
    pending context in advance closes that window: the old context **stays
    registered** on the gateway, so in-flight requests keep verifying against the
    old committee while it is still the one answering. Two caveats:
-   - clients sending **empty/v0 `extraData`** pin the gateway's *current* pointer,
+   - clients sending **empty/v0 `extraData`** pin the gateway's _current_ pointer,
      which `updateKmsContext` flips immediately — such requests stall until
      activation. With the epoch-aware relayer/SDK (§1), requests carry the host's
      current context explicitly and are unaffected;
    - the gateway pointer only moves **forward** (`KmsContextAlreadyRegistered`
      guard). If the host switch is cancelled after this step (`destroyKmsContext`),
      recover by registering the retry's (higher) context id.
+
 4. **Automatic phase 1 — creation quorum**: every connector (old and new
    committees) submits `confirmKmsContextCreation`. When **all new + (n − t) old**
    tx-senders have confirmed, the context flips to CREATED and the contract emits
@@ -286,7 +289,7 @@ Quorum cheat-sheet:
     Pending until governance destroys it (`destroyKmsEpoch`).
 - **One switch in flight at a time — by convention, not by contract check.**
   `defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext` do not revert
-  while another switch is pending, but the contract's bookkeeping *assumes* at most
+  while another switch is pending, but the contract's bookkeeping _assumes_ at most
   one context and one epoch are non-active (it resolves "the pending epoch" as the
   latest-issued one). Settle an in-flight switch — complete it, or cancel it via
   `destroyKmsContext` / `destroyKmsEpoch` — before opening another.
