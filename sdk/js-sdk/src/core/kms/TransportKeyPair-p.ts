@@ -3,7 +3,7 @@ import type { FhevmRuntime, WithDecrypt } from '../types/coreFhevmRuntime.js';
 import type { Bytes, BytesHex } from '../types/primitives.js';
 import type { TkmsPrivateKey } from '../types/tkms-p.js';
 import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
-import type { NativeClient, OptionalNativeClient } from '../types/coreFhevmClient.js';
+import type { OptionalNativeClient } from '../types/coreFhevmClient.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import { assertIsBytesOrBytesHex, bytesToHexLarge, hexToBytesFaster } from '../base/bytes.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
@@ -183,8 +183,6 @@ export function assertIsTransportKeyPair(
 /** Generates a fresh {@link TransportKeyPair}. */
 export async function generateTransportKeyPair(context: {
   readonly runtime: WithDecrypt;
-  readonly chain: FhevmChain;
-  readonly client: NativeClient;
   readonly tkmsVersion: TkmsVersion;
 }): Promise<TransportKeyPair> {
   const tkmsVersion = context.tkmsVersion;

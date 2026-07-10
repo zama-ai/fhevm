@@ -15,7 +15,7 @@ export async function generateTransportKeyPair(
   fhevm: Fhevm<FhevmChain, WithDecrypt>,
 ): Promise<GenerateTransportKeyPairReturnType> {
   const f = asFhevmWithTkmsVersion(fhevm);
-  return await generateTransportKeyPair_(f);
+  return await generateTransportKeyPair_({ runtime: f.runtime, tkmsVersion: f.tkmsVersion });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
