@@ -47,14 +47,10 @@
 //!
 //! ## Freshness contract
 //!
-//! [`dispatch_solana_mmr_proof`] verifies the proof against the live peaks FIRST. Only on
-//! verification failure does it compare the proof leaf count (the leaf_count the proof was built
-//! against, carried in the legacy `proof_slot` wire field) to the account's live `leaf_count`:
-//! - **mismatch** → `ProcessingError::Irrecoverable`: the lineage advanced since the proof was
-//!   built and the proof's mountain may have merged. The queued request is immutable, so retrying
-//!   it cannot refresh the proof; the client must rebuild and submit a new request.
-//! - **match** (proof leaf count == live leaf_count but still fails to verify) → `Irrecoverable`: the
-//!   proof is simply wrong for the account's actual state, not stale.
+//! [`dispatch_solana_mmr_proof`] verifies the proof against the live peaks FIRST. A failed proof is
+//! terminal because the queued request cannot change its proof bytes; the client must rebuild and
+//! submit a new request. The error retains the proof and live leaf counts to diagnose likely
+//! staleness without giving it a different retry classification.
 //!
 //! A proof that still verifies against the live peaks despite `proof_leaf_count != leaf_count` (count
 //! drifted but the relevant mountain never merged) is accepted — verify-first, never rebuilt from
@@ -334,30 +330,16 @@ fn dispatch_solana_public_mmr_proof(
         .map_err(|e| classify_mmr_verification_failure(e, proof_leaf_count, acl.leaf_count))
 }
 
-/// Verify-FIRST staleness classification: only reached after `verify_*` has already rejected the
-/// proof. A proof-leaf-count/live-`leaf_count` mismatch at that point means the lineage moved since
-/// the proof was built (its mountain may have merged). The request is terminal because its proof
-/// bytes cannot change; the client must submit a new request. Equal counts with a still-failing
-/// proof also mean the request is terminal because the proof is simply wrong.
+/// Terminal mapping reached only after `verify_*` rejects the proof against live finalized peaks.
+/// Both counts are retained for diagnostics; the queued proof bytes cannot be refreshed in place.
 fn classify_mmr_verification_failure(
     error: crate::core::solana_acl::SolanaAclVerificationError,
     proof_leaf_count: u64,
     live_leaf_count: u64,
 ) -> ProcessingError {
-    let is_freshness_shaped = matches!(
-        error,
-        crate::core::solana_acl::SolanaAclVerificationError::HistoricalAccessProofInvalid
-            | crate::core::solana_acl::SolanaAclVerificationError::PublicDecryptProofInvalid
-    );
-    if is_freshness_shaped && proof_leaf_count != live_leaf_count {
-        ProcessingError::Irrecoverable(anyhow!(
-            "Solana MMR proof stale: built at leaf_count={proof_leaf_count}, live leaf_count={live_leaf_count} ({error})"
-        ))
-    } else {
-        ProcessingError::Irrecoverable(anyhow!(
-            "Solana MMR proof invalid or non-freshness failure at live leaf_count={live_leaf_count}: {error}"
-        ))
-    }
+    ProcessingError::Irrecoverable(anyhow!(
+        "Solana MMR proof invalid: built at leaf_count={proof_leaf_count}, live leaf_count={live_leaf_count} ({error})"
+    ))
 }
 
 /// Full Solana user-decryption ACL check for one request: fetches the named `EncryptedValue`
@@ -875,49 +857,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn invalid_mmr_proof_classification_uses_leaf_count() {
-        let kp = identity_kp(15);
-        let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
-        let mut l = lineage(h(80), &[owner]);
-        l.rotate(h(81));
-        l.rotate(h(82));
-        l.rotate(h(83));
-
-        let stale_leaf_count = l.acl.leaf_count;
-        assert_eq!(stale_leaf_count, 3);
-        let stale_blob = proof_blob(MMR_MODE_HISTORICAL, &l.proof(2));
-        l.rotate(h(84));
-        let live_leaf_count = l.acl.leaf_count;
-        assert_eq!(live_leaf_count, 4);
-
-        let verifier = SolanaAclVerifier::new(HOST);
-        let stale_request =
-            signed_mmr_request(&kp, h(82), l.value_key(), stale_blob, stale_leaf_count);
-        let stale_auth = verify_solana_user_decrypt_signature(&stale_request, CHAIN_ID).unwrap();
-        let stale_err =
-            dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(82), &stale_auth)
-                .expect_err("a proof built against an older leaf_count must be rejected");
-        assert!(
-            matches!(stale_err, ProcessingError::Irrecoverable(_)),
-            "stale invalid proof must be terminal, got {stale_err:?}"
-        );
-
-        let mut live_proof = l.proof(2);
-        live_proof.siblings[0][0] ^= 0xff;
-        let live_blob = proof_blob(MMR_MODE_HISTORICAL, &live_proof);
-        let live_request =
-            signed_mmr_request(&kp, h(82), l.value_key(), live_blob, live_leaf_count);
-        let live_auth = verify_solana_user_decrypt_signature(&live_request, CHAIN_ID).unwrap();
-        let live_err =
-            dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(82), &live_auth)
-                .expect_err("an invalid proof carrying the live leaf_count must be rejected");
-        assert!(
-            matches!(live_err, ProcessingError::Irrecoverable(_)),
-            "invalid proof at live leaf_count must be irrecoverable, got {live_err:?}"
-        );
-    }
-
     // (3b) VERIFY-FIRST ACCEPTS COUNT DRIFT WITHOUT A MERGE
     #[test]
     fn valid_proof_survives_count_drift_without_merge() {
@@ -941,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    fn domain_not_allowed_with_stale_slot_is_not_budget_exempt() {
+    fn domain_failure_remains_terminal_when_leaf_count_differs() {
         let kp = identity_kp(14);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
         let mut l = lineage(h(70), &[owner]);
@@ -957,7 +896,7 @@ mod tests {
 
         let verifier = SolanaAclVerifier::new(HOST);
         let err = dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(70), &auth)
-            .expect_err("domain failures must not be classified as stale proofs");
+            .expect_err("domain failures must remain terminal");
         assert!(matches!(err, ProcessingError::Irrecoverable(_)));
     }
 
