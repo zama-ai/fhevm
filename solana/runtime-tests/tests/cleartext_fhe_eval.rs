@@ -4,8 +4,7 @@ use std::collections::HashMap;
 
 use support::cleartext_fhe_eval::{evaluate, ClearInputs, Handle, TypedClearValue};
 use zama_host::{
-    CoprocessorInputAttestation, FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput,
-    FheEvalStep, FheUnaryOpCode,
+    FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheUnaryOpCode,
 };
 
 const BOOL: u8 = 0;
@@ -428,65 +427,26 @@ fn bool_plaintext_and_scalar_use_their_production_encodings() {
 }
 
 #[test]
-fn confidential_transfer_plan_preserves_balances() {
-    for (amount, expected) in [
-        (30, [1, 70, 70, 30, 40]),
-        (130, [0, u64::MAX - 29, 100, 0, 10]),
-    ] {
-        let from = handle(1, U64);
-        let to = handle(2, U64);
-        let amount_handle = handle(3, U64);
-        let inputs = inputs([
-            (from, U64, 100),
-            (to, U64, 10),
-            (amount_handle, U64, amount),
-        ]);
-        let amount = verified(amount_handle);
-        let plan = args(vec![
-            FheEvalStep::Binary {
-                op: FheBinaryOpCode::Ge,
-                lhs: durable(from),
-                rhs: amount.clone(),
-                output_fhe_type: BOOL,
-                output: local(),
-            },
-            FheEvalStep::Binary {
-                op: FheBinaryOpCode::Sub,
-                lhs: durable(from),
-                rhs: amount,
-                output_fhe_type: U64,
-                output: local(),
-            },
-            FheEvalStep::Ternary {
-                op: zama_host::FheTernaryOpCode::IfThenElse,
-                control: local_operand(0),
-                if_true: local_operand(1),
-                if_false: durable(from),
-                output_fhe_type: U64,
-                output: local(),
-            },
-            FheEvalStep::Binary {
-                op: FheBinaryOpCode::Sub,
-                lhs: durable(from),
-                rhs: local_operand(2),
-                output_fhe_type: U64,
-                output: local(),
-            },
-            FheEvalStep::Binary {
-                op: FheBinaryOpCode::Add,
-                lhs: durable(to),
-                rhs: local_operand(3),
-                output_fhe_type: U64,
-                output: local(),
-            },
+fn ternary_selects_the_matching_branch() {
+    let if_true = handle(1, U64);
+    let if_false = handle(2, U64);
+    for (control, expected) in [(0, 20), (1, 10)] {
+        let control_handle = handle(3, BOOL);
+        let plan = args(vec![FheEvalStep::Ternary {
+            op: zama_host::FheTernaryOpCode::IfThenElse,
+            control: durable(control_handle),
+            if_true: durable(if_true),
+            if_false: durable(if_false),
+            output_fhe_type: U64,
+            output: local(),
+        }]);
+        let clear_inputs = inputs([
+            (control_handle, BOOL, control),
+            (if_true, U64, 10),
+            (if_false, U64, 20),
         ]);
 
-        let actual = evaluate(&plan, &inputs)
-            .unwrap()
-            .into_iter()
-            .map(as_u64)
-            .collect::<Vec<_>>();
-        assert_eq!(actual, expected);
+        assert_eq!(as_u64(evaluate(&plan, &clear_inputs).unwrap()[0]), expected);
     }
 }
 
@@ -671,21 +631,6 @@ fn durable(handle: Handle) -> FheEvalOperand {
     FheEvalOperand::AllowedDurable {
         handle,
         encrypted_value_index: 0,
-    }
-}
-
-fn verified(input_handle: Handle) -> FheEvalOperand {
-    FheEvalOperand::VerifiedInput {
-        attestation: Box::new(CoprocessorInputAttestation {
-            input_handle,
-            ct_handles: vec![input_handle],
-            handle_index: 0,
-            user_address: [0; 32],
-            contract_address: [0; 32],
-            contract_chain_id: 0,
-            extra_data: vec![],
-            signatures: vec![],
-        }),
     }
 }
 

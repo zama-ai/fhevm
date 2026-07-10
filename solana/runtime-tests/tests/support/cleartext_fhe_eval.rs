@@ -28,6 +28,9 @@ impl TypedClearValue {
         }
     }
 
+    // Each integration-test target compiles this support module independently; only the
+    // high-width evaluator tests need the full-byte constructor.
+    #[allow(dead_code)]
     pub fn from_be_bytes(fhe_type: u8, value: [u8; 32]) -> Self {
         Self { fhe_type, value }
     }
