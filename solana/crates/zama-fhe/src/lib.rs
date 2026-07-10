@@ -2826,52 +2826,6 @@ fn account_index(
     Ok(index)
 }
 
-/// Explicit escape hatch for host-shaped ABI pieces.
-///
-/// Normal app code should use typed [`Encrypted`], [`DurableSlot`], and
-/// [`AccessPolicy`] instead.
-#[cfg(feature = "raw-host-api")]
-pub mod advanced {
-    use super::{
-        handle_fhe_type, AccessPolicy, AccessSubject, Encrypted, EvalBuildError, EvalBuilder,
-        FheRandom, FheTyped, Operand, Output, Result,
-    };
-    use anchor_lang::prelude::Pubkey;
-
-    pub use zama_host::{AclSubjectEntry, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep};
-
-    pub fn access_policy_from_subjects(subjects: Vec<AclSubjectEntry>) -> Result<AccessPolicy> {
-        AccessPolicy::from_subjects(subjects.into_iter().map(AccessSubject::from_host).collect())
-    }
-
-    pub fn durable_with_encrypted_value<T: FheTyped>(
-        handle: [u8; 32],
-        encrypted_value: Pubkey,
-    ) -> Result<Encrypted<T>> {
-        if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
-            return Err(EvalBuildError::UnsupportedFheType);
-        }
-        Ok(Encrypted::from_operand(Operand::durable(
-            handle,
-            encrypted_value,
-        )))
-    }
-
-    pub fn trivial_encrypt<T: FheTyped>(
-        builder: &mut EvalBuilder,
-        plaintext: [u8; 32],
-        output: Output,
-    ) -> Result<Encrypted<T>> {
-        builder
-            .trivial_encrypt_raw(plaintext, T::FHE_TYPE, output)
-            .map(Encrypted::from_operand)
-    }
-
-    pub fn rand<T: FheRandom>(builder: &mut EvalBuilder, output: Output) -> Result<Encrypted<T>> {
-        builder.rand::<T>(output)
-    }
-}
-
 #[cfg(feature = "cpi")]
 pub struct EvalCpiAccounts<'a, 'info> {
     pub payer: AccountInfo<'info>,
@@ -2902,21 +2856,6 @@ trait EvalAccountResolver<'info> {
 impl<'info> EvalAccountResolver<'info> for ResolvedEvalAccounts<'info> {
     fn resolve_eval_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>> {
         self.resolve(pubkey)
-    }
-}
-
-#[cfg(all(feature = "cpi", feature = "raw-host-api"))]
-struct SliceEvalAccountResolver<'a, 'info> {
-    accounts: &'a [AccountInfo<'info>],
-}
-
-#[cfg(all(feature = "cpi", feature = "raw-host-api"))]
-impl<'info> EvalAccountResolver<'info> for SliceEvalAccountResolver<'_, 'info> {
-    fn resolve_eval_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>> {
-        self.accounts
-            .iter()
-            .find(|candidate| candidate.key() == pubkey)
-            .cloned()
     }
 }
 
@@ -2981,24 +2920,6 @@ where
     let resolved_accounts = plan.resolve_accounts(dynamic_accounts, output_authorities)?;
     invoke_eval_signed_resolved(&plan, accounts, &resolved_accounts, signer_seeds)?;
     Ok(())
-}
-
-/// Invokes `zama-host::fhe_eval` from an [`EvalPlan`].
-///
-/// `available_remaining_accounts` may be in any order. The SDK resolves them by
-/// pubkey, applies signer/writable roles from the plan, and emits the ordered
-/// host account list required by the low-level ABI.
-#[cfg(all(feature = "cpi", feature = "raw-host-api"))]
-pub fn invoke_eval_signed<'a, 'info>(
-    plan: &EvalPlan,
-    accounts: EvalCpiAccounts<'a, 'info>,
-    available_remaining_accounts: &[AccountInfo<'info>],
-    signer_seeds: &[&[&[u8]]],
-) -> anchor_lang::prelude::Result<()> {
-    let resolver = SliceEvalAccountResolver {
-        accounts: available_remaining_accounts,
-    };
-    invoke_eval_signed_with_resolver(plan, accounts, &resolver, signer_seeds)
 }
 
 /// Invokes `zama-host::fhe_eval` with accounts pre-resolved from an [`EvalPlan`].
@@ -4281,15 +4202,6 @@ mod tests {
 
         assert_eq!(
             AccessPolicy::from_subjects(Vec::<AccessSubject>::new()).unwrap_err(),
-            EvalBuildError::InvalidAccessPolicy
-        );
-
-        #[cfg(feature = "raw-host-api")]
-        assert_eq!(
-            advanced::access_policy_from_subjects(vec![AclSubjectEntry {
-                pubkey: Pubkey::default(),
-            }])
-            .unwrap_err(),
             EvalBuildError::InvalidAccessPolicy
         );
     }
