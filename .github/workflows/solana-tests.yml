@@ -154,23 +154,35 @@ jobs:
             echo '| Component | Covered lines | Coverage |'
             echo '| --- | ---: | ---: |'
             jq -r '
-              def row($label; $path):
-                [.data[0].files[] | select(.filename | contains($path)) | .summary.lines] as $parts
+              def components: [
+                {label: "zama-solana-acl", path: "/crates/zama-solana-acl/"},
+                {label: "solana-ed25519-instruction", path: "/crates/solana-ed25519-instruction/"},
+                {label: "zama-fhe", path: "/crates/zama-fhe/"},
+                {label: "zama-host", path: "/programs/zama-host/"},
+                {label: "confidential-token", path: "/programs/confidential-token/"},
+                {label: "confidential-deposit-app", path: "/programs/confidential-deposit-app/"}
+              ];
+              def line_parts($report; $path):
+                [$report.data[0].files[] | select(.filename | contains($path)) | .summary.lines];
+              def row($report; $component):
+                line_parts($report; $component.path) as $parts
                 | ($parts | map(.count) | add) as $total
                 | ($parts | map(.covered) | add) as $covered
                 | if ($total // 0) == 0 then
-                    error("no coverage entries found for \($label)")
+                    error("no coverage entries found for \($component.label)")
                   else
-                    "| \($label) | \($covered)/\($total) | \((($covered * 10000 / $total) | round) / 100)% |"
+                    "| \($component.label) | \($covered)/\($total) | \((($covered * 10000 / $total) | round) / 100)% |"
                   end;
-              [
-                row("zama-solana-acl"; "/crates/zama-solana-acl/"),
-                row("solana-ed25519-instruction"; "/crates/solana-ed25519-instruction/"),
-                row("zama-fhe"; "/crates/zama-fhe/"),
-                row("zama-host"; "/programs/zama-host/"),
-                row("confidential-token"; "/programs/confidential-token/"),
-                row("confidential-deposit-app"; "/programs/confidential-deposit-app/")
-              ][]
+              . as $report
+              | components as $components
+              | [$components[] | line_parts($report; .path)[] | .count] as $selected_counts
+              | ($selected_counts | add) as $selected_total
+              | $report.data[0].totals.lines.count as $workspace_total
+              | if $selected_total != $workspace_total then
+                  error("component rows cover \($selected_total) of \($workspace_total) workspace lines")
+                else
+                  $components[] | row($report; .)
+                end
             ' /tmp/solana-native-coverage.json
           } >> "$GITHUB_STEP_SUMMARY"
 
