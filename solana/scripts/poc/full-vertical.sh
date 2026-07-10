@@ -298,12 +298,32 @@ assert_decrypt() {
   job="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
     -d "{\"ciphertextHandles\":[\"$handle\"],\"extraData\":\"$EXTRA\"}" | \
     python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
-  for i in $(seq 1 80); do
+  for i in $(seq 1 40); do
     r="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$job")"
     st="$(echo "$r" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)" || st=""
     [ "$st" = succeeded ] && break
     [ "$st" = failed ] && fail "$label public-decrypt failed: $r"
-    [ "$i" = 80 ] && fail "$label public-decrypt timed out"
+    if [ "$i" = 40 ]; then
+      echo "DEBUG: $label public-decrypt did not settle for handle $handle"
+      docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -c "
+        SELECT encode(output_handle, 'hex') AS output_handle, fhe_operation,
+               is_completed, is_error, error_message,
+               array_to_string(ARRAY(SELECT encode(dep, 'hex') FROM unnest(dependencies) AS dep), ',') AS dependencies
+        FROM computations
+        WHERE output_handle = decode('${handle#0x}', 'hex');
+        SELECT encode(handle, 'hex') AS handle, is_completed, completed_at
+        FROM pbs_computations
+        WHERE handle = decode('${handle#0x}', 'hex');
+        SELECT encode(handle, 'hex') AS handle,
+               ciphertext IS NOT NULL AS ciphertext_ready,
+               ciphertext128 IS NOT NULL AS ciphertext128_ready
+        FROM ciphertext_digest
+        WHERE handle = decode('${handle#0x}', 'hex');
+      " || true
+      docker logs --tail 200 coprocessor-tfhe-worker || true
+      docker logs --tail 200 coprocessor-host-listener || true
+      fail "$label public-decrypt timed out"
+    fi
     sleep 3
   done
   dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
