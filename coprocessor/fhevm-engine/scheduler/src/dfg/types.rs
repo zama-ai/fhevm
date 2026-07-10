@@ -1,5 +1,6 @@
 use anyhow::Result;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct CompressedCiphertext {
@@ -14,7 +15,7 @@ pub struct ComputationOutput {
 
 pub struct TaskResult {
     pub compressed_ct: CompressedCiphertext,
-    pub working_ct: Option<SupportedFheCiphertexts>,
+    pub working_ct: Option<Arc<SupportedFheCiphertexts>>,
     pub is_allowed: bool,
     pub transaction_id: Handle,
 }
@@ -44,7 +45,7 @@ impl std::fmt::Debug for DFGTxResult {
 }
 #[derive(Clone)]
 pub enum DFGTxInput {
-    Value((SupportedFheCiphertexts, bool)),
+    Value((Arc<SupportedFheCiphertexts>, bool)),
     Compressed((CompressedCiphertext, bool)),
 }
 impl std::fmt::Debug for DFGTxInput {

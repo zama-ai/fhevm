@@ -1936,7 +1936,7 @@ async fn build_transaction_graph_and_execute<'a>(
                     if input.rerandomize_as_boundary {
                         re_randomise_boundary_input(&mut working, &block_hash, &cpk)?;
                     }
-                    results.push((handle, DFGTxInput::Value((working, true))));
+                    results.push((handle, DFGTxInput::Value((Arc::new(working), true))));
                 }
                 Ok(results)
             }

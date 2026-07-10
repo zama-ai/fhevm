@@ -745,7 +745,9 @@ impl OpNode {
                 DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => continue,
                 DFGTaskInput::Dependence(d) => {
                     let resolved = match ct_map.get(d) {
-                        Some(Some(DFGTxInput::Value((val, _)))) => DFGTaskInput::Value(val.clone()),
+                        Some(Some(DFGTxInput::Value((val, _)))) => {
+                            DFGTaskInput::Value(val.as_ref().clone())
+                        }
                         Some(Some(DFGTxInput::Compressed((cct, _)))) => {
                             DFGTaskInput::Compressed(cct.clone())
                         }

@@ -18,6 +18,7 @@ use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{get_ct_type, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -413,17 +414,14 @@ fn execute_partition(
                     let handle = node.result_handle.clone();
                     let result = match result.1 {
                         Ok(v) => {
+                            let working = Arc::new(v.working);
                             let task_result = TaskResult {
                                 compressed_ct: v.compressed,
-                                working_ct: Some(v.working),
+                                working_ct: Some(working.clone()),
                                 is_allowed: node.is_allowed,
                                 transaction_id: tid.clone(),
                             };
-                            let working = task_result.working_ct.as_ref().expect(
-                                "same-block propagation invariant violation: successful output missing working ciphertext",
-                            );
-                            let input =
-                                DFGTxInput::Value((working.clone(), task_result.is_allowed));
+                            let input = DFGTxInput::Value((working, task_result.is_allowed));
                             available_outputs.insert(handle.clone(), input);
                             Ok(task_result)
                         }
