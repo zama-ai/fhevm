@@ -2151,7 +2151,7 @@ async fn upload_transaction_graph_results<'a>(
                         continue;
                     }
                 }
-                set_computation_error(
+                let errored_computations = set_computation_error(
                     &result.handle,
                     &context.transaction_id,
                     &context.producer_block_hash,
@@ -2160,6 +2160,7 @@ async fn upload_transaction_graph_results<'a>(
                     deps_mngr,
                 )
                 .await?;
+                res |= errored_computations > 0;
             }
         }
     }
@@ -2363,30 +2364,172 @@ async fn set_computation_error<'a>(
     cerr: &(dyn std::error::Error + Send + Sync),
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
-) -> Result<(), CoprocessorError> {
+) -> Result<u64, CoprocessorError> {
     WORKER_ERRORS_COUNTER.inc();
     let err_string = cerr.to_string();
     error!(target: "tfhe_worker", error = %err_string, output_handle = %format!("0x{}", hex::encode(output_handle)), "error while processing work item");
     telemetry::set_current_span_error(&err_string);
 
-    let _ = sqlx::query!(
-        r#"
-        UPDATE computations_branch
-        SET is_error = true, error_message = $1
-        WHERE output_handle = $2
-          AND transaction_id = $3
-          AND producer_block_hash = $4
-        "#,
-        &err_string,
+    let errored_computations = persist_terminal_computation_error(
         output_handle,
         transaction_id,
         producer_block_hash,
+        &err_string,
+        trx,
     )
-    .execute(trx.as_mut())
     .await?;
 
     deps_mngr.set_processing_error(Some(err_string)).await?;
-    Ok(())
+    Ok(errored_computations)
+}
+
+/// Persist a terminal computation error and make its same-block dependency
+/// closure terminal. Ordinary `MissingInputs` never reaches this function, so
+/// work whose producer was merely not selected remains retryable.
+async fn persist_terminal_computation_error<'a>(
+    output_handle: &[u8],
+    transaction_id: &[u8],
+    producer_block_hash: &[u8],
+    error_message: &str,
+    trx: &mut sqlx::Transaction<'a, Postgres>,
+) -> Result<u64, sqlx::Error> {
+    let root_updated = sqlx::query(
+        r#"
+        UPDATE computations_branch
+        SET is_error = TRUE,
+            error_message = $1,
+            error_root_output_handle = NULL,
+            error_root_transaction_id = NULL,
+            error_root_producer_block_hash = NULL
+        WHERE output_handle = $2
+          AND transaction_id = $3
+          AND producer_block_hash = $4
+          AND is_completed = FALSE
+        "#,
+    )
+    .bind(error_message)
+    .bind(output_handle)
+    .bind(transaction_id)
+    .bind(producer_block_hash)
+    .execute(trx.as_mut())
+    .await?
+    .rows_affected();
+
+    let derived_message = format!(
+        "blocked by terminal computation error at output 0x{} transaction 0x{}",
+        hex::encode(output_handle),
+        hex::encode(transaction_id),
+    );
+    let derived_updated = sqlx::query(
+        r#"
+        WITH RECURSIVE root AS (
+            SELECT c.output_handle,
+                   c.transaction_id,
+                   c.producer_block_hash,
+                   c.host_chain_id,
+                   c.block_number
+              FROM computations_branch c
+             WHERE c.output_handle = $1
+               AND c.transaction_id = $2
+               AND c.producer_block_hash = $3
+               AND c.producer_block_hash <> ''::BYTEA
+               AND c.is_completed = FALSE
+               AND c.is_error = TRUE
+               -- Consumers route from the lexicographically smallest producer
+               -- when several transactions derive the same handle. An error in
+               -- a non-canonical producer must not poison that consumer path.
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM computations_branch earlier
+                    WHERE earlier.host_chain_id = c.host_chain_id
+                      AND earlier.block_number IS NOT DISTINCT FROM c.block_number
+                      AND earlier.producer_block_hash = c.producer_block_hash
+                      AND earlier.output_handle = c.output_handle
+                      AND earlier.transaction_id < c.transaction_id
+               )
+        ),
+        derived AS (
+            SELECT child.output_handle,
+                   child.transaction_id,
+                   child.producer_block_hash,
+                   child.host_chain_id,
+                   child.block_number
+              FROM root parent
+              JOIN computations_branch child
+                ON child.host_chain_id = parent.host_chain_id
+               AND child.block_number IS NOT DISTINCT FROM parent.block_number
+               AND child.producer_block_hash = parent.producer_block_hash
+               AND parent.output_handle = ANY(child.dependencies)
+             WHERE child.is_completed = FALSE
+               AND (child.is_error = FALSE OR child.error_root_output_handle IS NOT NULL)
+
+            UNION
+
+            SELECT child.output_handle,
+                   child.transaction_id,
+                   child.producer_block_hash,
+                   child.host_chain_id,
+                   child.block_number
+              FROM derived parent
+              JOIN computations_branch child
+                ON child.host_chain_id = parent.host_chain_id
+               AND child.block_number IS NOT DISTINCT FROM parent.block_number
+               AND child.producer_block_hash = parent.producer_block_hash
+               AND parent.output_handle = ANY(child.dependencies)
+             WHERE child.is_completed = FALSE
+               AND (child.is_error = FALSE OR child.error_root_output_handle IS NOT NULL)
+               -- A failed non-canonical alias is terminal itself, but its output
+               -- handle is still supplied by the canonical producer.
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM computations_branch earlier
+                    WHERE earlier.host_chain_id = parent.host_chain_id
+                      AND earlier.block_number IS NOT DISTINCT FROM parent.block_number
+                      AND earlier.producer_block_hash = parent.producer_block_hash
+                      AND earlier.output_handle = parent.output_handle
+                      AND earlier.transaction_id < parent.transaction_id
+               )
+        )
+        UPDATE computations_branch target
+           SET is_error = TRUE,
+               error_message = $4,
+               error_root_output_handle = $1,
+               error_root_transaction_id = $2,
+               error_root_producer_block_hash = $3
+          FROM derived d
+         WHERE target.output_handle = d.output_handle
+           AND target.transaction_id = d.transaction_id
+           AND target.producer_block_hash = d.producer_block_hash
+           AND target.is_completed = FALSE
+           AND (
+                target.is_error = FALSE
+                OR (
+                    target.error_root_output_handle IS NOT NULL
+                    AND (
+                        target.error_root_output_handle > $1
+                        OR (
+                            target.error_root_output_handle = $1
+                            AND target.error_root_transaction_id > $2
+                        )
+                        OR (
+                            target.error_root_output_handle = $1
+                            AND target.error_root_transaction_id = $2
+                            AND target.error_root_producer_block_hash > $3
+                        )
+                    )
+                )
+           )
+        "#,
+    )
+    .bind(output_handle)
+    .bind(transaction_id)
+    .bind(producer_block_hash)
+    .bind(derived_message)
+    .execute(trx.as_mut())
+    .await?
+    .rows_affected();
+
+    Ok(root_updated + derived_updated)
 }
 
 #[cfg(test)]
@@ -2398,14 +2541,17 @@ mod tests {
         add_branchless_ciphertext_metadata_fallback, build_current_branch_ancestry,
         dedupe_ciphertext_inserts, dedupe_ciphertext_inserts_inner,
         ensure_ciphertext_write_above_settled, observe_same_block_db_dependency_violation,
-        query_dependency_metadata, query_work_rows_for_dcid, resolve_current_branch_candidates,
-        resolve_dependency_metadata, select_ciphertext_candidate, settled_ciphertext_divergence,
-        BatchExecutionContext, BlockAncestorRow, CiphertextCandidate, CiphertextDedupeEntry,
-        CiphertextInsert, DependencyMetadata, ProducerCandidate,
+        persist_terminal_computation_error, query_dependency_metadata, query_work_rows_for_dcid,
+        resolve_current_branch_candidates, resolve_dependency_metadata,
+        select_ciphertext_candidate, settled_ciphertext_divergence, BatchExecutionContext,
+        BlockAncestorRow, CiphertextCandidate, CiphertextDedupeEntry, CiphertextInsert,
+        DependencyMetadata, ProducerCandidate,
     };
+    use fhevm_engine_common::branch::advance_settled_height;
     use fhevm_engine_common::drift_revert::WatcherTimeouts;
     use fhevm_engine_common::telemetry::MetricsConfig;
     use serial_test::serial;
+    use sqlx::Row;
     use test_harness::instance::{setup_test_db, ImportMode};
     use tracing::Level;
 
@@ -2472,6 +2618,321 @@ mod tests {
         .execute(pool)
         .await
         .expect("insert computations_branch row");
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_dependency_work_row(
+        pool: &sqlx::PgPool,
+        transaction_id: &[u8],
+        output_handle: &[u8],
+        dependencies: &[Vec<u8>],
+        producer_block_hash: &[u8],
+        block_number: i64,
+        is_completed: bool,
+        is_error: bool,
+    ) {
+        sqlx::query(
+            r#"
+            INSERT INTO computations_branch (
+                output_handle,
+                dependencies,
+                fhe_operation,
+                is_scalar,
+                is_allowed,
+                dependence_chain_id,
+                transaction_id,
+                host_chain_id,
+                block_number,
+                producer_block_hash,
+                is_completed,
+                is_error,
+                schedule_order
+            )
+            VALUES ($1, $2, 1, FALSE, TRUE, $3, $3, 1, $4, $5, $6, $7, NOW())
+            "#,
+        )
+        .bind(output_handle)
+        .bind(dependencies)
+        .bind(transaction_id)
+        .bind(block_number)
+        .bind(producer_block_hash)
+        .bind(is_completed)
+        .bind(is_error)
+        .execute(pool)
+        .await
+        .expect("insert dependency computations_branch row");
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn terminal_error_marks_same_block_dependency_closure_with_root() {
+        let db = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db.db_url())
+            .await
+            .expect("connect db");
+
+        let block_hash = vec![0xB1_u8; 32];
+        let other_block_hash = vec![0xB2_u8; 32];
+        let root_handle = vec![0x10_u8; 32];
+        let child_handle = vec![0x20_u8; 32];
+        let grandchild_handle = vec![0x30_u8; 32];
+        let unrelated_handle = vec![0x40_u8; 32];
+        let other_block_child = vec![0x50_u8; 32];
+        let completed_child = vec![0x60_u8; 32];
+        let root_tid = vec![0x01_u8; 32];
+
+        insert_dependency_work_row(
+            &pool,
+            &root_tid,
+            &root_handle,
+            &[],
+            &block_hash,
+            42,
+            false,
+            false,
+        )
+        .await;
+        insert_dependency_work_row(
+            &pool,
+            &[0x02; 32],
+            &child_handle,
+            std::slice::from_ref(&root_handle),
+            &block_hash,
+            42,
+            false,
+            false,
+        )
+        .await;
+        insert_dependency_work_row(
+            &pool,
+            &[0x03; 32],
+            &grandchild_handle,
+            std::slice::from_ref(&child_handle),
+            &block_hash,
+            42,
+            false,
+            false,
+        )
+        .await;
+        insert_dependency_work_row(
+            &pool,
+            &[0x04; 32],
+            &unrelated_handle,
+            &[],
+            &block_hash,
+            42,
+            false,
+            false,
+        )
+        .await;
+        insert_dependency_work_row(
+            &pool,
+            &[0x05; 32],
+            &other_block_child,
+            std::slice::from_ref(&root_handle),
+            &other_block_hash,
+            43,
+            false,
+            false,
+        )
+        .await;
+        insert_dependency_work_row(
+            &pool,
+            &[0x06; 32],
+            &completed_child,
+            std::slice::from_ref(&root_handle),
+            &block_hash,
+            42,
+            true,
+            false,
+        )
+        .await;
+
+        let mut tx = pool.begin().await.expect("begin tx");
+        let affected = persist_terminal_computation_error(
+            &root_handle,
+            &root_tid,
+            &block_hash,
+            "root failed",
+            &mut tx,
+        )
+        .await
+        .expect("persist terminal closure");
+        tx.commit().await.expect("commit terminal closure");
+        assert_eq!(affected, 3, "root and two pending descendants");
+
+        let rows = sqlx::query(
+            r#"
+            SELECT output_handle,
+                   is_completed,
+                   is_error,
+                   error_message,
+                   error_root_output_handle,
+                   error_root_transaction_id,
+                   error_root_producer_block_hash
+              FROM computations_branch
+             WHERE output_handle = ANY($1::BYTEA[])
+            "#,
+        )
+        .bind(vec![
+            root_handle.clone(),
+            child_handle.clone(),
+            grandchild_handle.clone(),
+            unrelated_handle.clone(),
+            other_block_child.clone(),
+            completed_child.clone(),
+        ])
+        .fetch_all(&pool)
+        .await
+        .expect("read terminal closure");
+
+        let states = rows
+            .into_iter()
+            .map(|row| {
+                let handle: Vec<u8> = row.get("output_handle");
+                (handle, row)
+            })
+            .collect::<HashMap<_, _>>();
+
+        let root = states.get(&root_handle).expect("root state");
+        assert!(root.get::<bool, _>("is_error"));
+        assert_eq!(
+            root.get::<Option<String>, _>("error_message").as_deref(),
+            Some("root failed")
+        );
+        assert!(root
+            .get::<Option<Vec<u8>>, _>("error_root_output_handle")
+            .is_none());
+
+        for handle in [&child_handle, &grandchild_handle] {
+            let row = states.get(handle).expect("derived state");
+            assert!(row.get::<bool, _>("is_error"));
+            assert_eq!(
+                row.get::<Option<Vec<u8>>, _>("error_root_output_handle"),
+                Some(root_handle.clone())
+            );
+            assert_eq!(
+                row.get::<Option<Vec<u8>>, _>("error_root_transaction_id"),
+                Some(root_tid.clone())
+            );
+            assert_eq!(
+                row.get::<Option<Vec<u8>>, _>("error_root_producer_block_hash"),
+                Some(block_hash.clone())
+            );
+        }
+
+        for handle in [&unrelated_handle, &other_block_child] {
+            assert!(!states
+                .get(handle)
+                .expect("unaffected state")
+                .get::<bool, _>("is_error"));
+        }
+        let completed = states.get(&completed_child).expect("completed state");
+        assert!(completed.get::<bool, _>("is_completed"));
+        assert!(!completed.get::<bool, _>("is_error"));
+
+        sqlx::query("UPDATE computations_branch SET is_completed = TRUE WHERE output_handle = $1")
+            .bind(&unrelated_handle)
+            .execute(&pool)
+            .await
+            .expect("complete unrelated work");
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+                (chain_id, block_hash, block_number, block_status)
+             VALUES (1, $1, 42, 'finalized')",
+        )
+        .bind(&block_hash)
+        .execute(&pool)
+        .await
+        .expect("insert finalized block");
+        sqlx::query("INSERT INTO coprocessor_settlement (chain_id, settled_height) VALUES (1, 41)")
+            .execute(&pool)
+            .await
+            .expect("seed settlement");
+
+        let mut tx = pool.begin().await.expect("begin settlement tx");
+        let settled = advance_settled_height(&mut tx, 1, 42, 42)
+            .await
+            .expect("advance settlement over terminal closure");
+        tx.commit().await.expect("commit settlement");
+        assert_eq!(settled, 42);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn noncanonical_producer_error_does_not_poison_consumers() {
+        let db = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db.db_url())
+            .await
+            .expect("connect db");
+
+        let block_hash = vec![0xC1_u8; 32];
+        let shared_handle = vec![0x70_u8; 32];
+        let child_handle = vec![0x71_u8; 32];
+        let canonical_tid = vec![0x01_u8; 32];
+        let alias_tid = vec![0x02_u8; 32];
+
+        insert_dependency_work_row(
+            &pool,
+            &canonical_tid,
+            &shared_handle,
+            &[],
+            &block_hash,
+            50,
+            false,
+            false,
+        )
+        .await;
+        insert_dependency_work_row(
+            &pool,
+            &alias_tid,
+            &shared_handle,
+            &[],
+            &block_hash,
+            50,
+            false,
+            false,
+        )
+        .await;
+        insert_dependency_work_row(
+            &pool,
+            &[0x03; 32],
+            &child_handle,
+            std::slice::from_ref(&shared_handle),
+            &block_hash,
+            50,
+            false,
+            false,
+        )
+        .await;
+
+        let mut tx = pool.begin().await.expect("begin tx");
+        let affected = persist_terminal_computation_error(
+            &shared_handle,
+            &alias_tid,
+            &block_hash,
+            "alias failed",
+            &mut tx,
+        )
+        .await
+        .expect("persist alias error");
+        tx.commit().await.expect("commit alias error");
+        assert_eq!(affected, 1, "only the failed alias is terminal");
+
+        let child_is_error: bool =
+            sqlx::query_scalar("SELECT is_error FROM computations_branch WHERE output_handle = $1")
+                .bind(&child_handle)
+                .fetch_one(&pool)
+                .await
+                .expect("read child state");
+        assert!(
+            !child_is_error,
+            "canonical producer can still supply the child"
+        );
     }
 
     fn cutover_guard_args(db_url: &str, branch_cutover_block: i64) -> crate::daemon_cli::Args {

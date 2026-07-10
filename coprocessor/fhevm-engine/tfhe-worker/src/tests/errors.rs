@@ -6,6 +6,7 @@ use crate::tests::event_helpers::{
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use serial_test::serial;
+use sqlx::Row;
 
 #[tokio::test]
 #[serial(db)]
@@ -115,6 +116,21 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     )
     .await?;
     allow_handle(&listener_db, &mut tx, &output).await?;
+
+    let dependent_output = next_handle();
+    insert_event(
+        &listener_db,
+        &mut tx,
+        tx_id,
+        TfheContractEvents::FheNeg(TfheContract::FheNeg {
+            caller: zero_address(),
+            ct: output,
+            result: dependent_output,
+        }),
+        true,
+    )
+    .await?;
+    allow_handle(&listener_db, &mut tx, &dependent_output).await?;
     tx.commit().await?;
 
     let (is_error, msg) = wait_for_error(&pool, output.as_ref(), tx_id.as_ref()).await?;
@@ -126,6 +142,50 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     assert!(
         error_msg.contains("UnsupportedFheTypes"),
         "expected UnsupportedFheTypes error, got: {error_msg}"
+    );
+
+    let (dependent_is_error, dependent_msg) =
+        wait_for_error(&pool, dependent_output.as_ref(), tx_id.as_ref()).await?;
+    assert!(
+        dependent_is_error,
+        "dependent computation must become terminal when its root fails"
+    );
+    assert!(
+        dependent_msg
+            .as_deref()
+            .is_some_and(|msg| msg.contains("blocked by terminal computation error")),
+        "dependent computation must record a derived error, got: {dependent_msg:?}"
+    );
+
+    let root = sqlx::query(
+        r#"
+        SELECT error_root_output_handle,
+               error_root_transaction_id,
+               error_root_producer_block_hash
+          FROM computations_branch
+         WHERE output_handle = $1
+           AND transaction_id = $2
+           AND producer_block_hash <> ''::BYTEA
+        "#,
+    )
+    .bind(dependent_output.as_slice())
+    .bind(tx_id.as_slice())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        root.get::<Option<Vec<u8>>, _>("error_root_output_handle")
+            .as_deref(),
+        Some(output.as_slice())
+    );
+    assert_eq!(
+        root.get::<Option<Vec<u8>>, _>("error_root_transaction_id")
+            .as_deref(),
+        Some(tx_id.as_slice())
+    );
+    assert!(
+        root.get::<Option<Vec<u8>>, _>("error_root_producer_block_hash")
+            .is_some(),
+        "derived error must record the root block"
     );
     Ok(())
 }
