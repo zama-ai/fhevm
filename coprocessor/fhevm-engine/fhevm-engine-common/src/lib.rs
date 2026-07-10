@@ -44,7 +44,7 @@ macro_rules! stack_version {
 #[cfg(not(feature = "stack-version-override"))]
 macro_rules! stack_version {
     () => {
-        "0.14.0"
+        "0.15.0"
     };
 }
 pub(crate) use stack_version;

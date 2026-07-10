@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use aws_sdk_s3::primitives::ByteStream;
-use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
+use fhevm_engine_common::database::{GCS_SCHEMA, GCS_SCHEMA_QUOTED};
 use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
 use sqlx::{postgres::PgListener, Pool, Postgres, Row};
 use tokio::select;
@@ -410,7 +410,12 @@ async fn upload_pending_gw_state_hashes(
                     .bind(block_number)
                     .execute(pool)
                     .await?;
-                info!(gw_chain_id, block_number, bucket = my_bucket, "gw state_hash uploaded");
+                info!(
+                    gw_chain_id,
+                    block_number,
+                    bucket = my_bucket,
+                    "gw state_hash uploaded"
+                );
             }
             Err(e) => {
                 warn!(gw_chain_id, block_number, error = %e, "gw state_hash upload failed; will retry");
@@ -418,6 +423,20 @@ async fn upload_pending_gw_state_hashes(
         }
     }
     Ok(())
+}
+
+/// True iff the versioned GCS schema (e.g. `gcs-0.15.0`) exists in the catalog.
+/// Checked against `information_schema.schemata` by exact (unquoted) name, so the
+/// hyphen/dots in the schema name need no identifier quoting. See
+/// [`compute_and_upload_state_hashes`] for why the pass is gated on this.
+async fn gcs_schema_exists(pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    let (exists,): (bool,) = sqlx::query_as(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
+    )
+    .bind(GCS_SCHEMA)
+    .fetch_one(pool)
+    .await?;
+    Ok(exists)
 }
 
 /// One reconciliation pass: compute + insert any pending GCS state hashes for
@@ -431,6 +450,23 @@ async fn compute_and_upload_state_hashes(
     batch_limit: i64,
     gw_chain_id: i64,
 ) -> anyhow::Result<()> {
+    // Every branch below touches the versioned GCS schema — the compute paths and
+    // the GW-inputs upload explicitly via GCS_SCHEMA_QUOTED, the host-chain upload
+    // implicitly through the gcs-first search_path. That schema is created by the
+    // GCS-side upgrade-controller at startup, and only for the stack version it is
+    // dry-running. Before an upgrade of THIS binary's version — or on a plain BCS
+    // deployment whose live version differs from the compiled STACK_VERSION — the
+    // schema is absent, and the hard-qualified GW upload would fail every pass with
+    // `relation "gcs-<ver>.state_hash" does not exist`. There is nothing to compute
+    // or upload without the schema, so skip the whole pass cleanly.
+    if !gcs_schema_exists(pool).await? {
+        debug!(
+            schema = GCS_SCHEMA,
+            "GCS schema absent — skipping state_hash pass"
+        );
+        return Ok(());
+    }
+
     // GCS hashes are only produced during an active upgrade window; BCS hashes
     // are not produced because they would never be uploaded or consumed.
     if let Some((start, end)) = crate::active_upgrade_window(pool).await? {
@@ -441,14 +477,8 @@ async fn compute_and_upload_state_hashes(
         if let (Some(gw_start), Some(gw_tip)) =
             (gw_start_block(pool).await?, gw_listener_tip(pool).await?)
         {
-            compute_and_insert_gw_input_hashes(
-                pool,
-                gw_chain_id,
-                gw_start,
-                gw_tip,
-                batch_limit,
-            )
-            .await?;
+            compute_and_insert_gw_input_hashes(pool, gw_chain_id, gw_start, gw_tip, batch_limit)
+                .await?;
         }
     }
 
