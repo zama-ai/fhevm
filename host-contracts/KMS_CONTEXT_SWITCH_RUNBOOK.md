@@ -12,7 +12,7 @@ parties:
 Audience: whoever coordinates the governance operation with the external KMS parties.
 
 Document map: §1 version prerequisites → §2 collecting the party metadata →
-§3–4 the two flows → §5 quick reference. Background material
+§3–4 the two operations → §5 quick reference. Background material
 lives at the end: **Annex A** (concepts and invariants) and **Annex B** (commands
 and helper scripts, referenced throughout as B.1–B.3).
 
@@ -25,18 +25,18 @@ The reference release is [`v0.14.0-1`](https://github.com/zama-ai/fhevm/tree/v0.
 versions **before** scheduling any window; the standard decrypt path working proves
 nothing about the switch path.
 
-| Component                           | Minimum version                                | Artifact                                                                           | How to check the deployment                         |
-| ----------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Host contracts (`ProtocolConfig`)   | ProtocolConfig `>=0.2.0`                       | `ghcr.io/zama-ai/fhevm/host-contracts:v0.14.0-1`                                   | `cast call $PROTOCOL_CONFIG "getVersion()(string)"` |
-| Gateway contracts (`GatewayConfig`) | GatewayConfig `>=0.7.0`                        | `ghcr.io/zama-ai/fhevm/gateway-contracts:v0.14.0-1`                                | `cast call $GATEWAY_CONFIG "getVersion()(string)"`  |
-| KMS connector (all parties)         | fhevm `v0.14.0-1` (connector crates `0.14.0`)  | `ghcr.io/zama-ai/fhevm/kms-connector/{gw-listener,kms-worker,tx-sender}:v0.14.0-1` | Confirm running parties image tag                   |
-| KMS core (all parties)              | kms `v0.14.0-1` or later (`v0.14.0-1` current) | `ghcr.io/zama-ai/kms/core-service:v0.14.0-1`                                       | Confirm running parties image                       |
-| Relayer                             | relayer `v0.14.0-1` or later                   | `ghcr.io/zama-ai/fhevm/relayer:v0.14.0-1`                                          | Confirm running image tag                           |
+| Component                           | Minimum version              | Artifact                                                                           | How to check the deployment                         |
+| ----------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Host contracts (`ProtocolConfig`)   | ProtocolConfig `>=0.2.0`     | `ghcr.io/zama-ai/fhevm/host-contracts:v0.14.0-1`                                   | `cast call $PROTOCOL_CONFIG "getVersion()(string)"` |
+| Gateway contracts (`GatewayConfig`) | GatewayConfig `>=0.7.0`      | `ghcr.io/zama-ai/fhevm/gateway-contracts:v0.14.0-1`                                | `cast call $GATEWAY_CONFIG "getVersion()(string)"`  |
+| KMS connector (all parties)         | fhevm `v0.14.0-1`            | `ghcr.io/zama-ai/fhevm/kms-connector/{gw-listener,kms-worker,tx-sender}:v0.14.0-1` | Confirm running parties image tag                   |
+| KMS core (all parties)              | kms `v0.14.0-1` or later     | `ghcr.io/zama-ai/kms/core-service:v0.14.0-1`                                       | Confirm running parties image                       |
+| Relayer                             | relayer `v0.14.0-1` or later | `ghcr.io/zama-ai/fhevm/relayer:v0.14.0-1`                                          | Confirm running image tag                           |
 
 ## 2. Preparing the KMS node party metadata
 
 A context switch registers the new committee on-chain as one `KmsNodeParams` entry
-per KMS node (struct in `host-contracts/contracts/shared/Structs.sol:31`). Each entry is the node's
+per KMS node (struct in `host-contracts/contracts/shared/Structs.sol`). Each entry is the node's
 full protocol identity — how the chain authenticates it, how the other parties'
 cores reach it, and where it publishes its public key material:
 
@@ -44,7 +44,7 @@ cores reach it, and where it publishes its public key material:
   confirmations) and the _signer_ (the core's key that signs key-material
   attestations) — a common mistake is swapping them;
 - **network endpoints**: the core's MPC endpoint (peer-to-peer between parties) and
-  the public vault (S3/MinIO) where the core publishes its verification address and
+  the public vault (S3 bucket) where the core publishes its verification address and
   TLS CA cert;
 - **MPC metadata**: the positional `partyId` (assigned by the coordinator) and the
   `mpcIdentity` string, which must byte-match the party's own core configuration.
@@ -126,8 +126,7 @@ receiver.
    epoch id to advance.
 5. **Verify**: run a decryption smoke test **after** the epoch id advances. The
    relayer must already be epoch-aware (§1) or requests will carry the stale epoch.
-6. **Gateway: nothing to do.** `updateKmsContext` registers node sets; an epoch
-   rotation changes no nodes.
+6. **Gateway: nothing to do.**
 
 ## 4. Context switch (committee change / node swap)
 
@@ -308,6 +307,10 @@ All host-side reads work with `cast` against the `ProtocolConfig` proxy
 
 ### B.1 Read the live state
 
+> **Run by** anyone · **needs** `cast` + host RPC url (the hardhat task also needs the
+> `host-contracts` repo) · **when** before, during and after any operation ·
+> **access** read-only `eth_call`/event queries — no keys, no gas, no writes.
+
 ```bash
 PC=$PROTOCOL_CONFIG_CONTRACT_ADDRESS
 RPC=<host-chain-rpc-url>
@@ -341,43 +344,67 @@ npx hardhat task:kmsContextSwitchStatus --network <network> --from-block <recent
 ```bash
 #!/usr/bin/env bash
 # verify-kms-party.sh — cross-check one party's questionnaire answers against
-# their public storage. Read-only: only GETs against the party's public vault.
-# Usage: ./verify-kms-party.sh <storageUrl> <storagePrefix> <claimedSigner>
+# their public storage.
+# Run by:  the coordinator, once per party (a party may self-check its own vault)
+# When:    after the questionnaire replies, before assembling committee.env
+# Access:  outbound GETs to the party's PUBLIC vault only — no keys, no chain
+#          access, no filesystem writes. Exit 0 = all checks passed.
+# Usage:   ./verify-kms-party.sh <storageUrl> <storagePrefix> <claimedSigner>
+#          (after review: chmod 500 verify-kms-party.sh — the script needs no write bit)
 set -euo pipefail
+
+CURL=(curl -sfS --max-time 30)
 
 STORAGE_URL=${1:?usage: verify-kms-party.sh <storageUrl> <storagePrefix> <claimedSigner>}
 PREFIX=${2:?missing storagePrefix}
 CLAIMED_SIGNER=$(printf '%s' "${3:?missing claimedSigner}" | tr '[:upper:]' '[:lower:]')
+[[ "$CLAIMED_SIGNER" =~ ^0x[0-9a-f]{40}$ ]] || {
+  echo "FAIL: claimed signer is not a 20-byte hex address"; exit 1; }
 
 # The core publishes one object per key handle under VerfAddress/ and CACert/.
+# Object keys are whitelisted to a safe charset before being used or printed.
 echo "--- objects under $PREFIX ---"
-HANDLES=$(curl -sfS "$STORAGE_URL/?prefix=$PREFIX/VerfAddress/&list-type=2" \
-  | grep -oE '<Key>[^<]+</Key>' | sed -E 's#</?Key>##g') || {
+HANDLES=$("${CURL[@]}" "$STORAGE_URL/?prefix=$PREFIX/VerfAddress/&list-type=2" \
+  | grep -oE '<Key>[^<]+</Key>' | sed -E 's#</?Key>##g' \
+  | grep -E '^[A-Za-z0-9._/-]+$') || {
     echo "FAIL: cannot list $STORAGE_URL under $PREFIX"; exit 1; }
 echo "$HANDLES"
 
 MATCHED=0
 for h in $HANDLES; do
-  ADDR=$(curl -sfS "$STORAGE_URL/$h" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+  ADDR=$("${CURL[@]}" "$STORAGE_URL/$h" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+  [[ "$ADDR" =~ ^0x[0-9a-f]{40}$ ]] || {
+    echo "FAIL: $h does not contain an address"; exit 1; }
   echo "VerfAddress ($h): $ADDR"
   [ "$ADDR" = "$CLAIMED_SIGNER" ] && MATCHED=1
 done
 [ "$MATCHED" -eq 1 ] || { echo "FAIL: no published VerfAddress matches $CLAIMED_SIGNER"; exit 1; }
 echo "OK: signer matches claim"
 
-# CA cert: fetch, parse, and emit the hex encoding used on-chain (bytes caCert).
-CERT_KEY=$(curl -sfS "$STORAGE_URL/?prefix=$PREFIX/CACert/&list-type=2" \
-  | grep -oE '<Key>[^<]+</Key>' | sed -E 's#</?Key>##g' | head -1)
+# CA cert: capture the byte-exact hex used on-chain (bytes caCert), then parse the
+# cert from that hex — nothing is written to disk.
+CERT_KEY=$("${CURL[@]}" "$STORAGE_URL/?prefix=$PREFIX/CACert/&list-type=2" \
+  | grep -oE '<Key>[^<]+</Key>' | sed -E 's#</?Key>##g' \
+  | grep -E '^[A-Za-z0-9._/-]+$' | head -1)
 [ -n "$CERT_KEY" ] || { echo "FAIL: no object under $PREFIX/CACert/"; exit 1; }
-CERT_FILE=$(mktemp) && trap 'rm -f "$CERT_FILE"' EXIT
-curl -sfS "$STORAGE_URL/$CERT_KEY" -o "$CERT_FILE"
-openssl x509 -in "$CERT_FILE" -noout -subject -dates -fingerprint
-printf 'KMS_NODE_CA_CERT hex: 0x%s\n' "$(xxd -p "$CERT_FILE" | tr -d '\n')"
+CERT_HEX=$("${CURL[@]}" "$STORAGE_URL/$CERT_KEY" | xxd -p | tr -d '\n')
+printf '%s' "$CERT_HEX" | xxd -r -p | openssl x509 -noout -subject -dates -fingerprint
+printf 'KMS_NODE_CA_CERT hex: 0x%s\n' "$CERT_HEX"
 ```
 
-The certificate subject typically embeds the party's MPC identity — compare it with
-the `mpc_identity` they pasted (do not _derive_ the identity from it; ask for the
-config value).
+The `subject=` / `notBefore=` / `Fingerprint=` lines are for review (the script only
+fails if the cert is missing or unparseable):
+
+- **subject** — typically embeds the party's MPC identity; compare it with the
+  `mpc_identity` they pasted (do not _derive_ the identity from it; ask for the
+  config value);
+- **dates** — `notAfter` must outlive the planned context (the committee's mutual
+  TLS runs on this CA; an expired cert is a committee-wide outage);
+- **fingerprint** — confirm it with the party over a trusted channel; that catches a
+  tampered vault object, which the fetch alone cannot.
+
+The machine-consumed output is the final `KMS_NODE_CA_CERT hex: 0x…` line — paste it
+verbatim into `committee.env`.
 
 ### B.3 Assemble and validate the env file (coordinator-side)
 
@@ -399,8 +426,8 @@ KMS_NODE_STORAGE_PREFIX_0=PUB-p1
 # … repeat for _1, _2, _3 …
 PUBLIC_DECRYPTION_THRESHOLD=3
 USER_DECRYPTION_THRESHOLD=3
-KMS_GEN_THRESHOLD=3
 MPC_THRESHOLD=1
+KMS_GEN_THRESHOLD=3
 KMS_GENERATION_THRESHOLD=3              # gateway name for KMS_GEN_THRESHOLD (same value!)
 KMS_SOFTWARE_VERSION=…
 KMS_PCR_VALUES=[{"pcr0":"0x…","pcr1":"0x…","pcr2":"0x…"}]
@@ -412,8 +439,14 @@ KMS_PCR_VALUES=[{"pcr0":"0x…","pcr1":"0x…","pcr2":"0x…"}]
 
 ```bash
 #!/usr/bin/env bash
-# validate-committee-env.sh — structural checks before any broadcast.
-# The env file is sourced: only run this on a committee.env you assembled yourself.
+# validate-committee-env.sh — structural checks on committee.env before any broadcast.
+# Run by:  the coordinator
+# When:    last step before broadcasting, and again after every edit
+# Access:  reads the env file only — no network, no chain, no keys, no writes.
+#          The env file is SOURCED (executed): only run this on a committee.env
+#          you assembled yourself, never on a file received from a third party.
+# Usage:   ./validate-committee-env.sh committee.env
+#          (after review: chmod 500 validate-committee-env.sh — the script needs no write bit)
 set -euo pipefail
 # shellcheck disable=SC1090
 source "${1:?usage: validate-committee-env.sh committee.env}"
@@ -428,6 +461,10 @@ for v in PUBLIC_DECRYPTION_THRESHOLD USER_DECRYPTION_THRESHOLD KMS_GEN_THRESHOLD
   [ -n "${!v:-}" ] || fail "$v is unset"
 done
 
+# Gateway spelling must be present and equal to its host twin.
+[ "${KMS_GENERATION_THRESHOLD:-}" = "$KMS_GEN_THRESHOLD" ] ||
+  fail "KMS_GENERATION_THRESHOLD (gateway spelling) must equal KMS_GEN_THRESHOLD"
+
 ids=(); txs=(); signers=(); mpcs=()
 for i in $(seq 0 $((n - 1))); do
   for v in KMS_TX_SENDER_ADDRESS_$i KMS_SIGNER_ADDRESS_$i KMS_NODE_IP_$i \
@@ -435,6 +472,9 @@ for i in $(seq 0 $((n - 1))); do
            KMS_NODE_CA_CERT_$i KMS_NODE_STORAGE_PREFIX_$i; do
     [ -n "${!v:-}" ] || fail "$v is unset"
   done
+  # Gateway spelling must be present and equal to its host twin.
+  v=KMS_NODE_IP_$i; g=KMS_NODE_IP_ADDRESS_$i
+  [ "${!g:-}" = "${!v}" ] || fail "$g (gateway spelling) must equal $v"
   for v in KMS_TX_SENDER_ADDRESS_$i KMS_SIGNER_ADDRESS_$i; do
     [[ "${!v}" =~ ^0x[0-9a-fA-F]{40}$ ]] || fail "$v is not a 20-byte hex address"
   done
@@ -462,5 +502,5 @@ check_dupes "tx-sender addresses" "${txs[@]}"
 check_dupes "signer addresses" "${signers[@]}"
 check_dupes "mpc identities" "${mpcs[@]}"
 
-echo "OK: $n nodes, ids contiguous 1..$n, no duplicate identities"
+echo "OK: $n nodes, ids contiguous 1..$n, no duplicate identities, gateway spellings consistent"
 ```
