@@ -93,7 +93,7 @@ pub(crate) async fn register_block(
     Ok(())
 }
 
-async fn mark_test_dcid_ready(
+pub(crate) async fn mark_test_dcid_ready(
     pool: &sqlx::PgPool,
     dependence_chain_id: &Handle,
     block_number: u64,

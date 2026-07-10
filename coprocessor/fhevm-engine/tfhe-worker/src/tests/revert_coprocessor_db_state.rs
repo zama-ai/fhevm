@@ -64,14 +64,15 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
         .expect("insert transaction");
 
     sqlx::query(
-        "INSERT INTO computations_branch (output_handle, dependencies, fhe_operation, is_scalar, transaction_id, host_chain_id, dependence_chain_id, block_number)
-         VALUES ($1, ARRAY[]::bytea[], 1, false, $2, $3, $4, $5)",
+        "INSERT INTO computations_branch (output_handle, dependencies, fhe_operation, is_scalar, transaction_id, host_chain_id, dependence_chain_id, block_number, producer_block_hash)
+         VALUES ($1, ARRAY[]::bytea[], 1, false, $2, $3, $4, $5, $6)",
     )
     .bind(&handle)
     .bind(&txn_id)
     .bind(chain_id)
     .bind(&dc_id)
     .bind(block_number)
+    .bind(&block_hash)
     .execute(pool)
     .await
     .expect("insert computation");
@@ -85,55 +86,64 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
     .expect("insert dependence_chain");
 
     sqlx::query(
-        "INSERT INTO pbs_computations_branch (handle, transaction_id, host_chain_id, block_number) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO pbs_computations_branch (handle, transaction_id, host_chain_id, block_number, producer_block_hash, block_hash) VALUES ($1, $2, $3, $4, $5, $5)",
     )
     .bind(&handle)
     .bind(&txn_id)
     .bind(chain_id)
     .bind(block_number)
+    .bind(&block_hash)
     .execute(pool)
     .await
     .expect("insert pbs_computation");
 
     sqlx::query(
-        "INSERT INTO allowed_handles_branch (handle, account_address, event_type, transaction_id, txn_block_number, host_chain_id, block_number)
-         VALUES ($1, '0xAccount', 0, $2, $3, $4, $3)",
+        "INSERT INTO allowed_handles_branch (handle, account_address, event_type, transaction_id, txn_block_number, host_chain_id, block_number, producer_block_hash, block_hash)
+         VALUES ($1, '0xAccount', 0, $2, $3, $4, $3, $5, $5)",
     )
     .bind(&handle)
     .bind(&txn_id)
     .bind(block_number)
     .bind(chain_id)
+    .bind(&block_hash)
     .execute(pool)
     .await
     .expect("insert allowed_handle");
 
     sqlx::query(
-        "INSERT INTO ciphertext_digest_branch (host_chain_id, key_id_gw, handle, transaction_id, txn_block_number)
-         VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO ciphertext_digest_branch (host_chain_id, key_id_gw, handle, transaction_id, txn_block_number, producer_block_hash, block_number, block_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, $5, $6)",
     )
     .bind(chain_id)
     .bind(key_id_gw)
     .bind(&handle)
     .bind(&txn_id)
     .bind(block_number)
+    .bind(&block_hash)
     .execute(pool)
     .await
     .expect("insert ciphertext_digest");
 
     sqlx::query(
-        "INSERT INTO ciphertexts_branch (handle, ciphertext, ciphertext_version, ciphertext_type)
-         VALUES ($1, $2, $3, 4)",
+        "INSERT INTO ciphertexts_branch (handle, ciphertext, ciphertext_version, ciphertext_type, producer_block_hash, block_number)
+         VALUES ($1, $2, $3, 4, $4, $5)",
     )
     .bind(&handle)
     .bind([0xFFu8; 4])
     .bind(current_ciphertext_version())
+    .bind(&block_hash)
+    .bind(block_number)
     .execute(pool)
     .await
     .expect("insert ciphertext");
 
-    sqlx::query("INSERT INTO ciphertexts128_branch (handle, ciphertext) VALUES ($1, $2)")
+    sqlx::query(
+        "INSERT INTO ciphertexts128_branch (handle, ciphertext, producer_block_hash, block_number) VALUES ($1, $2, $3, $4)",
+    )
         .bind(&handle)
         .bind([0xEEu8; 4])
+        .bind(&block_hash)
+        .bind(block_number)
         .execute(pool)
         .await
         .expect("insert ciphertext128");

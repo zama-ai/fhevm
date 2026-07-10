@@ -17,7 +17,7 @@ use serial_test::serial;
 
 use crate::tests::block_scoped::{
     allow_handle_in_block, insert_fhe_add_in_block, insert_trivial_encrypt_in_block,
-    make_block_hash, register_block,
+    make_block_hash, mark_test_dcid_ready, register_block,
 };
 use crate::tests::event_helpers::{next_handle, setup_event_harness, EventHarness, TEST_CHAIN_ID};
 use crate::tests::utils::{
@@ -195,6 +195,7 @@ async fn test_fork_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     allow_handle_in_block(&listener_db, &mut tx, &h_handle, 1, &hash_1a).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx_1a, 1, &hash_1a).await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Block 1B: TrivialEncrypt(20) → H (same handle, different value, different branch)
@@ -216,6 +217,7 @@ async fn test_fork_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     allow_handle_in_block(&listener_db, &mut tx, &h_handle, 1, &hash_1b).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx_1b, 1, &hash_1b).await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Step 4: Assert that both branch-specific ciphertexts coexist in DB
@@ -256,6 +258,7 @@ async fn test_fork_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     allow_handle_in_block(&listener_db, &mut tx, &out_a, 2, &hash_2a).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx_2a, 2, &hash_2a).await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Block 2B: H + H = out_B  (on branch B)
@@ -278,6 +281,7 @@ async fn test_fork_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     allow_handle_in_block(&listener_db, &mut tx, &out_b, 2, &hash_2b).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx_2b, 2, &hash_2b).await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Decrypt and verify branch-correct resolution.
@@ -374,6 +378,7 @@ async fn test_fork_finalization_cleanup() -> Result<(), Box<dyn std::error::Erro
     .await?;
     allow_handle_in_block(&listener_db, &mut tx, &h_handle, 1, &hash_1a).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx_1a, 1, &hash_1a).await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Block 1B: TrivialEncrypt(20) → H
@@ -395,6 +400,7 @@ async fn test_fork_finalization_cleanup() -> Result<(), Box<dyn std::error::Erro
     .await?;
     allow_handle_in_block(&listener_db, &mut tx, &h_handle, 1, &hash_1b).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx_1b, 1, &hash_1b).await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Block 2B (descendant of 1B): H + H = desc_handle
@@ -417,6 +423,7 @@ async fn test_fork_finalization_cleanup() -> Result<(), Box<dyn std::error::Erro
     .await?;
     allow_handle_in_block(&listener_db, &mut tx, &desc_handle, 2, &hash_2b).await?;
     tx.commit().await?;
+    mark_test_dcid_ready(&pool, &tx_2b, 2, &hash_2b).await?;
     wait_until_all_allowed_handles_computed(&app).await?;
 
     // Pre-finalization: verify both variants exist.
@@ -547,10 +554,9 @@ async fn test_restart_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
     let tx_2a = next_handle();
     let tx_2b = next_handle();
 
-    // --- Worker instance 1: produce both branches of H ---
     {
         let EventHarness {
-            app,
+            mut app,
             pool,
             listener_db,
         } = setup_event_harness().await?;
@@ -610,6 +616,7 @@ async fn test_restart_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
         allow_handle_in_block(&listener_db, &mut tx, &h_handle, 1, &hash_1a).await?;
         tx.commit().await?;
+        mark_test_dcid_ready(&pool, &tx_1a, 1, &hash_1a).await?;
         wait_until_all_allowed_handles_computed(&app).await?;
 
         let mut tx = listener_db
@@ -630,17 +637,11 @@ async fn test_restart_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
         allow_handle_in_block(&listener_db, &mut tx, &h_handle, 1, &hash_1b).await?;
         tx.commit().await?;
+        mark_test_dcid_ready(&pool, &tx_1b, 1, &hash_1b).await?;
         wait_until_all_allowed_handles_computed(&app).await?;
-    }
-    // Worker instance 1 dropped here — all in-memory state lost.
 
-    // --- Worker instance 2: resolve H on both branches after restart ---
-    {
-        let EventHarness {
-            app,
-            pool,
-            listener_db,
-        } = setup_event_harness().await?;
+        // Restart only the worker; the database container and fork rows stay live.
+        app.restart_worker().await;
 
         // Block 2A: H + H = out_A (branch A)
         let mut tx = listener_db
@@ -662,6 +663,7 @@ async fn test_restart_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
         allow_handle_in_block(&listener_db, &mut tx, &out_a, 2, &hash_2a).await?;
         tx.commit().await?;
+        mark_test_dcid_ready(&pool, &tx_2a, 2, &hash_2a).await?;
         wait_until_all_allowed_handles_computed(&app).await?;
 
         // Block 2B: H + H = out_B (branch B)
@@ -684,6 +686,7 @@ async fn test_restart_and_resolve() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
         allow_handle_in_block(&listener_db, &mut tx, &out_b, 2, &hash_2b).await?;
         tx.commit().await?;
+        mark_test_dcid_ready(&pool, &tx_2b, 2, &hash_2b).await?;
         wait_until_all_allowed_handles_computed(&app).await?;
 
         let resp = decrypt_ciphertexts(&pool, vec![out_a.to_vec(), out_b.to_vec()]).await?;

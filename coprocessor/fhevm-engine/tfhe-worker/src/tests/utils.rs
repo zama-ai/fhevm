@@ -19,6 +19,8 @@ pub struct TestInstance {
     app_close_channel: Option<tokio::sync::watch::Sender<bool>>,
     db_url: String,
     health_check_port: u16,
+    branch_cutover_block: i64,
+    pg_pool_max_connections: u32,
 }
 
 impl Drop for TestInstance {
@@ -41,6 +43,23 @@ impl TestInstance {
 
     pub fn health_check_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.health_check_port)
+    }
+
+    pub async fn restart_worker(&mut self) {
+        if let Some(chan) = self.app_close_channel.take() {
+            let _ = chan.send_replace(true);
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+
+        let (app_close_channel, rx) = tokio::sync::watch::channel(false);
+        self.health_check_port = start_coprocessor(
+            rx,
+            &self.db_url,
+            self.branch_cutover_block,
+            self.pg_pool_max_connections,
+        )
+        .await;
+        self.app_close_channel = Some(app_close_channel);
     }
 }
 
@@ -109,6 +128,8 @@ async fn setup_test_app_existing_db(
         app_close_channel: Some(app_close_channel),
         db_url: LOCAL_DB_URL.to_string(),
         health_check_port,
+        branch_cutover_block,
+        pg_pool_max_connections,
     })
 }
 
@@ -208,6 +229,8 @@ async fn setup_test_app_custom_docker(
         app_close_channel: Some(app_close_channel),
         db_url,
         health_check_port,
+        branch_cutover_block,
+        pg_pool_max_connections,
     })
 }
 
