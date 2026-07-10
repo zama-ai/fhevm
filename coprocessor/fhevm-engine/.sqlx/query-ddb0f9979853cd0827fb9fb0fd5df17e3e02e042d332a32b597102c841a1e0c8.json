@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH eligible AS (\n                SELECT\n                  d.handle,\n                  d.producer_block_hash,\n                  d.block_hash,\n                  d.key_id_gw,\n                  d.ciphertext,\n                  d.ciphertext128,\n                  d.host_chain_id,\n                  d.txn_limited_retries_count,\n                  d.txn_unlimited_retries_count,\n                  d.transaction_id,\n                  d.created_at,\n                  ROW_NUMBER() OVER (\n                      PARTITION BY d.host_chain_id, d.handle, d.producer_block_hash\n                      ORDER BY d.created_at ASC\n                  ) AS rn\n                FROM ciphertext_digest_branch d\n                WHERE d.txn_is_sent = false\n                AND d.ciphertext IS NOT NULL\n                AND d.ciphertext128 IS NOT NULL\n                AND (\n                    (\n                        d.ciphertext128 <> decode(repeat('00', 32), 'hex')\n                        AND EXISTS (\n                            SELECT 1\n                            FROM pbs_computations_branch p\n                            WHERE p.host_chain_id = d.host_chain_id\n                              AND p.handle = d.handle\n                              AND p.producer_block_hash = d.producer_block_hash\n                              AND p.block_hash = d.block_hash\n                              AND p.is_completed = TRUE\n                        )\n                    )\n                    OR (\n                        d.producer_block_hash = ''::BYTEA\n                        AND d.block_hash = ''::BYTEA\n                        AND NOT EXISTS (\n                            SELECT 1\n                            FROM pbs_computations_branch p\n                            WHERE p.host_chain_id = d.host_chain_id\n                              AND p.handle = d.handle\n                              AND p.producer_block_hash = d.producer_block_hash\n                              AND p.block_hash = d.block_hash\n                        )\n                    )\n                )\n                AND d.txn_limited_retries_count < $1\n                AND (\n                    (d.producer_block_hash = ''::bytea AND d.block_hash = ''::bytea)\n                    OR EXISTS (\n                        SELECT 1\n                        FROM host_chain_blocks_valid b\n                        WHERE b.chain_id = d.host_chain_id\n                          AND b.block_hash = d.block_hash\n                          AND b.block_status = 'finalized'\n                    )\n                )\n            )\n            SELECT\n                handle AS \"handle!\",\n                producer_block_hash AS \"producer_block_hash!\",\n                block_hash AS \"block_hash!\",\n                key_id_gw AS \"key_id_gw!\",\n                ciphertext,\n                ciphertext128,\n                host_chain_id AS \"host_chain_id!\",\n                txn_limited_retries_count AS \"txn_limited_retries_count!\",\n                txn_unlimited_retries_count AS \"txn_unlimited_retries_count!\",\n                transaction_id\n            FROM eligible\n            WHERE rn = 1\n            ORDER BY created_at ASC\n            LIMIT $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "producer_block_hash!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_hash!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "key_id_gw!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "host_chain_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "txn_limited_retries_count!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "txn_unlimited_retries_count!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "ddb0f9979853cd0827fb9fb0fd5df17e3e02e042d332a32b597102c841a1e0c8"
+}

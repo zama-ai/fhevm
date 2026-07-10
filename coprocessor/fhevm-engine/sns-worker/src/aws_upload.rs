@@ -166,9 +166,35 @@ async fn run_uploader_loop(
                               AND d.producer_block_hash = $3
                               AND d.block_hash = $4
                               AND (
+                                EXISTS (
+                                  SELECT 1
+                                  FROM pbs_computations_branch p
+                                  WHERE p.host_chain_id = d.host_chain_id
+                                    AND p.handle = d.handle
+                                    AND p.producer_block_hash = d.producer_block_hash
+                                    AND p.block_hash = d.block_hash
+                                    AND p.is_completed = TRUE
+                                )
+                                OR (
+                                  d.producer_block_hash = ''::BYTEA
+                                  AND d.block_hash = ''::BYTEA
+                                  AND NOT EXISTS (
+                                    SELECT 1
+                                    FROM pbs_computations_branch p
+                                    WHERE p.host_chain_id = d.host_chain_id
+                                      AND p.handle = d.handle
+                                      AND p.producer_block_hash = d.producer_block_hash
+                                      AND p.block_hash = d.block_hash
+                                  )
+                                )
+                              )
+                              AND (
                                 d.ciphertext IS NULL
                                 OR (
-                                  d.ciphertext128 IS NULL
+                                  (
+                                    d.ciphertext128 IS NULL
+                                    OR d.ciphertext128 = decode(repeat('00', 32), 'hex')
+                                  )
                                   AND EXISTS (
                                     SELECT 1
                                     FROM ciphertexts128_branch c
@@ -212,7 +238,17 @@ async fn run_uploader_loop(
                         }
 
                         if let Some(digest) = uploaded_ct128 {
-                            item.ct128_digest = Some(digest);
+                            if !item.ct128.is_empty()
+                                && digest.as_slice() == NO_SNS_CIPHERTEXT_DIGEST.as_slice()
+                            {
+                                // A previous recovery pass may have written the
+                                // no-SNS sentinel while conversion was still
+                                // incomplete. Recompute from the now-available
+                                // ct128 bytes instead of preserving it.
+                                item.ct128_digest = None;
+                            } else {
+                                item.ct128_digest = Some(digest);
+                            }
                         }
 
                         let ct128_format = match ciphertext128_format {
@@ -1186,17 +1222,45 @@ pub(crate) async fn fetch_pending_uploads(
                    AND c.ciphertext IS NOT NULL
                ) AS has_ct128_ciphertext
         FROM ciphertext_digest_branch d
-        WHERE d.ciphertext IS NULL
-           OR (
-             d.ciphertext128 IS NULL
-             AND EXISTS (
-               SELECT 1
-               FROM ciphertexts128_branch c
-               WHERE c.handle = d.handle
-                 AND c.producer_block_hash = d.producer_block_hash
-                 AND c.ciphertext IS NOT NULL
-             )
-           )
+        WHERE (
+                EXISTS (
+                  SELECT 1
+                  FROM pbs_computations_branch p
+                  WHERE p.host_chain_id = d.host_chain_id
+                    AND p.handle = d.handle
+                    AND p.producer_block_hash = d.producer_block_hash
+                    AND p.block_hash = d.block_hash
+                    AND p.is_completed = TRUE
+                )
+                OR (
+                  d.producer_block_hash = ''::BYTEA
+                  AND d.block_hash = ''::BYTEA
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM pbs_computations_branch p
+                    WHERE p.host_chain_id = d.host_chain_id
+                      AND p.handle = d.handle
+                      AND p.producer_block_hash = d.producer_block_hash
+                      AND p.block_hash = d.block_hash
+                  )
+                )
+              )
+          AND (
+                d.ciphertext IS NULL
+                OR (
+                  (
+                    d.ciphertext128 IS NULL
+                    OR d.ciphertext128 = decode(repeat('00', 32), 'hex')
+                  )
+                  AND EXISTS (
+                    SELECT 1
+                    FROM ciphertexts128_branch c
+                    WHERE c.handle = d.handle
+                      AND c.producer_block_hash = d.producer_block_hash
+                      AND c.ciphertext IS NOT NULL
+                  )
+                )
+              )
         FOR UPDATE SKIP LOCKED
         LIMIT $1
         "#,
@@ -1211,7 +1275,7 @@ pub(crate) async fn fetch_pending_uploads(
         let mut ct64_compressed = Arc::new(Vec::new());
         let mut ct128 = Vec::new();
         let ciphertext_digest = row.ciphertext;
-        let ciphertext128_digest = row.ciphertext128;
+        let mut ciphertext128_digest = row.ciphertext128;
         let s3_format_version = row.s3_format_version;
         let should_verify_existing_s3 = s3_format_version != Some(CURRENT_S3_FORMAT_VERSION);
         let handle = row.handle;
@@ -1223,6 +1287,15 @@ pub(crate) async fn fetch_pending_uploads(
         let key_id_gw = row.key_id_gw;
         let ciphertext128_format = row.ciphertext128_format;
         let has_ct128_ciphertext = row.has_ct128_ciphertext.unwrap_or(false);
+        if has_ct128_ciphertext
+            && ciphertext128_digest.as_deref() == Some(NO_SNS_CIPHERTEXT_DIGEST.as_slice())
+        {
+            warn!(
+                handle = %to_hex(&handle),
+                "Replacing stale no-SNS digest from completed conversion"
+            );
+            ciphertext128_digest = None;
+        }
         let row_incomplete =
             ciphertext_digest.is_none() || (has_ct128_ciphertext && ciphertext128_digest.is_none());
 
@@ -1406,6 +1479,29 @@ async fn fetch_pending_canonical_repairs(
                     q.locked_at IS NULL
                     OR q.locked_at < NOW() - INTERVAL '5 minutes'
                    )
+               AND (
+                    EXISTS (
+                        SELECT 1
+                          FROM pbs_computations_branch p
+                         WHERE p.host_chain_id = d.host_chain_id
+                           AND p.handle = d.handle
+                           AND p.producer_block_hash = d.producer_block_hash
+                           AND p.block_hash = d.block_hash
+                           AND p.is_completed = TRUE
+                    )
+                    OR (
+                        d.producer_block_hash = ''::BYTEA
+                        AND d.block_hash = ''::BYTEA
+                        AND NOT EXISTS (
+                            SELECT 1
+                              FROM pbs_computations_branch p
+                             WHERE p.host_chain_id = d.host_chain_id
+                               AND p.handle = d.handle
+                               AND p.producer_block_hash = d.producer_block_hash
+                               AND p.block_hash = d.block_hash
+                        )
+                    )
+               )
                AND d.ciphertext IS NOT NULL
                AND (
                     d.ciphertext128 IS NOT NULL
@@ -1531,19 +1627,28 @@ async fn fetch_pending_canonical_repairs(
             }
         }
 
-        let ct128_format = if !has_ct128_ciphertext {
-            Ciphertext128Format::Unknown
-        } else {
-            match ciphertext128_format.and_then(Ciphertext128Format::from_i16) {
-                Some(format) => format,
-                None => {
-                    error!(
-                        handle = to_hex(&handle),
-                        format_id = ?ciphertext128_format,
-                        "Missing or invalid ciphertext128 format for S3 canonical repair"
-                    );
-                    continue;
-                }
+        let has_committed_ct128 = ciphertext128_digest
+            .as_deref()
+            .is_some_and(|digest| digest != NO_SNS_CIPHERTEXT_DIGEST.as_slice());
+        let requires_ct128_format = has_ct128_ciphertext || has_committed_ct128;
+        let ct128_format = match ciphertext128_format.and_then(Ciphertext128Format::from_i16) {
+            Some(Ciphertext128Format::Unknown) if requires_ct128_format => {
+                error!(
+                    handle = to_hex(&handle),
+                    format_id = ?ciphertext128_format,
+                    "Unknown ciphertext128 format for S3 canonical repair"
+                );
+                continue;
+            }
+            Some(format) => format,
+            None if !requires_ct128_format => Ciphertext128Format::Unknown,
+            None => {
+                error!(
+                    handle = to_hex(&handle),
+                    format_id = ?ciphertext128_format,
+                    "Missing or invalid ciphertext128 format for S3 canonical repair"
+                );
+                continue;
             }
         };
 

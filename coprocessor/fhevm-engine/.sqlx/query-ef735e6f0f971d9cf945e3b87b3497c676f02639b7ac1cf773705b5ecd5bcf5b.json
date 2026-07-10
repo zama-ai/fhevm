@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                            SELECT d.ciphertext,\n                                   d.ciphertext128,\n                                   d.ciphertext128_format AS \"ciphertext128_format?\",\n                                   d.s3_format_version\n                            FROM ciphertext_digest_branch d\n                            WHERE d.host_chain_id = $1\n                              AND d.handle = $2\n                              AND d.producer_block_hash = $3\n                              AND d.block_hash = $4\n                              AND (\n                                EXISTS (\n                                  SELECT 1\n                                  FROM pbs_computations_branch p\n                                  WHERE p.host_chain_id = d.host_chain_id\n                                    AND p.handle = d.handle\n                                    AND p.producer_block_hash = d.producer_block_hash\n                                    AND p.block_hash = d.block_hash\n                                    AND p.is_completed = TRUE\n                                )\n                                OR (\n                                  d.producer_block_hash = ''::BYTEA\n                                  AND d.block_hash = ''::BYTEA\n                                  AND NOT EXISTS (\n                                    SELECT 1\n                                    FROM pbs_computations_branch p\n                                    WHERE p.host_chain_id = d.host_chain_id\n                                      AND p.handle = d.handle\n                                      AND p.producer_block_hash = d.producer_block_hash\n                                      AND p.block_hash = d.block_hash\n                                  )\n                                )\n                              )\n                              AND (\n                                d.ciphertext IS NULL\n                                OR (\n                                  (\n                                    d.ciphertext128 IS NULL\n                                    OR d.ciphertext128 = decode(repeat('00', 32), 'hex')\n                                  )\n                                  AND EXISTS (\n                                    SELECT 1\n                                    FROM ciphertexts128_branch c\n                                    WHERE c.handle = d.handle\n                                      AND c.producer_block_hash = d.producer_block_hash\n                                      AND c.ciphertext IS NOT NULL\n                                  )\n                                )\n                              )\n                            FOR UPDATE SKIP LOCKED\n                            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext128_format?",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "s3_format_version",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "ef735e6f0f971d9cf945e3b87b3497c676f02639b7ac1cf773705b5ecd5bcf5b"
+}

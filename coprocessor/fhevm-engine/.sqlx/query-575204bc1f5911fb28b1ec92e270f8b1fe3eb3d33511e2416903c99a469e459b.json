@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH selected AS (\n            SELECT q.host_chain_id,\n                   q.handle\n              FROM s3_canonical_repair_queue q\n              JOIN ciphertext_digest_branch d\n                ON d.host_chain_id = q.host_chain_id\n               AND d.handle = q.handle\n               AND d.producer_block_hash = q.target_producer_block_hash\n               AND d.block_hash = q.target_block_hash\n             WHERE (\n                    q.locked_at IS NULL\n                    OR q.locked_at < NOW() - INTERVAL '5 minutes'\n                   )\n               AND (\n                    EXISTS (\n                        SELECT 1\n                          FROM pbs_computations_branch p\n                         WHERE p.host_chain_id = d.host_chain_id\n                           AND p.handle = d.handle\n                           AND p.producer_block_hash = d.producer_block_hash\n                           AND p.block_hash = d.block_hash\n                           AND p.is_completed = TRUE\n                    )\n                    OR (\n                        d.producer_block_hash = ''::BYTEA\n                        AND d.block_hash = ''::BYTEA\n                        AND NOT EXISTS (\n                            SELECT 1\n                              FROM pbs_computations_branch p\n                             WHERE p.host_chain_id = d.host_chain_id\n                               AND p.handle = d.handle\n                               AND p.producer_block_hash = d.producer_block_hash\n                               AND p.block_hash = d.block_hash\n                        )\n                    )\n               )\n               AND d.ciphertext IS NOT NULL\n               AND (\n                    d.ciphertext128 IS NOT NULL\n                    OR NOT EXISTS (\n                        SELECT 1\n                          FROM ciphertexts128_branch c\n                         WHERE c.handle = d.handle\n                           AND c.producer_block_hash = d.producer_block_hash\n                           AND c.ciphertext IS NOT NULL\n                    )\n               )\n             ORDER BY q.updated_at ASC\n             FOR UPDATE OF q SKIP LOCKED\n             LIMIT $1\n        ),\n        locked AS (\n            UPDATE s3_canonical_repair_queue q\n               SET locked_at = NOW(),\n                   attempts = attempts + 1,\n                   updated_at = NOW()\n              FROM selected s\n             WHERE q.host_chain_id = s.host_chain_id\n               AND q.handle = s.handle\n             RETURNING q.host_chain_id,\n                       q.handle,\n                       q.target_producer_block_hash,\n                       q.target_block_hash\n        )\n        SELECT d.handle,\n               d.producer_block_hash,\n               d.block_hash,\n               d.block_number,\n               d.ciphertext,\n               d.ciphertext128,\n               d.ciphertext128_format AS \"ciphertext128_format?\",\n               d.s3_format_version,\n               d.transaction_id,\n               d.host_chain_id,\n               d.key_id_gw,\n               EXISTS (\n                 SELECT 1\n                   FROM ciphertexts128_branch c\n                 WHERE c.handle = d.handle\n                    AND c.producer_block_hash = d.producer_block_hash\n                    AND c.ciphertext IS NOT NULL\n               ) AS \"has_ct128_ciphertext!\"\n          FROM locked q\n          JOIN ciphertext_digest_branch d\n            ON d.host_chain_id = q.host_chain_id\n           AND d.handle = q.handle\n           AND d.producer_block_hash = q.target_producer_block_hash\n           AND d.block_hash = q.target_block_hash\n        LIMIT $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "producer_block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "ciphertext128_format?",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 7,
+        "name": "s3_format_version",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 9,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 10,
+        "name": "key_id_gw",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 11,
+        "name": "has_ct128_ciphertext!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "575204bc1f5911fb28b1ec92e270f8b1fe3eb3d33511e2416903c99a469e459b"
+}

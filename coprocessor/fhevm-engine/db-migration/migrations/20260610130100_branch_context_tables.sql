@@ -179,7 +179,7 @@ DROP CONSTRAINT IF EXISTS ciphertext_digest_branch_producer_block_number_check;
 
 ALTER TABLE ciphertext_digest_branch
 ADD CONSTRAINT ciphertext_digest_branch_producer_block_number_check
-CHECK (producer_block_hash = ''::BYTEA OR block_number IS NOT NULL);
+CHECK ((producer_block_hash = ''::BYTEA) = (block_number IS NULL));
 
 ALTER TABLE ciphertext_digest_branch
 DROP CONSTRAINT IF EXISTS ciphertext_digest_branch_pkey;

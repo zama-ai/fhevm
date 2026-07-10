@@ -354,16 +354,17 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
 
     // Acquire the task the same way the worker does, then release the lock.
     let mut trx = pool.begin().await.unwrap();
-    let task = query_sns_tasks(&mut trx, 1, 0, Order::Asc, &key_id_gw)
+    let mut task = query_sns_tasks(&mut trx, 1, 0, Order::Asc, &key_id_gw)
         .await
         .unwrap()
         .expect("one task")
         .remove(0);
     trx.rollback().await.unwrap();
 
-    // Live provenance: the digest row is enqueued.
+    // A cancelled conversion must not leave a digest row that recovery could
+    // complete with the no-SNS sentinel.
     let mut trx = pool.begin().await.unwrap();
-    assert!(task.enqueue_upload_task(&mut trx).await.unwrap());
+    assert!(!task.enqueue_upload_task(&mut trx).await.unwrap());
     trx.commit().await.unwrap();
     let digest_rows = || async {
         sqlx::query_scalar::<_, i64>(
@@ -374,6 +375,26 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
         .await
         .unwrap()
     };
+    assert_eq!(digest_rows().await, 0);
+
+    sqlx::query(
+        "UPDATE pbs_computations_branch
+         SET is_completed = TRUE
+         WHERE handle = $1",
+    )
+    .bind(&handle)
+    .execute(&pool)
+    .await
+    .unwrap();
+    task.ct128 = Arc::new(BigCiphertext::new(
+        vec![0xCD; 32],
+        Ciphertext128Format::CompressedOnCpu,
+    ));
+
+    // Completed live provenance: the digest row is enqueued.
+    let mut trx = pool.begin().await.unwrap();
+    assert!(task.enqueue_upload_task(&mut trx).await.unwrap());
+    trx.commit().await.unwrap();
     assert_eq!(digest_rows().await, 1);
 
     // Simulate the reorg cleanup for an orphan-only handle.
@@ -671,6 +692,21 @@ async fn test_query_sns_tasks_reads_branch_rows() {
         vec![0x55_u8; 32],
         Ciphertext128Format::CompressedOnCpu,
     ));
+    sqlx::query(
+        "UPDATE pbs_computations_branch
+         SET is_completed = TRUE
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND producer_block_hash = $3
+           AND block_hash = $4",
+    )
+    .bind(host_chain_id)
+    .bind(&upload_task.handle)
+    .bind(&upload_task.producer_block_hash)
+    .bind(&upload_task.block_hash)
+    .execute(trx.as_mut())
+    .await
+    .expect("complete upload task PBS witness");
     upload_task
         .enqueue_upload_task(&mut trx)
         .await
@@ -843,7 +879,142 @@ async fn stale_upload_mark_enqueues_canonical_repair_target() {
 
 #[tokio::test]
 #[serial(db)]
-async fn canonical_repair_queue_is_returned_as_upload_work() {
+async fn resubmit_waits_for_completed_pbs_and_rearms_stale_zero_digest() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    clean_up(&pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let handle = vec![0xB0_u8; 32];
+    let producer = vec![0xB1_u8; 32];
+    let event = vec![0xB2_u8; 32];
+    let key_id_gw = vec![0xB3_u8; 32];
+    let ct64 = vec![0xB4_u8; 32];
+    let ct128 = vec![0xB5_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash, is_completed
+         )
+         VALUES ($1, $2, 20, $3, $4, FALSE)",
+    )
+    .bind(&handle)
+    .bind(host_chain_id)
+    .bind(&producer)
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("insert incomplete PBS witness");
+
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, $2, 20, $3, $4, 0)",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&ct64)
+    .bind(current_ciphertext_version())
+    .execute(&pool)
+    .await
+    .expect("insert ct64 bytes");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number
+         )
+         VALUES ($1, $2, $3, $4, $5, 20)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("insert pending digest row");
+
+    let jobs = fetch_pending_uploads(&pool, 10)
+        .await
+        .expect("fetch pending uploads");
+    assert!(
+        jobs.is_empty(),
+        "incomplete PBS conversion must not be reconstructed as ct64-only"
+    );
+
+    // Model a row poisoned by the old recovery path, followed by a successful
+    // recomputation. The stale sentinel must be treated as missing so the real
+    // ct128 digest is recomputed from the retained bytes.
+    sqlx::query(
+        "INSERT INTO ciphertexts128_branch(handle, producer_block_hash, block_number, ciphertext)
+         VALUES ($1, $2, 20, $3)",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&ct128)
+    .execute(&pool)
+    .await
+    .expect("insert recomputed ct128 bytes");
+    sqlx::query(
+        "UPDATE pbs_computations_branch
+         SET is_completed = TRUE
+         WHERE handle = $1
+           AND producer_block_hash = $2
+           AND block_hash = $3",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("complete PBS witness");
+    sqlx::query(
+        "UPDATE ciphertext_digest_branch
+         SET ciphertext = $1,
+             ciphertext128 = $2,
+             ciphertext128_format = $3
+         WHERE handle = $4
+           AND producer_block_hash = $5
+           AND block_hash = $6",
+    )
+    .bind(vec![0xB6_u8; 32])
+    .bind(vec![0_u8; 32])
+    .bind(i16::from(Ciphertext128Format::CompressedOnCpu))
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("seed stale no-SNS digest");
+
+    let jobs = fetch_pending_uploads(&pool, 10)
+        .await
+        .expect("fetch stale-zero recovery");
+    assert_eq!(jobs.len(), 1);
+    match &jobs[0] {
+        crate::UploadJob::DatabaseLock(item) => {
+            assert_eq!(item.handle, handle);
+            assert_eq!(item.ct128.bytes(), ct128);
+            assert_eq!(item.ct128.format(), Ciphertext128Format::CompressedOnCpu);
+            assert!(
+                item.ct128_digest.is_none(),
+                "stale no-SNS sentinel must be rearmed for digest computation"
+            );
+        }
+        crate::UploadJob::Normal(_) => panic!("pending upload must reacquire its database lock"),
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn canonical_repair_after_ct128_gc_retains_stored_format() {
     let test_instance = setup_test_db(ImportMode::None)
         .await
         .expect("valid db instance");
@@ -862,6 +1033,22 @@ async fn canonical_repair_queue_is_returned_as_upload_work() {
     let event = vec![0xC2_u8; 32];
     let ct64 = vec![0xC3_u8; 32];
     let ct64_digest = vec![0xC4_u8; 32];
+    let ct128_digest = vec![0xC5_u8; 32];
+    let ct128_format = Ciphertext128Format::CompressedOnCpu;
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash, is_completed
+         )
+         VALUES ($1, $2, 30, $3, $4, TRUE)",
+    )
+    .bind(&handle)
+    .bind(host_chain_id)
+    .bind(&producer)
+    .bind(&event)
+    .execute(pool)
+    .await
+    .expect("insert completed PBS witness");
 
     sqlx::query(
         "INSERT INTO ciphertexts_branch(
@@ -880,9 +1067,9 @@ async fn canonical_repair_queue_is_returned_as_upload_work() {
     sqlx::query(
         "INSERT INTO ciphertext_digest_branch(
             host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number,
-            ciphertext, ciphertext128, s3_format_version
+            ciphertext, ciphertext128, ciphertext128_format, s3_format_version
          )
-         VALUES ($1, $2, $3, $4, $5, 30, $6, $7, $8)",
+         VALUES ($1, $2, $3, $4, $5, 30, $6, $7, $8, $9)",
     )
     .bind(host_chain_id)
     .bind(&key_id_gw)
@@ -890,7 +1077,8 @@ async fn canonical_repair_queue_is_returned_as_upload_work() {
     .bind(&producer)
     .bind(&event)
     .bind(&ct64_digest)
-    .bind(vec![0_u8; 32])
+    .bind(&ct128_digest)
+    .bind(i16::from(ct128_format))
     .bind(CURRENT_S3_FORMAT_VERSION)
     .execute(pool)
     .await
@@ -922,6 +1110,9 @@ async fn canonical_repair_queue_is_returned_as_upload_work() {
             assert_eq!(item.block_hash, event);
             assert_eq!(item.ct64_compressed.as_ref(), &ct64);
             assert_eq!(item.ct64_digest.as_deref(), Some(ct64_digest.as_slice()));
+            assert_eq!(item.ct128_digest.as_deref(), Some(ct128_digest.as_slice()));
+            assert!(item.ct128.is_empty(), "ct128 bytes were already GC'd");
+            assert_eq!(item.ct128.format(), ct128_format);
         }
         crate::UploadJob::DatabaseLock(_) => panic!("repair work should use normal upload path"),
     }

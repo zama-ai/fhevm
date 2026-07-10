@@ -160,15 +160,22 @@ async fn add_ciphertext_sends_only_finalized_branch_digest_row() -> anyhow::Resu
     let pending_block_hash = vec![0x63_u8; 32];
     let missing_ct128_block_hash = vec![0x64_u8; 32];
     let duplicate_finalized_block_hash = vec![0x65_u8; 32];
+    let incomplete_pbs_block_hash = vec![0x66_u8; 32];
+    let zero_ct128_block_hash = vec![0x67_u8; 32];
     let finalized_ciphertext = random::<[u8; 32]>().to_vec();
     let finalized_ciphertext128 = random::<[u8; 32]>().to_vec();
+    let incomplete_pbs_ciphertext = random::<[u8; 32]>().to_vec();
+    let incomplete_pbs_ciphertext128 = random::<[u8; 32]>().to_vec();
+    let zero_ct128_ciphertext = random::<[u8; 32]>().to_vec();
     sqlx::query(
         "
         INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status)
         VALUES ($1, $2, NULL, 10, 'finalized'),
                ($1, $3, NULL, 11, 'pending'),
                ($1, $4, NULL, 12, 'finalized'),
-               ($1, $5, NULL, 13, 'finalized')
+               ($1, $5, NULL, 13, 'finalized'),
+               ($1, $6, NULL, 14, 'finalized'),
+               ($1, $7, NULL, 15, 'finalized')
         ",
     )
     .bind(host_chain_id)
@@ -176,6 +183,39 @@ async fn add_ciphertext_sends_only_finalized_branch_digest_row() -> anyhow::Resu
     .bind(&pending_block_hash)
     .bind(&missing_ct128_block_hash)
     .bind(&duplicate_finalized_block_hash)
+    .bind(&incomplete_pbs_block_hash)
+    .bind(&zero_ct128_block_hash)
+    .execute(&env.db_pool)
+    .await?;
+
+    sqlx::query(
+        "
+        INSERT INTO pbs_computations_branch (
+            handle,
+            host_chain_id,
+            producer_block_hash,
+            block_hash,
+            block_number,
+            is_completed
+        )
+        VALUES
+            ($1, $2, $3, $4, 10, TRUE),
+            ($1, $2, $3, $5, 11, TRUE),
+            ($1, $2, $3, $6, 12, TRUE),
+            ($1, $2, $3, $7, 13, TRUE),
+            ($1, $2, $3, $8, 14, FALSE),
+            ($1, $2, $3, $9, 15, TRUE)
+        ",
+    )
+    .bind(&handle[..])
+    .bind(host_chain_id)
+    .bind(&producer_block_hash)
+    .bind(&finalized_block_hash)
+    .bind(&pending_block_hash)
+    .bind(&missing_ct128_block_hash)
+    .bind(&duplicate_finalized_block_hash)
+    .bind(&incomplete_pbs_block_hash)
+    .bind(&zero_ct128_block_hash)
     .execute(&env.db_pool)
     .await?;
 
@@ -207,7 +247,9 @@ async fn add_ciphertext_sends_only_finalized_branch_digest_row() -> anyhow::Resu
             ($1, $2, $3, $4, $5, 10, $6, $7),
             ($1, $2, $3, $4, $8, 11, $9, $10),
             ($1, $2, $3, $4, $11, 12, $12, NULL),
-            ($1, $2, $3, $4, $13, 13, $6, $7)
+            ($1, $2, $3, $4, $13, 13, $6, $7),
+            ($1, $2, $3, $4, $14, 14, $15, $16),
+            ($1, $2, $3, $4, $17, 15, $18, $19)
         ",
     )
     .bind(host_chain_id)
@@ -223,6 +265,12 @@ async fn add_ciphertext_sends_only_finalized_branch_digest_row() -> anyhow::Resu
     .bind(&missing_ct128_block_hash)
     .bind(random::<[u8; 32]>().to_vec())
     .bind(&duplicate_finalized_block_hash)
+    .bind(&incomplete_pbs_block_hash)
+    .bind(&incomplete_pbs_ciphertext)
+    .bind(&incomplete_pbs_ciphertext128)
+    .bind(&zero_ct128_block_hash)
+    .bind(&zero_ct128_ciphertext)
+    .bind(vec![0_u8; 32])
     .execute(&env.db_pool)
     .await?;
 
@@ -269,6 +317,16 @@ async fn add_ciphertext_sends_only_finalized_branch_digest_row() -> anyhow::Resu
             let txn_is_sent: bool = row.try_get("txn_is_sent").expect("txn_is_sent column");
             block_hash == duplicate_finalized_block_hash && txn_is_sent
         });
+        let incomplete_pbs_sent = rows.iter().any(|row| {
+            let block_hash: Vec<u8> = row.try_get("block_hash").expect("block_hash column");
+            let txn_is_sent: bool = row.try_get("txn_is_sent").expect("txn_is_sent column");
+            block_hash == incomplete_pbs_block_hash && txn_is_sent
+        });
+        let zero_ct128_sent = rows.iter().any(|row| {
+            let block_hash: Vec<u8> = row.try_get("block_hash").expect("block_hash column");
+            let txn_is_sent: bool = row.try_get("txn_is_sent").expect("txn_is_sent column");
+            block_hash == zero_ct128_block_hash && txn_is_sent
+        });
         if finalized_sent && duplicate_finalized_sent {
             assert!(
                 !pending_sent,
@@ -277,6 +335,14 @@ async fn add_ciphertext_sends_only_finalized_branch_digest_row() -> anyhow::Resu
             assert!(
                 !missing_ct128_sent,
                 "branch digest without ciphertext128 must remain unsent"
+            );
+            assert!(
+                !incomplete_pbs_sent,
+                "branch digest without a completed PBS witness must remain unsent"
+            );
+            assert!(
+                !zero_ct128_sent,
+                "reserved no-SNS digest must never be published for PBS-backed work"
             );
             break;
         }

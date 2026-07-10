@@ -329,32 +329,32 @@ impl HandleItem {
     /// If inserted into the `ciphertext_digest` table means that the both (ct64 and ct128)
     /// ciphertexts are ready to be uploaded to S3.
     ///
-    /// Returns `false` (and inserts nothing) when the handle's provenance is
-    /// gone: reorg cleanup deletes the `pbs_computations` row of handles that
-    /// lived solely on an orphaned fork, and bridge retraction deletes the
-    /// copied `ciphertexts` row of a retracted bridged handle — both also
-    /// delete the digest row, so an unguarded insert here would resurrect it
-    /// and drive a phantom `addCiphertextMaterial` publication. Both witness
-    /// rows are locked FOR KEY SHARE, and both deleters remove their witness
-    /// BEFORE the digest row, so whichever transaction commits first, the
-    /// other observes it: the deleter's digest DELETE (a later statement)
-    /// removes a just-committed insert, and a later witness read sees the
-    /// deletion and skips. The mirror triggers' advisory stripe locks make a
-    /// deadlock between this transaction and a concurrent cleanup possible
-    /// instead of a clean block; that is safe — the victim rolls back whole
-    /// (an aborted finalization pass re-runs from scratch, an aborted sns
-    /// batch is re-fetched) and the retry converges. What can never happen
-    /// is a silent resurrection.
+    /// Returns `false` (and inserts nothing) unless SNS conversion completed
+    /// and the handle's provenance is still alive. Requiring `is_completed`
+    /// prevents a cancelled conversion from leaving an upload row that
+    /// recovery could mistake for a ct64-only ciphertext.
+    ///
+    /// Reorg cleanup deletes the `pbs_computations` row of handles that lived
+    /// solely on an orphaned fork, and bridge retraction deletes the copied
+    /// `ciphertexts` row of a retracted bridged handle. Both also delete the
+    /// digest row, so an unguarded insert here would resurrect it and drive a
+    /// phantom `addCiphertextMaterial` publication. Both witness rows are
+    /// locked `FOR KEY SHARE`, and both deleters remove their witness before
+    /// the digest row. Whichever transaction commits first, the other observes
+    /// it: a later witness read skips the insert, while the deleter's later
+    /// digest delete removes a just-committed insert. A deadlock is safe because
+    /// the victim rolls back the whole transaction and the retry converges.
     pub(crate) async fn enqueue_upload_task(
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<bool, ExecutionError> {
-        let provenance_alive = sqlx::query_scalar::<_, i32>(
+        let conversion_completed = sqlx::query_scalar::<_, i32>(
             "SELECT 1 FROM pbs_computations_branch
              WHERE handle = $1
                AND host_chain_id = $2
                AND producer_block_hash = $3
                AND block_hash = $4
+               AND is_completed = TRUE
              FOR KEY SHARE",
         )
         .bind(&self.handle)
@@ -378,13 +378,13 @@ impl HandleItem {
         .await?
         .is_some();
 
-        if !provenance_alive || !ciphertext_alive {
+        if !conversion_completed || !ciphertext_alive {
             warn!(
                 handle = %to_hex(&self.handle),
                 host_chain_id = self.host_chain_id.as_i64(),
-                provenance_alive,
+                conversion_completed,
                 ciphertext_alive,
-                "Skipping upload enqueue: provenance gone (reorg cleanup or bridge retraction)"
+                "Skipping upload enqueue: SNS conversion incomplete or provenance gone"
             );
             return Ok(false);
         }
@@ -495,6 +495,32 @@ impl HandleItem {
               AND d.producer_block_hash = $7
               AND d.block_hash = $8
               AND (
+                    (
+                        $2 <> decode(repeat('00', 32), 'hex')
+                        AND EXISTS (
+                            SELECT 1
+                            FROM pbs_computations_branch p
+                            WHERE p.host_chain_id = d.host_chain_id
+                              AND p.handle = d.handle
+                              AND p.producer_block_hash = d.producer_block_hash
+                              AND p.block_hash = d.block_hash
+                              AND p.is_completed = TRUE
+                        )
+                    )
+                    OR (
+                        d.producer_block_hash = ''::BYTEA
+                        AND d.block_hash = ''::BYTEA
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM pbs_computations_branch p
+                            WHERE p.host_chain_id = d.host_chain_id
+                              AND p.handle = d.handle
+                              AND p.producer_block_hash = d.producer_block_hash
+                              AND p.block_hash = d.block_hash
+                        )
+                    )
+              )
+              AND (
                     d.producer_block_hash = ''::BYTEA
                     OR NOT EXISTS (
                         SELECT 1
@@ -604,6 +630,29 @@ impl HandleItem {
                   AND d.handle = $2
                   AND d.producer_block_hash = $3
                   AND d.block_hash = $4
+                  AND (
+                        EXISTS (
+                            SELECT 1
+                            FROM pbs_computations_branch p
+                            WHERE p.host_chain_id = d.host_chain_id
+                              AND p.handle = d.handle
+                              AND p.producer_block_hash = d.producer_block_hash
+                              AND p.block_hash = d.block_hash
+                              AND p.is_completed = TRUE
+                        )
+                        OR (
+                            d.producer_block_hash = ''::BYTEA
+                            AND d.block_hash = ''::BYTEA
+                            AND NOT EXISTS (
+                                SELECT 1
+                                FROM pbs_computations_branch p
+                                WHERE p.host_chain_id = d.host_chain_id
+                                  AND p.handle = d.handle
+                                  AND p.producer_block_hash = d.producer_block_hash
+                                  AND p.block_hash = d.block_hash
+                            )
+                        )
+                  )
                   AND (
                         d.producer_block_hash = ''::BYTEA
                         OR NOT EXISTS (

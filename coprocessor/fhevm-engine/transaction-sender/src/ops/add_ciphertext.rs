@@ -335,6 +335,32 @@ where
                AND d.ciphertext IS NOT NULL
                AND d.ciphertext128 IS NOT NULL
                AND (
+                   (
+                       d.ciphertext128 <> decode(repeat('00', 32), 'hex')
+                       AND EXISTS (
+                           SELECT 1
+                           FROM pbs_computations_branch p
+                           WHERE p.host_chain_id = d.host_chain_id
+                             AND p.handle = d.handle
+                             AND p.producer_block_hash = d.producer_block_hash
+                             AND p.block_hash = d.block_hash
+                             AND p.is_completed = TRUE
+                       )
+                   )
+                   OR (
+                       d.producer_block_hash = ''::BYTEA
+                       AND d.block_hash = ''::BYTEA
+                       AND NOT EXISTS (
+                           SELECT 1
+                           FROM pbs_computations_branch p
+                           WHERE p.host_chain_id = d.host_chain_id
+                             AND p.handle = d.handle
+                             AND p.producer_block_hash = d.producer_block_hash
+                             AND p.block_hash = d.block_hash
+                       )
+                   )
+               )
+               AND (
                    (d.producer_block_hash = ''::bytea AND d.block_hash = ''::bytea)
                    OR EXISTS (
                        SELECT 1
@@ -561,6 +587,32 @@ where
                 WHERE d.txn_is_sent = false
                 AND d.ciphertext IS NOT NULL
                 AND d.ciphertext128 IS NOT NULL
+                AND (
+                    (
+                        d.ciphertext128 <> decode(repeat('00', 32), 'hex')
+                        AND EXISTS (
+                            SELECT 1
+                            FROM pbs_computations_branch p
+                            WHERE p.host_chain_id = d.host_chain_id
+                              AND p.handle = d.handle
+                              AND p.producer_block_hash = d.producer_block_hash
+                              AND p.block_hash = d.block_hash
+                              AND p.is_completed = TRUE
+                        )
+                    )
+                    OR (
+                        d.producer_block_hash = ''::BYTEA
+                        AND d.block_hash = ''::BYTEA
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM pbs_computations_branch p
+                            WHERE p.host_chain_id = d.host_chain_id
+                              AND p.handle = d.handle
+                              AND p.producer_block_hash = d.producer_block_hash
+                              AND p.block_hash = d.block_hash
+                        )
+                    )
+                )
                 AND d.txn_limited_retries_count < $1
                 AND (
                     (d.producer_block_hash = ''::bytea AND d.block_hash = ''::bytea)
