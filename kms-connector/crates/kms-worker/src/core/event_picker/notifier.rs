@@ -139,8 +139,6 @@ impl DbEventNotifier {
                 },
             };
 
-            // Reset the matching ticker by its `kind`, so this stays correct regardless of the
-            // order `tickers` is declared in relative to the `EventType` variants.
             if let Some(ticker) = tickers.iter_mut().find(|t| t.kind == notification) {
                 ticker.reset();
             }
