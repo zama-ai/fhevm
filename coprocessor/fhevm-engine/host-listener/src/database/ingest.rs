@@ -818,10 +818,9 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             }
         }
     }
-    if canonical.is_empty() {
-        return;
-    }
 
+    // Advance settlement even when no blocks need finalization: asynchronous
+    // cleanup or publication work may have unblocked an existing finalized row.
     let mut tx = match db.new_transaction().await {
         Ok(Some(tx)) => tx,
         Ok(None) => {
