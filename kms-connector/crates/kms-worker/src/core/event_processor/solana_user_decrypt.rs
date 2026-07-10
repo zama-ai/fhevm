@@ -45,15 +45,14 @@
 //!   `authorize_public` ([`dispatch_solana_mmr_proof`]). There is no live "is public" flag any
 //!   more — public-ness is only provable via a `PublicDecryptLeaf` MMR leaf.
 //!
-//! ## Freshness contract: Recoverable (budget-exempt) vs Irrecoverable
+//! ## Freshness contract
 //!
 //! [`dispatch_solana_mmr_proof`] verifies the proof against the live peaks FIRST. Only on
 //! verification failure does it compare the proof leaf count (the leaf_count the proof was built
 //! against, carried in the legacy `proof_slot` wire field) to the account's live `leaf_count`:
-//! - **mismatch** → `ProcessingError::RecoverableBudgetExempt`: the lineage advanced since the
-//!   proof was built and the proof's mountain may have merged, so the client can rebuild and
-//!   resubmit a fresh proof. This budget-exempt path is only for MMR proof verification failures;
-//!   domain/owner/canonical-account failures are request errors even if the count changed.
+//! - **mismatch** → `ProcessingError::Irrecoverable`: the lineage advanced since the proof was
+//!   built and the proof's mountain may have merged. The queued request is immutable, so retrying
+//!   it cannot refresh the proof; the client must rebuild and submit a new request.
 //! - **match** (proof leaf count == live leaf_count but still fails to verify) → `Irrecoverable`: the
 //!   proof is simply wrong for the account's actual state, not stale.
 //!
@@ -337,8 +336,9 @@ fn dispatch_solana_public_mmr_proof(
 
 /// Verify-FIRST staleness classification: only reached after `verify_*` has already rejected the
 /// proof. A proof-leaf-count/live-`leaf_count` mismatch at that point means the lineage moved since
-/// the proof was built (its mountain may have merged) — Recoverable, budget-exempt (see module
-/// doc). Equal counts with a still-failing proof means the proof is simply wrong — Irrecoverable.
+/// the proof was built (its mountain may have merged). The request is terminal because its proof
+/// bytes cannot change; the client must submit a new request. Equal counts with a still-failing
+/// proof also mean the request is terminal because the proof is simply wrong.
 fn classify_mmr_verification_failure(
     error: crate::core::solana_acl::SolanaAclVerificationError,
     proof_leaf_count: u64,
@@ -350,7 +350,7 @@ fn classify_mmr_verification_failure(
             | crate::core::solana_acl::SolanaAclVerificationError::PublicDecryptProofInvalid
     );
     if is_freshness_shaped && proof_leaf_count != live_leaf_count {
-        ProcessingError::RecoverableBudgetExempt(anyhow!(
+        ProcessingError::Irrecoverable(anyhow!(
             "Solana MMR proof stale: built at leaf_count={proof_leaf_count}, live leaf_count={live_leaf_count} ({error})"
         ))
     } else {
@@ -842,9 +842,9 @@ mod tests {
         assert!(matches!(err, ProcessingError::Irrecoverable(_)));
     }
 
-    // (3) STALE RETRYABLE
+    // (3) STALE TERMINAL
     #[test]
-    fn stale_merged_proof_is_recoverable() {
+    fn stale_merged_proof_is_terminal() {
         let kp = identity_kp(11);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
         let mut l = lineage(h(10), &[owner]);
@@ -864,13 +864,13 @@ mod tests {
         let err = dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(12), &auth)
             .expect_err("a stale (merged) proof must be rejected");
         match err {
-            ProcessingError::RecoverableBudgetExempt(e) => {
+            ProcessingError::Irrecoverable(e) => {
                 let msg = e.to_string();
                 assert!(msg.contains("leaf_count=3"), "got: {msg}");
                 assert!(msg.contains("leaf_count=4"), "got: {msg}");
             }
             other => {
-                panic!("a stale (merged) proof must be RecoverableBudgetExempt, got {other:?}")
+                panic!("a stale (merged) proof must be terminal, got {other:?}")
             }
         }
     }
@@ -899,8 +899,8 @@ mod tests {
             dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(82), &stale_auth)
                 .expect_err("a proof built against an older leaf_count must be rejected");
         assert!(
-            matches!(stale_err, ProcessingError::RecoverableBudgetExempt(_)),
-            "stale invalid proof must be budget-exempt recoverable, got {stale_err:?}"
+            matches!(stale_err, ProcessingError::Irrecoverable(_)),
+            "stale invalid proof must be terminal, got {stale_err:?}"
         );
 
         let mut live_proof = l.proof(2);
@@ -957,7 +957,7 @@ mod tests {
 
         let verifier = SolanaAclVerifier::new(HOST);
         let err = dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(70), &auth)
-            .expect_err("domain failures must not get budget-exempt stale retries");
+            .expect_err("domain failures must not be classified as stale proofs");
         assert!(matches!(err, ProcessingError::Irrecoverable(_)));
     }
 
