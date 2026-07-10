@@ -110,7 +110,7 @@ export const normalizeRepository = (value: string) =>
 export const withHexPrefix = (value: string) => (value.startsWith("0x") ? value : `0x${value}`);
 
 /** Formats a bigint as a zero-padded 256-bit hex id. */
-const uint256ToId = (value: bigint) => value.toString(16).padStart(64, "0");
+export const uint256ToId = (value: bigint) => value.toString(16).padStart(64, "0");
 
 /** Predicts the default FHE key id before bootstrap discovery runs. */
 export const predictedKeyId = () => uint256ToId((4n << 248n) + 1n);

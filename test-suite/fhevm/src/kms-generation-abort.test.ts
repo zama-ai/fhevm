@@ -5,9 +5,9 @@ import {
   eventLogWord,
   firstDataWord,
   parseUintOutput,
-  uint256Hex,
   uint256LeHex,
 } from "./commands/kms-generation-abort";
+import { uint256ToId } from "./utils/fs";
 
 describe("kms-generation-abort parseUintOutput", () => {
   test("parses a plain decimal", () => {
@@ -34,18 +34,6 @@ describe("kms-generation-abort parseUintOutput", () => {
   });
 });
 
-describe("kms-generation-abort uint256Hex", () => {
-  test("zero-pads to the 64-hex-char id form used by MinIO paths and bytea literals", () => {
-    expect(uint256Hex(1n)).toBe("0000000000000000000000000000000000000000000000000000000000000001");
-  });
-
-  test("round-trips a domain-tagged request id", () => {
-    const id = (0x03n << 248n) | 5n;
-    expect(BigInt(`0x${uint256Hex(id)}`)).toBe(id);
-    expect(uint256Hex(id)).toHaveLength(64);
-  });
-});
-
 describe("kms-generation-abort uint256LeHex", () => {
   test("byte-reverses into the little-endian form the connector stores (alloy as_le_slice)", () => {
     // On-chain prepKeygenId 0x0300…0002 is stored as bytea 0200…0003 in prep_keygen_requests.
@@ -62,7 +50,7 @@ describe("kms-generation-abort uint256LeHex", () => {
 describe("kms-generation-abort firstDataWord", () => {
   test("reads the leading uint256 of the ABI-encoded event data", () => {
     const id = (0x03n << 248n) | 2n;
-    expect(firstDataWord(`0x${uint256Hex(id)}${uint256Hex(1n)}`)).toBe(id);
+    expect(firstDataWord(`0x${uint256ToId(id)}${uint256ToId(1n)}`)).toBe(id);
   });
 
   test("throws on truncated data", () => {
@@ -88,7 +76,7 @@ describe("kms-generation-abort eventLogWord", () => {
   const topic = "0xAAAA000000000000000000000000000000000000000000000000000000000000";
   const receipt = (topics: string[][]) => ({
     status: "0x1",
-    logs: topics.map((entry) => ({ address: "0x1", topics: entry, data: `0x${uint256Hex(9n)}` })),
+    logs: topics.map((entry) => ({ address: "0x1", topics: entry, data: `0x${uint256ToId(9n)}` })),
   });
 
   test("finds the event by topic0 case-insensitively and returns its leading word", () => {

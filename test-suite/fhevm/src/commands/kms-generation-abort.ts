@@ -32,7 +32,7 @@ import { kmsConnectorDbName, kmsPartyIds } from "../kms-party";
 import { COPROCESSOR_DB_CONTAINER, DEFAULT_POSTGRES_PASSWORD, DEFAULT_POSTGRES_USER, envPath } from "../layout";
 import { saveState } from "../state/state";
 import type { State } from "../types";
-import { readEnvFile, withHexPrefix } from "../utils/fs";
+import { readEnvFile, uint256ToId, withHexPrefix } from "../utils/fs";
 import { run } from "../utils/process";
 
 /** How long the connector gets to ingest the abort, forward it to KMS Core, and settle. */
@@ -46,12 +46,9 @@ const RECOVERY_POLL_MS = 5_000;
 
 type Receipt = { status: string; logs: { address: string; topics: string[]; data: string }[] };
 
-/** A uint256 as the big-endian 64-hex-char form used by MinIO material paths. */
-export const uint256Hex = (id: bigint) => id.toString(16).padStart(64, "0");
-
 /** The little-endian byte order the connector stores U256 ids in (alloy `as_le_slice`). */
 export const uint256LeHex = (id: bigint) => {
-  const be = uint256Hex(id);
+  const be = uint256ToId(id);
   let le = "";
   for (let i = be.length - 2; i >= 0; i -= 2) {
     le += be.slice(i, i + 2);
@@ -91,9 +88,19 @@ export const eventLogWord = (receipt: Receipt, topic0: string, eventName: string
   return firstDataWord(log.data);
 };
 
-const keccakTopic = async (signature: string) => (await run(["cast", "keccak", signature])).stdout.trim();
+const keccakCache = new Map<string, string>();
 
-/** The event topics and error selectors the profile asserts on, hashed once per run. */
+/** `cast keccak`, memoized — the same event/error signatures are asserted several times per run. */
+const keccakTopic = async (signature: string) => {
+  let hash = keccakCache.get(signature);
+  if (hash === undefined) {
+    hash = (await run(["cast", "keccak", signature])).stdout.trim();
+    keccakCache.set(signature, hash);
+  }
+  return hash;
+};
+
+/** The event topics the profile asserts on, hashed up front. */
 const loadAbiHashes = async () => {
   const [prepKeygenRequest, crsgenRequest, abortKeygen, abortCrsgen] = await Promise.all([
     keccakTopic("PrepKeygenRequest(uint256,uint8,bytes)"),
@@ -348,7 +355,7 @@ const recoverAfterAborts = async (state: State, target: Target, owner: Owner, ab
   const prepKeygenId = eventLogWord(keygenTrigger, abi.topics.prepKeygenRequest, "PrepKeygenRequest");
   const keyId = parseUintOutput(await castCall(target.rpcUrl, target.kmsGenerationAddress, "getKeyCounter()(uint256)"));
   await waitForActivation(target, "recovery keygen", "getActiveKeyId()(uint256)", keyId);
-  await ensureMaterial(`${minioBase}/PublicKey/${uint256Hex(keyId)}`);
+  await ensureMaterial(`${minioBase}/PublicKey/${uint256ToId(keyId)}`);
   await expectRevert(target, owner, "abort of a completed keygen", "AbortKeygenAlreadyDone(uint256)", "abortKeygen(uint256)", prepKeygenId.toString());
   console.log(`[kms-generation-abort] recovery keygen activated: keyId=${keyId}, materials published`);
 
@@ -356,7 +363,7 @@ const recoverAfterAborts = async (state: State, target: Target, owner: Owner, ab
   const crsgenTrigger = await castSend(target, owner, "crsgenRequest(uint256,uint8)", "2048", paramsType);
   const crsId = eventLogWord(crsgenTrigger, abi.topics.crsgenRequest, "CrsgenRequest");
   await waitForActivation(target, "recovery crsgen", "getActiveCrsId()(uint256)", crsId);
-  await ensureMaterial(`${minioBase}/CRS/${uint256Hex(crsId)}`);
+  await ensureMaterial(`${minioBase}/CRS/${uint256ToId(crsId)}`);
   await expectRevert(target, owner, "abort of a completed crsgen", "AbortCrsgenAlreadyDone(uint256)", "abortCrsgen(uint256)", crsId.toString());
   console.log(`[kms-generation-abort] recovery crsgen activated: crsId=${crsId}, materials published`);
 
@@ -396,10 +403,10 @@ export const runKmsGenerationAbortProfile = async (state: State) => {
   // The recovery rotated the active ids: re-sync persisted discovery so later bootstrap
   // probes (probeBootstrap drift check) stay coherent with the chain.
   const discovery = state.discovery!;
-  discovery.fheKeyId = uint256Hex(active.keyId);
-  discovery.actualFheKeyId = uint256Hex(active.keyId);
-  discovery.crsKeyId = uint256Hex(active.crsId);
-  discovery.actualCrsKeyId = uint256Hex(active.crsId);
+  discovery.fheKeyId = uint256ToId(active.keyId);
+  discovery.actualFheKeyId = uint256ToId(active.keyId);
+  discovery.crsKeyId = uint256ToId(active.crsId);
+  discovery.actualCrsKeyId = uint256ToId(active.crsId);
   await saveState(state);
   console.log(
     `[kms-generation-abort] PASS — aborts retired both ceremonies across contract, connector, and KMS Core, and the pipeline recovered to a fresh key/CRS (discovery re-synced to keyId=${active.keyId}, crsId=${active.crsId}; running services keep their fetched keyset — re-up before key-sensitive profiles)`,
