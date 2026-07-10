@@ -105,6 +105,8 @@ pub fn evaluate(args: &FheEvalArgs, inputs: &ClearInputs) -> Result<Vec<TypedCle
                 let control = resolve_encrypted(control, inputs, &produced)?;
                 let if_true = resolve_encrypted(if_true, inputs, &produced)?;
                 let if_false = resolve_encrypted(if_false, inputs, &produced)?;
+                // Mirrors the host-private `fhe_eval::assert_ternary_operand_types`; keep the
+                // malformed-ternary cases in `cleartext_fhe_eval.rs` aligned with that validator.
                 if control.fhe_type != 0
                     || if_true.fhe_type != *output_fhe_type
                     || if_false.fhe_type != *output_fhe_type

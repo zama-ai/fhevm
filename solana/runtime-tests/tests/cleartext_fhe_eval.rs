@@ -452,9 +452,14 @@ fn ternary_selects_the_matching_branch() {
 
 #[test]
 fn malformed_plans_are_rejected() {
+    let bool_handle = handle(0, BOOL);
     let u8_handle = handle(1, U8);
     let u16_handle = handle(2, U16);
-    let valid_inputs = inputs([(u8_handle, U8, 7), (u16_handle, U16, 7)]);
+    let valid_inputs = inputs([
+        (bool_handle, BOOL, 1),
+        (u8_handle, U8, 7),
+        (u16_handle, U16, 7),
+    ]);
     let high_only_scalar = {
         let mut value = [0; 32];
         value[0] = 1;
@@ -492,6 +497,30 @@ fn malformed_plans_are_rejected() {
                 output: local(),
             }]),
             "invalid binary operation",
+        ),
+        (
+            "ternary control is not bool",
+            args(vec![FheEvalStep::Ternary {
+                op: zama_host::FheTernaryOpCode::IfThenElse,
+                control: durable(u8_handle),
+                if_true: durable(u8_handle),
+                if_false: durable(u8_handle),
+                output_fhe_type: U8,
+                output: local(),
+            }]),
+            "invalid ternary operand types",
+        ),
+        (
+            "ternary branch type mismatch",
+            args(vec![FheEvalStep::Ternary {
+                op: zama_host::FheTernaryOpCode::IfThenElse,
+                control: durable(bool_handle),
+                if_true: durable(u8_handle),
+                if_false: durable(u16_handle),
+                output_fhe_type: U8,
+                output: local(),
+            }]),
+            "invalid ternary operand types",
         ),
         (
             "divisor truncates to zero",
