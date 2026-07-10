@@ -2226,7 +2226,7 @@ async fn upload_transaction_graph_results<'a>(
         // Two transactions in the same block can deterministically derive
         // the same output handle, which means both producers push a
         // `DFGTxResult` and both land here with equal `(handle,
-        // producer_block_hash, ciphertext_version)`. The INSERTs collapse
+        // producer_block_hash, ciphertext_version)`. The INSERT statements collapse
         // via `ON CONFLICT DO NOTHING` anyway, but we prune duplicates
         // up front so the UNNEST batch stays one row per unique key and
         // the persisted bytes are deterministic across coprocessors:

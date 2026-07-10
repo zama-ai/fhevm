@@ -12,12 +12,7 @@ task('task:addHostPausers')
     false,
     types.boolean,
   )
-  .addParam(
-    'useInternalPauserSetAddress',
-    'Legacy alias for useInternalProxyAddress',
-    false,
-    types.boolean,
-  )
+  .addParam('useInternalPauserSetAddress', 'Legacy alias for useInternalProxyAddress', false, types.boolean)
   .setAction(async function ({ useInternalProxyAddress, useInternalPauserSetAddress }, hre) {
     await hre.run('compile:specific', { contract: 'contracts/immutable' });
     console.log('Adding pausers to PauserSet contract');

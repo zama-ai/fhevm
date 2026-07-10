@@ -1033,7 +1033,7 @@ mod tests {
         );
     }
 
-    /// `get_results()` synthesises a `DFGTxResult` for every aliased tid
+    /// `get_results()` synthesizes a `DFGTxResult` for every aliased tid
     /// that did not already receive one. The broadcast uses the canonical's
     /// compressed ciphertext bytes verbatim; aliased bytes may never define
     /// the canonical persistent image.
@@ -1111,7 +1111,7 @@ mod tests {
 
     /// When an aliased tid already has its own `DFGTxResult` (the common
     /// different-partition case), the broadcast must be a no-op — we do
-    /// not synthesise a second entry for the same `(handle, tid)` pair.
+    /// not synthesize a second entry for the same `(handle, tid)` pair.
     #[test]
     fn get_results_does_not_duplicate_existing_aliased_entries() {
         let out = handle(0xAA);

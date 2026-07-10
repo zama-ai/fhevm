@@ -2538,7 +2538,7 @@ impl Database {
 
         // No computation on the current branch, no branchless ciphertext, and
         // no legacy ciphertext resolve this handle. Do NOT guess the ACL-event
-        // block: keying a branch row to the allow block would silently mis-key
+        // block: keying a branch row to the allow block would silently assign
         // it to a block that produced no ciphertext (the sns readiness join
         // then skips it forever) and could even collide with an unrelated
         // branch's ciphertext, risking a wrong-bytes noise-squash. Fall back to

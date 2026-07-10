@@ -1,7 +1,7 @@
 /// Carry-residue regression tests.
 ///
 /// Block-scoped execution forwards same-block intermediates raw, so
-/// operations can receive trivial operands and tfhe's levelled fast paths
+/// operations can receive trivial operands and tfhe's leveled fast paths
 /// run without a terminal PBS. Through tfhe 1.6.2 the barrel shifter's
 /// degree bookkeeping summed mutually-exclusive candidates, so a
 /// trivial<<trivial result claimed non-empty carries and compression
