@@ -100,7 +100,7 @@ pub(crate) async fn spawn_uploader(
     let op = move |pool, token| {
         let client = client.clone();
         let is_ready = is_ready.clone();
-        let conf = conf.s3.clone();
+        let conf = conf.clone();
         let rx = rx.clone();
         let signer = signer.clone();
 
@@ -121,9 +121,11 @@ async fn run_uploader_loop(
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
     pool: Pool<Postgres>,
-    conf: S3Config,
+    conf: Config,
     signer: CoproSigner,
 ) -> Result<(), ExecutionError> {
+    let gcs_mode = conf.gcs_mode;
+    let conf = conf.s3;
     let mut ongoing_upload_tasks: JoinSet<anyhow::Result<()>> = JoinSet::new();
     let max_concurrent_uploads = conf.max_concurrent_uploads as usize;
     let semaphore = Arc::new(Semaphore::new(max_concurrent_uploads));
@@ -143,7 +145,15 @@ async fn run_uploader_loop(
                     continue;
                 }
 
-                let mut trx = fhevm_engine_common::versioning::begin_guarded_pool(&pool).await?;
+                let Some(mut trx) = fhevm_engine_common::versioning::begin_write_guarded(
+                    &pool,
+                    gcs_mode,
+                )
+                .await?
+                else {
+                    info!("Cutover completed — stopping retired SNS uploader");
+                    return Ok(());
+                };
 
                 // Normal jobs defer their enqueue into the spawned task: the
                 // provenance witness takes FOR KEY SHARE on the pbs row,
@@ -195,6 +205,16 @@ async fn run_uploader_loop(
                                     d.ciphertext128 IS NULL
                                     OR d.ciphertext128 = decode(repeat('00', 32), 'hex')
                                   )
+                                  AND EXISTS (
+                                    SELECT 1
+                                    FROM ciphertexts128_branch c
+                                    WHERE c.handle = d.handle
+                                      AND c.producer_block_hash = d.producer_block_hash
+                                    AND c.ciphertext IS NOT NULL
+                                  )
+                                )
+                                OR (
+                                  d.ciphertext128_format IS NULL
                                   AND EXISTS (
                                     SELECT 1
                                     FROM ciphertexts128_branch c
@@ -260,6 +280,16 @@ async fn run_uploader_loop(
                                     format,
                                 ))
                             })?,
+                            None if !item.ct128.is_empty()
+                                && item.ct128.format() != Ciphertext128Format::Unknown =>
+                            {
+                                warn!(
+                                    handle = %to_hex(&item.handle),
+                                    format = %item.ct128.format(),
+                                    "Backfilling missing ciphertext128 format from SNS configuration"
+                                );
+                                item.ct128.format()
+                            }
                             None if item.ct128.is_empty() => Ciphertext128Format::Unknown,
                             None => {
                                 return Err(ExecutionError::InvalidCiphertext128Format(format!(
@@ -1200,6 +1230,7 @@ fn sha256_checksum_header(ct: &[u8]) -> String {
 pub(crate) async fn fetch_pending_uploads(
     db_pool: &Pool<Postgres>,
     limit: i64,
+    expected_ct128_format: Ciphertext128Format,
 ) -> Result<Vec<UploadJob>, ExecutionError> {
     let rows = sqlx::query!(
         r#"
@@ -1257,6 +1288,16 @@ pub(crate) async fn fetch_pending_uploads(
                     FROM ciphertexts128_branch c
                     WHERE c.handle = d.handle
                       AND c.producer_block_hash = d.producer_block_hash
+                    AND c.ciphertext IS NOT NULL
+                  )
+                )
+                OR (
+                  d.ciphertext128_format IS NULL
+                  AND EXISTS (
+                    SELECT 1
+                    FROM ciphertexts128_branch c
+                    WHERE c.handle = d.handle
+                      AND c.producer_block_hash = d.producer_block_hash
                       AND c.ciphertext IS NOT NULL
                   )
                 )
@@ -1296,8 +1337,9 @@ pub(crate) async fn fetch_pending_uploads(
             );
             ciphertext128_digest = None;
         }
-        let row_incomplete =
-            ciphertext_digest.is_none() || (has_ct128_ciphertext && ciphertext128_digest.is_none());
+        let row_incomplete = ciphertext_digest.is_none()
+            || (has_ct128_ciphertext
+                && (ciphertext128_digest.is_none() || ciphertext128_format.is_none()));
 
         // Fetch the ciphertext whenever the row is not fully committed. This
         // lets recovery revalidate both S3 objects before the single DB update.
@@ -1381,14 +1423,15 @@ pub(crate) async fn fetch_pending_uploads(
                     continue;
                 }
             },
-            None if !has_ct128_ciphertext => Ciphertext128Format::Unknown,
-            None => {
-                error!(
-                    handle = to_hex(&handle),
-                    "Missing ciphertext128 format for pending upload",
+            None if has_ct128_ciphertext => {
+                warn!(
+                    handle = %to_hex(&handle),
+                    format = %expected_ct128_format,
+                    "Recovering missing ciphertext128 format from SNS configuration"
                 );
-                continue;
+                expected_ct128_format
             }
+            None => Ciphertext128Format::Unknown,
         };
 
         let ct128 = if !is_ct128_empty {
@@ -2024,6 +2067,12 @@ async fn do_resubmits_loop(
     is_ready: Arc<AtomicBool>,
     signer: CoproSigner,
 ) -> Result<(), ExecutionError> {
+    let expected_ct128_format = if conf.enable_compression {
+        Ciphertext128Format::CompressedOnCpu
+    } else {
+        Ciphertext128Format::UncompressedOnCpu
+    };
+
     // Retry to resubmit all upload tasks at the start-up
     if is_ready.load(Ordering::Acquire) {
         reconcile_s3_canonical_publications(
@@ -2044,6 +2093,7 @@ async fn do_resubmits_loop(
         tasks.clone(),
         token.clone(),
         DEFAULT_BATCH_SIZE,
+        expected_ct128_format,
     )
     .await
     .unwrap_or_else(|err| {
@@ -2072,7 +2122,7 @@ async fn do_resubmits_loop(
                             .unwrap_or_else(|err| {
                                 error!(error = %err, "Failed to reconcile S3 canonical publications");
                             });
-                        try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE).await
+                        try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE, expected_ct128_format).await
                             .unwrap_or_else(|err| {
                                 error!(error = %err, "Failed to resubmit tasks");
                             });
@@ -2088,7 +2138,7 @@ async fn do_resubmits_loop(
                             error!(error = %err, "Failed to reconcile S3 canonical publications");
                         });
                 }
-                try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE).await
+                try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE, expected_ct128_format).await
                     .unwrap_or_else(|err| {
                         error!(error = %err, "Failed to resubmit tasks");
                 });
@@ -2108,6 +2158,7 @@ async fn try_resubmit(
     tasks: mpsc::Sender<UploadJob>,
     token: CancellationToken,
     batch_size: usize,
+    expected_ct128_format: Ciphertext128Format,
 ) -> Result<(), ExecutionError> {
     loop {
         if !is_ready.load(Ordering::SeqCst) {
@@ -2115,7 +2166,7 @@ async fn try_resubmit(
             return Ok(());
         }
 
-        match fetch_pending_uploads(pool, batch_size as i64).await {
+        match fetch_pending_uploads(pool, batch_size as i64, expected_ct128_format).await {
             Ok(jobs) => {
                 info!(
                     pending_uploads = jobs.len(),

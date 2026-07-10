@@ -26,7 +26,7 @@ else
 fi
 
 REMOVE_TENANTS_PREVIOUS_VERSION=20260120102002
-BRANCH_COMPONENT_INDEX_PREVIOUS_VERSION=20260610150100
+BRANCH_WAVE2_INDEX_PREVIOUS_VERSION=20260610145100
 
 run_sql() {
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "$1"
@@ -165,8 +165,26 @@ run_block_scope_materialization_wave1_prerequisites() {
 }
 
 run_branch_context_wave2_prerequisites() {
-  echo "Running online migrations before branch-context wave2 component index..."
-  sqlx migrate run --source "$MIGRATION_DIR" --target-version $BRANCH_COMPONENT_INDEX_PREVIOUS_VERSION || { echo "Failed to run migrations."; exit 1; }
+  echo "Running online migrations before branch-context wave2 indexes..."
+  sqlx migrate run --source "$MIGRATION_DIR" --target-version $BRANCH_WAVE2_INDEX_PREVIOUS_VERSION || { echo "Failed to run migrations."; exit 1; }
+
+  # 20260610150000 adds these metadata-only columns before building its two
+  # partial indexes. Add them here so all six indexes on hot mirrored branch
+  # tables can be built concurrently before transactional migrations resume.
+  run_sql "ALTER TABLE ciphertexts_branch
+           ADD COLUMN IF NOT EXISTS block_number BIGINT NULL;"
+  run_sql "ALTER TABLE ciphertexts128_branch
+           ADD COLUMN IF NOT EXISTS block_number BIGINT NULL;"
+
+  precreate_index "idx_ciphertexts_branch_block_number" \
+    "CREATE INDEX CONCURRENTLY idx_ciphertexts_branch_block_number \
+     ON ciphertexts_branch (block_number) \
+     WHERE producer_block_hash <> ''::BYTEA;"
+
+  precreate_index "idx_ciphertexts128_branch_block_number" \
+    "CREATE INDEX CONCURRENTLY idx_ciphertexts128_branch_block_number \
+     ON ciphertexts128_branch (block_number) \
+     WHERE producer_block_hash <> ''::BYTEA;"
 
   precreate_index "idx_computations_branch_component_rows_v2" \
     "CREATE INDEX CONCURRENTLY idx_computations_branch_component_rows_v2 ON computations_branch (
@@ -176,6 +194,18 @@ run_branch_context_wave2_prerequisites() {
       block_number,
       producer_block_hash
     ) WHERE is_error = false;"
+
+  precreate_index "idx_ciphertext_digest_branch_transaction_id" \
+    "CREATE INDEX CONCURRENTLY idx_ciphertext_digest_branch_transaction_id \
+     ON ciphertext_digest_branch (transaction_id);"
+
+  precreate_index "idx_allowed_handles_branch_transaction_id" \
+    "CREATE INDEX CONCURRENTLY idx_allowed_handles_branch_transaction_id \
+     ON allowed_handles_branch (transaction_id);"
+
+  precreate_index "idx_pbs_computations_branch_transaction_id" \
+    "CREATE INDEX CONCURRENTLY idx_pbs_computations_branch_transaction_id \
+     ON pbs_computations_branch (transaction_id);"
 }
 
 echo "-------------- Start database initilaization --------------"

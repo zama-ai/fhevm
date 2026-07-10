@@ -30,6 +30,7 @@ use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
     branch::{
         enqueue_s3_canonical_repair, read_settled_height, resolve_s3_canonical_publication_target,
+        validate_branch_rollout_bounds,
     },
     chain_id::ChainId,
     db_keys::DbKeyId,
@@ -418,16 +419,11 @@ impl HandleItem {
                 transaction_id,
                 ciphertext128_format
             )
-            SELECT $1, $2, $3, $4, $5, $6, $7, $8
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM ciphertext_digest_branch
-                WHERE host_chain_id = $1
-                  AND handle = $3
-                  AND producer_block_hash = $4
-                  AND block_hash = $5
-            )
-            ON CONFLICT (handle, producer_block_hash, block_hash) DO NOTHING
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (handle, producer_block_hash, block_hash) DO UPDATE
+            SET ciphertext128_format = EXCLUDED.ciphertext128_format
+            WHERE ciphertext_digest_branch.ciphertext128_format IS NULL
+              AND EXCLUDED.ciphertext128_format IS NOT NULL
             "#,
             self.host_chain_id.as_i64(),
             &self.key_id_gw,
@@ -922,6 +918,18 @@ pub async fn run_all(
     parent_token: CancellationToken,
     events_tx: InternalEvents,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let activation_block = match std::env::var("FHEVM_BRANCH_ACTIVATION_BLOCK") {
+        Ok(value) => value.parse::<u64>().map_err(|err| {
+            anyhow::anyhow!("Invalid FHEVM_BRANCH_ACTIVATION_BLOCK value {value:?}: {err}")
+        })?,
+        Err(std::env::VarError::NotPresent) => 0,
+        Err(err) => {
+            return Err(anyhow::anyhow!("Invalid FHEVM_BRANCH_ACTIVATION_BLOCK: {err}").into())
+        }
+    };
+    validate_branch_rollout_bounds(activation_block, config.db.branch_cutover_block)
+        .map_err(anyhow::Error::msg)?;
+
     // Queue of tasks to upload ciphertexts is 10 times the number of concurrent uploads
     // to avoid blocking the worker
     // and to allow for some burst of uploads

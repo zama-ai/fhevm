@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT (\n                    to_regclass('public.computations_branch') IS NOT NULL\n                    AND to_regclass('public.pbs_computations_branch') IS NOT NULL\n                    AND to_regclass('public.allowed_handles_branch') IS NOT NULL\n                    AND to_regclass('public.ciphertexts_branch') IS NOT NULL\n                    AND to_regclass('public.ciphertexts128_branch') IS NOT NULL\n                    AND to_regclass('public.ciphertext_digest_branch') IS NOT NULL\n                    AND to_regclass('public.coprocessor_settlement') IS NOT NULL\n                    AND to_regclass('public.s3_canonical_repair_queue') IS NOT NULL\n                    AND to_regclass('public.branch_cleanup_jobs') IS NOT NULL\n                    AND to_regclass('public.bridge_handle_events') IS NOT NULL\n                    AND to_regclass('public.handle_bridged_events') IS NOT NULL\n                    AND to_regclass('public.fallback_granted_events') IS NOT NULL\n                    AND EXISTS (\n                        SELECT 1\n                        FROM information_schema.columns\n                        WHERE table_name = 'host_chain_blocks_valid'\n                          AND column_name = 'parent_hash'\n                    )\n                    AND EXISTS (\n                        SELECT 1\n                        FROM information_schema.columns\n                        WHERE table_schema = 'public'\n                          AND table_name = 'ciphertext_digest_branch'\n                          AND column_name = 's3_publication_verified_at'\n                    )\n                    AND EXISTS (\n                        SELECT 1\n                        FROM information_schema.columns\n                        WHERE table_schema = 'public'\n                          AND table_name = 'ciphertext_digest_branch'\n                          AND column_name = 'ciphertext128_format'\n                          AND is_nullable = 'YES'\n                    )\n                    AND NOT EXISTS (\n                        SELECT required.column_name\n                        FROM (VALUES\n                            ('error_root_output_handle'),\n                            ('error_root_transaction_id'),\n                            ('error_root_producer_block_hash')\n                        ) AS required(column_name)\n                        WHERE NOT EXISTS (\n                            SELECT 1\n                            FROM information_schema.columns actual\n                            WHERE actual.table_schema = 'public'\n                              AND actual.table_name = 'computations_branch'\n                              AND actual.column_name = required.column_name\n                        )\n                    )\n                ) AS \"ready!\"\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ready!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8949bdd4fc5fa28065516827c67991e9a574c1aa2daada6453ee5866cb2f1640"
+}

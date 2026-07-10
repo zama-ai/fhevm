@@ -4,7 +4,9 @@ use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
-use fhevm_engine_common::branch::enqueue_s3_canonical_repairs;
+use fhevm_engine_common::branch::{
+    enqueue_s3_canonical_repairs, validate_branch_rollout_bounds,
+};
 use fhevm_engine_common::bridge::{chain_id_from_handle, derive_dst_handle};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::{
@@ -136,9 +138,30 @@ const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 /// (always dual-write) when unset; operators set the agreed cutover block on
 /// all services when rolling out wave 2.
 fn configured_branch_cutover_block() -> Option<i64> {
-    std::env::var("FHEVM_BRANCH_CUTOVER_BLOCK")
-        .ok()
-        .and_then(|v| v.parse().ok())
+    const ENV_VAR: &str = "FHEVM_BRANCH_CUTOVER_BLOCK";
+    match std::env::var(ENV_VAR) {
+        Ok(value) => match value.parse::<i64>() {
+            Ok(block) => Some(block),
+            Err(err) => {
+                error!(
+                    env_var = ENV_VAR,
+                    value = %value,
+                    error = %err,
+                    "Invalid branch cutover block configuration"
+                );
+                std::process::exit(1);
+            }
+        },
+        Err(std::env::VarError::NotPresent) => None,
+        Err(err) => {
+            error!(
+                env_var = ENV_VAR,
+                error = %err,
+                "Invalid branch cutover block configuration"
+            );
+            std::process::exit(1);
+        }
+    }
 }
 
 fn legacy_mirror_cutoff() -> i64 {
@@ -439,6 +462,13 @@ impl Database {
                 .into(),
             )));
         let branch_activation_block = parse_branch_activation_block();
+        if let Some(cutover_block) = configured_branch_cutover_block() {
+            validate_branch_rollout_bounds(
+                branch_activation_block,
+                cutover_block,
+            )
+            .map_err(anyhow::Error::msg)?;
+        }
         let db = Database {
             url: url.clone(),
             chain_id,
@@ -449,7 +479,7 @@ impl Database {
             gcs_mode,
             branch_activation_block,
         };
-        // Wave-1 deploy safety: a binary may start before the branch-context
+        // Wave-2 deploy safety: a binary may start before the branch-context
         // migration has applied (e.g. a rolling deploy where the db-migration
         // Job is still running). Wait for the branch schema rather than
         // crash-looping on `*_branch` / `parent_hash` writes. Returns instantly
@@ -459,8 +489,7 @@ impl Database {
         Ok(db)
     }
 
-    /// Block until the wave-1 branch-context schema is present (the `*_branch`
-    /// tables, `coprocessor_settlement`, and `host_chain_blocks_valid.parent_hash`).
+    /// Block until the wave-2 branch-context schema is present.
     /// This degrades a pre-migration start to a bounded wait instead of a
     /// crash-loop. Bounded so a genuinely-absent migration surfaces as an error
     /// (→ restart) rather than hanging forever.
@@ -477,13 +506,52 @@ impl Database {
                 r#"
                 SELECT (
                     to_regclass('public.computations_branch') IS NOT NULL
+                    AND to_regclass('public.pbs_computations_branch') IS NOT NULL
+                    AND to_regclass('public.allowed_handles_branch') IS NOT NULL
                     AND to_regclass('public.ciphertexts_branch') IS NOT NULL
+                    AND to_regclass('public.ciphertexts128_branch') IS NOT NULL
+                    AND to_regclass('public.ciphertext_digest_branch') IS NOT NULL
                     AND to_regclass('public.coprocessor_settlement') IS NOT NULL
+                    AND to_regclass('public.s3_canonical_repair_queue') IS NOT NULL
+                    AND to_regclass('public.branch_cleanup_jobs') IS NOT NULL
+                    AND to_regclass('public.bridge_handle_events') IS NOT NULL
+                    AND to_regclass('public.handle_bridged_events') IS NOT NULL
+                    AND to_regclass('public.fallback_granted_events') IS NOT NULL
                     AND EXISTS (
                         SELECT 1
                         FROM information_schema.columns
                         WHERE table_name = 'host_chain_blocks_valid'
                           AND column_name = 'parent_hash'
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'ciphertext_digest_branch'
+                          AND column_name = 's3_publication_verified_at'
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'ciphertext_digest_branch'
+                          AND column_name = 'ciphertext128_format'
+                          AND is_nullable = 'YES'
+                    )
+                    AND NOT EXISTS (
+                        SELECT required.column_name
+                        FROM (VALUES
+                            ('error_root_output_handle'),
+                            ('error_root_transaction_id'),
+                            ('error_root_producer_block_hash')
+                        ) AS required(column_name)
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns actual
+                            WHERE actual.table_schema = 'public'
+                              AND actual.table_name = 'computations_branch'
+                              AND actual.column_name = required.column_name
+                        )
                     )
                 ) AS "ready!"
                 "#,
@@ -494,18 +562,18 @@ impl Database {
                 if attempt > 0 {
                     info!(
                         attempt,
-                        "Branch-context schema present; proceeding."
+                        "Branch-context wave2 schema present; proceeding."
                     );
                 }
                 return Ok(());
             }
             warn!(
                 attempt,
-                "Branch-context (wave1) schema not yet present; waiting before ingesting..."
+                "Branch-context wave2 schema not yet present; waiting before ingesting..."
             );
         }
         anyhow::bail!(
-            "branch-context (wave1) schema not present after waiting; \
+            "branch-context wave2 schema not present after waiting; \
              is the db-migration job complete?"
         );
     }
@@ -1841,8 +1909,29 @@ impl Database {
                 .await?;
 
                 sqlx::query!(
+                    "DELETE FROM ciphertexts_branch
+                     WHERE handle = ANY($1::bytea[])
+                       AND producer_block_hash = ''::bytea",
+                    &orphan_only_handles as _,
+                )
+                .execute(tx.deref_mut())
+                .await?;
+
+                sqlx::query!(
                     "DELETE FROM ciphertext_digest
                      WHERE handle = ANY($1::bytea[]) AND host_chain_id = $2",
+                    &orphan_only_handles as _,
+                    self.chain_id.as_i64(),
+                )
+                .execute(tx.deref_mut())
+                .await?;
+
+                sqlx::query!(
+                    "DELETE FROM ciphertext_digest_branch
+                     WHERE handle = ANY($1::bytea[])
+                       AND host_chain_id = $2
+                       AND producer_block_hash = ''::bytea
+                       AND block_hash = ''::bytea",
                     &orphan_only_handles as _,
                     self.chain_id.as_i64(),
                 )

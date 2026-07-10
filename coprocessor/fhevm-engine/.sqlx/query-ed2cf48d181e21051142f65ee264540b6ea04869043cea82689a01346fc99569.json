@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ciphertext AS \"ciphertext!\",\n               ciphertext_version AS \"ciphertext_version!\",\n               ciphertext_type AS \"ciphertext_type!\",\n               ct64_digest AS \"ct64_digest!\",\n               ct128_digest AS \"ct128_digest!\",\n               ciphertext128_format AS \"ciphertext128_format!\",\n               key_id_gw AS \"key_id_gw!\",\n               s3_format_version AS \"s3_format_version?\"\n        FROM (\n            SELECT src_ct.ciphertext,\n                   src_ct.ciphertext_version,\n                   src_ct.ciphertext_type,\n                   src_digest.ciphertext AS ct64_digest,\n                   src_digest.ciphertext128 AS ct128_digest,\n                   src_digest.ciphertext128_format,\n                   src_digest.key_id_gw,\n                   src_digest.s3_format_version,\n                   0 AS source_priority,\n                   COALESCE(src_digest.block_number, -1) AS source_block_number,\n                   src_digest.created_at AS source_created_at\n            FROM ciphertexts_branch src_ct\n            JOIN ciphertext_digest_branch src_digest\n              ON src_digest.handle = src_ct.handle\n             AND src_digest.producer_block_hash = src_ct.producer_block_hash\n            WHERE src_ct.handle = $1\n              AND src_ct.ciphertext IS NOT NULL\n              AND src_ct.ciphertext_version = $2\n              AND src_digest.host_chain_id = $3\n              AND src_digest.ciphertext IS NOT NULL\n              AND src_digest.ciphertext128 IS NOT NULL\n              AND src_digest.ciphertext128_format IS NOT NULL\n              AND (\n                    src_digest.producer_block_hash = ''::bytea\n                    OR NOT EXISTS (\n                        SELECT 1 FROM host_chain_blocks_valid producer_block\n                        WHERE producer_block.chain_id = src_digest.host_chain_id\n                          AND producer_block.block_hash = src_digest.producer_block_hash\n                          AND producer_block.block_status = 'orphaned'\n                    )\n              )\n              AND (\n                    src_digest.block_hash = ''::bytea\n                    OR NOT EXISTS (\n                        SELECT 1 FROM host_chain_blocks_valid event_block\n                        WHERE event_block.chain_id = src_digest.host_chain_id\n                          AND event_block.block_hash = src_digest.block_hash\n                          AND event_block.block_status = 'orphaned'\n                    )\n              )\n\n            UNION ALL\n\n            SELECT src_ct.ciphertext,\n                   src_ct.ciphertext_version,\n                   src_ct.ciphertext_type,\n                   src_digest.ciphertext AS ct64_digest,\n                   src_digest.ciphertext128 AS ct128_digest,\n                   src_digest.ciphertext128_format,\n                   src_digest.key_id_gw,\n                   src_digest.s3_format_version,\n                   1 AS source_priority,\n                   -1 AS source_block_number,\n                   src_digest.created_at AS source_created_at\n            FROM ciphertexts src_ct\n            JOIN ciphertext_digest src_digest ON src_digest.handle = src_ct.handle\n            WHERE src_ct.handle = $1\n              AND src_ct.ciphertext IS NOT NULL\n              AND src_ct.ciphertext_version = $2\n              AND src_digest.host_chain_id = $3\n              AND src_digest.ciphertext IS NOT NULL\n              AND src_digest.ciphertext128 IS NOT NULL\n        ) source\n        ORDER BY source_priority, source_block_number DESC, source_created_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ciphertext!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext_version!",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext_type!",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "ct64_digest!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "ct128_digest!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "ciphertext128_format!",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 6,
+        "name": "key_id_gw!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "s3_format_version?",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ed2cf48d181e21051142f65ee264540b6ea04869043cea82689a01346fc99569"
+}

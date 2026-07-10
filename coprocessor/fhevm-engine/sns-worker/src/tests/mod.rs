@@ -941,7 +941,7 @@ async fn resubmit_waits_for_completed_pbs_and_rearms_stale_zero_digest() {
     .await
     .expect("insert pending digest row");
 
-    let jobs = fetch_pending_uploads(&pool, 10)
+    let jobs = fetch_pending_uploads(&pool, 10, Ciphertext128Format::CompressedOnCpu)
         .await
         .expect("fetch pending uploads");
     assert!(
@@ -994,7 +994,7 @@ async fn resubmit_waits_for_completed_pbs_and_rearms_stale_zero_digest() {
     .await
     .expect("seed stale no-SNS digest");
 
-    let jobs = fetch_pending_uploads(&pool, 10)
+    let jobs = fetch_pending_uploads(&pool, 10, Ciphertext128Format::CompressedOnCpu)
         .await
         .expect("fetch stale-zero recovery");
     assert_eq!(jobs.len(), 1);
@@ -1010,6 +1010,114 @@ async fn resubmit_waits_for_completed_pbs_and_rearms_stale_zero_digest() {
         }
         crate::UploadJob::Normal(_) => panic!("pending upload must reacquire its database lock"),
     }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn resubmit_recovers_and_backfills_missing_ct128_format() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    clean_up(&pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let handle = vec![0xA0_u8; 32];
+    let producer = vec![0xA1_u8; 32];
+    let event = vec![0xA2_u8; 32];
+    let ct64 = vec![0xA3_u8; 32];
+    let ct128 = vec![0xA4_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash, is_completed
+         )
+         VALUES ($1, $2, 19, $3, $4, TRUE)",
+    )
+    .bind(&handle)
+    .bind(host_chain_id)
+    .bind(&producer)
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("insert completed PBS witness");
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, $2, 19, $3, $4, 0)",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&ct64)
+    .bind(current_ciphertext_version())
+    .execute(&pool)
+    .await
+    .expect("insert ct64 bytes");
+    sqlx::query(
+        "INSERT INTO ciphertexts128_branch(handle, producer_block_hash, block_number, ciphertext)
+         VALUES ($1, $2, 19, $3)",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&ct128)
+    .execute(&pool)
+    .await
+    .expect("insert ct128 bytes");
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number,
+            ciphertext, ciphertext128, ciphertext128_format
+         )
+         VALUES ($1, $2, $3, $4, $5, 19, $6, $7, NULL)",
+    )
+    .bind(host_chain_id)
+    .bind(vec![0xA5_u8; 32])
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .bind(vec![0xA6_u8; 32])
+    .bind(vec![0xA7_u8; 32])
+    .execute(&pool)
+    .await
+    .expect("insert format-less digest row");
+
+    let jobs = fetch_pending_uploads(&pool, 10, Ciphertext128Format::UncompressedOnCpu)
+        .await
+        .expect("fetch format recovery");
+    assert_eq!(jobs.len(), 1);
+    let crate::UploadJob::DatabaseLock(item) = jobs.into_iter().next().unwrap() else {
+        panic!("format recovery must reacquire the digest row lock");
+    };
+    assert_eq!(item.ct128.bytes(), ct128);
+    assert_eq!(item.ct128.format(), Ciphertext128Format::UncompressedOnCpu);
+
+    let mut tx = pool.begin().await.expect("begin format backfill");
+    assert!(item
+        .enqueue_upload_task(&mut tx)
+        .await
+        .expect("backfill format through enqueue conflict"));
+    tx.commit().await.expect("commit format backfill");
+
+    let stored_format: Option<i16> = sqlx::query_scalar(
+        "SELECT ciphertext128_format
+         FROM ciphertext_digest_branch
+         WHERE handle = $1 AND producer_block_hash = $2 AND block_hash = $3",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .fetch_one(&pool)
+    .await
+    .expect("read backfilled format");
+    assert_eq!(
+        stored_format,
+        Some(i16::from(Ciphertext128Format::UncompressedOnCpu))
+    );
 }
 
 #[tokio::test]
@@ -1099,7 +1207,7 @@ async fn canonical_repair_after_ct128_gc_retains_stored_format() {
     .await
     .expect("insert repair row");
 
-    let jobs = fetch_pending_uploads(pool, 10)
+    let jobs = fetch_pending_uploads(pool, 10, Ciphertext128Format::CompressedOnCpu)
         .await
         .expect("fetch pending repairs");
     assert_eq!(jobs.len(), 1);

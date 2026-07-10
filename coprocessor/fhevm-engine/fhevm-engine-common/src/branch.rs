@@ -20,6 +20,28 @@ pub const BRANCHLESS_PRODUCER_BLOCK_HASH: &[u8] = &[];
 /// guard until the first explicit settlement row is created.
 pub const INITIAL_SETTLED_HEIGHT: i64 = -1;
 
+/// Validate the coordinated wave-1 activation and wave-2 cutover heights.
+/// A cutover below activation creates a block range that neither the legacy
+/// nor branch worker will execute.
+pub fn validate_branch_rollout_bounds(
+    activation_block: u64,
+    cutover_block: i64,
+) -> Result<(), String> {
+    if cutover_block < 0 {
+        return Err(format!(
+            "FHEVM_BRANCH_CUTOVER_BLOCK must be non-negative, got {cutover_block}"
+        ));
+    }
+    if (cutover_block as u64) < activation_block {
+        return Err(format!(
+            "FHEVM_BRANCH_CUTOVER_BLOCK ({cutover_block}) must be greater than or equal to \
+             FHEVM_BRANCH_ACTIVATION_BLOCK ({activation_block}); otherwise blocks in the gap \
+             have neither legacy nor branch work"
+        ));
+    }
+    Ok(())
+}
+
 /// A candidate row carrying the `producer_block_hash` it was stored under.
 pub trait ProducerBlockHashed {
     fn producer_block_hash(&self) -> &[u8];
@@ -396,6 +418,14 @@ mod tests {
         let candidates = vec![candidate(&[0xaa; 32], 1), candidate(&[], 2)];
         let selected = select_producer_candidate(&candidates, &[]).unwrap();
         assert_eq!(selected.tag, 2);
+    }
+
+    #[test]
+    fn rollout_bounds_reject_cutover_before_activation() {
+        assert!(validate_branch_rollout_bounds(100, 99).is_err());
+        assert!(validate_branch_rollout_bounds(100, -1).is_err());
+        assert!(validate_branch_rollout_bounds(100, 100).is_ok());
+        assert!(validate_branch_rollout_bounds(100, 101).is_ok());
     }
 
     #[test]

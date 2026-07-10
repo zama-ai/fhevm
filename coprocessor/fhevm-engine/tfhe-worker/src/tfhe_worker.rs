@@ -1,7 +1,8 @@
 use crate::dependence_chain::{self};
 use crate::types::CoprocessorError;
 use fhevm_engine_common::branch::{
-    is_branchless_producer, read_settled_height, select_producer_candidate, ProducerBlockHashed,
+    is_branchless_producer, read_settled_height, select_producer_candidate,
+    validate_branch_rollout_bounds, ProducerBlockHashed,
 };
 use fhevm_engine_common::database::{
     apply_gcs_mode_search_path, connect_pool_with_options,
@@ -271,6 +272,16 @@ fn short_byte_fingerprint(bytes: &[u8]) -> String {
 async fn ensure_cutover_safe(
     args: &crate::daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let activation_block = match std::env::var("FHEVM_BRANCH_ACTIVATION_BLOCK") {
+        Ok(value) => value.parse::<u64>().map_err(|err| {
+            format!("Invalid FHEVM_BRANCH_ACTIVATION_BLOCK value {value:?}: {err}")
+        })?,
+        Err(std::env::VarError::NotPresent) => 0,
+        Err(err) => return Err(format!("Invalid FHEVM_BRANCH_ACTIVATION_BLOCK: {err}").into()),
+    };
+    validate_branch_rollout_bounds(activation_block, args.branch_cutover_block)
+        .map_err(|err| -> Box<dyn std::error::Error + Send + Sync> { err.into() })?;
+
     if args.branch_cutover_block != 0 {
         return Ok(());
     }

@@ -178,6 +178,44 @@ async fn insert_ready_pair(pool: &PgPool, src_handle: &[u8], dst_handle: &[u8]) 
     insert_dst_event(pool, src_handle, dst_handle, DST_CHAIN).await;
 }
 
+async fn insert_branch_source(pool: &PgPool, src_handle: &[u8]) {
+    let producer_block_hash = vec![0x61_u8; 32];
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, ciphertext, ciphertext_version, ciphertext_type,
+            producer_block_hash, block_number
+         )
+         VALUES ($1, $2, $3, $4, $5, 1)",
+    )
+    .bind(src_handle)
+    .bind(CT64)
+    .bind(CIPHERTEXT_VERSION)
+    .bind(CIPHERTEXT_TYPE)
+    .bind(&producer_block_hash)
+    .execute(pool)
+    .await
+    .expect("insert branch source ciphertext");
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, ciphertext, ciphertext128,
+            ciphertext128_format, s3_format_version, producer_block_hash,
+            block_number, block_hash
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $8)",
+    )
+    .bind(SRC_CHAIN)
+    .bind(KEY_ID_GW)
+    .bind(src_handle)
+    .bind(CT64_DIGEST)
+    .bind(CT128_DIGEST)
+    .bind(CT128_FORMAT)
+    .bind(S3_FORMAT_VERSION)
+    .bind(&producer_block_hash)
+    .execute(pool)
+    .await
+    .expect("insert branch source digest");
+}
+
 async fn is_associated(pool: &PgPool, dst_handle: &[u8]) -> bool {
     sqlx::query_scalar::<_, bool>(
         "SELECT is_associated FROM handle_bridged_events WHERE dst_handle = $1",
@@ -261,6 +299,68 @@ async fn associates_ready_pair() {
     assert!(is_associated(&pool, &dst).await);
 
     assert!(in_publish_queue(&pool, &dst, DST_CHAIN).await);
+}
+
+#[tokio::test]
+#[serial]
+async fn post_cutover_association_reads_and_writes_branch_tables() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(3);
+    let dst = handle(4);
+    insert_branch_source(&pool, &src).await;
+    insert_src_event(&pool, &src, SRC_CHAIN, DST_CHAIN).await;
+    insert_dst_event(&pool, &src, &dst, DST_CHAIN).await;
+
+    let associated =
+        crate::bridge::drain_associations_at_cutover(&pool, 128, &CancellationToken::new(), 0)
+            .await
+            .unwrap();
+    assert_eq!(associated, 1);
+    assert!(is_associated(&pool, &dst).await);
+
+    let legacy_ciphertexts: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts WHERE handle = $1")
+            .bind(&dst)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let legacy_digests: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1")
+            .bind(&dst)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(legacy_ciphertexts, 0);
+    assert_eq!(legacy_digests, 0);
+
+    let copied: (Vec<u8>, Vec<u8>) = sqlx::query_as(
+        "SELECT c.ciphertext, c.producer_block_hash
+         FROM ciphertexts_branch c
+         WHERE c.handle = $1",
+    )
+    .bind(&dst)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(copied.0, CT64);
+    assert!(copied.1.is_empty(), "bridged destination is branchless");
+
+    let digest: CopiedDigest = sqlx::query_as(
+        "SELECT ciphertext, ciphertext128, ciphertext128_format, key_id_gw, s3_format_version
+         FROM ciphertext_digest_branch
+         WHERE handle = $1
+           AND producer_block_hash = ''::bytea
+           AND block_hash = ''::bytea",
+    )
+    .bind(&dst)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(digest.ciphertext.as_deref(), Some(CT64_DIGEST));
+    assert_eq!(digest.ciphertext128.as_deref(), Some(CT128_DIGEST));
+    assert_eq!(digest.ciphertext128_format, CT128_FORMAT);
+    assert_eq!(digest.key_id_gw, KEY_ID_GW);
+    assert_eq!(digest.s3_format_version, Some(S3_FORMAT_VERSION));
 }
 
 #[tokio::test]
