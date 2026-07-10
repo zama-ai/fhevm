@@ -78,8 +78,6 @@ pub enum SolanaAclVerificationError {
     EncryptedValueHandleMismatch,
     #[error("subject is not a current member of the encrypted-value lineage")]
     EncryptedValueSubjectMissing,
-    #[error("encrypted-value subject lacks the USE role")]
-    EncryptedValueSubjectUseRoleMissing,
     #[error("encrypted-value lineage account is not the canonical PDA for its value key")]
     NonCanonicalEncryptedValueAcl,
     #[error("encrypted-value lineage bump does not match the canonical PDA bump")]

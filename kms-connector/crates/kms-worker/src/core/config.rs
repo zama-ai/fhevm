@@ -168,8 +168,8 @@ pub struct HostChainConfig {
     pub acl_address: Option<Address>,
     /// The expected ZamaHost program id for Solana-owned ACL/material witnesses.
     ///
-    /// Required for Solana ACL verification. If omitted for a Solana chain, the
-    /// worker keeps rejecting Solana decrypt ACL checks fail-closed.
+    /// Required for Solana ACL verification. A Solana host chain that omits it is rejected during
+    /// worker startup validation.
     #[serde(
         default,
         deserialize_with = "deserialize_optional_solana_pubkey",
