@@ -47,10 +47,12 @@
 //!
 //! ## Freshness contract
 //!
-//! [`dispatch_solana_mmr_proof`] verifies the proof against the live peaks FIRST. A failed proof is
-//! terminal because the queued request cannot change its proof bytes; the client must rebuild and
-//! submit a new request. The error retains the proof and live leaf counts to diagnose likely
-//! staleness without giving it a different retry classification.
+//! [`dispatch_solana_mmr_proof`] verifies the proof against the live peaks FIRST. Only after a
+//! verification failure does the proof's leaf count classify the result:
+//! - **proof count < live count**: terminal; the immutable queued proof is stale.
+//! - **proof count == live count**: terminal; the proof is invalid for the live state.
+//! - **proof count > live count**: recoverable through the ordinary bounded attempt budget; the
+//!   KMS finalized view is behind the proof service, so the same proof may verify after catch-up.
 //!
 //! A proof that still verifies against the live peaks despite `proof_leaf_count != leaf_count` (count
 //! drifted but the relevant mountain never merged) is accepted — verify-first, never rebuilt from
@@ -330,16 +332,30 @@ fn dispatch_solana_public_mmr_proof(
         .map_err(|e| classify_mmr_verification_failure(e, proof_leaf_count, acl.leaf_count))
 }
 
-/// Terminal mapping reached only after `verify_*` rejects the proof against live finalized peaks.
-/// Both counts are retained for diagnostics; the queued proof bytes cannot be refreshed in place.
+/// Verify-first failure classification. An ahead-of-live proof can become valid when the KMS
+/// finalized view catches up, so it gets an ordinary bounded retry. A proof at or behind the live
+/// count cannot be repaired in place and is terminal.
 fn classify_mmr_verification_failure(
     error: crate::core::solana_acl::SolanaAclVerificationError,
     proof_leaf_count: u64,
     live_leaf_count: u64,
 ) -> ProcessingError {
-    ProcessingError::Irrecoverable(anyhow!(
-        "Solana MMR proof invalid: built at leaf_count={proof_leaf_count}, live leaf_count={live_leaf_count} ({error})"
-    ))
+    if proof_leaf_count > live_leaf_count {
+        ProcessingError::Recoverable(anyhow!(
+            "Solana MMR proof is ahead of the KMS finalized view: proof leaf_count={proof_leaf_count}, \
+             live finalized leaf_count={live_leaf_count}; retrying within the normal attempt budget \
+             while finalized state catches up ({error})"
+        ))
+    } else if proof_leaf_count < live_leaf_count {
+        ProcessingError::Irrecoverable(anyhow!(
+            "Solana MMR proof is stale and immutable: proof leaf_count={proof_leaf_count}, live \
+             finalized leaf_count={live_leaf_count} ({error})"
+        ))
+    } else {
+        ProcessingError::Irrecoverable(anyhow!(
+            "Solana MMR proof is invalid at live finalized leaf_count={live_leaf_count} ({error})"
+        ))
+    }
 }
 
 /// Full Solana user-decryption ACL check for one request: fetches the named `EncryptedValue`
@@ -848,12 +864,52 @@ mod tests {
         match err {
             ProcessingError::Irrecoverable(e) => {
                 let msg = e.to_string();
+                assert!(msg.contains("stale and immutable"), "got: {msg}");
                 assert!(msg.contains("leaf_count=3"), "got: {msg}");
                 assert!(msg.contains("leaf_count=4"), "got: {msg}");
             }
             other => {
                 panic!("a stale (merged) proof must be terminal, got {other:?}")
             }
+        }
+    }
+
+    #[test]
+    fn invalid_proof_at_live_leaf_count_is_terminal() {
+        let err = classify_mmr_verification_failure(
+            crate::core::solana_acl::SolanaAclVerificationError::HistoricalAccessProofInvalid,
+            4,
+            4,
+        );
+
+        match err {
+            ProcessingError::Irrecoverable(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("invalid at live finalized leaf_count=4"),
+                    "got: {msg}"
+                );
+            }
+            other => panic!("an invalid proof at the live count must be terminal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn proof_ahead_of_live_state_uses_normal_recoverable_budget() {
+        let err = classify_mmr_verification_failure(
+            crate::core::solana_acl::SolanaAclVerificationError::PublicDecryptProofInvalid,
+            2,
+            1,
+        );
+
+        match err {
+            ProcessingError::Recoverable(e) => {
+                let msg = e.to_string();
+                assert!(msg.contains("proof leaf_count=2"), "got: {msg}");
+                assert!(msg.contains("live finalized leaf_count=1"), "got: {msg}");
+                assert!(msg.contains("normal attempt budget"), "got: {msg}");
+            }
+            other => panic!("a proof ahead of finalized state must be recoverable, got {other:?}"),
         }
     }
 
