@@ -20,8 +20,11 @@ const SECOND_MS = 1_000;
 /** Rewrites raw `gh` failures into actionable user-facing guidance. */
 export const explainGitHubCliError = (message: string): string => {
   const lower = message.toLowerCase();
-  if (lower.includes("enoent") || lower.includes("not found")) {
+  if (lower.includes("enoent") || lower.includes("command not found")) {
     return "GitHub CLI `gh` is required. Install `gh`, authenticate with `gh auth login` or GH_TOKEN, or use `--lock-file` / `--target latest-supported` to avoid GitHub resolution.";
+  }
+  if (lower.includes("404") || (lower.includes("not found") && lower.includes("package"))) {
+    return `GitHub API returned 404 for a package version lookup: ${message.split("\n")[0]}. The image probably hasn't been published yet — push a build first, or use \`--lock-file\` with explicit pins.`;
   }
   if (lower.includes("read:packages") || lower.includes("scope to get a package") || (lower.includes("http 403") && lower.includes("package"))) {
     return "GitHub API is missing package-read scope. Run `gh auth refresh -s read:packages`, export GH_TOKEN with `read:packages`, or use `--lock-file` / `--target latest-supported` to avoid GitHub resolution.";
@@ -176,14 +179,24 @@ export const mainCommits = async (limit = 200) => {
   return commits.map((item) => item.sha);
 };
 
-/** Returns the published tag set for one GHCR package. */
+/** Returns the published tag set for one GHCR package. A missing (404) package
+ * yields an empty set so newly added images without CI builds yet don't block
+ * the whole resolution. */
 export const packageTags = async (pkg: string, targetTag?: string) => {
   const tags = new Set<string>();
   let page = 1;
   while (tags.size < GH_PACKAGE_VERSION_LIMIT) {
-    const payload = await runGhApi<PackageVersion[]>(
-      `/orgs/${GH_OWNER}/packages/container/${pkg}/versions?per_page=100&page=${page}`,
-    );
+    let payload: PackageVersion[];
+    try {
+      payload = await runGhApi<PackageVersion[]>(
+        `/orgs/${GH_OWNER}/packages/container/${pkg}/versions?per_page=100&page=${page}`,
+      );
+    } catch (error) {
+      if (error instanceof GitHubApiError && error.message.includes("404")) {
+        return tags;
+      }
+      throw error;
+    }
     if (!Array.isArray(payload) || payload.length === 0) {
       break;
     }

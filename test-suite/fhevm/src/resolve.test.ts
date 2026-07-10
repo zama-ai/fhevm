@@ -16,6 +16,7 @@ import {
   SHA_RUNTIME_COMPAT_MIN_SHA,
   applyVersionEnvOverrides,
   presetBundle,
+  selectSupportedMainSha,
   shaRuntimeCompatFloor,
   simpleAclFloor,
 } from "./resolve/target";
@@ -31,6 +32,37 @@ describe("resolve", () => {
     const commits = ["head", SHA_RUNTIME_COMPAT_MIN_SHA, SIMPLE_ACL_MIN_SHA, "tail"];
     expect(simpleAclFloor(commits)).toBe(2);
     expect(shaRuntimeCompatFloor(commits)).toBe(1);
+  });
+
+  test("selects the newest sha every gating package publishes", () => {
+    const candidates = ["aaaaaa1", "bbbbbb2", "cccccc3"];
+    const packageTagsMap = {
+      HOST_VERSION: new Set(["bbbbbb2", "cccccc3"]),
+      GATEWAY_VERSION: new Set(["aaaaaa1", "bbbbbb2", "cccccc3"]),
+    };
+    expect(selectSupportedMainSha(candidates, packageTagsMap)).toBe("bbbbbb2");
+  });
+
+  test("does not gate on unpublished or branch-only images", () => {
+    const candidates = ["aaaaaa1", "bbbbbb2"];
+    const packageTagsMap = {
+      HOST_VERSION: new Set(["aaaaaa1", "bbbbbb2"]),
+      // Empty set: image not published yet.
+      COPROCESSOR_CONSENSUS_DETECTOR_VERSION: new Set<string>(),
+      // Non-empty but only feature-branch tags absent from the candidate window:
+      // must not reject every main commit.
+      COPROCESSOR_UPGRADE_CONTROLLER_VERSION: new Set(["1a3646e", "9d01d7b"]),
+    };
+    expect(selectSupportedMainSha(candidates, packageTagsMap)).toBe("aaaaaa1");
+  });
+
+  test("returns undefined when a gating package publishes no candidate sha", () => {
+    const candidates = ["aaaaaa1", "bbbbbb2"];
+    const packageTagsMap = {
+      HOST_VERSION: new Set(["aaaaaa1"]),
+      GATEWAY_VERSION: new Set(["bbbbbb2"]),
+    };
+    expect(selectSupportedMainSha(candidates, packageTagsMap)).toBeUndefined();
   });
 
   test("applies env overrides to a bundle", () => {
