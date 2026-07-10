@@ -4,31 +4,17 @@
 
 - `docker-compose`
 - `rust`
-- `sqlx-cli`:
-```
-cargo install sqlx-cli
-```
 
 ## Development
 
-Start the database
+Start the database and apply migrations
 ```
-docker compose up -d
+make init_db
 ```
 
 Export database url for development
 ```
 export DATABASE_URL="postgres://postgres:postgres@localhost/coprocessor"
-```
-
-Create the database
-```
-sqlx db create
-```
-
-Run the migrations
-```
-sqlx migrate run
 ```
 
 ## Debugging database

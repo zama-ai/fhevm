@@ -173,14 +173,14 @@ jobs:
 
       - name: Install SQLx CLI
         run: |
-          if ! command -v sqlx &> /dev/null; then
+          if [[ "$(sqlx --version 2>/dev/null)" != "sqlx-cli 0.8.6" ]]; then
             echo "Installing sqlx-cli..."
             # Pin to the same series as the relayer's `sqlx` dependency
             # (0.8.6 in relayer/Cargo.toml). sqlx-cli 0.9.0 raised its
             # MSRV to rustc 1.94; rust-toolchain.toml pins 1.91.1.
             cargo install sqlx-cli --version 0.8.6 --no-default-features --features postgres --locked
           else
-            echo "sqlx-cli found in cache."
+            echo "sqlx-cli 0.8.6 found in cache."
           fi
 
       - name: Migrate Database
