@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM s3_canonical_repair_queue\n             WHERE host_chain_id = $1\n               AND (\n                    target_block_hash = ANY($2::bytea[])\n                    OR target_producer_block_hash = ANY($2::bytea[])\n               )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "527c5b6c0d4966fb5324193911e9e0c00a75d1cbac2e18cfd3018a66673e778a"
+}

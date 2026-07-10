@@ -142,6 +142,11 @@ pub async fn advance_settled_height(
            AND NOT EXISTS (
                SELECT 1
                FROM s3_canonical_repair_queue q
+               JOIN ciphertext_digest_branch d
+                 ON d.host_chain_id = q.host_chain_id
+                AND d.handle = q.handle
+                AND d.producer_block_hash = q.target_producer_block_hash
+                AND d.block_hash = q.target_block_hash
                WHERE q.host_chain_id = b.chain_id
                  AND q.target_block_number = b.block_number
            )
@@ -267,6 +272,17 @@ pub async fn enqueue_s3_canonical_repair(
     reason: &str,
 ) -> Result<bool, sqlx::Error> {
     let Some(target) = resolve_s3_canonical_publication_target(tx, chain_id, handle).await? else {
+        sqlx::query!(
+            r#"
+            DELETE FROM s3_canonical_repair_queue
+             WHERE host_chain_id = $1
+               AND handle = $2
+            "#,
+            chain_id,
+            handle,
+        )
+        .execute(tx.as_mut())
+        .await?;
         return Ok(false);
     };
 

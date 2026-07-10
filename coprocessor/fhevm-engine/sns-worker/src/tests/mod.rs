@@ -15,7 +15,10 @@ use ciphertext_attestation::{
 };
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
-use fhevm_engine_common::{branch::advance_settled_height, db_keys::DbKeyId};
+use fhevm_engine_common::{
+    branch::{advance_settled_height, enqueue_s3_canonical_repair},
+    db_keys::DbKeyId,
+};
 use serde::{Deserialize, Serialize};
 use serial_test::serial;
 use sqlx::Row;
@@ -1304,6 +1307,140 @@ async fn unverified_settled_publication_is_enqueued_for_repair() {
     .await
     .expect("repair queue target");
     assert_eq!(target, (producer, event));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn canonical_repair_resolution_removes_dangling_target() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    clean_up(&pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let handle = vec![0xD4_u8; 32];
+    sqlx::query(
+        "INSERT INTO s3_canonical_repair_queue(
+            host_chain_id, handle, target_producer_block_hash, target_block_hash,
+            target_block_number, reason
+         ) VALUES ($1, $2, $3, $4, 40, 'dangling_test')",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .bind(vec![0xD5_u8; 32])
+    .bind(vec![0xD6_u8; 32])
+    .execute(&pool)
+    .await
+    .expect("insert dangling repair target");
+
+    let mut tx = pool.begin().await.expect("begin repair resolution");
+    let enqueued =
+        enqueue_s3_canonical_repair(&mut tx, host_chain_id, &handle, "no_surviving_target")
+            .await
+            .expect("resolve missing target");
+    tx.commit().await.expect("commit repair resolution");
+    assert!(!enqueued);
+
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .fetch_one(&pool)
+    .await
+    .expect("count dangling targets");
+    assert_eq!(remaining, 0);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn settlement_blocks_only_repair_targets_with_digest_rows() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    clean_up(&pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let handle = vec![0xD7_u8; 32];
+    let block_hash = vec![0xD8_u8; 32];
+    let producer_hash = vec![0xD9_u8; 32];
+    let ciphertext_digest = vec![0xDA_u8; 32];
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid(chain_id, block_hash, block_number, block_status)
+         VALUES ($1, $2, 10, 'finalized')",
+    )
+    .bind(host_chain_id)
+    .bind(&block_hash)
+    .execute(&pool)
+    .await
+    .expect("insert finalized block");
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash,
+            block_number, ciphertext, ciphertext128, s3_format_version,
+            s3_publication_verified_at, s3_publication_verified_digest,
+            s3_publication_verified_producer_block_hash
+         ) VALUES ($1, $2, $3, $4, $5, 10, $6, $7, $8, NOW(), $6, $4)",
+    )
+    .bind(host_chain_id)
+    .bind(vec![0xDB_u8; 32])
+    .bind(&handle)
+    .bind(&producer_hash)
+    .bind(&block_hash)
+    .bind(&ciphertext_digest)
+    .bind(vec![0_u8; 32])
+    .bind(CURRENT_S3_FORMAT_VERSION)
+    .execute(&pool)
+    .await
+    .expect("insert verified digest target");
+    sqlx::query(
+        "INSERT INTO s3_canonical_repair_queue(
+            host_chain_id, handle, target_producer_block_hash, target_block_hash,
+            target_block_number, reason
+         ) VALUES ($1, $2, $3, $4, 10, 'dangling_settlement_test')",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .bind(&producer_hash)
+    .bind(&block_hash)
+    .execute(&pool)
+    .await
+    .expect("insert dangling repair target");
+
+    let mut tx = pool.begin().await.expect("begin blocked settlement");
+    let settled = advance_settled_height(&mut tx, host_chain_id, 10, 10)
+        .await
+        .expect("check live repair target");
+    tx.commit().await.expect("commit blocked settlement");
+    assert_eq!(settled, 9);
+
+    sqlx::query(
+        "DELETE FROM ciphertext_digest_branch
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .execute(&pool)
+    .await
+    .expect("delete repair target while preserving queue entry");
+
+    let mut tx = pool.begin().await.expect("begin unblocked settlement");
+    let settled = advance_settled_height(&mut tx, host_chain_id, 10, 10)
+        .await
+        .expect("advance past dangling target");
+    tx.commit().await.expect("commit unblocked settlement");
+    assert_eq!(settled, 10);
 }
 
 #[tokio::test]

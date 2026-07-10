@@ -1597,6 +1597,24 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
+        // Keep queue and digest lock ordering aligned with the SNS uploader:
+        // digest first, queue second. The survivor repair pass below repoints
+        // affected handles atomically before this cleanup transaction commits.
+        sqlx::query!(
+            r#"
+            DELETE FROM s3_canonical_repair_queue
+             WHERE host_chain_id = $1
+               AND (
+                    target_block_hash = ANY($2::bytea[])
+                    OR target_producer_block_hash = ANY($2::bytea[])
+               )
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
         sqlx::query!(
             r#"
             DELETE FROM allowed_handles_branch

@@ -4486,6 +4486,113 @@ async fn test_wave1_reorg_cleanup_preserves_legacy_ciphertext_bytes(
     Ok(())
 }
 
+#[tokio::test]
+#[serial(db)]
+async fn test_reorg_cleanup_removes_or_repoints_canonical_repair_targets(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let orphan_hash = vec![0x81_u8; 32];
+    let canonical_hash = vec![0x82_u8; 32];
+    let no_survivor_handle = vec![0x83_u8; 32];
+    let survivor_handle = vec![0x84_u8; 32];
+    let key_id_gw = vec![0x85_u8; 32];
+    let block_number = 30_i64;
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash
+         ) VALUES
+            ($1, $3, $4, $5, $5),
+            ($2, $3, $4, $5, $5),
+            ($2, $3, $4, $6, $6)",
+    )
+    .bind(&no_survivor_handle)
+    .bind(&survivor_handle)
+    .bind(chain_id.as_i64())
+    .bind(block_number)
+    .bind(&orphan_hash)
+    .bind(&canonical_hash)
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash,
+            block_number, ciphertext, ciphertext128
+         ) VALUES
+            ($1, $2, $3, $5, $5, $6, $7, $8),
+            ($1, $2, $4, $5, $5, $6, $7, $8),
+            ($1, $2, $4, $9, $9, $6, $7, $8)",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&key_id_gw)
+    .bind(&no_survivor_handle)
+    .bind(&survivor_handle)
+    .bind(&orphan_hash)
+    .bind(block_number)
+    .bind(vec![0x86_u8; 32])
+    .bind(vec![0x87_u8; 32])
+    .bind(&canonical_hash)
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO s3_canonical_repair_queue(
+            host_chain_id, handle, target_producer_block_hash, target_block_hash,
+            target_block_number, reason
+         ) VALUES
+            ($1, $2, $4, $4, $5, 'orphan_no_survivor'),
+            ($1, $3, $4, $4, $5, 'orphan_with_survivor')",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&no_survivor_handle)
+    .bind(&survivor_handle)
+    .bind(&orphan_hash)
+    .bind(block_number)
+    .execute(&pool)
+    .await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    db.cleanup_orphaned_branch_state(
+        &mut tx,
+        std::slice::from_ref(&orphan_hash),
+    )
+    .await?;
+    tx.commit().await?;
+
+    let no_survivor_queue_rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&no_survivor_handle)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(no_survivor_queue_rows, 0);
+
+    let survivor_target: (Vec<u8>, Vec<u8>) = sqlx::query_as(
+        "SELECT target_producer_block_hash, target_block_hash
+         FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&survivor_handle)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(survivor_target, (canonical_hash.clone(), canonical_hash));
+
+    Ok(())
+}
+
 /// Wave-1 branch dual-write strictness (require-branch-writes): the
 /// `ciphertext_digest` branch mirror is required, so a deterministic failure of
 /// the branchless mirror must ABORT the authoritative legacy `ciphertext_digest`
