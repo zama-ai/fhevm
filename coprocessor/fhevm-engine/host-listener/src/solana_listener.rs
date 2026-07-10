@@ -9,6 +9,8 @@
 //! in-process integration path via [`crate::solana_adapter`]; only the transport
 //! (real RPC vs. LiteSVM) differs, so the two stay behaviorally identical.
 
+#[cfg(feature = "solana-reconstruct")]
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -26,7 +28,7 @@ use solana_transaction_status::{
 };
 use time::{OffsetDateTime, PrimitiveDateTime};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::database::tfhe_event_propagate::Database;
 use crate::solana_adapter::{
@@ -36,6 +38,13 @@ use crate::solana_adapter::{
 
 /// `getSignaturesForAddress` returns at most this many entries per call.
 const SIGNATURES_PAGE_LIMIT: usize = 1_000;
+const SOLANA_RPC_AWAIT_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[derive(Debug)]
+enum SignatureIngestError {
+    Retry(anyhow::Error),
+    Skip(anyhow::Error),
+}
 
 /// Runtime configuration for the live Solana listener loop.
 #[derive(Clone, Debug)]
@@ -70,6 +79,9 @@ pub async fn run(
     );
 
     let mut cursor: Option<Signature> = None;
+    #[cfg(feature = "solana-reconstruct")]
+    let mut encrypted_value_tracker =
+        crate::solana_reconstruct::EncryptedValueLineageTracker::new();
     let mut ticker = tokio::time::interval(config.poll_interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -82,24 +94,83 @@ pub async fn run(
             _ = ticker.tick() => {}
         }
 
-        let signatures = match fetch_new_signatures(rpc, config, cursor).await {
-            Ok(signatures) => signatures,
-            Err(err) => {
+        let signatures = match tokio::time::timeout(
+            SOLANA_RPC_AWAIT_TIMEOUT,
+            fetch_new_signatures(rpc, config, cursor),
+        )
+        .await
+        {
+            Ok(Ok(signatures)) => signatures,
+            Ok(Err(err)) => {
                 error!(error = %err, "Failed to fetch new signatures; retrying next tick");
+                continue;
+            }
+            Err(_) => {
+                warn!(
+                    timeout = ?SOLANA_RPC_AWAIT_TIMEOUT,
+                    "Timed out fetching new signatures; retrying next tick"
+                );
                 continue;
             }
         };
 
         for signature in signatures {
-            match ingest_signature(db, rpc, config, &signature).await {
-                Ok(()) => cursor = Some(signature),
-                Err(err) => {
-                    // Stop advancing the cursor on the first failure so the next
-                    // poll retries this signature rather than skipping it.
-                    error!(signature = %signature, error = %err, "Failed to ingest transaction");
+            let result = match tokio::time::timeout(
+                SOLANA_RPC_AWAIT_TIMEOUT,
+                ingest_signature(
+                    db,
+                    rpc,
+                    config,
+                    &signature,
+                    #[cfg(feature = "solana-reconstruct")]
+                    &mut encrypted_value_tracker,
+                ),
+            )
+            .await
+            {
+                Ok(result) => result,
+                Err(_) => {
+                    warn!(
+                        signature = %signature,
+                        timeout = ?SOLANA_RPC_AWAIT_TIMEOUT,
+                        "Timed out ingesting transaction; retrying next tick"
+                    );
                     break;
                 }
+            };
+            if !record_signature_ingest_result(&mut cursor, signature, result) {
+                break;
             }
+        }
+    }
+}
+
+fn record_signature_ingest_result(
+    cursor: &mut Option<Signature>,
+    signature: Signature,
+    result: std::result::Result<(), SignatureIngestError>,
+) -> bool {
+    match result {
+        Ok(()) => {
+            *cursor = Some(signature);
+            true
+        }
+        Err(SignatureIngestError::Skip(err)) => {
+            error!(
+                signature = %signature,
+                error = %err,
+                "Failed to ingest transaction; skipping"
+            );
+            *cursor = Some(signature);
+            true
+        }
+        Err(SignatureIngestError::Retry(err)) => {
+            error!(
+                signature = %signature,
+                error = %err,
+                "Failed to ingest transaction; retrying next tick"
+            );
+            false
         }
     }
 }
@@ -166,7 +237,9 @@ async fn ingest_signature(
     rpc: &RpcClient,
     config: &SolanaListenerConfig,
     signature: &Signature,
-) -> Result<()> {
+    #[cfg(feature = "solana-reconstruct")]
+    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
+) -> std::result::Result<(), SignatureIngestError> {
     let confirmed = rpc
         .get_transaction_with_config(
             signature,
@@ -177,12 +250,17 @@ async fn ingest_signature(
             },
         )
         .await
-        .with_context(|| format!("get_transaction {signature}"))?;
+        .with_context(|| format!("get_transaction {signature}"))
+        .map_err(SignatureIngestError::Retry)?;
 
-    let (events, block) = extract_host_events(&confirmed, &config.program_id)
-        .with_context(|| {
-        format!("decode CPI events for transaction {signature}")
-    })?;
+    let (events, block) = extract_host_events_with_tracker(
+        &confirmed,
+        &config.program_id,
+        #[cfg(feature = "solana-reconstruct")]
+        encrypted_value_tracker,
+    )
+    .with_context(|| format!("decode CPI events for transaction {signature}"))
+    .map_err(SignatureIngestError::Skip)?;
 
     if events.is_empty() {
         return Ok(());
@@ -192,12 +270,17 @@ async fn ingest_signature(
     let mut tx = db
         .new_transaction()
         .await
-        .context("open database transaction")?;
+        .context("open database transaction")
+        .map_err(SignatureIngestError::Retry)?;
     let stats =
         insert_solana_events(db, &mut tx, events, transaction_id, block)
             .await
-            .context("insert_solana_events")?;
-    tx.commit().await.context("commit database transaction")?;
+            .context("insert_solana_events")
+            .map_err(SignatureIngestError::Retry)?;
+    tx.commit()
+        .await
+        .context("commit database transaction")
+        .map_err(SignatureIngestError::Retry)?;
 
     info!(
         signature = %signature,
@@ -213,18 +296,42 @@ async fn ingest_signature(
 /// Decodes the `zama-host` events carried by a confirmed transaction and derives
 /// its block metadata.
 ///
-/// A host event reaches us by one of two transports, chosen per emitting frame:
-/// `emit_cpi!` puts the event bytes in an inner instruction that self-invokes the
-/// program, while `emit!` writes them as a `Program data:` log line. A large
-/// `fhe_eval` frame (event count above the CPI cap, e.g. `confidential_burn`)
-/// uses log transport, so a CPI-only decoder silently drops its whole compute
-/// graph. We gather both the inner instructions and the log messages and hand
-/// them to [`decode_solana_transaction_events`], the shared decoder that strips
-/// the CPI/Anchor discriminators, scopes log lines to this program, and rejects a
-/// transaction that mixes the two transports.
+/// Compute (`fhe_eval`) events arrive via `emit_cpi!`: the event bytes live in an
+/// inner instruction that self-invokes the program. (DD-037 removed the old `emit!`
+/// `Program data:` log fallback for frames above the CPI cap, so oversized frames
+/// now emit nothing; we still gather log messages for compatibility, but the live
+/// source is the inner instructions.) Both are handed to
+/// [`decode_solana_transaction_events`], which strips the CPI/Anchor discriminators,
+/// scopes log lines to this program, and rejects a transaction mixing the two.
+///
+/// Separately, the RFC-024 ACL/allow lifecycle is EVENT-FREE: allow signals
+/// (public-decrypt / made-public / disclose+redeem requests) are recovered by
+/// decoding the `EncryptedValue` instructions via
+/// [`crate::solana_reconstruct::decode_encrypted_value_fetch_events`], compiled in
+/// under `solana-reconstruct`. That decode is required in EVERY transport (RPC
+/// included) — without the feature the listener ingests compute but drives no
+/// decrypts, so builds that need decrypts must enable it.
 pub fn extract_host_events(
     confirmed: &EncodedConfirmedTransactionWithStatusMeta,
     program_id: &Pubkey,
+) -> Result<(Vec<SolanaHostEvent>, SolanaBlockMeta)> {
+    #[cfg(feature = "solana-reconstruct")]
+    {
+        let mut tracker =
+            crate::solana_reconstruct::EncryptedValueLineageTracker::new();
+        extract_host_events_with_tracker(confirmed, program_id, &mut tracker)
+    }
+    #[cfg(not(feature = "solana-reconstruct"))]
+    {
+        extract_host_events_with_tracker(confirmed, program_id)
+    }
+}
+
+fn extract_host_events_with_tracker(
+    confirmed: &EncodedConfirmedTransactionWithStatusMeta,
+    program_id: &Pubkey,
+    #[cfg(feature = "solana-reconstruct")]
+    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
 ) -> Result<(Vec<SolanaHostEvent>, SolanaBlockMeta)> {
     let block = block_meta(confirmed)?;
     let meta = confirmed
@@ -261,6 +368,10 @@ pub fn extract_host_events(
         }
     }
 
+    #[cfg(feature = "solana-reconstruct")]
+    let all_instructions =
+        decoded_transaction_instructions(confirmed, &account_keys)?;
+
     // Log transport: `emit!` events arrive as `Program data:` log lines. Do not
     // early-return when there are no inner instructions — a log-only transaction
     // (every large eval frame) carries all its events here.
@@ -278,7 +389,142 @@ pub fn extract_host_events(
     )
     .context("decode host events")?;
 
+    #[cfg(feature = "solana-reconstruct")]
+    let events = {
+        let mut events = events;
+        events.extend(
+            crate::solana_reconstruct::decode_encrypted_value_fetch_events(
+                &all_instructions,
+                &program_id,
+                encrypted_value_tracker,
+            ),
+        );
+        events
+    };
+
     Ok((events, block))
+}
+
+#[cfg(feature = "solana-reconstruct")]
+fn decoded_transaction_instructions(
+    confirmed: &EncodedConfirmedTransactionWithStatusMeta,
+    account_keys: &[String],
+) -> Result<Vec<crate::solana_reconstruct::DecodedInstruction>> {
+    let account_key_bytes = account_keys
+        .iter()
+        .map(|key| {
+            Pubkey::from_str(key)
+                .map(|pubkey| pubkey.to_bytes())
+                .with_context(|| format!("parse account key {key}"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let resolve_accounts = |idxs: &[u8]| -> Vec<[u8; 32]> {
+        idxs.iter()
+            .filter_map(|&index| account_key_bytes.get(index as usize).copied())
+            .collect()
+    };
+
+    let decode_compiled =
+        |top_level_index: u32,
+         is_inner: bool,
+         program_id_index: u8,
+         data: &str,
+         accounts: &[u8]|
+         -> Result<crate::solana_reconstruct::DecodedInstruction> {
+            let program = account_keys
+                .get(program_id_index as usize)
+                .cloned()
+                .unwrap_or_default();
+            let data = bs58::decode(data)
+                .into_vec()
+                .context("base58-decode instruction data")?;
+            Ok(crate::solana_reconstruct::DecodedInstruction {
+                program,
+                data,
+                accounts: resolve_accounts(accounts),
+                top_level_index,
+                is_inner,
+            })
+        };
+
+    let mut top_level_by_index = HashMap::new();
+    let top_level_len = match &confirmed.transaction.transaction {
+        EncodedTransaction::Json(ui_tx) => match &ui_tx.message {
+            UiMessage::Raw(raw) => {
+                for (index, instruction) in raw.instructions.iter().enumerate()
+                {
+                    top_level_by_index.insert(
+                        index as u32,
+                        decode_compiled(
+                            index as u32,
+                            false,
+                            instruction.program_id_index,
+                            &instruction.data,
+                            &instruction.accounts,
+                        )?,
+                    );
+                }
+                raw.instructions.len()
+            }
+            UiMessage::Parsed(parsed) => {
+                for (index, instruction) in
+                    parsed.instructions.iter().enumerate()
+                {
+                    let UiInstruction::Compiled(compiled) = instruction else {
+                        continue;
+                    };
+                    top_level_by_index.insert(
+                        index as u32,
+                        decode_compiled(
+                            index as u32,
+                            false,
+                            compiled.program_id_index,
+                            &compiled.data,
+                            &compiled.accounts,
+                        )?,
+                    );
+                }
+                parsed.instructions.len()
+            }
+        },
+        _ => bail!("expected a JSON-encoded transaction"),
+    };
+
+    let mut inner_by_index: HashMap<u32, Vec<_>> = HashMap::new();
+    if let Some(meta) = &confirmed.transaction.meta {
+        if let OptionSerializer::Some(inner) = &meta.inner_instructions {
+            for group in inner {
+                let mut decoded = Vec::new();
+                for instruction in &group.instructions {
+                    let UiInstruction::Compiled(compiled) = instruction else {
+                        continue;
+                    };
+                    decoded.push(decode_compiled(
+                        group.index as u32,
+                        true,
+                        compiled.program_id_index,
+                        &compiled.data,
+                        &compiled.accounts,
+                    )?);
+                }
+                inner_by_index.insert(group.index as u32, decoded);
+            }
+        }
+    }
+
+    let mut ordered = Vec::new();
+    for index in 0..top_level_len as u32 {
+        if let Some(instruction) = top_level_by_index.remove(&index) {
+            ordered.push(instruction);
+        }
+        if let Some(inner) = inner_by_index.remove(&index) {
+            ordered.extend(inner);
+        }
+    }
+    ordered.extend(top_level_by_index.into_values());
+    ordered.extend(inner_by_index.into_values().flatten());
+    Ok(ordered)
 }
 
 /// Full ordered account-key list for a JSON-encoded transaction: static keys from
@@ -357,6 +603,39 @@ mod tests {
         payload.push(5); // to_type (euint64)
         payload.extend_from_slice(&[8; 32]); // result handle
         payload
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn per_signature_decode_error_advances_cursor_and_continues_batch() {
+        let signatures = vec![
+            Signature::new_unique(),
+            Signature::new_unique(),
+            Signature::new_unique(),
+        ];
+        let mut results = vec![
+            Ok(()),
+            Err(SignatureIngestError::Skip(anyhow::anyhow!("bad decode"))),
+            Ok(()),
+        ]
+        .into_iter();
+
+        let mut cursor = None;
+        let mut attempted = Vec::new();
+        for signature in signatures.iter().cloned() {
+            attempted.push(signature);
+            assert!(record_signature_ingest_result(
+                &mut cursor,
+                signature,
+                results.next().expect("test result")
+            ));
+        }
+
+        assert_eq!(attempted, signatures);
+        assert_eq!(cursor, signatures.last().cloned());
+        assert!(logs_contain("Failed to ingest transaction; skipping"));
+        assert!(logs_contain("bad decode"));
+        assert!(logs_contain(&signatures[1].to_string()));
     }
 
     /// Builds a confirmed-transaction fixture in the exact JSON shape returned by

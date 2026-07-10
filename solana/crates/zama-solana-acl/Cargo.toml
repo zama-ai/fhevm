@@ -1,0 +1,30 @@
+[package]
+name = "zama-solana-acl"
+version = "0.1.0"
+description = "Shared encrypted-value ACL layout, MMR history, and authorization for the Zama Solana port"
+# Standalone (no workspace inheritance): this crate is consumed as a `path`
+# dependency by the relayer and kms-connector Docker builds, whose contexts do
+# not include the solana workspace root — so it must resolve without it.
+authors = ["Zama"]
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+
+[lib]
+name = "zama_solana_acl"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+
+[dependencies]
+# Pure-Rust, solana-version-agnostic so the on-chain programs (solana 3.x), the
+# relayer proof service, and the KMS connector (solana 2.x) can depend on this
+# one crate. SHA-256 via `sha2` is byte-identical to the on-chain syscall hasher.
+borsh = { version = "1", features = ["derive"] }
+
+[target.'cfg(not(target_os = "solana"))'.dependencies]
+sha2 = { version = "0.10", default-features = false }
+
+# On SBF, hash via the sol_sha256 syscall (~100 CU) instead of software sha2
+# (thousands of CU per hash — enough to blow the per-tx budget on a transfer).
+[target.'cfg(target_os = "solana")'.dependencies]
+solana-sha256-hasher = { version = "3.1.0", default-features = false }

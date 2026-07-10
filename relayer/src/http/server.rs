@@ -16,6 +16,7 @@ use crate::http::openapi_middleware;
 use crate::http::retry_after::RetryAfterState;
 use crate::http::utils::BounceChecker;
 use crate::orchestrator::Orchestrator;
+use crate::solana_proof::http::DefaultSolanaProofService;
 use crate::store::sql::repositories::Repositories;
 use axum::{
     routing::{get, post},
@@ -42,6 +43,7 @@ async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
     Err(anyhow::anyhow!("HTTP server failed to start"))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_http_server(
     config: &HttpConfig,
     orchestrator: Arc<Orchestrator>,
@@ -50,6 +52,7 @@ pub async fn run_http_server(
     bouncer_throttlers: BouncerThrottlers,
     host_chain_id_checker: Arc<HostChainIdChecker>,
     signature_prechecker: Arc<UserDecryptSignaturePreChecker>,
+    solana_proof_service: Option<Arc<DefaultSolanaProofService>>,
 ) -> SocketAddr {
     let http_endpoint: SocketAddr = config
         .endpoint
@@ -174,6 +177,14 @@ pub async fn run_http_server(
         .merge(keyurl_handler_v2.routes())
         // Add OpenAPI documentation
         .merge(openapi_middleware());
+
+    // Solana MMR proof service: only mounted when a deployment configures it
+    // (interim internal endpoint until the Solana user-decrypt path calls it
+    // in-process; see relayer/src/solana_proof/http.rs).
+    if let Some(service) = solana_proof_service {
+        info!("Solana MMR proof service enabled at /internal/solana/mmr-proof");
+        app = app.merge(crate::solana_proof::http::router(service));
+    }
 
     // Admin endpoints configuration
     // When enabled, pass both registry (for TPS) and retry-after state

@@ -21,19 +21,19 @@ pub struct ConfidentialBurn<'info> {
     /// CHECK: Mint-scoped app authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// Current balance ACL record used as the left-hand operand.
-    pub current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// Current total-supply ACL record used as the left-hand operand.
-    pub current_total_supply_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub output_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub burned_amount_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub total_supply_output_acl: UncheckedAccount<'info>,
+    /// Stable balance lineage; read for the current handle and superseded by this eval.
+    #[account(mut, address = token_account.balance_encrypted_value)]
+    pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    /// Stable total-supply lineage; read for the current handle and superseded by this eval.
+    #[account(mut, address = mint.total_supply_encrypted_value)]
+    pub total_supply_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    /// CHECK: stable `burned_amount` lineage for `token_account`; created on the
+    /// account's first burn, superseded in place thereafter to each burn's own
+    /// delta. Each burn makes its own delta handle publicly decryptable at burn
+    /// (ERC-7984 `unwrap` parity), so every burn stays permanently redeemable
+    /// even after a later burn supersedes this lineage (DD-036 / Vector 2 closed).
+    #[account(mut, address = encrypted_value_address(mint.key(), token_account.key(), burned_amount_label()).0)]
+    pub burned_amount_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
@@ -57,11 +57,10 @@ pub struct ConfidentialBurn<'info> {
 }
 
 /// Burns an encrypted amount by rotating the account balance and encrypted total supply.
-pub fn confidential_burn(
-    ctx: Context<ConfidentialBurn>,
+pub fn confidential_burn<'info>(
+    ctx: Context<'info, ConfidentialBurn<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
 ) -> Result<()> {
-    assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
     let compute_signer = ctx.accounts.mint.compute_signer;
@@ -69,12 +68,8 @@ pub fn confidential_burn(
     let token_account = ctx.accounts.token_account.as_ref();
     let owner = token_account.owner;
     let token_account_key = token_account.key();
-    let balance_nonce_sequence = token_account.next_balance_nonce_sequence;
-    let old_balance_handle = token_account.balance_handle;
-    let old_balance_acl_record = token_account.balance_acl_record;
-    let total_supply_nonce_sequence = ctx.accounts.mint.next_total_supply_nonce_sequence;
-    let old_total_supply_handle = ctx.accounts.mint.total_supply_handle;
-    let old_total_supply_acl_record = ctx.accounts.mint.total_supply_acl_record;
+    let old_balance_handle = ctx.accounts.balance_value.current_handle;
+    let old_total_supply_handle = ctx.accounts.total_supply_value.current_handle;
 
     require_keys_eq!(
         owner,
@@ -92,63 +87,46 @@ pub fn confidential_burn(
         compute_signer,
         ConfidentialTokenError::ComputeSignerMismatch
     );
-    assert_current_balance_acl(
-        &ctx.accounts.current_compute_acl,
-        ctx.accounts.current_compute_acl.key(),
-        token_account,
-        mint_key,
-    )?;
     require_keys_eq!(
         total_supply_authority,
         total_supply_authority_address(mint_key).0,
         ConfidentialTokenError::TotalSupplyAuthorityMismatch
     );
-    assert_current_total_supply_acl(
-        &ctx.accounts.current_total_supply_acl,
-        ctx.accounts.current_total_supply_acl.key(),
-        ctx.accounts.mint.as_ref(),
-        mint_key,
-        total_supply_authority,
-    )?;
     // fromExternal parity: the burn amount is a coprocessor-attested external input authored by the
     // owner and bound to the mint compute-signer PDA (see assert_amount_attestation_binding).
     assert_amount_attestation_binding(&amount_attestation, owner, compute_signer)?;
+
     let balance_output = fhe::DurableOutput::new(
-        ctx.accounts.output_acl.to_account_info(),
-        durable_slot(
-            mint_key,
-            token_account_key,
-            balance_label(),
-            balance_nonce_sequence,
-        ),
+        ctx.accounts.balance_value.to_account_info(),
+        durable_slot(mint_key, token_account_key, balance_label()),
         zama_fhe::AccessPolicy::for_owner_and_compute(owner, compute_signer)
             .map_err(invalid_eval_plan)?,
     )?;
-    let burned_output = fhe::DurableOutput::new(
-        ctx.accounts.burned_amount_acl.to_account_info(),
-        durable_slot(
-            mint_key,
-            token_account_key,
-            burned_amount_label(),
-            balance_nonce_sequence,
-        ),
+    // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
+    // publicly decryptable inside this eval CPI, so the burn is permanently redeemable even after a
+    // later burn supersedes this shared lineage (DD-036 / Vector 2) — with no second make-public CPI.
+    let burned_output = fhe::DurableOutput::new_public(
+        ctx.accounts.burned_amount_value.to_account_info(),
+        durable_slot(mint_key, token_account_key, burned_amount_label()),
         access_policy_from_subjects(burned_amount_acl_subjects(owner, compute_signer))?,
     )?;
     let total_supply_output = fhe::DurableOutput::new(
-        ctx.accounts.total_supply_output_acl.to_account_info(),
-        durable_slot(
-            mint_key,
-            total_supply_authority,
-            total_supply_label(),
-            total_supply_nonce_sequence,
-        ),
+        ctx.accounts.total_supply_value.to_account_info(),
+        durable_slot(mint_key, total_supply_authority, total_supply_label()),
         zama_fhe::AccessPolicy::for_compute(compute_signer).map_err(invalid_eval_plan)?,
     )?;
 
-    let balance = uint64_from_acl(old_balance_handle, &ctx.accounts.current_compute_acl)?;
-    let total_supply = uint64_from_acl(
+    let balance = uint64_from_value(
+        old_balance_handle,
+        mint_key,
+        token_account_key,
+        balance_label(),
+    )?;
+    let total_supply = uint64_from_value(
         old_total_supply_handle,
-        &ctx.accounts.current_total_supply_acl,
+        mint_key,
+        total_supply_authority,
+        total_supply_label(),
     )?;
     let context_id = transfer_eval_context(
         b"burn-balance",
@@ -156,8 +134,6 @@ pub fn confidential_burn(
         token_account_key,
         token_account_key,
         amount_attestation.input_handle,
-        balance_nonce_sequence,
-        total_supply_nonce_sequence,
     )?;
     let mut builder = zama_fhe::EvalBuilder::new(
         context_id,
@@ -196,8 +172,6 @@ pub fn confidential_burn(
     let eval_accounts = fhe::EvalAccountSet::for_plan(
         &plan,
         [
-            ctx.accounts.current_compute_acl.to_account_info(),
-            ctx.accounts.current_total_supply_acl.to_account_info(),
             balance_output.account_info(),
             burned_output.account_info(),
             total_supply_output.account_info(),
@@ -217,6 +191,7 @@ pub fn confidential_burn(
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
+            deny_subject_records: ctx.remaining_accounts,
             compute_authority,
             system_program: &ctx.accounts.system_program,
             hcu_authority: fhe::HcuAuthority::for_mint(&ctx.accounts.hcu_authority, mint_key)?,
@@ -238,26 +213,13 @@ pub fn confidential_burn(
     let burned_handle = burned_output.handle()?;
     let new_total_supply_handle = total_supply_output.handle()?;
 
-    let token_account = &mut ctx.accounts.token_account;
-    token_account.balance_handle = new_balance_handle;
-    token_account.balance_acl_record = ctx.accounts.output_acl.key();
-    token_account.next_balance_nonce_sequence = balance_nonce_sequence
-        .checked_add(1)
-        .ok_or(ConfidentialTokenError::AclNonceOverflow)?;
-    let mint = &mut ctx.accounts.mint;
-    mint.total_supply_handle = new_total_supply_handle;
-    mint.total_supply_acl_record = ctx.accounts.total_supply_output_acl.key();
-    mint.next_total_supply_nonce_sequence = total_supply_nonce_sequence
-        .checked_add(1)
-        .ok_or(ConfidentialTokenError::AclNonceOverflow)?;
-
     emit_cpi!(ConfidentialBurnEvent {
         version: APP_EVENT_VERSION,
         mint: mint_key,
         owner,
         token_account: token_account_key,
         burned_handle,
-        burned_acl_record: ctx.accounts.burned_amount_acl.key(),
+        burned_encrypted_value: ctx.accounts.burned_amount_value.key(),
     });
     emit_cpi!(BalanceHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
@@ -265,18 +227,18 @@ pub fn confidential_burn(
         owner,
         token_account: token_account_key,
         old_handle: old_balance_handle,
-        old_acl_record: old_balance_acl_record,
+        old_encrypted_value: ctx.accounts.balance_value.key(),
         new_handle: new_balance_handle,
-        new_acl_record: ctx.accounts.output_acl.key(),
+        new_encrypted_value: ctx.accounts.balance_value.key(),
         reason: BalanceHandleUpdateReason::BurnDebit,
     });
     emit_cpi!(TotalSupplyHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: mint_key,
         old_handle: old_total_supply_handle,
-        old_acl_record: old_total_supply_acl_record,
+        old_encrypted_value: ctx.accounts.total_supply_value.key(),
         new_handle: new_total_supply_handle,
-        new_acl_record: ctx.accounts.total_supply_output_acl.key(),
+        new_encrypted_value: ctx.accounts.total_supply_value.key(),
         reason: TotalSupplyUpdateReason::Burn,
     });
     Ok(())

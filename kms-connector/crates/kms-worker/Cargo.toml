@@ -13,11 +13,13 @@ connector-utils.workspace = true
 fhevm_gateway_bindings.workspace = true
 fhevm_host_bindings.workspace = true
 user-decryption-signature.workspace = true
+zama-solana-acl.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
 base64.workspace = true
+borsh.workspace = true
 dashmap.workspace = true
 futures.workspace = true
 humantime-serde.workspace = true

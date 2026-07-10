@@ -1,21 +1,12 @@
-//! Phase 2: reconstruct zama-host events from decoded instruction data + block
-//! context, WITHOUT relying on on-chain `emit_cpi!`/`emit!`.
+//! Phase 2: reconstruct zama-host compute events from decoded instruction data +
+//! block context, WITHOUT relying on on-chain `emit_cpi!`/`emit!`.
 //!
-//! Compute reconstruction is centralized on `fhe_eval`: token
-//! balance/total-supply handles come from on-chain `fhe_eval` and are read from
-//! account state or reconstructed from the eval plan. Standalone compute
-//! instructions are intentionally not decoded here.
-//!
-//! Recomputation reuses the program's OWN `computed_*_handle` functions (the
-//! `zama-host` crate built with `no-entrypoint`) so the derived handles are
-//! byte-identical to what the program emits on-chain — parity a hand-copied
-//! implementation could silently lose.
-use anchor_lang::AnchorDeserialize;
+//! Covers the `fhe_eval` step-plan walk (recomputing each step's handle via the
+//! program's own `computed_*` functions, byte-identical to on-chain emission)
+//! and the event-free `EncryptedValue` instruction decode (RFC-024).
+
+use anchor_lang::{AnchorDeserialize, AnchorSerialize};
 use zama_host::state::{
-    computed_bound_eval_handle, computed_bound_eval_is_in_handle,
-    computed_bound_eval_mul_div_handle, computed_bound_eval_rand_seed,
-    computed_bound_eval_sum_handle, computed_bound_eval_ternary_handle,
-    computed_bound_eval_trivial_handle, computed_bound_eval_unary_handle,
     computed_eval_handle, computed_eval_is_in_handle,
     computed_eval_mul_div_handle, computed_eval_rand_seed,
     computed_eval_sum_handle, computed_eval_ternary_handle,
@@ -26,9 +17,6 @@ use zama_host::state::{
     FheUnaryOpCode as PgmUnaryOpCode,
 };
 
-use crate::generated::zama_host_instructions::{
-    AllowForDecryptionArgs, ZamaHostInstruction,
-};
 use crate::generated::{
     FheBinaryOpCode, FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent,
     FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
@@ -37,9 +25,9 @@ use crate::generated::{
 };
 use std::collections::HashMap;
 
+use crate::database::tfhe_event_propagate::Handle;
 use crate::solana_adapter::{
-    acl_record_fetch, material_fetch, SolanaFinalizedAccountFetch,
-    SolanaHostEvent,
+    acl_record_fetch, SolanaFinalizedAccountFetch, SolanaHostEvent,
 };
 
 /// Block + config context the deterministic handle derivation needs, taken from
@@ -52,101 +40,13 @@ pub struct ReconstructContext {
     pub unix_timestamp: i64,
 }
 
-/// Reconstructs the full ingestable event set (compute event + ACL allow-fetches)
-/// for a decoded zama-host instruction, resolving the ACL-record account from the
-/// instruction's `accounts` (raw 32-byte, in account order). Mirrors what the
-/// program's emits decode to, so ingest is byte-identical.
-///
-/// Wired for fetch-only host instructions. Compute-producing instructions are
-/// reconstructed through `fhe_eval`. New `ZamaHostInstruction` variants must be
-/// handled explicitly — no wildcard arm.
-pub fn reconstruct_instruction_events(
-    instruction: &ZamaHostInstruction,
-    accounts: &[[u8; 32]],
-    _ctx: &ReconstructContext,
-    acl_handles: &HashMap<[u8; 32], [u8; 32]>,
-) -> Option<Vec<SolanaHostEvent>> {
-    use ZamaHostInstruction as I;
-    match instruction {
-        // Allow instructions: fetch-only (no compute event). The handle was computed
-        // by an earlier instruction; these only flip its allow state.
-        // allow_for_decryption accounts: authority, authority_permission_record,
-        // acl_record(2), host_config, deny_subject_record.
-        I::AllowForDecryption(args) => {
-            let acl_record = accounts.get(2).copied()?;
-            Some(vec![SolanaHostEvent::FinalizedAccountFetch(
-                reconstruct_public_decrypt_allowed_fetch(args, acl_record),
-            )])
-        }
-        // allow_acl_subjects accounts: payer, authority, authority_permission_record,
-        // acl_record(3), host_config, deny_subject_record, system_program. One
-        // `acl_subject_allowed` fetch per subject (the `AclAllowed` event maps to no
-        // DB row, omitted; overflow permission records not handled here).
-        I::AllowAclSubjects(args) => {
-            let acl_record = accounts.get(3).copied()?;
-            Some(
-                (0..args.subjects.len())
-                    .map(|_| {
-                        SolanaHostEvent::FinalizedAccountFetch(
-                            acl_record_fetch(
-                                acl_record,
-                                args.handle,
-                                "acl_subject_allowed",
-                            ),
-                        )
-                    })
-                    .collect(),
-            )
-        }
-        // commit_handle_material: fetch-only, but the handle comes from the
-        // acl_record's account STATE (acl_record.handle), pre-fetched by the caller
-        // into `acl_handles`. accounts: payer, material_authority, host_config,
-        // acl_record(3), material_commitment(4), system_program. Emits both
-        // HandleMaterialCommitted + HandleMaterialSealed → three fetches.
-        I::CommitHandleMaterial(_) => {
-            let acl_record = accounts.get(3).copied()?;
-            let material_commitment = accounts.get(4).copied()?;
-            let handle = acl_handles.get(&acl_record).copied()?;
-            Some(vec![
-                SolanaHostEvent::FinalizedAccountFetch(material_fetch(
-                    material_commitment,
-                    acl_record,
-                    handle,
-                    "handle_material_committed",
-                )),
-                SolanaHostEvent::FinalizedAccountFetch(material_fetch(
-                    material_commitment,
-                    acl_record,
-                    handle,
-                    "handle_material_sealed",
-                )),
-                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
-                    acl_record,
-                    handle,
-                    "handle_material_sealed",
-                )),
-            ])
-        }
-    }
-}
-
-/// Parses the `handle` field from an on-chain `AclRecord` account's data, reusing
-/// the program's own `AclRecord` type. The transport reads this for instructions
-/// whose emitted handle comes from account state (e.g. `commit_handle_material`),
-/// not the instruction args.
-pub fn parse_acl_record_handle(account_data: &[u8]) -> Option<[u8; 32]> {
-    use anchor_lang::AccountDeserialize;
-    zama_host::state::AclRecord::try_deserialize(&mut &account_data[..])
-        .ok()
-        .map(|record| record.handle)
-}
-
-/// The `acl_record_bound` allow-fetch a durable `fhe_eval` output produces: the
+/// The `acl_record_bound` allow-fetch a `*_and_bind` instruction produces: the
 /// bound handle (identical to the reconstructed compute event's `result`) keyed
-/// by the AclRecord PDA the instruction wrote. This allow-reason is what flips
-/// `is_allowed=true` on the same-tx compute row so the tfhe-worker materializes
-/// the ciphertext. `acl_record` is the AclRecord account address, resolved from
-/// the eval instruction's remaining accounts by the caller.
+/// by the EncryptedValue PDA the instruction wrote. This allow-reason is what
+/// flips `is_allowed=true` on the same-tx compute row so the tfhe-worker
+/// materializes the ciphertext. `acl_record` is the EncryptedValue account
+/// address, resolved from the instruction's accounts by the caller (the
+/// transport wiring).
 pub fn reconstruct_acl_record_bound_fetch(
     acl_record: [u8; 32],
     bound_handle: [u8; 32],
@@ -154,14 +54,28 @@ pub fn reconstruct_acl_record_bound_fetch(
     acl_record_fetch(acl_record, bound_handle, "acl_record_bound")
 }
 
-/// The `public_decrypt_allowed` allow-fetch an `allow_for_decryption` instruction
-/// produces. The handle is the instruction arg; `acl_record` is resolved from the
-/// instruction's accounts by the caller.
-pub fn reconstruct_public_decrypt_allowed_fetch(
-    args: &AllowForDecryptionArgs,
+/// The `handle_superseded` allow-fetch produced when a durable `fhe_eval`
+/// output supersedes an existing lineage. The newly bound handle and the
+/// outgoing handle both remain decrypt-relevant: the new handle is current, and
+/// the old handle is historically authorized through the MMR leaves appended by
+/// the bind.
+pub fn reconstruct_handle_superseded_fetch(
     acl_record: [u8; 32],
+    handle: [u8; 32],
 ) -> SolanaFinalizedAccountFetch {
-    acl_record_fetch(acl_record, args.handle, "public_decrypt_allowed")
+    acl_record_fetch(acl_record, handle, "handle_superseded")
+}
+
+/// The `handle_made_public` allow-fetch a born-public durable `fhe_eval` output
+/// produces: the newly bound handle is publicly decryptable because the bind
+/// appended a public-decrypt leaf for it inline (`make_public: true`), identical
+/// to a standalone `make_handle_public`. Same reason/shape as the
+/// `make_handle_public` instruction decode, so both paths land the same fetch.
+pub fn reconstruct_handle_made_public_fetch(
+    acl_record: [u8; 32],
+    handle: [u8; 32],
+) -> SolanaFinalizedAccountFetch {
+    acl_record_fetch(acl_record, handle, "handle_made_public")
 }
 
 /// Discriminator for the `fhe_eval` instruction (sha256("global:fhe_eval")[..8]).
@@ -175,6 +89,366 @@ const FHE_EVAL_DISCRIMINATOR: [u8; 8] = [176, 42, 63, 177, 244, 167, 120, 109];
 pub fn decode_fhe_eval_args(instruction_data: &[u8]) -> Option<FheEvalArgs> {
     let payload = instruction_data.strip_prefix(&FHE_EVAL_DISCRIMINATOR)?;
     FheEvalArgs::try_from_slice(payload).ok()
+}
+
+// --- RFC-024 `EncryptedValue` instruction decode -----------------------------
+//
+// `EncryptedValue` is event-free by design (see zama-host's
+// `instructions/encrypted_value.rs` module doc): active ACL changes are carried
+// by `fhe_eval` durable outputs, `make_handle_public`, `allow_subjects`, and
+// `remove_subject`; raw create/update ABI stubs are decoded only as legacy
+// finalized data if encountered. There is no ACL event to decode — instruction
+// data is the allow signal and must be decoded directly (top-level AND
+// inner/CPI, since an app program may invoke these via CPI) by Anchor
+// discriminator
+// (`sha256("global:<name>")[..8]`).
+
+/// One subject grant, matching `zama_host::instructions::encrypted_value::
+/// EncryptedValueSubjectGrant`'s wire layout (`Pubkey`, borsh).
+#[derive(
+    AnchorDeserialize, AnchorSerialize, Clone, Copy, Debug, PartialEq, Eq,
+)]
+pub struct EncryptedValueSubjectGrant {
+    pub subject: [u8; 32],
+}
+
+#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
+pub struct CreateEncryptedValueArgs {
+    pub acl_domain_key: [u8; 32],
+    pub app_account: [u8; 32],
+    pub encrypted_value_label: [u8; 32],
+    pub handle: [u8; 32],
+    pub subjects: Vec<EncryptedValueSubjectGrant>,
+}
+
+#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
+pub struct UpdateEncryptedValueArgs {
+    pub new_handle: [u8; 32],
+    pub previous_handle: [u8; 32],
+    pub previous_subjects: Vec<[u8; 32]>,
+}
+
+#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
+pub struct MakeHandlePublicArgs {
+    pub handle: [u8; 32],
+}
+
+#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
+pub struct AllowSubjectsArgs {
+    pub subjects: Vec<EncryptedValueSubjectGrant>,
+}
+
+#[derive(AnchorDeserialize, AnchorSerialize, Clone, Debug, PartialEq, Eq)]
+pub struct RemoveSubjectArgs {
+    pub subject: [u8; 32],
+}
+
+/// A decoded `EncryptedValue` instruction, args-only (accounts are resolved by
+/// the caller from the instruction's account list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EncryptedValueInstruction {
+    Create(CreateEncryptedValueArgs),
+    Update(UpdateEncryptedValueArgs),
+    /// `None` is only a compatibility/safety fallback for a known
+    /// discriminator whose args fail to decode; normal Anchor payloads carry the
+    /// exact handle made public on-chain.
+    MakeHandlePublic(Option<MakeHandlePublicArgs>),
+    AllowSubjects(AllowSubjectsArgs),
+    RemoveSubject(RemoveSubjectArgs),
+}
+
+/// `sha256("global:create_encrypted_value")[..8]`.
+const CREATE_ENCRYPTED_VALUE_DISCRIMINATOR: [u8; 8] =
+    [16, 78, 219, 132, 226, 111, 211, 78];
+/// `sha256("global:update_encrypted_value")[..8]`.
+const UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR: [u8; 8] =
+    [134, 7, 12, 247, 233, 80, 35, 215];
+/// `sha256("global:make_handle_public")[..8]`.
+const MAKE_HANDLE_PUBLIC_DISCRIMINATOR: [u8; 8] =
+    [66, 199, 252, 247, 244, 172, 42, 118];
+/// `sha256("global:allow_subjects")[..8]`.
+const ALLOW_SUBJECTS_DISCRIMINATOR: [u8; 8] =
+    [186, 205, 31, 20, 183, 17, 5, 26];
+/// `sha256("global:remove_subject")[..8]`.
+const REMOVE_SUBJECT_DISCRIMINATOR: [u8; 8] =
+    [66, 88, 46, 123, 6, 107, 208, 50];
+
+/// Every pre-`remove_subject` `EncryptedValue` instruction accounts struct places
+/// `encrypted_value` at this index (`payer`, `app_account_authority`/`authority`,
+/// `encrypted_value`, ...) — see `CreateEncryptedValue`,
+/// `AllowEncryptedValueSubjects`, `UpdateEncryptedValue`,
+/// `MakeEncryptedValueHandlePublic` in zama-host's `encrypted_value.rs`.
+pub const ENCRYPTED_VALUE_ACCOUNT_INDEX: usize = 2;
+
+/// Decodes one `EncryptedValue` instruction from raw instruction data
+/// (discriminator + borsh args), or `None` if the discriminator doesn't match
+/// any known lifecycle discriminator (i.e. it is not an `EncryptedValue` instruction at all —
+/// the caller tries this decoder against every top-level and inner
+/// instruction of the zama-host program).
+pub fn decode_encrypted_value_instruction(
+    data: &[u8],
+) -> Option<EncryptedValueInstruction> {
+    if data.len() < 8 {
+        return None;
+    }
+    let (discriminator, payload) = data.split_at(8);
+    match discriminator {
+        d if d == CREATE_ENCRYPTED_VALUE_DISCRIMINATOR => {
+            CreateEncryptedValueArgs::try_from_slice(payload)
+                .ok()
+                .map(EncryptedValueInstruction::Create)
+        }
+        d if d == UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR => {
+            UpdateEncryptedValueArgs::try_from_slice(payload)
+                .ok()
+                .map(EncryptedValueInstruction::Update)
+        }
+        d if d == MAKE_HANDLE_PUBLIC_DISCRIMINATOR => {
+            Some(EncryptedValueInstruction::MakeHandlePublic(
+                MakeHandlePublicArgs::try_from_slice(payload).ok(),
+            ))
+        }
+        d if d == ALLOW_SUBJECTS_DISCRIMINATOR => {
+            AllowSubjectsArgs::try_from_slice(payload)
+                .ok()
+                .map(EncryptedValueInstruction::AllowSubjects)
+        }
+        d if d == REMOVE_SUBJECT_DISCRIMINATOR => {
+            RemoveSubjectArgs::try_from_slice(payload)
+                .ok()
+                .map(EncryptedValueInstruction::RemoveSubject)
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn encrypted_value_account_index(
+    instruction: &EncryptedValueInstruction,
+) -> usize {
+    match instruction {
+        EncryptedValueInstruction::RemoveSubject(_) => 1,
+        EncryptedValueInstruction::Create(_)
+        | EncryptedValueInstruction::Update(_)
+        | EncryptedValueInstruction::MakeHandlePublic(_)
+        | EncryptedValueInstruction::AllowSubjects(_) => {
+            ENCRYPTED_VALUE_ACCOUNT_INDEX
+        }
+    }
+}
+
+/// Tracks each `EncryptedValue` lineage's current handle across the
+/// instructions the listener has decoded so far (in on-chain order), so
+/// `allow_subjects`, `remove_subject`, and malformed `make_handle_public`
+/// fallback payloads resolve to the right handle without an extra account fetch.
+///
+/// Chosen over finalized-account-fetcher resolution: at decode time the
+/// transaction is only confirmed, not finalized, so the fetcher hasn't run
+/// yet and re-fetching mid-decode would make decode async/fallible on RPC
+/// availability. The handle is fully determined by the most recent
+/// creation/supersession this tracker has seen for the same `encrypted_value` PDA —
+/// exactly the on-chain precondition durable supersession enforces
+/// (`current_handle == previous_handle`) — so a listener that processes
+/// instructions in order can reconstruct it for free. Persist one tracker
+/// across the whole listener run (keyed by the `encrypted_value` account
+/// address, which is stable for a lineage's lifetime).
+#[derive(Default, Debug)]
+pub struct EncryptedValueLineageTracker {
+    current_handle: HashMap<[u8; 32], [u8; 32]>,
+}
+
+impl EncryptedValueLineageTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn record(
+        &mut self,
+        encrypted_value_account: [u8; 32],
+        handle: [u8; 32],
+    ) {
+        self.current_handle.insert(encrypted_value_account, handle);
+    }
+
+    pub fn current_handle(
+        &self,
+        encrypted_value_account: [u8; 32],
+    ) -> Option<[u8; 32]> {
+        self.current_handle.get(&encrypted_value_account).copied()
+    }
+}
+
+/// The allow-fetch(es) one decoded `EncryptedValue` instruction produces,
+/// updating `tracker` as a side effect for `create`/`update` (so later
+/// `make_handle_public`/`allow_subjects`/`remove_subject` in this or a later transaction
+/// resolve correctly). `encrypted_value_account` is
+/// `accounts[ENCRYPTED_VALUE_ACCOUNT_INDEX]`, resolved by the caller.
+///
+/// A raw legacy `update_encrypted_value` instruction's `previous_handle` is
+/// included as its own fetch (reason `handle_superseded` is reused for the new
+/// handle; the previous handle keeps its historical decrypt path alive via the
+/// SAME reason on the old handle) so a still-outstanding decrypt of the
+/// superseded handle is not silently dropped just because the lineage moved on.
+pub fn encrypted_value_instruction_fetches(
+    instruction: &EncryptedValueInstruction,
+    encrypted_value_account: [u8; 32],
+    tracker: &mut EncryptedValueLineageTracker,
+) -> Vec<SolanaFinalizedAccountFetch> {
+    match instruction {
+        EncryptedValueInstruction::Create(args) => {
+            tracker.record(encrypted_value_account, args.handle);
+            let mut fetches = if args.subjects.is_empty() {
+                vec![acl_record_fetch(
+                    encrypted_value_account,
+                    args.handle,
+                    "encrypted_value_created",
+                )]
+            } else {
+                Vec::with_capacity(args.subjects.len())
+            };
+            for grant in &args.subjects {
+                let mut fetch = acl_record_fetch(
+                    encrypted_value_account,
+                    args.handle,
+                    "encrypted_value_created",
+                );
+                fetch.subject = Some(grant.subject);
+                fetches.push(fetch);
+            }
+            fetches
+        }
+        EncryptedValueInstruction::Update(args) => {
+            tracker.record(encrypted_value_account, args.new_handle);
+            vec![
+                acl_record_fetch(
+                    encrypted_value_account,
+                    args.new_handle,
+                    "handle_superseded",
+                ),
+                // The outgoing handle must remain decryptable historically
+                // (SNS/ct128 prep already exists for it); still fetch it so
+                // the finalized consumer doesn't treat it as dropped.
+                acl_record_fetch(
+                    encrypted_value_account,
+                    args.previous_handle,
+                    "handle_superseded",
+                ),
+            ]
+        }
+        EncryptedValueInstruction::MakeHandlePublic(Some(args)) => {
+            vec![acl_record_fetch(
+                encrypted_value_account,
+                args.handle,
+                "handle_made_public",
+            )]
+        }
+        // A known discriminator with malformed args can only fall back to the
+        // lineage tracker. Tracker misses queue without a handle so the
+        // finalized account can resolve its current handle instead of guessing.
+        EncryptedValueInstruction::MakeHandlePublic(None) => {
+            vec![current_handle_fetch(
+                encrypted_value_account,
+                tracker.current_handle(encrypted_value_account),
+                "handle_made_public",
+            )]
+        }
+        EncryptedValueInstruction::AllowSubjects(args) => args
+            .subjects
+            .iter()
+            .map(|grant| {
+                let mut fetch = current_handle_fetch(
+                    encrypted_value_account,
+                    tracker.current_handle(encrypted_value_account),
+                    "subject_allowed",
+                );
+                fetch.subject = Some(grant.subject);
+                fetch
+            })
+            .collect(),
+        EncryptedValueInstruction::RemoveSubject(args) => {
+            let mut fetch = current_handle_fetch(
+                encrypted_value_account,
+                tracker.current_handle(encrypted_value_account),
+                "subject_removed",
+            );
+            fetch.subject = Some(args.subject);
+            vec![fetch]
+        }
+    }
+}
+
+/// An EncryptedValue-account fetch for a lineage's live handle; `handle` is
+/// `None` on a tracker miss, deferring resolution to the finalized account itself.
+fn current_handle_fetch(
+    acl_record: [u8; 32],
+    handle: Option<[u8; 32]>,
+    reason: &'static str,
+) -> SolanaFinalizedAccountFetch {
+    let mut fetch = acl_record_fetch(acl_record, [0u8; 32], reason);
+    fetch.handle = handle.map(Handle::from);
+    fetch
+}
+
+/// Decodes the `EncryptedValue` allow-fetches for one transaction's
+/// instructions, given in on-chain execution order and MUST include inner
+/// (CPI-invoked) instructions interleaved in that same order — an app program
+/// may invoke `allow_subjects`/`remove_subject`/`make_handle_public`/etc. via CPI, and the
+/// lineage tracker's ordering guarantee only holds if CPI instructions are not
+/// dropped. Non-`EncryptedValue`/non-matching-program instructions are
+/// skipped. `tracker` persists across transactions (own one per listener run).
+pub fn decode_encrypted_value_instructions<'a>(
+    instructions: impl IntoIterator<Item = (&'a str, &'a [u8], &'a [[u8; 32]])>,
+    zama_host_program_id: &str,
+    tracker: &mut EncryptedValueLineageTracker,
+) -> Vec<SolanaFinalizedAccountFetch> {
+    instructions
+        .into_iter()
+        .filter(|(program_id, _, _)| *program_id == zama_host_program_id)
+        .filter_map(|(_, data, accounts)| {
+            let instruction = decode_encrypted_value_instruction(data)?;
+            let encrypted_value_index =
+                encrypted_value_account_index(&instruction);
+            let encrypted_value_account =
+                accounts.get(encrypted_value_index).copied()?;
+            Some(encrypted_value_instruction_fetches(
+                &instruction,
+                encrypted_value_account,
+                tracker,
+            ))
+        })
+        .flatten()
+        .collect()
+}
+
+/// A decoded instruction invocation: program id, instruction data, resolved
+/// account addresses, and the top-level instruction frame it belongs to.
+#[derive(Clone, Debug)]
+pub struct DecodedInstruction {
+    pub program: String,
+    pub data: Vec<u8>,
+    pub accounts: Vec<[u8; 32]>,
+    pub top_level_index: u32,
+    pub is_inner: bool,
+}
+
+pub fn decode_encrypted_value_fetch_events(
+    instructions: &[DecodedInstruction],
+    zama_host_program_id: &str,
+    tracker: &mut EncryptedValueLineageTracker,
+) -> Vec<SolanaHostEvent> {
+    decode_encrypted_value_instructions(
+        instructions.iter().map(|ix| {
+            (
+                ix.program.as_str(),
+                ix.data.as_slice(),
+                ix.accounts.as_slice(),
+            )
+        }),
+        zama_host_program_id,
+        tracker,
+    )
+    .into_iter()
+    .map(SolanaHostEvent::FinalizedAccountFetch)
+    .collect()
 }
 
 // `previous_bank_hash` sourcing lives in `solana_slot_hashes` (feature-independent
@@ -283,8 +557,9 @@ fn map_pgm_ternary_op(op: PgmTernaryOpCode) -> FheTernaryOpCode {
 /// Reconstructs the per-step compute events a `fhe_eval` plan emits, mirroring
 /// the program's `walk_eval_frame`: walk steps in order, resolve operands
 /// (`Transient` referring to earlier steps' produced handles), recompute each
-/// step's result handle via the program's eval primitives (`Durable` output →
-/// bound variant, otherwise unbound), and record one event per step.
+/// step's result handle via the program's eval primitives, and record one event
+/// per step. Durable and instruction-local outputs derive the identical base
+/// handle — no per-output binding (matches EVM `FHEVMExecutor`).
 ///
 /// Returns `None` on a malformed plan (operand referencing a not-yet-produced
 /// step, or a `Scalar` where only an encrypted operand is valid). `context_id`
@@ -308,42 +583,22 @@ pub fn reconstruct_fhe_eval_steps(
                 lhs,
                 rhs,
                 output_fhe_type,
-                output,
+                ..
             } => {
                 let lhs_handle = resolve_operand(lhs, &produced)?;
                 let (rhs_handle, scalar) = resolve_rhs(rhs, &produced)?;
-                let result = match output {
-                    FheEvalOutput::AllowedDurable {
-                        output_nonce_key,
-                        output_nonce_sequence,
-                        ..
-                    } => computed_bound_eval_handle(
-                        *op,
-                        lhs_handle,
-                        rhs_handle,
-                        scalar,
-                        *output_fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                        *output_nonce_key,
-                        *output_nonce_sequence,
-                    ),
-                    FheEvalOutput::AllowedLocal => computed_eval_handle(
-                        *op,
-                        lhs_handle,
-                        rhs_handle,
-                        scalar,
-                        *output_fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                    ),
-                };
+                let result = computed_eval_handle(
+                    *op,
+                    lhs_handle,
+                    rhs_handle,
+                    scalar,
+                    *output_fhe_type,
+                    ctx.chain_id,
+                    ctx.previous_bank_hash,
+                    ctx.unix_timestamp,
+                    context_id,
+                    op_index,
+                );
                 produced.push(result);
                 SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
                     version: EVENT_VERSION,
@@ -361,45 +616,23 @@ pub fn reconstruct_fhe_eval_steps(
                 if_true,
                 if_false,
                 output_fhe_type,
-                output,
+                ..
             } => {
                 let c = resolve_operand(control, &produced)?;
                 let t = resolve_operand(if_true, &produced)?;
                 let f = resolve_operand(if_false, &produced)?;
-                let result = match output {
-                    FheEvalOutput::AllowedDurable {
-                        output_nonce_key,
-                        output_nonce_sequence,
-                        ..
-                    } => computed_bound_eval_ternary_handle(
-                        *op,
-                        c,
-                        t,
-                        f,
-                        *output_fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                        *output_nonce_key,
-                        *output_nonce_sequence,
-                    ),
-                    FheEvalOutput::AllowedLocal => {
-                        computed_eval_ternary_handle(
-                            *op,
-                            c,
-                            t,
-                            f,
-                            *output_fhe_type,
-                            ctx.chain_id,
-                            ctx.previous_bank_hash,
-                            ctx.unix_timestamp,
-                            context_id,
-                            op_index,
-                        )
-                    }
-                };
+                let result = computed_eval_ternary_handle(
+                    *op,
+                    c,
+                    t,
+                    f,
+                    *output_fhe_type,
+                    ctx.chain_id,
+                    ctx.previous_bank_hash,
+                    ctx.unix_timestamp,
+                    context_id,
+                    op_index,
+                );
                 produced.push(result);
                 SolanaHostEvent::FheTernaryOp(FheTernaryOpEvent {
                     version: EVENT_VERSION,
@@ -414,36 +647,17 @@ pub fn reconstruct_fhe_eval_steps(
             FheEvalStep::TrivialEncrypt {
                 plaintext,
                 fhe_type,
-                output,
+                ..
             } => {
-                let result = match output {
-                    FheEvalOutput::AllowedDurable {
-                        output_nonce_key,
-                        output_nonce_sequence,
-                        ..
-                    } => computed_bound_eval_trivial_handle(
-                        *plaintext,
-                        *fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                        *output_nonce_key,
-                        *output_nonce_sequence,
-                    ),
-                    FheEvalOutput::AllowedLocal => {
-                        computed_eval_trivial_handle(
-                            *plaintext,
-                            *fhe_type,
-                            ctx.chain_id,
-                            ctx.previous_bank_hash,
-                            ctx.unix_timestamp,
-                            context_id,
-                            op_index,
-                        )
-                    }
-                };
+                let result = computed_eval_trivial_handle(
+                    *plaintext,
+                    *fhe_type,
+                    ctx.chain_id,
+                    ctx.previous_bank_hash,
+                    ctx.unix_timestamp,
+                    context_id,
+                    op_index,
+                );
                 produced.push(result);
                 SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
                     version: EVENT_VERSION,
@@ -453,29 +667,14 @@ pub fn reconstruct_fhe_eval_steps(
                     result,
                 })
             }
-            FheEvalStep::Rand { fhe_type, output } => {
-                let seed = match output {
-                    FheEvalOutput::AllowedDurable {
-                        output_nonce_key,
-                        output_nonce_sequence,
-                        ..
-                    } => computed_bound_eval_rand_seed(
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                        *output_nonce_key,
-                        *output_nonce_sequence,
-                    ),
-                    FheEvalOutput::AllowedLocal => computed_eval_rand_seed(
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                    ),
-                };
+            FheEvalStep::Rand { fhe_type, .. } => {
+                let seed = computed_eval_rand_seed(
+                    ctx.chain_id,
+                    ctx.previous_bank_hash,
+                    ctx.unix_timestamp,
+                    context_id,
+                    op_index,
+                );
                 let result =
                     computed_rand_handle(seed, *fhe_type, ctx.chain_id);
                 produced.push(result);
@@ -491,37 +690,19 @@ pub fn reconstruct_fhe_eval_steps(
                 op,
                 operand,
                 output_fhe_type,
-                output,
+                output: _,
             } => {
                 let operand_handle = resolve_operand(operand, &produced)?;
-                let result = match output {
-                    FheEvalOutput::AllowedDurable {
-                        output_nonce_key,
-                        output_nonce_sequence,
-                        ..
-                    } => computed_bound_eval_unary_handle(
-                        *op,
-                        operand_handle,
-                        *output_fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                        *output_nonce_key,
-                        *output_nonce_sequence,
-                    ),
-                    FheEvalOutput::AllowedLocal => computed_eval_unary_handle(
-                        *op,
-                        operand_handle,
-                        *output_fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                    ),
-                };
+                let result = computed_eval_unary_handle(
+                    *op,
+                    operand_handle,
+                    *output_fhe_type,
+                    ctx.chain_id,
+                    ctx.previous_bank_hash,
+                    ctx.unix_timestamp,
+                    context_id,
+                    op_index,
+                );
                 produced.push(result);
                 SolanaHostEvent::FheUnaryOp(FheUnaryOpEvent {
                     version: EVENT_VERSION,
@@ -534,30 +715,15 @@ pub fn reconstruct_fhe_eval_steps(
             FheEvalStep::RandBounded {
                 upper_bound,
                 fhe_type,
-                output,
+                ..
             } => {
-                let seed = match output {
-                    FheEvalOutput::AllowedDurable {
-                        output_nonce_key,
-                        output_nonce_sequence,
-                        ..
-                    } => computed_bound_eval_rand_seed(
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                        *output_nonce_key,
-                        *output_nonce_sequence,
-                    ),
-                    FheEvalOutput::AllowedLocal => computed_eval_rand_seed(
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                    ),
-                };
+                let seed = computed_eval_rand_seed(
+                    ctx.chain_id,
+                    ctx.previous_bank_hash,
+                    ctx.unix_timestamp,
+                    context_id,
+                    op_index,
+                );
                 let result = computed_rand_bounded_handle(
                     *upper_bound,
                     seed,
@@ -577,38 +743,21 @@ pub fn reconstruct_fhe_eval_steps(
             FheEvalStep::Sum {
                 operands,
                 fhe_type,
-                output,
+                output: _,
             } => {
                 let operand_handles: Vec<[u8; 32]> = operands
                     .iter()
                     .map(|operand| resolve_operand(operand, &produced))
                     .collect::<Option<_>>()?;
-                let result = match output {
-                    FheEvalOutput::AllowedDurable {
-                        output_nonce_key,
-                        output_nonce_sequence,
-                        ..
-                    } => computed_bound_eval_sum_handle(
-                        &operand_handles,
-                        *fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                        *output_nonce_key,
-                        *output_nonce_sequence,
-                    ),
-                    FheEvalOutput::AllowedLocal => computed_eval_sum_handle(
-                        &operand_handles,
-                        *fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                    ),
-                };
+                let result = computed_eval_sum_handle(
+                    &operand_handles,
+                    *fhe_type,
+                    ctx.chain_id,
+                    ctx.previous_bank_hash,
+                    ctx.unix_timestamp,
+                    context_id,
+                    op_index,
+                );
                 produced.push(result);
                 SolanaHostEvent::FheSum(FheSumEvent {
                     version: EVENT_VERSION,
@@ -622,41 +771,23 @@ pub fn reconstruct_fhe_eval_steps(
                 value,
                 set,
                 fhe_type,
-                output,
+                output: _,
             } => {
                 let value_handle = resolve_operand(value, &produced)?;
                 let set_handles: Vec<[u8; 32]> = set
                     .iter()
                     .map(|operand| resolve_operand(operand, &produced))
                     .collect::<Option<_>>()?;
-                let result = match output {
-                    FheEvalOutput::AllowedDurable {
-                        output_nonce_key,
-                        output_nonce_sequence,
-                        ..
-                    } => computed_bound_eval_is_in_handle(
-                        value_handle,
-                        &set_handles,
-                        *fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                        *output_nonce_key,
-                        *output_nonce_sequence,
-                    ),
-                    FheEvalOutput::AllowedLocal => computed_eval_is_in_handle(
-                        value_handle,
-                        &set_handles,
-                        *fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                    ),
-                };
+                let result = computed_eval_is_in_handle(
+                    value_handle,
+                    &set_handles,
+                    *fhe_type,
+                    ctx.chain_id,
+                    ctx.previous_bank_hash,
+                    ctx.unix_timestamp,
+                    context_id,
+                    op_index,
+                );
                 produced.push(result);
                 SolanaHostEvent::FheIsIn(FheIsInEvent {
                     version: EVENT_VERSION,
@@ -672,44 +803,22 @@ pub fn reconstruct_fhe_eval_steps(
                 factor2,
                 divisor,
                 output_fhe_type,
-                output,
+                output: _,
             } => {
                 let factor1_handle = resolve_operand(factor1, &produced)?;
                 let (factor2_handle, scalar) = resolve_rhs(factor2, &produced)?;
-                let result = match output {
-                    FheEvalOutput::AllowedDurable {
-                        output_nonce_key,
-                        output_nonce_sequence,
-                        ..
-                    } => computed_bound_eval_mul_div_handle(
-                        factor1_handle,
-                        factor2_handle,
-                        *divisor,
-                        scalar,
-                        *output_fhe_type,
-                        ctx.chain_id,
-                        ctx.previous_bank_hash,
-                        ctx.unix_timestamp,
-                        context_id,
-                        op_index,
-                        *output_nonce_key,
-                        *output_nonce_sequence,
-                    ),
-                    FheEvalOutput::AllowedLocal => {
-                        computed_eval_mul_div_handle(
-                            factor1_handle,
-                            factor2_handle,
-                            *divisor,
-                            scalar,
-                            *output_fhe_type,
-                            ctx.chain_id,
-                            ctx.previous_bank_hash,
-                            ctx.unix_timestamp,
-                            context_id,
-                            op_index,
-                        )
-                    }
-                };
+                let result = computed_eval_mul_div_handle(
+                    factor1_handle,
+                    factor2_handle,
+                    *divisor,
+                    scalar,
+                    *output_fhe_type,
+                    ctx.chain_id,
+                    ctx.previous_bank_hash,
+                    ctx.unix_timestamp,
+                    context_id,
+                    op_index,
+                );
                 produced.push(result);
                 SolanaHostEvent::FheMulDiv(FheMulDivEvent {
                     version: EVENT_VERSION,
@@ -722,29 +831,66 @@ pub fn reconstruct_fhe_eval_steps(
                 })
             }
         };
-        let durable_acl_record_index = match fhe_eval_step_output(step) {
-            FheEvalOutput::AllowedDurable {
-                output_acl_record_index,
-                ..
-            } => Some(*output_acl_record_index),
-            FheEvalOutput::AllowedLocal => None,
-        };
         steps_out.push(ReconstructedEvalStep {
             event,
-            durable_acl_record_index,
+            durable_encrypted_value_index: fhe_eval_step_durable_output_index(
+                step,
+            ),
+            previous_handle: fhe_eval_step_previous_handle(step),
+            make_public: fhe_eval_step_make_public(step),
         });
     }
     Some(steps_out)
 }
 
 /// One reconstructed `fhe_eval` step: the compute event plus, for a `Durable`
-/// output, the `remaining_accounts` index of the output ACL record PDA. The
-/// transport resolves that index to an account address to rebuild the
-/// `acl_record_bound` allow-fetch (the same record the program's bind emitted),
+/// output, the `remaining_accounts` index of the output `EncryptedValue` PDA.
+/// The transport resolves that index to an account address to rebuild the
+/// `acl_record_bound` allow-fetch (the same lineage the program's bind wrote),
 /// which flips `is_allowed=true` on the compute row.
 pub struct ReconstructedEvalStep {
     pub event: SolanaHostEvent,
-    pub durable_acl_record_index: Option<u16>,
+    pub durable_encrypted_value_index: Option<u16>,
+    /// Present when the durable output supersedes an existing lineage. The
+    /// transport mirrors the host's historical-authorization update by emitting
+    /// finalized fetches for the outgoing handle and updating its lineage
+    /// tracker to the reconstructed output handle.
+    pub previous_handle: Option<[u8; 32]>,
+    /// The durable output was born publicly decryptable (`make_public: true`):
+    /// on-chain the bind appended a public-decrypt leaf for the newly bound
+    /// handle (byte-identical to `make_handle_public`), so the transport must
+    /// mirror it with a `handle_made_public` allow-fetch for the same handle.
+    /// Always `false` for a non-durable (`AllowedLocal`) output.
+    pub make_public: bool,
+}
+
+pub fn fhe_eval_step_durable_output_index(step: &FheEvalStep) -> Option<u16> {
+    match fhe_eval_step_output(step) {
+        FheEvalOutput::AllowedDurable {
+            output_encrypted_value_index,
+            ..
+        } => Some(*output_encrypted_value_index),
+        FheEvalOutput::AllowedLocal => None,
+    }
+}
+
+/// The outgoing handle when a durable output supersedes an existing lineage.
+pub fn fhe_eval_step_previous_handle(step: &FheEvalStep) -> Option<[u8; 32]> {
+    match fhe_eval_step_output(step) {
+        FheEvalOutput::AllowedDurable {
+            previous_handle, ..
+        } => *previous_handle,
+        FheEvalOutput::AllowedLocal => None,
+    }
+}
+
+/// Whether a step's durable output is born public (`make_public: true`), read
+/// from the same `FheEvalOutput::AllowedDurable` the program's bind consumes.
+pub fn fhe_eval_step_make_public(step: &FheEvalStep) -> bool {
+    match fhe_eval_step_output(step) {
+        FheEvalOutput::AllowedDurable { make_public, .. } => *make_public,
+        FheEvalOutput::AllowedLocal => false,
+    }
 }
 
 /// The output policy of an eval step, independent of step kind.
@@ -779,6 +925,357 @@ pub fn reconstruct_fhe_eval_events(
 }
 
 #[cfg(test)]
+mod encrypted_value_decode_tests {
+    use super::*;
+    use anchor_lang::AnchorSerialize;
+
+    const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";
+    const ENCRYPTED_VALUE: [u8; 32] = [0x22; 32];
+
+    type TestInstruction<'a> = (&'a str, &'a [u8], &'a [[u8; 32]]);
+
+    fn encode(discriminator: [u8; 8], args: impl AnchorSerialize) -> Vec<u8> {
+        let mut bytes = discriminator.to_vec();
+        args.serialize(&mut bytes).unwrap();
+        bytes
+    }
+
+    fn accounts_with_encrypted_value_at_index_2() -> [[u8; 32]; 6] {
+        let mut accounts = [[0u8; 32]; 6];
+        accounts[ENCRYPTED_VALUE_ACCOUNT_INDEX] = ENCRYPTED_VALUE;
+        accounts
+    }
+
+    fn remove_subject_accounts() -> [[u8; 32]; 4] {
+        let mut accounts = [[0u8; 32]; 4];
+        accounts[1] = ENCRYPTED_VALUE;
+        accounts
+    }
+
+    #[test]
+    fn decodes_create_encrypted_value() {
+        let args = CreateEncryptedValueArgs {
+            acl_domain_key: [1; 32],
+            app_account: [2; 32],
+            encrypted_value_label: [3; 32],
+            handle: [4; 32],
+            subjects: vec![EncryptedValueSubjectGrant { subject: [5; 32] }],
+        };
+        let data = encode(CREATE_ENCRYPTED_VALUE_DISCRIMINATOR, args.clone());
+        let decoded = decode_encrypted_value_instruction(&data)
+            .expect("must decode create_encrypted_value");
+        assert_eq!(decoded, EncryptedValueInstruction::Create(args));
+    }
+
+    #[test]
+    fn decodes_update_encrypted_value() {
+        let args = UpdateEncryptedValueArgs {
+            new_handle: [9; 32],
+            previous_handle: [8; 32],
+            previous_subjects: vec![[7; 32]],
+        };
+        let data = encode(UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR, args.clone());
+        let decoded = decode_encrypted_value_instruction(&data)
+            .expect("must decode update_encrypted_value");
+        assert_eq!(decoded, EncryptedValueInstruction::Update(args));
+    }
+
+    #[test]
+    fn decodes_make_handle_public_handle_arg() {
+        let args = MakeHandlePublicArgs { handle: [4; 32] };
+        let data = encode(MAKE_HANDLE_PUBLIC_DISCRIMINATOR, args.clone());
+        assert_eq!(
+            decode_encrypted_value_instruction(&data),
+            Some(EncryptedValueInstruction::MakeHandlePublic(Some(args)))
+        );
+    }
+
+    #[test]
+    fn make_handle_public_malformed_args_keeps_tracker_fallback() {
+        let data = MAKE_HANDLE_PUBLIC_DISCRIMINATOR.to_vec();
+        assert_eq!(
+            decode_encrypted_value_instruction(&data),
+            Some(EncryptedValueInstruction::MakeHandlePublic(None))
+        );
+    }
+
+    #[test]
+    fn decodes_allow_subjects() {
+        let args = AllowSubjectsArgs {
+            subjects: vec![EncryptedValueSubjectGrant { subject: [6; 32] }],
+        };
+        let data = encode(ALLOW_SUBJECTS_DISCRIMINATOR, args.clone());
+        let decoded = decode_encrypted_value_instruction(&data)
+            .expect("must decode allow_subjects");
+        assert_eq!(decoded, EncryptedValueInstruction::AllowSubjects(args));
+    }
+
+    #[test]
+    fn decodes_remove_subject() {
+        let args = RemoveSubjectArgs { subject: [7; 32] };
+        let data = encode(REMOVE_SUBJECT_DISCRIMINATOR, args.clone());
+        let decoded = decode_encrypted_value_instruction(&data)
+            .expect("must decode remove_subject");
+        assert_eq!(decoded, EncryptedValueInstruction::RemoveSubject(args));
+    }
+
+    #[test]
+    fn unknown_discriminator_decodes_to_none() {
+        let data = [0xFFu8; 8].to_vec();
+        assert!(decode_encrypted_value_instruction(&data).is_none());
+    }
+
+    #[test]
+    fn create_produces_encrypted_value_created_fetch_and_records_lineage() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        let args = CreateEncryptedValueArgs {
+            acl_domain_key: [1; 32],
+            app_account: [2; 32],
+            encrypted_value_label: [3; 32],
+            handle: [4; 32],
+            subjects: vec![],
+        };
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::Create(args),
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].account_key, ENCRYPTED_VALUE);
+        assert_eq!(fetches[0].reason, "encrypted_value_created");
+        assert_eq!(
+            tracker.current_handle(ENCRYPTED_VALUE),
+            Some([4; 32]),
+            "lineage tracker must record the birth handle"
+        );
+    }
+
+    #[test]
+    fn update_keeps_previous_handle_decryptable_and_advances_lineage() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [8; 32]);
+        let args = UpdateEncryptedValueArgs {
+            new_handle: [9; 32],
+            previous_handle: [8; 32],
+            previous_subjects: vec![],
+        };
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::Update(args),
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert_eq!(
+            fetches.len(),
+            2,
+            "both the new and the superseded handle must be fetched"
+        );
+        let handles: Vec<_> =
+            fetches.iter().map(|f| f.handle.unwrap()).collect();
+        assert!(handles.contains(
+            &crate::database::tfhe_event_propagate::Handle::from([9; 32])
+        ));
+        assert!(
+            handles.contains(&crate::database::tfhe_event_propagate::Handle::from([8; 32])),
+            "superseded handle must remain fetchable so historical decrypts keep working"
+        );
+        assert_eq!(
+            tracker.current_handle(ENCRYPTED_VALUE),
+            Some([9; 32]),
+            "lineage tracker must advance to the new handle"
+        );
+    }
+
+    #[test]
+    fn make_handle_public_uses_decoded_handle_not_tracker_current() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [9; 32]);
+        let args = MakeHandlePublicArgs { handle: [4; 32] };
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::MakeHandlePublic(Some(args)),
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].reason, "handle_made_public");
+        assert_eq!(
+            fetches[0].handle,
+            Some(crate::database::tfhe_event_propagate::Handle::from([4; 32]))
+        );
+        assert_ne!(
+            fetches[0].handle,
+            Some(crate::database::tfhe_event_propagate::Handle::from([9; 32])),
+            "make_handle_public must release the instruction handle, not the tracker current handle"
+        );
+    }
+
+    #[test]
+    fn malformed_make_handle_public_with_unknown_lineage_queues_handle_less_fetch(
+    ) {
+        // Known discriminator but malformed args, and no prior create/update seen
+        // for this account: defer handle resolution to the finalized
+        // EncryptedValue account instead of guessing.
+        let mut tracker = EncryptedValueLineageTracker::new();
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::MakeHandlePublic(None),
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].reason, "handle_made_public");
+        assert_eq!(fetches[0].handle, None);
+    }
+
+    #[test]
+    fn allow_subjects_produces_per_subject_grants() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [4; 32]);
+        let args = AllowSubjectsArgs {
+            subjects: vec![
+                EncryptedValueSubjectGrant { subject: [6; 32] },
+                EncryptedValueSubjectGrant { subject: [7; 32] },
+            ],
+        };
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::AllowSubjects(args),
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert_eq!(fetches.len(), 2);
+        for fetch in &fetches {
+            assert_eq!(fetch.reason, "subject_allowed");
+            assert_eq!(
+                fetch.handle,
+                Some(crate::database::tfhe_event_propagate::Handle::from(
+                    [4; 32]
+                ))
+            );
+        }
+        assert_eq!(fetches[0].subject, Some([6; 32]));
+        assert_eq!(fetches[1].subject, Some([7; 32]));
+    }
+
+    #[test]
+    fn remove_subject_produces_subject_scoped_removal_fetch() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [4; 32]);
+        let args = RemoveSubjectArgs { subject: [6; 32] };
+        let fetches = encrypted_value_instruction_fetches(
+            &EncryptedValueInstruction::RemoveSubject(args),
+            ENCRYPTED_VALUE,
+            &mut tracker,
+        );
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].reason, "subject_removed");
+        assert_eq!(fetches[0].subject, Some([6; 32]));
+        assert_eq!(
+            fetches[0].handle,
+            Some(crate::database::tfhe_event_propagate::Handle::from([4; 32]))
+        );
+    }
+
+    #[test]
+    fn transaction_decode_includes_inner_cpi_instructions() {
+        // A top-level instruction from a different (app) program CPIs into
+        // zama_host's create_encrypted_value, then allow_subjects; both must be
+        // picked up even though only the second is literally top-level here —
+        // the walk must not special-case position, only program id.
+        let mut tracker = EncryptedValueLineageTracker::new();
+        let create_data = encode(
+            CREATE_ENCRYPTED_VALUE_DISCRIMINATOR,
+            CreateEncryptedValueArgs {
+                acl_domain_key: [1; 32],
+                app_account: [2; 32],
+                encrypted_value_label: [3; 32],
+                handle: [4; 32],
+                subjects: vec![],
+            },
+        );
+        let allow_data = encode(
+            ALLOW_SUBJECTS_DISCRIMINATOR,
+            AllowSubjectsArgs {
+                subjects: vec![EncryptedValueSubjectGrant { subject: [6; 32] }],
+            },
+        );
+        let accounts = accounts_with_encrypted_value_at_index_2();
+        let app_program = "AppProgram111111111111111111111111111111";
+        let instructions: Vec<TestInstruction<'_>> = vec![
+            (app_program, b"unrelated top-level ix data...", &accounts),
+            // Inner (CPI-invoked) instruction from the app's top-level call.
+            (ZAMA_HOST, &create_data, &accounts),
+            (ZAMA_HOST, &allow_data, &accounts),
+        ];
+        let fetches = decode_encrypted_value_instructions(
+            instructions,
+            ZAMA_HOST,
+            &mut tracker,
+        );
+        assert_eq!(
+            fetches.len(),
+            2,
+            "both inner zama_host instructions must decode to a fetch"
+        );
+        assert_eq!(fetches[0].reason, "encrypted_value_created");
+        assert_eq!(fetches[1].reason, "subject_allowed");
+        assert_eq!(
+            fetches[1].handle,
+            Some(crate::database::tfhe_event_propagate::Handle::from(
+                [4; 32]
+            )),
+            "allow_subjects (CPI) must resolve the handle create_encrypted_value (also CPI) just bound"
+        );
+    }
+
+    #[test]
+    fn transaction_decode_uses_remove_subject_account_index() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        tracker.record(ENCRYPTED_VALUE, [4; 32]);
+        let remove_data = encode(
+            REMOVE_SUBJECT_DISCRIMINATOR,
+            RemoveSubjectArgs { subject: [6; 32] },
+        );
+        let accounts = remove_subject_accounts();
+        let instructions: Vec<TestInstruction<'_>> =
+            vec![(ZAMA_HOST, &remove_data, &accounts)];
+        let fetches = decode_encrypted_value_instructions(
+            instructions,
+            ZAMA_HOST,
+            &mut tracker,
+        );
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].account_key, ENCRYPTED_VALUE);
+        assert_eq!(fetches[0].reason, "subject_removed");
+        assert_eq!(fetches[0].subject, Some([6; 32]));
+    }
+
+    #[test]
+    fn non_zama_host_program_instructions_are_skipped() {
+        let mut tracker = EncryptedValueLineageTracker::new();
+        let data = encode(
+            CREATE_ENCRYPTED_VALUE_DISCRIMINATOR,
+            CreateEncryptedValueArgs {
+                acl_domain_key: [1; 32],
+                app_account: [2; 32],
+                encrypted_value_label: [3; 32],
+                handle: [4; 32],
+                subjects: vec![],
+            },
+        );
+        let accounts = accounts_with_encrypted_value_at_index_2();
+        let instructions: Vec<TestInstruction<'_>> = vec![(
+            "SomeOtherProgram1111111111111111111111111",
+            &data,
+            &accounts,
+        )];
+        let fetches = decode_encrypted_value_instructions(
+            instructions,
+            ZAMA_HOST,
+            &mut tracker,
+        );
+        assert!(fetches.is_empty());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -798,27 +1295,17 @@ mod tests {
         let acl_record = [8u8; 32];
         let handle = [9u8; 32];
         let f = reconstruct_acl_record_bound_fetch(acl_record, handle);
-        // Identical shape to the AclRecordBound event-decode path (acl_record_fetch).
+        // Identical shape to the event-decode path (acl_record_fetch).
         assert_eq!(f.account_key, acl_record);
-        assert_eq!(f.kind, SolanaFinalizedAccountFetchKind::AclRecord);
+        assert_eq!(
+            f.kind,
+            SolanaFinalizedAccountFetchKind::EncryptedValueAccount
+        );
         assert_eq!(f.reason, "acl_record_bound");
         assert!(f.handle.is_some());
         assert_eq!(f.related_account, None);
         assert_eq!(f.subject, None);
     }
-
-    #[test]
-    fn public_decrypt_allowed_fetch_uses_arg_handle() {
-        use crate::solana_adapter::SolanaFinalizedAccountFetchKind;
-        let args = AllowForDecryptionArgs { handle: [5u8; 32] };
-        let acl_record = [8u8; 32];
-        let f = reconstruct_public_decrypt_allowed_fetch(&args, acl_record);
-        assert_eq!(f.account_key, acl_record);
-        assert_eq!(f.kind, SolanaFinalizedAccountFetchKind::AclRecord);
-        assert_eq!(f.reason, "public_decrypt_allowed");
-        assert!(f.handle.is_some());
-    }
-
     #[test]
     fn fhe_eval_plan_round_trips_via_program_type() {
         use anchor_lang::AnchorSerialize;
@@ -896,8 +1383,11 @@ mod tests {
 
     #[test]
     fn fhe_eval_walk_reconstructs_bounded_rand() {
-        let mut upper_bound = [0u8; 32];
-        upper_bound[31] = 8;
+        let upper_bound = {
+            let mut bytes = [0u8; 32];
+            bytes[31] = 10;
+            bytes
+        };
         let plan = FheEvalArgs {
             context_id: [1u8; 32],
             steps: vec![FheEvalStep::RandBounded {
@@ -1106,123 +1596,5 @@ mod tests {
             }],
         };
         assert!(reconstruct_fhe_eval_events(&plan, SUBJECT, &ctx()).is_none());
-    }
-
-    #[test]
-    fn instruction_events_allow_for_decryption_is_public_decrypt_fetch() {
-        use crate::solana_adapter::SolanaFinalizedAccountFetchKind;
-        // Fetch-only (no compute event); acl_record is account index 2.
-        let args =
-            crate::generated::zama_host_instructions::AllowForDecryptionArgs {
-                handle: [7u8; 32],
-            };
-        let mut accounts = vec![[0u8; 32]; 5];
-        accounts[2] = [0x22u8; 32];
-        let evs = reconstruct_instruction_events(
-            &ZamaHostInstruction::AllowForDecryption(args),
-            &accounts,
-            &ctx(),
-            &HashMap::new(),
-        )
-        .expect("allow_for_decryption reconstructs");
-        assert_eq!(evs.len(), 1, "fetch-only, no compute event");
-        match &evs[0] {
-            SolanaHostEvent::FinalizedAccountFetch(f) => {
-                assert_eq!(f.account_key, [0x22u8; 32]); // accounts[2]
-                assert_eq!(f.kind, SolanaFinalizedAccountFetchKind::AclRecord);
-                assert_eq!(f.reason, "public_decrypt_allowed");
-            }
-            o => panic!("expected FinalizedAccountFetch, got {o:?}"),
-        }
-    }
-
-    #[test]
-    fn instruction_events_allow_acl_subjects_one_fetch_per_subject() {
-        // Fetch-only; acl_record is account index 3; one fetch per subject.
-        let args =
-            crate::generated::zama_host_instructions::AllowAclSubjectsArgs {
-                handle: [7u8; 32],
-                subjects: vec![
-                    crate::generated::zama_host_instructions::AclSubjectEntry {
-                        pubkey: [1u8; 32],
-                        role_flags: 1,
-                    },
-                    crate::generated::zama_host_instructions::AclSubjectEntry {
-                        pubkey: [2u8; 32],
-                        role_flags: 1,
-                    },
-                ],
-            };
-        let mut accounts = vec![[0u8; 32]; 7];
-        accounts[3] = [0x33u8; 32];
-        let evs = reconstruct_instruction_events(
-            &ZamaHostInstruction::AllowAclSubjects(args),
-            &accounts,
-            &ctx(),
-            &HashMap::new(),
-        )
-        .expect("allow_acl_subjects reconstructs");
-        assert_eq!(evs.len(), 2, "one acl_subject_allowed fetch per subject");
-        for e in &evs {
-            match e {
-                SolanaHostEvent::FinalizedAccountFetch(f) => {
-                    assert_eq!(f.account_key, [0x33u8; 32]); // accounts[3]
-                    assert_eq!(f.reason, "acl_subject_allowed");
-                }
-                o => panic!("expected FinalizedAccountFetch, got {o:?}"),
-            }
-        }
-    }
-
-    #[test]
-    fn instruction_events_commit_handle_material_reads_acl_handle() {
-        use crate::solana_adapter::SolanaFinalizedAccountFetchKind;
-        let args =
-            crate::generated::zama_host_instructions::CommitHandleMaterialArgs {
-                key_id: [1u8; 32],
-                ciphertext_digest: [2u8; 32],
-                sns_ciphertext_digest: [3u8; 32],
-                coprocessor_set_digest: [4u8; 32],
-            };
-        // accounts: payer, material_authority, host_config, acl_record(3),
-        // material_commitment(4), system_program.
-        let mut accounts = vec![[0u8; 32]; 6];
-        accounts[3] = [0x33u8; 32]; // acl_record
-        accounts[4] = [0x44u8; 32]; // material_commitment
-                                    // handle comes from acl_record account state, pre-fetched by the caller.
-        let mut acl_handles = HashMap::new();
-        acl_handles.insert([0x33u8; 32], [0x99u8; 32]);
-        let evs = reconstruct_instruction_events(
-            &ZamaHostInstruction::CommitHandleMaterial(args),
-            &accounts,
-            &ctx(),
-            &acl_handles,
-        )
-        .expect("commit_handle_material reconstructs");
-        assert_eq!(
-            evs.len(),
-            3,
-            "material committed + sealed + acl_record sealed"
-        );
-        match &evs[0] {
-            SolanaHostEvent::FinalizedAccountFetch(f) => {
-                assert_eq!(f.account_key, [0x44u8; 32]); // material_commitment
-                assert_eq!(
-                    f.kind,
-                    SolanaFinalizedAccountFetchKind::HandleMaterialCommitment
-                );
-                assert_eq!(f.reason, "handle_material_committed");
-                assert_eq!(f.related_account, Some([0x33u8; 32])); // acl_record
-            }
-            o => panic!("expected material fetch, got {o:?}"),
-        }
-        match &evs[2] {
-            SolanaHostEvent::FinalizedAccountFetch(f) => {
-                assert_eq!(f.account_key, [0x33u8; 32]); // acl_record
-                assert_eq!(f.kind, SolanaFinalizedAccountFetchKind::AclRecord);
-                assert_eq!(f.reason, "handle_material_sealed");
-            }
-            o => panic!("expected acl_record fetch, got {o:?}"),
-        }
     }
 }

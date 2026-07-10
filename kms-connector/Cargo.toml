@@ -25,11 +25,13 @@ bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "b9087af025de26cd6
 tfhe = { version = "=1.6.2", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
 ciphertext-attestation = { path = "../shared/ciphertext-attestation" }
+zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 
 #####################################################################
 #                       External dependencies                       #
 #####################################################################
 actix-web = "=4.11.0"
+borsh = { version = "=1.5.7", default-features = false, features = ["derive"] }
 alloy = { version = "=1.0.38", default-features = false, features = [
     "essentials",
     "provider-debug-api",

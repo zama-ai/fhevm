@@ -8,6 +8,15 @@ export type { FhevmSolanaEncryptClient } from './clients/createFhevmEncryptClien
 
 export { solanaSignerFromSecretKey } from './signer.js';
 export type { SolanaUserDecryptSigner } from './signer.js';
+export {
+  buildSolanaUserDecryptMmrProofExtraData,
+} from '../core/coprocessor/SolanaUserDecrypt-p.js';
+export {
+  bytesToHex as solanaProofBytesToHex,
+  hexToBytes as solanaProofHexToBytes,
+  verifyPublicDecryptProof,
+} from './proof.js';
+export type { MmrProof } from './proof.js';
 
 export type { SolanaUserDecryptParameters, SolanaUserDecryptResult } from './actions/userDecrypt.js';
 export type { SolanaDecryptActions } from './clients/decorators/decrypt.js';

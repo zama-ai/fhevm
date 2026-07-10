@@ -20,6 +20,9 @@ VALUE="${TE_VALUE:-77}"
 SID=9223372036854788153
 RPC=http://127.0.0.1:8899
 RELAYER=http://127.0.0.1:3000
+ACL=0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee
+USER="0x$(python3 -c "import json,os;print(bytes(json.load(open(os.path.expanduser('~/.config/solana/id.json')))[32:64]).hex())")"
+USER_B58="$(solana address -k "$HOME/.config/solana/id.json")"
 # extraData = version 0x01 ‖ 32-byte BE gateway KMS context id `0x07..01` (chain-type tag ‖ u64 id 1).
 # The KMS knows only this context; `extract_kms_context_id` derives the low-u64 (1) the Solana host
 # kms_context is keyed on.
@@ -81,7 +84,31 @@ export MINT UNDERLYING_MINT="$UNDER"
 
 wout="$(lc CONSUME_WRAP=1 WRAP_AMOUNT=1000)" || true
 echo "$wout" | grep -q 'OK wrap_usdc' || fail "(b) wrap_usdc: $(echo "$wout" | tail -3)"
-bout="$(lc CONSUME_BURN=1 BURN_BOUND=256)" || true
+CS_B58="$(echo "$minit" | grep -oE 'compute_signer +[A-Za-z0-9]+' | awk '{print $2}')"
+CS_HEX="$(echo "$minit" | grep -oE 'compute_signer +[A-Za-z0-9]+ 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+[ -n "$CS_B58" ] && [ -n "$CS_HEX" ] || fail "(b) could not read compute_signer from mint init: $minit"
+berr="$(mktemp)"
+bproof="$(cd "$ROOT/test-suite/fhevm" && \
+  IN_RELAYER_URL=http://127.0.0.1:3000 IN_CONTRACTS_CHAIN_ID="$SID" IN_ACL_PROGRAM="$ACL" \
+  IN_CONTRACT="$CS_HEX" IN_USER="$USER" IN_CONTRACT_B58="$CS_B58" IN_USER_B58="$USER_B58" \
+  IN_VALUE=7 IN_TYPE=uint64 \
+  node solana-input.ts 2>"$berr" || true)"
+bpost="$(printf '%s\n' "$bproof" | grep -oE '"jobId":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
+[ -n "$bpost" ] || fail "(b) burn input-proof POST failed.
+  client stdout: $(printf '%s' "$bproof" | tail -3)
+  client stderr: $(tail -30 "$berr")"
+for i in $(seq 1 40); do
+  br="$(curl -s -m10 "localhost:3000/v2/input-proof/$bpost")"
+  bst="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
+  [ "$bst" = succeeded ] && break
+  [ "$bst" = failed ] && fail "(b) burn input-proof failed: $br"
+  [ "$i" = 40 ] && fail "(b) burn input-proof timed out"; sleep 4
+done
+bh="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['handles'][0])")"
+bsig="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
+bextra="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','0x00'))")"
+bout="$(lc CONSUME_BURN=1 BIND_HANDLE="$bh" BIND_COPRO_SIG="$bsig" BIND_USER="$USER" \
+  BIND_CONTRACT="$CS_HEX" BIND_CHAIN_ID="$SID" BIND_EXTRA="$bextra")" || true
 BURNED_ACL="$(echo "$bout" | grep -oE 'burned amount ACL [A-Za-z0-9]+' | awk '{print $4}')"
 BURNED_HANDLE="$(echo "$bout" | grep -oE 'burned handle 0x[0-9a-f]+' | awk '{print $3}')"
 [ -n "$BURNED_HANDLE" ] && [ -n "$BURNED_ACL" ] || fail "(b) confidential_burn: $bout"

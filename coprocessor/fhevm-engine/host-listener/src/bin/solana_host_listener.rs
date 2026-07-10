@@ -21,6 +21,8 @@ use host_listener::cmd::DEFAULT_DEPENDENCE_CACHE_SIZE;
 use host_listener::database::tfhe_event_propagate::Database;
 use host_listener::solana_listener::{run, SolanaListenerConfig};
 
+const SOLANA_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[derive(Parser, Debug, Clone)]
 #[command(version, about = "Solana host listener", long_about = None)]
 struct Args {
@@ -87,11 +89,19 @@ enum Transport {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
-        args.log_level,
-        &args.service_name,
-        "otlp-layer",
-    );
+    // Only stand up the OTLP exporter when a collector is actually configured.
+    // With no collector (CI / the Solana e2e) a doomed exporter can stall the
+    // ingest loop's runtime, so fall back to JSON-logs-only there.
+    let _otel_guard = if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
+        telemetry::init_tracing_otel_with_logs_only_fallback(
+            args.log_level,
+            &args.service_name,
+            "otlp-layer",
+        )
+    } else {
+        let _ = telemetry::init_logs_only(args.log_level);
+        None
+    };
 
     let program_id = Pubkey::from_str(&args.program_id)
         .with_context(|| format!("invalid program id {}", args.program_id))?;
@@ -117,8 +127,11 @@ async fn main() -> Result<()> {
     match args.transport {
         Transport::Rpc => {
             let commitment = CommitmentConfig::confirmed();
-            let rpc =
-                RpcClient::new_with_commitment(args.url.clone(), commitment);
+            let rpc = RpcClient::new_with_timeout_and_commitment(
+                args.url.clone(),
+                SOLANA_RPC_REQUEST_TIMEOUT,
+                commitment,
+            );
             let config = SolanaListenerConfig {
                 rpc_url: args.url,
                 program_id,
@@ -149,7 +162,7 @@ async fn run_grpc(
         x_token: args.grpc_x_token.clone(),
         rpc_fallback_url: args.url.clone(),
         program_id: program_id.to_string(),
-        commitment: CommitmentLevel::Confirmed,
+        commitment: CommitmentLevel::Finalized,
         // Auto-detected from the on-chain HostConfig below (reconstruct mode only).
         chain_id: 0,
         zero_birth_entropy: false,
@@ -163,12 +176,12 @@ async fn run_grpc(
         use host_listener::solana_reconstruct::{
             parse_host_config, HOST_CONFIG_SEED,
         };
-        // Confirmed (not the RpcClient default of finalized) so a freshly created
-        // HostConfig is visible without waiting for finalization; matches the
-        // gRPC subscription's commitment.
-        let rpc = RpcClient::new_with_commitment(
+        // Match the gRPC subscription finality: the lineage tracker is only safe
+        // when reconstruction is driven by finalized data.
+        let rpc = RpcClient::new_with_timeout_and_commitment(
             args.url.clone(),
-            CommitmentConfig::confirmed(),
+            SOLANA_RPC_REQUEST_TIMEOUT,
+            CommitmentConfig::finalized(),
         );
         let (host_config_pda, _) =
             Pubkey::find_program_address(&[HOST_CONFIG_SEED], &program_id);

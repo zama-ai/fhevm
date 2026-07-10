@@ -990,6 +990,7 @@ dependencies = [
  "solana-sha256-hasher",
  "zama-fhe",
  "zama-host",
+ "zama-solana-acl",
 ]
 
 [[package]]
@@ -4922,6 +4923,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "zama-host",
+ "zama-solana-acl",
 ]
 
 [[package]]
@@ -4929,6 +4931,7 @@ name = "zama-host"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "borsh",
  "k256",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
@@ -4936,6 +4939,16 @@ dependencies = [
  "solana-secp256k1-recover",
  "solana-sha256-hasher",
  "solana-sysvar",
+ "zama-solana-acl",
+]
+
+[[package]]
+name = "zama-solana-acl"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "sha2 0.10.9",
+ "solana-sha256-hasher",
 ]
 
 [[package]]
@@ -4955,6 +4968,7 @@ dependencies = [
  "solana-sdk",
  "solana-sha256-hasher",
  "zama-host",
+ "zama-solana-acl",
 ]
 
 [[package]]

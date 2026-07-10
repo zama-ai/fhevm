@@ -36,6 +36,12 @@ use crate::{
     http::server::run_http_server,
     metrics,
     orchestrator::{HealthCheck, Orchestrator, TokioEventDispatcher},
+    solana_proof::{
+        chain::RpcChainFetcher,
+        http::{DefaultSolanaProofService, SolanaProofService},
+        poller::run_poll_loop,
+        store::FileLeafStore,
+    },
     startup_recovery,
     store::sql::repositories::Repositories,
 };
@@ -145,6 +151,42 @@ pub async fn run_fhevm_relayer(
 
     let mut settings = settings;
 
+    let solana_proof_service: Option<Arc<DefaultSolanaProofService>> =
+        if let Some(config) = settings.solana_proof.clone() {
+            config
+                .validate()
+                .context("Invalid Solana proof configuration")?;
+            let program_id = config
+                .program_id_bytes()
+                .context("Invalid Solana proof program_id")?;
+            let fetcher = Arc::new(RpcChainFetcher::new(config.rpc_url.clone()));
+            let store = Arc::new(
+                FileLeafStore::open(&config.leaf_store_path)
+                    .await
+                    .context("Failed to open Solana proof leaf store")?,
+            );
+            let service = Arc::new(SolanaProofService {
+                fetcher: fetcher.clone(),
+                store: store.clone(),
+                program_id,
+                catch_up_signature_budget: config.catch_up_signature_budget,
+            });
+
+            info!("Starting Solana proof ingestion poll loop");
+            orchestrator
+                .spawn_task_and_wait_ready(
+                    "solana_proof_poller",
+                    run_poll_loop(fetcher, store, config),
+                    async { Ok(()) },
+                )
+                .await
+                .context("Failed to start Solana proof poll loop")?;
+
+            Some(service)
+        } else {
+            None
+        };
+
     // === Services Phase ===
     // Start HTTP server, metrics server, and initialize handlers
     if settings.http.endpoint.is_some() {
@@ -158,6 +200,7 @@ pub async fn run_fhevm_relayer(
             bouncer_throttlers,
             host_chain_id_checker,
             signature_prechecker,
+            solana_proof_service,
         )
         .await;
 

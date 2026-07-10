@@ -47,9 +47,9 @@ pub enum ConfidentialTokenError {
     /// Compute signer PDA did not match the confidential mint metadata.
     #[msg("Compute signer does not match confidential mint")]
     ComputeSignerMismatch,
-    /// Current ACL record account did not match token account state.
-    #[msg("current ACL record does not match token account state")]
-    CurrentAclRecordMismatch,
+    /// Current EncryptedValue account did not match token account state.
+    #[msg("current encrypted value does not match token account state")]
+    CurrentEncryptedValueMismatch,
     /// Transfer amount handle does not carry the expected confidential balance type.
     #[msg("transfer amount handle type is invalid")]
     AmountHandleTypeMismatch,
@@ -71,6 +71,10 @@ pub enum ConfidentialTokenError {
     /// The KMS EIP-712 public-decrypt certificate failed secp256k1 threshold verification.
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
+    /// The MMR public-decrypt proof for the pinned burned handle did not verify against
+    /// the lineage's current peaks.
+    #[msg("public-decrypt MMR proof is invalid for this lineage")]
+    PublicDecryptProofInvalid,
     /// The host gateway verifier config (KMS signer / decryption contract) is unset.
     #[msg("gateway verifier config is not set")]
     GatewayVerifierConfigUnset,

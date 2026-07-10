@@ -1,6 +1,6 @@
 //! Minimal Solana account fetcher for the V2 user-decryption ACL check.
 //!
-//! Reads a single account (a ZamaHost `AclRecord`) from the configured Solana host-chain RPC at
+//! Reads a single ZamaHost `EncryptedValue` account from the configured Solana host-chain RPC at
 //! **`finalized`** commitment, via the JSON-RPC `getAccountInfo` method. It is intentionally tiny:
 //! the connector only needs to read account bytes + owner; it does not need the full Solana SDK
 //! RPC client, which is not in the connector's dependency set.
@@ -8,7 +8,7 @@
 //! Security-relevant choices:
 //! - commitment is pinned to `finalized` so the connector never authorizes against a slot that can
 //!   still be rolled back;
-//! - the caller verifies `owner == ZamaHost program id` and re-derives the canonical ACL-record
+//! - the caller verifies `owner == ZamaHost program id` and re-derives the canonical EncryptedValue
 //!   PDA before trusting the bytes (see [`crate::core::event_processor::decryption`]).
 
 use crate::core::solana_acl::SolanaPubkeyBytes;
@@ -21,10 +21,6 @@ use url::Url;
 /// The Solana commitment level used for every ACL read. Authorizing decryption against anything
 /// weaker than `finalized` would let a rolled-back slot grant access.
 pub const SOLANA_COMMITMENT_FINALIZED: &str = "finalized";
-
-/// Length of the Anchor account discriminator that prefixes every ZamaHost account; the
-/// `AclRecord.handle` field begins immediately after it.
-const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
 
 /// A fetched Solana account: its owner program and raw data bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -72,55 +68,6 @@ impl SolanaV2Fetcher {
         let body = Self::account_info_request_body(account);
         let response = self.post(&body).await?;
         parse_account_info_response(&response)
-    }
-
-    /// Builds the JSON-RPC `getProgramAccounts` body that finds ACL-record accounts owned by
-    /// `program_id` whose stored handle (the first field after the 8-byte Anchor discriminator)
-    /// equals `handle`. Pinned to `finalized` and base64; the `dataSlice` keeps the response small
-    /// while we only need the account keys (data is re-fetched/decoded by `getAccountInfo`). Split
-    /// out for unit-testing the `finalized` + `memcmp` shape.
-    pub fn program_accounts_by_handle_body(
-        program_id: &SolanaPubkeyBytes,
-        handle: &[u8; 32],
-    ) -> Value {
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getProgramAccounts",
-            "params": [
-                Pubkey::new_from_array(*program_id).to_string(),
-                {
-                    "encoding": "base64",
-                    "commitment": SOLANA_COMMITMENT_FINALIZED,
-                    "dataSlice": { "offset": 0, "length": 0 },
-                    "filters": [
-                        {
-                            "memcmp": {
-                                "offset": ANCHOR_DISCRIMINATOR_LEN,
-                                // A 32-byte handle base58-encoded; `Pubkey` is a 32-byte newtype
-                                // whose `Display` is exactly the base58 of its bytes.
-                                "bytes": Pubkey::new_from_array(*handle).to_string(),
-                                "encoding": "base58",
-                            }
-                        }
-                    ],
-                }
-            ],
-        })
-    }
-
-    /// Returns the account keys of every ACL record owned by `program_id` whose handle matches.
-    /// The `seed` is reserved for callers that want to assert it; the on-chain filter is by handle
-    /// offset since the PDA seeds (nonce metadata) are not known from the handle alone.
-    pub async fn find_acl_records_by_handle(
-        &self,
-        program_id: &SolanaPubkeyBytes,
-        _seed: &[u8],
-        handle: &[u8; 32],
-    ) -> anyhow::Result<Vec<SolanaPubkeyBytes>> {
-        let body = Self::program_accounts_by_handle_body(program_id, handle);
-        let response = self.post(&body).await?;
-        parse_program_accounts_pubkeys(&response)
     }
 
     async fn post(&self, body: &Value) -> anyhow::Result<String> {
@@ -172,33 +119,6 @@ pub fn parse_account_info_response(body: &str) -> anyhow::Result<Option<SolanaAc
     let data = decode_account_data(data_field)?;
 
     Ok(Some(SolanaAccount { owner, data }))
-}
-
-/// Parses a Solana JSON-RPC `getProgramAccounts` response into the matching account pubkeys. Pure
-/// so the multi-match handling is unit-testable.
-pub fn parse_program_accounts_pubkeys(body: &str) -> anyhow::Result<Vec<SolanaPubkeyBytes>> {
-    let json: Value =
-        serde_json::from_str(body).context("solana RPC response is not valid JSON")?;
-    if let Some(error) = json.get("error") {
-        bail!("solana RPC returned an error: {error}");
-    }
-    let result = json
-        .get("result")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow!("solana getProgramAccounts response missing result array"))?;
-
-    result
-        .iter()
-        .map(|entry| {
-            let pubkey_str = entry
-                .get("pubkey")
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow!("solana program account entry missing pubkey"))?;
-            Ok(Pubkey::try_from(pubkey_str)
-                .map_err(|e| anyhow!("invalid solana account pubkey '{pubkey_str}': {e}"))?
-                .to_bytes())
-        })
-        .collect()
 }
 
 /// Decodes the `data` field of a `getAccountInfo` value. We only request `base64`, so the field is
@@ -286,40 +206,6 @@ mod tests {
         })
         .to_string();
         assert!(parse_account_info_response(&body).is_err());
-    }
-
-    #[test]
-    fn program_accounts_request_pins_finalized_and_handle_memcmp() {
-        let program_id = [9u8; 32];
-        let handle = [4u8; 32];
-        let body = SolanaV2Fetcher::program_accounts_by_handle_body(&program_id, &handle);
-
-        assert_eq!(body["method"], "getProgramAccounts");
-        let params = &body["params"];
-        assert_eq!(params[1]["commitment"], "finalized");
-        let memcmp = &params[1]["filters"][0]["memcmp"];
-        assert_eq!(memcmp["offset"], ANCHOR_DISCRIMINATOR_LEN);
-        assert_eq!(
-            memcmp["bytes"].as_str().unwrap(),
-            Pubkey::new_from_array(handle).to_string()
-        );
-    }
-
-    #[test]
-    fn parses_program_accounts_pubkeys() {
-        let a = Pubkey::new_from_array([1u8; 32]);
-        let b = Pubkey::new_from_array([2u8; 32]);
-        let body = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "result": [
-                { "pubkey": a.to_string(), "account": { "data": ["", "base64"] } },
-                { "pubkey": b.to_string(), "account": { "data": ["", "base64"] } },
-            ]
-        })
-        .to_string();
-        let keys = parse_program_accounts_pubkeys(&body).unwrap();
-        assert_eq!(keys, vec![a.to_bytes(), b.to_bytes()]);
     }
 
     #[test]

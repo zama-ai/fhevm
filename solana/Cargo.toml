@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/solana-ed25519-instruction",
     "crates/zama-fhe",
+    "crates/zama-solana-acl",
     "programs/confidential-deposit-app",
     "programs/confidential-token",
     "programs/zama-host",

@@ -44,6 +44,11 @@ services:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/config/relayer.yaml:/app/config/local.yaml
     ports:
       - "3000:3000"
+    # The Solana MMR proof service reads the host-native validator RPC at
+    # http://host.docker.internal:8899. Docker Desktop provides that name; on Linux (CI) it must be
+    # mapped to the host gateway explicitly — same as the KMS worker (kms-connector-docker-compose.yml).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       relayer-db:
         condition: service_healthy

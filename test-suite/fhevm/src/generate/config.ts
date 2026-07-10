@@ -73,6 +73,29 @@ const rewriteHostChains = (
   return config;
 };
 
+/**
+ * Boots the relayer's Solana MMR proof service (relayer `solana_proof` config section) when a
+ * Solana host chain is declared. The service ingests zama-host instruction history over RPC and
+ * serves `GET /internal/solana/mmr-proof`, which the Solana decrypt vertical uses as its proof
+ * source. Field names mirror `relayer::solana_proof::SolanaProofConfig` (serde, snake_case);
+ * poll/budget knobs keep their config-crate defaults. `rpc_url` reaches the host-native validator
+ * from inside the docker network (same mechanism as the host-chain `url`).
+ */
+const rewriteSolanaProof = (
+  config: Record<string, unknown>,
+  state: Pick<State, "discovery">,
+  chains: HostChainScenario[],
+) => {
+  const solana = hostChainRuntimes(chains).find((chain) => chain.type === "solana");
+  if (!solana) return config;
+  config.solana_proof = {
+    rpc_url: solanaValidatorUrl(solana),
+    program_id: solanaProgramId(state.discovery, solana.key),
+    leaf_store_path: "/tmp/solana-mmr-leaves.json",
+  };
+  return config;
+};
+
 /** Rewrites protocol_config with the discovered ProtocolConfig address and host chain RPC. */
 const rewriteProtocolConfig = (
   config: Record<string, unknown>,
@@ -104,6 +127,7 @@ export const renderRelayerConfig = (
   if (chains.length) {
     config = rewriteHostChains(config, state, chains);
     config = rewriteProtocolConfig(config, state, chains);
+    config = rewriteSolanaProof(config, state, chains);
   }
   return YAML.stringify(config);
 };

@@ -66,14 +66,34 @@ pub fn burn_redemption_address(mint: Pubkey, burned_handle: [u8; 32]) -> (Pubkey
     )
 }
 
-/// Returns the ZamaHost nonce key for a token balance field.
-pub fn balance_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32] {
-    nonce_key(acl_domain_key, app_account, balance_label())
+/// Returns the canonical `EncryptedValue` PDA for a token balance field.
+pub fn balance_encrypted_value_address(
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+) -> (Pubkey, u8) {
+    encrypted_value_address(acl_domain_key, app_account, balance_label())
 }
 
-/// Returns the ZamaHost nonce key for the encrypted total supply field.
-pub fn total_supply_nonce_key(acl_domain_key: Pubkey, app_account: Pubkey) -> [u8; 32] {
-    nonce_key(acl_domain_key, app_account, total_supply_label())
+/// Returns the canonical `EncryptedValue` PDA for the encrypted total supply field.
+pub fn total_supply_encrypted_value_address(
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+) -> (Pubkey, u8) {
+    encrypted_value_address(acl_domain_key, app_account, total_supply_label())
+}
+
+/// Returns the canonical `EncryptedValue` PDA for an arbitrary label, delegating
+/// key derivation to ZamaHost so app and host agree exactly.
+pub fn encrypted_value_address(
+    acl_domain_key: Pubkey,
+    app_account: Pubkey,
+    encrypted_value_label: [u8; 32],
+) -> (Pubkey, u8) {
+    zama_host::encrypted_value_address(value_key(
+        acl_domain_key,
+        app_account,
+        encrypted_value_label,
+    ))
 }
 
 /// Fixed encrypted value label for confidential balances.
@@ -121,13 +141,17 @@ pub fn transferred_amount_label() -> [u8; 32] {
     *b"transferred_amount______________"
 }
 
-/// Delegates nonce-key derivation to ZamaHost so app and host agree exactly.
-pub fn nonce_key(
+/// Delegates value-key derivation to the shared ACL crate so app and host agree exactly.
+pub fn value_key(
     acl_domain_key: Pubkey,
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
 ) -> [u8; 32] {
-    zama_host::acl_nonce_key(acl_domain_key, app_account, encrypted_value_label)
+    zama_solana_acl::derive_value_key(
+        acl_domain_key.to_bytes(),
+        app_account.to_bytes(),
+        encrypted_value_label,
+    )
 }
 
 #[cfg(test)]

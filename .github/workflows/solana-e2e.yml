@@ -5,13 +5,11 @@ name: solana-e2e
 # public-decrypt -> PURE-SDK user-decrypt (no kms checkout) -> input-flow -> consume. The
 # user-decrypt de-signcryption runs entirely in @fhevm/sdk/solana, so no kms-core checkout.
 #
-# The matrix runs the SAME vertical twice, in parallel:
-#   reconstruct=false : on-chain emit-decode (zama-host emits events).
-#   reconstruct=true  : zama-host compiled EMITLESS, coprocessor fed purely by gRPC off-chain
-#                       RECONSTRUCTION (Yellowstone geyser plugin on the validator) — proving the
-#                       vertical stands alone on reconstruction once the program stops emitting.
-# The only per-leg differences are the RECONSTRUCT env (setup-solana-side.sh keys off it) and the
-# failure-log artifact name; everything else is shared.
+# Ingestion is Yellowstone-only (DD-037): zama-host is compiled EMITLESS (no `emit-events`) and the
+# coprocessor is fed purely by gRPC off-chain RECONSTRUCTION (Yellowstone geyser plugin on the
+# validator) — the emit/RPC transport has been retired. The single-value `reconstruct` matrix is
+# kept so the job/artifact names keep their `-reconstruct` suffix; setup-solana-side.sh no longer
+# keys off it.
 on:
   # Auto-run on PRs targeting the Solana feature branch (the vertical never ran on
   # workflow_dispatch-only). Also keep manual dispatch with a custom cleartext.
@@ -36,16 +34,16 @@ jobs:
     runs-on: large_ubuntu_32
     timeout-minutes: 120
     strategy:
-      # Both legs always run to completion: a failure in one must not cancel the other.
-      fail-fast: false
       matrix:
-        reconstruct: [false, true]
+        # Single-value matrix: only the Yellowstone reconstruction arm remains (the emit/RPC arm
+        # was retired). Kept as a matrix so `${{ matrix.reconstruct }}` keeps the `-reconstruct`
+        # suffix on the job and artifact names.
+        reconstruct: [true]
     permissions:
       contents: "read" # checkout
       packages: "read" # pull repo-owned images from ghcr.io
     env:
       TE_VALUE: ${{ inputs.te-value || '55' }}
-      RECONSTRUCT: ${{ matrix.reconstruct && '1' || '0' }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

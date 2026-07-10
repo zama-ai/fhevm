@@ -18,6 +18,7 @@ solana-compute-budget-interface = "3.0.0"
 solana-sdk = "3.0.0"
 serde_json = "1"
 zama-host = { path = "../programs/zama-host", features = ["no-entrypoint", "poc"] }
+zama-solana-acl = { path = "../crates/zama-solana-acl" }
 
 [dev-dependencies]
 # Signs coprocessor EIP-712 input attestations in the secp256k1 input-bind test.

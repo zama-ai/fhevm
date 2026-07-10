@@ -102,6 +102,7 @@ where
     pub async fn check_ciphertexts_allowed_for_public_decryption(
         &self,
         sns_ciphertexts: &[SnsCiphertextMaterial],
+        extra_data: &[u8],
     ) -> Result<(), RequestCheckError> {
         info!(
             "Starting ACL check for {} handles...",
@@ -112,11 +113,11 @@ where
             let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
                 .map_err(|e| RequestCheckError::irrecoverable(RequestCheckKind::Acl, e))?;
 
-            // Solana host: the EVM ACL contract does not exist on this chain. Defer to the on-chain
-            // ACL record's `public_decrypt` flag read at `finalized` (released via the host
-            // `allow_for_decryption`), mirroring the Solana user-decrypt ACL phase.
+            // Solana host: the EVM ACL contract does not exist on this chain. Public access is
+            // proven by a `PublicDecryptLeaf` MMR proof in `extraData`, verified against the live
+            // finalized lineage account.
             if let Some(host) = self.solana_hosts.get(&ct_chain_id) {
-                check_solana_handles_public_decrypt(host, &[ct.ctHandle.0])
+                check_solana_handles_public_decrypt(host, &[ct.ctHandle.0], extra_data)
                     .await
                     .map_err(|e| RequestCheckError::from_processing(RequestCheckKind::Acl, e))?;
                 continue;
@@ -534,7 +535,7 @@ where
         // ACL phase: read each handle's record at finalized commitment and run the domain-scoped
         // verifier with the identity as subject.
         let handles: Vec<HandleBytes> = request.handles.iter().map(|e| e.handle.0).collect();
-        check_solana_handles_acl(host, &handles, auth.identity, &auth.allowed_acl_domain_keys)
+        check_solana_handles_acl(host, &handles, &auth)
             .await
             .map_err(|e| RequestCheckError::from_processing(RequestCheckKind::Acl, e))?;
 
@@ -958,7 +959,7 @@ mod tests {
         }
 
         let result = decryption_processor
-            .check_ciphertexts_allowed_for_public_decryption(&sns_ciphertexts)
+            .check_ciphertexts_allowed_for_public_decryption(&sns_ciphertexts, &[0u8])
             .await
             .map_err(RequestCheckError::record);
 

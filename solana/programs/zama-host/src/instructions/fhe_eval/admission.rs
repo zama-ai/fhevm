@@ -1,4 +1,7 @@
-use super::super::common::assert_output_acl_metadata;
+use super::super::common::{
+    assert_encrypted_value_subject_allowed, assert_output_acl_metadata,
+    check_grant_not_denied_info, read_canonical_encrypted_value,
+};
 use super::handles::EvalHandleContext;
 use super::walk::{walk_eval_frame, EvalStepVisitor};
 use super::*;
@@ -52,44 +55,39 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
     fn resolve_durable(
         &mut self,
         handle: [u8; 32],
-        acl_record_index: u16,
-        permission_index: Option<u16>,
+        encrypted_value_index: u16,
     ) -> Result<ResolvedOperand> {
-        let record_info = account_at(self.remaining_accounts, acl_record_index)?;
-        let permission_info = permission_index
-            .map(|index| account_at(self.remaining_accounts, index))
-            .transpose()?;
-        assert_unchecked_acl_record_subject_role(
-            record_info,
-            handle,
-            self.chain_id,
-            self.subject,
-            ACL_ROLE_USE,
-            permission_info,
-        )?;
-        let public_decrypt_allowed = unchecked_acl_record_subject_has_role(
-            record_info,
-            handle,
-            self.subject,
-            ACL_ROLE_PUBLIC_DECRYPT,
-            permission_info,
-        )?;
-        Ok(ResolvedOperand::encrypted(handle, public_decrypt_allowed))
+        let value_info = account_at(self.remaining_accounts, encrypted_value_index)?;
+        assert_encrypted_value_subject_allowed(value_info, handle, self.chain_id, self.subject)?;
+        Ok(ResolvedOperand::encrypted(handle, false))
     }
 
+    /// Admits one durable output lineage account: canonical PDA, writable,
+    /// used at most once per frame, and either fresh (create) or an existing
+    /// canonical lineage whose stored state matches the plan's previous_*.
+    #[allow(clippy::too_many_arguments)]
     fn admit_durable_output_account(
         &mut self,
         remaining_accounts: &[AccountInfo],
-        output_acl_record_index: u16,
-        output_nonce_key: [u8; 32],
-        output_nonce_sequence: u64,
+        output_encrypted_value_index: u16,
+        output_acl_domain_key: Pubkey,
+        output_app_account: Pubkey,
+        output_encrypted_value_label: [u8; 32],
+        output_subjects: &[AclSubjectEntry],
+        previous_handle: &Option<[u8; 32]>,
+        previous_subjects: &Option<Vec<Pubkey>>,
     ) -> Result<()> {
-        let output_info = account_at(remaining_accounts, output_acl_record_index)?;
-        let (expected, _) = acl_record_address(output_nonce_key, output_nonce_sequence);
+        let output_info = account_at(remaining_accounts, output_encrypted_value_index)?;
+        let value_key = zama_solana_acl::derive_value_key(
+            output_acl_domain_key.to_bytes(),
+            output_app_account.to_bytes(),
+            output_encrypted_value_label,
+        );
+        let (expected, _) = encrypted_value_address(value_key);
         require_keys_eq!(
             output_info.key(),
             expected,
-            ZamaHostError::AclRecordPdaMismatch
+            ZamaHostError::EncryptedValuePdaMismatch
         );
         require!(
             !self
@@ -102,19 +100,33 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
             output_info.is_writable,
             ZamaHostError::InvalidFheEvalAccount
         );
-        require_keys_eq!(
-            *output_info.owner,
-            System::id(),
-            ZamaHostError::FheEvalOutputAlreadyInitialized
-        );
-        require!(
-            output_info.data_is_empty(),
-            ZamaHostError::FheEvalOutputAlreadyInitialized
-        );
-        require!(
-            !output_info.executable,
-            ZamaHostError::FheEvalOutputAlreadyInitialized
-        );
+        if output_info.owner == &crate::ID {
+            let value = read_canonical_encrypted_value(output_info)?;
+            super::validate_durable_output_previous_state(
+                &value,
+                output_subjects,
+                previous_handle,
+                previous_subjects,
+            )?;
+        } else {
+            require!(
+                previous_handle.is_none() && previous_subjects.is_none(),
+                ZamaHostError::PreviousStateMismatch
+            );
+            require_keys_eq!(
+                *output_info.owner,
+                System::id(),
+                ZamaHostError::FheEvalOutputAlreadyInitialized
+            );
+            require!(
+                output_info.data_is_empty(),
+                ZamaHostError::FheEvalOutputAlreadyInitialized
+            );
+            require!(
+                !output_info.executable,
+                ZamaHostError::FheEvalOutputAlreadyInitialized
+            );
+        }
         self.durable_output_accounts.push(output_info.key());
         Ok(())
     }
@@ -132,10 +144,9 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
     fn resolve_durable_operand(
         &mut self,
         handle: [u8; 32],
-        acl_record_index: u16,
-        permission_index: Option<u16>,
+        encrypted_value_index: u16,
     ) -> Result<ResolvedOperand> {
-        self.resolve_durable(handle, acl_record_index, permission_index)
+        self.resolve_durable(handle, encrypted_value_index)
     }
 
     fn resolve_verified_input_operand(
@@ -157,7 +168,6 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         result: [u8; 32],
         output: &FheEvalOutput,
         output_public_decrypt_allowed: bool,
-        enforce_public_decrypt_role_propagation: bool,
     ) -> Result<()> {
         require!(
             !self.produced.iter().any(|value| value.handle == result),
@@ -167,42 +177,35 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         match output {
             FheEvalOutput::AllowedLocal => {}
             FheEvalOutput::AllowedDurable {
-                output_acl_record_index,
+                output_encrypted_value_index,
                 output_app_account_authority_index,
-                output_nonce_key,
-                output_nonce_sequence,
                 output_acl_domain_key,
                 output_app_account,
                 output_encrypted_value_label,
                 output_subjects,
-                output_public_decrypt,
+                previous_handle,
+                previous_subjects,
+                make_public: _,
             } => {
                 let app_account_authority = admit_durable_output_authority(
                     ctx,
                     *output_app_account_authority_index,
                     *output_app_account,
                 )?;
-                if enforce_public_decrypt_role_propagation {
-                    assert_derived_public_decrypt_roles_allowed(
-                        output_subjects,
-                        output_public_decrypt_allowed,
-                        &app_account_authority,
-                    )?;
-                }
                 assert_output_acl_metadata(
                     app_account_authority.key(),
-                    *output_nonce_key,
+                    *output_app_account,
+                    output_subjects,
+                )?;
+                self.admit_durable_output_account(
+                    ctx.remaining_accounts,
+                    *output_encrypted_value_index,
                     *output_acl_domain_key,
                     *output_app_account,
                     *output_encrypted_value_label,
                     output_subjects,
-                )?;
-                assert_public_decrypt_not_set_at_birth(*output_public_decrypt)?;
-                self.admit_durable_output_account(
-                    ctx.remaining_accounts,
-                    *output_acl_record_index,
-                    *output_nonce_key,
-                    *output_nonce_sequence,
+                    previous_handle,
+                    previous_subjects,
                 )?;
             }
         }
@@ -220,7 +223,7 @@ fn admit_durable_output_authority<'info>(
     authority_index: Option<u16>,
     output_app_account: Pubkey,
 ) -> Result<AccountInfo<'info>> {
-    match authority_index {
+    let authority = match authority_index {
         Some(index) => {
             let authority = account_at(ctx.remaining_accounts, index)?;
             require!(authority.is_signer, ZamaHostError::InvalidFheEvalAccount);
@@ -229,10 +232,18 @@ fn admit_durable_output_authority<'info>(
                 output_app_account,
                 ZamaHostError::AppAccountAuthorityMismatch
             );
-            Ok(authority.clone())
+            authority.clone()
         }
-        None => Ok(ctx.accounts.app_account_authority.to_account_info()),
-    }
+        None => ctx.accounts.app_account_authority.to_account_info(),
+    };
+    let deny_record = super::deny_subject_record_for(
+        &ctx.accounts.host_config,
+        ctx.remaining_accounts,
+        None,
+        authority.key(),
+    )?;
+    check_grant_not_denied_info(&ctx.accounts.host_config, authority.key(), deny_record)?;
+    Ok(authority)
 }
 
 fn account_at<'a, 'info>(

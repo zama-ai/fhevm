@@ -17,10 +17,8 @@ pub struct DiscloseBalanceSecp<'info> {
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Confidential token account whose current balance is disclosed.
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// Current balance ACL record for the disclosed handle.
-    pub balance_acl_record: Box<Account<'info, zama_host::AclRecord>>,
-    /// Material commitment witness for the disclosed handle.
-    pub balance_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    /// Current balance `EncryptedValue` lineage for the disclosed handle.
+    pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Account-backed disclosure request witness consumed by this instruction.
     #[account(mut)]
     pub disclosure_request: Box<Account<'info, DisclosureRequest>>,
@@ -44,6 +42,7 @@ pub fn disclose_balance_secp(
     cleartext_amount: u64,
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
+    proof: MmrInclusionProof,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
@@ -59,23 +58,21 @@ pub fn disclose_balance_secp(
         mint_key,
         ctx.accounts.token_account.owner,
     )?;
-    assert_current_balance_acl(
-        &ctx.accounts.balance_acl_record,
-        ctx.accounts.balance_acl_record.key(),
+    // Balance lineages are superseded in place, so the account pointer is stable and this binds the
+    // passed lineage to the token account without depending on the live handle.
+    assert_current_balance_encrypted_value(
+        &ctx.accounts.balance_value,
         &ctx.accounts.token_account,
         mint_key,
     )?;
-    let handle = ctx.accounts.token_account.balance_handle;
-    assert_material_commitment(
-        &ctx.accounts.balance_material_commitment,
-        ctx.accounts.balance_material_commitment.key(),
-        &ctx.accounts.balance_acl_record,
-        handle,
-    )?;
-    assert_public_decrypt_released(&ctx.accounts.balance_acl_record)?;
+    // Authorize the WITNESS-pinned handle, not the live `current_handle`: any inbound transfer
+    // rotates the balance lineage during the KMS round-trip, which would otherwise strand the
+    // request. The handle's publicness was sealed as a permanent MMR leaf at request time.
+    let handle = ctx.accounts.disclosure_request.handle;
 
-    // Bind to the request witness: same mode/handle/accounts/material/host config; PENDING and
-    // unexpired; recomputed request_hash matches.
+    // Bind to the request witness: same mode/handle/accounts/host config; PENDING and unexpired;
+    // recomputed request_hash matches. Passing `balance_value.key()` binds it to
+    // `request.encrypted_value`.
     let token_account_key = ctx.accounts.token_account.key();
     assert_disclosure_request_witness(
         &ctx.accounts.disclosure_request,
@@ -85,9 +82,16 @@ pub fn disclose_balance_secp(
         token_account_key,
         token_account_key,
         handle,
-        ctx.accounts.balance_acl_record.key(),
-        &ctx.accounts.balance_material_commitment,
+        ctx.accounts.balance_value.key(),
         ctx.accounts.host_config.key(),
+    )?;
+    // Authorize the pinned handle by MMR public-decrypt proof against the lineage's current peaks.
+    let proof = zama_solana_acl::MmrProof::from(proof);
+    authorize_disclosed_handle(
+        &ctx.accounts.balance_value,
+        ctx.accounts.balance_value.key(),
+        handle,
+        &proof,
     )?;
     // Verify the cert against the witness-pinned context, closing rotation reuse.
     assert_kms_public_decrypt_cert_for_request(

@@ -11,7 +11,6 @@ use std::{collections::HashSet, fmt, ops::DerefMut};
 
 use alloy_primitives::{Address, FixedBytes, Log};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
-use fhevm_engine_common::types::AllowEvents;
 use sha2::{Digest, Sha256};
 use sqlx::{Error as SqlxError, Row};
 
@@ -31,22 +30,15 @@ use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    tfhe_result_handle, ClearConst, Database, Handle, LogTfhe, Transaction,
-    TransactionHash,
+    ClearConst, Database, Handle, LogTfhe, Transaction, TransactionHash,
 };
-
-#[derive(Clone, Debug)]
-pub struct SolanaAclAllowedEvent {
-    pub handle: Handle,
-    pub subject: String,
-    pub event_type: AllowEvents,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SolanaFinalizedAccountFetchKind {
-    AclRecord,
+    EncryptedValueAccount,
     AclPermission,
-    HandleMaterialCommitment,
+    // Kind 3 is reserved for the deleted material-commitment fetch kind.
+    // Remaining values are persisted in solana_finalized_account_fetches.kind.
     DisclosureRequest,
     BurnRedemptionRequest,
     TokenMint,
@@ -58,9 +50,8 @@ pub enum SolanaFinalizedAccountFetchKind {
 impl SolanaFinalizedAccountFetchKind {
     fn as_i16(self) -> i16 {
         match self {
-            SolanaFinalizedAccountFetchKind::AclRecord => 1,
+            SolanaFinalizedAccountFetchKind::EncryptedValueAccount => 1,
             SolanaFinalizedAccountFetchKind::AclPermission => 2,
-            SolanaFinalizedAccountFetchKind::HandleMaterialCommitment => 3,
             SolanaFinalizedAccountFetchKind::DisclosureRequest => 4,
             SolanaFinalizedAccountFetchKind::BurnRedemptionRequest => 5,
             SolanaFinalizedAccountFetchKind::TokenMint => 6,
@@ -72,11 +63,8 @@ impl SolanaFinalizedAccountFetchKind {
 
     fn from_i16(value: i16) -> Option<Self> {
         match value {
-            1 => Some(SolanaFinalizedAccountFetchKind::AclRecord),
+            1 => Some(SolanaFinalizedAccountFetchKind::EncryptedValueAccount),
             2 => Some(SolanaFinalizedAccountFetchKind::AclPermission),
-            3 => {
-                Some(SolanaFinalizedAccountFetchKind::HandleMaterialCommitment)
-            }
             4 => Some(SolanaFinalizedAccountFetchKind::DisclosureRequest),
             5 => Some(SolanaFinalizedAccountFetchKind::BurnRedemptionRequest),
             6 => Some(SolanaFinalizedAccountFetchKind::TokenMint),
@@ -135,14 +123,12 @@ pub enum SolanaHostEvent {
     FheIsIn(FheIsInEvent),
     FheMulDiv(FheMulDivEvent),
     FinalizedAccountFetch(SolanaFinalizedAccountFetch),
-    AclAllowed(SolanaAclAllowedEvent),
 }
 
 #[derive(Clone, Debug)]
 pub enum SolanaMappedEvent {
     Tfhe(Log<TfheContractEvents>),
     FinalizedAccountFetch(SolanaFinalizedAccountFetch),
-    IgnoredAclAllowed(SolanaAclAllowedEvent),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -452,69 +438,6 @@ fn decode_solana_host_events(event: ZamaHostEvent) -> Vec<SolanaHostEvent> {
         ZamaHostEvent::FheMulDiv(event) => {
             vec![SolanaHostEvent::FheMulDiv(event)]
         }
-        ZamaHostEvent::AclAllowed(event) => {
-            vec![SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
-                handle: Handle::from(event.handle),
-                subject: format!("0x{}", encode_hex(&event.subject)),
-                event_type: AllowEvents::AllowedAccount,
-            })]
-        }
-        ZamaHostEvent::AclRecordBound(event) => {
-            vec![SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
-                event.acl_record,
-                event.handle,
-                "acl_record_bound",
-            ))]
-        }
-        ZamaHostEvent::AclSubjectAllowed(event) => {
-            let mut fetches =
-                vec![SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
-                    event.acl_record,
-                    event.handle,
-                    "acl_subject_allowed",
-                ))];
-            if event.overflow_permission_record != [0; 32] {
-                fetches.push(SolanaHostEvent::FinalizedAccountFetch(
-                    acl_permission_fetch(
-                        event.overflow_permission_record,
-                        event.acl_record,
-                        event.subject,
-                        "acl_subject_allowed",
-                    ),
-                ));
-            }
-            fetches
-        }
-        ZamaHostEvent::HandleMaterialCommitted(event) => {
-            vec![SolanaHostEvent::FinalizedAccountFetch(material_fetch(
-                event.material_commitment,
-                event.acl_record,
-                event.handle,
-                "handle_material_committed",
-            ))]
-        }
-        ZamaHostEvent::HandleMaterialSealed(event) => {
-            vec![
-                SolanaHostEvent::FinalizedAccountFetch(material_fetch(
-                    event.material_commitment,
-                    event.acl_record,
-                    event.handle,
-                    "handle_material_sealed",
-                )),
-                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
-                    event.acl_record,
-                    event.handle,
-                    "handle_material_sealed",
-                )),
-            ]
-        }
-        ZamaHostEvent::PublicDecryptAllowed(event) => {
-            vec![SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
-                event.acl_record,
-                event.handle,
-                "public_decrypt_allowed",
-            ))]
-        }
         ZamaHostEvent::DenySubjectUpdated(_)
         | ZamaHostEvent::HcuAppTrustUpdated(_)
         | ZamaHostEvent::HostConfigInitialized(_)
@@ -600,6 +523,8 @@ fn account_fetches_from_solana_events(
         .collect()
 }
 
+// Only referenced by `solana_reconstruct` (feature-gated) outside of tests.
+#[cfg_attr(not(feature = "solana-reconstruct"), allow(dead_code))]
 pub(crate) fn acl_record_fetch(
     acl_record: [u8; 32],
     handle: [u8; 32],
@@ -607,42 +532,10 @@ pub(crate) fn acl_record_fetch(
 ) -> SolanaFinalizedAccountFetch {
     SolanaFinalizedAccountFetch {
         account_key: acl_record,
-        kind: SolanaFinalizedAccountFetchKind::AclRecord,
+        kind: SolanaFinalizedAccountFetchKind::EncryptedValueAccount,
         reason,
         handle: Some(Handle::from(handle)),
         related_account: None,
-        subject: None,
-    }
-}
-
-fn acl_permission_fetch(
-    permission: [u8; 32],
-    acl_record: [u8; 32],
-    subject: [u8; 32],
-    reason: &'static str,
-) -> SolanaFinalizedAccountFetch {
-    SolanaFinalizedAccountFetch {
-        account_key: permission,
-        kind: SolanaFinalizedAccountFetchKind::AclPermission,
-        reason,
-        handle: None,
-        related_account: Some(acl_record),
-        subject: Some(subject),
-    }
-}
-
-pub(crate) fn material_fetch(
-    material_commitment: [u8; 32],
-    acl_record: [u8; 32],
-    handle: [u8; 32],
-    reason: &'static str,
-) -> SolanaFinalizedAccountFetch {
-    SolanaFinalizedAccountFetch {
-        account_key: material_commitment,
-        kind: SolanaFinalizedAccountFetchKind::HandleMaterialCommitment,
-        reason,
-        handle: Some(Handle::from(handle)),
-        related_account: Some(acl_record),
         subject: None,
     }
 }
@@ -664,14 +557,19 @@ fn request_witness_fetch(
 
 fn dedup_account_fetches(fetches: &mut Vec<SolanaFinalizedAccountFetch>) {
     let mut seen = HashSet::new();
-    fetches.retain(|fetch| seen.insert((fetch.account_key, fetch.kind)));
+    fetches.retain(|fetch| {
+        seen.insert((
+            fetch.account_key,
+            fetch.kind,
+            fetch.reason,
+            fetch.handle,
+            fetch.subject,
+        ))
+    });
 }
 
 fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
     match event {
-        ZamaHostEvent::AclAllowed(event) => event.version,
-        ZamaHostEvent::AclRecordBound(event) => event.version,
-        ZamaHostEvent::AclSubjectAllowed(event) => event.version,
         ZamaHostEvent::DenySubjectUpdated(event) => event.version,
         ZamaHostEvent::FheBinaryOp(event) => event.version,
         ZamaHostEvent::FheRand(event) => event.version,
@@ -681,14 +579,11 @@ fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
         ZamaHostEvent::FheSum(event) => event.version,
         ZamaHostEvent::FheIsIn(event) => event.version,
         ZamaHostEvent::FheMulDiv(event) => event.version,
-        ZamaHostEvent::HandleMaterialCommitted(event) => event.version,
-        ZamaHostEvent::HandleMaterialSealed(event) => event.version,
         ZamaHostEvent::HcuAppTrustUpdated(event) => event.version,
         ZamaHostEvent::HostConfigInitialized(event) => event.version,
         ZamaHostEvent::HostConfigUpdated(event) => event.version,
         ZamaHostEvent::KmsContextDestroyed(event) => event.version,
         ZamaHostEvent::NewKmsContext(event) => event.version,
-        ZamaHostEvent::PublicDecryptAllowed(event) => event.version,
         ZamaHostEvent::TrivialEncrypt(event) => event.version,
         ZamaHostEvent::UserDecryptionDelegationUpdated(event) => event.version,
     }
@@ -726,12 +621,29 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
         SolanaHostEvent::FinalizedAccountFetch(fetch) => {
             SolanaMappedEvent::FinalizedAccountFetch(fetch)
         }
-        SolanaHostEvent::AclAllowed(event) => {
-            SolanaMappedEvent::IgnoredAclAllowed(event)
-        }
     }
 }
 
+// --- Eager compute scheduling (RFC-024 / Q11 option A) ---------------------
+//
+// Historically, a Solana compute's `is_allowed` bit was derived from allow
+// events observed in the SAME transaction, and a since-deleted
+// `mark_solana_computation_allowed` re-opened it later if the allow instead
+// landed in a following slot. That machinery is now retired as a *scheduling*
+// gate: every Solana
+// computation is inserted eager (`is_allowed = TRUE` unconditionally), so the
+// tfhe-worker schedules it immediately regardless of ACL/allow state. Allow
+// signals (active `fhe_eval` durable outputs plus `allow_subjects`, `remove_subject`,
+// `make_handle_public`; raw create/update only for legacy finalized data) still matter for
+// DECRYPT availability (SNS/ct128 prep, `allowed_handles`) — they are not needed to unblock
+// computation.
+//
+// Reorg unwind for eagerly-scheduled computations remains unimplemented: a
+// computation whose containing block loses a fork race is wasted work, not a
+// correctness bug, because `solana_finalized_account_fetcher` is the sole gate
+// on releasing a decrypt for a *finalized* handle+subject/public state. Eager
+// compute can never cause a wrong decrypt; at worst it burns cycles on a
+// minority fork.
 pub fn normalize_solana_events_for_db(
     events: impl IntoIterator<Item = SolanaHostEvent>,
     transaction_id: TransactionHash,
@@ -739,37 +651,25 @@ pub fn normalize_solana_events_for_db(
 ) -> (Vec<LogTfhe>, Vec<SolanaFinalizedAccountFetch>) {
     let events = events.into_iter().collect::<Vec<_>>();
 
-    // Handles allowed within THIS transaction. A compute event whose result is
-    // allowed must be inserted with is_allowed=true so the tfhe-worker
-    // materializes its ciphertext (it only schedules is_allowed=TRUE rows); an
-    // unallowed result is inserted is_completed=true and never materialized,
-    // mirroring the EVM ingest path (database::ingest collects ACL-allowed
-    // handles in the block, then sets is_allowed per compute result). The allow
-    // signal lives in the same confirmed Solana transaction as the compute, so
-    // materialization need not wait on finalization — finalization independently
-    // gates only the DECRYPT release (pbs/allowed_handles), via the fetch queue.
-    let allowed_handles = solana_allowed_result_handles(&events);
-
     let mut tfhe_logs = Vec::new();
     let mut account_fetches = Vec::new();
 
     for (index, event) in events.into_iter().enumerate() {
         match map_solana_event(event) {
             SolanaMappedEvent::Tfhe(event) => {
-                let is_allowed = tfhe_result_handle(&event.data)
-                    .is_some_and(|handle| allowed_handles.contains(&handle));
+                // Eager: schedulable the moment the compute itself confirms,
+                // independent of any allow/ACL signal. See module note above.
                 tfhe_logs.push(to_log_tfhe(
                     event,
                     transaction_id,
                     block,
-                    is_allowed,
+                    true,
                     index as u64,
                 ));
             }
             SolanaMappedEvent::FinalizedAccountFetch(fetch) => {
                 account_fetches.push(fetch);
             }
-            SolanaMappedEvent::IgnoredAclAllowed(_) => {}
         }
     }
 
@@ -777,37 +677,36 @@ pub fn normalize_solana_events_for_db(
     (tfhe_logs, account_fetches)
 }
 
-/// Result-handles allowed within one Solana transaction, gathered from the rich
-/// allow events that are routed to finalized-account fetches
-/// (`public_decrypt_allowed`, `acl_subject_allowed`, `acl_record_bound`) — each
-/// carries the handle being allowed. The legacy flat `AclAllowed` event is NOT
-/// an allow signal here: this design deliberately drops it (it is mapped to
-/// `IgnoredAclAllowed`), so trusting it to drive materialization would
-/// contradict that. Material-sealed/committed fetches are not allow signals
-/// either, so they are excluded.
-fn solana_allowed_result_handles(
-    events: &[SolanaHostEvent],
-) -> HashSet<Handle> {
-    events
-        .iter()
-        .filter_map(|event| match event {
-            SolanaHostEvent::FinalizedAccountFetch(fetch)
-                if is_solana_allow_reason(fetch.reason) =>
-            {
-                fetch.handle
-            }
-            _ => None,
-        })
-        .collect()
-}
-
-/// Whether a finalized-account-fetch reason denotes an ACL allow that releases a
-/// handle (vs. a material-commitment or request witness). Shared by the
-/// in-tx materialization mark and the finalized decrypt-release consumer.
+/// Whether a finalized-account-fetch reason denotes an ACL allow signal that
+/// feeds decrypt availability (vs. a material-commitment or request witness).
+/// Used only by the finalized decrypt-release consumer now — no longer by any
+/// compute-scheduling path (see the eager-compute note above).
+///
+/// `encrypted_value_created` / `handle_superseded` / `handle_made_public` /
+/// `subject_allowed` name the RFC-024 positive `EncryptedValue` instruction-derived
+/// signals (active durable-output supersession plus `make_handle_public` and
+/// `allow_subjects`; raw create/update only for legacy finalized data); the legacy
+/// `public_decrypt_allowed` / `acl_subject_allowed` / `acl_record_bound` reasons are kept for the
+/// still-IDL-driven decode path pending its RFC-024 instruction-decode rewrite
+/// (tracked separately — see host-listener README/TODO).
+///
+/// TODO(RFC-024 instruction decode): currently unreferenced because nothing
+/// yet emits `SolanaFinalizedAccountFetch::reason` from the new
+/// `EncryptedValue` instructions (`fhe_eval` durable outputs/`allow_subjects`/
+/// `make_handle_public`/`remove_subject`, plus legacy raw create/update if encountered) — see the host-listener
+/// section of the RFC-024 rollout notes. Once that decode lands, this becomes
+/// the finalized-fetcher's filter again.
+#[allow(dead_code)]
 pub(crate) fn is_solana_allow_reason(reason: &str) -> bool {
     matches!(
         reason,
-        "public_decrypt_allowed" | "acl_subject_allowed" | "acl_record_bound"
+        "public_decrypt_allowed"
+            | "acl_subject_allowed"
+            | "acl_record_bound"
+            | "encrypted_value_created"
+            | "handle_superseded"
+            | "handle_made_public"
+            | "subject_allowed"
     )
 }
 
@@ -844,16 +743,10 @@ pub async fn insert_solana_events(
         {
             inserted_rows += 1;
         }
-        // The allow for a computed handle lands a slot after the compute, which
-        // was therefore inserted unallowed (is_completed=true) and skipped by the
-        // worker. Re-open it for materialization now that the allow is known. The
-        // finalized fetch above independently gates the later DECRYPT release.
-        if is_solana_allow_reason(fetch.reason) {
-            if let Some(handle) = fetch.handle {
-                db.mark_solana_computation_allowed(tx, handle.as_slice())
-                    .await?;
-            }
-        }
+        // No re-open needed: computations are inserted eager (is_allowed=TRUE
+        // unconditionally, see `normalize_solana_events_for_db`), so there is
+        // nothing left to activate here. This fetch only feeds the finalized
+        // decrypt-release gate (`solana_finalized_account_fetcher`).
     }
 
     // Populate the dependence_chain scheduling table the tfhe-worker locks against; without
@@ -894,6 +787,7 @@ async fn insert_finalized_account_fetch(
     block_number: u64,
 ) -> Result<bool, SqlxError> {
     let handle = fetch.handle.map(|handle| handle.to_vec());
+    let handle_key = finalized_fetch_handle_key(fetch.handle, fetch.subject);
     let related_account = fetch.related_account.map(|account| account.to_vec());
     let subject = fetch.subject.map(|subject| subject.to_vec());
     sqlx::query(
@@ -903,15 +797,14 @@ async fn insert_finalized_account_fetch(
             kind,
             reason,
             handle,
+            handle_key,
             related_account,
             subject,
             transaction_id,
             block_number
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (account_key, kind) DO UPDATE SET
-            reason = EXCLUDED.reason,
-            handle = COALESCE(EXCLUDED.handle, solana_finalized_account_fetches.handle),
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (account_key, kind, reason, handle_key) DO UPDATE SET
             related_account = COALESCE(
                 EXCLUDED.related_account,
                 solana_finalized_account_fetches.related_account
@@ -927,6 +820,7 @@ async fn insert_finalized_account_fetch(
     .bind(fetch.kind.as_i16())
     .bind(fetch.reason)
     .bind(handle)
+    .bind(handle_key)
     .bind(related_account)
     .bind(subject)
     .bind(transaction_id.to_vec())
@@ -936,6 +830,36 @@ async fn insert_finalized_account_fetch(
     .map(|result| result.rows_affected() > 0)
 }
 
+fn finalized_fetch_handle_key(
+    handle: Option<Handle>,
+    subject: Option<[u8; 32]>,
+) -> Vec<u8> {
+    let mut key = Vec::with_capacity(33);
+    match (handle, subject) {
+        (Some(handle), Some(subject)) => {
+            key.push(2);
+            let mut hasher = Sha256::new();
+            hasher.update(handle.as_slice());
+            hasher.update(subject);
+            let digest = hasher.finalize();
+            key.extend_from_slice(&digest[..32]);
+        }
+        (Some(handle), None) => {
+            key.push(1);
+            key.extend_from_slice(handle.as_slice());
+        }
+        (None, Some(subject)) => {
+            key.push(3);
+            key.extend_from_slice(&subject);
+        }
+        (None, None) => {
+            key.push(0);
+            key.extend_from_slice(&[0u8; 32]);
+        }
+    }
+    key
+}
+
 pub async fn claim_pending_finalized_account_fetches(
     tx: &mut Transaction<'_>,
     limit: i64,
@@ -943,7 +867,7 @@ pub async fn claim_pending_finalized_account_fetches(
     let rows = sqlx::query(
         r#"
         WITH candidate AS (
-            SELECT account_key, kind
+            SELECT account_key, kind, reason, handle_key
             FROM solana_finalized_account_fetches
             WHERE status = 'pending'
                OR (
@@ -962,6 +886,8 @@ pub async fn claim_pending_finalized_account_fetches(
         FROM candidate
         WHERE claimed.account_key = candidate.account_key
           AND claimed.kind = candidate.kind
+          AND claimed.reason = candidate.reason
+          AND claimed.handle_key = candidate.handle_key
         RETURNING
             claimed.account_key,
             claimed.kind,
@@ -1037,15 +963,21 @@ pub async fn complete_finalized_account_fetch(
     tx: &mut Transaction<'_>,
     job: &SolanaFinalizedAccountFetchJob,
 ) -> Result<(), SqlxError> {
+    let handle_key = finalized_fetch_handle_key(job.handle, job.subject);
     sqlx::query(
         r#"
         UPDATE solana_finalized_account_fetches
         SET status = 'done', last_error = NULL, last_seen_at = NOW()
-        WHERE account_key = $1 AND kind = $2
+        WHERE account_key = $1
+          AND kind = $2
+          AND reason = $3
+          AND handle_key = $4
         "#,
     )
     .bind(job.account_key.to_vec())
     .bind(job.kind.as_i16())
+    .bind(&job.reason)
+    .bind(handle_key)
     .execute(tx.deref_mut())
     .await?;
     Ok(())
@@ -1056,15 +988,21 @@ pub async fn fail_finalized_account_fetch(
     job: &SolanaFinalizedAccountFetchJob,
     error: &str,
 ) -> Result<(), SqlxError> {
+    let handle_key = finalized_fetch_handle_key(job.handle, job.subject);
     sqlx::query(
         r#"
         UPDATE solana_finalized_account_fetches
-        SET status = 'error', last_error = $3, last_seen_at = NOW()
-        WHERE account_key = $1 AND kind = $2
+        SET status = 'error', last_error = $5, last_seen_at = NOW()
+        WHERE account_key = $1
+          AND kind = $2
+          AND reason = $3
+          AND handle_key = $4
         "#,
     )
     .bind(job.account_key.to_vec())
     .bind(job.kind.as_i16())
+    .bind(&job.reason)
+    .bind(handle_key)
     .bind(error)
     .execute(tx.deref_mut())
     .await?;
@@ -1076,15 +1014,21 @@ pub async fn retry_finalized_account_fetch(
     job: &SolanaFinalizedAccountFetchJob,
     error: &str,
 ) -> Result<(), SqlxError> {
+    let handle_key = finalized_fetch_handle_key(job.handle, job.subject);
     sqlx::query(
         r#"
         UPDATE solana_finalized_account_fetches
-        SET status = 'pending', last_error = $3, last_seen_at = NOW()
-        WHERE account_key = $1 AND kind = $2
+        SET status = 'pending', last_error = $5, last_seen_at = NOW()
+        WHERE account_key = $1
+          AND kind = $2
+          AND reason = $3
+          AND handle_key = $4
         "#,
     )
     .bind(job.account_key.to_vec())
     .bind(job.kind.as_i16())
+    .bind(&job.reason)
+    .bind(handle_key)
     .bind(error)
     .execute(tx.deref_mut())
     .await?;
@@ -1097,7 +1041,7 @@ fn finalized_account_fetch_job_from_row(
     let account_key = bytes32_from_vec(row.get::<Vec<u8>, _>("account_key"));
     let kind_value = row.get::<i16, _>("kind");
     let kind = SolanaFinalizedAccountFetchKind::from_i16(kind_value).expect(
-        "solana_finalized_account_fetches.kind is constrained to known values",
+        "solana_finalized_account_fetches.kind has no live fetch-kind variant",
     );
     let handle = row
         .get::<Option<Vec<u8>>, _>("handle")
@@ -1129,16 +1073,6 @@ fn bytes32_from_vec(bytes: Vec<u8>) -> [u8; 32] {
     bytes
         .try_into()
         .expect("Solana finalized-account queue bytea field has length 32")
-}
-
-fn encode_hex(bytes: &[u8; 32]) -> String {
-    const ALPHABET: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(64);
-    for byte in bytes {
-        out.push(ALPHABET[(byte >> 4) as usize] as char);
-        out.push(ALPHABET[(byte & 0x0f) as usize] as char);
-    }
-    out
 }
 
 pub fn to_log_tfhe(
@@ -1504,6 +1438,40 @@ mod tests {
     }
 
     #[test]
+    fn subject_scoped_fetches_keep_distinct_queue_keys() {
+        let handle = handle(4);
+        assert_ne!(
+            finalized_fetch_handle_key(Some(handle), Some([6; 32])),
+            finalized_fetch_handle_key(Some(handle), Some([7; 32]))
+        );
+        assert_ne!(
+            finalized_fetch_handle_key(Some(handle), Some([6; 32])),
+            finalized_fetch_handle_key(Some(handle), None)
+        );
+
+        let mut fetches = vec![
+            SolanaFinalizedAccountFetch {
+                account_key: [1; 32],
+                kind: SolanaFinalizedAccountFetchKind::EncryptedValueAccount,
+                reason: "subject_allowed",
+                handle: Some(handle),
+                related_account: None,
+                subject: Some([6; 32]),
+            },
+            SolanaFinalizedAccountFetch {
+                account_key: [1; 32],
+                kind: SolanaFinalizedAccountFetchKind::EncryptedValueAccount,
+                reason: "subject_allowed",
+                handle: Some(handle),
+                related_account: None,
+                subject: Some([7; 32]),
+            },
+        ];
+        dedup_account_fetches(&mut fetches);
+        assert_eq!(fetches.len(), 2);
+    }
+
+    #[test]
     fn decodes_anchor_event_cpi_binary_event_to_existing_tfhe_event() {
         let encoded = anchor_event_cpi(
             "FheBinaryOpEvent",
@@ -1575,7 +1543,7 @@ mod tests {
             "Program data: not base64".to_owned(),
         ];
 
-        for value in 0_u8..5 {
+        for value in 0_u8..12 {
             logs.push(format!(
                 "Program data: {}",
                 BASE64_STANDARD.encode(anchor_event(
@@ -1589,17 +1557,6 @@ mod tests {
                         [value; 32],
                     ),
                 ))
-            ));
-        }
-        for value in 10_u8..17 {
-            logs.push(format!(
-                "Program data: {}",
-                BASE64_STANDARD.encode(anchor_event("AclAllowedEvent", {
-                    let mut payload = vec![EVENT_VERSION];
-                    payload.extend_from_slice(&[value; 32]);
-                    payload.extend_from_slice(&[8; 32]);
-                    payload
-                }))
             ));
         }
         logs.push(format!("Program {host_program} success"));
@@ -1616,14 +1573,7 @@ mod tests {
                     SolanaHostEvent::FheBinaryOp(_)
                 ))
                 .count(),
-            5
-        );
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| matches!(event, SolanaHostEvent::AclAllowed(_)))
-                .count(),
-            7
+            12
         );
         assert!(matches!(
             &events[0],
@@ -1631,7 +1581,7 @@ mod tests {
         ));
         assert!(matches!(
             &events[5],
-            SolanaHostEvent::AclAllowed(event) if event.handle == handle(10)
+            SolanaHostEvent::FheBinaryOp(event) if event.result == [5; 32]
         ));
     }
 
@@ -1746,55 +1696,6 @@ mod tests {
                 cpi_events: 1,
                 log_events: 1,
             }
-        );
-    }
-
-    #[test]
-    fn finalized_account_fetch_logs_do_not_make_cpi_transport_mixed() {
-        let host_program = "ZamaHost111111111111111111111111111111111";
-        let cpi_event = anchor_event_cpi(
-            "FheBinaryOpEvent",
-            binary_op_payload(0, [9; 32], [1; 32], [2; 32], false, [3; 32]),
-        );
-        let logs = vec![
-            format!("Program {host_program} invoke [1]"),
-            program_data_log(
-                "AclRecordBoundEvent",
-                acl_record_bound_payload([3; 32]),
-            ),
-            program_data_log(
-                "AclSubjectAllowedEvent",
-                acl_subject_allowed_payload([3; 32], [4; 32]),
-            ),
-            format!("Program {host_program} success"),
-        ];
-
-        let events = decode_solana_transaction_events(
-            &logs,
-            [(host_program, cpi_event.as_slice())],
-            host_program,
-        )
-        .expect("account fetch logs must not conflict with CPI transport");
-
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| matches!(
-                    event,
-                    SolanaHostEvent::FheBinaryOp(_)
-                ))
-                .count(),
-            1
-        );
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| matches!(
-                    event,
-                    SolanaHostEvent::FinalizedAccountFetch(_)
-                ))
-                .count(),
-            3
         );
     }
 
@@ -1914,34 +1815,43 @@ mod tests {
                 payload.extend_from_slice(&[8; 32]);
                 payload
             }),
-            anchor_event(
-                "AclAllowedEvent",
-                acl_allowed_payload([7; 32], [8; 32]),
-            ),
-            anchor_event("AclRecordBoundEvent", {
-                let mut payload = vec![EVENT_VERSION];
+            anchor_event("FheUnaryOpEvent", {
+                let mut payload = vec![EVENT_VERSION, 0];
+                payload.extend_from_slice(&[9; 32]);
                 payload.extend_from_slice(&[1; 32]);
                 payload.extend_from_slice(&[2; 32]);
-                payload.extend_from_slice(&[3; 32]);
-                payload.extend_from_slice(&4_u64.to_le_bytes());
-                payload.extend_from_slice(&[5; 32]);
-                payload.extend_from_slice(&[6; 32]);
-                payload.extend_from_slice(&[7; 32]);
-                payload.push(8);
-                payload.push(0);
-                payload.extend_from_slice(&9_u64.to_le_bytes());
                 payload
             }),
-            anchor_event("AclSubjectAllowedEvent", {
+            anchor_event("FheSumEvent", {
                 let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&3_u32.to_le_bytes());
                 payload.extend_from_slice(&[1; 32]);
                 payload.extend_from_slice(&[2; 32]);
                 payload.extend_from_slice(&[3; 32]);
-                payload.extend_from_slice(&[4; 32]);
                 payload.push(5);
-                payload.extend_from_slice(&[6; 32]);
-                payload.push(u8::MAX);
-                payload.extend_from_slice(&7_u64.to_le_bytes());
+                payload.extend_from_slice(&[4; 32]);
+                payload
+            }),
+            anchor_event("FheIsInEvent", {
+                let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&[1; 32]);
+                payload.extend_from_slice(&2_u32.to_le_bytes());
+                payload.extend_from_slice(&[2; 32]);
+                payload.extend_from_slice(&[3; 32]);
+                payload.push(5);
+                payload.extend_from_slice(&[4; 32]);
+                payload
+            }),
+            anchor_event("FheMulDivEvent", {
+                let mut payload = vec![EVENT_VERSION];
+                payload.extend_from_slice(&[9; 32]);
+                payload.extend_from_slice(&[1; 32]);
+                payload.extend_from_slice(&[2; 32]);
+                payload.extend_from_slice(&[3; 32]);
+                payload.push(false.into());
+                payload.extend_from_slice(&[4; 32]);
                 payload
             }),
         ];
@@ -1988,32 +1898,6 @@ mod tests {
     }
 
     #[test]
-    fn decodes_anchor_event_cpi_acl_allowed_event() {
-        let encoded = anchor_event_cpi("AclAllowedEvent", {
-            let mut payload = vec![EVENT_VERSION];
-            payload.extend_from_slice(&[7; 32]);
-            payload.extend_from_slice(&[8; 32]);
-            payload
-        });
-
-        let SolanaHostEvent::AclAllowed(decoded) =
-            decode_anchor_cpi_event(&encoded).expect("expected ACL event")
-        else {
-            panic!("expected ACL event");
-        };
-
-        assert_eq!(decoded.handle, handle(7));
-        assert_eq!(
-            decoded.subject,
-            "0x0808080808080808080808080808080808080808080808080808080808080808"
-        );
-        assert_eq!(
-            decoded.event_type as i16,
-            AllowEvents::AllowedAccount as i16
-        );
-    }
-
-    #[test]
     fn ignores_anchor_event_cpi_with_unsupported_event_version() {
         let mut payload =
             binary_op_payload(0, [9; 32], [1; 32], [2; 32], false, [3; 32]);
@@ -2021,29 +1905,6 @@ mod tests {
         let encoded = anchor_event_cpi("FheBinaryOpEvent", payload);
 
         assert!(decode_anchor_cpi_event(&encoded).is_none());
-    }
-
-    #[test]
-    fn public_decrypt_allowed_event_schedules_finalized_acl_fetch() {
-        let encoded = anchor_event_cpi("PublicDecryptAllowedEvent", {
-            let mut payload = vec![EVENT_VERSION];
-            payload.extend_from_slice(&[1; 32]);
-            payload.extend_from_slice(&[2; 32]);
-            payload.extend_from_slice(&[3; 32]);
-            payload.extend_from_slice(&42_u64.to_le_bytes());
-            payload
-        });
-
-        let SolanaHostEvent::FinalizedAccountFetch(fetch) =
-            decode_anchor_cpi_event(&encoded).expect("expected ACL fetch")
-        else {
-            panic!("expected ACL fetch");
-        };
-
-        assert_eq!(fetch.account_key, [1; 32]);
-        assert_eq!(fetch.kind, SolanaFinalizedAccountFetchKind::AclRecord);
-        assert_eq!(fetch.reason, "public_decrypt_allowed");
-        assert_eq!(fetch.handle, Some(handle(2)));
     }
 
     #[test]
@@ -2280,63 +2141,6 @@ mod tests {
     }
 
     #[test]
-    fn maps_bounded_random_to_existing_tfhe_event() {
-        let mut upper_bound = [0_u8; 32];
-        upper_bound[30] = 1;
-
-        let mapped = to_fhe_rand_bounded_event(FheRandBoundedEvent {
-            version: EVENT_VERSION,
-            subject: [0; 32],
-            upper_bound,
-            seed: [7; 16],
-            fhe_type: 3,
-            result: [8; 32],
-        });
-
-        assert!(matches!(
-            mapped.data,
-            TfheContractEvents::FheRandBounded(TfheContract::FheRandBounded {
-                upperBound,
-                randType,
-                seed,
-                result,
-                ..
-            }) if upperBound == ClearConst::from(256_u64)
-                && randType == 3
-                && seed == FixedBytes::<16>::from([7; 16])
-                && result == handle(8)
-        ));
-    }
-
-    #[test]
-    fn formats_acl_allowed_subject_as_full_solana_pubkey_hex() {
-        let decoded =
-            decode_anchor_cpi_event(&anchor_event_cpi("AclAllowedEvent", {
-                let mut payload = vec![EVENT_VERSION];
-                payload.extend_from_slice(&[9; 32]);
-                payload.extend_from_slice(&[0xab; 32]);
-                payload
-            }))
-            .expect("expected ACL event");
-
-        let SolanaMappedEvent::IgnoredAclAllowed(mapped) =
-            map_solana_event(decoded)
-        else {
-            panic!("expected ACL allowance event");
-        };
-
-        assert_eq!(mapped.handle, handle(9));
-        assert_eq!(
-            mapped.subject,
-            "0xabababababababababababababababababababababababababababababababab"
-        );
-        assert_eq!(
-            mapped.event_type as i16,
-            AllowEvents::AllowedAccount as i16
-        );
-    }
-
-    #[test]
     fn normalizes_solana_signature_to_stable_transaction_id() {
         let signature = [7_u8; 64];
 
@@ -2387,94 +2191,11 @@ mod tests {
     }
 
     #[test]
-    fn ignores_same_transaction_acl_for_direct_db_normalization() {
-        let tx_id = solana_transaction_id(&[2_u8; 64]);
-        let block_timestamp = PrimitiveDateTime::new(
-            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
-            Time::MIDNIGHT,
-        );
-
-        let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
-            [
-                SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
-                    version: EVENT_VERSION,
-                    op: FheBinaryOpCode::Add,
-                    subject: [0; 32],
-                    lhs: [1; 32],
-                    rhs: [2; 32],
-                    scalar: false,
-                    result: [3; 32],
-                }),
-                SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
-                    handle: handle(3),
-                    subject:
-                        "0x0404040404040404040404040404040404040404040404040404040404040404"
-                            .to_owned(),
-                    event_type: AllowEvents::AllowedAccount,
-                }),
-            ],
-            tx_id,
-            SolanaBlockMeta {
-                block_number: 42,
-                block_timestamp,
-            },
-        );
-
-        assert!(acl_events.is_empty());
-        assert_eq!(tfhe_logs.len(), 1);
-        assert!(!tfhe_logs[0].is_allowed);
-        assert_eq!(tfhe_logs[0].transaction_hash, Some(tx_id));
-        assert_eq!(tfhe_logs[0].dependence_chain, tx_id);
-        assert_eq!(tfhe_logs[0].log_index, Some(0));
-    }
-
-    #[test]
-    fn leaves_unallowed_tfhe_result_pending() {
-        let tx_id = solana_transaction_id(&[3_u8; 64]);
-        let block_timestamp = PrimitiveDateTime::new(
-            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
-            Time::MIDNIGHT,
-        );
-
-        let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
-            [
-                SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
-                    version: EVENT_VERSION,
-                    op: FheBinaryOpCode::Sub,
-                    subject: [0; 32],
-                    lhs: [1; 32],
-                    rhs: [2; 32],
-                    scalar: false,
-                    result: [3; 32],
-                }),
-                SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
-                    handle: handle(9),
-                    subject:
-                        "0x0404040404040404040404040404040404040404040404040404040404040404"
-                            .to_owned(),
-                    event_type: AllowEvents::AllowedAccount,
-                }),
-            ],
-            tx_id,
-            SolanaBlockMeta {
-                block_number: 42,
-                block_timestamp,
-            },
-        );
-
-        assert!(acl_events.is_empty());
-        assert_eq!(tfhe_logs.len(), 1);
-        assert!(!tfhe_logs[0].is_allowed);
-    }
-
-    #[test]
-    fn public_decrypt_allow_in_same_tx_marks_compute_result_for_materialization(
-    ) {
-        // The eval frame that computes a handle also emits PublicDecryptAllowed
-        // for it (TE_ALLOW). That rich allow is routed to a finalized fetch, but
-        // its presence in the SAME tx must mark the compute is_allowed=true so the
-        // tfhe-worker (is_completed=FALSE AND is_allowed=TRUE) materializes the
-        // ciphertext; the finalized fetch separately gates the decrypt release.
+    fn compute_is_eager_regardless_of_same_tx_allow_signal() {
+        // Historically, the eval frame's compute would only be marked
+        // materializable when an allow for its result landed in the same tx.
+        // Under eager compute (RFC-024 Q11), it is unconditionally allowed;
+        // the finalized fetch below separately gates the decrypt release.
         let tx_id = solana_transaction_id(&[7_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
@@ -2506,7 +2227,7 @@ mod tests {
         assert_eq!(tfhe_logs.len(), 1);
         assert!(
             tfhe_logs[0].is_allowed,
-            "compute whose result is allowed in-tx must be materializable"
+            "eager compute: schedulable independent of the allow signal"
         );
         // The allow is still queued for the finalized decrypt-release check.
         assert_eq!(acl_events.len(), 1);
@@ -2514,8 +2235,46 @@ mod tests {
     }
 
     #[test]
-    fn unrelated_allow_handle_does_not_mark_compute_result() {
-        // An allow for a DIFFERENT handle must not mark this compute allowed.
+    fn same_account_update_fetches_keep_distinct_handles_in_one_batch() {
+        let tx_id = solana_transaction_id(&[9_u8; 64]);
+        let block_timestamp = PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
+            Time::MIDNIGHT,
+        );
+
+        let (_, acl_events) = normalize_solana_events_for_db(
+            [
+                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                    [9; 32],
+                    [1; 32],
+                    "handle_superseded",
+                )),
+                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
+                    [9; 32],
+                    [2; 32],
+                    "handle_superseded",
+                )),
+            ],
+            tx_id,
+            SolanaBlockMeta {
+                block_number: 42,
+                block_timestamp,
+            },
+        );
+
+        assert_eq!(acl_events.len(), 2);
+        assert!(acl_events
+            .iter()
+            .any(|fetch| fetch.handle == Some(handle(1))));
+        assert!(acl_events
+            .iter()
+            .any(|fetch| fetch.handle == Some(handle(2))));
+    }
+
+    #[test]
+    fn unrelated_allow_handle_does_not_affect_eager_compute_result() {
+        // An allow for a DIFFERENT handle is irrelevant either way under eager
+        // compute: this compute is schedulable regardless.
         let tx_id = solana_transaction_id(&[8_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
@@ -2545,7 +2304,7 @@ mod tests {
         );
 
         assert_eq!(tfhe_logs.len(), 1);
-        assert!(!tfhe_logs[0].is_allowed);
+        assert!(tfhe_logs[0].is_allowed, "eager compute: always schedulable");
     }
 
     #[test]
@@ -2569,13 +2328,6 @@ mod tests {
                     fhe_type: 0,
                     result: [1; 32],
                 }),
-                SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
-                    handle: handle(1),
-                    subject:
-                        "0x0404040404040404040404040404040404040404040404040404040404040404"
-                            .to_owned(),
-                    event_type: AllowEvents::AllowedAccount,
-                }),
                 SolanaHostEvent::FheRand(FheRandEvent {
                     version: EVENT_VERSION,
                     subject: [0; 32],
@@ -2592,25 +2344,6 @@ mod tests {
                     if_false: [1; 32],
                     result: [3; 32],
                 }),
-                SolanaHostEvent::AclAllowed(SolanaAclAllowedEvent {
-                    handle: handle(3),
-                    subject:
-                        "0x0505050505050505050505050505050505050505050505050505050505050505"
-                            .to_owned(),
-                    event_type: AllowEvents::AllowedAccount,
-                }),
-                SolanaHostEvent::FheRandBounded(FheRandBoundedEvent {
-                    version: EVENT_VERSION,
-                    subject: [0; 32],
-                    upper_bound: {
-                        let mut upper_bound = [0_u8; 32];
-                        upper_bound[31] = 8;
-                        upper_bound
-                    },
-                    seed: [4; 16],
-                    fhe_type: 5,
-                    result: [4; 32],
-                }),
             ],
             tx_id,
             SolanaBlockMeta {
@@ -2620,18 +2353,17 @@ mod tests {
         );
 
         assert!(acl_events.is_empty());
-        assert_eq!(tfhe_logs.len(), 4);
+        assert_eq!(tfhe_logs.len(), 3);
         assert_eq!(
             tfhe_logs
                 .iter()
                 .map(|log| log.log_index)
                 .collect::<Vec<_>>(),
-            vec![Some(0), Some(2), Some(3), Some(5)]
+            vec![Some(0), Some(1), Some(2)]
         );
-        assert!(!tfhe_logs[0].is_allowed);
-        assert!(!tfhe_logs[1].is_allowed);
-        assert!(!tfhe_logs[2].is_allowed);
-        assert!(!tfhe_logs[3].is_allowed);
+        assert!(tfhe_logs[0].is_allowed, "eager compute: always schedulable");
+        assert!(tfhe_logs[1].is_allowed, "eager compute: always schedulable");
+        assert!(tfhe_logs[2].is_allowed, "eager compute: always schedulable");
         assert!(matches!(
             tfhe_logs[0].event.data,
             TfheContractEvents::TrivialEncrypt(_)
@@ -2643,10 +2375,6 @@ mod tests {
         assert!(matches!(
             tfhe_logs[2].event.data,
             TfheContractEvents::FheIfThenElse(_)
-        ));
-        assert!(matches!(
-            tfhe_logs[3].event.data,
-            TfheContractEvents::FheRandBounded(_)
         ));
     }
 
@@ -2683,44 +2411,6 @@ mod tests {
         assert_eq!(fetch.handle, None);
         assert_eq!(fetch.related_account, None);
         assert_eq!(fetch.subject, None);
-    }
-
-    fn acl_allowed_payload(handle: [u8; 32], subject: [u8; 32]) -> Vec<u8> {
-        let mut payload = vec![EVENT_VERSION];
-        payload.extend_from_slice(&handle);
-        payload.extend_from_slice(&subject);
-        payload
-    }
-
-    fn acl_record_bound_payload(handle: [u8; 32]) -> Vec<u8> {
-        let mut payload = vec![EVENT_VERSION];
-        payload.extend_from_slice(&[1; 32]);
-        payload.extend_from_slice(&handle);
-        payload.extend_from_slice(&[2; 32]);
-        payload.extend_from_slice(&3_u64.to_le_bytes());
-        payload.extend_from_slice(&[4; 32]);
-        payload.extend_from_slice(&[5; 32]);
-        payload.extend_from_slice(&[6; 32]);
-        payload.push(1);
-        payload.push(0);
-        payload.extend_from_slice(&7_u64.to_le_bytes());
-        payload
-    }
-
-    fn acl_subject_allowed_payload(
-        handle: [u8; 32],
-        subject: [u8; 32],
-    ) -> Vec<u8> {
-        let mut payload = vec![EVENT_VERSION];
-        payload.extend_from_slice(&[1; 32]);
-        payload.extend_from_slice(&handle);
-        payload.extend_from_slice(&[2; 32]);
-        payload.extend_from_slice(&subject);
-        payload.push(1);
-        payload.extend_from_slice(&[3; 32]);
-        payload.push(0);
-        payload.extend_from_slice(&4_u64.to_le_bytes());
-        payload
     }
 
     fn token_payload() -> Vec<u8> {

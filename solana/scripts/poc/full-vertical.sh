@@ -21,8 +21,81 @@ CTX="${SOLANA_UD_CONTEXT_ID:-316618994008286471861326912133130998036285114320110
 # only knows THIS context, so the cert must be requested under it. The Solana host's u64 kms_context
 # id is the low-64-bits (1), which `extract_kms_context_id` derives from this same extra_data.
 EXTRA=0x010700000000000000000000000000000000000000000000000000000000000001
+PUBLIC_CONTEXT_ID="0x${EXTRA#0x01}"
 fail() { echo "FAIL: $*" >&2; exit 1; }
+hist_field() {
+  local body="$1"
+  local key="$2"
+  printf '%s\n' "$body" | awk -v key="$key" '$1=="HIST" && $2==key {print $3; exit}'
+}
+pub_field() {
+  local body="$1"
+  local key="$2"
+  printf '%s\n' "$body" | awk -v key="$key" '$1=="PUB" && $2==key {print $3; exit}'
+}
 LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"
+PUBLIC_DECRYPT_JSON=""
+# Mode-byte-free borsh(MmrInclusionProof) for the last handle proved — the PROOF the on-chain
+# consume steps (redeem_burned_amount_secp / disclose_*_secp) borsh-decode. Set by run_public_decrypt_with_proof.
+PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES=""
+
+run_public_decrypt_with_proof() {
+  local label="$1"
+  local handle="$2"
+  local acl="$3"
+  local expected="${4:-}"
+  # Proof source (5th arg, default relayer): the e2e sources the MMR proof from the running relayer
+  # proof service. `local` is reserved for the born-public burned leg (unresolvable over RPC in the
+  # emitless arm — see follow-up) and drives the in-process PoC builder instead. The client retries
+  # a transient `503 lagging` internally (re-invoking here would be unsafe for stateful steps).
+  local proof_source="${5:-relayer}"
+  local proof
+  proof="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+    PUBLIC_DECRYPT_PROOF=1 PUB_HANDLE="$handle" PUB_ACL="$acl" \
+    PROOF_SOURCE="$proof_source" RELAYER_URL=http://127.0.0.1:3000 \
+    ./target/debug/poc-live-client 2>&1)" \
+    || fail "$label public proof: $proof"
+  echo "$proof" | grep -E 'PUB H|PUB mmrProofBytes' >/dev/null || fail "$label public proof missing fields: $proof"
+
+  local pub_h pub_encrypted_value_account pub_acl_value_key pub_peaks pub_leaf_count
+  local pub_proof_slot pub_leaf_index pub_siblings pub_mmr_proof_bytes
+  pub_h="$(pub_field "$proof" H)"
+  pub_encrypted_value_account="$(pub_field "$proof" encryptedValueAccountHex)"
+  pub_acl_value_key="$(pub_field "$proof" aclValueKey)"
+  pub_peaks="$(pub_field "$proof" peaks)"
+  pub_leaf_count="$(pub_field "$proof" leafCount)"
+  pub_proof_slot="$(pub_field "$proof" proofSlot)"
+  pub_leaf_index="$(pub_field "$proof" leafIndex)"
+  pub_siblings="$(pub_field "$proof" siblings)"
+  pub_mmr_proof_bytes="$(pub_field "$proof" mmrProofBytes)"
+  local pub_mmr_inclusion_proof_bytes
+  pub_mmr_inclusion_proof_bytes="$(pub_field "$proof" mmrInclusionProofBytes)"
+  for required in pub_h pub_encrypted_value_account pub_acl_value_key pub_leaf_count pub_proof_slot pub_leaf_index pub_mmr_proof_bytes pub_mmr_inclusion_proof_bytes; do
+    [ -n "${!required}" ] || fail "$label public proof missing $required: $proof"
+  done
+  [ "$pub_h" = "$handle" ] || fail "$label public proof handle $pub_h != $handle"
+  PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES="$pub_mmr_inclusion_proof_bytes"
+
+  local result
+  if [ -n "$expected" ]; then
+    result="$(cd "$ROOT/test-suite/fhevm" && \
+      PD_RELAYER_URL=http://127.0.0.1:3000 PD_HANDLE="$handle" PD_CONTEXT_ID="$PUBLIC_CONTEXT_ID" \
+      PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
+      PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
+      PD_MMR_LEAF_INDEX="$pub_leaf_index" PD_MMR_SIBLINGS="$pub_siblings" \
+      PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" PD_EXPECTED="$expected" node solana-publicdecrypt.ts 2>&1)" \
+      || fail "$label public-decrypt failed: $result"
+  else
+    result="$(cd "$ROOT/test-suite/fhevm" && \
+      PD_RELAYER_URL=http://127.0.0.1:3000 PD_HANDLE="$handle" PD_CONTEXT_ID="$PUBLIC_CONTEXT_ID" \
+      PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
+      PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
+      PD_MMR_LEAF_INDEX="$pub_leaf_index" PD_MMR_SIBLINGS="$pub_siblings" \
+      PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" node solana-publicdecrypt.ts 2>&1)" \
+      || fail "$label public-decrypt failed: $result"
+  fi
+  PUBLIC_DECRYPT_JSON="$result"
+}
 
 # Solana host identities the input client binds to (deterministic: zama-host/confidential-token
 # program ids + deployer pubkey, as bytes32). SID = RFC-021 Solana host chain id.
@@ -86,6 +159,10 @@ out="$(cd "$ROOT/solana/scripts/poc/live-client" && TRIVIAL_ENCRYPT_EVAL=1 TE_VA
 echo "$out" | grep -E 'result handle|allow_for_decryption' || fail "trivial-encrypt(eval): $out"
 H="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
 [ -n "$H" ] || fail "no handle"
+H_ACL="$(echo "$out" | grep -oE 'output ACL record [A-Za-z0-9]+' | awk '{print $4}')"
+[ -n "$H_ACL" ] || fail "no output ACL record: $out"
+VK="$(echo "$out" | grep -oE 'acl value key 0x[0-9a-f]+' | awk '{print $4}')"
+[ -n "$VK" ] || fail "no acl value key: $out"
 echo "    handle=$H"
 
 echo "==> [compute] wait for SNS commit + S3 upload (coprocessor tfhe/sns-worker)"
@@ -98,15 +175,8 @@ for i in $(seq 1 30); do
 done
 
 echo "==> [public-decrypt] relayer /v2/public-decrypt"
-job="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
-  -d "{\"ciphertextHandles\":[\"$H\"],\"extraData\":\"$EXTRA\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
-for i in $(seq 1 40); do
-  r="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$job")"
-  st="$(echo "$r" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
-  [ "$st" = succeeded ] && break
-  [ "$st" = failed ] && fail "public-decrypt failed: $r"
-  [ "$i" = 40 ] && fail "public-decrypt timed out"; sleep 3
-done
+run_public_decrypt_with_proof "compute" "$H" "$H_ACL" "$VALUE"
+r="$PUBLIC_DECRYPT_JSON"
 dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 [ "$dv" = "$VALUE" ] && echo "    public-decrypt cleartext=$dv OK" || fail "public-decrypt $dv != $VALUE"
 
@@ -119,10 +189,64 @@ UD_SK="0x$(python3 -c "import json,os;print(bytes(json.load(open(os.path.expandu
 UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
 ( cd "$ROOT/test-suite/fhevm" && \
     UD_RELAYER_URL=http://127.0.0.1:3000 UD_CONTRACTS_CHAIN_ID="$SID" UD_HANDLE="$H" \
-    UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" UD_EXPECTED="$VALUE" \
+    UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" \
+    UD_ACL_VALUE_KEY="$VK" UD_EXPECTED="$VALUE" \
     bun run solana-userdecrypt-full.ts ) \
   || fail "pure-SDK user-decrypt failed"
 echo "    user-decrypt cleartext=$VALUE OK (PURE-SDK: ed25519 v3 + in-SDK de-signcryption, no kms checkout)"
+
+echo "==> [historical-user-decrypt] superseded handle via live MMR proof + /v3/user-decrypt"
+hist_compute="$(cd "$ROOT/solana/scripts/poc/live-client" && HISTORICAL_STEP=compute TE_VALUE="$VALUE" ./target/debug/poc-live-client 2>&1)"
+echo "$hist_compute" | grep -E 'HIST H_old|result handle' || fail "historical compute: $hist_compute"
+HIST_H_OLD="$(hist_field "$hist_compute" H_old)"
+HIST_ACL_VALUE_KEY_COMPUTE="$(hist_field "$hist_compute" aclValueKey)"
+[ -n "$HIST_H_OLD" ] && [ -n "$HIST_ACL_VALUE_KEY_COMPUTE" ] || fail "historical compute missing fields: $hist_compute"
+echo "    historical old handle=$HIST_H_OLD"
+
+echo "==> [historical-user-decrypt] wait for old-handle SNS commit before supersede"
+HIST_HH="${HIST_H_OLD#0x}"
+for i in $(seq 1 30); do
+  row="$(docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -tAc \
+    "SELECT ciphertext IS NOT NULL, ciphertext128 IS NOT NULL FROM ciphertext_digest WHERE handle=decode('$HIST_HH','hex')" 2>/dev/null | tr -d '[:space:]')"
+  [ "$row" = "t|t" ] && { echo "    committed"; break; }
+  [ "$i" = 30 ] && fail "historical old-handle SNS commit timed out"; sleep 6
+done
+
+# Sole-sourced from the relayer proof service (leaf_index 0). The supersede tx runs exactly once
+# here; the client retries a transient `503 lagging` internally, so this is not re-invoked on lag.
+hist_proof="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  HISTORICAL_STEP=supersede TE_VALUE="$VALUE" \
+  PROOF_SOURCE=relayer RELAYER_URL=http://127.0.0.1:3000 \
+  ./target/debug/poc-live-client 2>&1)" || fail "historical supersede/proof command failed: $hist_proof"
+echo "$hist_proof" | grep -E 'HIST H_new|HIST mmrProofBytes' || fail "historical supersede/proof: $hist_proof"
+HIST_H_OLD2="$(hist_field "$hist_proof" H_old)"
+HIST_H_NEW="$(hist_field "$hist_proof" H_new)"
+HIST_ENCRYPTED_VALUE_ACCOUNT="$(hist_field "$hist_proof" encryptedValueAccountHex)"
+HIST_ACL_VALUE_KEY="$(hist_field "$hist_proof" aclValueKey)"
+HIST_PEAKS="$(hist_field "$hist_proof" peaks)"
+HIST_LEAF_COUNT="$(hist_field "$hist_proof" leafCount)"
+HIST_PROOF_SLOT="$(hist_field "$hist_proof" proofSlot)"
+HIST_LEAF_INDEX="$(hist_field "$hist_proof" leafIndex)"
+HIST_SIBLINGS="$(hist_field "$hist_proof" siblings)"
+HIST_SUBJECT="$(hist_field "$hist_proof" subject)"
+HIST_MMR_PROOF_BYTES="$(hist_field "$hist_proof" mmrProofBytes)"
+for required in HIST_H_OLD2 HIST_H_NEW HIST_ENCRYPTED_VALUE_ACCOUNT HIST_ACL_VALUE_KEY HIST_PEAKS HIST_LEAF_COUNT HIST_PROOF_SLOT HIST_LEAF_INDEX HIST_SUBJECT HIST_MMR_PROOF_BYTES; do
+  [ -n "${!required}" ] || fail "historical proof missing $required: $hist_proof"
+done
+[ "$HIST_H_OLD2" = "$HIST_H_OLD" ] || fail "historical proof old handle $HIST_H_OLD2 != compute old handle $HIST_H_OLD"
+[ "$HIST_ACL_VALUE_KEY" = "$HIST_ACL_VALUE_KEY_COMPUTE" ] || fail "historical proof aclValueKey changed"
+
+( cd "$ROOT/test-suite/fhevm" && \
+    UD_RELAYER_URL=http://127.0.0.1:3000 UD_CONTRACTS_CHAIN_ID="$SID" UD_HANDLE="$HIST_H_OLD" \
+    UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" \
+    UD_ACL_VALUE_KEY="$HIST_ACL_VALUE_KEY" UD_EXPECTED="$VALUE" UD_HISTORICAL=1 \
+    UD_MMR_ENCRYPTED_VALUE_ACCOUNT="$HIST_ENCRYPTED_VALUE_ACCOUNT" UD_MMR_PEAKS="$HIST_PEAKS" \
+    UD_MMR_LEAF_COUNT="$HIST_LEAF_COUNT" UD_MMR_PROOF_SLOT="$HIST_PROOF_SLOT" \
+    UD_MMR_LEAF_INDEX="$HIST_LEAF_INDEX" UD_MMR_SIBLINGS="$HIST_SIBLINGS" \
+    UD_MMR_PROOF_BYTES="$HIST_MMR_PROOF_BYTES" UD_MMR_SUBJECT="$HIST_SUBJECT" \
+    bun run solana-userdecrypt-full.ts ) \
+  || fail "historical pure-SDK user-decrypt failed"
+echo "OK historical-user-decrypt cleartext=$VALUE old=$HIST_H_OLD new=$HIST_H_NEW"
 
 # Input flow (#1539): compute on the VERIFIED external input itself. One fhe_eval adds $ADD to the
 # attested input in-frame (FheEvalOperand::VerifiedInput — re-verified on-chain via secp256k1, no
@@ -138,6 +262,8 @@ eout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
 echo "$eout" | grep -E 'result handle|allow_for_decryption' || fail "fhe_eval verified-input: $eout"
 RH="$(echo "$eout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
 [ -n "$RH" ] || fail "no input-flow result handle"
+RACL="$(echo "$eout" | grep -oE 'output ACL record [A-Za-z0-9]+' | awk '{print $4}')"
+[ -n "$RACL" ] || fail "no input-flow output ACL record: $eout"
 echo "    result handle=$RH"
 
 echo "==> [input-flow] wait for SNS commit (tfhe/sns-worker computes input + $ADD)"
@@ -150,25 +276,20 @@ for i in $(seq 1 30); do
 done
 
 echo "==> [input-flow] public-decrypt result"
-ejob="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
-  -d "{\"ciphertextHandles\":[\"$RH\"],\"extraData\":\"$EXTRA\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
-for i in $(seq 1 40); do
-  er="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$ejob")"
-  est="$(echo "$er" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
-  [ "$est" = succeeded ] && break
-  [ "$est" = failed ] && fail "input-flow public-decrypt failed: $er"
-  [ "$i" = 40 ] && fail "input-flow public-decrypt timed out"; sleep 3
-done
+run_public_decrypt_with_proof "input-flow" "$RH" "$RACL" "$EXPECT"
+er="$PUBLIC_DECRYPT_JSON"
 edv="$(echo "$er" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 [ "$edv" = "$EXPECT" ] && echo "    input-flow public-decrypt cleartext=$edv == $IV+$ADD OK" \
   || fail "input-flow $edv != $EXPECT"
 
-# Helper: wait for coprocessor SNS commit of $handle then public-decrypt and assert cleartext.
-# Usage: assert_decrypt LABEL HANDLE EXPECTED_VALUE  (use "lt:N" to assert result < N)
+# Helper: wait for coprocessor SNS commit of $handle then public-decrypt with an exact MMR proof.
+# Usage: assert_decrypt LABEL HANDLE ACL EXPECTED_VALUE  (use "lt:N" to assert result < N)
 assert_decrypt() {
-  local label="$1" handle="$2" expected="$3"
+  local label="$1" handle="$2" acl="$3" expected="$4"
+  local public_decrypt_expected="$expected"
+  [[ "$expected" == lt:* ]] && public_decrypt_expected=""
   local hh="${handle#0x}"
-  local i row r st dv job
+  local i row r dv
   for i in $(seq 1 30); do
     row="$(docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -tAc \
       "SELECT ciphertext IS NOT NULL, ciphertext128 IS NOT NULL FROM ciphertext_digest WHERE handle=decode('$hh','hex')" 2>/dev/null | tr -d '[:space:]')" || row=""
@@ -176,17 +297,8 @@ assert_decrypt() {
     [ "$i" = 30 ] && fail "$label SNS commit timed out"
     sleep 6
   done
-  job="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
-    -d "{\"ciphertextHandles\":[\"$handle\"],\"extraData\":\"$EXTRA\"}" | \
-    python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
-  for i in $(seq 1 40); do
-    r="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$job")"
-    st="$(echo "$r" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)" || st=""
-    [ "$st" = succeeded ] && break
-    [ "$st" = failed ] && fail "$label public-decrypt failed: $r"
-    [ "$i" = 40 ] && fail "$label public-decrypt timed out"
-    sleep 3
-  done
+  run_public_decrypt_with_proof "$label" "$handle" "$acl" "$public_decrypt_expected"
+  r="$PUBLIC_DECRYPT_JSON"
   dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
   if [[ "$expected" == lt:* ]]; then
     local bound="${expected#lt:}"
@@ -199,7 +311,7 @@ assert_decrypt() {
 # Helper: run a binary fhe_eval, capture the result handle.
 run_binary() {
   local op="$1" a="$2" b="$3" scalar="$4" ftype="$5"
-  local out h extra_env=""
+  local out h acl extra_env=""
   [ "$scalar" = "1" ] && extra_env="BINARY_B_SCALAR=1"
   out="$(cd "$ROOT/solana/scripts/poc/live-client" && \
     env FHE_EVAL_BINARY=1 BINARY_OP="$op" BINARY_A="$a" BINARY_B="$b" \
@@ -207,75 +319,81 @@ run_binary() {
     ./target/debug/poc-live-client 2>&1)"
   echo "$out" | grep -qE 'allow_for_decryption' || fail "fhe_eval binary $op: $out"
   h="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+  acl="$(echo "$out" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{print $4}')"
   [ -n "$h" ] || fail "no $op result handle"
-  echo "$h"
+  [ -n "$acl" ] || fail "no $op output ACL record: $out"
+  EVAL_HANDLE="$h"
+  EVAL_ACL="$acl"
 }
 
 # Helper: run a unary fhe_eval, capture the result handle.
 run_unary() {
   local op="$1" a="$2" in_type="$3" out_type="$4"
-  local out h
+  local out h acl
   out="$(cd "$ROOT/solana/scripts/poc/live-client" && \
     FHE_EVAL_UNARY=1 UNARY_OP="$op" UNARY_A="$a" UNARY_IN_FHE_TYPE="$in_type" \
     UNARY_OUT_FHE_TYPE="$out_type" UNARY_ALLOW=1 \
     ./target/debug/poc-live-client 2>&1)"
   echo "$out" | grep -qE 'allow_for_decryption' || fail "fhe_eval unary $op: $out"
   h="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+  acl="$(echo "$out" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{print $4}')"
   [ -n "$h" ] || fail "no $op result handle"
-  echo "$h"
+  [ -n "$acl" ] || fail "no $op output ACL record: $out"
+  EVAL_HANDLE="$h"
+  EVAL_ACL="$acl"
 }
 
 echo "==> [binary ops] fhe_eval — 19 binary ops (euint8/euint64)"
 # Arithmetic
 echo "    Sub(100, enc(30)=70)"
-H="$(run_binary Sub 100 30 0 5)"; assert_decrypt "Sub" "$H" 70
+run_binary Sub 100 30 0 5; assert_decrypt "Sub" "$EVAL_HANDLE" "$EVAL_ACL" 70
 echo "    Mul(6, scalar(7))=42"
-H="$(run_binary Mul 6 7 1 5)"; assert_decrypt "Mul" "$H" 42
+run_binary Mul 6 7 1 5; assert_decrypt "Mul" "$EVAL_HANDLE" "$EVAL_ACL" 42
 echo "    Div(42, scalar(6))=7"
-H="$(run_binary Div 42 6 1 5)"; assert_decrypt "Div" "$H" 7
+run_binary Div 42 6 1 5; assert_decrypt "Div" "$EVAL_HANDLE" "$EVAL_ACL" 7
 echo "    Rem(42, scalar(10))=2"
-H="$(run_binary Rem 42 10 1 5)"; assert_decrypt "Rem" "$H" 2
+run_binary Rem 42 10 1 5; assert_decrypt "Rem" "$EVAL_HANDLE" "$EVAL_ACL" 2
 echo "    Min(10, enc(20))=10"
-H="$(run_binary Min 10 20 0 5)"; assert_decrypt "Min" "$H" 10
+run_binary Min 10 20 0 5; assert_decrypt "Min" "$EVAL_HANDLE" "$EVAL_ACL" 10
 echo "    Max(10, enc(20))=20"
-H="$(run_binary Max 10 20 0 5)"; assert_decrypt "Max" "$H" 20
+run_binary Max 10 20 0 5; assert_decrypt "Max" "$EVAL_HANDLE" "$EVAL_ACL" 20
 # Bitwise (euint8=type 2): and(240,15)=0  or(240,15)=255  xor(240,255)=15
 echo "    And(240, enc(15) euint8)=0"
-H="$(run_binary And 240 15 0 2)"; assert_decrypt "And" "$H" 0
+run_binary And 240 15 0 2; assert_decrypt "And" "$EVAL_HANDLE" "$EVAL_ACL" 0
 echo "    Or(240, enc(15) euint8)=255"
-H="$(run_binary Or 240 15 0 2)"; assert_decrypt "Or" "$H" 255
+run_binary Or 240 15 0 2; assert_decrypt "Or" "$EVAL_HANDLE" "$EVAL_ACL" 255
 echo "    Xor(240, enc(255) euint8)=15"
-H="$(run_binary Xor 240 255 0 2)"; assert_decrypt "Xor" "$H" 15
+run_binary Xor 240 255 0 2; assert_decrypt "Xor" "$EVAL_HANDLE" "$EVAL_ACL" 15
 # Shifts/rotations (euint8=type 2, scalar RHS)
 echo "    Shl(1, scalar(3) euint8)=8"
-H="$(run_binary Shl 1 3 1 2)"; assert_decrypt "Shl" "$H" 8
+run_binary Shl 1 3 1 2; assert_decrypt "Shl" "$EVAL_HANDLE" "$EVAL_ACL" 8
 echo "    Shr(8, scalar(3) euint8)=1"
-H="$(run_binary Shr 8 3 1 2)"; assert_decrypt "Shr" "$H" 1
+run_binary Shr 8 3 1 2; assert_decrypt "Shr" "$EVAL_HANDLE" "$EVAL_ACL" 1
 echo "    Rotl(1, scalar(1) euint8)=2"
-H="$(run_binary Rotl 1 1 1 2)"; assert_decrypt "Rotl" "$H" 2
+run_binary Rotl 1 1 1 2; assert_decrypt "Rotl" "$EVAL_HANDLE" "$EVAL_ACL" 2
 echo "    Rotr(2, scalar(1) euint8)=1"
-H="$(run_binary Rotr 2 1 1 2)"; assert_decrypt "Rotr" "$H" 1
+run_binary Rotr 2 1 1 2; assert_decrypt "Rotr" "$EVAL_HANDLE" "$EVAL_ACL" 1
 # Comparisons (euint64, output is ebool 0/1)
 echo "    Eq(42, enc(42))=1"
-H="$(run_binary Eq 42 42 0 5)"; assert_decrypt "Eq" "$H" 1
+run_binary Eq 42 42 0 5; assert_decrypt "Eq" "$EVAL_HANDLE" "$EVAL_ACL" 1
 echo "    Ne(42, enc(43))=1"
-H="$(run_binary Ne 42 43 0 5)"; assert_decrypt "Ne" "$H" 1
+run_binary Ne 42 43 0 5; assert_decrypt "Ne" "$EVAL_HANDLE" "$EVAL_ACL" 1
 echo "    Ge(42, enc(41))=1"
-H="$(run_binary Ge 42 41 0 5)"; assert_decrypt "Ge" "$H" 1
+run_binary Ge 42 41 0 5; assert_decrypt "Ge" "$EVAL_HANDLE" "$EVAL_ACL" 1
 echo "    Gt(42, enc(41))=1"
-H="$(run_binary Gt 42 41 0 5)"; assert_decrypt "Gt" "$H" 1
+run_binary Gt 42 41 0 5; assert_decrypt "Gt" "$EVAL_HANDLE" "$EVAL_ACL" 1
 echo "    Le(41, enc(42))=1"
-H="$(run_binary Le 41 42 0 5)"; assert_decrypt "Le" "$H" 1
+run_binary Le 41 42 0 5; assert_decrypt "Le" "$EVAL_HANDLE" "$EVAL_ACL" 1
 echo "    Lt(41, enc(42))=1"
-H="$(run_binary Lt 41 42 0 5)"; assert_decrypt "Lt" "$H" 1
+run_binary Lt 41 42 0 5; assert_decrypt "Lt" "$EVAL_HANDLE" "$EVAL_ACL" 1
 
 echo "==> [unary ops] fhe_eval — Neg, Not, Cast"
 echo "    Neg(100 euint8)=156"
-H="$(run_unary Neg 100 2 2)"; assert_decrypt "Neg" "$H" 156
+run_unary Neg 100 2 2; assert_decrypt "Neg" "$EVAL_HANDLE" "$EVAL_ACL" 156
 echo "    Not(240 euint8)=15"
-H="$(run_unary Not 240 2 2)"; assert_decrypt "Not" "$H" 15
+run_unary Not 240 2 2; assert_decrypt "Not" "$EVAL_HANDLE" "$EVAL_ACL" 15
 echo "    Cast(42 euint8->euint16)=42"
-H="$(run_unary Cast 42 2 3)"; assert_decrypt "Cast" "$H" 42
+run_unary Cast 42 2 3; assert_decrypt "Cast" "$EVAL_HANDLE" "$EVAL_ACL" 42
 
 echo "==> [ternary] fhe_eval IfThenElse(ctrl=1, true=42, false=99)->42"
 tout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
@@ -283,8 +401,10 @@ tout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
   ./target/debug/poc-live-client 2>&1)"
 echo "$tout" | grep -qE 'allow_for_decryption' || fail "fhe_eval ternary: $tout"
 TH="$(echo "$tout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+TH_ACL="$(echo "$tout" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{print $4}')"
 [ -n "$TH" ] || fail "no ternary result handle"
-assert_decrypt "IfThenElse" "$TH" 42
+[ -n "$TH_ACL" ] || fail "no ternary output ACL record: $tout"
+assert_decrypt "IfThenElse" "$TH" "$TH_ACL" 42
 
 echo "==> [rand_bounded] fhe_eval RandBounded(upper=128)"
 rbout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
@@ -292,8 +412,10 @@ rbout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
   ./target/debug/poc-live-client 2>&1)"
 echo "$rbout" | grep -qE 'allow_for_decryption' || fail "fhe_eval rand_bounded: $rbout"
 RBH="$(echo "$rbout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+RBH_ACL="$(echo "$rbout" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{print $4}')"
 [ -n "$RBH" ] || fail "no rand_bounded result handle"
-assert_decrypt "RandBounded" "$RBH" "lt:128"
+[ -n "$RBH_ACL" ] || fail "no rand_bounded output ACL record: $rbout"
+assert_decrypt "RandBounded" "$RBH" "$RBH_ACL" "lt:128"
 
 echo "==> [composite/sum] fhe_eval sum(${SUM_A:-10} + ${SUM_B:-20})"
 SUM_A="${SUM_A:-10}"; SUM_B="${SUM_B:-20}"; EXPECTED_SUM=$((SUM_A + SUM_B))
@@ -301,8 +423,10 @@ sout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
   FHE_EVAL_SUM=1 SUM_A="$SUM_A" SUM_B="$SUM_B" SUM_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
 echo "$sout" | grep -qE 'allow_for_decryption' || fail "fhe_eval sum: $sout"
 SH="$(echo "$sout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+SH_ACL="$(echo "$sout" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{print $4}')"
 [ -n "$SH" ] || fail "no sum result handle"
-assert_decrypt "sum" "$SH" "$EXPECTED_SUM"
+[ -n "$SH_ACL" ] || fail "no sum output ACL record: $sout"
+assert_decrypt "sum" "$SH" "$SH_ACL" "$EXPECTED_SUM"
 
 echo "==> [composite/isIn] fhe_eval isIn(${ISIN_VALUE:-42} in [10,42,100])->true"
 ISIN_VALUE="${ISIN_VALUE:-42}"
@@ -310,16 +434,20 @@ iout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
   FHE_EVAL_IS_IN=1 ISIN_VALUE="$ISIN_VALUE" ISIN_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
 echo "$iout" | grep -qE 'allow_for_decryption' || fail "fhe_eval isIn: $iout"
 IH="$(echo "$iout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+IH_ACL="$(echo "$iout" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{print $4}')"
 [ -n "$IH" ] || fail "no isIn result handle"
-assert_decrypt "isIn" "$IH" 1
+[ -n "$IH_ACL" ] || fail "no isIn output ACL record: $iout"
+assert_decrypt "isIn" "$IH" "$IH_ACL" 1
 
 echo "==> [composite/isIn] fhe_eval isIn(${ISIN_MISS_VALUE:-43} in [10,42,100])->false"
 ioutf="$(cd "$ROOT/solana/scripts/poc/live-client" && \
   FHE_EVAL_IS_IN=1 ISIN_VALUE="${ISIN_MISS_VALUE:-43}" ISIN_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
 echo "$ioutf" | grep -qE 'allow_for_decryption' || fail "fhe_eval isIn(miss): $ioutf"
 IHF="$(echo "$ioutf" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+IHF_ACL="$(echo "$ioutf" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{print $4}')"
 [ -n "$IHF" ] || fail "no isIn(miss) result handle"
-assert_decrypt "isIn(miss)" "$IHF" 0
+[ -n "$IHF_ACL" ] || fail "no isIn(miss) output ACL record: $ioutf"
+assert_decrypt "isIn(miss)" "$IHF" "$IHF_ACL" 0
 
 echo "==> [composite/mulDiv] fhe_eval mulDiv(${MULDIV_A:-6} * ${MULDIV_B:-7} / ${MULDIV_D:-3})"
 MULDIV_A="${MULDIV_A:-6}"; MULDIV_B="${MULDIV_B:-7}"; MULDIV_D="${MULDIV_D:-3}"
@@ -329,8 +457,10 @@ mdout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
   ./target/debug/poc-live-client 2>&1)"
 echo "$mdout" | grep -qE 'allow_for_decryption' || fail "fhe_eval mulDiv: $mdout"
 MDH="$(echo "$mdout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
+MDH_ACL="$(echo "$mdout" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{print $4}')"
 [ -n "$MDH" ] || fail "no mulDiv result handle"
-assert_decrypt "mulDiv" "$MDH" "$EXPECTED_MULDIV"
+[ -n "$MDH_ACL" ] || fail "no mulDiv output ACL record: $mdout"
+assert_decrypt "mulDiv" "$MDH" "$MDH_ACL" "$EXPECTED_MULDIV"
 
 echo "==> [consume] confidential mint + USDC; wrap -> burn -> release -> public-decrypt -> redeem(secp) + disclose(secp)"
 LCDIR="$ROOT/solana/scripts/poc/live-client"
@@ -405,23 +535,24 @@ COPROC_SET_DIGEST="$(cast keccak "$(cast abi-encode 'f(address[])' "[$COPROCESSO
 
 # Create the disclosure request witness: commit the burned handle's material, pin the host's
 # current KMS context id + expires_slot + request_hash into a DisclosureRequest PDA, and release
-# the handle for public decrypt (owner is inline ACL_ROLE_ALL in the burned ACL).
+# the handle for public decrypt (owner is an allowed subject in the burned ACL).
 relout="$(lc CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" \
    KEY_ID="$KEY_ID" CT64_DIGEST="$CT64" CT128_DIGEST="$CT128" COPROC_SET_DIGEST="$COPROC_SET_DIGEST")" || true
 echo "$relout" | grep -q 'OK request_disclose_amount' || fail "request_disclose_amount witness: $(echo "$relout" | tail -3)"
 echo "    disclosure request witness created (KMS context pinned); handle released for public decrypt"
 
 # Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert.
-cjob="$(curl -s -m15 localhost:3000/v2/public-decrypt -H 'content-type: application/json' \
-  -d "{\"ciphertextHandles\":[\"$BURNED_HANDLE\"],\"extraData\":\"$EXTRA\"}" \
-  | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['jobId'])")"
-for i in $(seq 1 50); do
-  cr="$(curl -s -m10 "localhost:3000/v2/public-decrypt/$cjob")"
-  cst="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
-  [ "$cst" = succeeded ] && break
-  [ "$cst" = failed ] && fail "burned public-decrypt failed: $cr"
-  [ "$i" = 50 ] && fail "burned public-decrypt timed out"; sleep 3
-done
+# PROOF_SOURCE=local: unlike the compute/input-flow/historical legs (relayer-sourced), the
+# born-public burned handle is derived on-chain from slot entropy and carried in NO instruction
+# arg, so in the emitless arm the relayer cannot resolve it over RPC (no op event). This leg stays
+# on the in-process PoC builder pending the relayer follow-up (Carbon sysvar reconstruction or an
+# untrusted verified handle-hint) — see fhevm-internal issue.
+run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL" "" local
+cr="$PUBLIC_DECRYPT_JSON"
+# The burned handle's public-decrypt MMR proof (DD-036): both the redeem and disclose consume
+# steps authorize by verifying it against the lineage's on-chain peaks. request_burn_redemption
+# appends no leaf, so this proof stays valid through both consumes.
+BURNED_PROOF_BYTES="$PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES"
 CLEARTEXT="$(echo "$cr" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 KMS_SIG="0x$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
 CEXTRA="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','$EXTRA'))")"
@@ -437,14 +568,14 @@ echo "    burn-redemption request witness created (KMS context pinned)"
 # Redeem: bind the redemption witness + on-chain secp256k1 verify of the KMS cert against the
 # witness-pinned KMS context + SPL vault release.
 redout="$(lc CONSUME_REDEEM=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
-   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1)" || true
+   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 PROOF="$BURNED_PROOF_BYTES")" || true
 echo "$redout" | grep -q 'OK redeem_burned_amount_secp' || fail "redeem_burned_amount_secp: $(echo "$redout" | tail -3)"
 echo "    redeem_burned_amount_secp OK -- witness-bound secp256k1 KMS-cert verify released $CLEARTEXT USDC base units"
 
 # Disclose: bind the disclosure witness + on-chain secp256k1 verify of the same KMS cert against the
 # witness-pinned KMS context + emit the cleartext on-chain.
 disout="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
-   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1)" || true
+   KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 PROOF="$BURNED_PROOF_BYTES")" || true
 echo "$disout" | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp: $(echo "$disout" | tail -3)"
 echo "    disclose_amount_secp OK -- witness-bound secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
 

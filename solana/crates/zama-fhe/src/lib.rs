@@ -31,10 +31,9 @@ use anchor_lang::{
 };
 
 use zama_host::{
-    acl_nonce_key, acl_record_address, role_flags_are_known, subject_has_role, AclSubjectEntry,
-    CoprocessorInputAttestation, FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput,
-    FheEvalStep, FheTernaryOpCode, FheUnaryOpCode, ACL_ROLE_USE, MAX_ACL_SUBJECTS,
-    MAX_FHE_EVAL_OPS,
+    encrypted_value_address, AclSubjectEntry, CoprocessorInputAttestation, FheBinaryOpCode,
+    FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode, FheUnaryOpCode,
+    MAX_ACL_SUBJECTS, MAX_FHE_EVAL_OPS,
 };
 
 /// Result type used by the builder helpers.
@@ -60,6 +59,8 @@ pub enum EvalBuildError {
     ScalarEncryptedOperand,
     /// The declared FHE type is not accepted by the host ABI.
     UnsupportedFheType,
+    /// A bounded random upper bound is zero, not a power of two, or too wide for euint64.
+    InvalidRandomUpperBound,
     /// The declared binary output type is not valid for the selected operator.
     UnsupportedBinaryOutputType,
     /// Binary operand handle types do not match the selected operator.
@@ -70,14 +71,13 @@ pub enum EvalBuildError {
     InvalidInputProof,
     /// A durable output ACL policy would be rejected by the host.
     InvalidAccessPolicy,
-    /// A bounded random upper bound would be rejected by the host.
-    InvalidRandomUpperBound,
     /// A durable slot contains an app-domain pubkey the host would reject.
     InvalidDurableSlot,
     /// The fixed app authority pubkey is not a valid signer identity.
     InvalidAppAuthority,
-    /// A permission record pubkey is not a valid dynamic account identity.
-    InvalidPermissionRecord,
+    /// A durable output's declared previous state is inconsistent (one of
+    /// `previous_handle`/`previous_subjects` set without the other).
+    InconsistentPreviousState,
     /// A lowered host account index does not match the eval plan account list.
     InvalidRemainingAccountReference,
     /// A verified-input operand referenced an attestation not registered with the builder.
@@ -357,25 +357,14 @@ pub struct Encrypted<T> {
 }
 
 impl<T: FheTyped> Encrypted<T> {
+    /// Builds a durable operand from a stable `EncryptedValue` lineage. `handle`
+    /// must be that lineage's current handle; the host re-verifies this on-chain.
     pub fn durable(handle: [u8; 32], slot: DurableSlot) -> Result<Self> {
         validate_durable_slot(&slot)?;
         if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
             return Err(EvalBuildError::UnsupportedFheType);
         }
         Ok(Self::from_operand(Operand::durable(handle, slot.address())))
-    }
-
-    pub fn durable_with_permission(
-        handle: [u8; 32],
-        slot: DurableSlot,
-        permission: PermissionRecord,
-    ) -> Result<Self> {
-        validate_permission_record(permission)?;
-        let mut value = Self::durable(handle, slot)?;
-        if let OperandKind::Durable(durable) = &mut value.operand.0 {
-            durable.permission = Some(permission.0);
-        }
-        Ok(value)
     }
 }
 
@@ -501,12 +490,11 @@ fn binary_rhs_operand<T>(rhs: impl Into<BinaryRhs<T>>) -> Operand {
     }
 }
 
-/// Durable host operand identified by account pubkeys.
+/// Durable host operand identified by its `EncryptedValue` PDA.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DurableOperand {
     handle: [u8; 32],
-    acl_record: Pubkey,
-    permission: Option<Pubkey>,
+    encrypted_value: Pubkey,
 }
 
 /// Raw operand used by the lowering implementation.
@@ -535,11 +523,10 @@ enum OperandKind {
 }
 
 impl Operand {
-    fn durable(handle: [u8; 32], acl_record: Pubkey) -> Self {
+    fn durable(handle: [u8; 32], encrypted_value: Pubkey) -> Self {
         Self(OperandKind::Durable(DurableOperand {
             handle,
-            acl_record,
-            permission: None,
+            encrypted_value,
         }))
     }
 
@@ -622,29 +609,28 @@ impl DurableLabel {
     }
 }
 
-/// App-domain durable value slot.
+/// App-domain address of a stable `EncryptedValue` lineage.
 ///
-/// The SDK lowers this to the host nonce key and output ACL record PDA.
+/// Addressing is stable per `(namespace, account, label)` — it does not rotate
+/// on handle updates, unlike the old nonce-keyed ACL records.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DurableSlot {
     namespace: Pubkey,
     account: Pubkey,
     label: DurableLabel,
-    sequence: u64,
 }
 
 impl DurableSlot {
-    pub fn new(namespace: Pubkey, account: Pubkey, label: DurableLabel, sequence: u64) -> Self {
+    pub fn new(namespace: Pubkey, account: Pubkey, label: DurableLabel) -> Self {
         Self {
             namespace,
             account,
             label,
-            sequence,
         }
     }
 
     pub fn address(&self) -> Pubkey {
-        acl_record_address(self.nonce_key(), self.sequence).0
+        encrypted_value_address(self.value_key()).0
     }
 
     pub fn namespace(&self) -> Pubkey {
@@ -659,22 +645,12 @@ impl DurableSlot {
         self.label
     }
 
-    pub fn sequence(&self) -> u64 {
-        self.sequence
-    }
-
-    pub fn nonce_key(&self) -> [u8; 32] {
-        acl_nonce_key(self.namespace, self.account, self.label.bytes())
-    }
-}
-
-/// Durable ACL permission record used when an input handle needs overflow access.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PermissionRecord(Pubkey);
-
-impl PermissionRecord {
-    pub fn new(pubkey: Pubkey) -> Self {
-        Self(pubkey)
+    pub fn value_key(&self) -> [u8; 32] {
+        zama_solana_acl::derive_value_key(
+            self.namespace.to_bytes(),
+            self.account.to_bytes(),
+            self.label.bytes(),
+        )
     }
 }
 
@@ -682,12 +658,12 @@ impl PermissionRecord {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AccessSubject {
     pubkey: Pubkey,
-    role_flags: u8,
 }
 
 impl AccessSubject {
+    /// Owner subject allowed on the durable value.
     pub fn owner(pubkey: Pubkey) -> Self {
-        Self::from_host(AclSubjectEntry::user(pubkey))
+        Self { pubkey }
     }
 
     pub fn compute(pubkey: Pubkey) -> Self {
@@ -702,21 +678,19 @@ impl AccessSubject {
         self.pubkey
     }
 
-    pub fn matches_record_entry(self, pubkey: Pubkey, role_flags: u8) -> bool {
-        self.pubkey == pubkey && self.role_flags == role_flags
+    pub fn matches_record_entry(self, pubkey: Pubkey) -> bool {
+        self.pubkey == pubkey
     }
 
     fn from_host(subject: AclSubjectEntry) -> Self {
         Self {
             pubkey: subject.pubkey,
-            role_flags: subject.role_flags,
         }
     }
 
     fn host_entry(self) -> AclSubjectEntry {
         AclSubjectEntry {
             pubkey: self.pubkey,
-            role_flags: self.role_flags,
         }
     }
 }
@@ -772,58 +746,92 @@ impl AccessPolicy {
     }
 }
 
+/// Previous on-chain state a durable output supersedes. `None` means this bind
+/// is the lineage's first (the `EncryptedValue` PDA is created).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PreviousLineageState {
+    handle: [u8; 32],
+    subjects: Vec<Pubkey>,
+}
+
 /// Durable output descriptor accepted by durable-only steps such as input bind.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DurableOutput {
     slot: DurableSlot,
     access: AccessPolicy,
+    previous: Option<PreviousLineageState>,
+    make_public: bool,
 }
 
 impl DurableOutput {
-    pub fn new(slot: DurableSlot, access: AccessPolicy) -> Self {
-        Self { slot, access }
+    /// First bind for a lineage: creates the `EncryptedValue` PDA.
+    pub fn create(slot: DurableSlot, access: AccessPolicy) -> Self {
+        Self {
+            slot,
+            access,
+            previous: None,
+            make_public: false,
+        }
+    }
+
+    /// Supersedes an existing lineage. `previous_handle`/`previous_subjects`
+    /// must be read from the on-chain `EncryptedValue` account in the same
+    /// instruction; the host verifies them exactly.
+    pub fn supersede(
+        slot: DurableSlot,
+        access: AccessPolicy,
+        previous_handle: [u8; 32],
+        previous_subjects: Vec<Pubkey>,
+    ) -> Self {
+        Self {
+            slot,
+            access,
+            previous: Some(PreviousLineageState {
+                handle: previous_handle,
+                subjects: previous_subjects,
+            }),
+            make_public: false,
+        }
+    }
+
+    /// Opts this output into being born publicly decryptable: the host seals a
+    /// public-decrypt leaf for the newly bound handle inside the same eval CPI
+    /// (EVM `unwrap`'s `makePubliclyDecryptable` parity; DD-036).
+    pub fn with_make_public(mut self, make_public: bool) -> Self {
+        self.make_public = make_public;
+        self
     }
 
     pub fn birth(&self) -> Result<DurableOutputBirth> {
         validate_durable_slot(&self.slot)?;
         validate_access_policy(self.access.subjects())?;
         Ok(DurableOutputBirth {
-            acl_record: self.slot.address(),
-            nonce_key: self.slot.nonce_key(),
-            sequence: self.slot.sequence,
+            encrypted_value: self.slot.address(),
             acl_domain_key: self.slot.namespace,
             app_account: self.slot.account,
             encrypted_value_label: self.slot.label.bytes(),
             subjects: self.access.subjects.clone(),
-            public_decrypt: false,
+            previous: self.previous.clone(),
+            make_public: self.make_public,
         })
     }
 }
 
-/// Host-ready metadata for creating a durable output ACL record.
+/// Host-ready metadata for creating or superseding a durable `EncryptedValue` lineage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DurableOutputBirth {
-    acl_record: Pubkey,
-    nonce_key: [u8; 32],
-    sequence: u64,
+    encrypted_value: Pubkey,
     acl_domain_key: Pubkey,
     app_account: Pubkey,
     encrypted_value_label: [u8; 32],
     subjects: Vec<AccessSubject>,
-    public_decrypt: bool,
+    previous: Option<PreviousLineageState>,
+    make_public: bool,
 }
 
 impl DurableOutputBirth {
-    pub fn acl_record(&self) -> Pubkey {
-        self.acl_record
-    }
-
-    pub fn nonce_key(&self) -> [u8; 32] {
-        self.nonce_key
-    }
-
-    pub fn sequence(&self) -> u64 {
-        self.sequence
+    pub fn encrypted_value(&self) -> Pubkey {
+        self.encrypted_value
     }
 
     pub fn acl_domain_key(&self) -> Pubkey {
@@ -842,8 +850,18 @@ impl DurableOutputBirth {
         &self.subjects
     }
 
-    pub fn public_decrypt(&self) -> bool {
-        self.public_decrypt
+    pub fn previous_handle(&self) -> Option<[u8; 32]> {
+        self.previous.as_ref().map(|previous| previous.handle)
+    }
+
+    pub fn previous_subjects(&self) -> Option<&[Pubkey]> {
+        self.previous
+            .as_ref()
+            .map(|previous| previous.subjects.as_slice())
+    }
+
+    pub fn make_public(&self) -> bool {
+        self.make_public
     }
 
     fn host_subjects(&self) -> Vec<AclSubjectEntry> {
@@ -916,8 +934,9 @@ impl Output {
         Self(OutputKind::Transient)
     }
 
+    /// First bind for a lineage (creates the `EncryptedValue` PDA).
     pub fn durable(slot: DurableSlot, access: AccessPolicy) -> Self {
-        Self(OutputKind::Durable(DurableOutput::new(slot, access)))
+        Self(OutputKind::Durable(DurableOutput::create(slot, access)))
     }
 
     pub fn durable_output(output: DurableOutput) -> Self {
@@ -929,7 +948,6 @@ impl Output {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EvalAccountPurpose {
     DurableInputAcl,
-    PermissionRecord,
     DurableOutputAcl,
     DurableOutputAuthority,
 }
@@ -2316,14 +2334,10 @@ fn validate_lowered_encrypted_operand(
 ) -> Result<()> {
     match operand {
         FheEvalOperand::AllowedDurable {
-            acl_record_index,
-            permission_index,
+            encrypted_value_index,
             ..
         } => {
-            mark_lowered_account(used_accounts, *acl_record_index)?;
-            if let Some(index) = permission_index {
-                mark_lowered_account(used_accounts, *index)?;
-            }
+            mark_lowered_account(used_accounts, *encrypted_value_index)?;
         }
         FheEvalOperand::AllowedLocal { producer_index } => {
             if *producer_index as usize >= step_index {
@@ -2342,11 +2356,11 @@ fn validate_lowered_output(output: &FheEvalOutput, used_accounts: &mut [bool]) -
     match output {
         FheEvalOutput::AllowedLocal => {}
         FheEvalOutput::AllowedDurable {
-            output_acl_record_index,
+            output_encrypted_value_index,
             output_app_account_authority_index,
             ..
         } => {
-            mark_lowered_account(used_accounts, *output_acl_record_index)?;
+            mark_lowered_account(used_accounts, *output_encrypted_value_index)?;
             if let Some(index) = output_app_account_authority_index {
                 mark_lowered_account(used_accounts, *index)?;
             }
@@ -2671,10 +2685,7 @@ fn validate_access_policy(subjects: &[AccessSubject]) -> Result<()> {
         return Err(EvalBuildError::InvalidAccessPolicy);
     }
     for (index, subject) in subjects.iter().enumerate() {
-        if subject.pubkey == Pubkey::default()
-            || !role_flags_are_known(subject.role_flags)
-            || !subject_has_role(subject.role_flags, ACL_ROLE_USE)
-        {
+        if subject.pubkey == Pubkey::default() {
             return Err(EvalBuildError::InvalidAccessPolicy);
         }
         if subjects[..index]
@@ -2701,13 +2712,6 @@ fn validate_app_authority(authority: EvalAppAuthority) -> Result<()> {
     Ok(())
 }
 
-fn validate_permission_record(permission: PermissionRecord) -> Result<()> {
-    if permission.0 == Pubkey::default() {
-        return Err(EvalBuildError::InvalidPermissionRecord);
-    }
-    Ok(())
-}
-
 fn handle_fhe_type(handle: [u8; 32]) -> u8 {
     handle[30]
 }
@@ -2722,23 +2726,16 @@ fn lower_operand(
 ) -> Result<FheEvalOperand> {
     match operand.0 {
         OperandKind::Durable(durable) => {
-            let acl_record_index = account_index(
+            let encrypted_value_index = account_index(
                 remaining_accounts,
-                EvalAccountMeta::readonly(durable.acl_record, EvalAccountPurpose::DurableInputAcl),
+                EvalAccountMeta::readonly(
+                    durable.encrypted_value,
+                    EvalAccountPurpose::DurableInputAcl,
+                ),
             )?;
-            let permission_index = durable
-                .permission
-                .map(|permission| {
-                    account_index(
-                        remaining_accounts,
-                        EvalAccountMeta::readonly(permission, EvalAccountPurpose::PermissionRecord),
-                    )
-                })
-                .transpose()?;
             Ok(FheEvalOperand::AllowedDurable {
                 handle: durable.handle,
-                acl_record_index,
-                permission_index,
+                encrypted_value_index,
             })
         }
         OperandKind::Transient {
@@ -2778,9 +2775,12 @@ fn lower_output(
         OutputKind::Transient => Ok(FheEvalOutput::AllowedLocal),
         OutputKind::Durable(output) => {
             let birth = output.birth()?;
-            let output_acl_record_index = account_index(
+            let output_encrypted_value_index = account_index(
                 remaining_accounts,
-                EvalAccountMeta::writable(birth.acl_record(), EvalAccountPurpose::DurableOutputAcl),
+                EvalAccountMeta::writable(
+                    birth.encrypted_value(),
+                    EvalAccountPurpose::DurableOutputAcl,
+                ),
             )?;
             let output_app_account_authority_index =
                 if birth.app_account() == app_authority.pubkey() {
@@ -2795,15 +2795,15 @@ fn lower_output(
                     )?)
                 };
             Ok(FheEvalOutput::AllowedDurable {
-                output_acl_record_index,
+                output_encrypted_value_index,
                 output_app_account_authority_index,
-                output_nonce_key: birth.nonce_key(),
-                output_nonce_sequence: birth.sequence(),
                 output_acl_domain_key: birth.acl_domain_key(),
                 output_app_account: birth.app_account(),
                 output_encrypted_value_label: birth.encrypted_value_label(),
                 output_subjects: birth.host_subjects(),
-                output_public_decrypt: birth.public_decrypt(),
+                previous_handle: birth.previous_handle(),
+                previous_subjects: birth.previous_subjects().map(|s| s.to_vec()),
+                make_public: birth.make_public(),
             })
         }
     }
@@ -2834,7 +2834,7 @@ fn account_index(
 pub mod advanced {
     use super::{
         handle_fhe_type, AccessPolicy, AccessSubject, Encrypted, EvalBuildError, EvalBuilder,
-        FheRandom, FheTyped, Operand, Output, PermissionRecord, Result,
+        FheRandom, FheTyped, Operand, Output, Result,
     };
     use anchor_lang::prelude::Pubkey;
 
@@ -2844,28 +2844,17 @@ pub mod advanced {
         AccessPolicy::from_subjects(subjects.into_iter().map(AccessSubject::from_host).collect())
     }
 
-    pub fn durable_with_acl_record<T: FheTyped>(
+    pub fn durable_with_encrypted_value<T: FheTyped>(
         handle: [u8; 32],
-        acl_record: Pubkey,
+        encrypted_value: Pubkey,
     ) -> Result<Encrypted<T>> {
         if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
             return Err(EvalBuildError::UnsupportedFheType);
         }
         Ok(Encrypted::from_operand(Operand::durable(
-            handle, acl_record,
+            handle,
+            encrypted_value,
         )))
-    }
-
-    pub fn durable_with_acl_record_and_permission<T: FheTyped>(
-        handle: [u8; 32],
-        acl_record: Pubkey,
-        permission: PermissionRecord,
-    ) -> Result<Encrypted<T>> {
-        let mut value = durable_with_acl_record(handle, acl_record)?;
-        if let super::OperandKind::Durable(durable) = &mut value.operand.0 {
-            durable.permission = Some(permission.0);
-        }
-        Ok(value)
     }
 
     pub fn trivial_encrypt<T: FheTyped>(
@@ -2884,11 +2873,12 @@ pub mod advanced {
 }
 
 #[cfg(feature = "cpi")]
-pub struct EvalCpiAccounts<'info> {
+pub struct EvalCpiAccounts<'a, 'info> {
     pub payer: AccountInfo<'info>,
     pub compute_subject: AccountInfo<'info>,
     pub app_account_authority: AccountInfo<'info>,
     pub host_config: AccountInfo<'info>,
+    pub deny_subject_records: &'a [AccountInfo<'info>],
     pub system_program: AccountInfo<'info>,
     /// The app identity the host meters and trusts: both HCU PDAs are derived from this key.
     /// Mandatory on every eval and must sign (include its seeds in `signer_seeds` when it is a
@@ -2973,10 +2963,10 @@ impl From<anchor_lang::error::Error> for EvalInvokeError {
 /// before constructing the ordered host account list used by
 /// [`invoke_eval_signed_resolved`].
 #[cfg(feature = "cpi")]
-pub fn invoke_eval_signed_with_builder<'info, T, F>(
+pub fn invoke_eval_signed_with_builder<'a, 'info, T, F>(
     context_id: EvalContextId,
     app_authority: EvalAppAuthority,
-    accounts: EvalCpiAccounts<'info>,
+    accounts: EvalCpiAccounts<'a, 'info>,
     dynamic_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
     output_authorities: impl IntoIterator<Item = AccountInfo<'info>>,
     signer_seeds: &[&[&[u8]]],
@@ -2999,9 +2989,9 @@ where
 /// pubkey, applies signer/writable roles from the plan, and emits the ordered
 /// host account list required by the low-level ABI.
 #[cfg(all(feature = "cpi", feature = "raw-host-api"))]
-pub fn invoke_eval_signed<'info>(
+pub fn invoke_eval_signed<'a, 'info>(
     plan: &EvalPlan,
-    accounts: EvalCpiAccounts<'info>,
+    accounts: EvalCpiAccounts<'a, 'info>,
     available_remaining_accounts: &[AccountInfo<'info>],
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()> {
@@ -3013,9 +3003,9 @@ pub fn invoke_eval_signed<'info>(
 
 /// Invokes `zama-host::fhe_eval` with accounts pre-resolved from an [`EvalPlan`].
 #[cfg(feature = "cpi")]
-pub fn invoke_eval_signed_resolved<'info>(
+pub fn invoke_eval_signed_resolved<'a, 'info>(
     plan: &EvalPlan,
-    accounts: EvalCpiAccounts<'info>,
+    accounts: EvalCpiAccounts<'a, 'info>,
     resolved_accounts: &ResolvedEvalAccounts<'info>,
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()> {
@@ -3023,9 +3013,9 @@ pub fn invoke_eval_signed_resolved<'info>(
 }
 
 #[cfg(feature = "cpi")]
-fn invoke_eval_signed_with_resolver<'info, R>(
+fn invoke_eval_signed_with_resolver<'a, 'info, R>(
     plan: &EvalPlan,
-    accounts: EvalCpiAccounts<'info>,
+    accounts: EvalCpiAccounts<'a, 'info>,
     resolver: &R,
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()>
@@ -3035,6 +3025,7 @@ where
     if accounts.app_account_authority.key() != plan.app_authority.pubkey() {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
+    let deny_subject_records = accounts.deny_subject_records;
     let fixed_accounts = zama_host::cpi::accounts::FheEval {
         payer: accounts.payer,
         compute_subject: accounts.compute_subject,
@@ -3060,6 +3051,10 @@ where
         };
         account_metas.push(meta);
         account_infos.push(account);
+    }
+    for record in deny_subject_records.iter().cloned() {
+        account_metas.push(AccountMeta::new_readonly(record.key(), false));
+        account_infos.push(record);
     }
 
     let instruction = Instruction {
@@ -3110,12 +3105,11 @@ mod tests {
         AccountInfo::new(key, false, is_writable, lamports, data, owner, false)
     }
 
-    fn durable_slot(account: Pubkey, sequence: u64) -> DurableSlot {
+    fn durable_slot(account: Pubkey, label_tag: u8) -> DurableSlot {
         DurableSlot::new(
             Pubkey::new_unique(),
             account,
-            DurableLabel::new(handle(5)),
-            sequence,
+            DurableLabel::new(handle(label_tag)),
         )
     }
 
@@ -3141,12 +3135,13 @@ mod tests {
     }
 
     #[cfg(feature = "cpi")]
-    fn cpi_accounts(app_authority: Pubkey) -> EvalCpiAccounts<'static> {
+    fn cpi_accounts(app_authority: Pubkey) -> EvalCpiAccounts<'static, 'static> {
         EvalCpiAccounts {
             payer: account_info(Pubkey::new_unique(), true),
             compute_subject: account_info(Pubkey::new_unique(), false),
             app_account_authority: account_info(app_authority, false),
             host_config: account_info(Pubkey::new_unique(), false),
+            deny_subject_records: &[],
             system_program: account_info(Pubkey::new_unique(), false),
             hcu_authority: account_info(Pubkey::new_unique(), false),
             hcu_block_meter: None,
@@ -3295,8 +3290,7 @@ mod tests {
             op: FheBinaryOpCode::Add,
             lhs: FheEvalOperand::AllowedDurable {
                 handle: balance_handle(1),
-                acl_record_index: 0,
-                permission_index: None,
+                encrypted_value_index: 0,
             },
             rhs: FheEvalOperand::Scalar(Scalar::<Uint<64>>::u64(1).bytes()),
             output_fhe_type: FheType::UINT64.byte(),
@@ -3500,18 +3494,19 @@ mod tests {
                 assert_eq!(*if_true, FheEvalOperand::AllowedLocal { producer_index: 1 });
                 match if_false {
                     FheEvalOperand::AllowedDurable {
-                        acl_record_index, ..
+                        encrypted_value_index,
+                        ..
                     } => {
-                        assert_eq!(*acl_record_index, 0)
+                        assert_eq!(*encrypted_value_index, 0)
                     }
                     other => panic!("unexpected if_false: {other:?}"),
                 }
                 match output {
                     FheEvalOutput::AllowedDurable {
-                        output_acl_record_index,
+                        output_encrypted_value_index,
                         ..
                     } => {
-                        assert_eq!(*output_acl_record_index, 2)
+                        assert_eq!(*output_encrypted_value_index, 2)
                     }
                     other => panic!("unexpected output: {other:?}"),
                 }
@@ -3525,16 +3520,10 @@ mod tests {
         let primary_authority = Pubkey::new_unique();
         let input_slot = durable_slot(primary_authority, 1);
         let input_acl = input_slot.address();
-        let permission = Pubkey::new_unique();
         let extra_authority = Pubkey::new_unique();
         let output_slot = durable_slot(extra_authority, 7);
         let output_acl = output_slot.address();
-        let input = Uint64Handle::durable_with_permission(
-            balance_handle(1),
-            input_slot,
-            PermissionRecord::new(permission),
-        )
-        .unwrap();
+        let input = Uint64Handle::durable(balance_handle(1), input_slot).unwrap();
 
         let plan = EvalPlan::build(context_id(9), app_authority(primary_authority), |builder| {
             builder.add(
@@ -3551,7 +3540,7 @@ mod tests {
                 .iter()
                 .map(EvalAccountRequirement::pubkey)
                 .collect::<Vec<_>>(),
-            vec![input_acl, permission, output_acl, extra_authority]
+            vec![input_acl, output_acl, extra_authority]
         );
         assert_eq!(
             requirements[0].purposes(),
@@ -3559,20 +3548,16 @@ mod tests {
         );
         assert_eq!(
             requirements[1].purposes(),
-            &[EvalAccountPurpose::PermissionRecord]
-        );
-        assert_eq!(
-            requirements[2].purposes(),
             &[EvalAccountPurpose::DurableOutputAcl]
         );
         assert_eq!(
-            requirements[3].purposes(),
+            requirements[2].purposes(),
             &[EvalAccountPurpose::DurableOutputAuthority]
         );
-        assert!(requirements[2].is_writable());
-        assert!(requirements[3].is_signer());
-        assert!(!requirements[3].requires_dynamic_account());
-        assert!(requirements[3].requires_output_authority());
+        assert!(requirements[1].is_writable());
+        assert!(requirements[2].is_signer());
+        assert!(!requirements[2].requires_dynamic_account());
+        assert!(requirements[2].requires_output_authority());
     }
 
     #[test]
@@ -3627,11 +3612,11 @@ mod tests {
         match &plan.args.steps[0] {
             FheEvalStep::Binary { output, .. } => match output {
                 FheEvalOutput::AllowedDurable {
-                    output_acl_record_index,
+                    output_encrypted_value_index,
                     output_app_account_authority_index,
                     ..
                 } => {
-                    assert_eq!(*output_acl_record_index, 1);
+                    assert_eq!(*output_encrypted_value_index, 1);
                     assert_eq!(*output_app_account_authority_index, Some(2));
                 }
                 other => panic!("unexpected output: {other:?}"),
@@ -4012,14 +3997,13 @@ mod tests {
             Pubkey::default(),
             Pubkey::new_unique(),
             DurableLabel::new(handle(5)),
-            1,
         );
         assert_eq!(
             Uint64Handle::durable(balance_handle(1), invalid_namespace_slot.clone()).unwrap_err(),
             EvalBuildError::InvalidDurableSlot
         );
         assert_eq!(
-            DurableOutput::new(invalid_namespace_slot, access_policy(Pubkey::new_unique()))
+            DurableOutput::create(invalid_namespace_slot, access_policy(Pubkey::new_unique()))
                 .birth()
                 .unwrap_err(),
             EvalBuildError::InvalidDurableSlot
@@ -4029,27 +4013,16 @@ mod tests {
             Pubkey::new_unique(),
             Pubkey::default(),
             DurableLabel::new(handle(5)),
-            1,
         );
         assert_eq!(
             Uint64Handle::durable(balance_handle(1), invalid_account_slot.clone()).unwrap_err(),
             EvalBuildError::InvalidDurableSlot
         );
         assert_eq!(
-            DurableOutput::new(invalid_account_slot, access_policy(Pubkey::new_unique()))
+            DurableOutput::create(invalid_account_slot, access_policy(Pubkey::new_unique()))
                 .birth()
                 .unwrap_err(),
             EvalBuildError::InvalidDurableSlot
-        );
-
-        assert_eq!(
-            Uint64Handle::durable_with_permission(
-                balance_handle(1),
-                durable_slot(Pubkey::new_unique(), 1),
-                PermissionRecord::new(Pubkey::default()),
-            )
-            .unwrap_err(),
-            EvalBuildError::InvalidPermissionRecord
         );
     }
 
@@ -4312,24 +4285,13 @@ mod tests {
         );
 
         #[cfg(feature = "raw-host-api")]
-        {
-            assert_eq!(
-                advanced::access_policy_from_subjects(vec![AclSubjectEntry {
-                    pubkey: Pubkey::new_unique(),
-                    role_flags: 0,
-                }])
-                .unwrap_err(),
-                EvalBuildError::InvalidAccessPolicy
-            );
-            assert_eq!(
-                advanced::access_policy_from_subjects(vec![AclSubjectEntry {
-                    pubkey: Pubkey::new_unique(),
-                    role_flags: ACL_ROLE_USE | 0x80,
-                }])
-                .unwrap_err(),
-                EvalBuildError::InvalidAccessPolicy
-            );
-        }
+        assert_eq!(
+            advanced::access_policy_from_subjects(vec![AclSubjectEntry {
+                pubkey: Pubkey::default(),
+            }])
+            .unwrap_err(),
+            EvalBuildError::InvalidAccessPolicy
+        );
     }
 
     #[test]
@@ -4337,17 +4299,16 @@ mod tests {
         let primary_authority = Pubkey::new_unique();
         let subject = Pubkey::new_unique();
         let output_slot = durable_slot(primary_authority, 42);
-        let output = DurableOutput::new(output_slot.clone(), access_policy(subject));
+        let output = DurableOutput::create(output_slot.clone(), access_policy(subject));
         let birth = output.birth().unwrap();
 
-        assert_eq!(birth.acl_record(), output_slot.address());
-        assert_eq!(birth.nonce_key(), output_slot.nonce_key());
-        assert_eq!(birth.sequence(), output_slot.sequence());
+        assert_eq!(birth.encrypted_value(), output_slot.address());
         assert_eq!(birth.acl_domain_key(), output_slot.namespace());
         assert_eq!(birth.app_account(), output_slot.account());
         assert_eq!(birth.encrypted_value_label(), output_slot.label().bytes());
         assert_eq!(birth.subjects(), access_policy(subject).subjects());
-        assert!(!birth.public_decrypt());
+        assert_eq!(birth.previous_handle(), None);
+        assert_eq!(birth.previous_subjects(), None);
 
         let mut builder = EvalBuilder::new(context_id(9), app_authority(primary_authority));
         builder
@@ -4358,56 +4319,50 @@ mod tests {
             FheEvalStep::TrivialEncrypt {
                 output:
                     FheEvalOutput::AllowedDurable {
-                        output_acl_record_index,
-                        output_nonce_key,
-                        output_nonce_sequence,
+                        output_encrypted_value_index,
                         output_acl_domain_key,
                         output_app_account,
                         output_encrypted_value_label,
                         output_subjects,
-                        output_public_decrypt,
+                        previous_handle,
+                        previous_subjects,
                         ..
                     },
                 ..
             } => {
-                let output_acl = plan.remaining_accounts[*output_acl_record_index as usize].pubkey;
-                assert_eq!(output_acl, birth.acl_record());
-                assert_eq!(*output_nonce_key, birth.nonce_key());
-                assert_eq!(*output_nonce_sequence, birth.sequence());
+                let output_encrypted_value =
+                    plan.remaining_accounts[*output_encrypted_value_index as usize].pubkey;
+                assert_eq!(output_encrypted_value, birth.encrypted_value());
                 assert_eq!(*output_acl_domain_key, birth.acl_domain_key());
                 assert_eq!(*output_app_account, birth.app_account());
                 assert_eq!(*output_encrypted_value_label, birth.encrypted_value_label());
                 assert_eq!(*output_subjects, birth.host_subjects());
-                assert_eq!(*output_public_decrypt, birth.public_decrypt());
+                assert_eq!(*previous_handle, birth.previous_handle());
+                assert_eq!(previous_subjects.as_deref(), birth.previous_subjects());
             }
             other => panic!("unexpected step: {other:?}"),
         }
     }
 
     #[test]
-    fn bounded_u64_upper_bound_validates_width_and_power_of_two() {
-        let mut valid = [0u8; 32];
-        valid[31] = 8;
-        assert_eq!(
-            BoundedU64UpperBound::power_of_two(8).unwrap().bytes(),
-            valid
+    fn durable_output_supersede_carries_previous_state() {
+        let primary_authority = Pubkey::new_unique();
+        let subject = Pubkey::new_unique();
+        let output_slot = durable_slot(primary_authority, 42);
+        let previous_handle = balance_handle(1);
+        let previous_subjects = vec![subject];
+        let output = DurableOutput::supersede(
+            output_slot,
+            access_policy(subject),
+            previous_handle,
+            previous_subjects.clone(),
         );
+        let birth = output.birth().unwrap();
 
+        assert_eq!(birth.previous_handle(), Some(previous_handle));
         assert_eq!(
-            BoundedU64UpperBound::from_be_bytes([0u8; 32]).unwrap_err(),
-            EvalBuildError::InvalidRandomUpperBound
-        );
-        let mut not_power_of_two = [0u8; 32];
-        not_power_of_two[31] = 3;
-        assert_eq!(
-            BoundedU64UpperBound::from_be_bytes(not_power_of_two).unwrap_err(),
-            EvalBuildError::InvalidRandomUpperBound
-        );
-        let mut too_wide = [0u8; 32];
-        too_wide[22] = 1;
-        assert_eq!(
-            BoundedU64UpperBound::from_be_bytes(too_wide).unwrap_err(),
-            EvalBuildError::InvalidRandomUpperBound
+            birth.previous_subjects(),
+            Some(previous_subjects.as_slice())
         );
     }
 

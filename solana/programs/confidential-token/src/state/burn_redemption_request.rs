@@ -21,14 +21,8 @@ pub struct BurnRedemptionRequest {
     pub destination_account: Pubkey,
     /// Burned amount handle.
     pub burned_handle: [u8; 32],
-    /// ACL record for `burned_handle`.
-    pub burned_acl_record: Pubkey,
-    /// Material commitment account for `burned_handle`.
-    pub material_commitment: Pubkey,
-    /// Canonical material commitment hash.
-    pub material_commitment_hash: [u8; 32],
-    /// Material key identifier.
-    pub material_key_id: [u8; 32],
+    /// `EncryptedValue` lineage for `burned_handle`.
+    pub burned_encrypted_value: Pubkey,
     /// Host config whose chain id and gates were validated.
     pub host_config: Pubkey,
     /// KMS context id pinned at request time; the redemption cert must verify
@@ -50,7 +44,7 @@ pub struct BurnRedemptionRequest {
 
 impl BurnRedemptionRequest {
     /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = (32 * 14) + (8 * 3) + 1 + 1;
+    pub const SPACE: usize = (32 * 11) + (8 * 3) + 1 + 1;
 }
 
 /// Returns the canonical PDA for a burn-redemption request witness.
@@ -84,10 +78,7 @@ pub fn burn_redemption_request_hash(
     destination_owner: Pubkey,
     destination_account: Pubkey,
     burned_handle: [u8; 32],
-    burned_acl_record: Pubkey,
-    material_commitment: Pubkey,
-    material_commitment_hash: [u8; 32],
-    material_key_id: [u8; 32],
+    burned_encrypted_value: Pubkey,
     host_config: Pubkey,
     kms_context_id: u64,
     request_nonce: [u8; 32],
@@ -105,10 +96,7 @@ pub fn burn_redemption_request_hash(
         destination_owner.as_ref(),
         destination_account.as_ref(),
         burned_handle.as_ref(),
-        burned_acl_record.as_ref(),
-        material_commitment.as_ref(),
-        material_commitment_hash.as_ref(),
-        material_key_id.as_ref(),
+        burned_encrypted_value.as_ref(),
         host_config.as_ref(),
         &kms_context_id.to_le_bytes(),
         request_nonce.as_ref(),

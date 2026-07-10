@@ -14,11 +14,10 @@ pub struct RequestDiscloseBalance<'info> {
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Confidential token account whose current balance is disclosed.
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// Current balance ACL record. Updated by ZamaHost CPI.
-    #[account(mut)]
-    pub balance_acl_record: Box<Account<'info, zama_host::AclRecord>>,
-    /// Material commitment witness for the disclosed handle.
-    pub balance_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    /// Stable balance lineage. The owner must be allowed so this instruction
+    /// can append a public-decrypt MMR leaf.
+    #[account(mut, address = token_account.balance_encrypted_value)]
+    pub balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Account-backed request witness consumed by the KMS response path.
     #[account(
         init,
@@ -28,23 +27,19 @@ pub struct RequestDiscloseBalance<'info> {
             b"disclosure-request",
             mint.key().as_ref(),
             owner.key().as_ref(),
-            token_account.balance_handle.as_ref(),
+            balance_value.current_handle.as_ref(),
             request_nonce.as_ref()
         ],
         bump
     )]
     pub disclosure_request: Box<Account<'info, DisclosureRequest>>,
-    /// CHECK: optional overflow permission witness for the owner authority.
-    pub authority_permission_record: Option<UncheckedAccount<'info>>,
     /// CHECK: optional deny-list witness when host deny-lists are enabled.
     pub deny_subject_record: Option<UncheckedAccount<'info>>,
-    /// CHECK: Anchor event CPI authority for the Zama host program.
-    pub zama_event_authority: UncheckedAccount<'info>,
-    /// ZamaHost program used to update the ACL record.
+    /// ZamaHost program used to update the balance lineage.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for pause and deny-list checks.
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// System program used for request witness creation.
+    /// System program used for request witness creation and lineage growth.
     pub system_program: Program<'info, System>,
 }
 
@@ -76,19 +71,12 @@ pub fn request_disclose_balance(
         ctx.accounts.mint.key(),
         ctx.accounts.owner.key(),
     )?;
-    assert_current_balance_acl(
-        &ctx.accounts.balance_acl_record,
-        ctx.accounts.balance_acl_record.key(),
+    assert_current_balance_encrypted_value(
+        &ctx.accounts.balance_value,
         &ctx.accounts.token_account,
         ctx.accounts.mint.key(),
     )?;
-    let handle = ctx.accounts.token_account.balance_handle;
-    assert_material_commitment(
-        &ctx.accounts.balance_material_commitment,
-        ctx.accounts.balance_material_commitment.key(),
-        &ctx.accounts.balance_acl_record,
-        handle,
-    )?;
+    let handle = ctx.accounts.balance_value.current_handle;
     // Pin the request to the host's current KMS context; the response cert must verify against
     // this context (not a later rotated one) when the disclosure is consumed.
     let kms_context_id = ctx.accounts.host_config.current_kms_context_id;
@@ -97,7 +85,7 @@ pub fn request_disclose_balance(
         ConfidentialTokenError::GatewayVerifierConfigUnset
     );
 
-    let acl_record = ctx.accounts.balance_acl_record.key();
+    let encrypted_value = ctx.accounts.balance_value.key();
     let request_key = ctx.accounts.disclosure_request.key();
     let request_hash = disclosure_request_hash(
         crate::ID,
@@ -107,12 +95,7 @@ pub fn request_disclose_balance(
         ctx.accounts.token_account.key(),
         ctx.accounts.token_account.key(),
         handle,
-        acl_record,
-        ctx.accounts.balance_material_commitment.key(),
-        ctx.accounts
-            .balance_material_commitment
-            .material_commitment_hash,
-        ctx.accounts.balance_material_commitment.key_id,
+        encrypted_value,
         ctx.accounts.host_config.key(),
         kms_context_id,
         request_nonce,
@@ -120,37 +103,49 @@ pub fn request_disclose_balance(
         expires_slot,
         DISCLOSURE_REQUEST_MODE_BALANCE,
     );
+
+    // Re-add the owner idempotently, then append the public-decrypt MMR leaf for
+    // the current handle.
+    fhe::allow_subjects(
+        fhe::AllowSubjects {
+            payer: &ctx.accounts.owner,
+            authority: &ctx.accounts.owner,
+            encrypted_value: ctx.accounts.balance_value.to_account_info(),
+            host_config: &ctx.accounts.host_config,
+            deny_subject_record: ctx
+                .accounts
+                .deny_subject_record
+                .as_ref()
+                .map(|account| account.to_account_info()),
+            zama_program: &ctx.accounts.zama_program,
+            system_program: &ctx.accounts.system_program,
+        },
+        vec![zama_host::instructions::EncryptedValueSubjectGrant {
+            subject: ctx.accounts.owner.key(),
+        }],
+    )?;
     fhe::allow_public_decrypt(fhe::AllowPublicDecrypt {
         authority: &ctx.accounts.owner,
-        authority_permission_record: ctx
-            .accounts
-            .authority_permission_record
-            .as_ref()
-            .map(|account| account.to_account_info()),
-        acl_record: ctx.accounts.balance_acl_record.to_account_info(),
+        payer: &ctx.accounts.owner,
+        handle,
+        encrypted_value: ctx.accounts.balance_value.to_account_info(),
         host_config: &ctx.accounts.host_config,
         deny_subject_record: ctx
             .accounts
             .deny_subject_record
             .as_ref()
             .map(|account| account.to_account_info()),
-        event_authority: &ctx.accounts.zama_event_authority,
         zama_program: &ctx.accounts.zama_program,
-        handle,
+        system_program: &ctx.accounts.system_program,
     })?;
+
     let request = &mut ctx.accounts.disclosure_request;
     request.mint = ctx.accounts.mint.key();
     request.requester = ctx.accounts.owner.key();
     request.token_account = ctx.accounts.token_account.key();
     request.app_account = ctx.accounts.token_account.key();
     request.handle = handle;
-    request.acl_record = acl_record;
-    request.material_commitment = ctx.accounts.balance_material_commitment.key();
-    request.material_commitment_hash = ctx
-        .accounts
-        .balance_material_commitment
-        .material_commitment_hash;
-    request.material_key_id = ctx.accounts.balance_material_commitment.key_id;
+    request.encrypted_value = encrypted_value;
     request.host_config = ctx.accounts.host_config.key();
     request.kms_context_id = kms_context_id;
     request.request_nonce = request_nonce;
@@ -166,7 +161,7 @@ pub fn request_disclose_balance(
         owner: ctx.accounts.owner.key(),
         token_account: ctx.accounts.token_account.key(),
         handle,
-        acl_record,
+        encrypted_value,
         request: request_key,
         request_hash,
         kms_context_id,

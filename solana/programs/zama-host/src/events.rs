@@ -78,115 +78,6 @@ pub struct KmsContextDestroyedEvent {
     pub kms_context_id: u64,
 }
 
-/// Emitted when ciphertext material is committed for a host handle.
-#[event]
-pub struct HandleMaterialCommittedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Canonical material commitment PDA.
-    pub material_commitment: Pubkey,
-    /// Canonical ACL record PDA.
-    pub acl_record: Pubkey,
-    /// Handle whose material is committed.
-    pub handle: [u8; 32],
-    /// Release/key identifier for the ciphertext material.
-    pub key_id: [u8; 32],
-    /// Digest of the ciphertext material.
-    pub ciphertext_digest: [u8; 32],
-    /// Digest of the SNS ciphertext material.
-    pub sns_ciphertext_digest: [u8; 32],
-    /// Release-pinned coprocessor-set digest.
-    pub coprocessor_set_digest: [u8; 32],
-    /// Canonical commitment hash over material witness fields.
-    pub material_commitment_hash: [u8; 32],
-    /// Slot in which the commitment was recorded.
-    pub created_slot: u64,
-}
-
-/// Emitted when committed material is sealed onto an ACL record.
-#[event]
-pub struct HandleMaterialSealedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Canonical material commitment PDA.
-    pub material_commitment: Pubkey,
-    /// Canonical ACL record PDA.
-    pub acl_record: Pubkey,
-    /// Handle whose material is sealed.
-    pub handle: [u8; 32],
-    /// Release/key identifier for the ciphertext material.
-    pub key_id: [u8; 32],
-    /// Canonical commitment hash over material witness fields.
-    pub material_commitment_hash: [u8; 32],
-    /// Slot in which this seal was applied.
-    pub updated_slot: u64,
-}
-
-/// Emitted when an ACL record is born and bound to a handle.
-#[event]
-pub struct AclRecordBoundEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Canonical ACL record PDA.
-    pub acl_record: Pubkey,
-    /// Opaque handle stored in the ACL record.
-    pub handle: [u8; 32],
-    /// Nonce key used in the ACL record PDA.
-    pub nonce_key: [u8; 32],
-    /// Nonce sequence used in the ACL record PDA.
-    pub nonce_sequence: u64,
-    /// App-level ACL domain.
-    pub acl_domain_key: Pubkey,
-    /// App account whose encrypted field is represented.
-    pub app_account: Pubkey,
-    /// App-level encrypted field label.
-    pub encrypted_value_label: [u8; 32],
-    /// Number of inline subjects stored at birth.
-    pub subject_count: u8,
-    /// Initial public-decrypt flag.
-    pub public_decrypt: bool,
-    /// Slot in which the ACL record was first bound.
-    pub created_slot: u64,
-}
-
-/// Emitted when a subject is granted on an ACL record.
-#[event]
-pub struct AclSubjectAllowedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Canonical ACL record PDA.
-    pub acl_record: Pubkey,
-    /// Handle stored in the ACL record.
-    pub handle: [u8; 32],
-    /// Authority that held `ACL_ROLE_GRANT`.
-    pub authority_subject: Pubkey,
-    /// Granted subject pubkey bytes.
-    pub subject: [u8; 32],
-    /// Role flags granted to the subject.
-    pub role_flags: u8,
-    /// Overflow permission PDA, or the default pubkey for inline subjects.
-    pub overflow_permission_record: Pubkey,
-    /// Inline subject index, or `u8::MAX` when the grant uses an overflow PDA.
-    pub inline_index: u8,
-    /// Slot in which this update was applied.
-    pub updated_slot: u64,
-}
-
-/// Emitted when public decrypt is enabled for a handle.
-#[event]
-pub struct PublicDecryptAllowedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Canonical ACL record PDA.
-    pub acl_record: Pubkey,
-    /// Publicly decryptable handle.
-    pub handle: [u8; 32],
-    /// Authority that held `ACL_ROLE_PUBLIC_DECRYPT`.
-    pub authority: [u8; 32],
-    /// Slot in which this update was applied.
-    pub updated_slot: u64,
-}
-
 /// Emitted when a subject deny-list record is updated.
 #[event]
 pub struct DenySubjectUpdatedEvent {
@@ -338,20 +229,6 @@ pub struct FheUnaryOpEvent {
     pub operand: [u8; 32],
     /// Output handle verified by the host formula.
     pub result: [u8; 32],
-}
-
-/// Legacy allowance event consumed by the current host listener.
-///
-/// New consumers should prefer [`AclSubjectAllowedEvent`] for richer context and
-/// still verify account state before authorizing decrypts.
-#[event]
-pub struct AclAllowedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Allowed handle.
-    pub handle: [u8; 32],
-    /// Allowed subject pubkey bytes.
-    pub subject: [u8; 32],
 }
 
 /// Emitted for an FHE sum operation accepted by the host.

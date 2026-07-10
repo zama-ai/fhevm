@@ -96,17 +96,16 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
     }
 
     let transfer_accounts = instruction_account_names(&idl, "confidential_transfer");
-    let owner_index = transfer_accounts
-        .iter()
-        .position(|account| account == "owner")
-        .expect("confidential_transfer must keep owner authority account");
-    let payer_index = transfer_accounts
-        .iter()
-        .position(|account| account == "payer")
-        .expect("confidential_transfer must add distinct payer account");
-    assert_ne!(
-        owner_index, payer_index,
-        "owner authority and payer must be separate account metas even when callers pass the same key"
+    let owner_meta = instruction_account(&idl, "confidential_transfer", "owner");
+    let payer_meta = instruction_account(&idl, "confidential_transfer", "payer");
+    assert!(
+        owner_meta.get("signer").and_then(Value::as_bool) == Some(true),
+        "owner authority must remain a signer"
+    );
+    assert!(
+        payer_meta.get("signer").and_then(Value::as_bool) == Some(true)
+            && payer_meta.get("writable").and_then(Value::as_bool) == Some(true),
+        "payer must remain a writable signer because it funds first-bind rent"
     );
     // fromExternal: the transfer amount is a coprocessor-attested instruction argument, not a
     // durable amount_compute_acl witness account.
@@ -209,15 +208,17 @@ fn token_idl_drops_transfer_and_call_callback_surface() {
 }
 
 #[test]
-fn token_request_witnesses_bind_material_and_secp_kms_context() {
+fn token_request_witnesses_bind_handle_lineage_and_secp_kms_context() {
     let source = TOKEN_COMMON;
-    // The request witness binds the request to its accounts, material, host config, chain id,
-    // and the pinned KMS context id; the response then verifies a secp256k1 KMS cert.
+    // The request witness binds the request to its accounts, the handle and its
+    // `EncryptedValue` lineage account (which replaced the deleted
+    // `HandleMaterialCommitment` material_* fields), host config, chain id, and
+    // the pinned KMS context id; the response then verifies a secp256k1 KMS cert.
     for required in [
         "request_hash",
         "kms_context_id",
-        "material_commitment_hash",
-        "material_key_id",
+        "request.handle == handle",
+        "request.encrypted_value == encrypted_value",
         "host_config",
         "chain_id",
         "assert_kms_public_decrypt_cert_for_request",
@@ -229,11 +230,15 @@ fn token_request_witnesses_bind_material_and_secp_kms_context() {
             "token request/consume path must bind `{required}`"
         );
     }
-    // The dead Ed25519 verifier-set message helpers must be gone.
+    // The dead Ed25519 verifier-set message helpers and the removed
+    // handle-material commitment surface must be gone.
     for removed in [
         "proof_message_v2",
         "assert_threshold_verifier_signature",
         "verifier_set_version",
+        "material_commitment_hash",
+        "material_key_id",
+        "HandleMaterialCommitment",
     ] {
         assert!(
             !source.contains(removed),
@@ -343,7 +348,14 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
             "ABI golden manifest must pin `{required}`"
         );
     }
-    for removed in ["VerifierSet", "OperatorSetEvent", "OperatorClosedEvent"] {
+    for removed in [
+        "VerifierSet",
+        "OperatorSetEvent",
+        "OperatorClosedEvent",
+        // Deleted by the EncryptedValue ACL rewrite.
+        "AclRecord",
+        "HandleMaterialCommitment",
+    ] {
         assert!(
             !schemas
                 .iter()
@@ -357,8 +369,8 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         "confidential_token.json",
         "HostConfig",
         "KmsContext",
-        "AclRecord",
-        "HandleMaterialCommitment",
+        // The ACL rewrite's lineage account replaces AclRecord/HandleMaterialCommitment.
+        "EncryptedValue",
     ] {
         assert!(
             IDL_CHECK_SCRIPT.contains(required)
@@ -403,6 +415,29 @@ fn instruction_account_names(idl: &Value, instruction_name: &str) -> Vec<String>
         .filter_map(|account| account.get("name").and_then(Value::as_str))
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn instruction_account<'a>(
+    idl: &'a Value,
+    instruction_name: &str,
+    account_name: &str,
+) -> &'a Value {
+    idl.get("instructions")
+        .and_then(Value::as_array)
+        .expect("IDL instructions should be an array")
+        .iter()
+        .find(|instruction| {
+            instruction.get("name").and_then(Value::as_str) == Some(instruction_name)
+        })
+        .unwrap_or_else(|| panic!("missing instruction `{instruction_name}`"))
+        .get("accounts")
+        .and_then(Value::as_array)
+        .expect("instruction accounts should be an array")
+        .iter()
+        .find(|account| account.get("name").and_then(Value::as_str) == Some(account_name))
+        .unwrap_or_else(|| {
+            panic!("missing account `{account_name}` on instruction `{instruction_name}`")
+        })
 }
 
 fn type_field_names(idl: &Value, type_name: &str) -> Vec<String> {

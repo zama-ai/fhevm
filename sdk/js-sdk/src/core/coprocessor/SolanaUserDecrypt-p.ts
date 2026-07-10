@@ -13,7 +13,7 @@ import { bytesToHex, concatBytes } from '../base/bytes.js';
  * re-derives this preimage and verifies the ed25519 signature over it, so the bytes produced
  * by {@link solanaUserDecryptSigningPreimage} MUST match the Rust byte-for-byte. The cross-impl
  * parity is locked by `SolanaUserDecrypt-p.test.ts`. The ed25519 auth fields travel as typed
- * gateway fields (RFC-021), so `extraData` carries only the KMS context (v0x01).
+ * gateway fields (RFC-021), so `extraData` carries only the KMS context or the MMR-proof tail.
  *
  * On EVM the Gateway verifies the EIP-712 publicKey-to-userAddress binding on-chain. The Solana
  * host has no such on-chain binding, so the signature here is what closes the publicKey
@@ -24,8 +24,18 @@ import { bytesToHex, concatBytes } from '../base/bytes.js';
 /** Context-only `extraData` version byte (RFC-003 v0x01): version ‖ contextId(32). */
 export const SOLANA_CONTEXT_EXTRA_DATA_VERSION = 0x01;
 
-/** Domain-separation tag for the signing preimage (`SOLANA_USER_DECRYPT_DOMAIN_TAG` in Rust). */
-export const SOLANA_USER_DECRYPT_DOMAIN_TAG = 'zama-solana-user-decrypt-v1';
+/** `extraData` version byte carrying the context id PLUS the MMR-proof tail (RFC-024): version ‖
+ * contextId(32) ‖ aclValueKey(32) ‖ proofSlot(8 BE) ‖ mmrProofLen(4 BE) ‖ mmrProofBytes. Mirrors
+ * `SOLANA_EXTRA_DATA_VERSION_MMR_PROOF` in `solana_extra_data.rs`. */
+export const SOLANA_MMR_PROOF_EXTRA_DATA_VERSION = 0x03;
+
+/**
+ * Domain-separation tag for the signing preimage (`SOLANA_USER_DECRYPT_DOMAIN_TAG` in Rust).
+ * Bumped to `v2` when the MMR-proof tail (`aclValueKey`, `proofSlot`, `mmrProofBytes`) was
+ * appended to the preimage (RFC-024) — ed25519 is non-malleable, so a `v1` signature can never
+ * verify against the `v2` preimage.
+ */
+export const SOLANA_USER_DECRYPT_DOMAIN_TAG = 'zama-solana-user-decrypt-v2';
 
 /** V2 user-decrypt attestation discriminator the relayer/gateway route on. */
 export const SOLANA_USER_DECRYPT_ATTESTATION_TYPE = 'solana-ed25519-user-decrypt-v1';
@@ -54,6 +64,10 @@ function assertLen(name: string, bytes: Uint8Array, len: number): void {
   }
 }
 
+function isZeroBytes(bytes: Uint8Array): boolean {
+  return bytes.every((byte) => byte === 0);
+}
+
 /** Fields shared by the `extraData` blob and the signing preimage. */
 export interface SolanaUserDecryptInput {
   /** The host chain id the handles belong to (`contracts_chain_id`). */
@@ -74,6 +88,36 @@ export interface SolanaUserDecryptInput {
   readonly startTimestamp: bigint;
   /** Validity window duration (seconds). */
   readonly durationSeconds: bigint;
+  /**
+   * The lineage value key for a current/historical/public decrypt; all-zero (the default) only
+   * when no lineage is named. Mirrors `acl_value_key` in `solana_extra_data.rs`.
+   */
+  readonly aclValueKey?: Uint8Array | undefined;
+  /**
+   * The full MMR-proof transport blob (1-byte mode prefix ‖ Borsh proof), committed verbatim;
+   * empty (the default) for a current-ACL request. Mirrors `mmr_proof_bytes`.
+   */
+  readonly mmrProofBytes?: Uint8Array | undefined;
+  /**
+   * The lineage `leaf_count` the proof was built against (staleness marker); `0n` (the default)
+   * for a current-ACL request. Mirrors `proof_slot`.
+   */
+  readonly proofSlot?: bigint | undefined;
+}
+
+const ZERO_ACL_VALUE_KEY = new Uint8Array(32);
+
+/** Fills in the MMR-proof tail defaults (all-zero/empty, i.e. "no named lineage/proof") for fields left unset. */
+function withProofDefaults(input: SolanaUserDecryptInput): {
+  aclValueKey: Uint8Array;
+  mmrProofBytes: Uint8Array;
+  proofSlot: bigint;
+} {
+  return {
+    aclValueKey: input.aclValueKey ?? ZERO_ACL_VALUE_KEY,
+    mmrProofBytes: input.mmrProofBytes ?? new Uint8Array(0),
+    proofSlot: input.proofSlot ?? 0n,
+  };
 }
 
 function assertLengths(name: string, items: readonly Uint8Array[], len: number): void {
@@ -89,6 +133,9 @@ function assertCommonInput(input: SolanaUserDecryptInput): void {
   assertLen('nonce', input.nonce, SOLANA_PUBKEY_LEN);
   assertLengths('handles', input.handles, HANDLE_LEN);
   assertLengths('allowedAclDomainKeys', input.allowedAclDomainKeys, SOLANA_PUBKEY_LEN);
+  if (input.aclValueKey !== undefined) {
+    assertLen('aclValueKey', input.aclValueKey, 32);
+  }
 }
 
 /**
@@ -102,15 +149,43 @@ export function buildSolanaUserDecryptContextExtraData(contextId: Uint8Array): U
 }
 
 /**
+ * Builds the MMR-proof-tail `extraData` placed on the wire (RFC-024 v0x03):
+ * `0x03 ‖ contextId(32) ‖ aclValueKey(32) ‖ proofSlot(8 BE) ‖ mmrProofLen(4 BE) ‖ mmrProofBytes`.
+ * Mirrors `encode_solana_extra_data_mmr_proof` in `solana_extra_data.rs`.
+ */
+export function buildSolanaUserDecryptMmrProofExtraData(
+  contextId: Uint8Array,
+  aclValueKey: Uint8Array,
+  proofSlot: bigint,
+  mmrProofBytes: Uint8Array,
+): Uint8Array {
+  assertLen('contextId', contextId, 32);
+  assertLen('aclValueKey', aclValueKey, 32);
+  return concatBytes(
+    new Uint8Array([SOLANA_MMR_PROOF_EXTRA_DATA_VERSION]),
+    contextId,
+    aclValueKey,
+    u64BE(proofSlot),
+    u32BE(mmrProofBytes.length),
+    mmrProofBytes,
+  );
+}
+
+/**
  * Builds the exact bytes the user's ed25519 key must sign, byte-identical to
  * `solana_user_decrypt_signing_preimage` in Rust:
  *
  * `TAG ‖ contracts_chain_id(8 BE) ‖ publicKey_len(4 BE) ‖ publicKey ‖ handle_count(4 BE) ‖
  * handles(32 each) ‖ identity(32) ‖ context_id(32 BE) ‖ nonce(32) ‖ domain_key_count(4 BE) ‖
- * domain_keys(32 each) ‖ start_timestamp(8 BE) ‖ duration_seconds(8 BE)`
+ * domain_keys(32 each) ‖ start_timestamp(8 BE) ‖ duration_seconds(8 BE) ‖ acl_value_key(32) ‖
+ * proof_slot(8 BE) ‖ mmr_proof_len(4 BE) ‖ mmr_proof_bytes`
+ *
+ * The MMR-proof tail is always appended (all-zero/empty when the request carries no proof),
+ * matching the Rust builder, which never makes the tail conditional.
  */
 export function solanaUserDecryptSigningPreimage(input: SolanaUserDecryptInput): Uint8Array {
   assertCommonInput(input);
+  const { aclValueKey, mmrProofBytes, proofSlot } = withProofDefaults(input);
 
   return concatBytes(
     new TextEncoder().encode(SOLANA_USER_DECRYPT_DOMAIN_TAG),
@@ -126,6 +201,10 @@ export function solanaUserDecryptSigningPreimage(input: SolanaUserDecryptInput):
     ...input.allowedAclDomainKeys,
     u64BE(input.startTimestamp),
     u64BE(input.durationSeconds),
+    aclValueKey,
+    u64BE(proofSlot),
+    u32BE(mmrProofBytes.length),
+    mmrProofBytes,
   );
 }
 
@@ -145,8 +224,7 @@ export interface SolanaUserDecryptRequest {
   readonly attestationType: typeof SOLANA_USER_DECRYPT_ATTESTATION_TYPE;
   /** The 64-byte ed25519 signature over the signing preimage, 0x-hex. */
   readonly signature: BytesHex;
-  /** Context-only `extraData` (v0x01: version ‖ contextId), 0x-hex. The Solana auth data is no
-   * longer packed here — it travels as the typed `solana*` fields below. */
+  /** `extraData`, 0x-hex: v0x01 context-only when no ACL value key is present, or v0x03 with the ACL/proof tail. */
   readonly extraData: BytesHex;
   /** The ML-KEM re-encryption public key, 0x-hex. */
   readonly publicKey: BytesHex;
@@ -187,10 +265,13 @@ export function buildSolanaUserDecryptRequest(
     throw new Error(`unexpected ed25519 signature length: ${signature.length}`);
   }
 
-  // The signed preimage still commits to identity + nonce + domain keys + context (unchanged);
-  // only the wire shape changes: `extraData` carries the context alone and the ed25519 auth fields
-  // travel as typed gateway fields (RFC-021), no longer packed into `extraData`.
-  const extraData = buildSolanaUserDecryptContextExtraData(input.contextId);
+  // The signed preimage always commits to the MMR-proof tail (all-zero/empty when absent); only
+  // the `extraData` wire shape is conditional. Any nonzero aclValueKey names a lineage the
+  // connector must fetch, so it needs the v0x03 tail even when the proof bytes are empty.
+  const { aclValueKey, mmrProofBytes, proofSlot } = withProofDefaults(input);
+  const extraData = !isZeroBytes(aclValueKey)
+    ? buildSolanaUserDecryptMmrProofExtraData(input.contextId, aclValueKey, proofSlot, mmrProofBytes)
+    : buildSolanaUserDecryptContextExtraData(input.contextId);
 
   return {
     attestationType: SOLANA_USER_DECRYPT_ATTESTATION_TYPE,

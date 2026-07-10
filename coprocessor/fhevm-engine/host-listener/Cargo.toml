@@ -8,7 +8,7 @@ license.workspace = true
 default = []
 test_bypass_key_extraction = []
 solana-grpc = ["dep:yellowstone-grpc-proto", "dep:tonic"]
-solana-reconstruct = ["dep:zama-host", "dep:anchor-lang"]
+solana-reconstruct = ["dep:zama-host", "dep:anchor-lang", "dep:zama-solana-acl"]
 
 [[bin]]
 path = "src/bin/main.rs"
@@ -90,6 +90,8 @@ yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", 
 zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint"], optional = true }
 # AnchorDeserialize for reusing zama-host's FheEvalArgs to decode the fhe_eval plan.
 anchor-lang = { version = "1.0.2", optional = true }
+# derive_value_key for durable fhe_eval output bindings (same parity rationale).
+zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl", optional = true }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }

@@ -6,7 +6,7 @@ import type { EncryptedValueLike } from '../../core/types/encryptedTypes.js';
 import type { ClearValue, Handle } from '../../core/types/encryptedTypes-p.js';
 import type { Bytes32Hex } from '../../core/types/primitives.js';
 import {
-  buildSolanaUserDecryptContextExtraData,
+  buildSolanaUserDecryptMmrProofExtraData,
   solanaUserDecryptClientId,
   solanaUserDecryptSigningPreimage,
   SOLANA_USER_DECRYPT_ATTESTATION_TYPE,
@@ -18,6 +18,14 @@ import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAs
 import { createClearValue } from '../../core/handle/ClearValue.js';
 import { bytesToClearValueType } from '../../core/handle/FheType.js';
 import { generateSolanaTransportKeyPair, deSigncryptSolanaUserDecrypt } from '../deSigncrypt.js';
+import {
+  decodeMmrProofTransportBlob,
+  MMR_MODE_HISTORICAL,
+  MMR_MODE_PUBLIC,
+  verifyHistoricalAccessProof,
+  verifyPublicDecryptProof,
+  type MmrProof,
+} from '../proof.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -52,6 +60,51 @@ export type SolanaUserDecryptParameters = {
       }
     | undefined;
   readonly options?: RelayerUserDecryptOptions | undefined;
+  /**
+   * The lineage value key naming the live `EncryptedValue` account for current-handle decrypts.
+   * Required when `mmrProof` is omitted; proof requests use `mmrProof.aclValueKey`.
+   */
+  readonly aclValueKey?: Uint8Array | undefined;
+  /**
+   * A historical/public MMR inclusion proof (RFC-024) authorizing this decrypt against the
+   * `EncryptedValue` lineage, instead of the live current-handle ACL. Single-handle only (a
+   * proof authorizes exactly one handle), so `handles` must have length 1 when this is set.
+   *
+   * DESIGN NOTE — "historical vs current" signal: at the time this was wired, the SDK had no
+   * existing notion of a historical/current distinction (no `isHistorical`/`blockNumber`-style
+   * flag anywhere in the request-building path). Rather than invent one, presence of this field
+   * IS the signal: callers who supply `mmrProof` get the proof-gated path (verified client-side
+   * below, then attached to the request); callers who omit it get the current-ACL path and must
+   * still provide `aclValueKey` so the connector fetches the intended lineage. If a first-class
+   * historical/current signal is added to the SDK later, this should be reconciled with it rather
+   * than kept as a second, parallel signal.
+   */
+  readonly mmrProof?: SolanaUserDecryptMmrProofParameter | undefined;
+};
+
+/** The MMR proof inputs needed to both verify (client-side, pre-sign) and attach a proof-gated
+ * Solana user-decrypt request. Field names mirror `proof.ts` / `solana_extra_data.rs`. */
+export type SolanaUserDecryptMmrProofParameter = {
+  /** The lineage's canonical PDA account (`encrypted_value_account` in `proof.ts`). */
+  readonly encryptedValueAccount: Uint8Array;
+  /** The lineage value key naming the `EncryptedValue` account (`acl_value_key` on the wire). */
+  readonly aclValueKey: Uint8Array;
+  /** The live MMR peaks fetched from the lineage account, used for client-side verification. */
+  readonly peaks: readonly Uint8Array[];
+  /** The live `leaf_count` fetched from the lineage account, used for client-side verification. */
+  readonly leafCount: bigint;
+  /** The lineage `leaf_count` the proof was built against (`proof_slot` on the wire). */
+  readonly proofSlot: bigint;
+  /** The decoded inclusion proof (leaf index + sibling path), used for client-side verification. */
+  readonly proof: MmrProof;
+  /** The full MMR-proof transport blob (mode prefix ‖ Borsh proof) attached verbatim to the wire
+   * request; committed into the signed preimage byte-for-byte. */
+  readonly mmrProofBytes: Uint8Array;
+  /** Whether this proof authorizes a historical access grant or an exact public-decrypt leaf. A
+   * historical proof additionally requires `subject`. */
+  readonly mode: 'historical' | 'public';
+  /** The subject the historical-access proof was issued to. Required when `mode` is `'historical'`. */
+  readonly subject?: Uint8Array | undefined;
 };
 
 /** One aggregated KMS signcrypted share, as returned by the relayer's v3 user-decrypt job. */
@@ -83,6 +136,39 @@ function randomNonce(): Uint8Array {
   const nonce = new Uint8Array(32);
   crypto.getRandomValues(nonce);
   return nonce;
+}
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function mmrProofsEqual(a: MmrProof, b: MmrProof): boolean {
+  if (a.leafIndex !== b.leafIndex || a.siblings.length !== b.siblings.length) return false;
+  for (let i = 0; i < a.siblings.length; i++) {
+    const left = a.siblings[i];
+    const right = b.siblings[i];
+    if (left === undefined || right === undefined || !bytesEqual(left, right)) return false;
+  }
+  return true;
+}
+
+function modeHex(mode: number): string {
+  return `0x${mode.toString(16).padStart(2, '0')}`;
+}
+
+function assertCanonicalMmrProofBytes(mmrProof: SolanaUserDecryptMmrProofParameter): void {
+  const decoded = decodeMmrProofTransportBlob(mmrProof.mmrProofBytes);
+  const expectedMode = mmrProof.mode === 'historical' ? MMR_MODE_HISTORICAL : MMR_MODE_PUBLIC;
+  if (decoded.mode !== expectedMode) {
+    throw new Error(`MMR proof mode byte mismatch: expected ${modeHex(expectedMode)}, got ${modeHex(decoded.mode)}`);
+  }
+  if (!mmrProofsEqual(decoded.proof, mmrProof.proof)) {
+    throw new Error('MMR proof bytes do not match the decoded proof parameter');
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -127,6 +213,60 @@ export async function userDecrypt(
   const startTimestamp = parameters.validity?.startTimestamp ?? BigInt(Math.floor(Date.now() / 1000));
   const durationSeconds = parameters.validity?.durationSeconds ?? DEFAULT_DURATION_SECONDS;
 
+  const mmrProof = parameters.mmrProof;
+  if (mmrProof !== undefined && handleBytes.length !== 1) {
+    // An MMR proof authorizes exactly one handle (see `proof.ts` / the connector's
+    // `require_single_handle`); a multi-handle request has no single handle for the proof to
+    // name, so refuse rather than silently ignoring the proof.
+    throw new Error('an MMR proof (`mmrProof`) can only be attached to a single-handle request');
+  }
+  if (mmrProof !== undefined && parameters.aclValueKey !== undefined) {
+    if (!bytesEqual(parameters.aclValueKey, mmrProof.aclValueKey)) {
+      throw new Error('`aclValueKey` must match `mmrProof.aclValueKey` when both are provided');
+    }
+  }
+  const aclValueKey = mmrProof?.aclValueKey ?? parameters.aclValueKey;
+  if (aclValueKey === undefined) {
+    throw new Error('`aclValueKey` is required for current-handle Solana user decrypt requests');
+  }
+  if (mmrProof !== undefined) {
+    assertCanonicalMmrProofBytes(mmrProof);
+    // Refuse to sign over a proof that would fail on-chain/in-connector verification: verifying
+    // client-side, before signing, catches a malformed or stale proof here instead of burning a
+    // relayer round trip (or worse, silently trusting an unverified proof).
+    const handle = handleBytes[0];
+    if (!handle) {
+      throw new Error('missing handle for MMR proof verification');
+    }
+    const verified =
+      mmrProof.mode === 'historical'
+        ? (() => {
+            if (!mmrProof.subject) {
+              throw new Error('a historical MMR proof requires `subject`');
+            }
+            return verifyHistoricalAccessProof(
+              mmrProof.encryptedValueAccount,
+              mmrProof.peaks,
+              mmrProof.leafCount,
+              handle,
+              mmrProof.subject,
+              mmrProof.proof,
+            );
+          })()
+        : verifyPublicDecryptProof(
+            mmrProof.encryptedValueAccount,
+            mmrProof.peaks,
+            mmrProof.leafCount,
+            handle,
+            mmrProof.proof,
+          );
+    if (!verified) {
+      throw new Error(
+        `MMR proof failed client-side verification (mode=${mmrProof.mode}); refusing to sign the decrypt request`,
+      );
+    }
+  }
+
   // 1. + 2. Build the canonical ed25519 preimage (the same bytes the KMS connector re-derives),
   // sign it via the abstract signer, then assemble the request. `buildSolanaUserDecryptRequest`
   // signs from a raw seed; an abstract signer is opaque, so we route through the same exported
@@ -141,6 +281,9 @@ export async function userDecrypt(
     allowedAclDomainKeys,
     startTimestamp,
     durationSeconds,
+    aclValueKey,
+    mmrProofBytes: mmrProof?.mmrProofBytes,
+    proofSlot: mmrProof?.proofSlot,
   };
 
   const preimage = solanaUserDecryptSigningPreimage(input);
@@ -183,7 +326,14 @@ export async function userDecrypt(
         durationSeconds: durationSeconds.toString(),
       },
       publicKey: bytesToHex(publicKey),
-      extraData: bytesToHex(buildSolanaUserDecryptContextExtraData(contextId)),
+      extraData: bytesToHex(
+        buildSolanaUserDecryptMmrProofExtraData(
+          contextId,
+          aclValueKey,
+          mmrProof?.proofSlot ?? 0n,
+          mmrProof?.mmrProofBytes ?? new Uint8Array(0),
+        ),
+      ),
       solanaUserIdentity: bytesToHex(identity),
       solanaNonce: bytesToHex(nonce),
       solanaAllowedAclDomainKeys: allowedAclDomainKeys.map((k) => bytesToHex(k)),
@@ -222,9 +372,7 @@ export async function userDecrypt(
       throw new Error(`missing handle at index ${i}`);
     }
     if (plaintext.fheType !== handle.fheTypeId) {
-      throw new Error(
-        `unexpected FHE type at index ${i}: got ${plaintext.fheType}, expected ${handle.fheTypeId}`,
-      );
+      throw new Error(`unexpected FHE type at index ${i}: got ${plaintext.fheType}, expected ${handle.fheTypeId}`);
     }
     return createClearValue({
       value: bytesToClearValueType(handle.fheType, plaintext.bytes),

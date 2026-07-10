@@ -1,7 +1,7 @@
 //! State and deterministic helper functions for the ZamaHost program.
 //!
 //! This module is intentionally reusable from app programs and tests. It
-//! exposes the PDA seeds, role flags, account layouts, and handle formulas
+//! exposes the PDA seeds, account layouts, and handle formulas
 //! needed to prepare CPI accounts and to verify host-owned ACL state off-chain.
 
 use anchor_lang::prelude::*;
@@ -12,10 +12,8 @@ use solana_sysvar::get_sysvar;
 use crate::constants::{COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER};
 use crate::errors::ZamaHostError;
 
-pub mod acl_permission;
-pub mod acl_record;
 pub mod deny_subject_record;
-pub mod handle_material_commitment;
+pub mod encrypted_value;
 pub mod hcu_block_meter;
 pub mod hcu_trusted_app_record;
 pub mod host_chain_address;
@@ -23,10 +21,8 @@ pub mod host_config;
 pub mod kms_context;
 pub mod user_decryption_delegation;
 
-pub use acl_permission::*;
-pub use acl_record::*;
 pub use deny_subject_record::*;
-pub use handle_material_commitment::*;
+pub use encrypted_value::*;
 pub use hcu_block_meter::*;
 pub use hcu_trusted_app_record::*;
 pub use host_chain_address::*;
@@ -63,39 +59,28 @@ pub struct InitializeHostConfigArgs {
     pub grant_deny_list_enabled: bool,
 }
 
-/// Pubkey plus role flags stored inline or in an overflow permission PDA.
+/// Pubkey stored inline as an allowed subject.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AclSubjectEntry {
     /// Subject identity. For app users this is usually the owner pubkey; for
     /// app programs this can be a program-controlled compute signer PDA.
     pub pubkey: Pubkey,
-    /// Bitset of `ACL_ROLE_*` flags.
-    pub role_flags: u8,
 }
 
 impl AclSubjectEntry {
-    /// Builds an owner/user subject with use, grant, and public-decrypt roles.
+    /// Builds an owner/user subject.
     pub fn user(pubkey: Pubkey) -> Self {
-        Self {
-            pubkey,
-            role_flags: ACL_ROLE_USER,
-        }
+        Self { pubkey }
     }
 
-    /// Builds a compute subject without public-decrypt authority.
+    /// Builds a compute subject.
     pub fn compute(pubkey: Pubkey) -> Self {
-        Self {
-            pubkey,
-            role_flags: ACL_ROLE_COMPUTE_SUBJECT,
-        }
+        Self { pubkey }
     }
 
-    /// Builds a subject that may use the handle but may not grant or publish it.
+    /// Builds an allowed subject.
     pub fn use_only(pubkey: Pubkey) -> Self {
-        Self {
-            pubkey,
-            role_flags: ACL_ROLE_USE,
-        }
+        Self { pubkey }
     }
 }
 
@@ -313,14 +298,13 @@ pub struct CoprocessorInputAttestation {
 /// Operand source for a composed FHE eval operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheEvalOperand {
-    /// Input allowed through durable ACL state: a canonical ACL record in `remaining_accounts`.
+    /// Input allowed through durable ACL state: a canonical `EncryptedValue`
+    /// account in `remaining_accounts` whose current handle matches.
     AllowedDurable {
-        /// Handle expected in the ACL record.
+        /// Handle expected as the encrypted value's current handle.
         handle: [u8; 32],
-        /// Index into `remaining_accounts` for the ACL record.
-        acl_record_index: u16,
-        /// Optional index into `remaining_accounts` for overflow subject permission.
-        permission_index: Option<u16>,
+        /// Index into `remaining_accounts` for the `EncryptedValue` account.
+        encrypted_value_index: u16,
     },
     /// Instruction-local value produced by an earlier operation in this `fhe_eval`; allowed only
     /// inside the current evaluation scope and never stored.
@@ -349,30 +333,40 @@ pub enum FheEvalOperand {
 pub enum FheEvalOutput {
     /// Output stays allowed only inside the current `fhe_eval` scope; no durable ACL record.
     AllowedLocal,
-    /// Output is bound into durable ACL state (a new ACL record).
+    /// Output is bound into durable ACL state: the `EncryptedValue` lineage PDA
+    /// is created when absent, or superseded when it exists.
     AllowedDurable {
-        /// Index into `remaining_accounts` for the output ACL record PDA.
-        output_acl_record_index: u16,
+        /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
+        output_encrypted_value_index: u16,
         /// Optional index into `remaining_accounts` for the app account authority signer.
         ///
         /// `None` uses the fixed `app_account_authority` account in the eval
         /// context. `Some(index)` requires that remaining account to be a signer
         /// and to match `output_app_account`.
         output_app_account_authority_index: Option<u16>,
-        /// Nonce key for the output ACL record.
-        output_nonce_key: [u8; 32],
-        /// Nonce sequence for the output ACL record.
-        output_nonce_sequence: u64,
-        /// ACL domain key for the output ACL record.
+        /// ACL domain key for the output lineage.
         output_acl_domain_key: Pubkey,
-        /// App account authorized to create the output ACL record.
+        /// App account authorized to bind the output lineage.
         output_app_account: Pubkey,
-        /// Encrypted value label for the output ACL record.
+        /// Encrypted value label for the output lineage.
         output_encrypted_value_label: [u8; 32],
-        /// Initial subjects on the output ACL record.
+        /// Subjects on the output lineage. On create these are the initial
+        /// subjects; on supersede they must equal the stored subjects exactly.
         output_subjects: Vec<AclSubjectEntry>,
-        /// Initial public decrypt flag on the output ACL record.
-        output_public_decrypt: bool,
+        /// Superseded handle: `None` on create, `Some(current_handle)` on update.
+        /// Carried in instruction data so indexers can reconstruct the appended
+        /// MMR leaves without reading the account; validated against the account.
+        previous_handle: Option<[u8; 32]>,
+        /// Superseded subject set, parallel to `previous_handle` (`None` on create,
+        /// exact stored subjects on update). Same indexer-reconstruction purpose.
+        previous_subjects: Option<Vec<Pubkey>>,
+        /// When true, the newly bound handle is born publicly decryptable: after
+        /// writing it as `current_handle`, a public-decrypt leaf is appended for
+        /// the new handle (byte-identical to `make_handle_public`). Carried in
+        /// instruction data so indexers reconstruct that leaf without reading the
+        /// account. This is the opt-in relaxation of the "created lineages cannot
+        /// be born public" invariant (DD-036).
+        make_public: bool,
     },
 }
 
@@ -411,47 +405,6 @@ impl FheTernaryOpCode {
             Self::IfThenElse => 25,
         }
     }
-}
-
-/// Returns true when `role_flags` contains every flag in `role`.
-pub fn subject_has_role(role_flags: u8, role: u8) -> bool {
-    role_flags & role == role
-}
-
-/// Returns true when a role bitset is nonempty and uses only known role bits.
-pub fn role_flags_are_known(role_flags: u8) -> bool {
-    role_flags != 0 && role_flags & !ACL_ROLE_KNOWN == 0
-}
-
-/// Returns true when the inline ACL subject arrays are exact and KMS-decodable.
-pub fn acl_record_subject_slots_are_canonical(record: &AclRecord) -> bool {
-    let subject_count = record.subject_count as usize;
-    if subject_count > MAX_ACL_SUBJECTS {
-        return false;
-    }
-    let mut index = 0usize;
-    while index < subject_count {
-        let subject = record.subjects[index];
-        let role_flags = record.subject_roles[index];
-        if subject == Pubkey::default() || !role_flags_are_known(role_flags) {
-            return false;
-        }
-        let mut previous = 0usize;
-        while previous < index {
-            if record.subjects[previous] == subject {
-                return false;
-            }
-            previous += 1;
-        }
-        index += 1;
-    }
-    while index < MAX_ACL_SUBJECTS {
-        if record.subjects[index] != Pubkey::default() || record.subject_roles[index] != 0 {
-            return false;
-        }
-        index += 1;
-    }
-    true
 }
 
 /// Returns the chain id embedded in a handle.
@@ -836,26 +789,6 @@ pub fn kms_context_address(context_id: u64) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[KMS_CONTEXT_SEED, &context_id.to_le_bytes()], &crate::ID)
 }
 
-/// Returns the canonical ACL record address for a nonce key and sequence.
-pub fn acl_record_address(nonce_key: [u8; 32], nonce_sequence: u64) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[
-            ACL_RECORD_SEED,
-            nonce_key.as_ref(),
-            &nonce_sequence.to_le_bytes(),
-        ],
-        &crate::ID,
-    )
-}
-
-/// Returns the canonical overflow permission address for a subject.
-pub fn acl_permission_address(acl_record: Pubkey, subject: Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &[ACL_PERMISSION_SEED, acl_record.as_ref(), subject.as_ref()],
-        &crate::ID,
-    )
-}
-
 /// Returns the canonical deny-list address for a subject.
 pub fn deny_subject_address(subject: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[DENY_SUBJECT_SEED, subject.as_ref()], &crate::ID)
@@ -886,62 +819,6 @@ pub fn user_decryption_delegation_address(
         ],
         &crate::ID,
     )
-}
-
-/// Returns the canonical material commitment address for an ACL record.
-pub fn handle_material_address(acl_record: Pubkey) -> (Pubkey, u8) {
-    let (host_config, _) = host_config_address();
-    Pubkey::find_program_address(
-        &[
-            HANDLE_MATERIAL_SEED,
-            host_config.as_ref(),
-            acl_record.as_ref(),
-        ],
-        &crate::ID,
-    )
-}
-
-/// Computes the commitment hash stored in [`HandleMaterialCommitment`].
-pub fn handle_material_commitment_hash(
-    material_commitment: Pubkey,
-    acl_record: Pubkey,
-    key_id: [u8; 32],
-    ciphertext_digest: [u8; 32],
-    sns_ciphertext_digest: [u8; 32],
-    coprocessor_set_digest: [u8; 32],
-) -> [u8; 32] {
-    let (host_config, _) = host_config_address();
-    hashv(&[
-        b"zama-solana-material-commitment-v1",
-        host_config.as_ref(),
-        crate::ID.as_ref(),
-        material_commitment.as_ref(),
-        acl_record.as_ref(),
-        &key_id,
-        &ciphertext_digest,
-        &sns_ciphertext_digest,
-        &coprocessor_set_digest,
-    ])
-    .to_bytes()
-}
-
-/// Derives the app-controlled nonce key for one encrypted field.
-///
-/// The nonce key intentionally contains app metadata, not the opaque handle.
-/// This lets the app predeclare the ACL account address before the host program
-/// computes or binds the final handle.
-pub fn acl_nonce_key(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> [u8; 32] {
-    hashv(&[
-        b"zama-acl-nonce-key-v1",
-        acl_domain_key.as_ref(),
-        app_account.as_ref(),
-        &encrypted_value_label,
-    ])
-    .to_bytes()
 }
 
 /// Derives an instruction-local eval handle using the current slot context.
@@ -1012,98 +889,6 @@ pub fn computed_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
         clock.unix_timestamp,
         context_id,
         op_index,
-    ))
-}
-
-/// Derives a nonce-bound eval output handle using the current slot context.
-///
-/// This helper uses [`SOLANA_POC_CHAIN_ID`]. CPI callers that have a
-/// [`HostConfig`] should prefer
-/// [`computed_bound_eval_handle_for_current_slot_with_chain_id`].
-pub fn computed_bound_eval_handle_for_current_slot(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    computed_bound_eval_handle_for_current_slot_with_chain_id(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        SOLANA_POC_CHAIN_ID,
-        context_id,
-        op_index,
-        output_nonce_key,
-        output_nonce_sequence,
-    )
-}
-
-/// Derives a nonce-bound eval output handle using the current slot context and chain id.
-pub fn computed_bound_eval_handle_for_current_slot_with_chain_id(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> Result<[u8; 32]> {
-    computed_bound_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        context_id,
-        op_index,
-        output_nonce_key,
-        output_nonce_sequence,
-        false,
-    )
-}
-
-/// Derives a nonce-bound eval output handle, optionally using the local-test
-/// zero fallback when explicitly allowed by host config.
-#[allow(clippy::too_many_arguments)]
-pub fn computed_bound_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-    allow_test_zero: bool,
-) -> Result<[u8; 32]> {
-    let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash_with_test_fallback(clock.slot, allow_test_zero)?;
-    Ok(computed_bound_eval_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        clock.unix_timestamp,
-        context_id,
-        op_index,
-        output_nonce_key,
-        output_nonce_sequence,
     ))
 }
 
@@ -1246,89 +1031,6 @@ pub fn computed_eval_rand_seed(
     seed
 }
 
-/// Derives a nonce-bound durable output handle for composed eval from explicit slot entropy.
-pub fn computed_bound_eval_handle(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let base_result = computed_eval_handle(
-        op,
-        lhs,
-        rhs,
-        scalar,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-        context_id,
-        op_index,
-    );
-    let mut result = base_result;
-    result[..21].copy_from_slice(
-        &keccak_hashv(&[
-            b"FHE_bound_eval_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
-    );
-    result
-}
-
-/// Derives a nonce-bound durable ternary output handle for composed eval from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
-pub fn computed_bound_eval_ternary_handle(
-    op: FheTernaryOpCode,
-    control: [u8; 32],
-    if_true: [u8; 32],
-    if_false: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let base_result = computed_eval_ternary_handle(
-        op,
-        control,
-        if_true,
-        if_false,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-        context_id,
-        op_index,
-    );
-    let mut result = base_result;
-    result[..21].copy_from_slice(
-        &hashv(&[
-            b"FHE_bound_eval_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
-    );
-    result
-}
-
 /// Derives an instruction-local eval sum handle from explicit slot entropy.
 #[allow(clippy::too_many_arguments)]
 pub fn computed_eval_sum_handle(
@@ -1359,42 +1061,6 @@ pub fn computed_eval_sum_handle(
     preimage.push(&timestamp_bytes);
     let mut result = hashv(preimage.as_slice()).to_bytes();
     finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
-}
-
-/// Derives a nonce-bound durable sum eval handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
-pub fn computed_bound_eval_sum_handle(
-    operand_handles: &[[u8; 32]],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let base_result = computed_eval_sum_handle(
-        operand_handles,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-        context_id,
-        op_index,
-    );
-    let mut result = base_result;
-    result[..21].copy_from_slice(
-        &hashv(&[
-            b"FHE_bound_eval_sum_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
-    );
     result
 }
 
@@ -1433,44 +1099,6 @@ pub fn computed_eval_is_in_handle(
     result
 }
 
-/// Derives a nonce-bound durable is-in eval handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
-pub fn computed_bound_eval_is_in_handle(
-    value_handle: [u8; 32],
-    set_handles: &[[u8; 32]],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let base_result = computed_eval_is_in_handle(
-        value_handle,
-        set_handles,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-        context_id,
-        op_index,
-    );
-    let mut result = base_result;
-    result[..21].copy_from_slice(
-        &hashv(&[
-            b"FHE_bound_eval_is_in_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
-    );
-    result
-}
-
 /// Derives an instruction-local eval mul-div handle from explicit slot entropy.
 #[allow(clippy::too_many_arguments)]
 pub fn computed_eval_mul_div_handle(
@@ -1505,114 +1133,6 @@ pub fn computed_eval_mul_div_handle(
     .to_bytes();
     finish_computed_handle(&mut result, &chain_id_bytes, output_fhe_type);
     result
-}
-
-/// Derives a nonce-bound durable mul-div eval handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
-pub fn computed_bound_eval_mul_div_handle(
-    factor1: [u8; 32],
-    factor2: [u8; 32],
-    divisor: [u8; 32],
-    scalar: bool,
-    output_fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let base_result = computed_eval_mul_div_handle(
-        factor1,
-        factor2,
-        divisor,
-        scalar,
-        output_fhe_type,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-        context_id,
-        op_index,
-    );
-    let mut result = base_result;
-    result[..21].copy_from_slice(
-        &hashv(&[
-            b"FHE_bound_eval_mul_div_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
-    );
-    result
-}
-
-/// Derives a nonce-bound durable trivial-encrypt eval handle from explicit slot entropy.
-pub fn computed_bound_eval_trivial_handle(
-    plaintext: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let fhe_type_bytes = [fhe_type];
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = hashv(&[
-        b"FHE_bound_eval_trivial_output",
-        &context_id,
-        &op_index_bytes,
-        &plaintext,
-        &fhe_type_bytes,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-        &output_nonce_key,
-        &sequence_bytes,
-    ])
-    .to_bytes();
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
-}
-
-/// Derives the seed emitted for a nonce-bound durable eval random handle from explicit slot entropy.
-pub fn computed_bound_eval_rand_seed(
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 16] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let hash = hashv(&[
-        b"FHE_bound_eval_seed",
-        &context_id,
-        &op_index_bytes,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-        &output_nonce_key,
-        &sequence_bytes,
-    ])
-    .to_bytes();
-    let mut seed = [0; 16];
-    seed.copy_from_slice(&hash[..16]);
-    seed
 }
 
 /// Deterministically derives a random-ciphertext handle from the emitted seed.
@@ -1694,39 +1214,6 @@ pub fn computed_unary_handle(
     result
 }
 
-/// Derives a nonce-bound unary-op output handle from explicit slot entropy.
-pub fn computed_bound_unary_handle(
-    op: FheUnaryOpCode,
-    operand: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let base_result = computed_unary_handle(
-        op,
-        operand,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    );
-    let mut result = base_result;
-    result[..21].copy_from_slice(
-        &keccak_hashv(&[
-            b"FHE_bound_unary_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
-    );
-    result
-}
-
 /// Derives an instruction-local eval unary handle from explicit slot entropy.
 pub fn computed_eval_unary_handle(
     op: FheUnaryOpCode,
@@ -1765,44 +1252,6 @@ pub fn computed_eval_unary_handle(
     result
 }
 
-/// Derives a nonce-bound durable unary eval handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
-pub fn computed_bound_eval_unary_handle(
-    op: FheUnaryOpCode,
-    operand: [u8; 32],
-    fhe_type: u8,
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 32] {
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let base_result = computed_eval_unary_handle(
-        op,
-        operand,
-        fhe_type,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-        context_id,
-        op_index,
-    );
-    let mut result = base_result;
-    result[..21].copy_from_slice(
-        &hashv(&[
-            b"FHE_bound_eval_unary_output",
-            &base_result,
-            &output_nonce_key,
-            &sequence_bytes,
-        ])
-        .to_bytes()[..21],
-    );
-    result
-}
-
 /// Derives the seed emitted for an instruction-local eval bounded-random handle.
 pub fn computed_eval_rand_bounded_seed(
     upper_bound: [u8; 32],
@@ -1824,40 +1273,6 @@ pub fn computed_eval_rand_bounded_seed(
         &chain_id_bytes,
         &previous_bank_hash,
         &timestamp_bytes,
-    ])
-    .to_bytes();
-    let mut seed = [0; 16];
-    seed.copy_from_slice(&hash[..16]);
-    seed
-}
-
-/// Derives the seed emitted for a nonce-bound durable eval bounded-random handle from explicit slot entropy.
-#[allow(clippy::too_many_arguments)]
-pub fn computed_bound_eval_rand_bounded_seed(
-    upper_bound: [u8; 32],
-    chain_id: u64,
-    previous_bank_hash: [u8; 32],
-    unix_timestamp: i64,
-    context_id: [u8; 32],
-    op_index: u16,
-    output_nonce_key: [u8; 32],
-    output_nonce_sequence: u64,
-) -> [u8; 16] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
-    let sequence_bytes = output_nonce_sequence.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let hash = hashv(&[
-        b"FHE_bound_eval_bounded_seed",
-        &context_id,
-        &op_index_bytes,
-        &upper_bound,
-        crate::ID.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-        &output_nonce_key,
-        &sequence_bytes,
     ])
     .to_bytes();
     let mut seed = [0; 16];
@@ -1947,11 +1362,6 @@ where
     entries
         .into_iter()
         .find_map(|(slot, hash)| (slot < current_slot).then_some(hash))
-}
-
-/// Returns true when an ACL record grants the base use role to an inline subject.
-pub fn record_allows(record: &AclRecord, subject: Pubkey) -> bool {
-    record.inline_subject_has_role(subject, ACL_ROLE_USE)
 }
 
 #[cfg(test)]

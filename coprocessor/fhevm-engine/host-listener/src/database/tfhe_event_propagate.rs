@@ -961,56 +961,6 @@ impl Database {
         Ok(inserted)
     }
 
-    /// Marks the computation that produces `handle` as allowed so the
-    /// tfhe-worker materializes its ciphertext (it only schedules
-    /// `is_completed = FALSE AND is_allowed = TRUE` rows), and re-arms its
-    /// dependence_chain so the worker re-acquires it.
-    ///
-    /// On Solana the allow event arrives in a LATER slot than the compute, so
-    /// the compute was inserted `is_completed = true` (the "unallowed" default)
-    /// and the worker already locked its chain, found no allowed work, and set
-    /// the chain `status = 'processed'`. Flipping the computation alone is not
-    /// enough: the chain must be reset to `'updated', worker_id = NULL` or the
-    /// worker never looks at it again. The computation flip is gated on
-    /// `completed_at IS NULL` so a genuinely materialized computation is never
-    /// reopened — only the never-run placeholder is.
-    pub async fn mark_solana_computation_allowed(
-        &self,
-        tx: &mut Transaction<'_>,
-        handle: &[u8],
-    ) -> Result<bool, SqlxError> {
-        let chains = sqlx::query!(
-            "UPDATE computations
-                SET is_allowed = TRUE, is_completed = FALSE
-              WHERE output_handle = $1
-                AND host_chain_id = $2
-                AND completed_at IS NULL
-                AND is_error = FALSE
-              RETURNING dependence_chain_id",
-            handle,
-            self.chain_id.as_i64(),
-        )
-        .fetch_all(tx.deref_mut())
-        .await?;
-        if chains.is_empty() {
-            return Ok(false);
-        }
-        for chain in &chains {
-            sqlx::query!(
-                "UPDATE dependence_chain
-                    SET status = 'updated', worker_id = NULL,
-                        lock_acquired_at = NULL, lock_expires_at = NULL,
-                        last_updated_at = NOW()
-                  WHERE dependence_chain_id = $1
-                    AND status = 'processed'",
-                chain.dependence_chain_id,
-            )
-            .execute(tx.deref_mut())
-            .await?;
-        }
-        Ok(true)
-    }
-
     /// Handles confidential-bridge events (see RFC 008). Each event is recorded
     /// once; re-observation is a no-op (`ON CONFLICT DO NOTHING`).
     /// The block-number column is therefore first-seen.
@@ -1208,6 +1158,23 @@ impl Database {
         );
         let inserted = query.execute(tx.deref_mut()).await?.rows_affected() > 0;
         Ok(inserted)
+    }
+
+    /// Remove one subject-scoped allow for a handle.
+    pub async fn delete_allowed_handle(
+        &self,
+        tx: &mut Transaction<'_>,
+        handle: Vec<u8>,
+        account_address: String,
+    ) -> Result<bool, SqlxError> {
+        let query = sqlx::query(
+            "DELETE FROM allowed_handles WHERE handle = $1 AND account_address = $2 AND host_chain_id = $3",
+        )
+        .bind(handle)
+        .bind(account_address)
+        .bind(self.chain_id.as_i64());
+        let deleted = query.execute(tx.deref_mut()).await?.rows_affected() > 0;
+        Ok(deleted)
     }
 
     async fn record_transaction_begin(

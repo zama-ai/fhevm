@@ -7,16 +7,15 @@ use super::*;
 #[instruction(amount_handle: [u8; 32], request_nonce: [u8; 32], expires_slot: u64)]
 #[event_cpi]
 pub struct RequestDiscloseAmount<'info> {
-    /// Requester that must have `ACL_ROLE_PUBLIC_DECRYPT` on the amount ACL.
+    /// Requester that must be allowed on the amount lineage.
     #[account(mut)]
     pub requester: Signer<'info>,
     /// Confidential mint that scopes the encrypted amount.
     pub mint: Box<Account<'info, ConfidentialMint>>,
-    /// Token-scoped amount ACL record. Updated by ZamaHost CPI.
+    /// Token-scoped amount `EncryptedValue` lineage. The requester must be
+    /// allowed so this instruction can append a public-decrypt MMR leaf.
     #[account(mut)]
-    pub amount_acl_record: Box<Account<'info, zama_host::AclRecord>>,
-    /// Material commitment witness for the disclosed handle.
-    pub amount_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Account-backed request witness consumed by the KMS response path.
     #[account(
         init,
@@ -32,17 +31,13 @@ pub struct RequestDiscloseAmount<'info> {
         bump
     )]
     pub disclosure_request: Box<Account<'info, DisclosureRequest>>,
-    /// CHECK: optional overflow permission witness for the requester authority.
-    pub authority_permission_record: Option<UncheckedAccount<'info>>,
     /// CHECK: optional deny-list witness when host deny-lists are enabled.
     pub deny_subject_record: Option<UncheckedAccount<'info>>,
-    /// CHECK: Anchor event CPI authority for the Zama host program.
-    pub zama_event_authority: UncheckedAccount<'info>,
-    /// ZamaHost program used to update the ACL record.
+    /// ZamaHost program used to update the amount lineage.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for pause and deny-list checks.
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// System program used for request witness creation.
+    /// System program used for request witness creation and lineage growth.
     pub system_program: Program<'info, System>,
 }
 
@@ -60,17 +55,11 @@ pub fn request_disclose_amount(
         expires_slot >= clock.slot,
         ConfidentialTokenError::RequestWitnessUnavailable
     );
-    assert_token_amount_acl(
-        &ctx.accounts.amount_acl_record,
+    assert_token_amount_encrypted_value(
+        &ctx.accounts.amount_value,
         amount_handle,
         ctx.accounts.mint.key(),
         ctx.accounts.mint.compute_signer,
-    )?;
-    assert_material_commitment(
-        &ctx.accounts.amount_material_commitment,
-        ctx.accounts.amount_material_commitment.key(),
-        &ctx.accounts.amount_acl_record,
-        amount_handle,
     )?;
     // Pin the request to the host's current KMS context; the response cert must verify against
     // this context (not a later rotated one) when the disclosure is consumed.
@@ -80,6 +69,8 @@ pub fn request_disclose_amount(
         ConfidentialTokenError::GatewayVerifierConfigUnset
     );
 
+    let encrypted_value = ctx.accounts.amount_value.key();
+    let app_account = ctx.accounts.amount_value.app_account;
     let request_key = ctx.accounts.disclosure_request.key();
     let request_hash = disclosure_request_hash(
         crate::ID,
@@ -87,14 +78,9 @@ pub fn request_disclose_amount(
         ctx.accounts.mint.key(),
         ctx.accounts.requester.key(),
         Pubkey::default(),
-        ctx.accounts.amount_acl_record.app_account,
+        app_account,
         amount_handle,
-        ctx.accounts.amount_acl_record.key(),
-        ctx.accounts.amount_material_commitment.key(),
-        ctx.accounts
-            .amount_material_commitment
-            .material_commitment_hash,
-        ctx.accounts.amount_material_commitment.key_id,
+        encrypted_value,
         ctx.accounts.host_config.key(),
         kms_context_id,
         request_nonce,
@@ -103,38 +89,48 @@ pub fn request_disclose_amount(
         DISCLOSURE_REQUEST_MODE_AMOUNT,
     );
 
+    // Re-add the requester idempotently, then append the public-decrypt MMR leaf
+    // for the current handle.
+    fhe::allow_subjects(
+        fhe::AllowSubjects {
+            payer: &ctx.accounts.requester,
+            authority: &ctx.accounts.requester,
+            encrypted_value: ctx.accounts.amount_value.to_account_info(),
+            host_config: &ctx.accounts.host_config,
+            deny_subject_record: ctx
+                .accounts
+                .deny_subject_record
+                .as_ref()
+                .map(|account| account.to_account_info()),
+            zama_program: &ctx.accounts.zama_program,
+            system_program: &ctx.accounts.system_program,
+        },
+        vec![zama_host::instructions::EncryptedValueSubjectGrant {
+            subject: ctx.accounts.requester.key(),
+        }],
+    )?;
     fhe::allow_public_decrypt(fhe::AllowPublicDecrypt {
         authority: &ctx.accounts.requester,
-        authority_permission_record: ctx
-            .accounts
-            .authority_permission_record
-            .as_ref()
-            .map(|account| account.to_account_info()),
-        acl_record: ctx.accounts.amount_acl_record.to_account_info(),
+        payer: &ctx.accounts.requester,
+        handle: amount_handle,
+        encrypted_value: ctx.accounts.amount_value.to_account_info(),
         host_config: &ctx.accounts.host_config,
         deny_subject_record: ctx
             .accounts
             .deny_subject_record
             .as_ref()
             .map(|account| account.to_account_info()),
-        event_authority: &ctx.accounts.zama_event_authority,
         zama_program: &ctx.accounts.zama_program,
-        handle: amount_handle,
+        system_program: &ctx.accounts.system_program,
     })?;
 
     let request = &mut ctx.accounts.disclosure_request;
     request.mint = ctx.accounts.mint.key();
     request.requester = ctx.accounts.requester.key();
     request.token_account = Pubkey::default();
-    request.app_account = ctx.accounts.amount_acl_record.app_account;
+    request.app_account = app_account;
     request.handle = amount_handle;
-    request.acl_record = ctx.accounts.amount_acl_record.key();
-    request.material_commitment = ctx.accounts.amount_material_commitment.key();
-    request.material_commitment_hash = ctx
-        .accounts
-        .amount_material_commitment
-        .material_commitment_hash;
-    request.material_key_id = ctx.accounts.amount_material_commitment.key_id;
+    request.encrypted_value = encrypted_value;
     request.host_config = ctx.accounts.host_config.key();
     request.kms_context_id = kms_context_id;
     request.request_nonce = request_nonce;
@@ -150,7 +146,7 @@ pub fn request_disclose_amount(
         mint: ctx.accounts.mint.key(),
         requester: ctx.accounts.requester.key(),
         handle: amount_handle,
-        acl_record: ctx.accounts.amount_acl_record.key(),
+        encrypted_value,
         request: request_key,
         request_hash,
         kms_context_id,

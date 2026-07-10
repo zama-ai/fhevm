@@ -15,10 +15,8 @@ use super::*;
 pub struct DiscloseAmountSecp<'info> {
     /// Confidential mint the disclosed amount belongs to.
     pub mint: Box<Account<'info, ConfidentialMint>>,
-    /// Token-scoped amount ACL record for the disclosed handle.
-    pub amount_acl_record: Box<Account<'info, zama_host::AclRecord>>,
-    /// Material commitment witness for the disclosed handle.
-    pub amount_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    /// Token-scoped amount `EncryptedValue` lineage for the disclosed handle.
+    pub amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Account-backed disclosure request witness consumed by this instruction.
     #[account(mut)]
     pub disclosure_request: Box<Account<'info, DisclosureRequest>>,
@@ -43,38 +41,36 @@ pub fn disclose_amount_secp(
     cleartext_amount: u64,
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
+    proof: MmrInclusionProof,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     assert_host_config_allows_token_response(&ctx.accounts.host_config)?;
     let mint_key = ctx.accounts.mint.key();
-    assert_token_amount_acl(
-        &ctx.accounts.amount_acl_record,
-        amount_handle,
-        mint_key,
-        ctx.accounts.mint.compute_signer,
-    )?;
-    assert_material_commitment(
-        &ctx.accounts.amount_material_commitment,
-        ctx.accounts.amount_material_commitment.key(),
-        &ctx.accounts.amount_acl_record,
-        amount_handle,
-    )?;
-    assert_public_decrypt_released(&ctx.accounts.amount_acl_record)?;
 
-    // Bind to the request witness: same mode/handle/accounts/material/host config; PENDING and
-    // unexpired; recomputed request_hash matches.
+    // Bind to the request witness: same mode/handle/accounts/host config; PENDING and unexpired;
+    // recomputed request_hash matches. Passing `amount_handle`/`amount_value.key()` binds them to
+    // `request.handle`/`request.encrypted_value`, so authorization targets the witness-pinned handle
+    // and lineage — not the live lineage handle, which may have been superseded during the KMS
+    // round-trip. The handle's publicness was sealed as a permanent MMR leaf at request time.
     assert_disclosure_request_witness(
         &ctx.accounts.disclosure_request,
         ctx.accounts.disclosure_request.key(),
         DISCLOSURE_REQUEST_MODE_AMOUNT,
         mint_key,
         Pubkey::default(),
-        ctx.accounts.amount_acl_record.app_account,
+        ctx.accounts.amount_value.app_account,
         amount_handle,
-        ctx.accounts.amount_acl_record.key(),
-        &ctx.accounts.amount_material_commitment,
+        ctx.accounts.amount_value.key(),
         ctx.accounts.host_config.key(),
+    )?;
+    // Authorize the pinned handle by MMR public-decrypt proof against the lineage's current peaks.
+    let proof = zama_solana_acl::MmrProof::from(proof);
+    authorize_disclosed_handle(
+        &ctx.accounts.amount_value,
+        ctx.accounts.amount_value.key(),
+        amount_handle,
+        &proof,
     )?;
     // Verify the cert against the witness-pinned context, closing rotation reuse.
     assert_kms_public_decrypt_cert_for_request(

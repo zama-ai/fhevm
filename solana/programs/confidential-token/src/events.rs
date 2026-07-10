@@ -21,11 +21,11 @@ pub struct BalanceHandleUpdatedEvent {
     /// Previous balance handle.
     pub old_handle: [u8; 32],
     /// Previous ZamaHost ACL record.
-    pub old_acl_record: Pubkey,
+    pub old_encrypted_value: Pubkey,
     /// New balance handle.
     pub new_handle: [u8; 32],
     /// New ZamaHost ACL record.
-    pub new_acl_record: Pubkey,
+    pub new_encrypted_value: Pubkey,
     /// Reason this balance pointer changed.
     pub reason: BalanceHandleUpdateReason,
 }
@@ -63,11 +63,11 @@ pub struct TotalSupplyHandleUpdatedEvent {
     /// Previous total-supply handle.
     pub old_handle: [u8; 32],
     /// Previous ZamaHost ACL record.
-    pub old_acl_record: Pubkey,
+    pub old_encrypted_value: Pubkey,
     /// New total-supply handle.
     pub new_handle: [u8; 32],
     /// New ZamaHost ACL record.
-    pub new_acl_record: Pubkey,
+    pub new_encrypted_value: Pubkey,
     /// Reason this total-supply pointer changed.
     pub reason: TotalSupplyUpdateReason,
 }
@@ -116,16 +116,10 @@ pub struct RandomAmountCreatedEvent {
     pub token_account: Pubkey,
     /// Whether this amount is intended for transfer or burn.
     pub amount_kind: ConfidentialAmountKind,
-    /// True when the random amount was bounded.
-    pub bounded: bool,
-    /// Bound supplied to ZamaHost for bounded random amounts, or zero bytes for unbounded amounts.
-    pub upper_bound: [u8; 32],
     /// Newly created amount handle.
     pub handle: [u8; 32],
     /// ZamaHost ACL record initialized for the amount.
-    pub acl_record: Pubkey,
-    /// Nonce sequence used for the amount ACL record.
-    pub nonce_sequence: u64,
+    pub encrypted_value: Pubkey,
 }
 
 /// Emitted when the owner requests public disclosure of the current balance.
@@ -142,7 +136,7 @@ pub struct BalanceDisclosureRequestedEvent {
     /// Publicly decryptable balance handle.
     pub handle: [u8; 32],
     /// ZamaHost ACL record updated by the request.
-    pub acl_record: Pubkey,
+    pub encrypted_value: Pubkey,
     /// Account-backed request witness.
     pub request: Pubkey,
     /// Canonical request hash stored in the witness.
@@ -165,7 +159,7 @@ pub struct AmountDisclosureRequestedEvent {
     /// Publicly decryptable amount handle.
     pub handle: [u8; 32],
     /// ZamaHost ACL record updated by the request.
-    pub acl_record: Pubkey,
+    pub encrypted_value: Pubkey,
     /// Account-backed request witness.
     pub request: Pubkey,
     /// Canonical request hash stored in the witness.
@@ -228,7 +222,7 @@ pub struct BurnRedemptionRequestedEvent {
     /// Burned amount handle.
     pub burned_handle: [u8; 32],
     /// ACL record for `burned_handle`.
-    pub burned_acl_record: Pubkey,
+    pub burned_encrypted_value: Pubkey,
     /// Underlying token destination owner.
     pub destination_owner: Pubkey,
     /// Underlying token destination account.
@@ -257,7 +251,7 @@ pub struct BurnRedeemedEvent {
     /// Burned amount handle proven by KMS.
     pub burned_handle: [u8; 32],
     /// ACL record for `burned_handle`.
-    pub burned_acl_record: Pubkey,
+    pub burned_encrypted_value: Pubkey,
     /// Underlying token destination account.
     pub destination_usdc: Pubkey,
     /// Consumed request witness.
@@ -282,7 +276,7 @@ pub struct ConfidentialBurnEvent {
     /// Encrypted amount actually burned.
     pub burned_handle: [u8; 32],
     /// ZamaHost ACL record for `burned_handle`.
-    pub burned_acl_record: Pubkey,
+    pub burned_encrypted_value: Pubkey,
 }
 
 /// Emitted when a confidential transfer computes the all-or-zero moved amount.
@@ -303,5 +297,5 @@ pub struct ConfidentialTransferEvent {
     /// Encrypted amount actually transferred.
     pub transferred_handle: [u8; 32],
     /// ZamaHost ACL record for `transferred_handle`.
-    pub transferred_acl_record: Pubkey,
+    pub transferred_encrypted_value: Pubkey,
 }

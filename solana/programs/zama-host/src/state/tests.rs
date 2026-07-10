@@ -49,8 +49,11 @@ fn host_config_with(
 
 #[test]
 fn zero_birth_entropy_requires_poc_chain_and_test_shims() {
-    // Local PoC chain with the shim flag: relaxation allowed.
-    assert!(host_config_with(SOLANA_POC_CHAIN_ID, true, false).zero_birth_entropy_allowed());
+    // Local PoC chain with the shim flag: relaxation allowed only in PoC-feature builds.
+    assert_eq!(
+        host_config_with(SOLANA_POC_CHAIN_ID, true, false).zero_birth_entropy_allowed(),
+        cfg!(feature = "poc")
+    );
     // Local PoC chain without the shim flag: fails closed (drives the
     // PreviousBankHashUnavailable negative test).
     assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, false).zero_birth_entropy_allowed());
@@ -234,35 +237,6 @@ fn handle_derivation_rand_uses_keccak() {
     ]);
     assert_eq!(&handle[..21], &expected_prehandle[..21]);
     assert_canonical_metadata(handle, fhe_type, chain_id);
-}
-
-#[test]
-fn acl_record_layout_unchanged_by_hcu() {
-    // The HCU feature must not touch AclRecord (no hcu_depth field). Self-consistency: a
-    // serialized record must occupy exactly 8 + AclRecord::SPACE bytes, so any accidental field/SPACE
-    // drift fails here. (Cross-instruction depth — persisting depth on AclRecord — is HCU_DEFERRED §2.)
-    use anchor_lang::AccountSerialize;
-    let record = AclRecord {
-        handle: [0u8; 32],
-        nonce_key: [0u8; 32],
-        nonce_sequence: 0,
-        acl_domain_key: Pubkey::default(),
-        app_account: Pubkey::default(),
-        encrypted_value_label: [0u8; 32],
-        subjects: [Pubkey::default(); MAX_ACL_SUBJECTS],
-        subject_roles: [0u8; MAX_ACL_SUBJECTS],
-        subject_count: 0,
-        overflow_subject_count: 0,
-        public_decrypt: false,
-        material_commitment: Pubkey::default(),
-        material_commitment_hash: [0u8; 32],
-        material_key_id: [0u8; 32],
-        created_slot: 0,
-        bump: 0,
-    };
-    let mut buf = Vec::new();
-    record.try_serialize(&mut buf).unwrap();
-    assert_eq!(buf.len(), 8 + AclRecord::SPACE);
 }
 
 /// Builds a handle carrying `fhe_type` in byte 30 (the canonical type nibble read by

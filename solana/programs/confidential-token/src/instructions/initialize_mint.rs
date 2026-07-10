@@ -22,7 +22,7 @@ pub struct InitializeMint<'info> {
     pub total_supply_authority: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub total_supply_acl_record: UncheckedAccount<'info>,
+    pub total_supply_encrypted_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used to create the initial total-supply handle.
@@ -46,8 +46,7 @@ pub struct InitializeMint<'info> {
 }
 
 /// Initializes a confidential mint and records its host ACL domain.
-pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
-    assert_no_remaining_accounts(ctx.remaining_accounts)?;
+pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Result<()> {
     let mint_key = ctx.accounts.mint.key();
     let compute_signer = compute_signer_address(mint_key).0;
     require_keys_eq!(
@@ -61,10 +60,10 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
         total_supply_authority_address(mint_key).0,
         ConfidentialTokenError::TotalSupplyAuthorityMismatch
     );
-    let total_supply_acl_record = ctx.accounts.total_supply_acl_record.key();
+    let total_supply_encrypted_value = ctx.accounts.total_supply_encrypted_value.key();
     let total_supply_output = fhe::DurableOutput::new(
-        ctx.accounts.total_supply_acl_record.to_account_info(),
-        durable_slot(mint_key, total_supply_authority, total_supply_label(), 0),
+        ctx.accounts.total_supply_encrypted_value.to_account_info(),
+        durable_slot(mint_key, total_supply_authority, total_supply_label()),
         zama_fhe::AccessPolicy::for_compute(compute_signer).map_err(invalid_eval_plan)?,
     )?;
     let context_id = transfer_eval_context(
@@ -73,8 +72,6 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
         total_supply_authority,
         total_supply_authority,
         [0; 32],
-        0,
-        0,
     )?;
     let mut builder = zama_fhe::EvalBuilder::new(
         context_id,
@@ -105,6 +102,7 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
             event_authority: &ctx.accounts.zama_event_authority,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
+            deny_subject_records: ctx.remaining_accounts,
             compute_authority,
             system_program: &ctx.accounts.system_program,
             hcu_authority: fhe::HcuAuthority::for_mint(&ctx.accounts.hcu_authority, mint_key)?,
@@ -129,16 +127,14 @@ pub fn initialize_mint(ctx: Context<InitializeMint>) -> Result<()> {
     mint.compute_signer = compute_signer;
     mint.underlying_mint = ctx.accounts.underlying_mint.key();
     mint.decimals = ctx.accounts.underlying_mint.decimals;
-    mint.total_supply_handle = total_supply_handle;
-    mint.total_supply_acl_record = total_supply_acl_record;
-    mint.next_total_supply_nonce_sequence = 1;
+    mint.total_supply_encrypted_value = total_supply_encrypted_value;
     emit_cpi!(TotalSupplyHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: mint_key,
         old_handle: [0; 32],
-        old_acl_record: Pubkey::default(),
+        old_encrypted_value: Pubkey::default(),
         new_handle: total_supply_handle,
-        new_acl_record: total_supply_acl_record,
+        new_encrypted_value: total_supply_encrypted_value,
         reason: TotalSupplyUpdateReason::Initialize,
     });
     Ok(())

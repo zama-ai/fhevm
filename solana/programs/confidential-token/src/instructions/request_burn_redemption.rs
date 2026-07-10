@@ -22,11 +22,12 @@ pub struct RequestBurnRedemption<'info> {
         constraint = destination_usdc.owner == owner.key() @ ConfidentialTokenError::OwnerMismatch
     )]
     pub destination_usdc: Box<Account<'info, TokenAccount>>,
-    /// Burned amount ACL record whose handle will be redeemed.
+    /// Stable burned-amount lineage whose (possibly historical) handle will be
+    /// redeemed. The burn already made that handle publicly decryptable, so this
+    /// instruction only sanity-checks the lineage and binds the handle into the
+    /// witness; it re-proves the owner is a live subject via `allow_subjects`.
     #[account(mut)]
-    pub burned_amount_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// Material commitment witness for the burned handle.
-    pub burned_material_commitment: Box<Account<'info, zama_host::HandleMaterialCommitment>>,
+    pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
     /// Account-backed request witness consumed by the redemption path.
     #[account(
         init,
@@ -42,17 +43,13 @@ pub struct RequestBurnRedemption<'info> {
         bump
     )]
     pub redemption_request: Box<Account<'info, BurnRedemptionRequest>>,
-    /// CHECK: optional overflow permission witness for the owner authority.
-    pub authority_permission_record: Option<UncheckedAccount<'info>>,
     /// CHECK: optional deny-list witness when host deny-lists are enabled.
     pub deny_subject_record: Option<UncheckedAccount<'info>>,
-    /// CHECK: Anchor event CPI authority for the Zama host program.
-    pub zama_event_authority: UncheckedAccount<'info>,
-    /// ZamaHost program used to update the ACL record.
+    /// ZamaHost program used to update the burned-amount lineage.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for pause and deny-list checks.
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// System program used for request witness creation.
+    /// System program used for request witness creation and lineage growth.
     pub system_program: Program<'info, System>,
 }
 
@@ -92,19 +89,16 @@ pub fn request_burn_redemption(
         mint_key,
         ctx.accounts.owner.key(),
     )?;
-    assert_burned_amount_acl(
-        &ctx.accounts.burned_amount_acl,
+    // Lineage-only checks: the burned handle need NOT be the live handle. The burn already made
+    // it publicly decryptable (DD-036 / Vector 2), so a historical handle superseded by a later
+    // burn can still be requested; redeem proves the handle's publicness via the MMR proof.
+    assert_burned_amount_lineage(
+        &ctx.accounts.burned_amount_value,
         burned_handle,
         mint_key,
         token_account_key,
         ctx.accounts.owner.key(),
         ctx.accounts.mint.compute_signer,
-    )?;
-    assert_material_commitment(
-        &ctx.accounts.burned_material_commitment,
-        ctx.accounts.burned_material_commitment.key(),
-        &ctx.accounts.burned_amount_acl,
-        burned_handle,
     )?;
     // Pin the request to the host's current KMS context; the redemption cert must verify against
     // this context (not a later rotated one) when the redemption is consumed.
@@ -114,6 +108,7 @@ pub fn request_burn_redemption(
         ConfidentialTokenError::GatewayVerifierConfigUnset
     );
 
+    let burned_encrypted_value = ctx.accounts.burned_amount_value.key();
     let request_key = ctx.accounts.redemption_request.key();
     let request_hash = burn_redemption_request_hash(
         crate::ID,
@@ -125,12 +120,7 @@ pub fn request_burn_redemption(
         ctx.accounts.destination_usdc.owner,
         ctx.accounts.destination_usdc.key(),
         burned_handle,
-        ctx.accounts.burned_amount_acl.key(),
-        ctx.accounts.burned_material_commitment.key(),
-        ctx.accounts
-            .burned_material_commitment
-            .material_commitment_hash,
-        ctx.accounts.burned_material_commitment.key_id,
+        burned_encrypted_value,
         ctx.accounts.host_config.key(),
         kms_context_id,
         request_nonce,
@@ -138,24 +128,28 @@ pub fn request_burn_redemption(
         expires_slot,
     );
 
-    fhe::allow_public_decrypt(fhe::AllowPublicDecrypt {
-        authority: &ctx.accounts.owner,
-        authority_permission_record: ctx
-            .accounts
-            .authority_permission_record
-            .as_ref()
-            .map(|account| account.to_account_info()),
-        acl_record: ctx.accounts.burned_amount_acl.to_account_info(),
-        host_config: &ctx.accounts.host_config,
-        deny_subject_record: ctx
-            .accounts
-            .deny_subject_record
-            .as_ref()
-            .map(|account| account.to_account_info()),
-        event_authority: &ctx.accounts.zama_event_authority,
-        zama_program: &ctx.accounts.zama_program,
-        handle: burned_handle,
-    })?;
+    // Re-add the owner idempotently: this is a no-op on membership (the owner is already a
+    // durable subject) but routes through the host, which enforces the pause gate and proves the
+    // owner is currently allowed. The burn — not this request — owns the public-decrypt leaf now,
+    // so no MMR leaf is appended here (keeping a historical handle's proof position stable).
+    fhe::allow_subjects(
+        fhe::AllowSubjects {
+            payer: &ctx.accounts.owner,
+            authority: &ctx.accounts.owner,
+            encrypted_value: ctx.accounts.burned_amount_value.to_account_info(),
+            host_config: &ctx.accounts.host_config,
+            deny_subject_record: ctx
+                .accounts
+                .deny_subject_record
+                .as_ref()
+                .map(|account| account.to_account_info()),
+            zama_program: &ctx.accounts.zama_program,
+            system_program: &ctx.accounts.system_program,
+        },
+        vec![zama_host::instructions::EncryptedValueSubjectGrant {
+            subject: ctx.accounts.owner.key(),
+        }],
+    )?;
 
     let request = &mut ctx.accounts.redemption_request;
     request.mint = mint_key;
@@ -165,13 +159,7 @@ pub fn request_burn_redemption(
     request.destination_owner = ctx.accounts.destination_usdc.owner;
     request.destination_account = ctx.accounts.destination_usdc.key();
     request.burned_handle = burned_handle;
-    request.burned_acl_record = ctx.accounts.burned_amount_acl.key();
-    request.material_commitment = ctx.accounts.burned_material_commitment.key();
-    request.material_commitment_hash = ctx
-        .accounts
-        .burned_material_commitment
-        .material_commitment_hash;
-    request.material_key_id = ctx.accounts.burned_material_commitment.key_id;
+    request.burned_encrypted_value = burned_encrypted_value;
     request.host_config = ctx.accounts.host_config.key();
     request.kms_context_id = kms_context_id;
     request.request_nonce = request_nonce;
@@ -187,7 +175,7 @@ pub fn request_burn_redemption(
         owner: ctx.accounts.owner.key(),
         token_account: token_account_key,
         burned_handle,
-        burned_acl_record: ctx.accounts.burned_amount_acl.key(),
+        burned_encrypted_value,
         destination_owner: ctx.accounts.destination_usdc.owner,
         destination_account: ctx.accounts.destination_usdc.key(),
         request: request_key,

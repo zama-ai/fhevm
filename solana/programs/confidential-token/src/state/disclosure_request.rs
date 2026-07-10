@@ -23,18 +23,12 @@ pub struct DisclosureRequest {
     pub requester: Pubkey,
     /// Balance token account for balance mode, or default for amount mode.
     pub token_account: Pubkey,
-    /// ACL app account stored in the host ACL record.
+    /// ACL app account stored in the host `EncryptedValue` lineage.
     pub app_account: Pubkey,
     /// Requested handle.
     pub handle: [u8; 32],
-    /// ACL record for the requested handle.
-    pub acl_record: Pubkey,
-    /// Material commitment account for the requested handle.
-    pub material_commitment: Pubkey,
-    /// Canonical material commitment hash.
-    pub material_commitment_hash: [u8; 32],
-    /// Material key identifier.
-    pub material_key_id: [u8; 32],
+    /// `EncryptedValue` lineage for the requested handle.
+    pub encrypted_value: Pubkey,
     /// Host config whose chain id and gates were validated.
     pub host_config: Pubkey,
     /// KMS context id pinned at request time; the response cert must verify
@@ -58,7 +52,7 @@ pub struct DisclosureRequest {
 
 impl DisclosureRequest {
     /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = (32 * 12) + (8 * 3) + 1 + 1 + 1;
+    pub const SPACE: usize = (32 * 9) + (8 * 3) + 1 + 1 + 1;
 }
 
 /// Returns the canonical PDA for a disclosure request witness.
@@ -90,10 +84,7 @@ pub fn disclosure_request_hash(
     token_account: Pubkey,
     app_account: Pubkey,
     handle: [u8; 32],
-    acl_record: Pubkey,
-    material_commitment: Pubkey,
-    material_commitment_hash: [u8; 32],
-    material_key_id: [u8; 32],
+    encrypted_value: Pubkey,
     host_config: Pubkey,
     kms_context_id: u64,
     request_nonce: [u8; 32],
@@ -110,10 +101,7 @@ pub fn disclosure_request_hash(
         token_account.as_ref(),
         app_account.as_ref(),
         handle.as_ref(),
-        acl_record.as_ref(),
-        material_commitment.as_ref(),
-        material_commitment_hash.as_ref(),
-        material_key_id.as_ref(),
+        encrypted_value.as_ref(),
         host_config.as_ref(),
         &kms_context_id.to_le_bytes(),
         request_nonce.as_ref(),

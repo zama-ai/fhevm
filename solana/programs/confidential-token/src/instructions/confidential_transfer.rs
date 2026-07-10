@@ -8,7 +8,7 @@ use super::*;
 pub struct ConfidentialTransfer<'info> {
     /// Sender and transfer authority.
     pub owner: Signer<'info>,
-    /// Pays rent for output ACL records.
+    /// Pays rent for the transferred-amount lineage on its first bind.
     #[account(mut)]
     pub payer: Signer<'info>,
     /// Confidential mint.
@@ -23,19 +23,17 @@ pub struct ConfidentialTransfer<'info> {
     /// CHECK: Program-controlled compute signer PDA.
     #[account(seeds = [b"fhe-compute", mint.key().as_ref()], bump)]
     pub compute_signer: UncheckedAccount<'info>,
-    /// Sender current balance ACL record.
-    pub from_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// Recipient current balance ACL record.
-    pub to_current_compute_acl: Box<Account<'info, zama_host::AclRecord>>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub from_output_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub transferred_amount_acl: UncheckedAccount<'info>,
-    /// CHECK: initialized and validated by the Zama host program CPI.
-    #[account(mut)]
-    pub to_output_acl: UncheckedAccount<'info>,
+    /// Sender's stable balance `EncryptedValue` lineage; read for the current
+    /// handle and superseded in place by this eval's CPI.
+    #[account(mut, address = from_account.balance_encrypted_value)]
+    pub from_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    /// Recipient's stable balance `EncryptedValue` lineage.
+    #[account(mut, dup, address = to_account.balance_encrypted_value)]
+    pub to_balance_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    /// CHECK: stable `transferred_amount` lineage for `from_account`; created on
+    /// the sender's first transfer, superseded thereafter.
+    #[account(mut, address = encrypted_value_address(mint.key(), from_account.key(), transferred_amount_label()).0)]
+    pub transferred_amount_value: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
@@ -58,22 +56,24 @@ pub struct ConfidentialTransfer<'info> {
 }
 
 impl<'info> ConfidentialTransfer<'info> {
-    pub(crate) fn as_transfer_accounts(&mut self) -> TransferAccounts<'_, 'info> {
+    pub(crate) fn as_transfer_accounts<'a>(
+        &'a self,
+        remaining_accounts: &'a [AccountInfo<'info>],
+    ) -> TransferAccounts<'a, 'info> {
         TransferAccounts {
             payer: &self.payer,
             transfer_authority: self.owner.key(),
             mint: &self.mint,
-            from_account: &mut self.from_account,
-            to_account: &mut self.to_account,
+            from_account: &self.from_account,
+            to_account: &self.to_account,
             compute_signer: &self.compute_signer,
-            from_current_compute_acl: self.from_current_compute_acl.as_ref(),
-            to_current_compute_acl: self.to_current_compute_acl.as_ref(),
-            from_output_acl: self.from_output_acl.to_account_info(),
-            transferred_amount_acl: self.transferred_amount_acl.to_account_info(),
-            to_output_acl: self.to_output_acl.to_account_info(),
+            from_balance_value: self.from_balance_value.to_account_info(),
+            to_balance_value: self.to_balance_value.to_account_info(),
+            transferred_amount_value: self.transferred_amount_value.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
+            deny_subject_records: remaining_accounts,
             system_program: &self.system_program,
             hcu_block_meter: self
                 .hcu_block_meter
@@ -89,18 +89,17 @@ impl<'info> ConfidentialTransfer<'info> {
 }
 
 /// Transfers an encrypted amount by rotating the sender and recipient balance handles.
-pub fn confidential_transfer(
-    ctx: Context<ConfidentialTransfer>,
+pub fn confidential_transfer<'info>(
+    ctx: Context<'info, ConfidentialTransfer<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
 ) -> Result<()> {
-    assert_no_remaining_accounts(ctx.remaining_accounts)?;
     require_keys_eq!(
         ctx.accounts.from_account.owner,
         ctx.accounts.owner.key(),
         ConfidentialTokenError::OwnerMismatch
     );
     let outcome = execute_transfer(
-        ctx.accounts.as_transfer_accounts(),
+        ctx.accounts.as_transfer_accounts(ctx.remaining_accounts),
         ctx.bumps.compute_signer,
         amount_attestation,
     )?;
@@ -113,7 +112,7 @@ pub fn confidential_transfer(
             to_owner: outcome.to_owner,
             to_token_account: outcome.to_token_account,
             transferred_handle: outcome.transferred_handle,
-            transferred_acl_record: outcome.transferred_acl_record,
+            transferred_encrypted_value: outcome.transferred_encrypted_value,
         });
         emit_cpi!(BalanceHandleUpdatedEvent {
             version: APP_EVENT_VERSION,
@@ -121,9 +120,9 @@ pub fn confidential_transfer(
             owner: outcome.from_owner,
             token_account: outcome.from_token_account,
             old_handle: outcome.old_from_handle,
-            old_acl_record: outcome.old_from_acl_record,
+            old_encrypted_value: outcome.from_encrypted_value,
             new_handle: outcome.new_from_handle,
-            new_acl_record: outcome.new_from_acl_record,
+            new_encrypted_value: outcome.from_encrypted_value,
             reason: BalanceHandleUpdateReason::TransferDebit,
         });
         emit_cpi!(BalanceHandleUpdatedEvent {
@@ -132,9 +131,9 @@ pub fn confidential_transfer(
             owner: outcome.to_owner,
             token_account: outcome.to_token_account,
             old_handle: outcome.old_to_handle,
-            old_acl_record: outcome.old_to_acl_record,
+            old_encrypted_value: outcome.to_encrypted_value,
             new_handle: outcome.new_to_handle,
-            new_acl_record: outcome.new_to_acl_record,
+            new_encrypted_value: outcome.to_encrypted_value,
             reason: BalanceHandleUpdateReason::TransferCredit,
         });
     }

@@ -11,22 +11,22 @@
   ],
   "instructions": [
     {
-      "name": "allow_acl_subjects",
+      "name": "allow_subjects",
       "discriminator": [
-        155,
-        157,
-        74,
-        6,
-        155,
-        238,
-        165,
-        130
+        186,
+        205,
+        31,
+        20,
+        183,
+        17,
+        5,
+        26
       ],
       "accounts": [
         {
           "name": "payer",
           "docs": [
-            "Pays rent for any overflow permission PDAs."
+            "Pays for the account's growth, if any."
           ],
           "writable": true,
           "signer": true
@@ -34,22 +34,89 @@
         {
           "name": "authority",
           "docs": [
-            "Subject that must already have `ACL_ROLE_GRANT`."
+            "Current allowed subject on the lineage."
           ],
           "signer": true
         },
         {
-          "name": "authority_permission_record",
-          "docs": [
-            "Optional overflow permission witness when `authority` is not inline."
-          ],
+          "name": "encrypted_value",
+          "writable": true
+        },
+        {
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deny_subject_record",
           "optional": true
         },
         {
-          "name": "acl_record",
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "subjects",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "EncryptedValueSubjectGrant"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "create_encrypted_value",
+      "discriminator": [
+        16,
+        78,
+        219,
+        132,
+        226,
+        111,
+        211,
+        78
+      ],
+      "accounts": [
+        {
+          "name": "payer",
           "docs": [
-            "Canonical ACL record to extend."
+            "Pays rent for the new account."
           ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "app_account_authority",
+          "docs": [
+            "App account authority; must sign and match `app_account`."
+          ],
+          "signer": true
+        },
+        {
+          "name": "encrypted_value",
           "writable": true
         },
         {
@@ -84,164 +151,10 @@
         },
         {
           "name": "system_program",
-          "docs": [
-            "System program used for overflow permission creation."
-          ],
           "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
         }
       ],
       "args": [
-        {
-          "name": "handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "subjects",
-          "type": {
-            "vec": {
-              "defined": {
-                "name": "AclSubjectEntry"
-              }
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "allow_for_decryption",
-      "discriminator": [
-        130,
-        19,
-        191,
-        95,
-        175,
-        243,
-        146,
-        195
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "docs": [
-            "Subject that must have `ACL_ROLE_PUBLIC_DECRYPT`."
-          ],
-          "signer": true
-        },
-        {
-          "name": "authority_permission_record",
-          "docs": [
-            "Optional overflow permission witness when `authority` is not inline."
-          ],
-          "optional": true
-        },
-        {
-          "name": "acl_record",
-          "docs": [
-            "Canonical ACL record whose public-decrypt flag is updated."
-          ],
-          "writable": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "deny_subject_record",
-          "optional": true
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "assert_acl_record",
-      "discriminator": [
-        192,
-        215,
-        203,
-        151,
-        108,
-        157,
-        254,
-        26
-      ],
-      "accounts": [
-        {
-          "name": "acl_record",
-          "docs": [
-            "Canonical ACL record expected to store the requested handle and subject."
-          ]
-        },
-        {
-          "name": "subject_permission_record",
-          "docs": [
-            "Optional overflow permission witness when `subject` is not stored inline."
-          ],
-          "optional": true
-        }
-      ],
-      "args": [
-        {
-          "name": "nonce_key",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "nonce_sequence",
-          "type": "u64"
-        },
         {
           "name": "acl_domain_key",
           "type": "pubkey"
@@ -269,162 +182,13 @@
           }
         },
         {
-          "name": "subject",
-          "type": "pubkey"
-        }
-      ]
-    },
-    {
-      "name": "commit_handle_material",
-      "discriminator": [
-        32,
-        14,
-        93,
-        40,
-        247,
-        237,
-        137,
-        180
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "docs": [
-            "Pays rent for the material commitment account."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "material_authority",
-          "docs": [
-            "Configured material commitment authority."
-          ],
-          "signer": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton host config PDA. Boxed: `try_accounts` deserializes this struct on the",
-            "SBF stack, and the per-app HCU block cap pushed the frame 8 bytes past the 4096",
-            "limit; heap-allocating the config keeps the frame under it."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
+          "name": "subjects",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "EncryptedValueSubjectGrant"
               }
-            ]
-          }
-        },
-        {
-          "name": "acl_record",
-          "docs": [
-            "Canonical ACL record for the handle whose material is committed and sealed."
-          ],
-          "writable": true
-        },
-        {
-          "name": "material_commitment",
-          "docs": [
-            "One-shot material commitment PDA for this ACL record."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  97,
-                  110,
-                  100,
-                  108,
-                  101,
-                  45,
-                  109,
-                  97,
-                  116,
-                  101,
-                  114,
-                  105,
-                  97,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "host_config"
-              },
-              {
-                "kind": "account",
-                "path": "acl_record"
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for account creation."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "key_id",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "ciphertext_digest",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "sns_ciphertext_digest",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "coprocessor_set_digest",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
+            }
           }
         }
       ]
@@ -903,6 +667,138 @@
               "name": "InitializeHostConfigArgs"
             }
           }
+        }
+      ]
+    },
+    {
+      "name": "make_handle_public",
+      "discriminator": [
+        66,
+        199,
+        252,
+        247,
+        244,
+        172,
+        42,
+        118
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "Current allowed subject."
+          ],
+          "signer": true
+        },
+        {
+          "name": "encrypted_value",
+          "writable": true
+        },
+        {
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "remove_subject",
+      "discriminator": [
+        66,
+        88,
+        46,
+        123,
+        6,
+        107,
+        208,
+        50
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Current allowed subject on the lineage."
+          ],
+          "signer": true
+        },
+        {
+          "name": "encrypted_value",
+          "writable": true
+        },
+        {
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "subject",
+          "type": "pubkey"
         }
       ]
     },
@@ -1396,35 +1292,97 @@
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "update_encrypted_value",
+      "discriminator": [
+        134,
+        7,
+        12,
+        247,
+        233,
+        80,
+        35,
+        215
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "app_account_authority",
+          "docs": [
+            "App account authority; must sign and match the lineage's `app_account`."
+          ],
+          "signer": true
+        },
+        {
+          "name": "encrypted_value",
+          "writable": true
+        },
+        {
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deny_subject_record",
+          "optional": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "previous_handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "previous_subjects",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
     }
   ],
   "accounts": [
-    {
-      "name": "AclRecord",
-      "discriminator": [
-        185,
-        66,
-        125,
-        31,
-        45,
-        252,
-        71,
-        125
-      ]
-    },
-    {
-      "name": "HandleMaterialCommitment",
-      "discriminator": [
-        168,
-        38,
-        112,
-        58,
-        29,
-        67,
-        252,
-        208
-      ]
-    },
     {
       "name": "HostConfig",
       "discriminator": [
@@ -1466,45 +1424,6 @@
     }
   ],
   "events": [
-    {
-      "name": "AclAllowedEvent",
-      "discriminator": [
-        188,
-        19,
-        9,
-        204,
-        171,
-        220,
-        55,
-        204
-      ]
-    },
-    {
-      "name": "AclRecordBoundEvent",
-      "discriminator": [
-        102,
-        177,
-        87,
-        216,
-        100,
-        126,
-        1,
-        212
-      ]
-    },
-    {
-      "name": "AclSubjectAllowedEvent",
-      "discriminator": [
-        62,
-        166,
-        198,
-        55,
-        211,
-        170,
-        22,
-        108
-      ]
-    },
     {
       "name": "DenySubjectUpdatedEvent",
       "discriminator": [
@@ -1623,32 +1542,6 @@
       ]
     },
     {
-      "name": "HandleMaterialCommittedEvent",
-      "discriminator": [
-        58,
-        91,
-        73,
-        86,
-        209,
-        187,
-        147,
-        85
-      ]
-    },
-    {
-      "name": "HandleMaterialSealedEvent",
-      "discriminator": [
-        28,
-        37,
-        176,
-        253,
-        104,
-        153,
-        195,
-        226
-      ]
-    },
-    {
       "name": "HcuAppTrustUpdatedEvent",
       "discriminator": [
         40,
@@ -1711,19 +1604,6 @@
         232,
         240,
         63
-      ]
-    },
-    {
-      "name": "PublicDecryptAllowedEvent",
-      "discriminator": [
-        96,
-        45,
-        132,
-        148,
-        115,
-        231,
-        51,
-        235
       ]
     },
     {
@@ -1796,765 +1676,340 @@
     },
     {
       "code": 6008,
-      "name": "MaterialAuthorityMismatch",
-      "msg": "material authority does not match config"
-    },
-    {
-      "code": 6009,
-      "name": "MaterialCommitmentPdaMismatch",
-      "msg": "material commitment account does not match the canonical PDA"
-    },
-    {
-      "code": 6010,
-      "name": "InvalidMaterialCommitment",
-      "msg": "material commitment is invalid"
-    },
-    {
-      "code": 6011,
-      "name": "MaterialAlreadySealed",
-      "msg": "ACL record already has sealed material"
-    },
-    {
-      "code": 6012,
       "name": "InvalidInputProof",
       "msg": "input proof is invalid"
     },
     {
-      "code": 6013,
+      "code": 6009,
       "name": "InvalidInputHandleIndex",
       "msg": "input proof handle index is invalid"
     },
     {
-      "code": 6014,
+      "code": 6010,
       "name": "InvalidInputHandle",
       "msg": "input proof selected handle does not match"
     },
     {
-      "code": 6015,
+      "code": 6011,
       "name": "InvalidInputAttestation",
       "msg": "coprocessor input attestation is invalid"
     },
     {
-      "code": 6016,
+      "code": 6012,
       "name": "GatewayVerifierConfigUnset",
       "msg": "gateway verifier config is not set"
     },
     {
-      "code": 6017,
+      "code": 6013,
       "name": "EmptyKmsContext",
       "msg": "KMS context has no signers"
     },
     {
-      "code": 6018,
+      "code": 6014,
       "name": "TooManyKmsSigners",
       "msg": "KMS context exceeds the maximum signer count"
     },
     {
-      "code": 6019,
+      "code": 6015,
       "name": "InvalidKmsThreshold",
       "msg": "KMS context threshold is invalid"
     },
     {
-      "code": 6020,
+      "code": 6016,
       "name": "InvalidKmsContextId",
       "msg": "KMS context id is not the next sequential id"
     },
     {
-      "code": 6021,
+      "code": 6017,
       "name": "CurrentKmsContextCannotBeDestroyed",
       "msg": "current KMS context cannot be destroyed"
     },
     {
-      "code": 6022,
+      "code": 6018,
       "name": "InvalidInputHandleVersion",
       "msg": "input handle version is unsupported"
     },
     {
-      "code": 6023,
+      "code": 6019,
       "name": "InvalidInputHandleChain",
       "msg": "input handle chain id does not match host config"
     },
     {
-      "code": 6024,
+      "code": 6020,
       "name": "InvalidInputHandleType",
       "msg": "input handle FHE type is unsupported"
     },
     {
-      "code": 6025,
+      "code": 6021,
       "name": "UnsupportedFheType",
       "msg": "FHE type is unsupported"
     },
     {
-      "code": 6026,
+      "code": 6022,
       "name": "BinaryOperandTypeMismatch",
       "msg": "binary FHE operand type is incompatible"
     },
     {
-      "code": 6027,
+      "code": 6023,
       "name": "InvalidRandomUpperBound",
       "msg": "bounded random upper bound is invalid"
     },
     {
-      "code": 6028,
+      "code": 6024,
       "name": "InputProofSignatureMissing",
       "msg": "input proof Ed25519 signature is missing or malformed"
     },
     {
-      "code": 6029,
+      "code": 6025,
       "name": "TestShimsDisabled",
       "msg": "test event shims are disabled"
     },
     {
-      "code": 6030,
+      "code": 6026,
       "name": "TestShimAuthorityMismatch",
       "msg": "test shim authority does not match config"
     },
     {
-      "code": 6031,
+      "code": 6027,
       "name": "AppAccountAuthorityMismatch",
       "msg": "ACL app account authority does not match app account"
     },
     {
-      "code": 6032,
-      "name": "AclNonceKeyMismatch",
-      "msg": "ACL record nonce key does not match"
-    },
-    {
-      "code": 6033,
-      "name": "AclRecordPdaMismatch",
-      "msg": "ACL record address is not the canonical PDA for its nonce key"
-    },
-    {
-      "code": 6034,
-      "name": "AclNonceSequenceMismatch",
-      "msg": "ACL record nonce sequence does not match"
-    },
-    {
-      "code": 6035,
-      "name": "AclDomainKeyMismatch",
-      "msg": "ACL record domain key does not match"
-    },
-    {
-      "code": 6036,
-      "name": "AclAppAccountMismatch",
-      "msg": "ACL record app account does not match"
-    },
-    {
-      "code": 6037,
-      "name": "AclEncryptedValueLabelMismatch",
-      "msg": "ACL record encrypted value label does not match"
-    },
-    {
-      "code": 6038,
-      "name": "AclHandleMismatch",
-      "msg": "ACL record handle does not match"
-    },
-    {
-      "code": 6039,
-      "name": "AclSubjectMismatch",
-      "msg": "ACL record subject is not allowed"
-    },
-    {
-      "code": 6040,
-      "name": "AclSubjectRoleMismatch",
-      "msg": "ACL record subject lacks the required role"
-    },
-    {
-      "code": 6041,
+      "code": 6028,
       "name": "PublicDecryptAtBirthUnsupported",
-      "msg": "public decrypt cannot be set during ACL record birth"
+      "msg": "public decrypt cannot be set at encrypted value birth"
     },
     {
-      "code": 6042,
-      "name": "AclSubjectCapacityExceeded",
-      "msg": "ACL record has too many inline subjects"
-    },
-    {
-      "code": 6043,
-      "name": "AclPermissionMissing",
-      "msg": "ACL permission account is required for an overflow subject"
-    },
-    {
-      "code": 6044,
-      "name": "AclPermissionPdaMismatch",
-      "msg": "ACL permission account does not match the canonical PDA"
-    },
-    {
-      "code": 6045,
-      "name": "AclPermissionMismatch",
-      "msg": "ACL permission account data does not match the requested subject"
-    },
-    {
-      "code": 6046,
+      "code": 6029,
       "name": "AclDenyRecordMissing",
       "msg": "ACL deny-list account is required"
     },
     {
-      "code": 6047,
+      "code": 6030,
       "name": "AclDenyRecordMismatch",
       "msg": "ACL deny-list account does not match the canonical PDA"
     },
     {
-      "code": 6048,
+      "code": 6031,
       "name": "AclSubjectDenied",
       "msg": "ACL authority subject is deny-listed"
     },
     {
-      "code": 6049,
+      "code": 6032,
       "name": "DelegationPdaMismatch",
       "msg": "delegation record does not match the canonical PDA"
     },
     {
-      "code": 6050,
+      "code": 6033,
       "name": "InvalidDelegation",
       "msg": "delegation tuple is invalid"
     },
     {
-      "code": 6051,
+      "code": 6034,
       "name": "DelegationRevoked",
       "msg": "delegation has already been revoked"
     },
     {
-      "code": 6052,
+      "code": 6035,
       "name": "DelegationUpdatedInCurrentSlot",
       "msg": "delegation was already updated in the current slot"
     },
     {
-      "code": 6053,
+      "code": 6036,
       "name": "PreviousBankHashUnavailable",
       "msg": "previous bank hash is not available"
     },
     {
-      "code": 6054,
-      "name": "ComputedHandleMismatch",
-      "msg": "computed handle does not match host formula"
-    },
-    {
-      "code": 6055,
+      "code": 6037,
       "name": "PdaCreationMismatch",
       "msg": "PDA creation target is invalid"
     },
     {
-      "code": 6056,
+      "code": 6038,
       "name": "InvalidFheEvalOperationCount",
       "msg": "FHE eval operation count is invalid"
     },
     {
-      "code": 6057,
-      "name": "FheEvalEventLogBudgetExceeded",
-      "msg": "FHE eval event log budget is exceeded"
+      "code": 6039,
+      "name": "FheEvalBornPublicFrameTooLarge",
+      "msg": "FHE eval born-public output requires a CPI-transportable frame"
     },
     {
-      "code": 6058,
+      "code": 6040,
       "name": "InvalidFheEvalAccount",
       "msg": "FHE eval account reference is invalid"
     },
     {
-      "code": 6059,
+      "code": 6041,
       "name": "FheEvalAllowedLocalMissing",
       "msg": "FHE eval transient operand is missing"
     },
     {
-      "code": 6060,
+      "code": 6042,
       "name": "FheEvalDuplicateHandle",
       "msg": "FHE eval output handle is duplicated"
     },
     {
-      "code": 6061,
+      "code": 6043,
       "name": "FheEvalOutputAlreadyInitialized",
       "msg": "FHE eval durable output ACL record already exists"
     },
     {
-      "code": 6062,
+      "code": 6044,
       "name": "InvalidFheEvalContext",
       "msg": "FHE eval context id is invalid"
     },
     {
-      "code": 6063,
+      "code": 6045,
       "name": "DerivedOutputPublicDecryptDenied",
       "msg": "transient capability cannot authorize public decrypt"
     },
     {
-      "code": 6064,
+      "code": 6046,
       "name": "DuplicateKmsSigner",
       "msg": "KMS context signer set contains a duplicate address"
     },
     {
-      "code": 6065,
+      "code": 6047,
       "name": "InputBindContractMismatch",
       "msg": "attested contract address does not match the output app account"
     },
     {
-      "code": 6066,
+      "code": 6048,
       "name": "InputBindUserNotSubject",
       "msg": "attested user address is not an output ACL subject"
     },
     {
-      "code": 6067,
+      "code": 6049,
       "name": "HcuTransactionLimitExceeded",
       "msg": "FHE op total HCU exceeds the per-transaction limit"
     },
     {
-      "code": 6068,
+      "code": 6050,
       "name": "HcuTransactionDepthLimitExceeded",
       "msg": "FHE op depth HCU exceeds the per-transaction depth limit"
     },
     {
-      "code": 6069,
+      "code": 6051,
       "name": "HcuUnknownCost",
       "msg": "no HCU cost is defined for this op / type / scalar combination"
     },
     {
-      "code": 6070,
+      "code": 6052,
       "name": "HcuLimitOrderingInvalid",
       "msg": "HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx"
     },
     {
-      "code": 6071,
+      "code": 6053,
       "name": "AttestationChainIdMismatch",
       "msg": "attested contract chain id does not match the host chain id"
     },
     {
-      "code": 6072,
+      "code": 6054,
+      "name": "RawEncryptedValueLifecycleDisabled",
+      "msg": "raw encrypted value lifecycle is disabled; use fhe_eval durable outputs"
+    },
+    {
+      "code": 6055,
+      "name": "EncryptedValuePdaMismatch",
+      "msg": "encrypted value account does not match the canonical PDA"
+    },
+    {
+      "code": 6056,
+      "name": "EncryptedValueAccountInvalid",
+      "msg": "encrypted value account is not a valid EncryptedValue account"
+    },
+    {
+      "code": 6057,
+      "name": "EncryptedValueSubjectCapacityExceeded",
+      "msg": "encrypted value subject capacity exceeded"
+    },
+    {
+      "code": 6058,
+      "name": "PreviousStateMismatch",
+      "msg": "encrypted value previous state does not match the account"
+    },
+    {
+      "code": 6059,
+      "name": "EncryptedValuePublicHandleMismatch",
+      "msg": "encrypted value public handle does not match the account"
+    },
+    {
+      "code": 6060,
+      "name": "SubjectNotAllowed",
+      "msg": "encrypted value subject is not allowed"
+    },
+    {
+      "code": 6061,
+      "name": "SubjectNotFound",
+      "msg": "encrypted value subject is not a current member"
+    },
+    {
+      "code": 6062,
+      "name": "EncryptedValueEmptySubjects",
+      "msg": "encrypted value must be created with at least one subject"
+    },
+    {
+      "code": 6063,
+      "name": "EncryptedValueLastSubject",
+      "msg": "encrypted value must retain at least one subject"
+    },
+    {
+      "code": 6064,
+      "name": "EncryptedValueMmrInconsistent",
+      "msg": "encrypted value MMR state is inconsistent"
+    },
+    {
+      "code": 6065,
+      "name": "EncryptedValueMmrPeakCapacityExceeded",
+      "msg": "encrypted value MMR peak capacity exceeded"
+    },
+    {
+      "code": 6066,
       "name": "HcuBlockLimitExceeded",
       "msg": "per-app in-slot HCU exceeds the block cap"
     },
     {
-      "code": 6073,
+      "code": 6067,
       "name": "HcuBlockMeterMissing",
       "msg": "HCU block meter account is required for a metered app"
     },
     {
-      "code": 6074,
+      "code": 6068,
       "name": "HcuBlockMeterMismatch",
       "msg": "HCU block meter account does not match the canonical PDA"
     },
     {
-      "code": 6075,
+      "code": 6069,
       "name": "HcuTrustedAppRecordMismatch",
       "msg": "HCU trusted-app record does not match the canonical PDA"
     },
     {
-      "code": 6076,
+      "code": 6070,
       "name": "HcuBlockCapBelowMaxPerTx",
       "msg": "HCU block cap is below max_hcu_per_tx"
     },
     {
-      "code": 6077,
+      "code": 6071,
       "name": "MulDivDivisorZero",
       "msg": "fheMulDiv divisor must be non-zero"
     },
     {
-      "code": 6078,
+      "code": 6072,
       "name": "DivisorMustBeScalar",
       "msg": "fheDiv/fheRem divisor must be a plaintext scalar"
     },
     {
-      "code": 6079,
+      "code": 6073,
       "name": "DivisionByZero",
       "msg": "fheDiv/fheRem divisor must be non-zero"
     }
   ],
   "types": [
     {
-      "name": "AclAllowedEvent",
-      "docs": [
-        "Legacy allowance event consumed by the current host listener.",
-        "",
-        "New consumers should prefer [`AclSubjectAllowedEvent`] for richer context and",
-        "still verify account state before authorizing decrypts."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Allowed handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "subject",
-            "docs": [
-              "Allowed subject pubkey bytes."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "AclRecord",
-      "docs": [
-        "Canonical ACL state for one host handle.",
-        "",
-        "The account address is independent from the opaque handle:",
-        "`PDA(\"acl-record\", nonce_key, nonce_sequence)`. The handle is stored in the",
-        "account body so computed handles can be bound after transaction accounts are",
-        "declared."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "handle",
-            "docs": [
-              "Opaque FHEVM handle controlled by this ACL record."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "nonce_key",
-            "docs": [
-              "Domain-separated nonce key derived from app account metadata."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "nonce_sequence",
-            "docs": [
-              "App-maintained sequence for this nonce key."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "acl_domain_key",
-            "docs": [
-              "App-level ACL domain, such as a confidential token mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "app_account",
-            "docs": [
-              "App-owned account whose encrypted field is represented by this handle."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "encrypted_value_label",
-            "docs": [
-              "Domain-separated encrypted field label inside `app_account`."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "subjects",
-            "docs": [
-              "Inline subjects for the common case."
-            ],
-            "type": {
-              "array": [
-                "pubkey",
-                8
-              ]
-            }
-          },
-          {
-            "name": "subject_roles",
-            "docs": [
-              "Role flags parallel to [`AclRecord::subjects`]."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                8
-              ]
-            }
-          },
-          {
-            "name": "subject_count",
-            "docs": [
-              "Number of valid entries in the inline subject arrays."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "overflow_subject_count",
-            "docs": [
-              "Number of overflow subjects represented by [`AclPermission`] PDAs."
-            ],
-            "type": "u32"
-          },
-          {
-            "name": "public_decrypt",
-            "docs": [
-              "Durable public-decrypt flag checked by KMS-style verification."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "material_commitment",
-            "docs": [
-              "Canonical material commitment PDA sealed to this ACL record."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "material_commitment_hash",
-            "docs": [
-              "Canonical material commitment hash sealed to this ACL record."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "material_key_id",
-            "docs": [
-              "Material key identifier sealed to this ACL record."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "created_slot",
-            "docs": [
-              "Slot in which this ACL record was first bound."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for this record."
-            ],
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "AclRecordBoundEvent",
-      "docs": [
-        "Emitted when an ACL record is born and bound to a handle."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "acl_record",
-            "docs": [
-              "Canonical ACL record PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Opaque handle stored in the ACL record."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "nonce_key",
-            "docs": [
-              "Nonce key used in the ACL record PDA."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "nonce_sequence",
-            "docs": [
-              "Nonce sequence used in the ACL record PDA."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "acl_domain_key",
-            "docs": [
-              "App-level ACL domain."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "app_account",
-            "docs": [
-              "App account whose encrypted field is represented."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "encrypted_value_label",
-            "docs": [
-              "App-level encrypted field label."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "subject_count",
-            "docs": [
-              "Number of inline subjects stored at birth."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "public_decrypt",
-            "docs": [
-              "Initial public-decrypt flag."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "created_slot",
-            "docs": [
-              "Slot in which the ACL record was first bound."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "AclSubjectAllowedEvent",
-      "docs": [
-        "Emitted when a subject is granted on an ACL record."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "acl_record",
-            "docs": [
-              "Canonical ACL record PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Handle stored in the ACL record."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "authority_subject",
-            "docs": [
-              "Authority that held `ACL_ROLE_GRANT`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "subject",
-            "docs": [
-              "Granted subject pubkey bytes."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "role_flags",
-            "docs": [
-              "Role flags granted to the subject."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "overflow_permission_record",
-            "docs": [
-              "Overflow permission PDA, or the default pubkey for inline subjects."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "inline_index",
-            "docs": [
-              "Inline subject index, or `u8::MAX` when the grant uses an overflow PDA."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "updated_slot",
-            "docs": [
-              "Slot in which this update was applied."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
       "name": "AclSubjectEntry",
       "docs": [
-        "Pubkey plus role flags stored inline or in an overflow permission PDA."
+        "Pubkey stored inline as an allowed subject."
       ],
       "type": {
         "kind": "struct",
@@ -2566,13 +2021,6 @@
               "app programs this can be a program-controlled compute signer PDA."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "role_flags",
-            "docs": [
-              "Bitset of `ACL_ROLE_*` flags."
-            ],
-            "type": "u8"
           }
         ]
       }
@@ -2716,6 +2164,21 @@
               "Slot in which this update was applied."
             ],
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EncryptedValueSubjectGrant",
+      "docs": [
+        "One subject grant: identity to add to the allowed set."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "subject",
+            "type": "pubkey"
           }
         ]
       }
@@ -2928,7 +2391,7 @@
               {
                 "name": "handle",
                 "docs": [
-                  "Handle expected in the ACL record."
+                  "Handle expected as the encrypted value's current handle."
                 ],
                 "type": {
                   "array": [
@@ -2938,20 +2401,11 @@
                 }
               },
               {
-                "name": "acl_record_index",
+                "name": "encrypted_value_index",
                 "docs": [
-                  "Index into `remaining_accounts` for the ACL record."
+                  "Index into `remaining_accounts` for the `EncryptedValue` account."
                 ],
                 "type": "u16"
-              },
-              {
-                "name": "permission_index",
-                "docs": [
-                  "Optional index into `remaining_accounts` for overflow subject permission."
-                ],
-                "type": {
-                  "option": "u16"
-                }
               }
             ]
           },
@@ -3012,9 +2466,9 @@
             "name": "AllowedDurable",
             "fields": [
               {
-                "name": "output_acl_record_index",
+                "name": "output_encrypted_value_index",
                 "docs": [
-                  "Index into `remaining_accounts` for the output ACL record PDA."
+                  "Index into `remaining_accounts` for the output `EncryptedValue` PDA."
                 ],
                 "type": "u16"
               },
@@ -3032,42 +2486,23 @@
                 }
               },
               {
-                "name": "output_nonce_key",
-                "docs": [
-                  "Nonce key for the output ACL record."
-                ],
-                "type": {
-                  "array": [
-                    "u8",
-                    32
-                  ]
-                }
-              },
-              {
-                "name": "output_nonce_sequence",
-                "docs": [
-                  "Nonce sequence for the output ACL record."
-                ],
-                "type": "u64"
-              },
-              {
                 "name": "output_acl_domain_key",
                 "docs": [
-                  "ACL domain key for the output ACL record."
+                  "ACL domain key for the output lineage."
                 ],
                 "type": "pubkey"
               },
               {
                 "name": "output_app_account",
                 "docs": [
-                  "App account authorized to create the output ACL record."
+                  "App account authorized to bind the output lineage."
                 ],
                 "type": "pubkey"
               },
               {
                 "name": "output_encrypted_value_label",
                 "docs": [
-                  "Encrypted value label for the output ACL record."
+                  "Encrypted value label for the output lineage."
                 ],
                 "type": {
                   "array": [
@@ -3079,7 +2514,8 @@
               {
                 "name": "output_subjects",
                 "docs": [
-                  "Initial subjects on the output ACL record."
+                  "Subjects on the output lineage. On create these are the initial",
+                  "subjects; on supersede they must equal the stored subjects exactly."
                 ],
                 "type": {
                   "vec": {
@@ -3090,9 +2526,42 @@
                 }
               },
               {
-                "name": "output_public_decrypt",
+                "name": "previous_handle",
                 "docs": [
-                  "Initial public decrypt flag on the output ACL record."
+                  "Superseded handle: `None` on create, `Some(current_handle)` on update.",
+                  "Carried in instruction data so indexers can reconstruct the appended",
+                  "MMR leaves without reading the account; validated against the account."
+                ],
+                "type": {
+                  "option": {
+                    "array": [
+                      "u8",
+                      32
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "previous_subjects",
+                "docs": [
+                  "Superseded subject set, parallel to `previous_handle` (`None` on create,",
+                  "exact stored subjects on update). Same indexer-reconstruction purpose."
+                ],
+                "type": {
+                  "option": {
+                    "vec": "pubkey"
+                  }
+                }
+              },
+              {
+                "name": "make_public",
+                "docs": [
+                  "When true, the newly bound handle is born publicly decryptable: after",
+                  "writing it as `current_handle`, a public-decrypt leaf is appended for",
+                  "the new handle (byte-identical to `make_handle_public`). Carried in",
+                  "instruction data so indexers reconstruct that leaf without reading the",
+                  "account. This is the opt-in relaxation of the \"created lineages cannot",
+                  "be born public\" invariant (DD-036)."
                 ],
                 "type": "bool"
               }
@@ -4059,307 +3528,6 @@
       }
     },
     {
-      "name": "HandleMaterialCommitment",
-      "docs": [
-        "Host-owned commitment proving ciphertext material is available for a handle.",
-        "",
-        "ACL birth and material readiness are deliberately separate. KMS-style",
-        "decryption checks must verify both the canonical ACL record and this",
-        "material commitment before authorizing a decryptable handle."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "acl_record",
-            "docs": [
-              "ACL record whose handle has committed material."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Handle copied from the ACL record at commitment time."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "key_id",
-            "docs": [
-              "Release/key identifier for the ciphertext material."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "ciphertext_digest",
-            "docs": [
-              "Digest of the ciphertext material."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "sns_ciphertext_digest",
-            "docs": [
-              "Digest of the SNS ciphertext material."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "coprocessor_set_digest",
-            "docs": [
-              "Release-pinned coprocessor-set digest."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "material_commitment_hash",
-            "docs": [
-              "Canonical commitment hash over the material witness fields."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "created_slot",
-            "docs": [
-              "Slot in which the commitment was recorded."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "state",
-            "docs": [
-              "Commitment state. Native-v0 decryptability requires committed."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for this material commitment."
-            ],
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "HandleMaterialCommittedEvent",
-      "docs": [
-        "Emitted when ciphertext material is committed for a host handle."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "material_commitment",
-            "docs": [
-              "Canonical material commitment PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "acl_record",
-            "docs": [
-              "Canonical ACL record PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Handle whose material is committed."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "key_id",
-            "docs": [
-              "Release/key identifier for the ciphertext material."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "ciphertext_digest",
-            "docs": [
-              "Digest of the ciphertext material."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "sns_ciphertext_digest",
-            "docs": [
-              "Digest of the SNS ciphertext material."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "coprocessor_set_digest",
-            "docs": [
-              "Release-pinned coprocessor-set digest."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "material_commitment_hash",
-            "docs": [
-              "Canonical commitment hash over material witness fields."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "created_slot",
-            "docs": [
-              "Slot in which the commitment was recorded."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "HandleMaterialSealedEvent",
-      "docs": [
-        "Emitted when committed material is sealed onto an ACL record."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "material_commitment",
-            "docs": [
-              "Canonical material commitment PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "acl_record",
-            "docs": [
-              "Canonical ACL record PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Handle whose material is sealed."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "key_id",
-            "docs": [
-              "Release/key identifier for the ciphertext material."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "material_commitment_hash",
-            "docs": [
-              "Canonical commitment hash over material witness fields."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "updated_slot",
-            "docs": [
-              "Slot in which this seal was applied."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
       "name": "HcuAppTrustUpdatedEvent",
       "docs": [
         "Emitted when an app's HCU block-cap trust registry entry is updated."
@@ -4996,62 +4164,6 @@
               "User-decrypt signature threshold."
             ],
             "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "PublicDecryptAllowedEvent",
-      "docs": [
-        "Emitted when public decrypt is enabled for a handle."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "acl_record",
-            "docs": [
-              "Canonical ACL record PDA."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Publicly decryptable handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "authority",
-            "docs": [
-              "Authority that held `ACL_ROLE_PUBLIC_DECRYPT`."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "updated_slot",
-            "docs": [
-              "Slot in which this update was applied."
-            ],
-            "type": "u64"
           }
         ]
       }

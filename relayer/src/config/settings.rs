@@ -667,6 +667,10 @@ pub struct Settings {
     pub protocol_config: ProtocolConfigSettings,
     /// User-decryption signature check configuration
     pub user_decrypt_signature_check: UserDecryptSignatureCheckConfig,
+    /// Solana ACL MMR proof service (RFC-024). Optional: absent for EVM-only
+    /// deployments, so existing config files need no changes.
+    #[serde(default)]
+    pub solana_proof: Option<crate::solana_proof::SolanaProofConfig>,
 }
 
 // Error type for application-specific configuration errors

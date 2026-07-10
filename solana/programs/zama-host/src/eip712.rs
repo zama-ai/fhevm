@@ -110,7 +110,8 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 
 /// Resolve the KMS context id a public-decrypt certificate is bound to, mirroring the EVM
 /// gateway `_extractContextId`: empty or version-0 `extra_data` selects the current context;
-/// version 1 carries a big-endian context id in `extra_data[1..33]`. Because the KMS signs over
+/// versions 1 and 3 carry a big-endian context id in `extra_data[1..33]` (v3 appends a Solana
+/// MMR-proof tail that is ignored here). Because the KMS signs over
 /// `extra_data`, the returned id is authenticated by the certificate, so a cert minted under
 /// context N cannot be verified against a different context after a rotation. Returns `None` for
 /// an unsupported version or a short version-1 payload.
@@ -124,7 +125,10 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: u64) -> Option<u64> {
     match extra_data.first() {
         None | Some(0) => Some(current_context_id),
-        Some(1) => {
+        // Version 1 (context tail) and version 3 (context + Solana MMR-proof tail) both carry the
+        // context id in `extra_data[1..33]`; v3 just appends proof bytes a public-decrypt cert is
+        // signed over. Read the id at the shared offset and ignore any trailing proof bytes.
+        Some(1) | Some(3) => {
             let id_bytes = extra_data.get(1..33)?;
             // On-chain kms_context is keyed by the low-64-bit id; the high bytes carry the
             // protocol context's chain-type tag (e.g. 0x07 for the Solana host) and are not
@@ -140,10 +144,10 @@ pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: u64) -> Opt
 /// Recover the EVM signer address from a 65-byte `r||s||v` signature over `digest`.
 pub fn recover_evm_address(digest: &[u8; 32], signature: &[u8; 65]) -> Option<[u8; 20]> {
     // EVM EIP-712 signatures use v = 27/28 (recovery id 0/1).
-    let recovery_id = signature[64].checked_sub(27)?;
-    if recovery_id > 3 {
+    if !matches!(signature[64], 27 | 28) {
         return None;
     }
+    let recovery_id = signature[64] - 27;
     // Reject high-s (malleable) signatures for EVM parity with OpenZeppelin ECDSA.
     if signature[32..64] > SECP256K1_HALF_ORDER[..] {
         return None;
@@ -320,6 +324,19 @@ mod tests {
     }
 
     #[test]
+    fn rejects_non_evm_recovery_ids() {
+        let key = SigningKey::from_bytes(&[0x45u8; 32].into()).expect("valid signing key");
+        let digest = [0x11u8; 32];
+        let signature = sign(&key, &digest);
+
+        for v in [0, 1, 26, 29, 30] {
+            let mut invalid = signature;
+            invalid[64] = v;
+            assert_eq!(recover_evm_address(&digest, &invalid), None, "v={v}");
+        }
+    }
+
+    #[test]
     fn extract_kms_context_id_mirrors_evm_extractcontextid() {
         // Empty or version-0 extra_data -> current context.
         assert_eq!(extract_kms_context_id(&[], 7), Some(7));
@@ -338,8 +355,24 @@ mod tests {
         assert_eq!(extract_kms_context_id(&tagged, 7), Some(1));
         // Version 1 with a short payload -> rejected.
         assert_eq!(extract_kms_context_id(&[1u8, 0, 0], 7), None);
-        // Unsupported version -> rejected.
+        // Version 3 (context + MMR-proof tail) reads the id at the same [1..33] offset and ignores
+        // the trailing proof bytes. A public-decrypt cert signed over a v3 blob still binds context.
+        let mut v3 = vec![3u8];
+        v3.extend_from_slice(&[0u8; 24]);
+        v3.extend_from_slice(&42u64.to_be_bytes());
+        v3.extend_from_slice(&[0xABu8; 40]); // trailing acl_value_key/proof_slot/mmr bytes, ignored
+        assert_eq!(extract_kms_context_id(&v3, 7), Some(42));
+        // Version 2 is RFC-005 context+epoch on the EVM side, not a Solana certificate shape.
+        let mut v2 = vec![2u8];
+        v2.extend_from_slice(&[0u8; 24]);
+        v2.extend_from_slice(&42u64.to_be_bytes());
+        v2.extend_from_slice(&[0xCDu8; 32]);
+        assert_eq!(extract_kms_context_id(&v2, 7), None);
+        // Bare version bytes with no context id are still rejected.
         assert_eq!(extract_kms_context_id(&[2u8], 7), None);
+        assert_eq!(extract_kms_context_id(&[3u8], 7), None);
+        // Unsupported version -> rejected.
+        assert_eq!(extract_kms_context_id(&[4u8], 7), None);
     }
 
     #[test]

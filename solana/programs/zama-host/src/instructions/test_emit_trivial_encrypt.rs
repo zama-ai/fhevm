@@ -3,8 +3,25 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use super::test_emit_acl_allowed::TestEmitProtocolEvent;
-use crate::{events::TrivialEncryptEvent, state::EVENT_VERSION};
+use crate::{
+    events::TrivialEncryptEvent,
+    state::{HostConfig, EVENT_VERSION, HOST_CONFIG_SEED},
+};
+
+/// Accounts for authority-gated test event shims.
+///
+/// These shims do not prove or mutate protocol state and must not be treated as
+/// production APIs. The generated Anchor account type is intentionally still
+/// named `TestEmitProtocolEvent` for compatibility with existing callers.
+#[derive(Accounts)]
+#[event_cpi]
+pub struct TestEmitProtocolEvent<'info> {
+    /// Configured test-shim authority.
+    pub test_authority: Signer<'info>,
+    /// Singleton config PDA with `test_shims_enabled`.
+    #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
+    pub host_config: Account<'info, HostConfig>,
+}
 
 /// Emits a trivial-encrypt event after test-shim authority checks.
 pub fn test_emit_trivial_encrypt(

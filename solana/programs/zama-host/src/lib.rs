@@ -1,8 +1,8 @@
 //! Anchor program for the Solana FHEVM host PoC.
 //!
-//! `zama-host` owns the protocol-facing parts of the PoC:
-//! ACL records, handle derivation, FHE event emission, public-decrypt state,
-//! test/mock gates, and the small set of account witnesses that a future
+//! `zama-host` owns the protocol-facing parts of the PoC: the append-only
+//! `EncryptedValue` ACL/MMR model, handle derivation, FHE eval, public-decrypt
+//! state, test/mock gates, and the small set of account witnesses that a future
 //! Gateway/KMS request must verify.
 //!
 //! The program intentionally keeps app semantics outside this crate. App
@@ -14,7 +14,7 @@
 #![allow(unexpected_cfgs)]
 #![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
 
-/// Shared constants, seed bytes, role flags, and fixed protocol sizes.
+/// Shared constants, seed bytes, and fixed protocol sizes.
 pub mod constants;
 /// EIP-712 v4 verification of EVM-signed KMS / coprocessor certificates.
 pub mod eip712;
@@ -24,7 +24,7 @@ pub mod errors;
 pub mod events;
 /// Instruction account contexts and handlers.
 pub mod instructions;
-/// Account layouts, PDA helpers, roles, and handle derivation helpers.
+/// Account layouts, PDA helpers, and handle derivation helpers.
 pub mod state;
 
 use anchor_lang::prelude::*;
@@ -132,65 +132,6 @@ pub mod zama_host {
         instructions::revoke_delegation_for_user_decryption(ctx)
     }
 
-    #[cfg(feature = "poc")]
-    pub fn test_emit_acl_allowed(
-        ctx: Context<TestEmitProtocolEvent>,
-        handle: [u8; 32],
-        subject: Pubkey,
-    ) -> Result<()> {
-        instructions::test_emit_acl_allowed(ctx, handle, subject)
-    }
-
-    pub fn allow_acl_subjects<'info>(
-        ctx: Context<'info, AllowAclSubjects<'info>>,
-        handle: [u8; 32],
-        subjects: Vec<AclSubjectEntry>,
-    ) -> Result<()> {
-        instructions::allow_acl_subjects(ctx, handle, subjects)
-    }
-
-    pub fn assert_acl_record(
-        ctx: Context<AssertAclRecord>,
-        nonce_key: [u8; 32],
-        nonce_sequence: u64,
-        acl_domain_key: Pubkey,
-        app_account: Pubkey,
-        encrypted_value_label: [u8; 32],
-        handle: [u8; 32],
-        subject: Pubkey,
-    ) -> Result<()> {
-        instructions::assert_acl_record(
-            ctx,
-            nonce_key,
-            nonce_sequence,
-            acl_domain_key,
-            app_account,
-            encrypted_value_label,
-            handle,
-            subject,
-        )
-    }
-
-    pub fn allow_for_decryption(ctx: Context<AllowForDecryption>, handle: [u8; 32]) -> Result<()> {
-        instructions::allow_for_decryption(ctx, handle)
-    }
-
-    pub fn commit_handle_material(
-        ctx: Context<CommitHandleMaterial>,
-        key_id: [u8; 32],
-        ciphertext_digest: [u8; 32],
-        sns_ciphertext_digest: [u8; 32],
-        coprocessor_set_digest: [u8; 32],
-    ) -> Result<()> {
-        instructions::commit_handle_material(
-            ctx,
-            key_id,
-            ciphertext_digest,
-            sns_ciphertext_digest,
-            coprocessor_set_digest,
-        )
-    }
-
     pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -> Result<()> {
         instructions::fhe_eval(ctx, args)
     }
@@ -215,5 +156,55 @@ pub mod zama_host {
         result: [u8; 32],
     ) -> Result<()> {
         instructions::test_emit_fhe_rand(ctx, subject, seed, fhe_type, result)
+    }
+
+    // ---- RFC-024 EncryptedValue ACL model ----
+
+    pub fn create_encrypted_value(
+        ctx: Context<CreateEncryptedValue>,
+        acl_domain_key: Pubkey,
+        app_account: Pubkey,
+        encrypted_value_label: [u8; 32],
+        handle: [u8; 32],
+        subjects: Vec<EncryptedValueSubjectGrant>,
+    ) -> Result<()> {
+        instructions::create_encrypted_value(
+            ctx,
+            acl_domain_key,
+            app_account,
+            encrypted_value_label,
+            handle,
+            subjects,
+        )
+    }
+
+    pub fn allow_subjects(
+        ctx: Context<AllowEncryptedValueSubjects>,
+        subjects: Vec<EncryptedValueSubjectGrant>,
+    ) -> Result<()> {
+        instructions::allow_subjects(ctx, subjects)
+    }
+
+    pub fn remove_subject(
+        ctx: Context<RemoveEncryptedValueSubject>,
+        subject: Pubkey,
+    ) -> Result<()> {
+        instructions::remove_subject(ctx, subject)
+    }
+
+    pub fn update_encrypted_value(
+        ctx: Context<UpdateEncryptedValue>,
+        new_handle: [u8; 32],
+        previous_handle: [u8; 32],
+        previous_subjects: Vec<Pubkey>,
+    ) -> Result<()> {
+        instructions::update_encrypted_value(ctx, new_handle, previous_handle, previous_subjects)
+    }
+
+    pub fn make_handle_public(
+        ctx: Context<MakeEncryptedValueHandlePublic>,
+        handle: [u8; 32],
+    ) -> Result<()> {
+        instructions::make_handle_public(ctx, handle)
     }
 }

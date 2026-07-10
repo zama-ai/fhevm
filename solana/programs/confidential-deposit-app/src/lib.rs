@@ -65,11 +65,9 @@ pub mod confidential_deposit_app {
             from_account: ctx.accounts.depositor_token_account.to_account_info(),
             to_account: ctx.accounts.vault_token_account.to_account_info(),
             compute_signer: ctx.accounts.compute_signer.to_account_info(),
-            from_current_compute_acl: ctx.accounts.from_current_compute_acl.to_account_info(),
-            to_current_compute_acl: ctx.accounts.to_current_compute_acl.to_account_info(),
-            from_output_acl: ctx.accounts.from_output_acl.to_account_info(),
-            transferred_amount_acl: ctx.accounts.transferred_amount_acl.to_account_info(),
-            to_output_acl: ctx.accounts.to_output_acl.to_account_info(),
+            from_balance_value: ctx.accounts.from_balance_value.to_account_info(),
+            to_balance_value: ctx.accounts.to_balance_value.to_account_info(),
+            transferred_amount_value: ctx.accounts.transferred_amount_value.to_account_info(),
             zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
             zama_program: ctx.accounts.zama_program.to_account_info(),
             host_config: ctx.accounts.host_config.to_account_info(),
@@ -160,19 +158,15 @@ pub struct Deposit<'info> {
     pub vault_token_account: UncheckedAccount<'info>,
     /// CHECK: Mint compute-signer PDA; validated by `confidential_token`.
     pub compute_signer: UncheckedAccount<'info>,
-    /// CHECK: Depositor current balance ACL record; validated by the token CPI.
-    pub from_current_compute_acl: UncheckedAccount<'info>,
-    /// CHECK: Vault current balance ACL record; validated by the token CPI.
-    pub to_current_compute_acl: UncheckedAccount<'info>,
-    /// CHECK: New depositor balance ACL record (host-initialized in the CPI).
+    /// CHECK: Depositor's stable balance lineage; read and superseded by the token CPI.
     #[account(mut)]
-    pub from_output_acl: UncheckedAccount<'info>,
-    /// CHECK: Transferred-amount ACL record (host-initialized in the CPI).
+    pub from_balance_value: UncheckedAccount<'info>,
+    /// CHECK: Vault's stable balance lineage; read and superseded by the token CPI.
     #[account(mut)]
-    pub transferred_amount_acl: UncheckedAccount<'info>,
-    /// CHECK: New vault balance ACL record (host-initialized in the CPI).
+    pub to_balance_value: UncheckedAccount<'info>,
+    /// CHECK: Depositor's stable transferred-amount lineage; superseded by the token CPI.
     #[account(mut)]
-    pub to_output_acl: UncheckedAccount<'info>,
+    pub transferred_amount_value: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).

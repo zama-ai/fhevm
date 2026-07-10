@@ -5,52 +5,79 @@
 //! output handles.
 
 use anchor_lang::{prelude::*, AccountDeserialize};
-use zama_host::{
-    cpi, cpi::accounts::AllowForDecryption as HostAllowForDecryption, program::ZamaHost, HostConfig,
-};
+use zama_host::{cpi, program::ZamaHost, EncryptedValue, HostConfig};
 
 use crate::{
     compute_signer_address, hcu_authority_address, token_account_address,
     total_supply_authority_address, ConfidentialTokenAccount, ConfidentialTokenError,
 };
 
-/// A durable eval output account bound to the exact slot it is allowed to create.
+/// A durable eval output account bound to the exact `EncryptedValue` lineage
+/// it is allowed to create or supersede.
 pub(crate) struct DurableOutput<'info> {
-    acl_record: AccountInfo<'info>,
+    encrypted_value: AccountInfo<'info>,
     output: Box<zama_fhe::DurableOutput>,
 }
 
 impl<'info> DurableOutput<'info> {
+    /// Binds `encrypted_value` as the output of a durable eval step: creates the
+    /// lineage's first handle if the PDA does not exist yet, or supersedes it
+    /// (reading `previous_handle`/`previous_subjects` off the on-chain account)
+    /// if it does. Either way the eval CPI's attestation matches exactly what
+    /// the host will verify.
     pub(crate) fn new(
-        acl_record: AccountInfo<'info>,
+        encrypted_value: AccountInfo<'info>,
         slot: zama_fhe::DurableSlot,
         access: zama_fhe::AccessPolicy,
     ) -> Result<Self> {
+        Self::new_inner(encrypted_value, slot, access, false)
+    }
+
+    /// Like [`new`], but binds the output born publicly decryptable: the host
+    /// seals a public-decrypt leaf for the new handle inside the same eval CPI
+    /// (EVM `unwrap` parity; DD-036). Used by `confidential_burn` for the burned
+    /// delta so every burn stays permanently redeemable with no second CPI.
+    pub(crate) fn new_public(
+        encrypted_value: AccountInfo<'info>,
+        slot: zama_fhe::DurableSlot,
+        access: zama_fhe::AccessPolicy,
+    ) -> Result<Self> {
+        Self::new_inner(encrypted_value, slot, access, true)
+    }
+
+    fn new_inner(
+        encrypted_value: AccountInfo<'info>,
+        slot: zama_fhe::DurableSlot,
+        access: zama_fhe::AccessPolicy,
+        make_public: bool,
+    ) -> Result<Self> {
         require_keys_eq!(
-            acl_record.key(),
+            encrypted_value.key(),
             slot.address(),
             ConfidentialTokenError::AmountAclMismatch
         );
-        require_keys_eq!(
-            *acl_record.owner,
-            System::id(),
-            ConfidentialTokenError::AmountAclMismatch
-        );
-        require!(
-            acl_record.data_is_empty(),
-            ConfidentialTokenError::AmountAclMismatch
-        );
-        require!(
-            !acl_record.executable,
-            ConfidentialTokenError::AmountAclMismatch
-        );
-        let output = zama_fhe::DurableOutput::new(slot, access);
+        let output = if *encrypted_value.owner == System::id() {
+            require!(
+                encrypted_value.data_is_empty() && !encrypted_value.executable,
+                ConfidentialTokenError::AmountAclMismatch
+            );
+            zama_fhe::DurableOutput::create(slot, access)
+        } else {
+            let value = read_encrypted_value(&encrypted_value)?;
+            zama_fhe::DurableOutput::supersede(
+                slot,
+                access,
+                value.current_handle,
+                value.subjects.clone(),
+            )
+        }
+        .with_make_public(make_public);
         output.birth().map_err(|error| {
             msg!("invalid durable FHE output: {:?}", error);
             error!(ConfidentialTokenError::InvalidFheEvalPlan)
         })?;
         Ok(Self {
-            acl_record,
+            encrypted_value,
             output: Box::new(output),
         })
     }
@@ -59,53 +86,21 @@ impl<'info> DurableOutput<'info> {
         zama_fhe::Output::durable_output((*self.output).clone())
     }
 
+    /// Reads the handle the host bound into `encrypted_value` by this eval CPI.
+    /// Call only after the CPI that carries this output has executed.
     pub(crate) fn handle(&self) -> Result<[u8; 32]> {
         let birth = self.birth()?;
         require_keys_eq!(
-            self.acl_record.key(),
-            birth.acl_record(),
-            ConfidentialTokenError::CurrentAclRecordMismatch
+            self.encrypted_value.key(),
+            birth.encrypted_value(),
+            ConfidentialTokenError::CurrentEncryptedValueMismatch
         );
-        require_keys_eq!(
-            *self.acl_record.owner,
-            zama_host::ID,
-            ConfidentialTokenError::CurrentAclRecordMismatch
-        );
-        require!(
-            self.acl_record.data_len() == 8 + zama_host::AclRecord::SPACE,
-            ConfidentialTokenError::CurrentAclRecordMismatch
-        );
-        let data = self.acl_record.try_borrow_data()?;
-        let mut data_slice: &[u8] = &data;
-        let record = zama_host::AclRecord::try_deserialize(&mut data_slice)?;
-        require!(
-            zama_host::acl_record_subject_slots_are_canonical(&record),
-            ConfidentialTokenError::CurrentAclRecordMismatch
-        );
-        require!(
-            record.nonce_key == birth.nonce_key()
-                && record.nonce_sequence == birth.sequence()
-                && record.acl_domain_key == birth.acl_domain_key()
-                && record.app_account == birth.app_account()
-                && record.encrypted_value_label == birth.encrypted_value_label()
-                && record.public_decrypt == birth.public_decrypt()
-                && record.subject_count as usize == birth.subjects().len()
-                && record.overflow_subject_count == 0
-                && record.bump
-                    == zama_host::acl_record_address(birth.nonce_key(), birth.sequence()).1,
-            ConfidentialTokenError::CurrentAclRecordMismatch
-        );
-        for (index, subject) in birth.subjects().iter().enumerate() {
-            require!(
-                subject.matches_record_entry(record.subjects[index], record.subject_roles[index]),
-                ConfidentialTokenError::CurrentAclRecordMismatch
-            );
-        }
-        Ok(record.handle)
+        let value = read_encrypted_value(&self.encrypted_value)?;
+        Ok(value.current_handle)
     }
 
     pub(crate) fn account_info(&self) -> AccountInfo<'info> {
-        self.acl_record.clone()
+        self.encrypted_value.clone()
     }
 
     fn birth(&self) -> Result<zama_fhe::DurableOutputBirth> {
@@ -114,6 +109,18 @@ impl<'info> DurableOutput<'info> {
             error!(ConfidentialTokenError::InvalidFheEvalPlan)
         })
     }
+}
+
+/// Decodes a canonical, program-owned `EncryptedValue` account.
+pub(crate) fn read_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue> {
+    require_keys_eq!(
+        *info.owner,
+        zama_host::ID,
+        ConfidentialTokenError::CurrentEncryptedValueMismatch
+    );
+    let data = info.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    EncryptedValue::try_deserialize(&mut slice)
 }
 
 /// Program-controlled compute signer PDA plus the ACL domain it signs for.
@@ -384,6 +391,8 @@ pub(crate) struct EvalContext<'a, 'info> {
     pub zama_program: &'a Program<'info, ZamaHost>,
     /// Host config used for chain-id-aware handle derivation.
     pub host_config: &'a Account<'info, HostConfig>,
+    /// Canonical deny-record PDA witnesses supplied as instruction remaining accounts.
+    pub deny_subject_records: &'a [AccountInfo<'info>],
     /// Program-controlled compute signer PDA and its ACL domain.
     pub compute_authority: ComputeAuthority<'info>,
     /// System program used for output ACL creation.
@@ -475,6 +484,12 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
     for seeds in &extra_output_authority_seeds {
         signer_seed_vec.push(seeds.as_slice());
     }
+    validate_deny_subject_records_for_output_authorities(
+        request.context.host_config.grant_deny_list_enabled,
+        request.context.deny_subject_records,
+        app_authority.key(),
+        &extra_output_authorities,
+    )?;
     signer_seed_vec.push(hcu_authority_seeds.as_slice());
 
     zama_fhe::invoke_eval_signed_resolved(
@@ -484,6 +499,7 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
             compute_subject: request.context.compute_authority.account_info(),
             app_account_authority: app_authority.account.clone(),
             host_config: request.context.host_config.to_account_info(),
+            deny_subject_records: request.context.deny_subject_records,
             system_program: request.context.system_program.to_account_info(),
             hcu_authority: request.context.hcu_authority.account_info(),
             hcu_block_meter: request.context.hcu_block_meter.clone(),
@@ -497,42 +513,117 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
     Ok(())
 }
 
+fn validate_deny_subject_records_for_output_authorities<'info>(
+    deny_list_enabled: bool,
+    supplied_records: &[AccountInfo<'info>],
+    app_authority: Pubkey,
+    extra_output_authorities: &[OutputAuthority<'info>],
+) -> Result<()> {
+    if !deny_list_enabled {
+        require!(
+            supplied_records.is_empty(),
+            ConfidentialTokenError::UnexpectedRemainingAccounts
+        );
+        return Ok(());
+    }
+
+    for (index, supplied) in supplied_records.iter().enumerate() {
+        require!(
+            !supplied_records[index + 1..]
+                .iter()
+                .any(|later| later.key() == supplied.key()),
+            ConfidentialTokenError::UnexpectedRemainingAccounts
+        );
+        require!(
+            is_deny_record_for_authority(supplied.key(), app_authority)
+                || extra_output_authorities
+                    .iter()
+                    .any(|authority| is_deny_record_for_authority(supplied.key(), authority.key())),
+            ConfidentialTokenError::UnexpectedRemainingAccounts
+        );
+    }
+    Ok(())
+}
+
+fn is_deny_record_for_authority(record: Pubkey, authority: Pubkey) -> bool {
+    zama_host::deny_subject_address(authority).0 == record
+}
+
 /// Inputs required to mark a host handle publicly decryptable.
 pub struct AllowPublicDecrypt<'a, 'info> {
-    /// Subject that already has `ACL_ROLE_PUBLIC_DECRYPT` on the ACL record.
+    /// Subject that is allowed on the lineage.
     pub authority: &'a Signer<'info>,
-    /// Optional overflow permission witness when the authority is not inline.
-    pub authority_permission_record: Option<AccountInfo<'info>>,
-    /// ACL record whose public-decrypt flag is updated.
-    pub acl_record: AccountInfo<'info>,
+    /// Rent payer for the account's growth, if any.
+    pub payer: &'a Signer<'info>,
+    /// Current handle expected on the lineage.
+    pub handle: [u8; 32],
+    /// `EncryptedValue` lineage whose current handle is marked public.
+    pub encrypted_value: AccountInfo<'info>,
     /// ZamaHost config account.
     pub host_config: &'a Account<'info, HostConfig>,
     /// Optional deny-list witness when grant deny-lists are enabled.
     pub deny_subject_record: Option<AccountInfo<'info>>,
-    /// Anchor event CPI authority for ZamaHost.
-    pub event_authority: &'a UncheckedAccount<'info>,
     /// ZamaHost program account.
     pub zama_program: &'a Program<'info, ZamaHost>,
-    /// Handle stored in `acl_record`.
-    pub handle: [u8; 32],
+    /// System program used for the account's growth, if any.
+    pub system_program: &'a Program<'info, System>,
 }
 
 /// Delegates public-decrypt authorization to ZamaHost.
 pub fn allow_public_decrypt<'info>(request: AllowPublicDecrypt<'_, 'info>) -> Result<()> {
-    cpi::allow_for_decryption(
+    cpi::make_handle_public(
         CpiContext::new(
             request.zama_program.key(),
-            HostAllowForDecryption {
+            cpi::accounts::MakeEncryptedValueHandlePublic {
+                payer: request.payer.to_account_info(),
                 authority: request.authority.to_account_info(),
-                authority_permission_record: request.authority_permission_record,
-                acl_record: request.acl_record,
+                encrypted_value: request.encrypted_value,
                 host_config: request.host_config.to_account_info(),
                 deny_subject_record: request.deny_subject_record,
-                event_authority: request.event_authority.to_account_info(),
-                program: request.zama_program.to_account_info(),
+                system_program: request.system_program.to_account_info(),
             },
         ),
         request.handle,
+    )
+}
+
+/// Inputs required to add subjects to an existing lineage.
+pub struct AllowSubjects<'a, 'info> {
+    /// Rent payer for the account's growth, if any.
+    pub payer: &'a Signer<'info>,
+    /// Current allowed subject on the lineage.
+    pub authority: &'a Signer<'info>,
+    /// `EncryptedValue` lineage receiving the new allowed subjects.
+    pub encrypted_value: AccountInfo<'info>,
+    /// ZamaHost config account.
+    pub host_config: &'a Account<'info, HostConfig>,
+    /// Optional deny-list witness when grant deny-lists are enabled.
+    pub deny_subject_record: Option<AccountInfo<'info>>,
+    /// ZamaHost program account.
+    pub zama_program: &'a Program<'info, ZamaHost>,
+    /// System program used for the account's growth, if any.
+    pub system_program: &'a Program<'info, System>,
+}
+
+/// Adds subjects to an existing `EncryptedValue` lineage. Re-adding an existing
+/// subject is idempotent and still proves the authority is currently allowed.
+pub(crate) fn allow_subjects<'info>(
+    request: AllowSubjects<'_, 'info>,
+    subjects: Vec<zama_host::instructions::EncryptedValueSubjectGrant>,
+) -> Result<()> {
+    cpi::allow_subjects(
+        CpiContext::new(
+            request.zama_program.key(),
+            cpi::accounts::AllowEncryptedValueSubjects {
+                payer: request.payer.to_account_info(),
+                authority: request.authority.to_account_info(),
+                encrypted_value: request.encrypted_value,
+                host_config: request.host_config.to_account_info(),
+                deny_subject_record: request.deny_subject_record,
+                system_program: request.system_program.to_account_info(),
+            },
+        ),
+        subjects,
     )
 }
 
@@ -569,12 +660,11 @@ mod tests {
         }
     }
 
-    fn durable_slot(account: Pubkey, sequence: u64) -> zama_fhe::DurableSlot {
+    fn durable_slot(account: Pubkey, label_tag: u8) -> zama_fhe::DurableSlot {
         zama_fhe::DurableSlot::new(
             Pubkey::new_unique(),
             account,
-            zama_fhe::DurableLabel::new(handle(5)),
-            sequence,
+            zama_fhe::DurableLabel::new(handle(label_tag)),
         )
     }
 
