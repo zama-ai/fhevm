@@ -102,6 +102,78 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  native-coverage:
+    name: solana-tests/native-coverage
+    needs: check-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-solana == 'true' }}
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: solana
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Setup Rust toolchain file
+        run: cp rust-toolchain.toml ..
+
+      - uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Cache cargo
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            solana/target/llvm-cov-target
+          key: ${{ runner.os }}-cargo-solana-coverage-${{ hashFiles('solana/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-solana-coverage-
+
+      - name: Measure native unit coverage
+        run: |
+          cargo llvm-cov \
+            --workspace \
+            --exclude zama-solana-runtime-tests \
+            --json \
+            --summary-only \
+            --output-path /tmp/solana-native-coverage.json
+
+          {
+            echo '### Solana native unit coverage'
+            echo
+            echo 'Mollusk executes prebuilt SBF programs, so it validates runtime behavior but cannot attribute LLVM coverage to program instruction bodies. The runtime-test harness is excluded here to avoid inflating this native signal.'
+            echo
+            echo '| Component | Covered lines | Coverage |'
+            echo '| --- | ---: | ---: |'
+            jq -r '
+              def row($label; $path):
+                [.data[0].files[] | select(.filename | contains($path)) | .summary.lines] as $parts
+                | ($parts | map(.count) | add) as $total
+                | ($parts | map(.covered) | add) as $covered
+                | if ($total // 0) == 0 then
+                    error("no coverage entries found for \($label)")
+                  else
+                    "| \($label) | \($covered)/\($total) | \((($covered * 10000 / $total) | round) / 100)% |"
+                  end;
+              [
+                row("zama-solana-acl"; "/crates/zama-solana-acl/"),
+                row("solana-ed25519-instruction"; "/crates/solana-ed25519-instruction/"),
+                row("zama-fhe"; "/crates/zama-fhe/"),
+                row("zama-host"; "/programs/zama-host/"),
+                row("confidential-token"; "/programs/confidential-token/"),
+                row("confidential-deposit-app"; "/programs/confidential-deposit-app/")
+              ][]
+            ' /tmp/solana-native-coverage.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # The off-chain reconstruction path (host-listener, solana-reconstruct feature) is otherwise
   # only built/exercised by the full solana-e2e job. Compile it here and run its unit tests so a
   # break (e.g. the fhe_eval ACL-record account-offset) is caught in minutes, not 40+.
