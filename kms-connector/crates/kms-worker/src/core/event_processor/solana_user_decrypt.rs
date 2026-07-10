@@ -48,11 +48,14 @@
 //! ## Freshness contract
 //!
 //! [`dispatch_solana_mmr_proof`] verifies the proof against the live peaks FIRST. Only after a
-//! verification failure does the proof's leaf count classify the result:
+//! inclusion-proof failure does the proof's leaf count classify the result:
 //! - **proof count < live count**: terminal; the immutable queued proof is stale.
 //! - **proof count == live count**: terminal; the proof is invalid for the live state.
 //! - **proof count > live count**: recoverable through the ordinary bounded attempt budget; the
 //!   KMS finalized view is behind the proof service, so the same proof may verify after catch-up.
+//!
+//! Domain, owner, canonical-account, bump, and inconsistent-MMR failures remain terminal regardless
+//! of the two counts because finalized-view catch-up cannot repair them.
 //!
 //! A proof that still verifies against the live peaks despite `proof_leaf_count != leaf_count` (count
 //! drifted but the relevant mountain never merged) is accepted — verify-first, never rebuilt from
@@ -332,28 +335,38 @@ fn dispatch_solana_public_mmr_proof(
         .map_err(|e| classify_mmr_verification_failure(e, proof_leaf_count, acl.leaf_count))
 }
 
-/// Verify-first failure classification. An ahead-of-live proof can become valid when the KMS
-/// finalized view catches up, so it gets an ordinary bounded retry. A proof at or behind the live
-/// count cannot be repaired in place and is terminal.
+/// Verify-first failure classification. Only an inclusion-proof mismatch ahead of the KMS finalized
+/// view can heal through catch-up, so it gets an ordinary bounded retry. All other verifier errors,
+/// and proof mismatches at or behind the live count, are terminal.
 fn classify_mmr_verification_failure(
     error: crate::core::solana_acl::SolanaAclVerificationError,
     proof_leaf_count: u64,
     live_leaf_count: u64,
 ) -> ProcessingError {
-    if proof_leaf_count > live_leaf_count {
+    let proof_invalid = matches!(
+        error,
+        crate::core::solana_acl::SolanaAclVerificationError::HistoricalAccessProofInvalid
+            | crate::core::solana_acl::SolanaAclVerificationError::PublicDecryptProofInvalid
+    );
+    if proof_invalid && proof_leaf_count > live_leaf_count {
         ProcessingError::Recoverable(anyhow!(
             "Solana MMR proof is ahead of the KMS finalized view: proof leaf_count={proof_leaf_count}, \
              live finalized leaf_count={live_leaf_count}; retrying within the normal attempt budget \
              while finalized state catches up ({error})"
         ))
-    } else if proof_leaf_count < live_leaf_count {
+    } else if proof_invalid && proof_leaf_count < live_leaf_count {
         ProcessingError::Irrecoverable(anyhow!(
             "Solana MMR proof is stale and immutable: proof leaf_count={proof_leaf_count}, live \
              finalized leaf_count={live_leaf_count} ({error})"
         ))
-    } else {
+    } else if proof_invalid {
         ProcessingError::Irrecoverable(anyhow!(
             "Solana MMR proof is invalid at live finalized leaf_count={live_leaf_count} ({error})"
+        ))
+    } else {
+        ProcessingError::Irrecoverable(anyhow!(
+            "Solana MMR authorization failed irrecoverably: proof leaf_count={proof_leaf_count}, \
+             live finalized leaf_count={live_leaf_count} ({error})"
         ))
     }
 }
@@ -936,15 +949,14 @@ mod tests {
     }
 
     #[test]
-    fn domain_failure_remains_terminal_when_leaf_count_differs() {
+    fn ahead_count_domain_and_canonical_failures_remain_terminal() {
         let kp = identity_kp(14);
         let owner: SolanaPubkeyBytes = kp.public_key().as_ref().try_into().unwrap();
         let mut l = lineage(h(70), &[owner]);
         l.rotate(h(71));
-        let proof_slot = l.acl.leaf_count;
+        let proof_slot = l.acl.leaf_count + 1;
         let blob = proof_blob(MMR_MODE_HISTORICAL, &l.proof(0));
-        l.rotate(h(72));
-        assert_ne!(proof_slot, l.acl.leaf_count);
+        assert!(proof_slot > l.acl.leaf_count);
 
         let request = signed_mmr_request(&kp, h(70), l.value_key(), blob, proof_slot);
         let mut auth = verify_solana_user_decrypt_signature(&request, CHAIN_ID).unwrap();
@@ -952,8 +964,18 @@ mod tests {
 
         let verifier = SolanaAclVerifier::new(HOST);
         let err = dispatch_solana_mmr_proof(&verifier, l.account, HOST, &l.acl, h(70), &auth)
-            .expect_err("domain failures must remain terminal");
+            .expect_err("an ahead count must not make a domain failure retryable");
         assert!(matches!(err, ProcessingError::Irrecoverable(_)));
+
+        let canonical_err = classify_mmr_verification_failure(
+            crate::core::solana_acl::SolanaAclVerificationError::NonCanonicalEncryptedValueAcl,
+            2,
+            1,
+        );
+        assert!(
+            matches!(canonical_err, ProcessingError::Irrecoverable(_)),
+            "an ahead count must not make a canonical-account failure retryable"
+        );
     }
 
     // (3c) CURRENT ACCEPT
