@@ -141,6 +141,8 @@ impl DbEventNotifier {
 
             if let Some(ticker) = tickers.iter_mut().find(|t| t.kind == notification) {
                 ticker.reset();
+            } else {
+                warn!("Notification from unknown event type: {notification:?}");
             }
 
             if self.notif_sender.send(notification).await.is_err() {
