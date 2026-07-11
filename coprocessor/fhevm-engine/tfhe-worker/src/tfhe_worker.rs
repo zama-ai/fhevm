@@ -22,6 +22,7 @@ use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFG
 use sha3::{Digest, Keccak256};
 use sqlx::types::Uuid;
 use sqlx::Postgres;
+use sqlx::Row;
 use sqlx::{postgres::PgListener, query};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -87,6 +88,12 @@ lazy_static! {
     static ref UNRESOLVED_DEPENDENCY_PRODUCER_BLOCK_COUNTER: IntCounter = register_int_counter!(
         "coprocessor_unresolved_dependency_producer_block_total",
         "dependency metadata rows whose producer block hash has no observed host-chain block"
+    )
+    .unwrap();
+    static ref PROPAGATED_DEPENDENCY_ERRORS_COUNTER: IntCounter = register_int_counter!(
+        "coprocessor_propagated_dependency_errors_total",
+        "computations marked terminal because their resolved producer in an earlier block \
+         errored terminally and can never supply ciphertext bytes"
     )
     .unwrap();
     static ref WORK_ITEMS_QUERY_HISTOGRAM: Histogram = register_histogram!(
@@ -1889,6 +1896,18 @@ async fn build_transaction_graph_and_execute<'a>(
             warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - fetched_handles.len()), dcid = %hex::encode(dcid_lock.dependence_chain_id) },
 	      "some inputs are missing to execute the dependence chain");
         }
+        // A missing input whose producers are ALL terminal will never arrive:
+        // mark its consumers terminal now (with the producer's error root) so
+        // they stop yielding retryable MissingInputs and settlement can
+        // advance. Producers that are merely pending keep the input retryable.
+        propagate_unresolvable_dependency_errors(
+            &resolved_handles,
+            &fetched_handles,
+            batch_context,
+            trx,
+        )
+        .await
+        .map_err(CoprocessorError::from)?;
     }
     // Block-scoped execution is the only path: decompress + re-rand boundary
     // inputs at the worker level so all partitions receive pre-materialized
@@ -2590,6 +2609,206 @@ async fn persist_terminal_computation_error<'a>(
     Ok(root_updated + derived_updated)
 }
 
+/// Resolution-time propagation of terminal producer errors across blocks.
+///
+/// `persist_terminal_computation_error` makes the SAME-BLOCK closure of an
+/// errored computation terminal at error time, but a consumer in a LATER block
+/// (or one ingested after the error was recorded) is not in that closure: its
+/// dependency resolves to the errored producer row, no ciphertext candidate
+/// exists, and it would yield retryable `MissingInputs` forever — permanently
+/// freezing `settled_height` below its block.
+///
+/// This runs after batch dependency resolution: for every resolved branch
+/// dependency with no ciphertext bytes, if EVERY producer row of that handle in
+/// the resolved context is terminal (`is_error`), the bytes can never appear,
+/// so the consumers in the current batch context are marked terminal with the
+/// producer's error root and their same-block closure is cascaded.
+///
+/// The all-producers-terminal condition is what keeps this consensus-safe: if
+/// the canonical producer errored but a sibling transaction deriving the same
+/// handle is still pending, bytes may yet appear, and marking would depend on
+/// each coprocessor's polling timing. Roots recorded on derived errors are
+/// preserved (a derived producer propagates its original root, not itself).
+async fn propagate_unresolvable_dependency_errors<'a>(
+    dependency_metadata: &HashMap<Handle, DependencyMetadata>,
+    fetched_handles: &HashSet<Vec<u8>>,
+    batch_context: &BatchExecutionContext,
+    trx: &mut sqlx::Transaction<'a, Postgres>,
+) -> Result<u64, sqlx::Error> {
+    let mut missing_handles: Vec<Vec<u8>> = Vec::new();
+    let mut missing_producers: Vec<Vec<u8>> = Vec::new();
+    for (handle, metadata) in dependency_metadata {
+        if metadata.producer_block_hash.is_empty() || fetched_handles.contains(handle) {
+            continue;
+        }
+        missing_handles.push(handle.clone());
+        missing_producers.push(metadata.producer_block_hash.clone());
+    }
+    if missing_handles.is_empty() {
+        return Ok(0);
+    }
+
+    // Per missing dependency context: the canonical (lexicographically
+    // smallest transaction) producer row's identity and recorded error root,
+    // plus whether every producer row of the handle in that context is
+    // already terminal.
+    let terminal_producers = sqlx::query(
+        r#"
+        SELECT req.handle,
+               req.producer_block_hash,
+               (ARRAY_AGG(c.transaction_id ORDER BY c.transaction_id))[1] AS canonical_transaction_id,
+               (ARRAY_AGG(c.error_root_output_handle ORDER BY c.transaction_id))[1] AS root_output_handle,
+               (ARRAY_AGG(c.error_root_transaction_id ORDER BY c.transaction_id))[1] AS root_transaction_id,
+               (ARRAY_AGG(c.error_root_producer_block_hash ORDER BY c.transaction_id))[1] AS root_producer_block_hash,
+               BOOL_AND(c.is_error) AS all_terminal
+        FROM UNNEST($1::BYTEA[], $2::BYTEA[]) AS req(handle, producer_block_hash)
+        JOIN computations_branch c
+          ON c.host_chain_id = $3
+         AND c.output_handle = req.handle
+         AND c.producer_block_hash = req.producer_block_hash
+        GROUP BY req.handle, req.producer_block_hash
+        "#,
+    )
+    .bind(&missing_handles)
+    .bind(&missing_producers)
+    .bind(batch_context.host_chain_id)
+    .fetch_all(trx.as_mut())
+    .await?;
+
+    let mut total_marked = 0_u64;
+    for row in terminal_producers {
+        let all_terminal: bool = row.try_get("all_terminal")?;
+        if !all_terminal {
+            continue;
+        }
+        let handle: Vec<u8> = row.try_get("handle")?;
+        let producer_block_hash: Vec<u8> = row.try_get("producer_block_hash")?;
+        let canonical_transaction_id: Vec<u8> = row.try_get("canonical_transaction_id")?;
+        // Preserve the original root when the producer is itself a derived
+        // error; otherwise the producer is the root.
+        let root_output_handle: Vec<u8> = row
+            .try_get::<Option<Vec<u8>>, _>("root_output_handle")?
+            .unwrap_or_else(|| handle.clone());
+        let root_transaction_id: Vec<u8> = row
+            .try_get::<Option<Vec<u8>>, _>("root_transaction_id")?
+            .unwrap_or_else(|| canonical_transaction_id.clone());
+        let root_producer_block_hash: Vec<u8> = row
+            .try_get::<Option<Vec<u8>>, _>("root_producer_block_hash")?
+            .unwrap_or_else(|| producer_block_hash.clone());
+
+        let derived_message = format!(
+            "blocked by terminal computation error at output 0x{} transaction 0x{}",
+            hex::encode(&root_output_handle),
+            hex::encode(&root_transaction_id),
+        );
+        // Mirror of the derived closure in `persist_terminal_computation_error`:
+        // the first hop targets the current batch context's consumers of the
+        // dead handle, subsequent hops walk their same-block closure. The
+        // overwrite predicate keeps the lexicographically smallest root so
+        // concurrent propagation from several dead dependencies converges.
+        let marked = sqlx::query(
+            r#"
+            WITH RECURSIVE derived AS (
+                SELECT child.output_handle,
+                       child.transaction_id,
+                       child.producer_block_hash,
+                       child.host_chain_id,
+                       child.block_number
+                  FROM computations_branch child
+                 WHERE child.host_chain_id = $1
+                   AND child.producer_block_hash = $2
+                   AND child.block_number IS NOT DISTINCT FROM $3
+                   AND $4 = ANY(child.dependencies)
+                   AND child.is_completed = FALSE
+                   AND (child.is_error = FALSE OR child.error_root_output_handle IS NOT NULL)
+
+                UNION
+
+                SELECT child.output_handle,
+                       child.transaction_id,
+                       child.producer_block_hash,
+                       child.host_chain_id,
+                       child.block_number
+                  FROM derived parent
+                  JOIN computations_branch child
+                    ON child.host_chain_id = parent.host_chain_id
+                   AND child.block_number IS NOT DISTINCT FROM parent.block_number
+                   AND child.producer_block_hash = parent.producer_block_hash
+                   AND parent.output_handle = ANY(child.dependencies)
+                 WHERE child.is_completed = FALSE
+                   AND (child.is_error = FALSE OR child.error_root_output_handle IS NOT NULL)
+                   -- A failed non-canonical alias is terminal itself, but its
+                   -- output handle is still supplied by the canonical producer.
+                   AND NOT EXISTS (
+                       SELECT 1
+                         FROM computations_branch earlier
+                        WHERE earlier.host_chain_id = parent.host_chain_id
+                          AND earlier.block_number IS NOT DISTINCT FROM parent.block_number
+                          AND earlier.producer_block_hash = parent.producer_block_hash
+                          AND earlier.output_handle = parent.output_handle
+                          AND earlier.transaction_id < parent.transaction_id
+                   )
+            )
+            UPDATE computations_branch target
+               SET is_error = TRUE,
+                   error_message = $5,
+                   error_root_output_handle = $6,
+                   error_root_transaction_id = $7,
+                   error_root_producer_block_hash = $8
+              FROM derived d
+             WHERE target.output_handle = d.output_handle
+               AND target.transaction_id = d.transaction_id
+               AND target.producer_block_hash = d.producer_block_hash
+               AND target.is_completed = FALSE
+               AND (
+                    target.is_error = FALSE
+                    OR (
+                        target.error_root_output_handle IS NOT NULL
+                        AND (
+                            target.error_root_output_handle > $6
+                            OR (
+                                target.error_root_output_handle = $6
+                                AND target.error_root_transaction_id > $7
+                            )
+                            OR (
+                                target.error_root_output_handle = $6
+                                AND target.error_root_transaction_id = $7
+                                AND target.error_root_producer_block_hash > $8
+                            )
+                        )
+                    )
+               )
+            "#,
+        )
+        .bind(batch_context.host_chain_id)
+        .bind(&batch_context.producer_block_hash)
+        .bind(batch_context.block_number)
+        .bind(&handle)
+        .bind(&derived_message)
+        .bind(&root_output_handle)
+        .bind(&root_transaction_id)
+        .bind(&root_producer_block_hash)
+        .execute(trx.as_mut())
+        .await?
+        .rows_affected();
+
+        if marked > 0 {
+            PROPAGATED_DEPENDENCY_ERRORS_COUNTER.inc_by(marked);
+            warn!(
+                target: "tfhe_worker",
+                dependency = %hex::encode(&handle),
+                producer_block_hash = %hex::encode(&producer_block_hash),
+                error_root = %hex::encode(&root_output_handle),
+                marked,
+                "dependency's producers are all terminal; marked its consumers in this \
+                 batch context terminal so settlement can advance past them"
+            );
+        }
+        total_marked += marked;
+    }
+    Ok(total_marked)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
@@ -2599,11 +2818,11 @@ mod tests {
         add_branchless_ciphertext_metadata_fallback, build_current_branch_ancestry,
         dedupe_ciphertext_inserts, dedupe_ciphertext_inserts_inner,
         ensure_ciphertext_write_above_settled, observe_same_block_db_dependency_violation,
-        persist_terminal_computation_error, query_dependency_metadata, query_work_rows_for_dcid,
-        resolve_current_branch_candidates, resolve_dependency_metadata,
-        select_ciphertext_candidate, settled_ciphertext_divergence, BatchExecutionContext,
-        BlockAncestorRow, CiphertextCandidate, CiphertextDedupeEntry, CiphertextInsert,
-        DependencyMetadata, ProducerCandidate,
+        persist_terminal_computation_error, propagate_unresolvable_dependency_errors,
+        query_dependency_metadata, query_work_rows_for_dcid, resolve_current_branch_candidates,
+        resolve_dependency_metadata, select_ciphertext_candidate, settled_ciphertext_divergence,
+        BatchExecutionContext, BlockAncestorRow, CiphertextCandidate, CiphertextDedupeEntry,
+        CiphertextInsert, DependencyMetadata, ProducerCandidate,
     };
     use fhevm_engine_common::branch::advance_settled_height;
     use fhevm_engine_common::drift_revert::WatcherTimeouts;
@@ -3024,6 +3243,340 @@ mod tests {
                 db_down_limit: Duration::from_secs(5),
             },
         }
+    }
+
+    /// Cross-block variant of the terminal-error closure: the producer errored
+    /// in block 42, the consumers live in block 43 and are only reachable at
+    /// resolution time. The consumer, its same-block closure, and nothing on a
+    /// sibling fork must be marked, all carrying the producer as error root.
+    #[tokio::test]
+    #[serial(db)]
+    async fn cross_block_consumers_of_terminal_producer_are_marked_with_root() {
+        let db = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db.db_url())
+            .await
+            .expect("connect db");
+
+        let producer_block = vec![0xA1_u8; 32];
+        let consumer_block = vec![0xA2_u8; 32];
+        let sibling_fork_block = vec![0xA3_u8; 32];
+        let dead_handle = vec![0x10_u8; 32];
+        let consumer_handle = vec![0x20_u8; 32];
+        let grandchild_handle = vec![0x30_u8; 32];
+        let sibling_handle = vec![0x40_u8; 32];
+        let producer_tid = vec![0x01_u8; 32];
+
+        // Terminal producer in block 42.
+        insert_dependency_work_row(
+            &pool,
+            &producer_tid,
+            &dead_handle,
+            &[],
+            &producer_block,
+            42,
+            false,
+            true,
+        )
+        .await;
+        // Consumer and its same-block dependent in block 43.
+        insert_dependency_work_row(
+            &pool,
+            &[0x02_u8; 32],
+            &consumer_handle,
+            std::slice::from_ref(&dead_handle),
+            &consumer_block,
+            43,
+            false,
+            false,
+        )
+        .await;
+        insert_dependency_work_row(
+            &pool,
+            &[0x03_u8; 32],
+            &grandchild_handle,
+            std::slice::from_ref(&consumer_handle),
+            &consumer_block,
+            43,
+            false,
+            false,
+        )
+        .await;
+        // A consumer of the same dead handle on a sibling fork resolves its
+        // own producer row and must stay untouched.
+        insert_dependency_work_row(
+            &pool,
+            &[0x04_u8; 32],
+            &sibling_handle,
+            std::slice::from_ref(&dead_handle),
+            &sibling_fork_block,
+            43,
+            false,
+            false,
+        )
+        .await;
+
+        let batch_context = BatchExecutionContext {
+            host_chain_id: 1,
+            block_number: Some(43),
+            producer_block_hash: consumer_block.clone(),
+        };
+        let dependency_metadata = HashMap::from([(
+            dead_handle.clone(),
+            DependencyMetadata {
+                producer_block_hash: producer_block.clone(),
+                block_number: Some(42),
+                settled_producer_block_hashes: Vec::new(),
+            },
+        )]);
+
+        let mut tx = pool.begin().await.expect("begin tx");
+        let marked = propagate_unresolvable_dependency_errors(
+            &dependency_metadata,
+            &HashSet::new(),
+            &batch_context,
+            &mut tx,
+        )
+        .await
+        .expect("propagate unresolvable dependency errors");
+        tx.commit().await.expect("commit propagation");
+        assert_eq!(marked, 2, "consumer and its same-block dependent");
+
+        for handle in [&consumer_handle, &grandchild_handle] {
+            let row = sqlx::query(
+                "SELECT is_error, error_message, error_root_output_handle,
+                        error_root_transaction_id, error_root_producer_block_hash
+                 FROM computations_branch WHERE output_handle = $1",
+            )
+            .bind(handle)
+            .fetch_one(&pool)
+            .await
+            .expect("read consumer state");
+            assert!(row.get::<bool, _>("is_error"));
+            assert_eq!(
+                row.get::<Option<Vec<u8>>, _>("error_root_output_handle"),
+                Some(dead_handle.clone())
+            );
+            assert_eq!(
+                row.get::<Option<Vec<u8>>, _>("error_root_transaction_id"),
+                Some(producer_tid.clone())
+            );
+            assert_eq!(
+                row.get::<Option<Vec<u8>>, _>("error_root_producer_block_hash"),
+                Some(producer_block.clone())
+            );
+            assert!(row
+                .get::<Option<String>, _>("error_message")
+                .expect("derived message")
+                .contains("blocked by terminal computation error"));
+        }
+
+        let sibling_is_error: bool =
+            sqlx::query_scalar("SELECT is_error FROM computations_branch WHERE output_handle = $1")
+                .bind(&sibling_handle)
+                .fetch_one(&pool)
+                .await
+                .expect("read sibling state");
+        assert!(!sibling_is_error, "sibling fork consumer stays retryable");
+    }
+
+    /// While any producer of the missing handle is still pending, bytes may
+    /// yet appear, so consumers must stay retryable — marking early would make
+    /// the outcome depend on each coprocessor's polling timing.
+    #[tokio::test]
+    #[serial(db)]
+    async fn pending_sibling_producer_keeps_cross_block_consumer_retryable() {
+        let db = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db.db_url())
+            .await
+            .expect("connect db");
+
+        let producer_block = vec![0xB1_u8; 32];
+        let consumer_block = vec![0xB2_u8; 32];
+        let dead_handle = vec![0x11_u8; 32];
+        let consumer_handle = vec![0x21_u8; 32];
+
+        // Canonical producer errored, but a later transaction deriving the
+        // same handle is still pending.
+        insert_dependency_work_row(
+            &pool,
+            &[0x01_u8; 32],
+            &dead_handle,
+            &[],
+            &producer_block,
+            42,
+            false,
+            true,
+        )
+        .await;
+        insert_dependency_work_row(
+            &pool,
+            &[0x02_u8; 32],
+            &dead_handle,
+            &[],
+            &producer_block,
+            42,
+            false,
+            false,
+        )
+        .await;
+        insert_dependency_work_row(
+            &pool,
+            &[0x03_u8; 32],
+            &consumer_handle,
+            std::slice::from_ref(&dead_handle),
+            &consumer_block,
+            43,
+            false,
+            false,
+        )
+        .await;
+
+        let batch_context = BatchExecutionContext {
+            host_chain_id: 1,
+            block_number: Some(43),
+            producer_block_hash: consumer_block.clone(),
+        };
+        let dependency_metadata = HashMap::from([(
+            dead_handle.clone(),
+            DependencyMetadata {
+                producer_block_hash: producer_block.clone(),
+                block_number: Some(42),
+                settled_producer_block_hashes: Vec::new(),
+            },
+        )]);
+
+        let mut tx = pool.begin().await.expect("begin tx");
+        let marked = propagate_unresolvable_dependency_errors(
+            &dependency_metadata,
+            &HashSet::new(),
+            &batch_context,
+            &mut tx,
+        )
+        .await
+        .expect("propagate unresolvable dependency errors");
+        tx.commit().await.expect("commit propagation");
+        assert_eq!(marked, 0);
+
+        let consumer_is_error: bool =
+            sqlx::query_scalar("SELECT is_error FROM computations_branch WHERE output_handle = $1")
+                .bind(&consumer_handle)
+                .fetch_one(&pool)
+                .await
+                .expect("read consumer state");
+        assert!(!consumer_is_error);
+    }
+
+    /// A producer that is itself a derived error must propagate its recorded
+    /// original root, not itself, so root provenance survives chains of
+    /// cross-block propagation.
+    #[tokio::test]
+    #[serial(db)]
+    async fn derived_error_producer_propagates_original_root() {
+        let db = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db.db_url())
+            .await
+            .expect("connect db");
+
+        let root_block = vec![0xC0_u8; 32];
+        let producer_block = vec![0xC1_u8; 32];
+        let consumer_block = vec![0xC2_u8; 32];
+        let original_root_handle = vec![0x12_u8; 32];
+        let original_root_tid = vec![0x01_u8; 32];
+        let dead_handle = vec![0x22_u8; 32];
+        let consumer_handle = vec![0x32_u8; 32];
+
+        // The producer in block 42 is a derived error rooted in block 41.
+        insert_dependency_work_row(
+            &pool,
+            &[0x02_u8; 32],
+            &dead_handle,
+            &[],
+            &producer_block,
+            42,
+            false,
+            true,
+        )
+        .await;
+        sqlx::query(
+            "UPDATE computations_branch
+             SET error_root_output_handle = $1,
+                 error_root_transaction_id = $2,
+                 error_root_producer_block_hash = $3
+             WHERE output_handle = $4",
+        )
+        .bind(&original_root_handle)
+        .bind(&original_root_tid)
+        .bind(&root_block)
+        .bind(&dead_handle)
+        .execute(&pool)
+        .await
+        .expect("record derived error root");
+
+        insert_dependency_work_row(
+            &pool,
+            &[0x03_u8; 32],
+            &consumer_handle,
+            std::slice::from_ref(&dead_handle),
+            &consumer_block,
+            43,
+            false,
+            false,
+        )
+        .await;
+
+        let batch_context = BatchExecutionContext {
+            host_chain_id: 1,
+            block_number: Some(43),
+            producer_block_hash: consumer_block.clone(),
+        };
+        let dependency_metadata = HashMap::from([(
+            dead_handle.clone(),
+            DependencyMetadata {
+                producer_block_hash: producer_block.clone(),
+                block_number: Some(42),
+                settled_producer_block_hashes: Vec::new(),
+            },
+        )]);
+
+        let mut tx = pool.begin().await.expect("begin tx");
+        let marked = propagate_unresolvable_dependency_errors(
+            &dependency_metadata,
+            &HashSet::new(),
+            &batch_context,
+            &mut tx,
+        )
+        .await
+        .expect("propagate unresolvable dependency errors");
+        tx.commit().await.expect("commit propagation");
+        assert_eq!(marked, 1);
+
+        let row = sqlx::query(
+            "SELECT error_root_output_handle, error_root_transaction_id,
+                    error_root_producer_block_hash
+             FROM computations_branch WHERE output_handle = $1",
+        )
+        .bind(&consumer_handle)
+        .fetch_one(&pool)
+        .await
+        .expect("read consumer root");
+        assert_eq!(
+            row.get::<Option<Vec<u8>>, _>("error_root_output_handle"),
+            Some(original_root_handle.clone())
+        );
+        assert_eq!(
+            row.get::<Option<Vec<u8>>, _>("error_root_transaction_id"),
+            Some(original_root_tid.clone())
+        );
+        assert_eq!(
+            row.get::<Option<Vec<u8>>, _>("error_root_producer_block_hash"),
+            Some(root_block.clone())
+        );
     }
 
     #[tokio::test]
