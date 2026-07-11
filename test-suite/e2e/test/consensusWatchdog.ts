@@ -114,19 +114,17 @@ export class ConsensusWatchdog {
   }
 
   /**
-   * Give recent submissions their normal consensus window before afterAll
-   * decides whether the run drained. This avoids treating a submission that
-   * arrived during the final test as stalled merely because the suite ended.
+   * Give all pending submissions one bounded final drain window before
+   * afterAll decides whether the run drained. Time spent running the suite is
+   * not a reliable stall deadline under sharded CI load.
    */
   async waitForDrain(consensusTimeoutMs = CONSENSUS_TIMEOUT_MS, pollIntervalMs = POLL_INTERVAL_MS): Promise<void> {
+    const deadline = Date.now() + consensusTimeoutMs;
     while (this.divergences.length === 0) {
       await this.flush();
       if (this.pendingHandles.size === 0 && this.pendingProofs.size === 0) return;
 
-      const firstSeenAt = Math.min(
-        ...[...this.pendingHandles.values(), ...this.pendingProofs.values()].map((pending) => pending.firstSeenAt),
-      );
-      const remainingMs = firstSeenAt + consensusTimeoutMs - Date.now();
+      const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) return;
 
       await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)));
@@ -381,17 +379,13 @@ export class ConsensusWatchdog {
   }
 
   /**
-   * Check for divergences (instant) and stalls (3-minute timeout).
-   * Called in afterEach to fail the current test if consensus is broken.
+   * Check for divergences immediately and for pending consensus older than the
+   * normal timeout. Hooks use checkDivergence between tests and reserve the
+   * stall decision for the final drain, so unrelated publication backlog is
+   * not attributed to whichever test happens to finish after three minutes.
    */
   checkHealth(): void {
-    // Force a sync check of divergences accumulated since last poll.
-    if (this.divergences.length > 0) {
-      const msg = this.divergences.join('\n\n');
-      this.divergences = [];
-      this.divergenceKeys.clear();
-      throw new Error(`Consensus divergence detected:\n\n${msg}`);
-    }
+    this.checkDivergence();
 
     // Check for stalls: handles that received a first submission but no consensus within timeout.
     const now = Date.now();
@@ -420,6 +414,15 @@ export class ConsensusWatchdog {
             `(submitters: ${coprocessors})`,
         );
       }
+    }
+  }
+
+  checkDivergence(): void {
+    if (this.divergences.length > 0) {
+      const msg = this.divergences.join('\n\n');
+      this.divergences = [];
+      this.divergenceKeys.clear();
+      throw new Error(`Consensus divergence detected:\n\n${msg}`);
     }
   }
 
@@ -501,15 +504,14 @@ export const mochaHooks = {
     await watchdog.flush();
     // Tests that intentionally inject divergence must explicitly ignore only
     // their expected handle with ignoreWatchdogCiphertextHandle().
-    watchdog.checkHealth();
+    watchdog.checkDivergence();
   },
 
   async afterAll(this: Mocha.Context) {
     if (!watchdog) return;
 
     try {
-      // Recent submissions are allowed the same consensus window at suite end
-      // that checkHealth grants them between tests.
+      // Pending submissions get one bounded drain window at suite end.
       await watchdog.waitForDrain();
       const summary = watchdog.summary();
       if (summary) console.log(summary);

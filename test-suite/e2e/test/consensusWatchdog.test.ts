@@ -259,12 +259,13 @@ describe('ConsensusWatchdog', function () {
   });
 
   describe('final drain', function () {
-    it('should wait for a recent ciphertext submission to reach consensus', async function () {
+    it('should give an old ciphertext submission a fresh final drain window', async function () {
       const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
 
       setCiphertextEvents([fakeEvent('0xhandle1', 1n, '0xdigest', '0xsns', '0xCopro1')], []);
       setBlock(1);
       await watchdog.flush();
+      (watchdog as any).pendingHandles.get('0xhandle1').firstSeenAt = Date.now() - 100;
 
       setTimeout(() => {
         setCiphertextEvents([], [fakeEvent('0xhandle1')]);
@@ -276,17 +277,41 @@ describe('ConsensusWatchdog', function () {
       expect(() => watchdog.assertDrained()).to.not.throw();
     });
 
-    it('should stop waiting once a pending submission reaches its timeout', async function () {
+    it('should stop waiting when the final drain window expires', async function () {
       const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
 
       setCiphertextEvents([fakeEvent('0xhandle1', 1n, '0xdigest', '0xsns', '0xCopro1')], []);
       setBlock(1);
       await watchdog.flush();
-      (watchdog as any).pendingHandles.get('0xhandle1').firstSeenAt = Date.now() - 100;
 
-      await watchdog.waitForDrain(50, 5);
+      await watchdog.waitForDrain(10, 5);
 
       expect(() => watchdog.assertDrained()).to.throw('1 ciphertext handle(s) never reached consensus');
+    });
+  });
+
+  describe('inter-test health checks', function () {
+    it('should defer old pending submissions while still failing divergence', async function () {
+      const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
+
+      setCiphertextEvents([fakeEvent('0xpending', 1n, '0xdigest', '0xsns', '0xCopro1')], []);
+      setBlock(1);
+      await watchdog.flush();
+      (watchdog as any).pendingHandles.get('0xpending').firstSeenAt = Date.now() - 4 * 60 * 1000;
+
+      expect(() => watchdog.checkDivergence()).to.not.throw();
+
+      setCiphertextEvents(
+        [
+          fakeEvent('0xdivergent', 1n, '0xdigestA', '0xsns', '0xCopro1'),
+          fakeEvent('0xdivergent', 1n, '0xdigestB', '0xsns', '0xCopro2'),
+        ],
+        [],
+      );
+      setBlock(2);
+      await watchdog.flush();
+
+      expect(() => watchdog.checkDivergence()).to.throw('Consensus divergence detected');
     });
   });
 
