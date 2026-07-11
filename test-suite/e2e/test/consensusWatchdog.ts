@@ -113,6 +113,26 @@ export class ConsensusWatchdog {
     return this.poll();
   }
 
+  /**
+   * Give recent submissions their normal consensus window before afterAll
+   * decides whether the run drained. This avoids treating a submission that
+   * arrived during the final test as stalled merely because the suite ended.
+   */
+  async waitForDrain(consensusTimeoutMs = CONSENSUS_TIMEOUT_MS, pollIntervalMs = POLL_INTERVAL_MS): Promise<void> {
+    while (this.divergences.length === 0) {
+      await this.flush();
+      if (this.pendingHandles.size === 0 && this.pendingProofs.size === 0) return;
+
+      const firstSeenAt = Math.min(
+        ...[...this.pendingHandles.values(), ...this.pendingProofs.values()].map((pending) => pending.firstSeenAt),
+      );
+      const remainingMs = firstSeenAt + consensusTimeoutMs - Date.now();
+      if (remainingMs <= 0) return;
+
+      await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remainingMs)));
+    }
+  }
+
   private async poll(): Promise<void> {
     if (this.pollInFlight) return this.pollInFlight;
     this.pollInFlight = this.runPoll().finally(() => {
@@ -160,11 +180,7 @@ export class ConsensusWatchdog {
 
   private async pollCiphertextEvents(fromBlock: number, toBlock: number): Promise<CiphertextPollResult> {
     const [submissions, consensuses] = await Promise.all([
-      this.ciphertextCommits.queryFilter(
-        this.ciphertextCommits.filters.AddCiphertextMaterial(),
-        fromBlock,
-        toBlock,
-      ),
+      this.ciphertextCommits.queryFilter(this.ciphertextCommits.filters.AddCiphertextMaterial(), fromBlock, toBlock),
       this.ciphertextCommits.queryFilter(
         this.ciphertextCommits.filters.AddCiphertextMaterialConsensus(),
         fromBlock,
@@ -238,11 +254,7 @@ export class ConsensusWatchdog {
         fromBlock,
         toBlock,
       ),
-      this.inputVerification!.queryFilter(
-        this.inputVerification!.filters.VerifyProofResponse(),
-        fromBlock,
-        toBlock,
-      ),
+      this.inputVerification!.queryFilter(this.inputVerification!.filters.VerifyProofResponse(), fromBlock, toBlock),
     ]);
 
     const pendingProofs = this.clonePendingProofs();
@@ -348,7 +360,10 @@ export class ConsensusWatchdog {
         proofId,
         {
           firstSeenAt: pending.firstSeenAt,
-          submissions: pending.submissions.map((submission) => ({ ...submission, ctHandles: [...submission.ctHandles] })),
+          submissions: pending.submissions.map((submission) => ({
+            ...submission,
+            ctHandles: [...submission.ctHandles],
+          })),
         },
       ]),
     );
@@ -472,7 +487,9 @@ export const mochaHooks = {
       console.warn('[consensus-watchdog] INPUT_VERIFICATION_ADDRESS not set, skipping proof monitoring');
     }
 
-    console.log(`[consensus-watchdog] Starting — gateway=${gatewayRpcUrl} ciphertextCommits=${ciphertextCommitsAddress}`);
+    console.log(
+      `[consensus-watchdog] Starting — gateway=${gatewayRpcUrl} ciphertextCommits=${ciphertextCommitsAddress}`,
+    );
     watchdog = new ConsensusWatchdog(gatewayRpcUrl, ciphertextCommitsAddress, inputVerificationAddress);
     await watchdog.start();
   },
@@ -491,8 +508,9 @@ export const mochaHooks = {
     if (!watchdog) return;
 
     try {
-      // Final poll + summary.
-      await watchdog.flush();
+      // Recent submissions are allowed the same consensus window at suite end
+      // that checkHealth grants them between tests.
+      await watchdog.waitForDrain();
       const summary = watchdog.summary();
       if (summary) console.log(summary);
       watchdog.assertDrained();
