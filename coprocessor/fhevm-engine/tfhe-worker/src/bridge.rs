@@ -577,7 +577,7 @@ async fn fetch_bridge_source_material(
                    src_digest.s3_format_version,
                    0 AS source_priority,
                    COALESCE(src_digest.block_number, -1) AS source_block_number,
-                   src_digest.created_at AS source_created_at
+                   src_digest.producer_block_hash AS source_producer_block_hash
             FROM ciphertexts_branch src_ct
             JOIN ciphertext_digest_branch src_digest
               ON src_digest.handle = src_ct.handle
@@ -620,7 +620,7 @@ async fn fetch_bridge_source_material(
                    src_digest.s3_format_version,
                    1 AS source_priority,
                    -1 AS source_block_number,
-                   src_digest.created_at AS source_created_at
+                   ''::bytea AS source_producer_block_hash
             FROM ciphertexts src_ct
             JOIN ciphertext_digest src_digest ON src_digest.handle = src_ct.handle
             WHERE src_ct.handle = $1
@@ -630,7 +630,13 @@ async fn fetch_bridge_source_material(
               AND src_digest.ciphertext IS NOT NULL
               AND src_digest.ciphertext128 IS NOT NULL
         ) source
-        ORDER BY source_priority, source_block_number DESC, source_created_at DESC
+        -- Deterministic across coprocessors: never tie-break on a local column
+        -- like created_at. Under per-block re-randomization two live sibling
+        -- forks of the same source handle hold different bytes, so an
+        -- ingestion-order tie-break would copy divergent bytes/digests onto the
+        -- (write-once) destination on different coprocessors. producer_block_hash
+        -- is unique per fork at a given height and identical fleet-wide.
+        ORDER BY source_priority, source_block_number DESC, source_producer_block_hash
         LIMIT 1
         "#,
         src_handle,
