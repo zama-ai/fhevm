@@ -184,7 +184,7 @@ describe('ConsensusWatchdog', function () {
   });
 
   describe('checkHealth — stall detection', function () {
-    it('should throw when consensus is not reached within timeout', async function () {
+    it('should not throw for ciphertext publication stalls', async function () {
       const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
 
       // Single submission, no consensus.
@@ -197,19 +197,19 @@ describe('ConsensusWatchdog', function () {
       const pending = (watchdog as any).pendingHandles.get('0xhandle1');
       pending.firstSeenAt = Date.now() - 4 * 60 * 1000; // 4 minutes ago
 
-      expect(() => watchdog.checkHealth()).to.throw('Consensus stall');
       expect(() => watchdog.checkHealth()).to.not.throw();
     });
 
-    it('should not throw when within timeout', async function () {
-      const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
+    it('should throw when input-proof consensus is not reached within timeout', async function () {
+      const { watchdog, setBlock, setProofEvents } = mockWatchdog();
 
-      setCiphertextEvents([fakeEvent('0xhandle1', 1n, '0xdigest', '0xsns', '0xCopro1')], []);
+      setProofEvents([fakeEvent(42n, ['0xhandle1'], '0xsig', '0xCopro1', '0x')], []);
 
       setBlock(1);
       await watchdog.flush();
+      (watchdog as any).pendingProofs.get('42').firstSeenAt = Date.now() - 4 * 60 * 1000;
 
-      expect(() => watchdog.checkHealth()).to.not.throw();
+      expect(() => watchdog.checkHealth()).to.throw('Consensus stall for input verification');
     });
   });
 
@@ -259,34 +259,48 @@ describe('ConsensusWatchdog', function () {
   });
 
   describe('final drain', function () {
-    it('should give an old ciphertext submission a fresh final drain window', async function () {
-      const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
+    it('should give an old input-proof submission a fresh final drain window', async function () {
+      const { watchdog, setBlock, setProofEvents } = mockWatchdog();
 
-      setCiphertextEvents([fakeEvent('0xhandle1', 1n, '0xdigest', '0xsns', '0xCopro1')], []);
+      setProofEvents([fakeEvent(42n, ['0xhandle1'], '0xsig', '0xCopro1', '0x')], []);
       setBlock(1);
       await watchdog.flush();
-      (watchdog as any).pendingHandles.get('0xhandle1').firstSeenAt = Date.now() - 100;
+      (watchdog as any).pendingProofs.get('42').firstSeenAt = Date.now() - 100;
 
       setTimeout(() => {
-        setCiphertextEvents([], [fakeEvent('0xhandle1')]);
+        setProofEvents([], [fakeEvent(42n)]);
         setBlock(2);
       }, 5);
 
-      await watchdog.waitForDrain(100, 5);
+      await watchdog.waitForBlockingDrain(100, 5);
 
-      expect(() => watchdog.assertDrained()).to.not.throw();
+      expect(() => watchdog.assertNoBlockingIssues()).to.not.throw();
     });
 
-    it('should stop waiting when the final drain window expires', async function () {
+    it('should fail when the input-proof drain window expires', async function () {
+      const { watchdog, setBlock, setProofEvents } = mockWatchdog();
+
+      setProofEvents([fakeEvent(42n, ['0xhandle1'], '0xsig', '0xCopro1', '0x')], []);
+      setBlock(1);
+      await watchdog.flush();
+
+      await watchdog.waitForBlockingDrain(10, 5);
+
+      expect(() => watchdog.assertNoBlockingIssues()).to.throw('1 proof(s) never reached consensus');
+    });
+
+    it('should report but not wait for or fail ciphertext publication stalls', async function () {
       const { watchdog, setBlock, setCiphertextEvents } = mockWatchdog();
 
       setCiphertextEvents([fakeEvent('0xhandle1', 1n, '0xdigest', '0xsns', '0xCopro1')], []);
       setBlock(1);
       await watchdog.flush();
+      (watchdog as any).pendingHandles.get('0xhandle1').firstSeenAt = Date.now() - 4 * 60 * 1000;
 
-      await watchdog.waitForDrain(10, 5);
+      await watchdog.waitForBlockingDrain(100, 5);
 
-      expect(() => watchdog.assertDrained()).to.throw('1 ciphertext handle(s) never reached consensus');
+      expect(watchdog.summary()).to.include('1 ciphertext handle(s) never reached consensus');
+      expect(() => watchdog.assertNoBlockingIssues()).to.not.throw();
     });
   });
 

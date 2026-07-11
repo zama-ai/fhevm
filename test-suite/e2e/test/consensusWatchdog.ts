@@ -114,15 +114,20 @@ export class ConsensusWatchdog {
   }
 
   /**
-   * Give all pending submissions one bounded final drain window before
-   * afterAll decides whether the run drained. Time spent running the suite is
-   * not a reliable stall deadline under sharded CI load.
+   * Give blocking input-proof submissions one bounded final drain window.
+   * Time spent running the suite is not a reliable stall deadline under
+   * sharded CI load.
    */
-  async waitForDrain(consensusTimeoutMs = CONSENSUS_TIMEOUT_MS, pollIntervalMs = POLL_INTERVAL_MS): Promise<void> {
+  async waitForBlockingDrain(
+    consensusTimeoutMs = CONSENSUS_TIMEOUT_MS,
+    pollIntervalMs = POLL_INTERVAL_MS,
+  ): Promise<void> {
     const deadline = Date.now() + consensusTimeoutMs;
     while (this.divergences.length === 0) {
       await this.flush();
-      if (this.pendingHandles.size === 0 && this.pendingProofs.size === 0) return;
+      // Ciphertext publication consensus is diagnostic only now that S3 is the
+      // source of truth. Input-proof consensus remains a blocking contract path.
+      if (this.pendingProofs.size === 0) return;
 
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) return;
@@ -379,29 +384,14 @@ export class ConsensusWatchdog {
   }
 
   /**
-   * Check for divergences immediately and for pending consensus older than the
-   * normal timeout. Hooks use checkDivergence between tests and reserve the
-   * stall decision for the final drain, so unrelated publication backlog is
-   * not attributed to whichever test happens to finish after three minutes.
+   * Check for divergences immediately and for input-proof consensus older than
+   * the normal timeout. Ciphertext publication stalls are diagnostic because
+   * S3, rather than addCiphertext, is the release's source of truth.
    */
   checkHealth(): void {
     this.checkDivergence();
 
-    // Check for stalls: handles that received a first submission but no consensus within timeout.
     const now = Date.now();
-
-    for (const [ctHandle, pending] of this.pendingHandles) {
-      const elapsed = now - pending.firstSeenAt;
-      if (elapsed > CONSENSUS_TIMEOUT_MS) {
-        const coprocessors = pending.submissions.map((s) => s.coprocessor).join(', ');
-        this.pendingHandles.delete(ctHandle);
-        throw new Error(
-          `Consensus stall for ciphertext handle ${ctHandle}: ` +
-            `only ${pending.submissions.length} coprocessor(s) submitted after ${Math.round(elapsed / 1000)}s ` +
-            `(submitters: ${coprocessors})`,
-        );
-      }
-    }
 
     for (const [zkProofId, pending] of this.pendingProofs) {
       const elapsed = now - pending.firstSeenAt;
@@ -450,13 +440,10 @@ export class ConsensusWatchdog {
     return lines.join('\n');
   }
 
-  assertDrained(): void {
+  assertNoBlockingIssues(): void {
     const failures: string[] = [];
     if (this.divergences.length > 0) {
       failures.push(`Consensus divergence detected:\n\n${this.divergences.join('\n\n')}`);
-    }
-    if (this.pendingHandles.size > 0) {
-      failures.push(`${this.pendingHandles.size} ciphertext handle(s) never reached consensus`);
     }
     if (this.pendingProofs.size > 0) {
       failures.push(`${this.pendingProofs.size} proof(s) never reached consensus`);
@@ -511,11 +498,12 @@ export const mochaHooks = {
     if (!watchdog) return;
 
     try {
-      // Pending submissions get one bounded drain window at suite end.
-      await watchdog.waitForDrain();
+      // Input-proof submissions get one bounded drain window at suite end.
+      // Ciphertext publication stalls remain visible in the summary only.
+      await watchdog.waitForBlockingDrain();
       const summary = watchdog.summary();
       if (summary) console.log(summary);
-      watchdog.assertDrained();
+      watchdog.assertNoBlockingIssues();
     } finally {
       await watchdog.stop();
       watchdog = null;
