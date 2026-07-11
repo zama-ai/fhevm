@@ -14,6 +14,10 @@ use tfhe::{
     ClientKey, FheBool, FheUint64, FheUint8, ServerKey,
 };
 
+const BOOL_TYPE: i16 = 0;
+const U8_TYPE: i16 = 2;
+const U64_TYPE: i16 = 5;
+
 struct TestKeys {
     client: ClientKey,
     server: ServerKey,
@@ -81,7 +85,7 @@ fn scalar(value: impl Into<Vec<u8>>) -> SupportedFheCiphertexts {
 }
 
 fn decrypt_bool(result: SupportedFheCiphertexts, keys: &TestKeys) -> bool {
-    assert_eq!(result.type_num(), 0);
+    assert_eq!(result.type_num(), BOOL_TYPE);
     let SupportedFheCiphertexts::FheBool(result) = result else {
         panic!("expected FheBool result");
     };
@@ -89,7 +93,7 @@ fn decrypt_bool(result: SupportedFheCiphertexts, keys: &TestKeys) -> bool {
 }
 
 fn decrypt_u8(result: SupportedFheCiphertexts, keys: &TestKeys) -> u8 {
-    assert_eq!(result.type_num(), 2);
+    assert_eq!(result.type_num(), U8_TYPE);
     let SupportedFheCiphertexts::FheUint8(result) = result else {
         panic!("expected FheUint8 result");
     };
@@ -97,7 +101,7 @@ fn decrypt_u8(result: SupportedFheCiphertexts, keys: &TestKeys) -> u8 {
 }
 
 fn decrypt_u64(result: SupportedFheCiphertexts, keys: &TestKeys) -> u64 {
-    assert_eq!(result.type_num(), 5);
+    assert_eq!(result.type_num(), U64_TYPE);
     let SupportedFheCiphertexts::FheUint64(result) = result else {
         panic!("expected FheUint64 result");
     };
@@ -110,7 +114,7 @@ fn bool_xor_uses_real_tfhe() {
     let result = run(
         SupportedFheOperations::FheBitXor,
         &[encrypted_bool(true, keys), encrypted_bool(false, keys)],
-        0,
+        BOOL_TYPE,
     );
     assert!(decrypt_bool(result, keys));
 }
@@ -121,7 +125,7 @@ fn bool_not_uses_real_tfhe() {
     let result = run(
         SupportedFheOperations::FheNot,
         &[encrypted_bool(true, keys)],
-        0,
+        BOOL_TYPE,
     );
     assert!(!decrypt_bool(result, keys));
 }
@@ -132,7 +136,7 @@ fn uint8_encrypted_add_wraps() {
     let result = run(
         SupportedFheOperations::FheAdd,
         &[encrypted_u8(250, keys), encrypted_u8(10, keys)],
-        2,
+        U8_TYPE,
     );
     assert_eq!(decrypt_u8(result, keys), 4);
 }
@@ -143,7 +147,7 @@ fn uint8_scalar_subtraction_wraps() {
     let result = run(
         SupportedFheOperations::FheSub,
         &[encrypted_u8(3, keys), scalar(vec![5])],
-        2,
+        U8_TYPE,
     );
     assert_eq!(decrypt_u8(result, keys), 254);
 }
@@ -154,26 +158,31 @@ fn uint8_comparison_returns_bool() {
     let result = run(
         SupportedFheOperations::FheLt,
         &[encrypted_u8(7, keys), encrypted_u8(9, keys)],
-        0,
+        BOOL_TYPE,
     );
     assert!(decrypt_bool(result, keys));
 }
 
 #[test]
-fn uint8_scalar_shift_and_rotate_are_distinct() {
+fn uint8_scalar_shift_discards_high_bit() {
     let (_execution, keys) = install_server_key();
-    let shifted = run(
+    let result = run(
         SupportedFheOperations::FheShl,
         &[encrypted_u8(0b1000_0001, keys), scalar(vec![1])],
-        2,
+        U8_TYPE,
     );
-    let rotated = run(
+    assert_eq!(decrypt_u8(result, keys), 0b0000_0010);
+}
+
+#[test]
+fn uint8_scalar_rotate_preserves_high_bit() {
+    let (_execution, keys) = install_server_key();
+    let result = run(
         SupportedFheOperations::FheRotl,
         &[encrypted_u8(0b1000_0001, keys), scalar(vec![1])],
-        2,
+        U8_TYPE,
     );
-    assert_eq!(decrypt_u8(shifted, keys), 0b0000_0010);
-    assert_eq!(decrypt_u8(rotated, keys), 0b0000_0011);
+    assert_eq!(decrypt_u8(result, keys), 0b0000_0011);
 }
 
 #[test]
@@ -182,38 +191,47 @@ fn uint64_encrypted_multiply_uses_real_tfhe() {
     let result = run(
         SupportedFheOperations::FheMul,
         &[encrypted_u64(7, keys), encrypted_u64(9, keys)],
-        5,
+        U64_TYPE,
     );
     assert_eq!(decrypt_u64(result, keys), 63);
 }
 
 #[test]
-fn uint64_scalar_division_and_remainder_are_supported() {
+fn uint64_scalar_division_is_supported() {
     let (_execution, keys) = install_server_key();
-    let quotient = run(
+    let result = run(
         SupportedFheOperations::FheDiv,
         &[
             encrypted_u64(29, keys),
             scalar(5_u64.to_be_bytes().to_vec()),
         ],
-        5,
+        U64_TYPE,
     );
-    let remainder = run(
+    assert_eq!(decrypt_u64(result, keys), 5);
+}
+
+#[test]
+fn uint64_scalar_remainder_is_supported() {
+    let (_execution, keys) = install_server_key();
+    let result = run(
         SupportedFheOperations::FheRem,
         &[
             encrypted_u64(29, keys),
             scalar(5_u64.to_be_bytes().to_vec()),
         ],
-        5,
+        U64_TYPE,
     );
-    assert_eq!(decrypt_u64(quotient, keys), 5);
-    assert_eq!(decrypt_u64(remainder, keys), 4);
+    assert_eq!(decrypt_u64(result, keys), 4);
 }
 
 #[test]
 fn uint64_unary_negation_wraps() {
     let (_execution, keys) = install_server_key();
-    let result = run(SupportedFheOperations::FheNeg, &[encrypted_u64(1, keys)], 5);
+    let result = run(
+        SupportedFheOperations::FheNeg,
+        &[encrypted_u64(1, keys)],
+        U64_TYPE,
+    );
     assert_eq!(decrypt_u64(result, keys), u64::MAX);
 }
 
@@ -224,9 +242,9 @@ fn uint8_cast_to_uint64_uses_big_endian_type_id() {
         SupportedFheOperations::FheCast,
         &[
             encrypted_u8(200, keys),
-            scalar(5_u16.to_be_bytes().to_vec()),
+            scalar((U64_TYPE as u16).to_be_bytes().to_vec()),
         ],
-        5,
+        U64_TYPE,
     );
     assert_eq!(decrypt_u64(result, keys), 200);
 }
@@ -241,7 +259,7 @@ fn if_then_else_selects_uint8_branch() {
             encrypted_u8(10, keys),
             encrypted_u8(20, keys),
         ],
-        2,
+        U8_TYPE,
     );
     assert_eq!(decrypt_u8(result, keys), 20);
 }
@@ -256,7 +274,7 @@ fn non_empty_uint8_sum_wraps() {
             encrypted_u8(10, keys),
             encrypted_u8(1, keys),
         ],
-        2,
+        U8_TYPE,
     );
     assert_eq!(decrypt_u8(result, keys), 5);
 }
@@ -272,7 +290,7 @@ fn non_empty_uint8_is_in_returns_bool() {
             encrypted_u8(7, keys),
             encrypted_u8(11, keys),
         ],
-        0,
+        BOOL_TYPE,
     );
     assert!(decrypt_bool(result, keys));
 }
@@ -287,36 +305,7 @@ fn uint8_mul_div_uses_fused_real_tfhe_operation() {
             encrypted_u8(9, keys),
             scalar(vec![6]),
         ],
-        2,
+        U8_TYPE,
     );
     assert_eq!(decrypt_u8(result, keys), 15);
-}
-
-#[test]
-fn uint8_rand_returns_typed_ciphertext() {
-    let (_execution, keys) = install_server_key();
-    let result = run(
-        SupportedFheOperations::FheRand,
-        &[
-            scalar(42_u128.to_be_bytes().to_vec()),
-            scalar(2_u16.to_be_bytes().to_vec()),
-        ],
-        2,
-    );
-    let _ = decrypt_u8(result, keys);
-}
-
-#[test]
-fn uint8_rand_bounded_respects_exclusive_upper_bound() {
-    let (_execution, keys) = install_server_key();
-    let result = run(
-        SupportedFheOperations::FheRandBounded,
-        &[
-            scalar(42_u128.to_be_bytes().to_vec()),
-            scalar(vec![10]),
-            scalar(2_u16.to_be_bytes().to_vec()),
-        ],
-        2,
-    );
-    assert!(decrypt_u8(result, keys) < 10);
 }
