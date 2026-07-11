@@ -139,6 +139,7 @@ eip = "eip"               # Ethereum Improvement Proposal
 calldata = "calldata"     # Solidity calldata keyword
 bytecode = "bytecode"     # compiled contract code
 hardhat = "hardhat"       # Ethereum dev framework
+datas = "datas"           # required JSON key in governance remote-proposal format
 
 # Common variable/function name patterns that might be flagged
 noop = "noop"             # no operation
