@@ -22,7 +22,6 @@ use scheduler::dfg::{build_component_nodes, ComponentNode, DFComponentGraph, DFG
 use sha3::{Digest, Keccak256};
 use sqlx::types::Uuid;
 use sqlx::Postgres;
-use sqlx::Row;
 use sqlx::{postgres::PgListener, query};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -2460,6 +2459,88 @@ async fn set_computation_error<'a>(
     Ok(errored_computations)
 }
 
+/// Error message recorded on computations made terminal because of another
+/// computation's terminal error. Both the same-block (error-time) and the
+/// cross-block (resolution-time) propagation paths use this exact format;
+/// tests and operator tooling grep for it.
+fn derived_terminal_error_message(root_output_handle: &[u8], root_transaction_id: &[u8]) -> String {
+    format!(
+        "blocked by terminal computation error at output 0x{} transaction 0x{}",
+        hex::encode(root_output_handle),
+        hex::encode(root_transaction_id),
+    )
+}
+
+/// Recursive hop of the derived-closure walk: same-block consumers of an
+/// already-collected `derived` row, excluding consumers whose handle is also
+/// supplied by an earlier (canonical) producer. Shared verbatim by the
+/// error-time and resolution-time propagation paths — the two walks MUST
+/// collect identical row sets or coprocessors that discover an error through
+/// different paths diverge on which rows become terminal.
+const DERIVED_CLOSURE_RECURSIVE_HOP_SQL: &str = r#"
+            SELECT child.output_handle,
+                   child.transaction_id,
+                   child.producer_block_hash,
+                   child.host_chain_id,
+                   child.block_number
+              FROM derived parent
+              JOIN computations_branch child
+                ON child.host_chain_id = parent.host_chain_id
+               AND child.block_number IS NOT DISTINCT FROM parent.block_number
+               AND child.producer_block_hash = parent.producer_block_hash
+               AND parent.output_handle = ANY(child.dependencies)
+             WHERE child.is_completed = FALSE
+               AND (child.is_error = FALSE OR child.error_root_output_handle IS NOT NULL)
+               -- A failed non-canonical alias is terminal itself, but its output
+               -- handle is still supplied by the canonical producer.
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM computations_branch earlier
+                    WHERE earlier.host_chain_id = parent.host_chain_id
+                      AND earlier.block_number IS NOT DISTINCT FROM parent.block_number
+                      AND earlier.producer_block_hash = parent.producer_block_hash
+                      AND earlier.output_handle = parent.output_handle
+                      AND earlier.transaction_id < parent.transaction_id
+               )
+"#;
+
+/// Terminal-marking UPDATE applied to a collected `derived` closure. Binds:
+/// $1 = error message, $2/$3/$4 = error-root triple. The overwrite predicate
+/// keeps the lexicographically smallest root so concurrent propagations from
+/// several roots converge on one deterministic root per row; it is shared
+/// verbatim by both propagation paths for the same reason as the hop above.
+const DERIVED_CLOSURE_UPDATE_SQL: &str = r#"
+        UPDATE computations_branch target
+           SET is_error = TRUE,
+               error_message = $1,
+               error_root_output_handle = $2,
+               error_root_transaction_id = $3,
+               error_root_producer_block_hash = $4
+          FROM derived d
+         WHERE target.output_handle = d.output_handle
+           AND target.transaction_id = d.transaction_id
+           AND target.producer_block_hash = d.producer_block_hash
+           AND target.is_completed = FALSE
+           AND (
+                target.is_error = FALSE
+                OR (
+                    target.error_root_output_handle IS NOT NULL
+                    AND (
+                        target.error_root_output_handle > $2
+                        OR (
+                            target.error_root_output_handle = $2
+                            AND target.error_root_transaction_id > $3
+                        )
+                        OR (
+                            target.error_root_output_handle = $2
+                            AND target.error_root_transaction_id = $3
+                            AND target.error_root_producer_block_hash > $4
+                        )
+                    )
+                )
+           )
+"#;
+
 /// Persist a terminal computation error and make its same-block dependency
 /// closure terminal. Ordinary `MissingInputs` never reaches this function, so
 /// work whose producer was merely not selected remains retryable.
@@ -2492,12 +2573,9 @@ async fn persist_terminal_computation_error<'a>(
     .await?
     .rows_affected();
 
-    let derived_message = format!(
-        "blocked by terminal computation error at output 0x{} transaction 0x{}",
-        hex::encode(output_handle),
-        hex::encode(transaction_id),
-    );
-    let derived_updated = sqlx::query(
+    // Binds: $1 message, $2/$3/$4 root triple (shared fragments), which here
+    // also anchor the seed — the errored row is its own root.
+    let derived_sql = format!(
         r#"
         WITH RECURSIVE root AS (
             SELECT c.output_handle,
@@ -2506,9 +2584,9 @@ async fn persist_terminal_computation_error<'a>(
                    c.host_chain_id,
                    c.block_number
               FROM computations_branch c
-             WHERE c.output_handle = $1
-               AND c.transaction_id = $2
-               AND c.producer_block_hash = $3
+             WHERE c.output_handle = $2
+               AND c.transaction_id = $3
+               AND c.producer_block_hash = $4
                AND c.producer_block_hash <> ''::BYTEA
                AND c.is_completed = FALSE
                AND c.is_error = TRUE
@@ -2541,72 +2619,39 @@ async fn persist_terminal_computation_error<'a>(
                AND (child.is_error = FALSE OR child.error_root_output_handle IS NOT NULL)
 
             UNION
-
-            SELECT child.output_handle,
-                   child.transaction_id,
-                   child.producer_block_hash,
-                   child.host_chain_id,
-                   child.block_number
-              FROM derived parent
-              JOIN computations_branch child
-                ON child.host_chain_id = parent.host_chain_id
-               AND child.block_number IS NOT DISTINCT FROM parent.block_number
-               AND child.producer_block_hash = parent.producer_block_hash
-               AND parent.output_handle = ANY(child.dependencies)
-             WHERE child.is_completed = FALSE
-               AND (child.is_error = FALSE OR child.error_root_output_handle IS NOT NULL)
-               -- A failed non-canonical alias is terminal itself, but its output
-               -- handle is still supplied by the canonical producer.
-               AND NOT EXISTS (
-                   SELECT 1
-                     FROM computations_branch earlier
-                    WHERE earlier.host_chain_id = parent.host_chain_id
-                      AND earlier.block_number IS NOT DISTINCT FROM parent.block_number
-                      AND earlier.producer_block_hash = parent.producer_block_hash
-                      AND earlier.output_handle = parent.output_handle
-                      AND earlier.transaction_id < parent.transaction_id
-               )
+{hop}
         )
-        UPDATE computations_branch target
-           SET is_error = TRUE,
-               error_message = $4,
-               error_root_output_handle = $1,
-               error_root_transaction_id = $2,
-               error_root_producer_block_hash = $3
-          FROM derived d
-         WHERE target.output_handle = d.output_handle
-           AND target.transaction_id = d.transaction_id
-           AND target.producer_block_hash = d.producer_block_hash
-           AND target.is_completed = FALSE
-           AND (
-                target.is_error = FALSE
-                OR (
-                    target.error_root_output_handle IS NOT NULL
-                    AND (
-                        target.error_root_output_handle > $1
-                        OR (
-                            target.error_root_output_handle = $1
-                            AND target.error_root_transaction_id > $2
-                        )
-                        OR (
-                            target.error_root_output_handle = $1
-                            AND target.error_root_transaction_id = $2
-                            AND target.error_root_producer_block_hash > $3
-                        )
-                    )
-                )
-           )
+{update}
         "#,
-    )
-    .bind(output_handle)
-    .bind(transaction_id)
-    .bind(producer_block_hash)
-    .bind(derived_message)
-    .execute(trx.as_mut())
-    .await?
-    .rows_affected();
+        hop = DERIVED_CLOSURE_RECURSIVE_HOP_SQL,
+        update = DERIVED_CLOSURE_UPDATE_SQL,
+    );
+    let derived_updated = sqlx::query(&derived_sql)
+        .bind(derived_terminal_error_message(
+            output_handle,
+            transaction_id,
+        ))
+        .bind(output_handle)
+        .bind(transaction_id)
+        .bind(producer_block_hash)
+        .execute(trx.as_mut())
+        .await?
+        .rows_affected();
 
     Ok(root_updated + derived_updated)
+}
+
+/// One missing dependency context whose producer rows are all terminal: the
+/// canonical producer's identity plus its recorded error root (NULL when the
+/// producer is itself the root).
+#[derive(sqlx::FromRow)]
+struct TerminalProducerContext {
+    handle: Vec<u8>,
+    producer_block_hash: Vec<u8>,
+    canonical_transaction_id: Vec<u8>,
+    root_output_handle: Option<Vec<u8>>,
+    root_transaction_id: Option<Vec<u8>>,
+    root_producer_block_hash: Option<Vec<u8>>,
 }
 
 /// Resolution-time propagation of terminal producer errors across blocks.
@@ -2635,6 +2680,18 @@ async fn propagate_unresolvable_dependency_errors<'a>(
     batch_context: &BatchExecutionContext,
     trx: &mut sqlx::Transaction<'a, Postgres>,
 ) -> Result<u64, sqlx::Error> {
+    // Only propagate within a real block context. A branchless batch context
+    // ('' producer hash) is a namespace, not a block: work selection locks
+    // only the seed dependence chain's rows there, so a chain-wide closure
+    // UPDATE over the '' namespace would touch rows other workers hold locked
+    // (lock waits / deadlocks). This mirrors persist_terminal_computation_error,
+    // whose root CTE also excludes '' producers; branchless consumers of a dead
+    // handle simply stay retryable, and they are already exempt from the
+    // settlement gate, so nothing freezes.
+    if batch_context.producer_block_hash.is_empty() {
+        return Ok(0);
+    }
+
     let mut missing_handles: Vec<Vec<u8>> = Vec::new();
     let mut missing_producers: Vec<Vec<u8>> = Vec::new();
     for (handle, metadata) in dependency_metadata {
@@ -2648,25 +2705,26 @@ async fn propagate_unresolvable_dependency_errors<'a>(
         return Ok(0);
     }
 
-    // Per missing dependency context: the canonical (lexicographically
-    // smallest transaction) producer row's identity and recorded error root,
-    // plus whether every producer row of the handle in that context is
-    // already terminal.
-    let terminal_producers = sqlx::query(
+    // Per missing dependency context whose producer rows are ALL terminal:
+    // the canonical (lexicographically smallest transaction) producer row's
+    // identity and recorded error root. Contexts with any live producer are
+    // filtered in SQL — the common benign case (producer merely pending)
+    // returns no rows.
+    let terminal_producers = sqlx::query_as::<_, TerminalProducerContext>(
         r#"
         SELECT req.handle,
                req.producer_block_hash,
                (ARRAY_AGG(c.transaction_id ORDER BY c.transaction_id))[1] AS canonical_transaction_id,
                (ARRAY_AGG(c.error_root_output_handle ORDER BY c.transaction_id))[1] AS root_output_handle,
                (ARRAY_AGG(c.error_root_transaction_id ORDER BY c.transaction_id))[1] AS root_transaction_id,
-               (ARRAY_AGG(c.error_root_producer_block_hash ORDER BY c.transaction_id))[1] AS root_producer_block_hash,
-               BOOL_AND(c.is_error) AS all_terminal
+               (ARRAY_AGG(c.error_root_producer_block_hash ORDER BY c.transaction_id))[1] AS root_producer_block_hash
         FROM UNNEST($1::BYTEA[], $2::BYTEA[]) AS req(handle, producer_block_hash)
         JOIN computations_branch c
           ON c.host_chain_id = $3
          AND c.output_handle = req.handle
          AND c.producer_block_hash = req.producer_block_hash
         GROUP BY req.handle, req.producer_block_hash
+        HAVING BOOL_AND(c.is_error)
         "#,
     )
     .bind(&missing_handles)
@@ -2675,129 +2733,70 @@ async fn propagate_unresolvable_dependency_errors<'a>(
     .fetch_all(trx.as_mut())
     .await?;
 
+    // Binds: $1 message, $2/$3/$4 root triple (shared fragments), $5-$8 the
+    // seed — the current batch context's direct consumers of the dead handle;
+    // subsequent hops walk their same-block closure.
+    let marked_sql = format!(
+        r#"
+        WITH RECURSIVE derived AS (
+            SELECT child.output_handle,
+                   child.transaction_id,
+                   child.producer_block_hash,
+                   child.host_chain_id,
+                   child.block_number
+              FROM computations_branch child
+             WHERE child.host_chain_id = $5
+               AND child.producer_block_hash = $6
+               AND child.block_number IS NOT DISTINCT FROM $7
+               AND $8 = ANY(child.dependencies)
+               AND child.is_completed = FALSE
+               AND (child.is_error = FALSE OR child.error_root_output_handle IS NOT NULL)
+
+            UNION
+{hop}
+        )
+{update}
+        "#,
+        hop = DERIVED_CLOSURE_RECURSIVE_HOP_SQL,
+        update = DERIVED_CLOSURE_UPDATE_SQL,
+    );
+
     let mut total_marked = 0_u64;
-    for row in terminal_producers {
-        let all_terminal: bool = row.try_get("all_terminal")?;
-        if !all_terminal {
-            continue;
-        }
-        let handle: Vec<u8> = row.try_get("handle")?;
-        let producer_block_hash: Vec<u8> = row.try_get("producer_block_hash")?;
-        let canonical_transaction_id: Vec<u8> = row.try_get("canonical_transaction_id")?;
+    for context in terminal_producers {
         // Preserve the original root when the producer is itself a derived
         // error; otherwise the producer is the root.
-        let root_output_handle: Vec<u8> = row
-            .try_get::<Option<Vec<u8>>, _>("root_output_handle")?
-            .unwrap_or_else(|| handle.clone());
-        let root_transaction_id: Vec<u8> = row
-            .try_get::<Option<Vec<u8>>, _>("root_transaction_id")?
-            .unwrap_or_else(|| canonical_transaction_id.clone());
-        let root_producer_block_hash: Vec<u8> = row
-            .try_get::<Option<Vec<u8>>, _>("root_producer_block_hash")?
-            .unwrap_or_else(|| producer_block_hash.clone());
+        let root_output_handle = context
+            .root_output_handle
+            .unwrap_or_else(|| context.handle.clone());
+        let root_transaction_id = context
+            .root_transaction_id
+            .unwrap_or_else(|| context.canonical_transaction_id.clone());
+        let root_producer_block_hash = context
+            .root_producer_block_hash
+            .unwrap_or_else(|| context.producer_block_hash.clone());
 
-        let derived_message = format!(
-            "blocked by terminal computation error at output 0x{} transaction 0x{}",
-            hex::encode(&root_output_handle),
-            hex::encode(&root_transaction_id),
-        );
-        // Mirror of the derived closure in `persist_terminal_computation_error`:
-        // the first hop targets the current batch context's consumers of the
-        // dead handle, subsequent hops walk their same-block closure. The
-        // overwrite predicate keeps the lexicographically smallest root so
-        // concurrent propagation from several dead dependencies converges.
-        let marked = sqlx::query(
-            r#"
-            WITH RECURSIVE derived AS (
-                SELECT child.output_handle,
-                       child.transaction_id,
-                       child.producer_block_hash,
-                       child.host_chain_id,
-                       child.block_number
-                  FROM computations_branch child
-                 WHERE child.host_chain_id = $1
-                   AND child.producer_block_hash = $2
-                   AND child.block_number IS NOT DISTINCT FROM $3
-                   AND $4 = ANY(child.dependencies)
-                   AND child.is_completed = FALSE
-                   AND (child.is_error = FALSE OR child.error_root_output_handle IS NOT NULL)
-
-                UNION
-
-                SELECT child.output_handle,
-                       child.transaction_id,
-                       child.producer_block_hash,
-                       child.host_chain_id,
-                       child.block_number
-                  FROM derived parent
-                  JOIN computations_branch child
-                    ON child.host_chain_id = parent.host_chain_id
-                   AND child.block_number IS NOT DISTINCT FROM parent.block_number
-                   AND child.producer_block_hash = parent.producer_block_hash
-                   AND parent.output_handle = ANY(child.dependencies)
-                 WHERE child.is_completed = FALSE
-                   AND (child.is_error = FALSE OR child.error_root_output_handle IS NOT NULL)
-                   -- A failed non-canonical alias is terminal itself, but its
-                   -- output handle is still supplied by the canonical producer.
-                   AND NOT EXISTS (
-                       SELECT 1
-                         FROM computations_branch earlier
-                        WHERE earlier.host_chain_id = parent.host_chain_id
-                          AND earlier.block_number IS NOT DISTINCT FROM parent.block_number
-                          AND earlier.producer_block_hash = parent.producer_block_hash
-                          AND earlier.output_handle = parent.output_handle
-                          AND earlier.transaction_id < parent.transaction_id
-                   )
-            )
-            UPDATE computations_branch target
-               SET is_error = TRUE,
-                   error_message = $5,
-                   error_root_output_handle = $6,
-                   error_root_transaction_id = $7,
-                   error_root_producer_block_hash = $8
-              FROM derived d
-             WHERE target.output_handle = d.output_handle
-               AND target.transaction_id = d.transaction_id
-               AND target.producer_block_hash = d.producer_block_hash
-               AND target.is_completed = FALSE
-               AND (
-                    target.is_error = FALSE
-                    OR (
-                        target.error_root_output_handle IS NOT NULL
-                        AND (
-                            target.error_root_output_handle > $6
-                            OR (
-                                target.error_root_output_handle = $6
-                                AND target.error_root_transaction_id > $7
-                            )
-                            OR (
-                                target.error_root_output_handle = $6
-                                AND target.error_root_transaction_id = $7
-                                AND target.error_root_producer_block_hash > $8
-                            )
-                        )
-                    )
-               )
-            "#,
-        )
-        .bind(batch_context.host_chain_id)
-        .bind(&batch_context.producer_block_hash)
-        .bind(batch_context.block_number)
-        .bind(&handle)
-        .bind(&derived_message)
-        .bind(&root_output_handle)
-        .bind(&root_transaction_id)
-        .bind(&root_producer_block_hash)
-        .execute(trx.as_mut())
-        .await?
-        .rows_affected();
+        let marked = sqlx::query(&marked_sql)
+            .bind(derived_terminal_error_message(
+                &root_output_handle,
+                &root_transaction_id,
+            ))
+            .bind(&root_output_handle)
+            .bind(&root_transaction_id)
+            .bind(&root_producer_block_hash)
+            .bind(batch_context.host_chain_id)
+            .bind(&batch_context.producer_block_hash)
+            .bind(batch_context.block_number)
+            .bind(&context.handle)
+            .execute(trx.as_mut())
+            .await?
+            .rows_affected();
 
         if marked > 0 {
             PROPAGATED_DEPENDENCY_ERRORS_COUNTER.inc_by(marked);
             warn!(
                 target: "tfhe_worker",
-                dependency = %hex::encode(&handle),
-                producer_block_hash = %hex::encode(&producer_block_hash),
+                dependency = %hex::encode(&context.handle),
+                producer_block_hash = %hex::encode(&context.producer_block_hash),
                 error_root = %hex::encode(&root_output_handle),
                 marked,
                 "dependency's producers are all terminal; marked its consumers in this \
@@ -3459,6 +3458,83 @@ mod tests {
         .await
         .expect("propagate unresolvable dependency errors");
         tx.commit().await.expect("commit propagation");
+        assert_eq!(marked, 0);
+
+        let consumer_is_error: bool =
+            sqlx::query_scalar("SELECT is_error FROM computations_branch WHERE output_handle = $1")
+                .bind(&consumer_handle)
+                .fetch_one(&pool)
+                .await
+                .expect("read consumer state");
+        assert!(!consumer_is_error);
+    }
+
+    /// A branchless batch context ('' producer hash) must not propagate: work
+    /// selection locks only the seed lane there, so a namespace-wide UPDATE
+    /// would touch rows other workers hold locked. The dead branchless
+    /// dependency's consumer stays retryable instead.
+    #[tokio::test]
+    #[serial(db)]
+    async fn branchless_batch_context_does_not_propagate() {
+        let db = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db.db_url())
+            .await
+            .expect("connect db");
+
+        let dead_handle = vec![0x13_u8; 32];
+        let consumer_handle = vec![0x23_u8; 32];
+        let empty_hash: Vec<u8> = Vec::new();
+
+        // Terminal branchless producer and a branchless consumer of it.
+        insert_dependency_work_row(
+            &pool,
+            &[0x01_u8; 32],
+            &dead_handle,
+            &[],
+            &empty_hash,
+            0,
+            false,
+            true,
+        )
+        .await;
+        insert_dependency_work_row(
+            &pool,
+            &[0x02_u8; 32],
+            &consumer_handle,
+            std::slice::from_ref(&dead_handle),
+            &empty_hash,
+            0,
+            false,
+            false,
+        )
+        .await;
+
+        let batch_context = BatchExecutionContext {
+            host_chain_id: 1,
+            block_number: None,
+            producer_block_hash: empty_hash.clone(),
+        };
+        let dependency_metadata = HashMap::from([(
+            dead_handle.clone(),
+            DependencyMetadata {
+                producer_block_hash: empty_hash.clone(),
+                block_number: None,
+                settled_producer_block_hashes: Vec::new(),
+            },
+        )]);
+
+        let mut tx = pool.begin().await.expect("begin tx");
+        let marked = propagate_unresolvable_dependency_errors(
+            &dependency_metadata,
+            &HashSet::new(),
+            &batch_context,
+            &mut tx,
+        )
+        .await
+        .expect("propagate unresolvable dependency errors");
+        tx.commit().await.expect("commit");
         assert_eq!(marked, 0);
 
         let consumer_is_error: bool =
