@@ -684,10 +684,11 @@ async fn associate_pair_skips_digest_and_flag_when_copy_no_ops() {
         .unwrap();
 
     let mut txn = pool.begin().await.unwrap();
-    crate::bridge::associate_pair(&mut txn, id, &src, &dst, DST_CHAIN)
+    let associated = crate::bridge::associate_pair(&mut txn, id, &src, &dst, SRC_CHAIN, DST_CHAIN)
         .await
         .unwrap();
     txn.commit().await.unwrap();
+    assert!(!associated, "a no-op copy must not report an association");
 
     // Destination ciphertext untouched, no digest copied, not marked associated.
     let ciphertext: Vec<u8> =
@@ -776,4 +777,127 @@ async fn associates_same_chain_pair() {
     assert_eq!(src_ct, CT64);
     assert_eq!(digest_count(&pool, &src).await, 1);
     assert!(in_publish_queue(&pool, &src, SAME_CHAIN).await);
+}
+
+/// A destination event below the branch cutover whose source was produced by a
+/// wave2 binary: bytes and digests exist only in the branch tables. The legacy
+/// writer must still associate it (branch-aware source reads) and write the
+/// destination to the legacy tables, matching pre-cutover destination
+/// semantics.
+#[tokio::test]
+#[serial]
+async fn pre_cutover_dst_with_branch_only_source_associates() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(5);
+    let dst = handle(6);
+    insert_branch_source(&pool, &src).await;
+    insert_src_event(&pool, &src, SRC_CHAIN, DST_CHAIN).await;
+    insert_dst_event(&pool, &src, &dst, DST_CHAIN).await;
+
+    // drain_associations pins the cutover above every event block, so the
+    // destination goes through the legacy writer.
+    let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(associated, 1);
+    assert!(is_associated(&pool, &dst).await);
+
+    let (ciphertext, version, ct_type): (Vec<u8>, i16, i16) = sqlx::query_as(
+        "SELECT ciphertext, ciphertext_version, ciphertext_type FROM ciphertexts WHERE handle = $1",
+    )
+    .bind(&dst)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ciphertext, CT64);
+    assert_eq!(version, CIPHERTEXT_VERSION);
+    assert_eq!(ct_type, CIPHERTEXT_TYPE);
+
+    // The digest values come from the branch digest row (no legacy digest
+    // exists) and land in the legacy table, so the destination publishes
+    // through the pre-cutover pipeline.
+    let digest: CopiedDigest = sqlx::query_as(
+        "SELECT ciphertext, ciphertext128, ciphertext128_format, key_id_gw, s3_format_version
+         FROM ciphertext_digest WHERE handle = $1",
+    )
+    .bind(&dst)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(digest.ciphertext.as_deref(), Some(CT64_DIGEST));
+    assert_eq!(digest.ciphertext128.as_deref(), Some(CT128_DIGEST));
+    assert_eq!(digest.ciphertext128_format, CT128_FORMAT);
+    assert_eq!(digest.key_id_gw, KEY_ID_GW);
+    assert_eq!(digest.s3_format_version, Some(S3_FORMAT_VERSION));
+    assert!(in_publish_queue(&pool, &dst, DST_CHAIN).await);
+
+    // The destination is legacy-only: no branch-table rows were created.
+    let branch_rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts_branch WHERE handle = $1")
+            .bind(&dst)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(branch_rows, 0);
+}
+
+/// A ZK-input source handle: the verifier dual-writes the legacy `ciphertexts`
+/// row, but the wave2 sns-worker records digests in the branch table only. A
+/// pre-cutover destination must associate with the digest taken from the
+/// branch row instead of half-associating (ciphertext copied, no digest).
+#[tokio::test]
+#[serial]
+async fn pre_cutover_zk_input_source_without_legacy_digest_associates() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(7);
+    let dst = handle(8);
+    insert_ciphertext(&pool, &src, CT64).await;
+    insert_branch_source(&pool, &src).await;
+    insert_src_event(&pool, &src, SRC_CHAIN, DST_CHAIN).await;
+    insert_dst_event(&pool, &src, &dst, DST_CHAIN).await;
+
+    let associated = crate::bridge::drain_associations(&pool, 128, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(associated, 1);
+    assert!(is_associated(&pool, &dst).await);
+
+    // The association is complete: ciphertext AND digest are materialized.
+    assert_eq!(digest_count(&pool, &dst).await, 1);
+    assert!(in_publish_queue(&pool, &dst, DST_CHAIN).await);
+}
+
+/// Without any source material the writer must report no association: the
+/// event stays unmarked, nothing is copied, and the batch does not count it
+/// (which would inflate the metric and spin the drain loop).
+#[tokio::test]
+#[serial]
+async fn associate_pair_returns_false_without_source_material() {
+    let (_db, pool) = fresh_db().await;
+    let src = handle(9);
+    let dst = handle(10);
+    insert_src_event(&pool, &src, SRC_CHAIN, DST_CHAIN).await;
+    insert_dst_event(&pool, &src, &dst, DST_CHAIN).await;
+
+    let id: i64 = sqlx::query_scalar("SELECT id FROM handle_bridged_events WHERE dst_handle = $1")
+        .bind(&dst)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let mut txn = pool.begin().await.unwrap();
+    let associated = crate::bridge::associate_pair(&mut txn, id, &src, &dst, SRC_CHAIN, DST_CHAIN)
+        .await
+        .unwrap();
+    txn.commit().await.unwrap();
+
+    assert!(!associated);
+    assert!(!is_associated(&pool, &dst).await);
+    let dst_cts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts WHERE handle = $1")
+        .bind(&dst)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(dst_cts, 0);
+    assert_eq!(digest_count(&pool, &dst).await, 0);
 }

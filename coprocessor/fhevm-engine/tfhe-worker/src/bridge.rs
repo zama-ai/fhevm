@@ -31,7 +31,7 @@ use prometheus::{register_int_counter, register_int_gauge, IntCounter, IntGauge}
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 static BRIDGE_ASSOCIATED_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(
@@ -317,9 +317,15 @@ async fn associate_batch(
     .fetch_all(txn.as_mut())
     .await?;
 
-    let associated = ready.len() as u64;
+    // Only pairs whose writer fully materialized the destination (ciphertext
+    // and digest placed, event marked) count as associated: the count feeds
+    // the metric, the transaction-sender wakeup, and the drain loop's
+    // continuation condition, so a pair the writer had to skip must not
+    // register progress (a full batch of skips would otherwise spin the drain
+    // loop hot while re-selecting the same rows).
+    let mut associated: u64 = 0;
     for pair in ready {
-        if pair.block_number >= branch_cutover_block {
+        let pair_associated = if pair.block_number >= branch_cutover_block {
             associate_pair_branch(
                 &mut txn,
                 pair.id,
@@ -329,16 +335,31 @@ async fn associate_batch(
                 pair.dst_chain_id,
                 pair.transaction_id.as_deref(),
             )
-            .await?;
+            .await?
         } else {
             associate_pair(
                 &mut txn,
                 pair.id,
                 &pair.src_handle,
                 &pair.dst_handle,
+                pair.src_chain_id,
                 pair.dst_chain_id,
             )
-            .await?;
+            .await?
+        };
+        if pair_associated {
+            associated += 1;
+        } else {
+            // The pair stays unassociated and is retried on the next poll.
+            // Reachable only when the source material or the destination slot
+            // changed between the readiness check and the copy (concurrent
+            // retraction or another materialization path).
+            warn!(
+                target: "bridge",
+                id = pair.id,
+                dst_handle = %hex::encode(&pair.dst_handle),
+                "Ready bridge pair could not be associated; leaving it for the next cycle"
+            );
         }
     }
 
@@ -355,31 +376,44 @@ async fn associate_batch(
     Ok(associated)
 }
 
-/// Copies the source ciphertext and its digest onto the destination handle. The
-/// digest is retargeted to the destination chain so the transaction-sender
-/// publishes it there. The ct64/ct128 digests (and therefore the S3 blobs they
+/// Copies the source ciphertext and its digest onto the destination handle in
+/// the legacy tables (destination events below the branch cutover). The digest
+/// is retargeted to the destination chain so the transaction-sender publishes
+/// it there. The ct64/ct128 digests (and therefore the S3 blobs they
 /// reference) are unchanged because the ciphertext is identical.
+///
+/// Returns whether the pair was fully associated: ciphertext and digest
+/// materialized and the event marked, all in the caller's transaction.
 pub(crate) async fn associate_pair(
     txn: &mut Transaction<'_, Postgres>,
     id: i64,
     src_handle: &[u8],
     dst_handle: &[u8],
+    src_chain_id: i64,
     dst_chain_id: i64,
-) -> Result<(), sqlx::Error> {
+) -> Result<bool, sqlx::Error> {
+    // Source reads are branch-aware even though the destination is written to
+    // the legacy tables: a destination event below the cutover can reference a
+    // source handle produced by a wave2 binary, whose bytes and digests exist
+    // only in the branch tables.
+    let Some(source) = fetch_bridge_source_material(txn, src_handle, src_chain_id).await? else {
+        return Ok(false);
+    };
+
     // Write-once: copy the source ciphertext only if the destination handle has no
     // ciphertext yet.
-    let ciphertext_copied = sqlx::query!(
+    let ciphertext_copied = sqlx::query(
         r#"
         INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
-        SELECT $1, ciphertext, ciphertext_version, ciphertext_type
-        FROM ciphertexts
-        WHERE handle = $2
-          AND NOT EXISTS (SELECT 1 FROM ciphertexts WHERE handle = $1)
+        SELECT $1, $2, $3, $4
+        WHERE NOT EXISTS (SELECT 1 FROM ciphertexts WHERE handle = $1)
         ON CONFLICT (handle, ciphertext_version) DO NOTHING
         "#,
-        dst_handle,
-        src_handle,
     )
+    .bind(dst_handle)
+    .bind(&source.ciphertext)
+    .bind(source.ciphertext_version)
+    .bind(source.ciphertext_type)
     .execute(txn.as_mut())
     .await?
     .rows_affected()
@@ -393,42 +427,46 @@ pub(crate) async fn associate_pair(
     // the host-listener's reorg cleanup uses a flagged observation in an
     // orphaned block as proof that this association produced the
     // materialization, and retracts it.
-    if ciphertext_copied {
-        // `s3_format_version` travels with the digests: the copied row points at
-        // the source's S3 objects, so it must carry the version those objects
-        // were written with (NULL means "not uploaded" and would make the row
-        // self-contradictory — digests present but officially absent from S3).
-        sqlx::query!(
-            r#"
-            INSERT INTO ciphertext_digest
-                (handle, ciphertext, ciphertext128, ciphertext128_format, host_chain_id, key_id_gw, s3_format_version)
-            SELECT $1, ciphertext, ciphertext128, ciphertext128_format, $2, key_id_gw, s3_format_version
-            FROM ciphertext_digest
-            WHERE handle = $3
-            ON CONFLICT (handle) DO NOTHING
-            "#,
-            dst_handle,
-            dst_chain_id,
-            src_handle,
-        )
-        .execute(txn.as_mut())
-        .await?;
-
-        sqlx::query!(
-            "UPDATE handle_bridged_events SET is_associated = true WHERE id = $1",
-            id,
-        )
-        .execute(txn.as_mut())
-        .await?;
+    if !ciphertext_copied {
+        return Ok(false);
     }
 
-    Ok(())
+    // `s3_format_version` travels with the digests: the copied row points at
+    // the source's S3 objects, so it must carry the version those objects
+    // were written with (NULL means "not uploaded" and would make the row
+    // self-contradictory — digests present but officially absent from S3).
+    sqlx::query(
+        r#"
+        INSERT INTO ciphertext_digest
+            (handle, ciphertext, ciphertext128, ciphertext128_format, host_chain_id, key_id_gw, s3_format_version)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (handle) DO NOTHING
+        "#,
+    )
+    .bind(dst_handle)
+    .bind(&source.ct64_digest)
+    .bind(&source.ct128_digest)
+    .bind(source.ciphertext128_format)
+    .bind(dst_chain_id)
+    .bind(&source.key_id_gw)
+    .bind(source.s3_format_version)
+    .execute(txn.as_mut())
+    .await?;
+
+    sqlx::query("UPDATE handle_bridged_events SET is_associated = true WHERE id = $1")
+        .bind(id)
+        .execute(txn.as_mut())
+        .await?;
+
+    Ok(true)
 }
 
 /// Wave-2 bridge association. Source material prefers a live branch row but
 /// falls back to the legacy tables so pre-cutover handles remain bridgeable.
 /// The destination is branchless because its lifetime is governed explicitly
 /// by the destination `HandleBridged` observation and its reorg cleanup.
+///
+/// Returns whether the pair was fully associated (see [`associate_pair`]).
 #[allow(clippy::too_many_arguments)]
 async fn associate_pair_branch(
     txn: &mut Transaction<'_, Postgres>,
@@ -438,8 +476,86 @@ async fn associate_pair_branch(
     src_chain_id: i64,
     dst_chain_id: i64,
     transaction_id: Option<&[u8]>,
-) -> Result<(), sqlx::Error> {
-    let source = sqlx::query_as!(
+) -> Result<bool, sqlx::Error> {
+    let Some(source) = fetch_bridge_source_material(txn, src_handle, src_chain_id).await? else {
+        return Ok(false);
+    };
+
+    let ciphertext_copied = sqlx::query(
+        r#"
+        INSERT INTO ciphertexts_branch (
+            handle,
+            ciphertext,
+            ciphertext_version,
+            ciphertext_type,
+            producer_block_hash,
+            block_number
+        )
+        VALUES ($1, $2, $3, $4, ''::bytea, NULL)
+        ON CONFLICT (handle, ciphertext_version, producer_block_hash) DO NOTHING
+        "#,
+    )
+    .bind(dst_handle)
+    .bind(&source.ciphertext)
+    .bind(source.ciphertext_version)
+    .bind(source.ciphertext_type)
+    .execute(txn.as_mut())
+    .await?
+    .rows_affected()
+        > 0;
+
+    if !ciphertext_copied {
+        return Ok(false);
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO ciphertext_digest_branch (
+            handle,
+            ciphertext,
+            ciphertext128,
+            ciphertext128_format,
+            host_chain_id,
+            key_id_gw,
+            s3_format_version,
+            producer_block_hash,
+            block_number,
+            block_hash,
+            transaction_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, ''::bytea, NULL, ''::bytea, $8)
+        ON CONFLICT (handle, producer_block_hash, block_hash) DO NOTHING
+        "#,
+    )
+    .bind(dst_handle)
+    .bind(&source.ct64_digest)
+    .bind(&source.ct128_digest)
+    .bind(source.ciphertext128_format)
+    .bind(dst_chain_id)
+    .bind(&source.key_id_gw)
+    .bind(source.s3_format_version)
+    .bind(transaction_id)
+    .execute(txn.as_mut())
+    .await?;
+
+    sqlx::query("UPDATE handle_bridged_events SET is_associated = TRUE WHERE id = $1")
+        .bind(id)
+        .execute(txn.as_mut())
+        .await?;
+
+    Ok(true)
+}
+
+/// Selects the freshest live source material for `src_handle`, preferring a
+/// branch row over the legacy tables. Mirrors the source arms of the readiness
+/// query in `associate_batch`, so any pair selected as ready resolves material
+/// here unless it raced a concurrent retraction.
+async fn fetch_bridge_source_material(
+    txn: &mut Transaction<'_, Postgres>,
+    src_handle: &[u8],
+    src_chain_id: i64,
+) -> Result<Option<BridgeSourceMaterial>, sqlx::Error> {
+    sqlx::query_as!(
         BridgeSourceMaterial,
         r#"
         SELECT ciphertext AS "ciphertext!",
@@ -522,73 +638,5 @@ async fn associate_pair_branch(
         src_chain_id,
     )
     .fetch_optional(txn.as_mut())
-    .await?;
-
-    let Some(source) = source else {
-        return Ok(());
-    };
-
-    let ciphertext_copied = sqlx::query(
-        r#"
-        INSERT INTO ciphertexts_branch (
-            handle,
-            ciphertext,
-            ciphertext_version,
-            ciphertext_type,
-            producer_block_hash,
-            block_number
-        )
-        VALUES ($1, $2, $3, $4, ''::bytea, NULL)
-        ON CONFLICT (handle, ciphertext_version, producer_block_hash) DO NOTHING
-        "#,
-    )
-    .bind(dst_handle)
-    .bind(&source.ciphertext)
-    .bind(source.ciphertext_version)
-    .bind(source.ciphertext_type)
-    .execute(txn.as_mut())
-    .await?
-    .rows_affected()
-        > 0;
-
-    if !ciphertext_copied {
-        return Ok(());
-    }
-
-    sqlx::query(
-        r#"
-        INSERT INTO ciphertext_digest_branch (
-            handle,
-            ciphertext,
-            ciphertext128,
-            ciphertext128_format,
-            host_chain_id,
-            key_id_gw,
-            s3_format_version,
-            producer_block_hash,
-            block_number,
-            block_hash,
-            transaction_id
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, ''::bytea, NULL, ''::bytea, $8)
-        ON CONFLICT (handle, producer_block_hash, block_hash) DO NOTHING
-        "#,
-    )
-    .bind(dst_handle)
-    .bind(&source.ct64_digest)
-    .bind(&source.ct128_digest)
-    .bind(source.ciphertext128_format)
-    .bind(dst_chain_id)
-    .bind(&source.key_id_gw)
-    .bind(source.s3_format_version)
-    .bind(transaction_id)
-    .execute(txn.as_mut())
-    .await?;
-
-    sqlx::query("UPDATE handle_bridged_events SET is_associated = TRUE WHERE id = $1")
-        .bind(id)
-        .execute(txn.as_mut())
-        .await?;
-
-    Ok(())
+    .await
 }
