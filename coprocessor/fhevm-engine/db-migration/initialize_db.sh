@@ -168,13 +168,20 @@ run_branch_context_wave2_prerequisites() {
   echo "Running online migrations before branch-context wave2 indexes..."
   sqlx migrate run --source "$MIGRATION_DIR" --target-version $BRANCH_WAVE2_INDEX_PREVIOUS_VERSION || { echo "Failed to run migrations."; exit 1; }
 
-  # 20260610150000 adds these metadata-only columns before building its two
-  # partial indexes. Add them here so all six indexes on hot mirrored branch
-  # tables can be built concurrently before transactional migrations resume.
+  # 20260610150000 and 20260610150400 add these metadata-only columns before
+  # building their partial indexes. Add them here so all eight indexes on hot
+  # mirrored branch tables can be built concurrently before transactional
+  # migrations resume.
   run_sql "ALTER TABLE ciphertexts_branch
            ADD COLUMN IF NOT EXISTS block_number BIGINT NULL;"
   run_sql "ALTER TABLE ciphertexts128_branch
            ADD COLUMN IF NOT EXISTS block_number BIGINT NULL;"
+  run_sql "ALTER TABLE ciphertext_digest_branch
+           ADD COLUMN IF NOT EXISTS s3_publication_verified_at TIMESTAMPTZ NULL;"
+  run_sql "ALTER TABLE ciphertext_digest_branch
+           ADD COLUMN IF NOT EXISTS s3_publication_verified_digest BYTEA NULL;"
+  run_sql "ALTER TABLE ciphertext_digest_branch
+           ADD COLUMN IF NOT EXISTS s3_publication_verified_producer_block_hash BYTEA NULL;"
 
   precreate_index "idx_ciphertexts_branch_block_number" \
     "CREATE INDEX CONCURRENTLY idx_ciphertexts_branch_block_number \
@@ -206,6 +213,23 @@ run_branch_context_wave2_prerequisites() {
   precreate_index "idx_pbs_computations_branch_transaction_id" \
     "CREATE INDEX CONCURRENTLY idx_pbs_computations_branch_transaction_id \
      ON pbs_computations_branch (transaction_id);"
+
+  # 20260610150400: the s3_unverified predicate matches every pre-existing row
+  # (the verification columns were just added as NULL) and even the initially
+  # empty s3_verified partial index needs a full heap scan to evaluate its
+  # predicate, so both must be built concurrently on a live database.
+  precreate_index "idx_ciphertext_digest_branch_s3_unverified" \
+    "CREATE INDEX CONCURRENTLY idx_ciphertext_digest_branch_s3_unverified \
+     ON ciphertext_digest_branch (host_chain_id, block_number, created_at) \
+     WHERE ciphertext IS NULL \
+        OR s3_publication_verified_at IS NULL \
+        OR s3_publication_verified_digest IS DISTINCT FROM ciphertext \
+        OR s3_publication_verified_producer_block_hash IS DISTINCT FROM producer_block_hash;"
+
+  precreate_index "idx_ciphertext_digest_branch_s3_verified" \
+    "CREATE INDEX CONCURRENTLY idx_ciphertext_digest_branch_s3_verified \
+     ON ciphertext_digest_branch (host_chain_id, s3_publication_verified_at) \
+     WHERE s3_publication_verified_at IS NOT NULL;"
 }
 
 echo "-------------- Start database initilaization --------------"
