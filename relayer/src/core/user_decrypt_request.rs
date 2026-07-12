@@ -365,14 +365,39 @@ mod tests {
     }
 
     #[test]
-    fn solana_proof_data_affects_content_hash_and_job_identity() {
+    fn solana_request_domain_and_proof_pin_job_identity() {
         let first = sample_solana_unified(solana_proof_extra_data(0xaa));
         let second = sample_solana_unified(solana_proof_extra_data(0xbb));
         let first_hash = first.content_hash();
         let second_hash = second.content_hash();
 
+        // This golden digest makes the Solana variant/domain separator load-bearing,
+        // rather than relying on unlike EVM and Solana payloads to hash differently.
+        assert_eq!(
+            hex::encode(first_hash),
+            "71f74ed228523685ec6de56b3b50753553a12214504d46b0f15e496e3b6f7c8c"
+        );
         assert_ne!(first_hash, second_hash);
         assert_ne!(JobId::from(first_hash), JobId::from(second_hash));
-        assert_ne!(first_hash, sample_eip712_unified().content_hash());
+    }
+
+    #[test]
+    fn solana_excluded_fields_do_not_affect_content_hash() {
+        let first = sample_solana_unified(solana_proof_extra_data(0xaa));
+        let mut second = first.clone();
+        if let UserDecryptRequest::SolanaUnifiedV1 {
+            signature,
+            request_validity,
+            ..
+        } = &mut second
+        {
+            *signature = Bytes::from(vec![0xff; 4]);
+            *request_validity = RequestValiditySeconds {
+                start_timestamp: U256::from(999_999),
+                duration_seconds: U256::from(99_999),
+            };
+        }
+
+        assert_eq!(first.content_hash(), second.content_hash());
     }
 }
