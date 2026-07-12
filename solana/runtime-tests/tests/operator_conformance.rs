@@ -496,13 +496,16 @@ mod rejected {
             }
             for op in ternary_ops() {
                 for fhe_type in u8::MIN..=u8::MAX {
-                    for (control, branch, output) in
-                        [(fhe_type, 2, 2), (0, fhe_type, 2), (0, fhe_type, fhe_type)]
-                    {
+                    for (control, if_true, if_false, output) in [
+                        (fhe_type, 2, 2, 2),
+                        (0, fhe_type, 2, 2),
+                        (0, 2, fhe_type, 2),
+                        (0, fhe_type, fhe_type, fhe_type),
+                    ] {
                         assert_eq!(
-                            ternary_is_accepted(op, control, branch, output),
-                            expected_ternary(op, control, branch, output),
-                            "{op:?}, control={control}, branch={branch}, output={output}"
+                            ternary_is_accepted(op, control, if_true, if_false, output),
+                            expected_ternary(op, control, if_true, if_false, output),
+                            "{op:?}, control={control}, if_true={if_true}, if_false={if_false}, output={output}"
                         );
                     }
                 }
@@ -926,10 +929,16 @@ fn ternary_ops() -> [FheTernaryOpCode; 1] {
     [FheTernaryOpCode::IfThenElse]
 }
 
-fn expected_ternary(op: FheTernaryOpCode, control: u8, branch: u8, output: u8) -> bool {
+fn expected_ternary(
+    op: FheTernaryOpCode,
+    control: u8,
+    if_true: u8,
+    if_false: u8,
+    output: u8,
+) -> bool {
     match op {
         FheTernaryOpCode::IfThenElse => {
-            control == 0 && matches!(branch, 0 | 2..=8) && output == branch
+            control == 0 && matches!(if_true, 0 | 2..=8) && if_true == output && if_false == output
         }
     }
 }
@@ -937,14 +946,15 @@ fn expected_ternary(op: FheTernaryOpCode, control: u8, branch: u8, output: u8) -
 fn ternary_is_accepted(
     op: FheTernaryOpCode,
     control_type: u8,
-    branch_type: u8,
+    if_true_type: u8,
+    if_false_type: u8,
     output: u8,
 ) -> bool {
     match op {
         FheTernaryOpCode::IfThenElse => assert_ternary_operand_types(
             handle(1, control_type),
-            handle(2, branch_type),
-            handle(3, branch_type),
+            handle(2, if_true_type),
+            handle(3, if_false_type),
             output,
         )
         .is_ok(),
