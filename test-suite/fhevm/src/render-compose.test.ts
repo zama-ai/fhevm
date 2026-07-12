@@ -194,6 +194,30 @@ describe("render-compose", () => {
     expect(services).not.toContain("coprocessor1-host-listener-consumer");
   });
 
+  test("does not request consensus-detector or upgrade-controller services for legacy coprocessor bundles", () => {
+    const legacyState: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: {
+          ...state.versions.env,
+          COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.12.2",
+          COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "v0.12.2",
+        },
+      },
+    };
+
+    const services = serviceNameList(legacyState, "coprocessor");
+    expect(services).not.toContain("coprocessor-consensus-detector");
+    expect(services).not.toContain("coprocessor-upgrade-controller");
+    expect(services).not.toContain("coprocessor1-consensus-detector");
+    expect(services).not.toContain("coprocessor1-upgrade-controller");
+
+    const modernServices = serviceNameList(state, "coprocessor");
+    expect(modernServices).toContain("coprocessor-consensus-detector");
+    expect(modernServices).toContain("coprocessor-upgrade-controller");
+  });
+
   test("renders inherited two-of-two instances with local build tags when coprocessor build is active", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });

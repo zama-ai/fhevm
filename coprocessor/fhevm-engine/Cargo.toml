@@ -10,6 +10,8 @@ members = [
     "zkproof-worker",
     "test-harness",
     "stress-test-generator",
+    "upgrade-controller",
+    "consensus-detector",
 ]
 
 [workspace.package]
