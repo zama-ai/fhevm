@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
-import "../shared/Structs.sol";
+import '../shared/Structs.sol';
 
 contract DecryptionMock {
     struct ContractsInfo {
@@ -73,6 +73,8 @@ contract DecryptionMock {
         bytes extraData
     );
 
+    event PublicDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, bytes extraData);
+
     event PublicDecryptionResponseCall(
         uint256 indexed decryptionId,
         bytes decryptedResult,
@@ -103,6 +105,20 @@ contract DecryptionMock {
         UserDecryptionRequestPayload payload
     );
 
+    event UserDecryptionRequest(
+        uint256 indexed decryptionId,
+        bytes32[] ctHandles,
+        address userAddress,
+        bytes publicKey,
+        bytes extraData
+    );
+
+    event UserDecryptionRequest(
+        uint256 indexed decryptionId,
+        HandleEntry[] handles,
+        UserDecryptionRequestPayload payload
+    );
+
     event UserDecryptionResponse(
         uint256 indexed decryptionId,
         uint256 indexShare,
@@ -120,6 +136,8 @@ contract DecryptionMock {
         publicDecryptionCounter++;
         uint256 decryptionId = publicDecryptionCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
+
+        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraData);
 
         emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraData);
     }
@@ -152,6 +170,8 @@ contract DecryptionMock {
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
 
         emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+
+        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
 
     function delegatedUserDecryptionRequest(
@@ -167,6 +187,8 @@ contract DecryptionMock {
         uint256 decryptionId = userDecryptionCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
         address userAddress;
+
+        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
 
         emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }

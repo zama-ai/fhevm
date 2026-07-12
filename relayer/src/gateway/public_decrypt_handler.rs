@@ -726,10 +726,10 @@ impl TxLifecycleHooks for GatewayHandler {
         receipt: &TxResult,
     ) -> Result<(), EventProcessingError> {
         let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
-            Decryption::PublicDecryptionRequest,
+            Decryption::PublicDecryptionRequest_0,
         >(
             receipt,
-            Decryption::PublicDecryptionRequest::SIGNATURE_HASH,
+            Decryption::PublicDecryptionRequest_0::SIGNATURE_HASH,
             |event| event.decryptionId,
         )?;
 
