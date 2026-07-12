@@ -10,9 +10,6 @@ fs_permissions = [
     { access = "read", path = "out" },
     { access = "read", path = "../../.." },
     { access = "write", path = "../test/fheTest" },
-    { access = "write", path = "src/latest/host-contracts/addresses" },
-    { access = "write", path = "src/v0.12.0/host-contracts/addresses" },
-    { access = "write", path = "src/v0.13.0/host-contracts/addresses" },
 ]
 remappings = [
     "forge-std/=dependencies/forge-std-1.11.0/src/",
@@ -48,32 +45,8 @@ forge-std = "1.11.0"
 "@openzeppelin-contracts" = "5.1.0"
 "@openzeppelin-contracts-upgradeable" = "5.1.0"
 
-[profile.v12]
-remappings = [
-    "forge-std/=dependencies/forge-std-1.11.0/src/",
-    "encrypted-types/=dependencies/@encrypted-types-0.0.4/",
-    "@openzeppelin-contracts-5.1.0/=dependencies/@openzeppelin-contracts-5.1.0/",
-    "@openzeppelin-contracts-upgradeable-5.1.0/=dependencies/@openzeppelin-contracts-upgradeable-5.1.0/",
-    "@openzeppelin/contracts/=dependencies/@openzeppelin-contracts-5.1.0/",
-    "@openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.1.0/",
-    "@fhevm/solidity/=../../../library-solidity/",
-    "@fhevm/host-contracts/=./src/v0.12.0/host-contracts/",
-    "@fhevm/cleartext/=./src/v0.12.0/cleartext/",
-    "@fhevm/host-contracts-0.12.0/=./src/v0.12.0/host-contracts/",
-    "@fhevm/cleartext-0.12.0/=./src/v0.12.0/cleartext/",
-]
-
-[profile.v13]
-remappings = [
-    "forge-std/=dependencies/forge-std-1.11.0/src/",
-    "encrypted-types/=dependencies/@encrypted-types-0.0.4/",
-    "@openzeppelin-contracts-5.1.0/=dependencies/@openzeppelin-contracts-5.1.0/",
-    "@openzeppelin-contracts-upgradeable-5.1.0/=dependencies/@openzeppelin-contracts-upgradeable-5.1.0/",
-    "@openzeppelin/contracts/=dependencies/@openzeppelin-contracts-5.1.0/",
-    "@openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.1.0/",
-    "@fhevm/solidity/=../../../library-solidity/",
-    "@fhevm/host-contracts/=./src/v0.13.0/host-contracts/",
-    "@fhevm/cleartext/=./src/v0.13.0/cleartext/",
-    "@fhevm/host-contracts-0.13.0/=./src/v0.13.0/host-contracts/",
-    "@fhevm/cleartext-0.13.0/=./src/v0.13.0/cleartext/",
-]
+# NOTE: js-sdk no longer vendors the cleartext contracts. Its own src/ (FHETest, configs) uses only
+# `@fhevm/solidity`, so a single default profile builds everything. The cleartext host stack is deployed
+# from the sibling `@fhevm/host-contracts-cleartext` packages (v0.13 / v0.14) — selected by
+# FOUNDRY_PROFILE=v13|v14 in scripts/fhevm-deploy.sh, which delegates to the matching package. v0.11/v0.12
+# are intentionally dropped.

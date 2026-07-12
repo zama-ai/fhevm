@@ -118,13 +118,13 @@ case "$LIB" in
 esac
 
 case "$PROFILE" in
-    v12|v13) ;;
+    v13|v14) ;;
     "")
-        echo "Error: --foundry-profile is required. Expected: v12 or v13." >&2
+        echo "Error: --foundry-profile is required. Expected: v13 or v14." >&2
         exit 1
         ;;
     *)
-        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v12 or v13." >&2
+        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v13 or v14." >&2
         exit 1
         ;;
 esac

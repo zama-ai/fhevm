@@ -209,15 +209,15 @@ verify_balance() {
 fhevm_assert_foundry_profile() {
     local profile="$1"
     case "$profile" in
-        v12|v13|latest)
+        v12|v13|v14|latest)
             return 0
             ;;
         "")
-            echo "❌ Foundry profile is required (expected: v12 | v13 | latest)" >&2
+            echo "❌ Foundry profile is required (expected: v12 | v13 | v14 | latest)" >&2
             exit 1
             ;;
         *)
-            echo "❌ unsupported Foundry profile '$profile' (expected: v12 | v13 | latest)" >&2
+            echo "❌ unsupported Foundry profile '$profile' (expected: v12 | v13 | v14 | latest)" >&2
             exit 1
             ;;
     esac
@@ -243,11 +243,14 @@ fhevm_host_addresses_file() {
         v13)
             printf '%s/src/v0.13.0/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
             ;;
+        v14)
+            printf '%s/src/v0.14.0/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
+            ;;
         latest)
             printf '%s/src/latest/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
             ;;
         *)
-            echo "fhevm_host_addresses_file: unsupported profile '$profile' (expected: v12 | v13 | latest)" >&2
+            echo "fhevm_host_addresses_file: unsupported profile '$profile' (expected: v12 | v13 | v14 | latest)" >&2
             return 1
             ;;
     esac
