@@ -1,0 +1,34 @@
+{
+  "name": "@fhevm/host-contracts-cleartext",
+  "version": "0.14.0",
+  "description": "Cleartext (mock) FHEVM host contracts for local, on-chain testing at protocol v0.14. Stores decrypted values on-chain so tools can assert on them.",
+  "license": "BSD-3-Clause-Clear",
+  "main": "src/cleartext/CleartextFHEVMExecutor.sol",
+  "files": [
+    "src/",
+    "scripts/",
+    "artifacts-hardhat/",
+    "foundry.toml",
+    "soldeer.lock",
+    "README.md"
+  ],
+  "exports": {
+    "./artifacts/*": "./artifacts-hardhat/*",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "keywords": [
+    "fhevm",
+    "zama",
+    "fhe",
+    "cleartext",
+    "mock",
+    "host-contracts"
+  ],
+  "scripts": {
+    "build": "forge build"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

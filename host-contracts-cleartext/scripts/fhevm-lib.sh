@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+# =============================================================================
+# fhevm-lib.sh — Small shell utilities for FHEVM deployment scripts.
+#
+# Source from another bash script:
+#
+#   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+#   source "$SCRIPT_DIR/fhevm-lib.sh"
+#
+# Then call:
+#
+#   if is_anvil "$rpc_url"; then ...
+#
+# Functions defined:
+#   is_anvil <rpc_url>   — exit 0 if the RPC is an anvil node, else non-zero.
+# =============================================================================
+
+# Guard against double-sourcing — re-sourcing is harmless but wasteful.
+if [[ -n "${__FHEVM_LIB_SH_LOADED:-}" ]]; then
+    return 0
+fi
+__FHEVM_LIB_SH_LOADED=1
+
+# Pull in the canonical source-of-truth resolver / detect helpers
+# (resolve_chain_rpc_url, detect_rpc_client, is_truthy, normalize_address, ...).
+# lib-common.sh has its own load guard so re-sourcing is safe.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-common.sh"
+
+# Prints <message> inside an `=`-banner to stderr. Used as the standard error
+# format for the assert helpers in this lib.
+#
+# Usage: boxed_error <message>
+boxed_error() {
+    local message="$1"
+    cat >&2 <<EOF
+
+================================================================================
+❌ ${message}
+================================================================================
+
+EOF
+}
+
+# Asserts that the deployed FHETest address matches the committed
+# `fheTestAddress` in chain-defaults.json for the given chain. Exits 1 on
+# mismatch (or missing file / missing key) with a banner-formatted error.
+#
+# Behavior per chain:
+#   localcleartext | localstack  → checks BOTH `localcleartext` AND `localstack`
+#                                  keys in the JSON.
+#   localstack_v11..v14 (etc.)   → checks the matching `localstack_<vNN>` key.
+#   devnet                       → checks the `devnet` key.
+#   anything else                → no-op (returns 0).
+#
+# Usage: assert_fhetest_address <chain> <deployed_addr> <chain_defaults_json_file>
+# JSON shape: { "<chain>": { "fheTestAddress": "0x...", ... }, ... }
+assert_fhetest_address() {
+    local chain="$1"
+    local deployed_addr="$2"
+    local chain_defaults_file="$3"
+
+    local -a keys=()
+    case "$chain" in
+        localcleartext|localstack)
+            keys=(localcleartext localstack)
+            ;;
+        localstack_*)
+            keys=("$chain")
+            ;;
+        devnet)
+            keys=(devnet)
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    if [[ ! -f "$chain_defaults_file" ]]; then
+        boxed_error "Expected chain defaults JSON at $chain_defaults_file, but the file does not exist."
+        exit 1
+    fi
+
+    local key expected_addr expected_addr_lc deployed_addr_lc
+    # Lower-case via `tr` rather than the bash 4 `${var,,}` expansion, which is
+    # unsupported by the bash 3.2 shipped on macOS ("bad substitution").
+    deployed_addr_lc="$(printf '%s' "$deployed_addr" | tr '[:upper:]' '[:lower:]')"
+    for key in "${keys[@]}"; do
+        expected_addr="$(_extract_fhetest_address_from_json "$chain_defaults_file" "$key")"
+        if [[ -z "$expected_addr" || "$expected_addr" == "null" ]]; then
+            boxed_error "Could not find fheTestAddress for key '${key}' in $chain_defaults_file"
+            exit 1
+        fi
+
+        expected_addr_lc="$(printf '%s' "$expected_addr" | tr '[:upper:]' '[:lower:]')"
+        if [[ "$expected_addr_lc" != "$deployed_addr_lc" ]]; then
+            boxed_error "fheTestAddress for '${key}' in $chain_defaults_file does not match deployed FHETest.
+  expected from JSON: $expected_addr
+  deployed:           $deployed_addr"
+            exit 1
+        fi
+    done
+}
+
+# Private: extracts a FHETest address from chain-defaults.json by chain key.
+# JSON shape: { "<key>": { "fheTestAddress": "0x...", ... }, ... }. Uses jq -r
+# so the output is the raw address (no quotes); emits the empty string when the
+# key or the `fheTestAddress` field is absent — caller treats that as "not found".
+_extract_fhetest_address_from_json() {
+    local file="$1"
+    local key="$2"
+    jq -r --arg k "$key" '.[$k].fheTestAddress // ""' "$file"
+}
+
+# Returns 0 if the JSON-RPC at <rpc_url> is an anvil node, non-zero otherwise.
+#
+# Detection: calls the standard `web3_clientVersion` RPC method and checks the
+# response for the substring "anvil". Geth, reth, hardhat, and others report
+# different identifiers, so the match is reliable. Returns non-zero on an
+# unreachable / broken RPC as well.
+#
+# Usage: is_anvil <rpc_url>
+is_anvil() {
+    local rpc_url="$1"
+    if [[ -z "$rpc_url" ]]; then
+        echo "is_anvil: missing rpc_url argument" >&2
+        return 2
+    fi
+
+    local version
+    version="$(cast rpc web3_clientVersion --rpc-url "$rpc_url" 2>/dev/null)" || return 1
+    [[ "$version" == *anvil* ]]
+}
+
+# Fail-fast variant of `is_anvil`. Exits the calling process with status 1
+# (banner-formatted via `boxed_error`) when the RPC at <rpc_url> isn't an
+# anvil node — i.e. either unreachable or running a different client.
+#
+# Use at script entry to short-circuit before any downstream call that
+# depends on anvil-specific cheats (anvil_setBalance, anvil_setCode, etc.).
+#
+# Usage: assert_is_anvil <rpc_url>
+assert_is_anvil() {
+    local rpc_url="$1"
+    if [[ -z "$rpc_url" ]]; then
+        boxed_error "assert_is_anvil: missing rpc_url argument"
+        exit 1
+    fi
+    if ! is_anvil "$rpc_url"; then
+        boxed_error "anvil is not running at $rpc_url (or another client is on that port).
+  Start anvil first, e.g.:  anvil --port 8545"
+        exit 1
+    fi
+}
+
+set_anvil_balance() {
+    local account_addr="$1"
+    local amount_eth="$2"
+    local rpc_url="$3"
+    local zero_address="0x0000000000000000000000000000000000000000"
+
+    local fund_amount_wei
+    fund_amount_wei="$(cast to-hex "$(cast to-wei "$amount_eth" ether)")"
+
+    if [[ "$account_addr" != "$zero_address" ]]; then
+        echo "🍟 Funding ${account_addr} with ${amount_eth} ETH..."
+        cast rpc anvil_setBalance "$account_addr" "$fund_amount_wei" --rpc-url "$rpc_url" >/dev/null
+    fi
+}
+
+# Verifies that <account_addr> on <rpc_url> holds exactly <expected_eth> ETH.
+# Silently no-ops (return 0) when <account_addr> is the zero address — that's
+# the convention for "not configured" used by `set_anvil_balance` and
+# `resolveDeployersAsJson`. Prints ✅ on match (stdout) and ❌ + return 1 on
+# mismatch (stderr).
+#
+# The optional <label> overrides the friendly name shown in the log line;
+# defaults to the address itself.
+#
+# Usage: verify_balance <account_addr> <expected_eth> <rpc_url> [<label>]
+verify_balance() {
+    local account_addr="$1"
+    local expected_eth="$2"
+    local rpc_url="$3"
+    local label="${4:-$account_addr}"
+    local zero_address="0x0000000000000000000000000000000000000000"
+
+    if [[ "$account_addr" == "$zero_address" ]]; then
+        return 0
+    fi
+
+    local expected_wei actual_wei
+    expected_wei="$(cast to-wei "$expected_eth" ether)"
+    actual_wei="$(cast balance "$account_addr" --rpc-url "$rpc_url")"
+
+    if [[ "$actual_wei" != "$expected_wei" ]]; then
+        echo "❌ ${label} balance mismatch: expected ${expected_wei} wei, got ${actual_wei} wei" >&2
+        return 1
+    fi
+    echo "✅ ${label} balance: $(cast from-wei "$actual_wei") ETH"
+}
+
+# Validates that <profile> is one of the supported Foundry profiles for the
+# fhevm contracts workspace. On invalid input, prints an error and EXITS the
+# calling process with status 1 (fail-fast; intended for script entry).
+#
+# This package is single-version (v0.14) with one Foundry profile (`default`).
+# The historical profile names are accepted for backward compatibility.
+#
+# Usage: fhevm_assert_foundry_profile [profile]
+fhevm_assert_foundry_profile() {
+    local profile="${1:-default}"
+    case "$profile" in
+        default|v14|latest)
+            return 0
+            ;;
+        *)
+            echo "❌ unsupported Foundry profile '$profile' (this package is single-version; expected: default)" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Resolves the FHEVMHostAddresses.sol path. The package is single-version, so
+# there is a single addresses file under src/host-contracts/. The optional
+# argument is accepted (and ignored) for backward compatibility.
+#
+# Usage: fhevm_host_addresses_file
+#
+#   addresses_file="$(fhevm_host_addresses_file)"
+fhevm_host_addresses_file() {
+    local contracts_dir
+    contracts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    printf '%s/src/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
+}
+
+# Reads a single contract address from a chain TS file by key.
+#
+# Supported keys (matched as `<key>:` in the TS source):
+#   acl, inputVerifier, kmsVerifier        — host-stack contracts
+#   decryption, inputVerification          — gateway-side verifying contracts
+#
+# Implementation note: greps for the line `<key>:` followed by the next
+# `address: '0x…'` line. The chain TS files are auto-generated with a
+# stable shape, so this is reliable; if the shape changes (e.g. minified
+# output), revisit.
+#
+# Usage: fhevm_chain_address <chain_name> <key>
+# 
+# acl_addr="$(fhevm_chain_address localstack acl)"   
+# acl_addr="$(fhevm_chain_address localcleartext acl)"   
+fhevm_chain_address() {
+    local chain="$1"
+    local key="$2"
+
+    if [[ -z "$chain" || -z "$key" ]]; then
+        echo "fhevm_chain_address: missing argument(s); usage: fhevm_chain_address <chain_name> <key>" >&2
+        return 2
+    fi
+
+    local file
+    file="$(fhevm_chain_file "$chain")" || return 1
+    
+    if [[ ! -f "$file" ]]; then
+        echo "fhevm_chain_address: chain file not found: $file" >&2
+        return 1
+    fi
+
+    local addr
+    addr="$(grep -A 1 "${key}:" "$file" | grep -oE "0x[0-9a-fA-F]{40}" | head -n 1)"
+    if [[ -z "$addr" ]]; then
+        echo "fhevm_chain_address: address for key '$key' not found in $file" >&2
+        return 1
+    fi
+    printf '%s\n' "$addr"
+}
