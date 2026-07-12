@@ -253,6 +253,11 @@ const rewriteCoprocessorDependsOn = (
     ]),
   );
 
+const s3MigrationArgs = (serviceKey: string, envVars: Record<string, string>) => {
+  const mode = envVars.S3_MIGRATION_MODE;
+  return serviceKey === "sns-worker" && mode && mode !== "no" ? [`--s3-migration=${mode}`] : [];
+};
+
 /** Applies env, compat, and instance-specific command adjustments to a service. */
 const applyInstanceAdjustments = (
   baseServiceName: string,
@@ -299,7 +304,11 @@ const applyInstanceAdjustments = (
   }
   if (next.command) {
     const current = Array.isArray(next.command) ? next.command : [];
-    next.command = mergeArgs(current, [...(override.args["*"] ?? []), ...(override.args[serviceKey] ?? [])]);
+    next.command = mergeArgs(current, [
+      ...s3MigrationArgs(serviceKey, envVars),
+      ...(override.args["*"] ?? []),
+      ...(override.args[serviceKey] ?? []),
+    ]);
   }
   return next;
 };
