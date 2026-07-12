@@ -83,6 +83,30 @@ describe("resolve", () => {
     expect(bundle.env.CORE_VERSION).not.toBe("abcdef0");
   });
 
+  test("pins optional images by default but omits unpublished ones for latest-main", () => {
+    // No published-key set (e.g. --target sha): optional images stay pinned like every package.
+    const shaBundle = presetBundle("sha", "abcdef0", "sha-abcdef0.json");
+    expect(shaBundle.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("abcdef0");
+    expect(shaBundle.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION).toBe("abcdef0");
+
+    // latest-main with only consensus-detector published at the resolved sha: pin it, drop the
+    // upgrade-controller so its service gates out instead of pulling a nonexistent manifest.
+    const bundle = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json", [], new Set([
+      "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+    ]));
+    expect(bundle.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("abcdef0");
+    expect("COPROCESSOR_UPGRADE_CONTROLLER_VERSION" in bundle.env).toBe(false);
+    // Non-optional repo images are still always pinned.
+    expect(bundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
+  });
+
+  test("honors an explicit env pin for an omitted optional image", () => {
+    const bundle = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json", [], new Set());
+    expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in bundle.env).toBe(false);
+    const next = applyVersionEnvOverrides(bundle, { COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.14.0" });
+    expect(next.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("v0.14.0");
+  });
+
   test("only caches immutable sha targets", () => {
     expect(targetUsesCache("latest-supported")).toBe(false);
     expect(targetUsesCache("latest-main")).toBe(false);
@@ -116,6 +140,43 @@ describe("resolve", () => {
           process.env,
         ),
       ).rejects.toThrow("invalid lockName");
+    });
+  });
+
+  test("accepts a lock file that omits unpublished optional images", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const lockFile = path.join(stateDir, "latest-main.json");
+      // Optional images pinned only when published: presetBundle with an empty set omits them.
+      const env = presetBundle("latest-main", "abcdef0", "latest-main.json", [], new Set()).env;
+      expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in env).toBe(false);
+      await writeFile(
+        lockFile,
+        JSON.stringify({ target: "latest-main", lockName: "latest-main.json", sources: ["test"], env }),
+      );
+      const { bundle } = await resolveBundle(
+        { target: "latest-main", requestedTarget: undefined, sha: undefined, lockFile, reset: false },
+        {},
+      );
+      expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in bundle.env).toBe(false);
+      expect(bundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
+    });
+  });
+
+  test("still rejects a lock file missing a required (non-optional) image", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const lockFile = path.join(stateDir, "latest-main.json");
+      const env = { ...presetBundle("latest-main", "abcdef0", "latest-main.json").env };
+      delete env.COPROCESSOR_HOST_LISTENER_VERSION;
+      await writeFile(
+        lockFile,
+        JSON.stringify({ target: "latest-main", lockName: "latest-main.json", sources: ["test"], env }),
+      );
+      await expect(
+        resolveBundle(
+          { target: "latest-main", requestedTarget: undefined, sha: undefined, lockFile, reset: false },
+          {},
+        ),
+      ).rejects.toThrow("missing required version keys");
     });
   });
 

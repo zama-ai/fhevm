@@ -80,6 +80,12 @@ const REPO_PACKAGES = {
 
 export const REPO_KEYS = new Set(Object.keys(REPO_PACKAGES));
 
+// Repo-owned images that may not be published at a resolved sha yet (brand-new images); pinned once published, omitted while unpublished so the compat layer gates their services out instead of docker failing to pull a missing manifest.
+export const OPTIONAL_REPO_KEYS = new Set([
+  "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+  "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
+]);
+
 export const PACKAGE_TO_REPOSITORY = {
   GATEWAY_VERSION: "ghcr.io/zama-ai/fhevm/gateway-contracts",
   HOST_VERSION: "ghcr.io/zama-ai/fhevm/host-contracts",
@@ -196,18 +202,23 @@ export const presetBundle = (
   repoVersion: string,
   lockName: string,
   sources: string[] = [],
+  publishedOptionalKeys?: ReadonlySet<string>,
 ): VersionBundle => ({
   target,
   lockName,
   env: Object.fromEntries(
-    Object.keys(PACKAGE_TO_REPOSITORY).map((key) => {
+    Object.keys(PACKAGE_TO_REPOSITORY).flatMap((key) => {
+      // Omit optional repo-owned images the resolved sha has not published (per `publishedOptionalKeys`) so the compat layer gates the service out instead of docker failing with `manifest unknown`.
+      if (OPTIONAL_REPO_KEYS.has(key) && publishedOptionalKeys && !publishedOptionalKeys.has(key)) {
+        return [];
+      }
       const version = REPO_KEYS.has(key)
         ? repoVersion
         : NON_NETWORK_COMPANIONS[target][key as keyof (typeof NON_NETWORK_COMPANIONS)[typeof target]];
       if (!version) {
         throw new Error(`Missing ${target} preset for ${key}`);
       }
-      return [key, version];
+      return [[key, version]];
     }),
   ),
   sources: [`preset=${target}`, `repo-owned=${repoVersion}`, ...sources],
@@ -218,10 +229,13 @@ export const applyVersionEnvOverrides = (
   bundle: VersionBundle,
   env: Record<string, string | undefined>,
 ): VersionBundle => {
+  // Optional repo-owned images may be absent from the resolved bundle when unpublished; still honor an explicit env pin so callers can force-test a specific published tag.
+  const overrideKeys = new Set([
+    ...Object.keys(bundle.env),
+    ...[...OPTIONAL_REPO_KEYS].filter((key) => env[key]?.length),
+  ]);
   const overrides = Object.fromEntries(
-    Object.keys(bundle.env)
-      .filter((key) => env[key]?.length)
-      .map((key) => [key, env[key] as string]),
+    [...overrideKeys].filter((key) => env[key]?.length).map((key) => [key, env[key] as string]),
   );
   if (!Object.keys(overrides).length) {
     return bundle;
@@ -309,6 +323,21 @@ export const selectSupportedMainSha = (
   return candidateShas.find((sha) => gatingSets.every((set) => set.has(sha)));
 };
 
+/**
+ * Returns which optional repo-owned images are published at a short tag (for `--target sha`).
+ * Older shas predate these images, so their tag sets omit the sha and the services gate out.
+ */
+export const publishedOptionalKeysForTag = async (tag: string): Promise<Set<string>> => {
+  const entries = await Promise.all(
+    [...OPTIONAL_REPO_KEYS].map(async (key) => {
+      const pkg = REPO_PACKAGES[key as keyof typeof REPO_PACKAGES];
+      const tags = await packageTags(pkg, tag);
+      return [key, tags.has(tag)] as const;
+    }),
+  );
+  return new Set(entries.filter(([, published]) => published).map(([key]) => key));
+};
+
 /** Fetches the available tag sets for all repo-owned packages. */
 const repoPackageTags = async (targetTag?: string) =>
   Object.fromEntries(
@@ -348,7 +377,8 @@ export const resolveTarget = async (
       throw new GitHubApiError(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
     }
     const tag = shortSha(requested);
-    return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`]);
+    const publishedOptionalKeys = await publishedOptionalKeysForTag(tag);
+    return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`], publishedOptionalKeys);
   }
 
   const [packageTagsMap, commits] = await Promise.all([repoPackageTags(), mainCommits(5000)]);
@@ -368,5 +398,8 @@ export const resolveTarget = async (
   if (!short) {
     throw new GitHubApiError("Could not find a supported modern latest-main image set");
   }
-  return presetBundle(target, short, `latest-main-${short}.json`);
+  const publishedOptionalKeys = new Set(
+    [...OPTIONAL_REPO_KEYS].filter((key) => packageTagsMap[key]?.has(short)),
+  );
+  return presetBundle(target, short, `latest-main-${short}.json`, [], publishedOptionalKeys);
 };
