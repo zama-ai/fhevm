@@ -2651,6 +2651,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "consensus-detector"
+version = "0.7.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "aws-config",
+ "aws-sdk-s3",
+ "clap",
+ "dashmap",
+ "fhevm-engine-common",
+ "fhevm_gateway_bindings",
+ "futures",
+ "hex",
+ "humantime",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.16",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "const-hex"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8853,6 +8880,24 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
+
+[[package]]
+name = "upgrade-controller"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fhevm-engine-common",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "test-harness",
+ "thiserror 2.0.16",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "url"

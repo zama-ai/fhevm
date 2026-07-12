@@ -1,0 +1,30 @@
+[package]
+name = "upgrade-controller"
+version = "0.7.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+
+[dev-dependencies]
+test-harness = { path = "../test-harness" }
+
+[[bin]]
+name = "upgrade-controller"
+path = "src/bin/upgrade_controller.rs"
+
+[lints]
+workspace = true
