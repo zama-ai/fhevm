@@ -6,11 +6,13 @@
   },
   "workspaces": [
     "host-contracts",
+    "host-contracts-cleartext",
     "library-solidity",
     "library-solidity/codegen",
     "test-suite/e2e",
     "sdk/js-sdk",
-    "sdk/js-sdk/src"
+    "sdk/js-sdk/src",
+    "sdk/hardhat-plugin"
   ],
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
