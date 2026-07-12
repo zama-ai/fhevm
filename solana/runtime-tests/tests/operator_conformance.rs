@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 use operator_contracts::{binary_contract_tests, composite_contract_tests, unary_contract_tests};
 use support::cleartext_fhe_eval::{evaluate, ClearInputs, TypedClearValue};
+use zama_host::instructions::fhe_eval::assert_ternary_operand_types;
 use zama_host::{
     assert_binary_operand_types, assert_unary_operand_type, CoprocessorInputAttestation,
     FheBinaryOpCode, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep, FheTernaryOpCode,
@@ -939,24 +940,15 @@ fn ternary_is_accepted(
     branch_type: u8,
     output: u8,
 ) -> bool {
-    let control = handle(1, control_type);
-    let branch = handle(2, branch_type);
-    let plan = args(vec![FheEvalStep::Ternary {
-        op,
-        control: durable(control),
-        if_true: durable(branch),
-        if_false: durable(branch),
-        output_fhe_type: output,
-        output: local_output(),
-    }]);
-    evaluate(
-        &plan,
-        &HashMap::from([
-            (control, typed(control_type, 1)),
-            (branch, typed(branch_type, 1)),
-        ]),
-    )
-    .is_ok()
+    match op {
+        FheTernaryOpCode::IfThenElse => assert_ternary_operand_types(
+            handle(1, control_type),
+            handle(2, branch_type),
+            handle(3, branch_type),
+            output,
+        )
+        .is_ok(),
+    }
 }
 
 fn expect_error(plan: FheEvalArgs, inputs: ClearInputs, expected: &str) {
