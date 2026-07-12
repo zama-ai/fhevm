@@ -323,21 +323,6 @@ export const selectSupportedMainSha = (
   return candidateShas.find((sha) => gatingSets.every((set) => set.has(sha)));
 };
 
-/**
- * Returns which optional repo-owned images are published at a short tag (for `--target sha`).
- * Older shas predate these images, so their tag sets omit the sha and the services gate out.
- */
-export const publishedOptionalKeysForTag = async (tag: string): Promise<Set<string>> => {
-  const entries = await Promise.all(
-    [...OPTIONAL_REPO_KEYS].map(async (key) => {
-      const pkg = REPO_PACKAGES[key as keyof typeof REPO_PACKAGES];
-      const tags = await packageTags(pkg, tag);
-      return [key, tags.has(tag)] as const;
-    }),
-  );
-  return new Set(entries.filter(([, published]) => published).map(([key]) => key));
-};
-
 /** Fetches the available tag sets for all repo-owned packages. */
 const repoPackageTags = async (targetTag?: string) =>
   Object.fromEntries(
@@ -377,8 +362,7 @@ export const resolveTarget = async (
       throw new GitHubApiError(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
     }
     const tag = shortSha(requested);
-    const publishedOptionalKeys = await publishedOptionalKeysForTag(tag);
-    return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`], publishedOptionalKeys);
+    return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`], new Set());
   }
 
   const [packageTagsMap, commits] = await Promise.all([repoPackageTags(), mainCommits(5000)]);

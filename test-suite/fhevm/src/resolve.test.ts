@@ -84,10 +84,16 @@ describe("resolve", () => {
   });
 
   test("pins optional images by default but omits unpublished ones for latest-main", () => {
-    // No published-key set (e.g. --target sha): optional images stay pinned like every package.
-    const shaBundle = presetBundle("sha", "abcdef0", "sha-abcdef0.json");
-    expect(shaBundle.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("abcdef0");
-    expect(shaBundle.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION).toBe("abcdef0");
+    // No published-key set: optional images stay pinned like every package (default contract).
+    const pinned = presetBundle("sha", "abcdef0", "sha-abcdef0.json");
+    expect(pinned.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("abcdef0");
+    expect(pinned.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION).toBe("abcdef0");
+
+    // Empty published-key set (what `--target sha` passes): optional images are omitted.
+    const shaBundle = presetBundle("sha", "abcdef0", "sha-abcdef0.json", [], new Set());
+    expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in shaBundle.env).toBe(false);
+    expect("COPROCESSOR_UPGRADE_CONTROLLER_VERSION" in shaBundle.env).toBe(false);
+    expect(shaBundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
 
     // latest-main with only consensus-detector published at the resolved sha: pin it, drop the
     // upgrade-controller so its service gates out instead of pulling a nonexistent manifest.
