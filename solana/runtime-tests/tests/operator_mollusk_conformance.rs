@@ -175,7 +175,7 @@ fn random_executes_then_binds_seed_and_type() {
 }
 
 #[test]
-fn bounded_random_executes_then_binds_bound_seed_and_type() {
+fn bounded_random_executes_then_binds_bound_into_result_handle() {
     let outcome = EvalFlow::new().execute(FheEvalStep::RandBounded {
         upper_bound: be(16),
         fhe_type: 5,
@@ -440,10 +440,6 @@ fn mollusk() -> Mollusk {
     let mut mollusk = Mollusk::new(&host::id(), "zama_host");
     mollusk.sysvars.clock.slot = 100;
     mollusk.sysvars.clock.unix_timestamp = UNIX_TIMESTAMP;
-    mollusk.sysvars.slot_hashes = solana_sdk::slot_hashes::SlotHashes::new(&[(
-        99,
-        solana_sdk::hash::Hash::new_from_array([9; 32]),
-    )]);
     mollusk
 }
 
