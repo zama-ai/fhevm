@@ -23,6 +23,44 @@ pub enum KmsWallet {
     AwsKms(AwsSigner),
 }
 
+/// A wallet private key, provided as a hex string (with or without `0x` prefix).
+///
+/// # Testing only
+///
+/// Configuring a raw private key is intended for **testing purposes only**.
+/// Production deployments should use an AWS KMS signer instead (see [`AwsKmsConfig`]).
+///
+/// The inner secret is kept private and the [`Debug`] implementation redacts it, so the key
+/// is never leaked through debug logs.
+#[derive(Clone, Deserialize, PartialEq)]
+#[cfg_attr(debug_assertions, derive(Serialize))]
+#[serde(transparent)]
+pub struct PrivateKey(String);
+
+impl PrivateKey {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for PrivateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PrivateKey(<redacted>)")
+    }
+}
+
+impl From<String> for PrivateKey {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&str> for PrivateKey {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+
 /// Configuration for AWS KMS signer.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct AwsKmsConfig {
