@@ -1707,6 +1707,7 @@ dependencies = [
  "borsh",
  "confidential-token",
  "serde",
+ "serde_json",
  "solana-keypair",
  "ureq",
  "zama-host",

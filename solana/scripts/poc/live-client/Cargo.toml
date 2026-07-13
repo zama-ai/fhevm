@@ -20,6 +20,7 @@ solana-keypair = "3.1.2"
 # Blocking HTTP client for the relayer MMR-proof endpoint.
 ureq = { version = "2", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 zama-host = { path = "../../../programs/zama-host", features = ["no-entrypoint"] }
 zama-solana-acl = { path = "../../../crates/zama-solana-acl" }
 confidential-token = { path = "../../../programs/confidential-token", features = ["no-entrypoint", "poc"] }

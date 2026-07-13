@@ -10,6 +10,7 @@
 //! Underlying SPL mint is passed via $UNDERLYING_MINT (create it with `spl-token
 //! create-token`). RPC is pinned to the local validator — never mainnet.
 
+use std::io::Read;
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -685,21 +686,9 @@ fn fetch_relayer_mmr_proof_once(
     let body: RelayerMmrProofResponse = match ureq::get(&url).call() {
         Ok(resp) => resp.into_json()?,
         Err(ureq::Error::Status(code, resp)) => {
-            let error_body: RelayerMmrProofResponse = resp.into_json().map_err(|e| {
-                format!("relayer proof HTTP {code} returned an invalid error body: {e}")
-            })?;
-            if code == 503 && error_body.status == "lagging" {
-                return Err(format!(
-                    "relayer proof lagging: HTTP {code}, leaf_count={}",
-                    error_body.leaf_count
-                )
-                .into());
-            }
-            return Err(format!(
-                "relayer proof HTTP {code}: status={}, leaf_count={}",
-                error_body.status, error_body.leaf_count
-            )
-            .into());
+            let mut raw_body = Vec::new();
+            resp.into_reader().read_to_end(&mut raw_body)?;
+            return Err(relayer_http_error(code, &raw_body).into());
         }
         Err(e) => return Err(format!("relayer proof request to {url} failed: {e}").into()),
     };
@@ -731,6 +720,29 @@ fn fetch_relayer_mmr_proof_once(
         leaf_index: dto.leaf_index,
         siblings,
     })
+}
+
+fn relayer_http_error(code: u16, raw_body: &[u8]) -> String {
+    if let Ok(error_body) = serde_json::from_slice::<RelayerMmrProofResponse>(raw_body) {
+        if code == 503 && error_body.status == "lagging" {
+            return format!(
+                "relayer proof lagging: HTTP {code}, leaf_count={}",
+                error_body.leaf_count
+            );
+        }
+        return format!(
+            "relayer proof HTTP {code}: status={}, leaf_count={}",
+            error_body.status, error_body.leaf_count
+        );
+    }
+
+    let body = String::from_utf8_lossy(raw_body);
+    let body = if body.is_empty() {
+        "<empty response body>"
+    } else {
+        body.as_ref()
+    };
+    format!("relayer proof HTTP {code}: {body}")
 }
 
 fn public_decrypt_proof_step(
@@ -2769,4 +2781,40 @@ fn initialize_mint(
         acl.data.len()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::relayer_http_error;
+
+    #[test]
+    fn retries_only_structured_lagging_response() {
+        let lagging = br#"{"mmr_proof":null,"leaf_count":7,"proof_slot":42,"verified":false,"status":"lagging"}"#;
+        assert_eq!(
+            relayer_http_error(503, lagging),
+            "relayer proof lagging: HTTP 503, leaf_count=7"
+        );
+
+        let wrong_status = br#"{"mmr_proof":null,"leaf_count":7,"proof_slot":42,"verified":false,"status":"corrupt_cache"}"#;
+        assert_eq!(
+            relayer_http_error(503, wrong_status),
+            "relayer proof HTTP 503: status=corrupt_cache, leaf_count=7"
+        );
+    }
+
+    #[test]
+    fn preserves_non_json_error_body_for_diagnostics() {
+        assert_eq!(
+            relayer_http_error(502, b"upstream unavailable"),
+            "relayer proof HTTP 502: upstream unavailable"
+        );
+        assert_eq!(
+            relayer_http_error(500, &[b'b', 0xff]),
+            "relayer proof HTTP 500: b\u{fffd}"
+        );
+        assert_eq!(
+            relayer_http_error(500, b""),
+            "relayer proof HTTP 500: <empty response body>"
+        );
+    }
 }

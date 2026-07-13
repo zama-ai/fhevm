@@ -549,7 +549,7 @@ echo "$relout" | grep -q 'OK request_disclose_amount' || fail "request_disclose_
 echo "    disclosure request witness created (KMS context pinned); handle released for public decrypt"
 
 # Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert. This lineage
-# must contain the born-public lifecycle leaf followed by the explicit make_handle_public leaf; a
+# must contain the produced-public lifecycle leaf followed by the explicit make_handle_public leaf; a
 # proof for a one-leaf lineage would not exercise lifecycle-batch ingestion.
 run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL" "" 2 1
 cr="$PUBLIC_DECRYPT_JSON"
