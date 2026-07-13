@@ -172,9 +172,10 @@ export const decryptUserValues = async (
             handle,
             contractAddress: context.contractAddress,
           })),
-          transportKeyPair: serializeTransportKeyPair(client, {
-            transportKeyPair,
-          }),
+          transportKeyPair: {
+            ...serializeTransportKeyPair(client, { transportKeyPair }),
+            tkmsVersion: transportKeyPair.tkmsVersion,
+          },
           serializedPermit: serializeSignedDecryptionPermit(client, {
             signedPermit,
           }),

@@ -36,7 +36,11 @@ const signature = `0x${"11".repeat(65)}` as Hex;
 describe("decryptUserValues", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    sdk.client.generateTransportKeyPair.mockResolvedValue({ key: "transport" });
+    sdk.client.ready = Promise.resolve();
+    sdk.client.generateTransportKeyPair.mockResolvedValue({
+      key: "transport",
+      tkmsVersion: "0.13.20-0",
+    });
     sdk.client.signDecryptionPermit.mockResolvedValue({
       version: 2,
       isDelegated: false,
@@ -91,9 +95,44 @@ describe("decryptUserValues", () => {
     });
     expect(result.validationArtifact).toMatchObject({
       schemaVersion: 2,
+      transportKeyPair: {
+        publicKey: "0x1234",
+        privateKey: "0x5678",
+        tkmsVersion: "0.13.20-0",
+      },
       permit: { version: 2, durationSeconds: 604_800 },
     });
   });
+
+  it.each(["0.13.10", "0.13.20-0"] as const)(
+    "preserves TKMS version %s in the validation artifact JSON",
+    async (tkmsVersion) => {
+      sdk.client.generateTransportKeyPair.mockResolvedValue({
+        key: "transport",
+        tkmsVersion,
+      });
+
+      const result = await decryptUserValues(
+        {
+          chain: {} as never,
+          contractAddress,
+          publicClient: {} as never,
+        },
+        {
+          encryptedValues: [handle],
+          signer: { address: ownerAddress } as never,
+          ownerAddress,
+          durationSeconds: 86_400,
+          network: "testnet",
+          includeValidationArtifact: true,
+        },
+      );
+
+      expect(
+        JSON.parse(JSON.stringify(result.validationArtifact)),
+      ).toHaveProperty("transportKeyPair.tkmsVersion", tkmsVersion);
+    },
+  );
 
   it("rejects invalid second durations before creating an SDK client", async () => {
     await expect(
@@ -151,5 +190,60 @@ describe("decryptUserValues", () => {
       ownerAddress: delegatorAddress,
       permit: { version: 2, durationSeconds: 86_400 },
     });
+  });
+
+  it("does not start decrypt actions before the SDK client is ready", async () => {
+    let resolveReady!: () => void;
+    sdk.client.ready = new Promise<void>((resolve) => {
+      resolveReady = resolve;
+    });
+
+    const decrypting = decryptUserValues(
+      {
+        chain: {} as never,
+        contractAddress,
+        publicClient: {} as never,
+      },
+      {
+        encryptedValues: [handle],
+        signer: { address: ownerAddress } as never,
+        ownerAddress,
+        durationSeconds: 86_400,
+        network: "testnet",
+      },
+    );
+    await vi.waitFor(() => expect(sdk.createFhevmDecryptClient).toHaveBeenCalled());
+    expect(sdk.client.generateTransportKeyPair).not.toHaveBeenCalled();
+    expect(sdk.client.signDecryptionPermit).not.toHaveBeenCalled();
+    expect(sdk.client.decryptValues).not.toHaveBeenCalled();
+
+    resolveReady();
+    await decrypting;
+    expect(sdk.client.generateTransportKeyPair).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates readiness failure before starting decrypt actions", async () => {
+    const readinessError = new Error("decrypt runtime unavailable");
+    sdk.client.ready = Promise.reject(readinessError);
+
+    await expect(
+      decryptUserValues(
+        {
+          chain: {} as never,
+          contractAddress,
+          publicClient: {} as never,
+        },
+        {
+          encryptedValues: [handle],
+          signer: { address: ownerAddress } as never,
+          ownerAddress,
+          durationSeconds: 86_400,
+          network: "testnet",
+        },
+      ),
+    ).rejects.toBe(readinessError);
+    expect(sdk.client.generateTransportKeyPair).not.toHaveBeenCalled();
+    expect(sdk.client.signDecryptionPermit).not.toHaveBeenCalled();
+    expect(sdk.client.decryptValues).not.toHaveBeenCalled();
   });
 });

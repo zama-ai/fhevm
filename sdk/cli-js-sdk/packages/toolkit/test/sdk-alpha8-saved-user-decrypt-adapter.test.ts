@@ -127,6 +127,27 @@ describe("alpha.8 saved user-decrypt adapter", () => {
     });
   });
 
+  it("does not load or invoke private decrypt internals before readiness", async () => {
+    let resolveReady!: () => void;
+    const input = parameters();
+    input.fhevm.ready = new Promise<void>((resolve) => {
+      resolveReady = resolve;
+    });
+    const loadInternals = vi.fn().mockResolvedValue({});
+    const decrypt = createAlpha8SavedUserDecryptAdapter({
+      sdkVersion: "1.1.0-alpha.8",
+      loadInternals,
+    });
+
+    const decrypting = decrypt(input);
+    await Promise.resolve();
+    expect(loadInternals).not.toHaveBeenCalled();
+
+    resolveReady();
+    await expect(decrypting).rejects.toThrow();
+    expect(loadInternals).toHaveBeenCalledTimes(1);
+  });
+
   it("fails closed for a different SDK version before loading internals", async () => {
     const loadInternals = vi.fn();
     const decrypt = createAlpha8SavedUserDecryptAdapter({

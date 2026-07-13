@@ -79,9 +79,6 @@ const NETWORK_CONFIGS = {
     defaultRpcUrl: DEFAULT_SEPOLIA_RPC_URL,
     envRpcUrl: "SEPOLIA_RPC_URL",
     fheTestAddress: "0x94B9d3aF050687D1F76251aD7D09a1F216a19845",
-    runtime: {
-      moduleVersions: { tfhe: "1.5.3" },
-    },
   },
   "devnet": {
     fhevmChain: devnet,
@@ -103,9 +100,6 @@ const NETWORK_CONFIGS = {
     defaultRpcUrl: DEFAULT_MAINNET_RPC_URL,
     envRpcUrl: "MAINNET_RPC_URL",
     fheTestAddress: "0xba4d707745689eD409d4Afac8722224f5FD78C63",
-    runtime: {
-      moduleVersions: { tfhe: "1.5.3" },
-    },
   },
 } as const satisfies Record<NetworkName, NetworkConfig>;
 

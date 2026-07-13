@@ -1,12 +1,14 @@
-import {
-  parseSignedDecryptionPermit,
-  parseTransportKeyPair,
-} from "@fhevm/sdk/actions/chain";
+import { parseSignedDecryptionPermit } from "@fhevm/sdk/actions/chain";
 import type { Hex } from "viem";
 
-import { createClientContext, resolveChain, type ClientOptions } from "../../config";
+import {
+  createDecryptClientContext,
+  resolveChain,
+  type ClientOptions,
+} from "../../config";
 import {
   decryptSavedUserDecryptResult,
+  parseAlpha8TransportKeyPair,
   type SavedUserDecryptShare,
 } from "../../sdk-alpha8-saved-user-decrypt-adapter";
 import type {
@@ -367,15 +369,34 @@ export const verifyUserDecryptShares = async (
     );
   }
 
-  const context = createClientContext({
-    network: options.artifact.network,
-    rpcUrl: options.rpcUrl,
-    contractAddress: options.artifact.contractAddress,
-  });
+  const tkmsVersion = (
+    options.artifact.transportKeyPair as { readonly tkmsVersion?: unknown }
+  ).tkmsVersion;
+  if (tkmsVersion !== "0.13.10" && tkmsVersion !== "0.13.20-0") {
+    throw new Error(
+      "Artifact transportKeyPair.tkmsVersion must be 0.13.10 or 0.13.20-0",
+    );
+  }
 
-  const transportKeyPair = await parseTransportKeyPair(context.fhevm, {
+  const context = createDecryptClientContext(
+    {
+      network: options.artifact.network,
+      rpcUrl: options.rpcUrl,
+      contractAddress: options.artifact.contractAddress,
+    },
+    tkmsVersion,
+  );
+  await context.fhevm.ready;
+  if (context.fhevm.tkmsVersion !== tkmsVersion) {
+    throw new Error(
+      `Saved transport key TKMS version ${tkmsVersion} does not match the resolved decrypt client version ${context.fhevm.tkmsVersion}.`,
+    );
+  }
+
+  const transportKeyPair = await parseAlpha8TransportKeyPair(context.fhevm, {
     publicKey: options.artifact.transportKeyPair.publicKey,
     privateKey: options.artifact.transportKeyPair.privateKey,
+    tkmsVersion,
   });
   const signedPermit = await parseSignedDecryptionPermit(context.fhevm, {
     serializedPermit: normalizeSerializedPermit(

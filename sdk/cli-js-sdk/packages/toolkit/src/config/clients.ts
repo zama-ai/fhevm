@@ -1,4 +1,7 @@
-import { createFhevmClient } from "@fhevm/sdk/viem";
+import {
+  createFhevmClient,
+  createFhevmDecryptClient,
+} from "@fhevm/sdk/viem";
 import {
   createPublicClient,
   createWalletClient,
@@ -25,7 +28,7 @@ import type { ClientOptions } from "./types";
  */
 export const createClients = (options: ClientOptions) => {
   const networkConfig = resolveNetworkConfig(options.network);
-  configureFhevmRuntime(networkConfig);
+  configureFhevmRuntime();
 
   const chain = resolveChain(options);
   const rpcUrl = resolveRpcUrl(options);
@@ -39,6 +42,32 @@ export const createClients = (options: ClientOptions) => {
   return { chain, fhevm, publicClient, rpcUrl, transport };
 };
 
+export type DecryptClientTkmsVersion = "0.13.10" | "0.13.20-0";
+
+/** Creates read-only host-chain and version-pinned decrypt-only SDK clients. */
+export const createDecryptClients = (
+  options: ClientOptions,
+  tkmsVersion: DecryptClientTkmsVersion,
+) => {
+  const networkConfig = resolveNetworkConfig(options.network);
+  configureFhevmRuntime();
+
+  const chain = resolveChain(options);
+  const rpcUrl = resolveRpcUrl(options);
+  const transport = http(rpcUrl);
+  const publicClient = createPublicClient({
+    chain: networkConfig.hostChain,
+    transport,
+  });
+  const fhevm = createFhevmDecryptClient({
+    chain,
+    publicClient,
+    options: { moduleVersions: { kms: tkmsVersion } },
+  });
+
+  return { chain, fhevm, publicClient, rpcUrl, transport };
+};
+
 /** Read-only client context plus the resolved FHETest contract address. */
 export type ClientContext = ReturnType<typeof createClients> &
   Readonly<{
@@ -48,6 +77,21 @@ export type ClientContext = ReturnType<typeof createClients> &
 /** Creates a read-only client context for the resolved FHETest contract. */
 export const createClientContext = (options: ClientOptions): ClientContext => ({
   ...createClients(options),
+  contractAddress: resolveContractAddress(options),
+});
+
+/** Decrypt-only client context plus the resolved FHETest contract address. */
+export type DecryptClientContext = ReturnType<typeof createDecryptClients> &
+  Readonly<{
+    contractAddress: Hex;
+  }>;
+
+/** Creates a decrypt-only context without initializing TFHE encryption. */
+export const createDecryptClientContext = (
+  options: ClientOptions,
+  tkmsVersion: DecryptClientTkmsVersion,
+): DecryptClientContext => ({
+  ...createDecryptClients(options, tkmsVersion),
   contractAddress: resolveContractAddress(options),
 });
 

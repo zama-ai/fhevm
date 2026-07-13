@@ -151,6 +151,7 @@ export type UserDecryptValidationArtifact = Readonly<{
   transportKeyPair: Readonly<{
     publicKey: string;
     privateKey: string;
+    tkmsVersion: "0.13.10" | "0.13.20-0";
   }>;
   serializedPermit: unknown;
   permit: DecryptionPermitSummary;

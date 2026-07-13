@@ -1,4 +1,5 @@
 import sdkPackage from "@fhevm/sdk/package.json" with { type: "json" };
+import { parseTransportKeyPair } from "@fhevm/sdk/actions/chain";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
@@ -16,6 +17,27 @@ import { pathToFileURL } from "node:url";
  * facade may duplicate SDK modules and invalidate their private brands.
  */
 const SUPPORTED_SDK_VERSION = "1.1.0-alpha.8";
+
+export type Alpha8TkmsVersion = "0.13.10" | "0.13.20-0";
+
+type Alpha8SerializedTransportKeyPair = Readonly<{
+  publicKey: string;
+  privateKey: string;
+  tkmsVersion: Alpha8TkmsVersion;
+}>;
+
+/**
+ * Alpha.8 reads `tkmsVersion` at runtime but omits it from the public parser's
+ * parameter type. Keep that temporary mismatch isolated to this adapter.
+ */
+export const parseAlpha8TransportKeyPair = (
+  fhevm: Parameters<typeof parseTransportKeyPair>[0],
+  parameters: Alpha8SerializedTransportKeyPair,
+): ReturnType<typeof parseTransportKeyPair> =>
+  parseTransportKeyPair(
+    fhevm,
+    parameters as Parameters<typeof parseTransportKeyPair>[1],
+  );
 
 export type SavedUserDecryptShare = Readonly<{
   payload: string;
