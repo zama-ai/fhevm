@@ -165,6 +165,13 @@ where
 impl TransactionSender<DbKmsResponsePicker, WalletProviderFillers, RootProvider> {
     /// Creates a new `TransactionSender` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
+        if config.private_key.is_some() {
+            warn!(
+                "Signing transactions with a raw private key. This is intended for TESTING \
+                PURPOSES ONLY, production deployments should use an AWS KMS signer instead!"
+            );
+        }
+
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let response_picker = DbKmsResponsePicker::connect(db_pool.clone(), &config).await?;
 
