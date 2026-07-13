@@ -76,6 +76,8 @@ Environment (read from the workspace-root `.env` or the environment):
   `mainnet`. Public network defaults are used when the matching variable and
   `--rpc-url` are both absent.
 - `ZAMA_FHEVM_API_KEY` — optional SDK and raw-relayer API-key authentication.
+- `ZAMA_FHEVM_API_KEY_B` — optional distinct API key for the candidate relayer
+  (`--relayer-b`); falls back to `ZAMA_FHEVM_API_KEY` when unset.
 - `LOAD_TEST_RELAYER_URL`, `LOAD_TEST_NETWORK`, `LOAD_TEST_DATA_DIR`,
   `LOAD_TEST_RELAYER_CONFIG` — defaults for the matching CLI flags.
 

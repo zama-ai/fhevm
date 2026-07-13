@@ -297,7 +297,7 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
           baseUrl: env.relayerBUrl,
           apiPrefix: env.relayerBApiPrefix ?? env.relayerApiPrefix,
           connections: options.connections,
-          apiKey: process.env.ZAMA_FHEVM_API_KEY,
+          apiKey: process.env.ZAMA_FHEVM_API_KEY_B ?? process.env.ZAMA_FHEVM_API_KEY,
         })
       : undefined;
 

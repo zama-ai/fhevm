@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   buildReport: vi.fn(),
-  clients: [] as Array<{ close: ReturnType<typeof vi.fn>; isReady: ReturnType<typeof vi.fn> }>,
+  clients: [] as Array<{
+    apiKey?: string;
+    close: ReturnType<typeof vi.fn>;
+    isReady: ReturnType<typeof vi.fn>;
+  }>,
   collectorInstances: [] as Array<{ stop: ReturnType<typeof vi.fn> }>,
   createFlowExecutor: vi.fn(),
   events: [] as string[],
@@ -19,12 +23,14 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../src/relayer/client", () => ({
   RelayerClient: class {
+    readonly apiKey?: string;
     readonly close = vi.fn(async () => {
       mocks.events.push("client.stop");
     });
     readonly isReady = vi.fn().mockResolvedValue(true);
 
-    constructor() {
+    constructor(options: { apiKey?: string }) {
+      this.apiKey = options.apiKey;
       mocks.clients.push(this);
     }
   },
@@ -180,6 +186,35 @@ describe("executeRun lifecycle", () => {
     expect(instance.close).toHaveBeenCalledOnce();
     expect(mocks.clients).toHaveLength(1);
     expect(mocks.clients[0]?.close).toHaveBeenCalledOnce();
+  });
+
+  it("uses ZAMA_FHEVM_API_KEY_B for the candidate relayer client, falling back to the shared key", async () => {
+    const originalApiKey = process.env.ZAMA_FHEVM_API_KEY;
+    const originalApiKeyB = process.env.ZAMA_FHEVM_API_KEY_B;
+    process.env.ZAMA_FHEVM_API_KEY = "shared-key";
+    process.env.ZAMA_FHEVM_API_KEY_B = "candidate-key";
+    try {
+      const instance = executor();
+      const failure = new Error("prepare failed");
+      instance.prepare.mockRejectedValue(failure);
+      mocks.createFlowExecutor.mockResolvedValue(instance);
+
+      await executeRun({
+        scenario,
+        env: { ...env(dir), relayerBUrl: "https://candidate.example" },
+        skipReadiness: true,
+      }).catch(() => undefined);
+
+      expect(mocks.clients.map((client) => client.apiKey)).toEqual([
+        "shared-key",
+        "candidate-key",
+      ]);
+    } finally {
+      if (originalApiKey === undefined) delete process.env.ZAMA_FHEVM_API_KEY;
+      else process.env.ZAMA_FHEVM_API_KEY = originalApiKey;
+      if (originalApiKeyB === undefined) delete process.env.ZAMA_FHEVM_API_KEY_B;
+      else process.env.ZAMA_FHEVM_API_KEY_B = originalApiKeyB;
+    }
   });
 
   it("settles every owned resource when the scheduler fails", async () => {

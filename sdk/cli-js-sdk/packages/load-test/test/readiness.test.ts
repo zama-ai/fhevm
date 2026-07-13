@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   clients: [] as Array<{
     baseUrl: string;
+    apiKey?: string;
     isReady: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
   }>,
@@ -13,11 +14,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../src/relayer/client", () => ({
   RelayerClient: class {
     readonly baseUrl: string;
+    readonly apiKey?: string;
     readonly isReady: ReturnType<typeof vi.fn>;
     readonly close: ReturnType<typeof vi.fn>;
 
-    constructor(options: { baseUrl: string }) {
+    constructor(options: { baseUrl: string; apiKey?: string }) {
       this.baseUrl = options.baseUrl;
+      this.apiKey = options.apiKey;
       this.isReady = vi.fn(async () => mocks.readiness.get(this.baseUrl) ?? true);
       this.close = vi.fn(async () => {
         const failure = mocks.closeFailures.get(this.baseUrl);
@@ -42,13 +45,36 @@ const env = {
   dataDir: ".load-test",
 };
 
+const originalApiKey = process.env.ZAMA_FHEVM_API_KEY;
+const originalApiKeyB = process.env.ZAMA_FHEVM_API_KEY_B;
+
 beforeEach(() => {
   mocks.clients.length = 0;
   mocks.readiness.clear();
   mocks.closeFailures.clear();
+  delete process.env.ZAMA_FHEVM_API_KEY;
+  delete process.env.ZAMA_FHEVM_API_KEY_B;
+});
+
+afterEach(() => {
+  if (originalApiKey === undefined) delete process.env.ZAMA_FHEVM_API_KEY;
+  else process.env.ZAMA_FHEVM_API_KEY = originalApiKey;
+  if (originalApiKeyB === undefined) delete process.env.ZAMA_FHEVM_API_KEY_B;
+  else process.env.ZAMA_FHEVM_API_KEY_B = originalApiKeyB;
 });
 
 describe("assertRelayerReadiness", () => {
+  it("uses ZAMA_FHEVM_API_KEY_B for the candidate, falling back to the shared key", async () => {
+    process.env.ZAMA_FHEVM_API_KEY = "shared-key";
+    await assertRelayerReadiness({ env });
+    expect(mocks.clients.map((client) => client.apiKey)).toEqual(["shared-key", "shared-key"]);
+
+    mocks.clients.length = 0;
+    process.env.ZAMA_FHEVM_API_KEY_B = "candidate-key";
+    await assertRelayerReadiness({ env });
+    expect(mocks.clients.map((client) => client.apiKey)).toEqual(["shared-key", "candidate-key"]);
+  });
+
   it("checks and closes independently owned A/B clients", async () => {
     await assertRelayerReadiness({ env });
 

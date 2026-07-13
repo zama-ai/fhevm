@@ -31,7 +31,7 @@ const createClients = (options: RelayerReadinessOptions): RelayerReadinessClient
           baseUrl: options.env.relayerBUrl,
           apiPrefix: options.env.relayerBApiPrefix ?? options.env.relayerApiPrefix,
           connections: options.connections,
-          apiKey: process.env.ZAMA_FHEVM_API_KEY,
+          apiKey: process.env.ZAMA_FHEVM_API_KEY_B ?? process.env.ZAMA_FHEVM_API_KEY,
         }),
       }
     : {}),
