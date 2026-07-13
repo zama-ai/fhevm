@@ -39,6 +39,7 @@ addresses to fund.
 
 ```bash
 node --import tsx index.ts suite list            # what exists
+node --import tsx index.ts suite show standard   # resolved suite JSON, including resolved entries
 node --import tsx index.ts suite plan standard   # read-only; add --check for CI exit 2
 node --import tsx index.ts suite prepare standard # explicit preparation; does not run
 node --import tsx index.ts suite run standard    # runs only when pools are ready

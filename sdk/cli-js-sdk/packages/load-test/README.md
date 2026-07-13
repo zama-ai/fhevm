@@ -13,6 +13,8 @@ plan → explicit prepare (when needed) → execute → collect → report
 `suite plan <smoke|standard|capacity|endurance>`. A normal `suite run` never
 creates missing pool material: use `suite prepare`, or add `--prepare` to
 explicitly authorize the local CPU and funded on-chain work before execution.
+`suite show <ref>` (built-in name or suite JSON path) prints the resolved
+suite as JSON, including every resolved entry, mirroring `scenario show`.
 
 ## How each flow is driven
 

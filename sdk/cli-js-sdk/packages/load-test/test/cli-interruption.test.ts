@@ -153,7 +153,7 @@ describe("CLI interruption exit behavior", () => {
         "list", "show", "plan", "prepare", "run",
       ]);
     expect(program.commands.find((command) => command.name() === "suite")
-      ?.commands.map((command) => command.name())).toEqual(["list", "plan", "prepare", "run"]);
+      ?.commands.map((command) => command.name())).toEqual(["list", "show", "plan", "prepare", "run"]);
   });
 
   it("leaves --network unset by default so LOAD_TEST_NETWORK is not shadowed", () => {
@@ -170,6 +170,23 @@ describe("CLI interruption exit behavior", () => {
     await expect(program.parseAsync(["node", "load-test", "--version"]))
       .rejects.toMatchObject({ code: "commander.version" });
     expect(output.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it("prints the resolved suite JSON with resolved entries via suite show", async () => {
+    mocks.loadSuite.mockResolvedValueOnce({ name: "suite", pauseSec: 30, entries: [] });
+    mocks.resolveSuiteScenarios.mockResolvedValueOnce([
+      { label: "entry-a", scenario: { name: "scenario-a" } },
+    ]);
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    await createProgram().parseAsync(["node", "load-test", "suite", "show", "suite"]);
+    expect(mocks.loadSuite).toHaveBeenCalledWith("suite");
+    const printed = JSON.parse(consoleSpy.mock.calls.at(-1)?.[0] as string) as {
+      name: string;
+      entries: readonly { label: string; scenario: { name: string } }[];
+    };
+    expect(printed.name).toBe("suite");
+    expect(printed.entries).toEqual([{ label: "entry-a", scenario: { name: "scenario-a" } }]);
+    consoleSpy.mockRestore();
   });
 
   it("renders top-level help and routes a scenario action", async () => {

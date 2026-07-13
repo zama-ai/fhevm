@@ -21,6 +21,19 @@ export const registerSuiteCommands = (program: Command): void => {
     }
   });
 
+  suite.command("show <ref>").description("Print the resolved suite JSON, including resolved entries")
+    .action(async (ref) => {
+      const [{ loadSuite }, { resolveSuiteScenarios }] = await Promise.all([
+        import("../../suite/load"), import("../../suite/run"),
+      ]);
+      const definition = await loadSuite(ref);
+      const resolved = await resolveSuiteScenarios(definition);
+      console.log(JSON.stringify({
+        ...definition,
+        entries: resolved.map((entry) => ({ label: entry.label, scenario: entry.scenario })),
+      }, null, 2));
+    });
+
   suite.command("plan <ref>").description("Inspect pool requirements without pool mutation")
     .option("--check", "exit 2 when preparation work is required")
     .option("--out <dir>", "explicit directory for pool-plan.json/.md evidence")
