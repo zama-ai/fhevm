@@ -433,7 +433,7 @@ pub async fn publish_context_and_epoch(
     info!("Publishing KMS context #{context_id} (epoch #{epoch_id}) in DB...");
     let now = Utc::now();
     let mut tx = db_pool.begin().await?;
-    sqlx::query!(
+    let context_result = sqlx::query!(
         "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
         VALUES ($1, TRUE, $2, $2) ON CONFLICT DO NOTHING",
         context_id.as_le_slice(),
@@ -441,7 +441,7 @@ pub async fn publish_context_and_epoch(
     )
     .execute(&mut *tx)
     .await?;
-    sqlx::query!(
+    let epoch_result = sqlx::query!(
         "INSERT INTO kms_epoch(id, context_id, is_valid, created_at, updated_at)
         VALUES ($1, $2, TRUE, $3, $3) ON CONFLICT DO NOTHING",
         epoch_id.as_le_slice(),
@@ -452,8 +452,18 @@ pub async fn publish_context_and_epoch(
     .await?;
     tx.commit().await?;
 
-    info!("KMS context #{context_id} (epoch #{epoch_id}) was successfully published!");
+    log_cache_insert_outcome(&context_result, &format!("KMS context #{context_id}"));
+    log_cache_insert_outcome(&epoch_result, &format!("KMS epoch #{epoch_id}"));
     Ok(())
+}
+
+/// Logs the outcome of a single-row insert in the context/epoch validation cache.
+fn log_cache_insert_outcome(query_result: &PgQueryResult, entity: &str) {
+    match query_result.rows_affected() {
+        1 => info!("{entity} was successfully published!"),
+        0 => info!("{entity} was already in the validation cache"),
+        _ => warn!("Unexpected query result while publishing {entity}: {query_result:?}"),
+    }
 }
 
 async fn publish_new_kms_context<'e>(
