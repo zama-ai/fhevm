@@ -184,10 +184,9 @@ node --import tsx index.ts pool inspect
 node --import tsx index.ts scenario plan open-steady --rps 20 --duration 600 --check --out /tmp/open-steady-plan
 node --import tsx index.ts scenario prepare open-steady --rps 20 --duration 600
 node --import tsx index.ts scenario run open-steady --rps 20 --duration 600 --baseline baselines/testnet/open-steady-20.json
-node --import tsx index.ts run open-steady --rps 20 --duration 600 # thin alias for scenario run
-node --import tsx index.ts run closed-steady --vus 20 --duration 600 --flow user-decrypt
-node --import tsx index.ts run closed-ramp --vus 5 --duration 120 --flow delegated-user-decrypt
-node --import tsx index.ts run closed-steady --vus 20 --duration 600 --think-time 1000 --flow user-decrypt
+node --import tsx index.ts scenario run closed-steady --vus 20 --duration 600 --flow user-decrypt
+node --import tsx index.ts scenario run closed-ramp --vus 5 --duration 120 --flow delegated-user-decrypt
+node --import tsx index.ts scenario run closed-steady --vus 20 --duration 600 --think-time 1000 --flow user-decrypt
 
 # Reports
 node --import tsx index.ts report render <run-dir>
@@ -216,8 +215,8 @@ Choose the model by the product question:
 not the poll interval. Polling waits come from `Retry-After` while the current
 job is still in progress.
 
-Override semantics are shared by `scenario show|plan|prepare|run`, the root
-`run` alias, custom JSON, and suite `params`. `--rps` scales all segmented
+Override semantics are shared by `scenario show|plan|prepare|run`, custom JSON,
+and suite `params`. `--rps` scales all segmented
 rates relative to the first positive rate; `--vus` scales all stages relative
 to the first stage; `--duration` is per segment/stage; and `--flow` rejects
 multi-flow scenarios. Model-mismatched options fail instead of being ignored.
@@ -356,7 +355,7 @@ is 6 rps over equal ip/ud/pd thirds ×300s, `open-soak` is 3 rps, `drain` is
 a burst scenario/suite (~5 requests per flow) rather than an open-steady run.
 
 To reproduce the old baseline keys, re-baseline against the new keys, or pass
-`--rps 10` / `--vus 10` (e.g. `run open-steady --rps 10` → `open-steady-10`).
+`--rps 10` / `--vus 10` (e.g. `scenario run open-steady --rps 10` → `open-steady-10`).
 `delegated-user-decrypt` is excluded from every default flow mix (it behaves
 like user-decrypt) and stays reachable via `--flow delegated-user-decrypt`.
 

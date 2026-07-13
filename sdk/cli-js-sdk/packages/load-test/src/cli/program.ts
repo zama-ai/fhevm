@@ -6,7 +6,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { registerPoolCommands } from "./commands/pool";
-import { registerRunCommand } from "./commands/run";
 import { registerScenarioCommands } from "./commands/scenarios";
 import { registerSuiteCommands } from "./commands/suite";
 import { registerReportCommands } from "./commands/report";
@@ -38,7 +37,6 @@ export const createProgram = (): Command => {
   registerPoolCommands(command);
   registerScenarioCommands(command);
   registerSuiteCommands(command);
-  registerRunCommand(command);
   registerReportCommands(command);
   registerBaselineCommands(command);
   return command;

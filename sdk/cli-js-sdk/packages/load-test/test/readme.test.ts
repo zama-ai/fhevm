@@ -37,7 +37,7 @@ describe("README capability contract", () => {
       expect(document).not.toContain("--prepare-only");
       expect(document).not.toContain("--skip-prepare");
     }
-    expect(readme).toContain("thin alias for `scenario run`");
+    expect(readme).toContain("`scenario run` is the canonical entry point");
     expect(readme).toContain("**Executive Summary**");
     expect(operations).toContain("implementation-agnostic");
   });

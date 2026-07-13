@@ -137,11 +137,11 @@ scenarios must set `maxIterations`, because those pools are single-use.
 node --import tsx index.ts scenario plan open-steady --rps 20 --duration 600 --out /tmp/open-steady-plan
 node --import tsx index.ts scenario prepare open-steady --rps 20 --duration 600
 node --import tsx index.ts scenario run open-steady --rps 20 --duration 600 --flow input-proof
-node --import tsx index.ts run open-ramp --rps 10 --duration 120
-node --import tsx index.ts run closed-steady --vus 20 --duration 600 --flow user-decrypt
-node --import tsx index.ts run closed-ramp --vus 5 --duration 120 --flow delegated-user-decrypt
-node --import tsx index.ts run drain --count 1000 --rps 200
-node --import tsx index.ts run scenarios/my-scenario.json --baseline baselines/testnet/open-steady.json
+node --import tsx index.ts scenario run open-ramp --rps 10 --duration 120
+node --import tsx index.ts scenario run closed-steady --vus 20 --duration 600 --flow user-decrypt
+node --import tsx index.ts scenario run closed-ramp --vus 5 --duration 120 --flow delegated-user-decrypt
+node --import tsx index.ts scenario run drain --count 1000 --rps 200
+node --import tsx index.ts scenario run scenarios/my-scenario.json --baseline baselines/testnet/open-steady.json
 ```
 
 Built-ins (`scenario list` / `scenario show <name>`): `baseline`, `smoke`,
@@ -153,10 +153,10 @@ an advisory warning but still runs. Custom scenarios are
 JSON documents validated against the schema in `src/scenario/schema.ts` (flow
 mix and weights, load shape, timeouts, thresholds, saturation stop).
 
-The root `run` command is a thin alias for `scenario run`. The same overrides
-apply to built-ins, custom JSON scenarios, and suite-entry `params`; they are
-resolved before pool planning. Unsupported shape/option combinations fail
-instead of being ignored:
+`scenario run` is the canonical entry point. The same overrides apply to
+built-ins, custom JSON scenarios, and suite-entry `params`; they are resolved
+before pool planning. Unsupported shape/option combinations fail instead of
+being ignored:
 
 - `--rps` replaces a constant or burst rate. For segmented shapes it scales
   the complete rate profile relative to its first positive configured rate.

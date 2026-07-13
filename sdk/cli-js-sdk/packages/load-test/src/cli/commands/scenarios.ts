@@ -236,13 +236,10 @@ const runScenarioAction = async (
   );
 };
 
-/** Registers the canonical scenario run action or its root-level thin alias. */
-export const registerScenarioRunCommand = (
-  parent: CommandUnknownOpts,
-  description = "Run a scenario (built-in name or scenario JSON path)",
-): void => {
+/** Registers the canonical `scenario run` action. */
+export const registerScenarioRunCommand = (parent: CommandUnknownOpts): void => {
   const command = addScenarioOverrideOptions(
-    parent.command("run <scenario>").description(description),
+    parent.command("run <scenario>").description("Run a scenario (built-in name or scenario JSON path)"),
   )
     .option("--out <dir>", "output directory override")
     .option("--connections <n>", "max sockets toward the relayer", parseBoundedInt("--connections", MAX_CONNECTIONS))

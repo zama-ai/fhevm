@@ -89,7 +89,7 @@ vi.mock("../src/shared/logger", () => ({
   logger: mocks.logger,
 }));
 
-import { registerRunCommand } from "../src/cli/commands/run";
+import { registerScenarioCommands } from "../src/cli/commands/scenarios";
 import { registerSuiteCommands } from "../src/cli/commands/suite";
 import { createProgram } from "../src/cli/program";
 
@@ -148,7 +148,7 @@ describe("CLI interruption exit behavior", () => {
   it("exposes the intentional grouped command surface from createProgram", () => {
     const program = createProgram();
     expect(program.commands.map((command) => command.name())).toEqual([
-      "pool", "scenario", "suite", "run", "report", "baseline",
+      "pool", "scenario", "suite", "report", "baseline",
     ]);
     expect(program.commands.find((command) => command.name() === "pool")
       ?.commands.map((command) => command.name())).toEqual(["add", "inspect"]);
@@ -230,8 +230,7 @@ describe("CLI interruption exit behavior", () => {
     expect(scenarioHelp).toContain("steady or per-segment/stage duration");
     expect(scenarioHelp).toContain("explicitly create missing pools first");
 
-    const rootRun = program.commands.find((command) => command.name() === "run")!;
-    expect(rootRun.description()).toBe("Alias for `scenario run`");
+    expect(program.commands.some((command) => command.name() === "run")).toBe(false);
     const suite = program.commands.find((command) => command.name() === "suite")!;
     expect(suite.description()).toBe("Plan and run suites; preparation is explicit");
     const suiteRun = suite.commands.find((command) => command.name() === "run")!;
@@ -309,9 +308,9 @@ describe("CLI interruption exit behavior", () => {
     const sigintListeners = process.listenerCount("SIGINT");
     const sigtermListeners = process.listenerCount("SIGTERM");
     const program = new Command();
-    registerRunCommand(program);
+    registerScenarioCommands(program);
 
-    await program.parseAsync(["node", "load-test", "run", "scenario"]);
+    await program.parseAsync(["node", "load-test", "scenario", "run", "scenario"]);
 
     expect(process.exitCode).toBe(130);
     expect(process.listenerCount("SIGINT")).toBe(sigintListeners);
@@ -396,33 +395,6 @@ describe("CLI interruption exit behavior", () => {
       "node", "load-test", "suite", "run", "suite", "--lanes", "2",
     ])).rejects.toThrow(/only valid with --prepare/);
     expect(mocks.runSuite).not.toHaveBeenCalled();
-  });
-
-  it("keeps root run as a thin alias with the same resolved overrides", async () => {
-    mocks.executeRun.mockResolvedValue({
-      report: { thresholds: { passed: true, breaches: [] } },
-      outputDir: "/tmp/complete-run",
-      status: "completed",
-    });
-    await createProgram().parseAsync([
-      "node", "load-test", "scenario", "run", "scenario",
-      "--rps", "4", "--duration", "5", "--flow", "input-proof",
-    ]);
-    const canonicalLoad = mocks.loadScenario.mock.calls.at(-1);
-    const canonicalRun = mocks.executeRun.mock.calls.at(-1)?.[0];
-
-    await createProgram().parseAsync([
-      "node", "load-test", "run", "scenario",
-      "--rps", "4", "--duration", "5", "--flow", "input-proof",
-    ]);
-    expect(mocks.loadScenario.mock.calls.at(-1)).toEqual(canonicalLoad);
-    expect(mocks.executeRun.mock.calls.at(-1)?.[0]).toEqual(
-      expect.objectContaining({
-        scenario: canonicalRun.scenario,
-        connections: canonicalRun.connections,
-        skipReadiness: canonicalRun.skipReadiness,
-      }),
-    );
   });
 
   it("keeps scenario plan read-only and uses exit 2 only with --check", async () => {
@@ -618,7 +590,7 @@ describe("CLI interruption exit behavior", () => {
       regressions: [{ flow: "input-proof", metric: "e2e", baseline: 1, current: 2 }],
     });
     await createProgram().parseAsync([
-      "node", "load-test", "run", "scenario", "--baseline", "/tmp/base.json",
+      "node", "load-test", "scenario", "run", "scenario", "--baseline", "/tmp/base.json",
     ]);
     expect(mocks.readReport).toHaveBeenCalledWith("/tmp/base.json");
     expect(mocks.diffReports).toHaveBeenCalled();
@@ -639,8 +611,8 @@ describe("CLI interruption exit behavior", () => {
       };
     });
     const program = new Command();
-    registerRunCommand(program);
-    const parsing = program.parseAsync(["node", "load-test", "run", "scenario"]);
+    registerScenarioCommands(program);
+    const parsing = program.parseAsync(["node", "load-test", "scenario", "run", "scenario"]);
     await vi.waitFor(() => expect(received).toBeDefined());
     process.emit("SIGINT");
     await parsing;
