@@ -49,7 +49,7 @@ describe("computeFlowNeeds", () => {
     const steady = createBuiltinScenario("open-steady", { rps: 10, durationSec: 100 });
     const needs = computeFlowNeeds([steady, steady]);
     const inputProof = needs.find((need) => need.flow === "input-proof");
-    expect(inputProof?.requests).toBe(2000);
+    expect(inputProof?.workload).toEqual({ mode: "finite", requestBudget: 2000 });
   });
 
   it("tracks public-decrypt needs per combination size", () => {
@@ -66,7 +66,7 @@ describe("computeFlowNeeds", () => {
     expect(needs).toEqual([
       {
         flow: "user-decrypt",
-        requests: 1,
+        workload: { mode: "duration-bound" },
         byHandleCount: new Map(),
       },
     ]);
