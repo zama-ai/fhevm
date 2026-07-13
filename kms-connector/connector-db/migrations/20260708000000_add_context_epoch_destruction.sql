@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS kms_epoch (
     id BYTEA NOT NULL,
     -- NULL for invalidation written from `KmsEpochDestroyed`, which only carries the epoch ID.
     context_id BYTEA,
-    is_valid BOOLEAN NOT NULL DEFAULT TRUE,
+    is_valid BOOLEAN NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (id)
@@ -21,6 +21,8 @@ ALTER TABLE kms_context
     DROP CONSTRAINT kms_context_pkey,
     ADD PRIMARY KEY (id);
 ALTER TABLE kms_context DROP COLUMN epoch_id;
+-- No default: validity must always be stated explicitly
+ALTER TABLE kms_context ALTER COLUMN is_valid DROP DEFAULT;
 
 -- Store `KmsContextDestroyed` and `KmsEpochDestroyed` events emitted by the `ProtocolConfig`
 -- contract on Ethereum, so the kms-worker can forward the destruction to the KMS Core
