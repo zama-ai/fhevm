@@ -121,8 +121,14 @@ const loadResolvedScenario = async (
   ref: string,
   options: ScenarioCommandOptions,
 ): Promise<Scenario> => {
-  const { loadScenario } = await import("../../scenario/load");
-  return loadScenario(ref, scenarioOverrides(options));
+  const [{ loadScenario }, { ceilingWarnings }, { logger }] = await Promise.all([
+    import("../../scenario/load"),
+    import("../../scenario/limits"),
+    import("../../shared/logger"),
+  ]);
+  const scenario = await loadScenario(ref, scenarioOverrides(options));
+  for (const warning of ceilingWarnings(scenario)) logger.warn(warning);
+  return scenario;
 };
 
 const runScenarioAction = async (

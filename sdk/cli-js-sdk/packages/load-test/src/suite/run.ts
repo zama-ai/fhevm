@@ -14,6 +14,7 @@ import { readReportFile } from "../report/runtime";
 import type { Report } from "../report/schema";
 import { executeRun, RunInterruptedError } from "../runner/run";
 import { assertRelayerReadiness } from "../runner/readiness";
+import { ceilingWarnings } from "../scenario/limits";
 import { loadScenario } from "../scenario/load";
 import type { Scenario } from "../scenario/schema";
 import { logger } from "../shared/logger";
@@ -163,6 +164,7 @@ export const resolveSuiteScenarios = async (
   const resolved: ResolvedSuiteEntry[] = [];
   for (const entry of suite.entries) {
     const scenario = await loadScenario(entry.scenario, entry.params);
+    for (const warning of ceilingWarnings(scenario)) logger.warn(warning);
     resolved.push({ label: entry.label ?? scenario.name, scenario });
   }
   const labels = resolved.map((entry) => entry.label);
