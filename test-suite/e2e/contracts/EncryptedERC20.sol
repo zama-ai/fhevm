@@ -34,7 +34,10 @@ contract EncryptedERC20 is Ownable2Step, E2ECoprocessorConfig {
     /// @notice Constructor to initialize the token's name and symbol, and set up the owner
     /// @param name_ The name of the token
     /// @param symbol_ The symbol of the token
-    constructor(string memory name_, string memory symbol_) Ownable(msg.sender) {
+    constructor(
+        string memory name_,
+        string memory symbol_
+    ) Ownable(msg.sender) {
         _name = name_;
         _symbol = symbol_;
     }
@@ -58,11 +61,39 @@ contract EncryptedERC20 is Ownable2Step, E2ECoprocessorConfig {
     /// @dev Only the contract owner can call this function.
     /// @param mintedAmount The amount of tokens to mint
     function mint(uint64 mintedAmount) public virtual onlyOwner {
-        balances[owner()] = FHE.add(balances[owner()], mintedAmount); // overflow impossible because of next line
-        FHE.allowThis(balances[owner()]);
-        FHE.allow(balances[owner()], owner());
+        _mint(owner(), mintedAmount);
+    }
+
+    /// @notice Mints new tokens and assigns them to a specific recipient.
+    /// @dev Only the contract owner can call this function.
+    /// @param to The address receiving the minted tokens
+    /// @param mintedAmount The amount of tokens to mint
+    function mintTo(address to, uint64 mintedAmount) public virtual onlyOwner {
+        _mint(to, mintedAmount);
+    }
+
+    /// @notice Mints the same amount to each recipient in a batch.
+    /// @dev Only the contract owner can call this function.
+    /// @param recipients The addresses receiving the minted tokens
+    /// @param mintedAmount The amount of tokens to mint for each recipient
+    function mintToMany(
+        address[] calldata recipients,
+        uint64 mintedAmount
+    ) public virtual onlyOwner {
+        for (uint256 i = 0; i < recipients.length; i++) {
+            _mint(recipients[i], mintedAmount);
+        }
+    }
+
+    /// @notice Internal mint helper shared by single-recipient and batch minting.
+    /// @param to The address receiving the minted tokens
+    /// @param mintedAmount The amount of tokens to mint
+    function _mint(address to, uint64 mintedAmount) internal virtual {
+        balances[to] = FHE.add(balances[to], mintedAmount);
+        FHE.allowThis(balances[to]);
+        FHE.allow(balances[to], to);
         _totalSupply = _totalSupply + mintedAmount;
-        emit Mint(owner(), mintedAmount);
+        emit Mint(to, mintedAmount);
     }
 
     /// @notice Transfers an encrypted amount from the message sender address to the `to` address.
@@ -83,7 +114,10 @@ contract EncryptedERC20 is Ownable2Step, E2ECoprocessorConfig {
     /// @param to The recipient address
     /// @param amount The encrypted amount to transfer
     /// @return bool indicating success of the transfer
-    function transfer(address to, euint64 amount) public virtual returns (bool) {
+    function transfer(
+        address to,
+        euint64 amount
+    ) public virtual returns (bool) {
         require(FHE.isSenderAllowed(amount));
         /// @dev Makes sure the owner has enough tokens
         ebool canTransfer = FHE.le(amount, balances[msg.sender]);
@@ -116,7 +150,10 @@ contract EncryptedERC20 is Ownable2Step, E2ECoprocessorConfig {
     /// @param spender The address authorized to spend
     /// @param amount The amount to approve
     /// @return bool indicating success of the approval
-    function approve(address spender, euint64 amount) public virtual returns (bool) {
+    function approve(
+        address spender,
+        euint64 amount
+    ) public virtual returns (bool) {
         require(FHE.isSenderAllowed(amount));
         address owner = msg.sender;
         _approve(owner, spender, amount);
@@ -128,7 +165,10 @@ contract EncryptedERC20 is Ownable2Step, E2ECoprocessorConfig {
     /// @param owner The address that owns the tokens
     /// @param spender The address authorized to spend
     /// @return euint64 The remaining allowance
-    function allowance(address owner, address spender) public view virtual returns (euint64) {
+    function allowance(
+        address owner,
+        address spender
+    ) public view virtual returns (euint64) {
         return _allowance(owner, spender);
     }
 
@@ -153,7 +193,11 @@ contract EncryptedERC20 is Ownable2Step, E2ECoprocessorConfig {
     /// @param to The address to transfer to
     /// @param amount The amount to transfer
     /// @return bool indicating success of the transfer
-    function transferFrom(address from, address to, euint64 amount) public virtual returns (bool) {
+    function transferFrom(
+        address from,
+        address to,
+        euint64 amount
+    ) public virtual returns (bool) {
         require(FHE.isSenderAllowed(amount));
         address spender = msg.sender;
         ebool isTransferable = _updateAllowance(from, spender, amount);
@@ -166,7 +210,11 @@ contract EncryptedERC20 is Ownable2Step, E2ECoprocessorConfig {
     /// @param owner The address that owns the tokens
     /// @param spender The address authorized to spend
     /// @param amount The amount to approve
-    function _approve(address owner, address spender, euint64 amount) internal virtual {
+    function _approve(
+        address owner,
+        address spender,
+        euint64 amount
+    ) internal virtual {
         allowances[owner][spender] = amount;
         FHE.allowThis(amount);
         FHE.allow(amount, owner);
@@ -177,7 +225,10 @@ contract EncryptedERC20 is Ownable2Step, E2ECoprocessorConfig {
     /// @param owner The address that owns the tokens
     /// @param spender The address authorized to spend
     /// @return euint64 The current allowance
-    function _allowance(address owner, address spender) internal view virtual returns (euint64) {
+    function _allowance(
+        address owner,
+        address spender
+    ) internal view virtual returns (euint64) {
         return allowances[owner][spender];
     }
 
@@ -187,14 +238,26 @@ contract EncryptedERC20 is Ownable2Step, E2ECoprocessorConfig {
     /// @param spender The address authorized to spend
     /// @param amount The amount of the proposed transfer
     /// @return ebool indicating whether the transfer is allowed
-    function _updateAllowance(address owner, address spender, euint64 amount) internal virtual returns (ebool) {
+    function _updateAllowance(
+        address owner,
+        address spender,
+        euint64 amount
+    ) internal virtual returns (ebool) {
         euint64 currentAllowance = _allowance(owner, spender);
         /// @dev Makes sure the allowance suffices
         ebool allowedTransfer = FHE.le(amount, currentAllowance);
         /// @dev Makes sure the owner has enough tokens
         ebool canTransfer = FHE.le(amount, balances[owner]);
         ebool isTransferable = FHE.and(canTransfer, allowedTransfer);
-        _approve(owner, spender, FHE.select(isTransferable, FHE.sub(currentAllowance, amount), currentAllowance));
+        _approve(
+            owner,
+            spender,
+            FHE.select(
+                isTransferable,
+                FHE.sub(currentAllowance, amount),
+                currentAllowance
+            )
+        );
         return isTransferable;
     }
 
@@ -204,9 +267,18 @@ contract EncryptedERC20 is Ownable2Step, E2ECoprocessorConfig {
     /// @param to The address to transfer to
     /// @param amount The amount to transfer
     /// @param isTransferable Boolean indicating if the transfer is allowed
-    function _transfer(address from, address to, euint64 amount, ebool isTransferable) internal virtual {
+    function _transfer(
+        address from,
+        address to,
+        euint64 amount,
+        ebool isTransferable
+    ) internal virtual {
         /// @dev Add to the balance of `to` and subract from the balance of `from`.
-        euint64 transferValue = FHE.select(isTransferable, amount, FHE.asEuint64(0));
+        euint64 transferValue = FHE.select(
+            isTransferable,
+            amount,
+            FHE.asEuint64(0)
+        );
         euint64 newBalanceTo = FHE.add(balances[to], transferValue);
         balances[to] = newBalanceTo;
         FHE.allowThis(newBalanceTo);

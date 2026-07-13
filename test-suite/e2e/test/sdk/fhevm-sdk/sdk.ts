@@ -78,6 +78,7 @@ export class FhevmSdk implements SdkInstance {
     readonly gatewayChainId: number;
     readonly chainId: number;
     readonly auth?: Auth;
+    readonly numberOfThreads?: number;
   }): Promise<SdkInstance> {
     const {
       verifyingContractAddressDecryption,
@@ -91,6 +92,7 @@ export class FhevmSdk implements SdkInstance {
       gatewayChainId,
       chainId,
       auth,
+      numberOfThreads,
     } = parameters;
     let sanitizedRelayerUrl = relayerUrl;
     if (relayerUrl.endsWith('/v1') || relayerUrl.endsWith('/v2')) {
@@ -99,6 +101,7 @@ export class FhevmSdk implements SdkInstance {
     if (!hasFhevmRuntimeConfig()) {
       setFhevmRuntimeConfig({
         singleThread: false,
+        ...(numberOfThreads === undefined ? {} : { numberOfThreads }),
         logger: {
           debug: (message: string) => console.log(`[debug] ${message}`),
           warn: (message: string) => console.log(`[warn] ${message}`),
