@@ -403,9 +403,10 @@ mod tests {
                 .unwrap_err(),
             SolanaAclVerificationError::HistoricalAccessProofInvalid
         );
-        assert!(
-            v.verify_historical_user_decrypt(target(h(99)), OWNER, &[DOMAIN], &proof)
-                .is_err()
+        assert_eq!(
+            v.verify_historical_user_decrypt(target(h(99)), OWNER, &[], &proof)
+                .unwrap_err(),
+            SolanaAclVerificationError::HistoricalAccessProofInvalid
         );
     }
 
