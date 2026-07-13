@@ -56,6 +56,28 @@ function proofBlob(mode: number, leafIndex: bigint, siblings: readonly Uint8Arra
   return concatBytes(new Uint8Array([mode]), u64LE(leafIndex), u32LE(siblings.length), ...siblings);
 }
 
+describe('hexToBytes', () => {
+  it('accepts unprefixed, 0x-prefixed, and 0X-prefixed hex', () => {
+    expect(hexToBytes('00aF')).toEqual(new Uint8Array([0x00, 0xaf]));
+    expect(hexToBytes('0x00aF')).toEqual(new Uint8Array([0x00, 0xaf]));
+    expect(hexToBytes('0X00aF')).toEqual(new Uint8Array([0x00, 0xaf]));
+  });
+
+  it('round-trips bytes through the exported hex helpers', () => {
+    const bytes = new Uint8Array([0x00, 0x12, 0xab, 0xff]);
+    expect(hexToBytes(bytesToHex(bytes))).toEqual(bytes);
+  });
+
+  it('rejects malformed characters instead of coercing them to zero', () => {
+    expect(() => hexToBytes('0xzz')).toThrow('hexToBytes: invalid hex string: 0xzz');
+    expect(() => hexToBytes('0y00')).toThrow('hexToBytes: invalid hex string: 0y00');
+  });
+
+  it('rejects odd-length hex', () => {
+    expect(() => hexToBytes('0x123')).toThrow('hexToBytes: odd-length hex string: 0x123');
+  });
+});
+
 describe('decodeMmrProofTransportBlob', () => {
   const sibling = new Uint8Array(32).fill(0x42);
 
