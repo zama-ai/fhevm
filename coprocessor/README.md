@@ -53,7 +53,7 @@ The keys are stored by default in `fhevm-engine/fhevm-keys`.
 
 - `docker-compose`
 - `rust`
-- `sqlx-cli` (install with `cargo install sqlx-cli`)
+- `sqlx-cli` (install with `cargo install sqlx-cli --version 0.8.6 --locked`)
 - `anvil` (for testing, installation manual https://book.getfoundry.sh/getting-started/installation)
 
 #### Installation
