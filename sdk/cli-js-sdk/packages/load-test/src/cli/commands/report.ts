@@ -1,6 +1,13 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import { parseBoundedNonNegativeNumber, parseNonNegativeNumber, readReport } from "../shared";
+import {
+  emitJson,
+  parseBoundedNonNegativeNumber,
+  parseNonNegativeNumber,
+  readReport,
+  useJsonOutput,
+  withFormatOption,
+} from "../shared";
 
 export const registerReportCommands = (program: Command): void => {
   const report = program.command("report").description("Render and compare validated run reports");
@@ -11,8 +18,8 @@ export const registerReportCommands = (program: Command): void => {
       console.log(renderMarkdownReport(await readReport(reportPath)));
     });
 
-  report.command("diff <baseline> <current>")
-    .description("Compare compatible reports; exits non-zero on regression")
+  withFormatOption(report.command("diff <baseline> <current>")
+    .description("Compare compatible reports; exits non-zero on regression"))
     .option(
       "--max-latency-increase <fraction>",
       "allowed relative p95/p99 latency increase over baseline, e.g. 0.2 = 20% (default 0.20)",
@@ -24,6 +31,7 @@ export const registerReportCommands = (program: Command): void => {
       parseBoundedNonNegativeNumber("--max-error-rate-increase", 1),
     )
     .action(async (baselinePath, currentPath, options) => {
+      const json = await useJsonOutput(options);
       const [{ diffReports }, { logger }] = await Promise.all([
         import("../../report/diff"), import("../../shared/logger"),
       ]);
@@ -31,6 +39,11 @@ export const registerReportCommands = (program: Command): void => {
         latencyTolerance: options.maxLatencyIncrease as number | undefined,
         errorRateTolerance: options.maxErrorRateIncrease as number | undefined,
       });
+      if (json) {
+        emitJson(result);
+        if (!result.passed) process.exitCode = 1;
+        return;
+      }
       for (const note of result.notes) logger.warn(note);
       if (result.passed) { logger.success("No regressions."); return; }
       for (const regression of result.regressions) {

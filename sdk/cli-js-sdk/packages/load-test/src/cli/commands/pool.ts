@@ -2,12 +2,15 @@ import { Option, type Command } from "@commander-js/extra-typings";
 import { readdir } from "node:fs/promises";
 
 import {
+  emitJson,
   envFromCommand,
   parseBoundedInt,
   parseBoundedIntOrAuto,
   parsePositiveInt,
   parseValueTypes,
+  useJsonOutput,
   withEnvOptions,
+  withFormatOption,
 } from "../shared";
 
 const MAX_THREADS = 128;
@@ -102,25 +105,42 @@ export const registerPoolCommands = (program: Command): void => {
       });
     });
 
-  withEnvOptions(pool.command("inspect").description("Show flow-aware capacity, consumption, owners, and ACL health"))
-    .action(async (_options, command) => {
+  withFormatOption(withEnvOptions(pool.command("inspect").description("Show flow-aware capacity, consumption, owners, and ACL health")))
+    .action(async (options, command) => {
+      const json = await useJsonOutput(options);
       const env = await envFromCommand(command);
       const [{ poolDir }, { HANDLE_POOLS }, { INPUT_PROOF_POOL }, { PoolStore }, { binomial }, { logger }] = await Promise.all([
         import("../../env"), import("../../pool/handles"), import("../../pool/input-proof"),
         import("../../pool/store"), import("../../pool/combinations"), import("../../shared/logger"),
       ]);
+      const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+      const statuses: unknown[] = [];
       for (const name of [INPUT_PROOF_POOL, ...Object.values(HANDLE_POOLS)]) {
         const store = await PoolStore.openIfExists(poolDir(env, name));
-        if (!store) { logger.info(`${name}: not created`); continue; }
+        if (!store) {
+          if (json) statuses.push({ pool: name, status: "not-created" });
+          else logger.info(`${name}: not created`);
+          continue;
+        }
         if (store.meta.flow === "input-proof") {
           const consumed = store.cursor("submit").position;
           const remaining = BigInt(store.meta.count) > consumed
             ? BigInt(store.meta.count) - consumed
             : 0n;
-          logger.info(
-            `${name}: ${store.meta.count.toString()} payload(s), ${consumed.toString()} consumed, ` +
-              `${remaining.toString()} remaining`,
-          );
+          if (json) {
+            statuses.push({
+              pool: name,
+              flow: store.meta.flow,
+              count: store.meta.count,
+              consumed: consumed.toString(),
+              remaining: remaining.toString(),
+            });
+          } else {
+            logger.info(
+              `${name}: ${store.meta.count.toString()} payload(s), ${consumed.toString()} consumed, ` +
+                `${remaining.toString()} remaining`,
+            );
+          }
           continue;
         }
         if (store.meta.flow === "public-decrypt") {
@@ -133,31 +153,63 @@ export const registerPoolCommands = (program: Command): void => {
             ...usedKs,
             ...Array.from({ length: Math.min(4, store.meta.count) }, (_, index) => index + 1),
           ])].sort((a, b) => a - b);
-          logger.info(`${name}: ${store.meta.count.toString()} reusable handle(s)`);
-          for (const k of ks) {
+          const combinations = ks.map((k) => {
             const capacity = binomial(store.meta.count, k);
             const used = store.cursor(`combos-k${k.toString()}`).position;
-            logger.info(
-              `  k=${k.toString()}: ${capacity.toString()} combinations, ${used.toString()} consumed, ` +
-                `${(capacity > used ? capacity - used : 0n).toString()} remaining`,
-            );
+            return {
+              k,
+              capacity: capacity.toString(),
+              consumed: used.toString(),
+              remaining: (capacity > used ? capacity - used : 0n).toString(),
+            };
+          });
+          if (json) {
+            statuses.push({ pool: name, flow: store.meta.flow, count: store.meta.count, combinations });
+          } else {
+            logger.info(`${name}: ${store.meta.count.toString()} reusable handle(s)`);
+            for (const entry of combinations) {
+              logger.info(
+                `  k=${entry.k.toString()}: ${entry.capacity} combinations, ${entry.consumed} consumed, ` +
+                  `${entry.remaining} remaining`,
+              );
+            }
           }
           continue;
         }
-        logger.info(
-          `${name}: ${store.meta.count.toString()} reusable handle(s), owners ` +
-            `[${(store.meta.ownerIndices ?? []).join(", ")}]`,
-        );
-        if (store.meta.flow === "delegated-user-decrypt") {
-          const expirations = store.meta.delegationExpirations ?? {};
-          const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
-          for (const owner of store.meta.ownerIndices ?? []) {
-            logger.info(
-              `  owner ${owner.toString()} ACL ` +
-                describeAclExpiration(expirations[owner.toString()], nowSeconds),
-            );
+        const owners = store.meta.ownerIndices ?? [];
+        const acl = store.meta.flow === "delegated-user-decrypt"
+          ? owners.map((owner) => {
+              const expiration = (store.meta.delegationExpirations ?? {})[owner.toString()];
+              const state = expiration === undefined
+                ? "missing"
+                : BigInt(expiration) <= nowSeconds ? "expired" : "healthy";
+              return { owner, expiration, state };
+            })
+          : undefined;
+        if (json) {
+          statuses.push({
+            pool: name,
+            flow: store.meta.flow,
+            count: store.meta.count,
+            owners,
+            ...(acl ? { acl } : {}),
+          });
+        } else {
+          logger.info(
+            `${name}: ${store.meta.count.toString()} reusable handle(s), owners ` +
+              `[${owners.join(", ")}]`,
+          );
+          if (store.meta.flow === "delegated-user-decrypt") {
+            const expirations = store.meta.delegationExpirations ?? {};
+            for (const owner of owners) {
+              logger.info(
+                `  owner ${owner.toString()} ACL ` +
+                  describeAclExpiration(expirations[owner.toString()], nowSeconds),
+              );
+            }
           }
         }
       }
+      if (json) emitJson(statuses);
     });
 };

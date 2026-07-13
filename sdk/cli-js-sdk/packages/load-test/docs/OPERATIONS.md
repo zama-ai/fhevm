@@ -198,6 +198,11 @@ node --import tsx index.ts report render <run-dir>
 node --import tsx index.ts report diff <baseline.json> <report.json>
 ```
 
+Read-only commands (`scenario list`, `scenario plan`, `suite list`, `suite
+plan`, `baseline list`, `pool inspect`, `report diff`) accept `--format
+text|json`. In `json` mode they emit a single JSON document to stdout with log
+lines suppressed, for `jq`/CI consumption; errors still print to stderr.
+
 Flow-specific pool options are enforced: `--threads` applies only to
 input-proof generation, handle concurrency/lane options apply only to handle
 pools, and `--delegation-days` applies only to delegated-user-decrypt. Inspect

@@ -116,7 +116,9 @@ beforeEach(() => {
   mocks.generateInputProofPool.mockReset().mockResolvedValue(undefined);
   mocks.createHandlePool.mockReset().mockResolvedValue(undefined);
   mocks.openPool.mockReset().mockResolvedValue(undefined);
-  for (const method of Object.values(mocks.logger)) method.mockReset();
+  for (const method of Object.values(mocks.logger)) {
+    if (typeof method === "function") method.mockReset();
+  }
 });
 
 afterEach(() => {
@@ -391,6 +393,48 @@ describe("CLI interruption exit behavior", () => {
       "node", "load-test", "suite", "run", "suite", "--lanes", "2",
     ])).rejects.toThrow(/only valid with --prepare/);
     expect(mocks.runSuite).not.toHaveBeenCalled();
+  });
+
+  it("emits parseable JSON for scenario list --format json", async () => {
+    const writes: string[] = [];
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    try {
+      await createProgram().parseAsync(["node", "load-test", "scenario", "list", "--format", "json"]);
+    } finally {
+      writeSpy.mockRestore();
+    }
+    const parsed = JSON.parse(writes.join("")) as { name: string; description: string }[];
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed.every((entry) => typeof entry.name === "string" && typeof entry.description === "string")).toBe(true);
+  });
+
+  it("emits the plan artifact as parseable JSON for scenario plan --format json", async () => {
+    mocks.inspectPoolRequirements.mockResolvedValueOnce({
+      ready: false,
+      items: [],
+      plannedActions: [{
+        kind: "generate-input-proof", pool: "input-proof", flow: "input-proof", items: 2,
+      }],
+    });
+    const writes: string[] = [];
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    try {
+      await createProgram().parseAsync([
+        "node", "load-test", "scenario", "plan", "scenario", "--format", "json",
+      ]);
+    } finally {
+      writeSpy.mockRestore();
+    }
+    const parsed = JSON.parse(writes.join("")) as { ready: boolean; plannedActions: unknown[] };
+    expect(parsed.ready).toBe(false);
+    expect(parsed.plannedActions).toHaveLength(1);
+    expect(mocks.formatPoolPlan).not.toHaveBeenCalled();
   });
 
   it("keeps scenario plan read-only and uses exit 2 only with --check", async () => {

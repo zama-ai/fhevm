@@ -169,6 +169,12 @@ being ignored:
 - `--flow` is valid only for a single-flow scenario. It preserves that flow
   entry's weight and `handlesPerRequest`; multi-flow scenarios reject it.
 
+Read-only commands (`scenario list`, `scenario plan`, `suite list`, `suite
+plan`, `baseline list`, `pool inspect`, `report diff`) accept `--format
+text|json`. In `json` mode they print exactly one JSON document to stdout and
+suppress the info/success/warning log lines, so the output is safe to pipe into
+`jq` or a script; errors still go to stderr.
+
 Operator-authored JSON definitions are intentionally untracked by the local
 ignore policies in `scenarios/` and `suites/`. JSON paths are resolved from the
 load-test process working directory, not relative to a referring suite file.

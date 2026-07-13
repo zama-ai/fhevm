@@ -40,6 +40,33 @@ export const withEnvOptions = <T extends CommandUnknownOpts>(command: T): T => {
   return command;
 };
 
+/** Adds a `--format text|json` option to a read-only command. */
+export const withFormatOption = <T extends CommandUnknownOpts>(command: T): T => {
+  command.addOption(
+    new Option("--format <format>", "output format").choices(["text", "json"]).default("text"),
+  );
+  return command;
+};
+
+/**
+ * In JSON mode, silences info/warn/success logger lines — consola sends those to
+ * stdout — so a single JSON document is the only thing on stdout; errors still
+ * reach stderr. Returns whether JSON output was requested.
+ */
+export const useJsonOutput = async (
+  options: { readonly format?: string } & Record<string, unknown>,
+): Promise<boolean> => {
+  if (options.format !== "json") return false;
+  const { logger } = await import("../shared/logger");
+  logger.level = 0;
+  return true;
+};
+
+/** Writes exactly one pretty-printed JSON document to stdout. */
+export const emitJson = (value: unknown): void => {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+};
+
 export const envFromCommand = async (command: {
   optsWithGlobals(): unknown;
 }): Promise<LoadTestEnv> => {

@@ -1,6 +1,13 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import { envFromCommand, parseBoundedInt, withEnvOptions } from "../shared";
+import {
+  emitJson,
+  envFromCommand,
+  parseBoundedInt,
+  useJsonOutput,
+  withEnvOptions,
+  withFormatOption,
+} from "../shared";
 
 const MAX_CONNECTIONS = 1024;
 const MAX_LANES = 64;
@@ -8,18 +15,33 @@ const MAX_LANES = 64;
 export const registerSuiteCommands = (program: Command): void => {
   const suite = program.command("suite").description("Plan and run suites; preparation is explicit");
 
-  suite.command("list").description("List built-in suites").action(async () => {
-    const [{ BUILTIN_SUITES, createBuiltinSuite }, { logger }] = await Promise.all([
-      import("../../suite/builtin"), import("../../shared/logger"),
-    ]);
-    for (const name of BUILTIN_SUITES) {
-      const definition = createBuiltinSuite(name);
-      logger.info(`${name}: ${definition.description}`);
-      for (const entry of definition.entries) {
-        logger.info(`  - ${entry.scenario}${Object.keys(entry.params).length > 0 ? ` ${JSON.stringify(entry.params)}` : ""}`);
+  withFormatOption(suite.command("list").description("List built-in suites"))
+    .action(async (options) => {
+      const json = await useJsonOutput(options);
+      const { BUILTIN_SUITES, createBuiltinSuite } = await import("../../suite/builtin");
+      const suites = BUILTIN_SUITES.map((name) => {
+        const definition = createBuiltinSuite(name);
+        return {
+          name,
+          description: definition.description,
+          entries: definition.entries.map((entry) => ({
+            scenario: entry.scenario,
+            params: entry.params,
+          })),
+        };
+      });
+      if (json) {
+        emitJson(suites);
+        return;
       }
-    }
-  });
+      const { logger } = await import("../../shared/logger");
+      for (const definition of suites) {
+        logger.info(`${definition.name}: ${definition.description}`);
+        for (const entry of definition.entries) {
+          logger.info(`  - ${entry.scenario}${Object.keys(entry.params).length > 0 ? ` ${JSON.stringify(entry.params)}` : ""}`);
+        }
+      }
+    });
 
   suite.command("show <ref>").description("Print the resolved suite JSON, including resolved entries")
     .action(async (ref) => {
@@ -34,10 +56,11 @@ export const registerSuiteCommands = (program: Command): void => {
       }, null, 2));
     });
 
-  withEnvOptions(suite.command("plan <ref>").description("Inspect pool requirements without pool mutation"))
+  withFormatOption(withEnvOptions(suite.command("plan <ref>").description("Inspect pool requirements without pool mutation")))
     .option("--check", "exit 2 when preparation work is required")
     .option("--out <dir>", "explicit directory for pool-plan.json/.md evidence")
     .action(async (ref, options, command) => {
+      const json = await useJsonOutput(options);
       const env = await envFromCommand(command);
       const [{ loadSuite }, { resolveSuiteScenarios }, { inspectPoolRequirements, formatPoolPlan }, { logger }] = await Promise.all([
         import("../../suite/load"), import("../../suite/run"),
@@ -51,10 +74,14 @@ export const registerSuiteCommands = (program: Command): void => {
         pauseSec: definition.pauseSec,
         artifactDir: options.out as string | undefined,
       });
-      for (const line of formatPoolPlan(plan)) logger.info(line);
-      logger.info(plan.ready
-        ? "Pools are ready."
-        : "Run `suite prepare <ref>` or `suite run <ref> --prepare` after reviewing the plan.");
+      if (json) {
+        emitJson(plan);
+      } else {
+        for (const line of formatPoolPlan(plan)) logger.info(line);
+        logger.info(plan.ready
+          ? "Pools are ready."
+          : "Run `suite prepare <ref>` or `suite run <ref> --prepare` after reviewing the plan.");
+      }
       if (options.check && !plan.ready) process.exitCode = 2;
     });
 

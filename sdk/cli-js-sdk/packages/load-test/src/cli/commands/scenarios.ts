@@ -7,13 +7,16 @@ import type { ScenarioOverrides } from "../../scenario/overrides";
 import type { Scenario } from "../../scenario/schema";
 import { isoNow } from "../../shared/time";
 import {
+  emitJson,
   envFromCommand,
   parseBoundedInt,
   parseNonNegativeInt,
   parsePositiveInt,
   parsePositiveNumber,
   readReport,
+  useJsonOutput,
   withEnvOptions,
+  withFormatOption,
 } from "../shared";
 
 const MAX_CONNECTIONS = 1024;
@@ -259,15 +262,21 @@ export const registerScenarioRunCommand = (parent: CommandUnknownOpts): void => 
 export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
   const scenarios = program.command("scenario").description("Inspect, plan, prepare, and run scenarios");
 
-  scenarios.command("list").description("List built-in scenarios").action(async () => {
-    const [{ BUILTIN_SCENARIOS, createBuiltinScenario }, { logger }] = await Promise.all([
-      import("../../scenario/builtin"), import("../../shared/logger"),
-    ]);
-    for (const name of BUILTIN_SCENARIOS) {
-      const scenario = createBuiltinScenario(name);
-      logger.info(`${name}: ${scenario.description}`);
-    }
-  });
+  withFormatOption(scenarios.command("list").description("List built-in scenarios"))
+    .action(async (options) => {
+      const json = await useJsonOutput(options);
+      const { BUILTIN_SCENARIOS, createBuiltinScenario } = await import("../../scenario/builtin");
+      const entries = BUILTIN_SCENARIOS.map((name) => ({
+        name,
+        description: createBuiltinScenario(name).description,
+      }));
+      if (json) {
+        emitJson(entries);
+        return;
+      }
+      const { logger } = await import("../../shared/logger");
+      for (const entry of entries) logger.info(`${entry.name}: ${entry.description}`);
+    });
 
   const show = addScenarioOverrideOptions(
     scenarios.command("show <ref>")
@@ -277,13 +286,14 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
     console.log(JSON.stringify(await loadResolvedScenario(ref, options), null, 2));
   });
 
-  const plan = withEnvOptions(addScenarioOverrideOptions(
+  const plan = withFormatOption(withEnvOptions(addScenarioOverrideOptions(
     scenarios.command("plan <ref>")
       .description("Inspect pool requirements without creating payloads, handles, or ACL grants"),
-  ))
+  )))
     .option("--check", "exit 2 when pool preparation is required")
     .option("--out <dir>", "explicit directory for pool-plan.json/.md evidence");
   plan.action(async (ref, options, command) => {
+    const json = await useJsonOutput(options);
     const env = await envFromCommand(command);
     const [{ formatPoolPlan, inspectPoolRequirements }, { logger }] = await Promise.all([
       import("../../pool/planning"), import("../../shared/logger"),
@@ -295,7 +305,8 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
       scenarios: [resolved],
       artifactDir: planOptions.out,
     });
-    for (const line of formatPoolPlan(result)) logger.info(line);
+    if (json) emitJson(result);
+    else for (const line of formatPoolPlan(result)) logger.info(line);
     if (options.check && !result.ready) process.exitCode = 2;
   });
 

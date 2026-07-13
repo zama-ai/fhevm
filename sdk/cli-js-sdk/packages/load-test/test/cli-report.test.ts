@@ -78,4 +78,36 @@ describe("report diff tolerance flags", () => {
       "--max-latency-increase", "-0.1",
     ])).rejects.toThrow(/non-negative number/);
   });
+
+  it("emits a single parseable JSON diff document with --format json", async () => {
+    mocks.diffReports.mockReturnValueOnce({
+      passed: false,
+      notes: ["a note"],
+      regressions: [{
+        flow: "input-proof", target: "A", metric: "errorRate",
+        baseline: 0.01, current: 0.2, relativeChange: 0.19,
+      }],
+    });
+    const writes: string[] = [];
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    try {
+      await program().parseAsync([
+        "node", "load-test", "report", "diff", "baseline.json", "current.json",
+        "--format", "json",
+      ]);
+    } finally {
+      writeSpy.mockRestore();
+    }
+    const parsed = JSON.parse(writes.join("")) as {
+      passed: boolean;
+      regressions: readonly { metric: string }[];
+    };
+    expect(parsed.passed).toBe(false);
+    expect(parsed.regressions[0]?.metric).toBe("errorRate");
+    expect(process.exitCode).toBe(1);
+    process.exitCode = undefined;
+  });
 });
