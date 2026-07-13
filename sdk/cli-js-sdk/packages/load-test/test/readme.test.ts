@@ -14,4 +14,31 @@ describe("README capability contract", () => {
     expect(readme).toContain("`MAINNET_RPC_URL` for");
     expect(readme).not.toContain("when the DB collector is on");
   });
+
+  it("documents the explicit planning authority and evidence contract", async () => {
+    const [readme, operations] = await Promise.all([
+      readFile(new URL("../README.md", import.meta.url), "utf8"),
+      readFile(new URL("../docs/OPERATIONS.md", import.meta.url), "utf8"),
+    ]);
+    for (const document of [readme, operations]) {
+      expect(document).toContain("suite prepare");
+      expect(document).toContain("--prepare");
+      expect(document).toContain("pool-plan.json");
+      expect(document).toContain("preparation.json");
+      expect(document).toContain("JSON");
+      expect(document).toContain("authoritative");
+      expect(document).toMatch(/scenario\s+digest/);
+      expect(document).toMatch(/environment\s+identity/);
+      expect(document).toContain("inspect artifacts before sharing");
+      expect(document).toContain("duration-bound");
+      expect(document).toContain("[LOCAL CPU]");
+      expect(document).toContain("[ON-CHAIN]");
+      expect(document).toContain("`130`");
+      expect(document).not.toContain("--prepare-only");
+      expect(document).not.toContain("--skip-prepare");
+    }
+    expect(readme).toContain("thin alias for `scenario run`");
+    expect(readme).toContain("**Executive Summary**");
+    expect(operations).toContain("implementation-agnostic");
+  });
 });

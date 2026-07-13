@@ -1,16 +1,18 @@
 # Load-Test Operator Guide
 
-The short version: set credentials, then run **one command**:
+The short version: inspect first, then explicitly authorize preparation only
+when the plan requires it:
 
 ```bash
 cd sdk/cli-js-sdk/packages/load-test
-node --import tsx index.ts --relayer-url <relayer> suite run standard
+node --import tsx index.ts --relayer-url <relayer> suite plan standard --check
+node --import tsx index.ts --relayer-url <relayer> suite run standard --prepare
 ```
 
-That plans pool requirements for every scenario in the suite, generates or
-creates whatever is missing (payloads off-chain, handles on-chain), runs the
-scenarios sequentially, and writes per-run reports plus a suite summary.
-Everything below is detail.
+The first command is read-only and exits 2 when work is required. After
+reviewing the disclosed local CPU and funded on-chain actions, `--prepare`
+explicitly authorizes them and then runs the scenarios sequentially. If pools
+are already ready, omit `--prepare`. Everything below is detail.
 
 ## 1. One-time setup
 
@@ -33,12 +35,14 @@ delegation transaction per lane for delegated pools). Lanes are checked for
 a minimum balance before any transaction is sent and the run fails with the
 addresses to fund.
 
-## 2. The single command: suites
+## 2. Suite lifecycle
 
 ```bash
 node --import tsx index.ts suite list            # what exists
-node --import tsx index.ts suite plan standard   # no generation/on-chain writes; validates pool storage
-node --import tsx index.ts suite run standard    # prepare + run + summarize
+node --import tsx index.ts suite plan standard   # read-only; add --check for CI exit 2
+node --import tsx index.ts suite prepare standard # explicit preparation; does not run
+node --import tsx index.ts suite run standard    # runs only when pools are ready
+node --import tsx index.ts suite run standard --prepare # explicitly prepare + run
 ```
 
 Built-in suites and when to run them:
@@ -50,12 +54,18 @@ Built-in suites and when to run them:
 | `capacity` | open-ramp (stops at saturation), open-spike | ≤ ~40 min | what is max sustainable throughput, and does it recover? |
 | `endurance` | open-soak 5 req/s ×60 min | ~70 min | leaks/drift in the relayer process? |
 
-Useful flags on `suite run`:
+The commands have deliberately separate authority:
 
-- `--prepare-only` — build all pools now (e.g. ahead of a scheduled window),
-  run nothing.
-- `--skip-prepare` — fail instead of creating anything (CI guard against
-  accidental on-chain spend).
+- `suite plan` never creates payloads, handles, ACL grants, or an output
+  directory unless `--out <dir>` is supplied. `--check` exits 2 if preparation
+  is required.
+- `suite prepare` is the explicit prepare-only operation. Input-proof work is
+  local and CPU-bound; handle creation and delegated ACL refreshes send funded
+  host-chain transactions. Readiness is checked before mutation unless
+  `--skip-readiness` is deliberately supplied.
+- `suite run` always records a live plan, but without `--prepare` it blocks
+  with exit 2 instead of preparing pools when work is required. `--prepare`
+  authorizes the disclosed local/on-chain work before execution.
 - `--baselines-dir <dir>` (default `baselines`) — each scenario is diffed
   against `<dir>/<network>/<label>.json` when present; regressions fail the
   suite.
@@ -83,8 +93,12 @@ Custom scenario and suite JSON is operator-local and ignored under
 `scenarios/` and `suites/`. Paths are resolved from the load-test process
 working directory, not from the suite file's directory, so suite entries must
 use package-relative paths as above or absolute paths.
-`params` overrides apply to built-in scenario names; a JSON scenario carries
-its complete configuration in its own file.
+`params` overrides apply identically to built-in names and JSON scenarios, and
+are resolved before planning. Shape-aware rules reject irrelevant knobs:
+`rps` scales a segmented profile from its first positive rate, `vus` scales
+staged VUs from the first stage, and `durationSec` replaces every segment or
+stage duration rather than the total. `flow` only replaces a single-flow
+scenario and preserves its weight and `handlesPerRequest`.
 
 Suites run scenarios **sequentially** with a pause in between — never run two
 load tests against the same relayer at once; they corrupt each other's
@@ -94,6 +108,10 @@ measurements.
 
 ```text
 <out>/
+├── pool-plan.json        # authoritative resolved-scenario + live-pool plan
+├── pool-plan.md          # human mirror of the plan
+├── preparation.json      # present after explicit preparation
+├── preparation.md        # human mirror of preparation evidence
 ├── suite-summary.md       # one row per scenario: errors, verify failures, thresholds, diff
 ├── suite-summary.json
 └── <label>/               # one directory per scenario run
@@ -104,10 +122,54 @@ measurements.
     └── metrics-b.jsonl    # optional target B /metrics snapshots
 ```
 
-Exit code is non-zero if any scenario breaches its thresholds or regresses
-against its baseline — safe to wire into CI directly.
+`suite prepare` additionally writes `suite-preparation.json/.md`. Standalone
+suite preparation defaults to `<data-dir>/preparations/<timestamp>-suite-<name>/`;
+standalone scenario preparation defaults to
+`<data-dir>/preparations/<timestamp>-scenario-<name>/`. When `run --prepare`
+actually performs preparation, plan, preparation, and run evidence share the
+run root.
 
-## 4. Lower-level commands (what `suite run` automates)
+`scenario plan` has the same optional `--out <dir>` evidence behavior as suite
+planning. `scenario run` always creates one stable run root and writes its live
+plan there. If preparation is required but not authorized, it exits 2 before
+readiness, pool preparation, or workload execution and leaves the plan for review.
+When the live plan is already ready, `--prepare` is a no-op authorization: the
+run does not repeat readiness or preparation work.
+
+Plan summaries distinguish finite request budgets from duration-bound closed
+decrypt workloads, for which they show the reusable-handle target rather than
+a fictional request count. Inventory, availability, and deficit creation units
+are separate. Every planned action is labelled `[LOCAL CPU]` or `[ON-CHAIN]`;
+handle actions disclose funded setter transactions and delegated ACL work is
+listed separately. Dedicated `scenario prepare` and `suite prepare` always
+write preparation evidence, including ready no-op results, while the readiness
+gate runs only immediately before a fresh plan's first actual action.
+
+For `pool-plan` and `preparation`, JSON is authoritative and Markdown is the
+human mirror. Each of those files is flushed and atomically renamed
+independently, so a crash between JSON and Markdown publication can leave a
+mirror from a different attempt. This durability claim does not cover suite
+summaries, suite-preparation wrappers, or streaming JSONL. A plan's scenario
+digest binds the fully resolved ordered scenarios and suite pause. Its
+environment identity separately binds network, chain, contract, relayer
+origins, and API paths; compare both. A stored plan is never executed:
+preparation always plans live again and re-inspects after its actions.
+
+Evidence omits RPC URLs/data directories, removes URL userinfo and queries,
+and bounds and sanitizes recognized credential patterns in errors. This is
+defense in depth, not proof that arbitrary provider text contains no secret;
+inspect artifacts before sharing.
+
+Exit codes are suitable for automation:
+
+| Code | Meaning |
+| ---: | --- |
+| `0` | completed and accepted; unchecked plans may still report work |
+| `1` | operation failed, preparation remained unready, or thresholds/baseline diff failed |
+| `2` | checked plan needs work, or a run recorded evidence then stopped before pool preparation/workload execution |
+| `130` | interrupted by the operator |
+
+## 4. Lower-level commands
 
 ```bash
 # Pools
@@ -118,7 +180,10 @@ node --import tsx index.ts pool add --flow delegated-user-decrypt --count 4
 node --import tsx index.ts pool inspect
 
 # Single scenario
-node --import tsx index.ts run open-steady --rps 20 --duration 600 --baseline baselines/testnet/open-steady-20.json
+node --import tsx index.ts scenario plan open-steady --rps 20 --duration 600 --check --out /tmp/open-steady-plan
+node --import tsx index.ts scenario prepare open-steady --rps 20 --duration 600
+node --import tsx index.ts scenario run open-steady --rps 20 --duration 600 --baseline baselines/testnet/open-steady-20.json
+node --import tsx index.ts run open-steady --rps 20 --duration 600 # thin alias for scenario run
 node --import tsx index.ts run closed-steady --vus 20 --duration 600 --flow user-decrypt
 node --import tsx index.ts run closed-ramp --vus 5 --duration 120 --flow delegated-user-decrypt
 node --import tsx index.ts run closed-steady --vus 20 --duration 600 --think-time 1000 --flow user-decrypt
@@ -149,6 +214,12 @@ Choose the model by the product question:
 `--think-time` is the closed-model pause after one complete workflow. It is
 not the poll interval. Polling waits come from `Retry-After` while the current
 job is still in progress.
+
+Override semantics are shared by `scenario show|plan|prepare|run`, the root
+`run` alias, custom JSON, and suite `params`. `--rps` scales all segmented
+rates relative to the first positive rate; `--vus` scales all stages relative
+to the first stage; `--duration` is per segment/stage; and `--flow` rejects
+multi-flow scenarios. Model-mismatched options fail instead of being ignored.
 
 Pool sizing rules the planner applies (so you can reason about costs):
 
@@ -229,32 +300,36 @@ snapshots. Never prune a live pool.
 
 ## 5. Routine runbooks
 
-**Suggested nightly regression:** run `suite run standard` with the
-committed baselines; investigate any ❌ row in `suite-summary.md`, starting
-with the per-run `report.md` **Diagnosis** section — it names the dominant
-stage, any saturated limiter, and whether the fix is a config knob or
-downstream capacity. The stage `Share` column and the **Backlog by Stage**
-table localize *where* time/queue went.
+**Suggested nightly regression:** prepare pools ahead of the window, then run
+`suite run standard` without pool-preparation authority. Investigate any ❌ row
+in `suite-summary.md`, starting with the per-run `report.md` **Executive Summary**
+for status, correctness, performance evidence, injector health, and telemetry
+coverage. Continue to **Diagnosis** when present for actionable findings, then
+use the stage `Share` column and **Backlog by Stage** table to localize where
+time or queue went.
 
 **Before/after a relayer change:**
 
 ```bash
-node --import tsx index.ts suite run standard --out runs/before   # on the old build
+node --import tsx index.ts suite run standard --prepare --out runs/before # old build
 # deploy the new build
-node --import tsx index.ts suite run standard --out runs/after
+node --import tsx index.ts suite run standard --prepare --out runs/after
 node --import tsx index.ts report diff runs/before/open-steady-10/report.json runs/after/open-steady-10/report.json
 ```
 
-**Capacity check on a new environment:** `suite run capacity`. A ramp only
-stops early when the target's Prometheus surface provides compatible
-queue-depth feedback; otherwise it runs all configured steps.
+**Capacity check on a new environment:** plan and explicitly prepare first,
+then use `suite run capacity`. A ramp only stops early when the target's
+Prometheus surface provides compatible queue-depth feedback; otherwise it runs
+all configured steps.
 
-Prometheus report sections distinguish an uninterrupted collector, a recovered
-collector, and one whose latest scrape failed. The report retains the most
-recent failure message and attempt/success/failure timestamps. Legacy reports
-include both database request-status backlog and peak/final throttler queue
-gauges. If a cumulative counter resets, affected deltas and derived HTTP totals
-or rates are conservative lower bounds and are labelled as such.
+Prometheus collection is implementation-agnostic and capability-detected.
+Report sections distinguish an uninterrupted collector, a recovered collector,
+and one whose latest scrape failed. Legacy metric families retain legacy queue
+and stage semantics; v2 families retain their native transaction, recovery,
+wallet-lease, database-error, and HTTP semantics. Missing families remain
+unavailable rather than being guessed across implementations. If a cumulative
+counter resets, affected deltas and derived HTTP totals or rates are
+conservative lower bounds and are labelled as such.
 
 **Blessing new baselines after an accepted perf change:** run the suite to a
 completed output, review it, then use
@@ -269,8 +344,8 @@ incompatible existing baselines are never overwritten.
 
 | Symptom | Cause / fix |
 | --- | --- |
-| `failed the readiness check` | wrong `--relayer-url` (must be a v2 relayer) or relayer down; `curl <url>/health/readiness` |
-| `pool has N unused payloads; scenario needs M` | top up: `pool add --flow input-proof --count <M-N>`, or just use `suite run` which does this |
+| `failed the readiness check` | target does not expose `GET /health/readiness` or is down; verify its health surface, then use `--skip-readiness` only when another check proves it ready |
+| `Pool preparation is required` | inspect `pool-plan.md`, then run `suite prepare`, `scenario prepare`, or rerun with explicit `--prepare` |
 | `Lane X holds 0 ETH` | fund the printed address; lanes are HD indices 0..lanes-1 of `MNEMONIC` |
 | many `client_poll_deadline_exceeded` | requests outlived `requestTimeoutSec` — relayer saturated or timeout too tight for the load |
 | `verify_failed` > 0 | **stop and investigate the relayer** — it returned wrong plaintexts or bad signatures; never bless such a run |

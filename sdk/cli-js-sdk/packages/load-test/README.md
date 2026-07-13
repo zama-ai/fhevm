@@ -1,18 +1,18 @@
 # @cli-fhevm-sdk/load-test
 
-Fully automated load-test tool for **Relayer v2**. It provides model-aware
-load generation built on the workspace toolkit and `@fhevm/sdk`, with
-pre-generated payload pools, pluggable collectors, and machine-readable
-reports.
+Protocol load-test tool for both the legacy relayer and relayer v2. It provides
+model-aware load generation built on the workspace toolkit and `@fhevm/sdk`,
+with pre-generated payload pools, implementation-agnostic client evidence,
+capability-detected Prometheus metrics, and machine-readable reports.
 
 ```text
-run = prepare → execute → collect → report
+plan → explicit prepare (when needed) → execute → collect → report
 ```
 
-**Operators:** see [`docs/OPERATIONS.md`](./docs/OPERATIONS.md) — the
-one-command workflow is `suite run <smoke|standard|capacity|endurance>`,
-which plans pool requirements, prepares deficits, runs the grouped
-scenarios, and writes a suite summary.
+**Operators:** see [`docs/OPERATIONS.md`](./docs/OPERATIONS.md). Start with
+`suite plan <smoke|standard|capacity|endurance>`. A normal `suite run` never
+creates missing pool material: use `suite prepare`, or add `--prepare` to
+explicitly authorize the local CPU and funded on-chain work before execution.
 
 ## How each flow is driven
 
@@ -130,8 +130,9 @@ scenarios must set `maxIterations`, because those pools are single-use.
 ## Running scenarios
 
 ```bash
-node --import tsx index.ts run baseline
-node --import tsx index.ts run open-steady --rps 20 --duration 600 --flow input-proof
+node --import tsx index.ts scenario plan open-steady --rps 20 --duration 600 --out /tmp/open-steady-plan
+node --import tsx index.ts scenario prepare open-steady --rps 20 --duration 600
+node --import tsx index.ts scenario run open-steady --rps 20 --duration 600 --flow input-proof
 node --import tsx index.ts run open-ramp --rps 10 --duration 120
 node --import tsx index.ts run closed-steady --vus 20 --duration 600 --flow user-decrypt
 node --import tsx index.ts run closed-ramp --vus 5 --duration 120 --flow delegated-user-decrypt
@@ -145,6 +146,22 @@ Built-ins (`scenario list` / `scenario show <name>`): `baseline`,
 JSON documents validated against the schema in `src/scenario/schema.ts` (flow
 mix and weights, load shape, timeouts, thresholds, saturation stop).
 
+The root `run` command is a thin alias for `scenario run`. The same overrides
+apply to built-ins, custom JSON scenarios, and suite-entry `params`; they are
+resolved before pool planning. Unsupported shape/option combinations fail
+instead of being ignored:
+
+- `--rps` replaces a constant or burst rate. For segmented shapes it scales
+  the complete rate profile relative to its first positive configured rate.
+- `--vus` replaces steady VUs. For staged closed shapes it scales every stage
+  relative to the first stage, rounding to positive integers.
+- `--duration` replaces a steady duration, or **each** segment/stage duration;
+  it is not a total-duration override.
+- `--count` is burst-only. `--think-time` and `--max-iterations` are
+  closed-model-only.
+- `--flow` is valid only for a single-flow scenario. It preserves that flow
+  entry's weight and `handlesPerRequest`; multi-flow scenarios reject it.
+
 Operator-authored JSON definitions are intentionally untracked by the local
 ignore policies in `scenarios/` and `suites/`. JSON paths are resolved from the
 load-test process working directory, not relative to a referring suite file.
@@ -155,17 +172,20 @@ for a definition stored elsewhere.
 
 ## Collectors (all optional; absence degrades the report, never the run)
 
-- **Prometheus** — scrapes the relayer `/metrics` every 5 s; the report
+- **Prometheus** — scrapes the configured relayer `/metrics` every 5 s and is
+  agnostic to the server implementation; the report
   records capability and scrape-health information, then reports only signals
   actually exported by that relayer. Scrape counts, current attempt state,
   timestamps, and the most recent failure are retained so a recovered scrape
   is distinguishable from both uninterrupted collection and current outage.
-  Legacy request-status gauges provide queue depth and stage durations, while
-  legacy throttler gauges report peak and final in-process queue depth.
-  Relayer v2 metrics remain explicitly v2
-  shaped: input-proof inserts/duration, transaction outcomes/duration/errors,
-  recovery runs/items/duration, wallet-lease state/transitions, DB errors, and
-  HTTP endpoint/status counts. Counter or histogram resets are marked as
+  Capabilities are detected from exported metric families. Legacy
+  request-status gauges provide queue depth and stage durations, while legacy
+  throttler gauges report peak and final in-process queue depth. Relayer v2
+  metrics retain their native semantics: input-proof inserts/duration,
+  transaction outcomes/duration/errors, recovery runs/items/duration,
+  wallet-lease state/transitions, DB errors, and HTTP endpoint/status counts.
+  Missing families stay unavailable rather than being inferred across
+  implementations. Counter or histogram resets are marked as
   conservative lower bounds, including aggregate HTTP totals and rates.
   Neither current exporter exposes sqlx pool
   connection/acquire-wait families.
@@ -185,12 +205,58 @@ Each run writes to `<data-dir>/runs/<timestamp>-<scenario>/`:
 - `metrics-a.jsonl` and, for dual-target runs, `metrics-b.jsonl` — retained
   Prometheus collector time series.
 
+Planning and preparation evidence uses the same stable names:
+
+- `pool-plan.json` is the authoritative, versioned machine-readable live
+  observation; `pool-plan.md` is its human-readable mirror.
+- Explicit preparation also writes authoritative `preparation.json` plus
+  `preparation.md`. Standalone preparation defaults to
+  `<data-dir>/preparations/<timestamp>-scenario-<name>/`; when a `scenario run
+  --prepare` actually needs preparation, it places that evidence in the run
+  directory.
+- Scenario and suite plan commands write evidence only when `--out <dir>` is
+  given; without it they remain read-only and print the plan without creating
+  directories.
+- `suite prepare` defaults under `<data-dir>/preparations/`; `suite run` writes
+  its plan, optional preparation evidence, scenario reports, and suite summary
+  under one run root.
+- `scenario run` likewise allocates one stable run root and records its initial
+  live plan there before deciding whether to execute. A deficient run without
+  `--prepare` exits 2 and leaves that plan evidence for review; a ready run
+  proceeds without redundant preparation even if `--prepare` was supplied.
+
+The shared operator summary keeps units explicit: finite workloads show a
+request budget, duration-bound closed decrypt workloads show a reusable-handle
+target instead of inventing a request count, and deficits are pool creation
+units. Planned actions are labelled `[LOCAL CPU]` or `[ON-CHAIN]`; handle
+actions state the funded setter-transaction count, while delegated ACL costs
+are identified separately. Dedicated `scenario prepare` and `suite prepare`
+still write no-op preparation evidence when pools are ready, but the readiness
+gate runs only immediately before a fresh plan's first actual action.
+
+Each `pool-plan` and `preparation` file is flushed and atomically renamed
+independently. Their JSON is authoritative; a crash between JSON and Markdown
+publication can leave the mirror from a different attempt. This durability
+claim does not extend to suite summaries, suite-preparation wrappers, or
+streaming JSONL. The scenario digest binds the fully resolved, ordered scenario
+definitions and suite pause, while the recorded environment identity binds the
+target network, chain, contract, relayer origins, and API paths. Compare both
+fields—neither alone identifies the complete plan. Stored plans are evidence
+only: preparation always computes a fresh live plan and then re-inspects before
+declaring readiness.
+
+Artifacts omit configured RPC URLs and data directories, strip relayer URL
+userinfo/query data, and bound and sanitize recognized credential patterns in
+error text. Sanitization is defensive rather than a guarantee against every
+possible secret format; inspect artifacts before sharing them.
+
 The report records the run model (`open`, `closed`, or `drain`) and each flow's
-driver (`raw-http` for input-proof, `sdk` for decrypt flows). It leads with a
-**Diagnosis** section synthesized from all
-collected signals — a one-line verdict, the dominant pipeline stage (as a %
-of e2e when the exported metrics provide that signal), which limiters
-saturated, severity-tagged flags, and concrete recommendations. Below it:
+driver (`raw-http` for input-proof, `sdk` for decrypt flows). It leads with an
+**Executive Summary**: target identity, model/status/window, planned versus
+submitted workflows and achieved rate, threshold/correctness verdicts,
+performance evidence, injector assessment, and telemetry coverage. When the
+evidence supports actionable findings, **Diagnosis** follows with
+severity-tagged flags and concrete recommendations. Below it:
 per-flow client histograms; **client results by load stage** for ramp/sweep
 scenarios; capability-gated relayer metric deltas and relayer-side **HTTP**
 status distribution;
@@ -203,7 +269,16 @@ correlation, poll-free server e2e comparison, and database-timestamp pipeline
 stages are future adapter boundaries in the report model, not data collected
 by the current command surface.
 
-Exit code is non-zero on threshold breach or baseline regression:
+Command exit codes are stable for automation:
+
+- `0`: operation completed and acceptance checks passed (or an unchecked plan
+  merely reported work).
+- `1`: operational failure, threshold breach, baseline regression, or
+  preparation that did not produce readiness.
+- `2`: `plan --check` found required work, or `run` recorded the plan and was
+  safely blocked before pool preparation and workload execution because
+  preparation was not explicitly authorized.
+- `130`: interrupted by the operator.
 
 ```bash
 node --import tsx index.ts report diff baselines/testnet/open-steady.json runs/<dir>/report.json
