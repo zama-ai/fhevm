@@ -726,6 +726,7 @@ async fn reconstruct_events_for_insert(
     use crate::solana_reconstruct::{
         decode_encrypted_value_instruction, decode_fhe_eval_args,
         encrypted_value_account_index, encrypted_value_material_requests,
+        is_encrypted_value_instruction, is_fhe_eval_instruction,
         reconstruct_fhe_eval_steps,
     };
 
@@ -734,33 +735,42 @@ async fn reconstruct_events_for_insert(
     // fhe_eval_durable_encrypted_value.)
     const COMPUTE_SUBJECT_INDEX: usize = 1;
 
-    let has_lifecycle = instructions.iter().any(|ix| {
-        ix.program == config.program_id
-            && decode_encrypted_value_instruction(&ix.data).is_some()
-    });
-    let has_fhe_eval = instructions.iter().any(|ix| {
-        ix.program == config.program_id
-            && decode_fhe_eval_args(&ix.data).is_some()
-    });
+    let host_instructions = instructions
+        .iter()
+        .filter(|ix| ix.program == config.program_id)
+        .collect::<Vec<_>>();
+    for ix in &host_instructions {
+        if is_fhe_eval_instruction(&ix.data)
+            && decode_fhe_eval_args(&ix.data).is_none()
+        {
+            anyhow::bail!(
+                "reconstruct: known fhe_eval discriminator has undecodable arguments in slot {slot}"
+            );
+        }
+        if is_encrypted_value_instruction(&ix.data)
+            && decode_encrypted_value_instruction(&ix.data).is_none()
+        {
+            anyhow::bail!(
+                "reconstruct: known EncryptedValue lifecycle discriminator has undecodable arguments in slot {slot}"
+            );
+        }
+    }
+    let has_lifecycle = host_instructions
+        .iter()
+        .any(|ix| is_encrypted_value_instruction(&ix.data));
+    let has_fhe_eval = host_instructions
+        .iter()
+        .any(|ix| is_fhe_eval_instruction(&ix.data));
     if !has_lifecycle && !has_fhe_eval {
         return Ok(ReconstructionOutcome::NotCovered);
     }
 
-    let Some(ctx) =
-        reconstruct_context(config, slot, slot_bank_hash, slot_clock_ts)
-    else {
-        if has_fhe_eval {
-            anyhow::bail!(
-                "reconstruct: missing slot derivation context for covered fhe_eval in slot {slot}"
-            );
-        }
-        let events =
-            crate::solana_reconstruct::decode_encrypted_value_material_request_events(
-                instructions,
-                &config.program_id,
-            );
-        return Ok(ReconstructionOutcome::Complete(events));
-    };
+    let ctx = reconstruct_context(config, slot, slot_bank_hash, slot_clock_ts);
+    if has_fhe_eval && ctx.is_none() {
+        anyhow::bail!(
+            "reconstruct: missing slot derivation context for covered fhe_eval in slot {slot}"
+        );
+    }
 
     let mut events = Vec::new();
 
@@ -769,6 +779,9 @@ async fn reconstruct_events_for_insert(
             continue;
         }
         if let Some(plan) = decode_fhe_eval_args(&ix.data) {
+            let ctx = ctx
+                .as_ref()
+                .expect("covered fhe_eval requires reconstruction context");
             let subject = ix
                 .accounts
                 .get(COMPUTE_SUBJECT_INDEX)
@@ -776,7 +789,7 @@ async fn reconstruct_events_for_insert(
                 .unwrap_or([0u8; 32]);
             // Durable output handles recompute from the plan's value_key + block
             // entropy alone (DD-015): no lineage leaf count, no handle hints.
-            let Some(steps) = reconstruct_fhe_eval_steps(&plan, subject, &ctx)
+            let Some(steps) = reconstruct_fhe_eval_steps(&plan, subject, ctx)
             else {
                 anyhow::bail!(
                     "reconstruct: incomplete fhe_eval reconstruction in slot {slot}; \
@@ -819,13 +832,18 @@ async fn reconstruct_events_for_insert(
         {
             let encrypted_value_index =
                 encrypted_value_account_index(&instruction);
-            if ix.accounts.get(encrypted_value_index).is_some() {
-                events.extend(
-                    encrypted_value_material_requests(&instruction)
-                        .into_iter()
-                        .map(SolanaHostEvent::MaterialRequest),
+            if ix.accounts.get(encrypted_value_index).is_none() {
+                anyhow::bail!(
+                    "reconstruct: EncryptedValue lifecycle account index {encrypted_value_index} \
+                     out of range in slot {slot}; accounts={}",
+                    ix.accounts.len()
                 );
             }
+            events.extend(
+                encrypted_value_material_requests(&instruction)
+                    .into_iter()
+                    .map(SolanaHostEvent::MaterialRequest),
+            );
         }
     }
     Ok(ReconstructionOutcome::Complete(events))
@@ -1076,6 +1094,55 @@ mod fhe_eval_acl_tests {
         );
 
         assert!(events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn known_but_undecodable_instructions_fail_ingest() {
+        let malformed = [
+            discriminator("fhe_eval").to_vec(),
+            discriminator("make_handle_public").to_vec(),
+        ];
+        let (slot_bank_hash, slot_clock_ts) = slot_context();
+
+        for data in malformed {
+            let err = reconstruct_events_for_insert(
+                &config(),
+                &[decoded_ix(data, encrypted_value_accounts(), 0, false)],
+                42,
+                &slot_bank_hash,
+                &slot_clock_ts,
+            )
+            .await
+            .expect_err(
+                "known discriminator with malformed args must fail ingest",
+            );
+            assert!(
+                err.to_string().contains("undecodable arguments"),
+                "got: {err}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn lifecycle_with_missing_accounts_fails_ingest() {
+        let allow_data = encode_instruction(
+            "allow_subjects",
+            AllowSubjectsArgs {
+                subjects: vec![EncryptedValueSubjectGrant { subject: [7; 32] }],
+            },
+        );
+        let (slot_bank_hash, slot_clock_ts) = slot_context();
+        let err = reconstruct_events_for_insert(
+            &config(),
+            &[decoded_ix(allow_data, vec![[0u8; 32]], 0, false)],
+            42,
+            &slot_bank_hash,
+            &slot_clock_ts,
+        )
+        .await
+        .expect_err("covered lifecycle instruction with missing accounts must fail ingest");
+
+        assert!(err.to_string().contains("account index 2 out of range"));
     }
 
     /// A superseding durable `fhe_eval` output recomputes its handle directly

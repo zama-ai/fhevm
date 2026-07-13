@@ -63,6 +63,7 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    // Without a configured collector, constructing an OTLP exporter can stall the PoC ingest loop.
     let _otel_guard = if std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_ok() {
         telemetry::init_tracing_otel_with_logs_only_fallback(
             args.log_level,
@@ -76,11 +77,17 @@ async fn main() -> Result<()> {
 
     let program_id = Pubkey::from_str(&args.program_id)
         .with_context(|| format!("invalid program id {}", args.program_id))?;
-    let chain_id = ChainId::from_canonical_u64(args.host_chain_id as u64);
-    let db =
-        Database::new(&args.database_url, chain_id, args.dependence_cache_size)
-            .await
-            .context("connect coprocessor database")?;
+    // Solana host IDs set the RFC-021 high bit and arrive through CLI as the equivalent signed i64;
+    // canonical-u64 conversion intentionally preserves that bit pattern.
+    let database_chain_id =
+        ChainId::from_canonical_u64(args.host_chain_id as u64);
+    let db = Database::new(
+        &args.database_url,
+        database_chain_id,
+        args.dependence_cache_size,
+    )
+    .await
+    .context("connect coprocessor database")?;
 
     let rpc = RpcClient::new_with_timeout_and_commitment(
         args.url.clone(),
@@ -93,10 +100,11 @@ async fn main() -> Result<()> {
         .get_account(&host_config_pda)
         .await
         .with_context(|| format!("fetch HostConfig {host_config_pda}"))?;
-    let (chain_id, zero_birth_entropy) = parse_host_config(&account.data)?;
+    let (host_config_chain_id, zero_birth_entropy) =
+        parse_host_config(&account.data)?;
     info!(
         %host_config_pda,
-        chain_id,
+        chain_id = host_config_chain_id,
         zero_birth_entropy,
         "auto-detected handle-derivation params from confirmed HostConfig"
     );
@@ -117,7 +125,7 @@ async fn main() -> Result<()> {
             x_token: args.grpc_x_token,
             rpc_fallback_url: args.url,
             program_id: program_id.to_string(),
-            chain_id,
+            chain_id: host_config_chain_id,
             zero_birth_entropy,
         },
         cancel,

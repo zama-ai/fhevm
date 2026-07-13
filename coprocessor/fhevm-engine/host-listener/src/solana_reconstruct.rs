@@ -42,6 +42,10 @@ pub struct ReconstructContext {
 /// Discriminator for the `fhe_eval` instruction (sha256("global:fhe_eval")[..8]).
 const FHE_EVAL_DISCRIMINATOR: [u8; 8] = [176, 42, 63, 177, 244, 167, 120, 109];
 
+pub fn is_fhe_eval_instruction(instruction_data: &[u8]) -> bool {
+    instruction_data.starts_with(&FHE_EVAL_DISCRIMINATOR)
+}
+
 /// Decodes a `fhe_eval` instruction's data into the program's own `FheEvalArgs`
 /// step plan, reusing the zama-host type (so there is no bespoke decoder to drift
 /// from the on-chain layout). The decoded plan is the input to the eval walk that
@@ -130,6 +134,17 @@ const ALLOW_SUBJECTS_DISCRIMINATOR: [u8; 8] =
 /// `sha256("global:remove_subject")[..8]`.
 const REMOVE_SUBJECT_DISCRIMINATOR: [u8; 8] =
     [66, 88, 46, 123, 6, 107, 208, 50];
+
+pub fn is_encrypted_value_instruction(data: &[u8]) -> bool {
+    let Some(discriminator) = data.get(..8) else {
+        return false;
+    };
+    discriminator == CREATE_ENCRYPTED_VALUE_DISCRIMINATOR
+        || discriminator == UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR
+        || discriminator == MAKE_HANDLE_PUBLIC_DISCRIMINATOR
+        || discriminator == ALLOW_SUBJECTS_DISCRIMINATOR
+        || discriminator == REMOVE_SUBJECT_DISCRIMINATOR
+}
 
 /// Every pre-`remove_subject` `EncryptedValue` instruction accounts struct places
 /// `encrypted_value` at this index (`payer`, `app_account_authority`/`authority`,
