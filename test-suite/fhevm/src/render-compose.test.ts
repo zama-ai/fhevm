@@ -6,7 +6,7 @@ import YAML from "yaml";
 import { generateComposeOverrides, loadMergedComposeDoc, serviceNameList } from "./generate/compose";
 import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
-import { parseCoprocessorScenario, resolveScenarioFile } from "./scenario/resolve";
+import { parseBlueGreenScenario, parseCoprocessorScenario, resolveBlueGreenScenario, resolveScenarioFile } from "./scenario/resolve";
 import { stackSpecForState } from "./stack-spec/stack-spec";
 import { testDefaultScenario } from "./test-fixtures";
 import { withTempStateDir } from "./test-state";
@@ -359,6 +359,140 @@ describe("render-compose", () => {
       };
       expect(doc.services["coprocessor1-host-listener"]?.command).toEqual(
         expect.arrayContaining(["--error-sleep-max-secs=30", "--initial-block-time=2"]),
+      );
+    });
+  });
+
+  test("blue-green scenario emits coprocessor-gcs-* services from local HEAD build", async () => {
+    const blueGreenScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-test.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.0"
+`),
+    );
+    const bgState: State = { ...state, scenario: blueGreenScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<
+          string,
+          { container_name?: string; build?: { args?: Record<string, string> } }
+        >;
+      };
+      // BCS side keeps the base `coprocessor-*` names.
+      expect(doc.services["coprocessor-host-listener"]?.container_name).toBe("coprocessor-host-listener");
+      // GCS side is layered on with `coprocessor-gcs-*` prefix.
+      expect(doc.services["coprocessor-gcs-host-listener"]?.container_name).toBe(
+        "coprocessor-gcs-host-listener",
+      );
+      expect(doc.services["coprocessor-gcs-upgrade-controller"]?.container_name).toBe(
+        "coprocessor-gcs-upgrade-controller",
+      );
+      // GCS builds from local HEAD; no STACK_VERSION_OVERRIDE arg.
+      expect(doc.services["coprocessor-gcs-host-listener"]?.build).toBeDefined();
+      expect(doc.services["coprocessor-gcs-host-listener"]?.build?.args?.STACK_VERSION_OVERRIDE).toBeUndefined();
+      // GCS reuses BCS's db-migration — no `coprocessor-gcs-db-migration`.
+      expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
+    });
+  });
+
+  test("multi-operator blue-green emits BCS + GCS fleets per operator with correct prefixes", async () => {
+    const multiOpBlueGreen = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-2op.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+topology:
+  count: 2
+  threshold: 2
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.0"
+`),
+    );
+    const bgState: State = { ...state, scenario: multiOpBlueGreen };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { container_name?: string }>;
+      };
+      // Operator 0: BCS as `coprocessor-*`, GCS as `coprocessor-gcs-*`.
+      expect(doc.services["coprocessor-host-listener"]?.container_name).toBe("coprocessor-host-listener");
+      expect(doc.services["coprocessor-gcs-host-listener"]?.container_name).toBe(
+        "coprocessor-gcs-host-listener",
+      );
+      // Operator 1: BCS as `coprocessor1-*`, GCS as `coprocessor1-gcs-*`.
+      expect(doc.services["coprocessor1-host-listener"]?.container_name).toBe(
+        "coprocessor1-host-listener",
+      );
+      expect(doc.services["coprocessor1-gcs-host-listener"]?.container_name).toBe(
+        "coprocessor1-gcs-host-listener",
+      );
+      expect(doc.services["coprocessor1-gcs-upgrade-controller"]?.container_name).toBe(
+        "coprocessor1-gcs-upgrade-controller",
+      );
+      // Each operator has its own db-migration (BCS); GCS reuses it.
+      expect(doc.services["coprocessor-db-migration"]).toBeDefined();
+      expect(doc.services["coprocessor1-db-migration"]).toBeDefined();
+      expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
+      expect(doc.services["coprocessor1-gcs-db-migration"]).toBeUndefined();
+    });
+  });
+
+  test("blue-green with bcs.source.mode=registry pins BCS to previous-release images except db-migration", async () => {
+    const realUpgradeScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-real-test.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+bcs:
+  source:
+    mode: registry
+    tag: v0.13.0
+gcs:
+  source: { mode: local }
+  stackVersion: "0.15.0"
+`),
+    );
+    const bgState: State = { ...state, scenario: realUpgradeScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<
+          string,
+          {
+            container_name?: string;
+            image?: string;
+            build?: { args?: Record<string, string> } | undefined;
+          }
+        >;
+      };
+      // BCS runtime services are pinned to the registry tag.
+      expect(doc.services["coprocessor-host-listener"]?.image).toContain(":v0.13.0");
+      expect(doc.services["coprocessor-tfhe-worker"]?.image).toContain(":v0.13.0");
+      expect(doc.services["coprocessor-sns-worker"]?.image).toContain(":v0.13.0");
+      expect(doc.services["coprocessor-zkproof-worker"]?.image).toContain(":v0.13.0");
+      expect(doc.services["coprocessor-gw-listener"]?.image).toContain(":v0.13.0");
+      expect(doc.services["coprocessor-transaction-sender"]?.image).toContain(":v0.13.0");
+      // Registry-mode services should NOT carry a build spec.
+      expect(doc.services["coprocessor-tfhe-worker"]?.build).toBeUndefined();
+      // db-migration is force-local so GCS gets the v0.14 schema.
+      expect(doc.services["coprocessor-db-migration"]?.build).toBeDefined();
+      expect(doc.services["coprocessor-db-migration"]?.image).not.toContain(":v0.13.0");
+      expect(doc.services["coprocessor-gcs-tfhe-worker"]?.build).toBeDefined();
+      expect(doc.services["coprocessor-gcs-upgrade-controller"]?.container_name).toBe(
+        "coprocessor-gcs-upgrade-controller",
       );
     });
   });

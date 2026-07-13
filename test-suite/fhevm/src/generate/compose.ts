@@ -316,18 +316,51 @@ const applyInstanceAdjustments = (
   return next;
 };
 
+// Suffixes of services that only run on the GCS fleet in blue-green mode.
+export const GCS_ONLY_SUFFIXES = new Set(["upgrade-controller", "consensus-detector"]);
+
+/** Blue-green container names per operator: BCS (previous-release shape) + full GCS fleet reusing BCS's db-migration. */
+export const blueGreenServiceNames = (
+  state: Pick<State, "scenario" | "versions">,
+  options: { includeMigration: boolean },
+): string[] => {
+  const includeConsumer = supportsHostListenerConsumer(state);
+  const names: string[] = [];
+  for (let index = 0; index < topologyForState(state).count; index += 1) {
+    const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
+    for (const suffix of GROUP_SERVICE_SUFFIXES.coprocessor) {
+      if (GCS_ONLY_SUFFIXES.has(suffix)) continue;
+      if (!options.includeMigration && suffix.includes("migration")) continue;
+      if (suffix === "host-listener-consumer" && !includeConsumer) continue;
+      names.push(`${prefix}${suffix}`);
+    }
+    for (const suffix of GROUP_SERVICE_SUFFIXES.coprocessor) {
+      if (suffix.includes("migration")) continue;
+      if (suffix === "host-listener-consumer" && !includeConsumer) continue;
+      names.push(`${prefix}gcs-${suffix}`);
+    }
+  }
+  return names;
+};
+
 /** Lists runtime service names for the requested component and topology. */
 export const serviceNameList = (state: Pick<State, "scenario" | "versions">, component: string) => {
   if (component !== "coprocessor") {
     return [];
   }
-  const topology = topologyForState(state);
+  if (state.scenario.kind === "blue-green") {
+    return blueGreenServiceNames(state, { includeMigration: true });
+  }
+  const includeConsumer = supportsHostListenerConsumer(state);
+  const includeConsensusDetector = supportsConsensusDetector(state);
+  const includeUpgradeController = supportsUpgradeController(state);
   const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (suffix) =>
-      (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
-      (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
-      (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
+      (includeConsumer || suffix !== "host-listener-consumer") &&
+      (includeConsensusDetector || suffix !== "consensus-detector") &&
+      (includeUpgradeController || suffix !== "upgrade-controller"),
   );
+  const topology = topologyForState(state);
   const names: string[] = [];
   for (let index = 0; index < topology.count; index += 1) {
     for (const suffix of suffixes) {
@@ -399,12 +432,18 @@ const applyCoprocessorSource = (
   }
 };
 
+// Green-side services omitted from BCS so it matches the previous-release shape.
+const GCS_ONLY_SERVICES = new Set([...GCS_ONLY_SUFFIXES].map((suffix) => `coprocessor-${suffix}`));
+
 /** Builds the generated coprocessor compose override across all scenario instances. */
 const buildCoprocessorOverride = async (plan: StackSpec) => {
   const doc = rewriteComposePaths(await loadComposeDoc("coprocessor"));
   const next = structuredClone(doc);
   const clonedServices = new Set(Object.keys(doc.services));
   const services: Record<string, Record<string, unknown>> = {};
+  if (!plan.coprocessor) {
+    return next;
+  }
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
   const excludedServices = new Set([
@@ -412,6 +451,8 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     ...(supportsConsensusDetector(plan) ? [] : ["coprocessor-consensus-detector"]),
     ...(supportsUpgradeController(plan) ? [] : ["coprocessor-upgrade-controller"]),
   ]);
+  const includeConsumer = supportsHostListenerConsumer(plan);
+  const isBlueGreen = Boolean(plan.blueGreen);
   for (const instance of plan.coprocessor.instances) {
     const localServices =
       instance.source.mode === "local"
@@ -419,12 +460,19 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         : instance.source.mode === "inherit"
           ? inheritedBuildServices
           : new Set<string>();
+    // Blue-green: force db-migration to HEAD so GCS gets the current schema regardless of BCS's pin.
+    if (isBlueGreen) {
+      localServices.add("coprocessor-db-migration");
+    }
     const envName = instance.index === 0 ? "coprocessor" : `coprocessor.${instance.index}`;
     const envFileValue = envPath(envName);
     const instanceEnv = await readEnvFile(envFileValue);
     const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
     for (const [name, service] of Object.entries(doc.services)) {
       if (excludedServices.has(name)) {
+        continue;
+      }
+      if (isBlueGreen && GCS_ONLY_SERVICES.has(name)) {
         continue;
       }
       const suffix = name.replace(/^coprocessor-/, "");
@@ -451,6 +499,58 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       services[serviceName] = adjusted;
     }
   }
+
+  // Blue-green: layer a `<prefix>gcs-*` fleet per operator, sharing that operator's DB and db-migration.
+  if (plan.blueGreen) {
+    const gcs = plan.blueGreen.gcs;
+    for (const bcsInstance of plan.coprocessor.instances) {
+      const bcsPrefix = bcsInstance.index === 0 ? "coprocessor-" : `coprocessor${bcsInstance.index}-`;
+      const gcsPrefix = `${bcsPrefix}gcs-`;
+      const envName = bcsInstance.index === 0 ? "coprocessor" : `coprocessor.${bcsInstance.index}`;
+      const gcsEnvFileValue = envPath(envName);
+      const gcsInstanceEnv = await readEnvFile(gcsEnvFileValue);
+      const gcsInstance: ResolvedCoprocessorScenarioInstance = {
+        index: bcsInstance.index,
+        source: gcs.source,
+        env: gcs.env,
+        args: gcs.args,
+      };
+      for (const [baseName, service] of Object.entries(doc.services)) {
+        if (!includeConsumer && baseName === "coprocessor-host-listener-consumer") {
+          continue;
+        }
+        if (baseName === "coprocessor-db-migration") {
+          continue;
+        }
+        const suffix = baseName.replace(/^coprocessor-/, "");
+        const serviceName = `${gcsPrefix}${suffix}`;
+        const adjusted = applyInstanceAdjustments(
+          baseName,
+          service,
+          gcsEnvFileValue,
+          gcsInstanceEnv,
+          gcsInstance,
+          compat.coprocessorArgs,
+          compat.coprocessorDropFlags,
+        );
+        adjusted.container_name = serviceName;
+        const buildSpec = localBuildSpecFor("coprocessor", baseName);
+        if (buildSpec) {
+          adjusted.image = retagLocal(service.image, `gcs-${gcs.stackVersion}`);
+          adjusted.build = buildSpec;
+        }
+        if (bcsInstance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
+          adjusted.depends_on = rewriteCoprocessorDependsOn(
+            adjusted.depends_on as Record<string, unknown>,
+            bcsPrefix,
+            clonedServices,
+          );
+        }
+        services[serviceName] = adjusted;
+      }
+    }
+  }
+
   next.services = services;
   return next;
 };
@@ -606,6 +706,10 @@ const buildExtraCoprocessorListenerOverride = async (
 ): Promise<ComposeDoc> => {
   const doc = rewriteComposePaths(await loadComposeDoc("coprocessor"));
   const services: Record<string, Record<string, unknown>> = {};
+  if (!plan.coprocessor) {
+    // Multi-chain overrides don't apply to blue-green (single chain).
+    return { ...doc, services };
+  }
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
   const listenerServices = ["coprocessor-host-listener", "coprocessor-host-listener-poller"];
