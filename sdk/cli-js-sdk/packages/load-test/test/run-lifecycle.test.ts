@@ -110,7 +110,7 @@ vi.mock("../src/shared/logger", () => ({
 }));
 
 import type { FlowExecutor } from "../src/flows/types";
-import { executeRun } from "../src/runner/run";
+import { executeRun, RunInterruptedError } from "../src/runner/run";
 import { scenarioSchema } from "../src/scenario/schema";
 
 let dir: string;
@@ -337,6 +337,49 @@ describe("executeRun lifecycle", () => {
     });
     expect(result.status).toBe("completed");
     expect((result.report as unknown as { run: { status: string } }).run.status).toBe(result.status);
+  });
+
+  it("classifies a user-signal abort during preparation as an interruption", async () => {
+    const userController = new AbortController();
+    const instance = executor();
+    instance.prepare.mockImplementation(async (_planned: number, signal: AbortSignal) => {
+      userController.abort();
+      signal.throwIfAborted();
+    });
+    mocks.createFlowExecutor.mockResolvedValue(instance);
+
+    const received = await executeRun({
+      scenario,
+      env: env(dir),
+      skipReadiness: true,
+      signal: userController.signal,
+    }).catch((error: unknown) => error);
+
+    expect(received).toBeInstanceOf(RunInterruptedError);
+    expect(instance.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not mask an unrelated AbortError as an interruption when a signal coincides", async () => {
+    const userController = new AbortController();
+    const unrelated = new DOMException("unrelated abort", "AbortError");
+    const instance = executor();
+    instance.prepare.mockImplementation(async () => {
+      // A user signal coincidentally arrives, but the failure is from an
+      // unrelated abort (e.g. a request timeout), not our signal chain.
+      userController.abort();
+      throw unrelated;
+    });
+    mocks.createFlowExecutor.mockResolvedValue(instance);
+
+    const received = await executeRun({
+      scenario,
+      env: env(dir),
+      skipReadiness: true,
+      signal: userController.signal,
+    }).catch((error: unknown) => error);
+
+    expect(received).toBe(unrelated);
+    expect(received).not.toBeInstanceOf(RunInterruptedError);
   });
 
   it("bounds a hung close and continues later cleanup phases", async () => {

@@ -212,9 +212,21 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let cleaned = false;
   let cleanupErrors: unknown[] = [];
-  let interrupted = options.signal?.aborted ?? false;
-  const latchInterruption = (): void => { interrupted = true; };
-  options.signal?.addEventListener("abort", latchInterruption, { once: true });
+  // Interruption is derived from an internal controller whose abort reason is a
+  // distinctive RunInterruptedError, chained to the user signal. Downstream work
+  // receives this signal, so an abort that genuinely originates from the user
+  // throws that exact reason (AbortSignal.reason propagates through
+  // throwIfAborted, fetch, and undici). An unrelated AbortError is therefore
+  // never reclassified as an interruption just because a signal coincided.
+  const interruptController = new AbortController();
+  const interruptRun = (): void => {
+    if (!interruptController.signal.aborted) {
+      interruptController.abort(new RunInterruptedError());
+    }
+  };
+  if (options.signal?.aborted) interruptRun();
+  else options.signal?.addEventListener("abort", interruptRun, { once: true });
+  const runSignal = interruptController.signal;
 
   const cleanup = async (): Promise<unknown[]> => {
     if (cleaned) return [];
@@ -273,7 +285,7 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
   };
 
   const assertNotInterrupted = (): void => {
-    if (interrupted) throw new RunInterruptedError();
+    runSignal.throwIfAborted();
   };
 
   let result: RunResult | undefined;
@@ -306,7 +318,7 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
       env,
       connections: options.connections,
       skipReadiness: options.skipReadiness,
-      signal: options.signal,
+      signal: runSignal,
       clients: { primary: client, ...(clientB ? { candidate: clientB } : {}) },
     });
     assertNotInterrupted();
@@ -336,7 +348,7 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
       });
       executors.set(mix.flow, executor);
       const flowPlanned = allocations.get(mix.flow)?.requests ?? 1;
-      await executor.prepare(flowPlanned, options.signal);
+      await executor.prepare(flowPlanned, runSignal);
     }
     assertNotInterrupted();
     logger.success(
@@ -410,7 +422,7 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
       scenario,
       executors,
       recorder,
-      signal: options.signal,
+      signal: runSignal,
       onSegmentEnd: createSaturationMonitor(scenario, depthSource),
       onSubmitted: progress.onSubmitted,
       onCompleted: progress.onCompleted,
@@ -430,8 +442,8 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
     // Cleanup is the terminal boundary. Freeze interruption state once all
     // owned work is stopped so report.json and the returned status cannot
     // diverge if a signal arrives while artifacts are being written.
-    const runInterrupted = schedulerResult.interrupted || interrupted;
-    options.signal?.removeEventListener("abort", latchInterruption);
+    const runInterrupted = schedulerResult.interrupted || runSignal.aborted;
+    options.signal?.removeEventListener("abort", interruptRun);
 
     // ---- Report -----------------------------------------------------------
     const report = buildReport({
@@ -492,13 +504,20 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
       status: runInterrupted ? "interrupted" : "completed",
     };
   } catch (error) {
-    primaryError =
-      interrupted && error instanceof Error && error.name === "AbortError"
-        ? new RunInterruptedError()
-        : error;
+    // Only an abort originating from the user signal chain is an interruption:
+    // throwIfAborted/fetch/undici surface the internal controller's distinctive
+    // RunInterruptedError reason. An unrelated AbortError stays a real failure.
+    const causedByUserInterrupt =
+      error instanceof RunInterruptedError ||
+      (runSignal.aborted && error === runSignal.reason);
+    primaryError = causedByUserInterrupt
+      ? error instanceof RunInterruptedError
+        ? error
+        : new RunInterruptedError()
+      : error;
   } finally {
     cleanupErrors = await cleanup();
-    options.signal?.removeEventListener("abort", latchInterruption);
+    options.signal?.removeEventListener("abort", interruptRun);
   }
 
   if (primaryError !== undefined) {
