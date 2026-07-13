@@ -14,13 +14,13 @@ use connector_utils::{
     tasks::default_task_limit,
 };
 use serde::Deserialize;
-#[cfg(debug_assertions)]
+#[cfg(test)]
 use serde::Serialize;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 /// Configuration of the `GatewayListener`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
+#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
     pub database_url: String,

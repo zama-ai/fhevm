@@ -7,7 +7,7 @@ pub use contract::ContractConfig;
 pub use deserialize::DeserializeConfig;
 pub use error::{Error, Result};
 use sqlx::postgres::types::PgInterval;
-pub use wallet::{AwsKmsConfig, KmsWallet, PrivateKey};
+pub use wallet::{AwsKmsConfig, KmsWallet, TestingPrivateKey};
 
 use serde::{Deserializer, Serializer};
 use std::time::Duration;
