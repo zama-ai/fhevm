@@ -3,6 +3,7 @@ import type { ZodType } from "zod";
 
 import { safeArtifactText } from "../shared/safe-artifact";
 import { clamp, monotonicNowMs, sleep } from "../shared/time";
+import { normalizeApiPrefix } from "./api-prefix";
 import {
   failedJobResponseSchema,
   flowResultSchemas,
@@ -82,18 +83,6 @@ export type PollOptions = Readonly<{
 }>;
 
 const JSON_HEADERS = { "content-type": "application/json" } as const;
-
-const normalizeApiPrefix = (value: string | undefined): string => {
-  // An explicit empty string opts out of any prefix (routes served at root,
-  // e.g. `/input-proof`); only an undefined value falls back to `/v2`.
-  if (value !== undefined) {
-    const raw = value.trim();
-    if (raw === "") return "";
-    const prefixed = raw.startsWith("/") ? raw : `/${raw}`;
-    return prefixed.replace(/\/+$/, "");
-  }
-  return "/v2";
-};
 
 const parseRetryAfterMs = (headers: Dispatcher.ResponseData["headers"]): number | undefined => {
   const raw = headers["retry-after"];

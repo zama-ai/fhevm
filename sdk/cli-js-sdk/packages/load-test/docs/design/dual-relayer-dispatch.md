@@ -53,7 +53,11 @@ pre-job failures are `submit_failed`, and plaintext mismatches are
   derivation, delegate identity, public handles in private pools, malformed
   expected plaintexts, or insufficient per-owner ACL delegation before load
   starts. Delegation state is checked both in pool metadata and on-chain.
-- Primary and candidate relayer origins must differ.
+- Primary and candidate must be two distinct targets, but they may share an
+  origin: a path-routed deployment (one gateway host serving A and B under
+  different base paths or API prefixes, e.g. `--relayer-api-prefix /v1` vs
+  `--relayer-b-api-prefix /v2`) is supported. Only a fully identical target —
+  same normalized URL *and* same effective API prefix — is rejected.
 - `--max-connections` bounds sockets **per relayer target**, so a paired A/B run
   can open up to twice that many connections in aggregate (one pool per target).
 - The two targets should use equivalent ingress paths and authentication so

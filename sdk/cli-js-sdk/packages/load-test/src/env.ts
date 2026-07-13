@@ -9,6 +9,8 @@ import { join } from "node:path";
 import type { Hex } from "viem";
 import { mnemonicToAccount, privateKeyToAccount, type Account } from "viem/accounts";
 
+import { normalizeApiPrefix } from "./relayer/api-prefix";
+
 /** Resolved tool environment shared by pool, run, and report commands. */
 export type LoadTestEnv = Readonly<{
   network: NetworkName;
@@ -58,6 +60,8 @@ export const resolveEnv = (overrides: EnvOverrides = {}): LoadTestEnv => {
       process.env.LOAD_TEST_RELAYER_URL ??
       networkConfig.fhevmChain.fhevm.relayerUrl,
   );
+  const relayerApiPrefix =
+    overrides.relayerApiPrefix ?? process.env.LOAD_TEST_RELAYER_API_PREFIX;
   const relayerBUrlRaw =
     overrides.relayerBUrl ?? process.env.LOAD_TEST_RELAYER_B_URL;
   const relayerBApiPrefixRaw =
@@ -81,18 +85,30 @@ export const resolveEnv = (overrides: EnvOverrides = {}): LoadTestEnv => {
   }
 
   const relayerBUrl = relayerBUrlRaw ? normalizeRelayerUrl(relayerBUrlRaw) : undefined;
-  if (relayerBUrl && new URL(relayerBUrl).origin === new URL(relayerUrl).origin) {
-    throw new Error(
-      `--relayer-b-url (${relayerBUrl}) must not resolve to the same origin as the primary ` +
-        `relayer (${relayerUrl}).`,
-    );
+  // Reject only when A and B are effectively the SAME target: identical
+  // normalized URL AND identical effective API prefix (B falls back to A's
+  // prefix when unset, mirroring how the client resolves it). Path-routed
+  // deployments — one host serving A and B under distinct paths or API
+  // prefixes (e.g. /v1 vs /v2) — are legitimate and must be accepted.
+  if (relayerBUrl) {
+    const sameUrl = new URL(relayerBUrl).href === new URL(relayerUrl).href;
+    const samePrefix =
+      normalizeApiPrefix(relayerApiPrefix) ===
+      normalizeApiPrefix(relayerBApiPrefixRaw ?? relayerApiPrefix);
+    if (sameUrl && samePrefix) {
+      throw new Error(
+        `--relayer-b-url (${relayerBUrl}) resolves to the same target as the primary relayer ` +
+          `(${relayerUrl}) with the same API prefix; A/B comparison needs two distinct targets. ` +
+          `Use different hosts, paths, or API prefixes (e.g. --relayer-api-prefix /v1 vs ` +
+          `--relayer-b-api-prefix /v2).`,
+      );
+    }
   }
 
   return {
     network,
     relayerUrl,
-    relayerApiPrefix:
-      overrides.relayerApiPrefix ?? process.env.LOAD_TEST_RELAYER_API_PREFIX,
+    relayerApiPrefix,
     relayerBUrl,
     relayerBApiPrefix: relayerBApiPrefixRaw,
     rpcUrl: overrides.rpcUrl ?? process.env[networkConfig.envRpcUrl] ?? undefined,

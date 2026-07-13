@@ -57,11 +57,11 @@ describe("resolveEnv A/B target validation", () => {
     expect(env.relayerBConfigPath).toBe("/tmp/relayer-b.json");
   });
 
-  it("rejects relayer B resolving to the same origin as relayer A", () => {
+  it("rejects relayer B that is an identical target (same URL and API prefix)", () => {
     expect(() => resolveEnv({
       relayerUrl: "https://relayer.example",
       relayerBUrl: "https://relayer.example/v2",
-    })).toThrow(/must not resolve to the same origin/);
+    })).toThrow(/same target as the primary relayer/);
   });
 
   it("allows relayer B on a distinct origin", () => {
@@ -70,5 +70,36 @@ describe("resolveEnv A/B target validation", () => {
       relayerBUrl: "https://candidate.example",
     });
     expect(env.relayerBUrl).toBe("https://candidate.example");
+  });
+
+  it("accepts a path-routed B on the same host with a distinct API prefix", () => {
+    // One gateway host serving A and B under different API prefixes is a
+    // legitimate deployment and must not be rejected.
+    const env = resolveEnv({
+      relayerUrl: "https://gateway.example",
+      relayerApiPrefix: "/v1",
+      relayerBUrl: "https://gateway.example",
+      relayerBApiPrefix: "/v2",
+    });
+    expect(env.relayerBUrl).toBe("https://gateway.example");
+    expect(env.relayerApiPrefix).toBe("/v1");
+    expect(env.relayerBApiPrefix).toBe("/v2");
+  });
+
+  it("accepts a path-routed B on the same host under a distinct base path", () => {
+    const env = resolveEnv({
+      relayerUrl: "https://gateway.example/tenant-a",
+      relayerBUrl: "https://gateway.example/tenant-b",
+    });
+    expect(env.relayerBUrl).toBe("https://gateway.example/tenant-b");
+  });
+
+  it("rejects relayer B with an identical URL and the same effective prefix", () => {
+    expect(() => resolveEnv({
+      relayerUrl: "https://gateway.example",
+      relayerApiPrefix: "/v2",
+      relayerBUrl: "https://gateway.example",
+      // B prefix falls back to A's (/v2), so this is the same target.
+    })).toThrow(/same target as the primary relayer/);
   });
 });
