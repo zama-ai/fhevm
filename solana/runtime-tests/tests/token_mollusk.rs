@@ -40,7 +40,10 @@ use anchor_lang::{
     Discriminator, InstructionData, ToAccountMetas,
 };
 use confidential_token as token;
-use mollusk_svm::{result::Check, Mollusk};
+use mollusk_svm::{
+    result::{Check, InstructionResult},
+    Mollusk,
+};
 use solana_sdk::{
     account::Account,
     instruction::{AccountMeta, Instruction},
@@ -150,6 +153,109 @@ fn eval_step_output(step: &host::FheEvalStep) -> &host::FheEvalOutput {
         | host::FheEvalStep::Sum { output, .. }
         | host::FheEvalStep::IsIn { output, .. }
         | host::FheEvalStep::MulDiv { output, .. } => output,
+    }
+}
+
+#[derive(Default)]
+struct CleartextLedger {
+    values: ClearInputs,
+}
+
+impl CleartextLedger {
+    fn seed_amount(&mut self, handle: [u8; 32], value: u64) {
+        self.values
+            .insert(handle, TypedClearValue::from_u64(BALANCE_FHE_TYPE, value));
+    }
+
+    /// Applies the exact FHE plan invoked by the token program and associates each durable
+    /// result with the handle persisted in its canonical `EncryptedValue` account.
+    fn evaluate_fhe_cpi(
+        &mut self,
+        context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+        result: &InstructionResult,
+    ) -> usize {
+        let message = result
+            .message
+            .as_ref()
+            .expect("Mollusk result must include its compiled message");
+        let eval_args = result
+            .inner_instructions
+            .iter()
+            .filter(|inner| {
+                message
+                    .account_keys()
+                    .get(inner.instruction.program_id_index as usize)
+                    .copied()
+                    == Some(host::id())
+            })
+            .filter_map(|inner| decode_fhe_eval_args(&inner.instruction.data))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            eval_args.len(),
+            1,
+            "expected one token -> host fhe_eval CPI"
+        );
+
+        let outputs = evaluate_cleartext(&eval_args[0], &self.values)
+            .expect("the token program must emit a valid cleartext FHE plan");
+        let mut durable_outputs = 0;
+        for (step, value) in eval_args[0].steps.iter().zip(outputs) {
+            let host::FheEvalOutput::AllowedDurable {
+                output_acl_domain_key,
+                output_app_account,
+                output_encrypted_value_label,
+                ..
+            } = eval_step_output(step)
+            else {
+                continue;
+            };
+            let value_key = zama_solana_acl::derive_value_key(
+                output_acl_domain_key.to_bytes(),
+                output_app_account.to_bytes(),
+                *output_encrypted_value_label,
+            );
+            let address = host::encrypted_value_address(value_key).0;
+            let persisted = read_encrypted_value(context, address);
+            self.values.insert(persisted.current_handle, value);
+            durable_outputs += 1;
+        }
+        durable_outputs
+    }
+
+    fn balance(
+        &self,
+        context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+        token_account: Pubkey,
+    ) -> u64 {
+        let account = read_token_account(context, token_account);
+        self.u64_at(context, account.balance_encrypted_value)
+    }
+
+    fn transferred_amount(
+        &self,
+        context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+        mint: Pubkey,
+        from_token: Pubkey,
+    ) -> u64 {
+        self.u64_at(
+            context,
+            token::encrypted_value_address(mint, from_token, token::transferred_amount_label()).0,
+        )
+    }
+
+    fn u64_at(
+        &self,
+        context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+        encrypted_value: Pubkey,
+    ) -> u64 {
+        let handle = read_encrypted_value(context, encrypted_value).current_handle;
+        let value = self
+            .values
+            .get(&handle)
+            .expect("missing cleartext value for persisted handle");
+        assert_eq!(value.fhe_type, BALANCE_FHE_TYPE);
+        assert_eq!(value.value[..24], [0; 24], "cleartext value exceeds u64");
+        u64::from_be_bytes(value.value[24..].try_into().unwrap())
     }
 }
 
@@ -937,7 +1043,7 @@ fn mollusk_confidential_transfer_self_transfer_is_no_op() {
     let context = mollusk().with_context(fixture.base_accounts());
     let amount_handle = handle_for_chain(9, BALANCE_FHE_TYPE);
     let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
-    let ix = confidential_transfer_ix(
+    let transfer = confidential_transfer_ix(
         &fixture,
         fixture.alice_token,
         fixture.alice_token,
@@ -946,7 +1052,7 @@ fn mollusk_confidential_transfer_self_transfer_is_no_op() {
         attestation,
     );
 
-    let result = context.process_instruction(&ix);
+    let result = context.process_instruction(&transfer);
 
     assert!(result.raw_result.is_ok());
     assert!(result.inner_instructions.is_empty());
@@ -964,9 +1070,13 @@ fn mollusk_confidential_transfer_updates_lineages_and_cleartext_balances() {
     let fixture = TokenFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
     let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.alice_initial, 1_000);
+    cleartext.seed_amount(fixture.bob_initial, 100);
+    cleartext.seed_amount(amount_handle, 400);
     let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
     let transferred_value_address = fixture.transferred_amount_value_address(fixture.alice_token);
-    let ix = confidential_transfer_ix(
+    let transfer = confidential_transfer_ix(
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
@@ -975,9 +1085,16 @@ fn mollusk_confidential_transfer_updates_lineages_and_cleartext_balances() {
         attestation,
     );
 
-    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
+    let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
-    assert!(!result.inner_instructions.is_empty());
+    assert_eq!(durable_outputs, 3);
+    assert_eq!(cleartext.balance(&context, fixture.alice_token), 600);
+    assert_eq!(cleartext.balance(&context, fixture.bob_token), 500);
+    assert_eq!(
+        cleartext.transferred_amount(&context, fixture.mint, fixture.alice_token),
+        400
+    );
 
     // Token account addresses and their balance `EncryptedValue` PDAs stay stable across the
     // transfer: no new balance account is created, the existing lineages are superseded in place.
@@ -1033,77 +1150,6 @@ fn mollusk_confidential_transfer_updates_lineages_and_cleartext_balances() {
     assert!(transferred.has_subject(fixture.bob_owner));
     assert!(transferred.has_subject(fixture.compute_signer));
     assert_eq!(transferred.leaf_count, 0); // birth: no supersession yet.
-
-    // Apply cleartext semantics to the exact `fhe_eval` plan that crossed the token -> host CPI.
-    // The plaintext map is test-owned: production handles remain opaque and all program-side
-    // account, signer, attestation, ACL, HCU, handle-derivation, and persistence checks above ran
-    // unchanged under Mollusk.
-    let eval_args = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_fhe_eval_args(&inner.instruction.data))
-        .collect::<Vec<_>>();
-    assert_eq!(eval_args.len(), 1);
-    let clear_inputs = ClearInputs::from([
-        (
-            fixture.alice_initial,
-            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 1_000),
-        ),
-        (
-            fixture.bob_initial,
-            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 100),
-        ),
-        (
-            amount_handle,
-            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 400),
-        ),
-    ]);
-    let clear_outputs = evaluate_cleartext(&eval_args[0], &clear_inputs).unwrap();
-    assert_eq!(
-        clear_outputs,
-        vec![
-            TypedClearValue::from_u64(0, 1),
-            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 600),
-            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 600),
-            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 400),
-            TypedClearValue::from_u64(BALANCE_FHE_TYPE, 500),
-        ]
-    );
-    // Durable cleartext binding comes from the canonical output descriptors and resulting account
-    // state, not optional compute events (valid frames above eight steps emit none).
-    let durable_handles_by_index = HashMap::from([
-        (0_u16, alice_balance.current_handle),
-        (1_u16, transferred.current_handle),
-        (2_u16, bob_balance.current_handle),
-    ]);
-    let cleartext_by_handle = eval_args[0]
-        .steps
-        .iter()
-        .zip(clear_outputs)
-        .filter_map(|(step, value)| match eval_step_output(step) {
-            host::FheEvalOutput::AllowedLocal => None,
-            host::FheEvalOutput::AllowedDurable {
-                output_encrypted_value_index,
-                ..
-            } => Some((
-                durable_handles_by_index[output_encrypted_value_index],
-                value,
-            )),
-        })
-        .collect::<ClearInputs>();
-    assert_eq!(cleartext_by_handle.len(), 3);
-    assert_eq!(
-        cleartext_by_handle[&alice_balance.current_handle],
-        TypedClearValue::from_u64(BALANCE_FHE_TYPE, 600)
-    );
-    assert_eq!(
-        cleartext_by_handle[&transferred.current_handle],
-        TypedClearValue::from_u64(BALANCE_FHE_TYPE, 400)
-    );
-    assert_eq!(
-        cleartext_by_handle[&bob_balance.current_handle],
-        TypedClearValue::from_u64(BALANCE_FHE_TYPE, 500)
-    );
 
     let transfer_events: Vec<token::ConfidentialTransferEvent> = result
         .inner_instructions
