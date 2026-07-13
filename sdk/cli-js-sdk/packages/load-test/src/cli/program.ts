@@ -14,7 +14,9 @@ export const createProgram = (): Command => {
   const program = new Command()
     .name("load-test")
     .description("FHEVM relayer load-test tool for legacy and v2 implementations")
-    .addOption(new Option("-n, --network <network>", "network to target").choices(NETWORKS).default(DEFAULT_NETWORK))
+    .addOption(
+      new Option("-n, --network <network>", `network to target (default: ${DEFAULT_NETWORK})`).choices(NETWORKS),
+    )
     .option("--relayer-url <url>", "relayer base URL override")
     .option("--relayer-api-prefix <prefix>", "primary relayer API route prefix (raw flows only)")
     .option("--relayer-b <url>", "candidate relayer base URL for paired dispatch")

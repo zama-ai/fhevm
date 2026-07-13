@@ -145,6 +145,12 @@ describe("CLI interruption exit behavior", () => {
       ?.commands.map((command) => command.name())).toEqual(["list", "plan", "prepare", "run"]);
   });
 
+  it("leaves --network unset by default so LOAD_TEST_NETWORK is not shadowed", () => {
+    const program = createProgram();
+    expect((program.opts() as { network?: string }).network).toBeUndefined();
+    expect(program.helpInformation()).toContain("network to target (default:");
+  });
+
   it("renders top-level help and routes a scenario action", async () => {
     const help = createProgram();
     let output = "";
