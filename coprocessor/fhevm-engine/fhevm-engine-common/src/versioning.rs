@@ -334,19 +334,25 @@ pub const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
 /// compatible, so this does **not** serialize BCS worker replicas against each
 /// other — only against the one-shot cutover.
 ///
-/// GCS-mode workers write to the `gcs-*` schema (never the cutover target), so
-/// the gate is a no-op for them: it returns `false` without taking the lock.
+/// GCS-mode (green) workers also take the shared lock: their writes land in the
+/// `gcs` schema, which `execute_cutover` merges into the live tables and then
+/// drops. Without the lock a green write committing between cutover's merge read
+/// and its `DROP SCHEMA gcs CASCADE` would be neither merged nor preserved (a
+/// silent-loss window); holding the shared lock makes cutover's exclusive request
+/// block until the write commits, so it is merged before the drop. They skip only
+/// the [`is_retired`] re-check: a green binary is strictly newer than the live
+/// stack, so it can never be retired (`is_retired` is always `false` for it).
 pub async fn cutover_gate(
     tx: &mut Transaction<'_, Postgres>,
     gcs_mode: bool,
 ) -> Result<bool, sqlx::Error> {
-    if gcs_mode {
-        return Ok(false);
-    }
     sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
         .bind(CUTOVER_LOCK_ID)
         .execute(&mut **tx)
         .await?;
+    if gcs_mode {
+        return Ok(false);
+    }
     is_retired(tx).await
 }
 
