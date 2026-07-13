@@ -90,6 +90,7 @@ pub enum KeyType {
     Server,
     #[default]
     Public,
+    CompressedKeySet = 3,
 }
 
 impl TryFrom<u8> for KeyType {
@@ -100,6 +101,8 @@ impl TryFrom<u8> for KeyType {
             Ok(Self::Server)
         } else if value == Self::Public as u8 {
             Ok(Self::Public)
+        } else if value == Self::CompressedKeySet as u8 {
+            Ok(Self::CompressedKeySet)
         } else {
             Err(anyhow!("Invalid KeyType value: {value}"))
         }
@@ -113,6 +116,7 @@ impl FromStr for KeyType {
         match s {
             "ServerKey" => Ok(Self::Server),
             "PublicKey" => Ok(Self::Public),
+            "CompressedXofKeySet" => Ok(Self::CompressedKeySet),
             _ => Err(anyhow!("Invalid KeyType value: {s}")),
         }
     }

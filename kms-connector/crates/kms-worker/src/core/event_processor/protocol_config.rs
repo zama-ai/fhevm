@@ -7,7 +7,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{
-    KmsGrpcRequest, db::KeyType, extra_data::extra_data_v2_payload, u256_to_request_id,
+    db::KeyType, extra_data::extra_data_v2_payload, u256_to_request_id, KmsGrpcRequest,
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{self, KMSGenerationInstance},
@@ -291,6 +291,7 @@ fn key_type_to_string(key_type: u8) -> anyhow::Result<String> {
     match KeyType::try_from(key_type)? {
         KeyType::Server => Ok("ServerKey".to_string()),
         KeyType::Public => Ok("PublicKey".to_string()),
+        KeyType::CompressedKeySet => Ok("CompressedXofKeySet".to_string()),
     }
 }
 

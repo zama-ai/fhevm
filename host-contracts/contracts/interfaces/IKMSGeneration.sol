@@ -20,7 +20,9 @@ interface IKMSGeneration {
      */
     enum KeyType {
         Server, // 0
-        Public // 1
+        Public, // 1
+        Reserved, // 2
+        CompressedKeySet // 3
     }
 
     /**

@@ -3,7 +3,7 @@ use crate::core::{
     event_processor::{ContextManager, ProcessingError, RequestCheckError},
 };
 use alloy::primitives::U256;
-use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_to_request_id};
+use connector_utils::types::{extra_data::parse_extra_data, u256_to_request_id, KmsGrpcRequest};
 use fhevm_host_bindings::kms_generation::KMSGeneration::{
     CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
@@ -60,8 +60,8 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: prep_keygen_request.extraData.to_vec(),
-            // Used to generate other types of key, but not planned to be supported by the Gateway
-            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
+            // Explicitly request the compressed XOF keyset layout expected by GPU workers.
+            keyset_config: Some(COMPRESSED_XOF_KEY_SET_CONFIG),
         }))
     }
 
@@ -84,8 +84,8 @@ where
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: keygen_request.extraData.to_vec(),
-            // Used to generate other types of key, but not planned to be supported by the Gateway
-            keyset_config: Some(UNCOMPRESSED_KEY_SET_CONFIG),
+            // Explicitly request the compressed XOF keyset layout expected by GPU workers.
+            keyset_config: Some(COMPRESSED_XOF_KEY_SET_CONFIG),
             keyset_added_info: None,
         }))
     }
@@ -124,11 +124,28 @@ where
     }
 }
 
-const UNCOMPRESSED_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
+const COMPRESSED_XOF_KEY_SET_CONFIG: KeySetConfig = KeySetConfig {
     keyset_type: KeySetType::Standard as i32,
     standard_keyset_config: Some(StandardKeySetConfig {
         compute_key_type: ComputeKeyType::Cpu as i32,
         secret_key_config: KeyGenSecretKeyConfig::GenerateAll as i32,
-        compressed_key_config: CompressedKeyConfig::CompressedNone as i32,
+        compressed_key_config: CompressedKeyConfig::CompressedAll as i32,
     }),
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keygen_requests_use_compressed_xof_keyset_config() {
+        let config = COMPRESSED_XOF_KEY_SET_CONFIG
+            .standard_keyset_config
+            .expect("standard keyset config must be present");
+
+        assert_eq!(
+            config.compressed_key_config,
+            CompressedKeyConfig::CompressedAll as i32
+        );
+    }
+}
