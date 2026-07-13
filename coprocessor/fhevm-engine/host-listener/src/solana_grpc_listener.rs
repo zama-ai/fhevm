@@ -155,9 +155,6 @@ pub struct SolanaGrpcListenerConfig {
     /// On-chain HostConfig chain_id used in handle derivation (distinct from the
     /// coprocessor host-chain id). Used by the reconstruction path.
     pub chain_id: u64,
-    /// True when the on-chain HostConfig enables zero-birth entropy (test/PoC):
-    /// derivation uses previous_bank_hash=[0;32] instead of the SlotHashes value.
-    pub zero_birth_entropy: bool,
 }
 
 /// Connects, subscribes, and ingests until `cancel` fires. Reconnects with a
@@ -677,8 +674,7 @@ fn unix_to_pdt(ts: i64) -> Option<PrimitiveDateTime> {
 }
 
 /// Builds the handle-derivation context for `slot` from the streamed sysvars,
-/// applying the zero-birth-entropy rule. Returns `None` until both the Clock and
-/// (in production mode) the SlotHashes value for the slot have been cached.
+/// Returns `None` until both the Clock and SlotHashes value for the slot have been cached.
 fn reconstruct_context(
     config: &SolanaGrpcListenerConfig,
     slot: u64,
@@ -686,14 +682,7 @@ fn reconstruct_context(
     slot_clock_ts: &HashMap<u64, i64>,
 ) -> Option<crate::solana_reconstruct::ReconstructContext> {
     let unix_timestamp = slot_clock_ts.get(&slot).copied()?;
-    // Zero-birth-entropy (test/PoC) configs derive with previous_bank_hash=[0;32]
-    // (host_config.zero_birth_entropy_allowed()); production uses the
-    // SlotHashes-sourced value for the tx's slot.
-    let previous_bank_hash = if config.zero_birth_entropy {
-        [0u8; 32]
-    } else {
-        slot_bank_hash.get(&slot).copied()?
-    };
+    let previous_bank_hash = slot_bank_hash.get(&slot).copied()?;
     Some(crate::solana_reconstruct::ReconstructContext {
         chain_id: config.chain_id,
         previous_bank_hash,
@@ -932,13 +921,13 @@ mod fhe_eval_acl_tests {
             rpc_fallback_url: "http://127.0.0.1:1".to_owned(),
             program_id: ZAMA_HOST.to_owned(),
             chain_id: 12345,
-            zero_birth_entropy: true,
         }
     }
 
     const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";
     const ENCRYPTED_VALUE: [u8; 32] = [0x22; 32];
     const SUBJECT: [u8; 32] = [0x33; 32];
+    const PREVIOUS_BANK_HASH: [u8; 32] = [0x44; 32];
 
     fn discriminator(name: &str) -> [u8; 8] {
         let digest = Sha256::digest(format!("global:{name}").as_bytes());
@@ -995,14 +984,17 @@ mod fhe_eval_acl_tests {
     }
 
     fn slot_context() -> (HashMap<u64, [u8; 32]>, HashMap<u64, i64>) {
-        (HashMap::new(), HashMap::from([(42, 1_700_000_000)]))
+        (
+            HashMap::from([(42, PREVIOUS_BANK_HASH)]),
+            HashMap::from([(42, 1_700_000_000)]),
+        )
     }
 
     /// The durable `Add` output handle the fhe_eval fixtures produce, derived
     /// exactly as the program does: the base handle, no per-output binding
     /// (durable == instruction-local, matching EVM). Matches `config()`
-    /// (chain_id 12345, zero_birth_entropy → previous_bank_hash [0;32]), slot
-    /// 42's clock ts, op_index 0, scalar rhs.
+    /// (chain_id 12345, `PREVIOUS_BANK_HASH`), slot 42's clock ts, op_index 0,
+    /// scalar rhs.
     fn derived_add_output_handle() -> [u8; 32] {
         zama_host::state::computed_eval_handle(
             PgmBinaryOpCode::Add,
@@ -1011,7 +1003,7 @@ mod fhe_eval_acl_tests {
             true,
             5,
             12345,
-            [0; 32],
+            PREVIOUS_BANK_HASH,
             1_700_000_000,
             [1; 32],
             0,

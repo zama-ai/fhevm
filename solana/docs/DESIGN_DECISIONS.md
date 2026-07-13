@@ -464,41 +464,30 @@ Consequences:
 Tests should cover both positive Solana witness acceptance and negative cases where EVM-shaped
 checks are unavailable or inappropriate.
 
-## DD-014: Local-PoC Relaxations Are Compile-Gated And Chain-Id Confined
+## DD-014: Host Handle Birth Has No Local-PoC Relaxation
 
 Status: adopted
 
 Context:
 
-Local testing needs a zero birth-entropy fallback when the Mollusk slot-hash sysvar is empty. Earlier
-test-only controls were gated only by admin-toggled `HostConfig` flags, so enabling them could silently
-re-open the zero-entropy hole, and nothing bound them to a non-production chain.
+Earlier local tests used admin-toggled `HostConfig` flags and a zero birth-entropy fallback when the
+Mollusk slot-hash sysvar was empty. That made test setup diverge from the deployed handle-birth path.
 
 Decision:
 
-Two defenses stack. (1) The local-only controls (`set_test_shims_enabled`,
-`set_mock_input_enabled`) are `#[cfg(feature = "poc")]` — compiled out of default/production builds.
-(2) The surviving state relaxation, the zero-entropy fallback, is gated at the consumption site by
-`HostConfig::zero_birth_entropy_allowed()` (`test_shims_enabled && is_local_poc_chain()`, where
-`is_local_poc_chain() = POC_FEATURE_ENABLED && chain_id == SOLANA_POC_CHAIN_ID`). A default build, or
-any non-PoC chain id, always takes the production branch — handle birth fails closed with
-`PreviousBankHashUnavailable`.
-
-The former `mock_input_verified_and_bind` input short-circuit, the never-consumed `mock_input_allowed`
-gate, and the event-only `test_emit_*` instructions were **removed**. The real input path is the in-frame
-secp256k1 attestation verify (DD-007). The vestigial `mock_input_enabled` flag on `HostConfig` remains
-only for account-layout stability and should be dropped at the next ABI break.
+The host `poc` feature, its admin controls, and the zero-entropy fallback are removed. Handle birth
+always reads the previous bank hash and fails with `PreviousBankHashUnavailable` if the runtime does
+not provide one. Mollusk and LiteSVM tests seed `Clock` and `SlotHashes` as a validator would. The real
+input path remains the in-frame secp256k1 attestation verify (DD-007).
 
 Rationale:
 
-The security boundary belongs at the point of use *and* is compiled out entirely by default, so the
-property holds even if a future config path forgets a guard.
+One handle-birth path is easier to reason about and tests the same entropy requirement as deployment.
 
 Consequences:
 
-The host and app (`confidential-token`) derive the same gate from the same `HostConfig`, so
-app-precomputed and host-verified handles stay in agreement. The `PreviousBankHashUnavailable`
-negative test runs on the PoC chain with `test_shims_enabled = false` to exercise fail-closed birth.
+Missing prior-bank entropy fails closed on every chain. The confidential-token demo retains its own
+compile-gated receiver helpers; those do not alter host verification or handle derivation.
 
 ## DD-015: Handle Birth Entropy Policy — RESOLVED: Keep The Entropy
 
@@ -1037,8 +1026,8 @@ Status: adopted (reconciliation) — stated so the debate doesn't assume more th
 - **Single local validator** in the harness — real reorgs / finality lag are not exercised end-to-end.
 - **Input proof / transciphering** behind the coprocessor attestation is a PoC shortcut; real ZKPoK +
   transciphering is production work (DD-007).
-- The zero-birth-entropy fallback remains test-only and chain-id confined (DD-014); its controls are
-  compiled out for mainnet (Open Product Decisions).
+- Host handle birth always requires the previous bank hash; local runtime tests seed the real
+  `Clock` and `SlotHashes` sysvars (DD-014).
 
 ## DD-029: `drift_revert` ≠ On-Chain Reorg (disambiguation)
 
@@ -1384,14 +1373,12 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - Handle birth entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
   handles are accepted on every chain.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
-- Rejecting the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID = 12345`) unconditionally in production
-  builds; the `poc` feature already compiles out the shims and confines the zero-entropy fallback.
+- Replacing the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID = 12345`) with the repository-wide
+  high-bit Solana chain-id convention.
 - Rent/archival policy for the `EncryptedValue` MMR itself (DD-032): the account no longer needs
   per-supersession PDA closes (one stable PDA is reused for a lineage's whole life), but growth of
   `peaks`/`subjects` over a long-lived lineage's history still needs a compaction story if rent becomes
   a product issue.
-- Dropping the vestigial `mock_input_enabled` flag and dead callback-flow enum variants at the next
-  deliberate ABI break (FUTURE_DESIGN §6).
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
 - Full production KMS-connector wiring and real ZKPoK / transciphering behind the input attestation
   (both PoC shortcuts today, DD-028).

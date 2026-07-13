@@ -248,24 +248,22 @@ fn token_request_witnesses_bind_handle_lineage_and_secp_kms_context() {
 }
 
 #[test]
-fn production_poc_paths_are_compile_feature_gated_and_runtime_rejected() {
+fn host_poc_shims_are_absent_while_token_demo_helpers_remain_gated() {
     assert!(
-        HOST_CARGO.contains("poc"),
-        "zama-host Cargo.toml must define a `poc` feature for mock/test-only paths"
+        !HOST_CARGO
+            .lines()
+            .any(|line| line.trim_start().starts_with("poc =")),
+        "zama-host must not expose a `poc` feature"
     );
     assert!(
         TOKEN_CARGO.contains("poc"),
         "confidential-token Cargo.toml must define a `poc` feature for receiver test paths"
     );
 
-    for symbol in [
-        "mock_input_verified_and_bind",
-        "test_emit_input_verified",
-        "test_emit_acl_allowed",
-    ] {
+    for symbol in ["set_test_shims_enabled", "set_mock_input_enabled"] {
         assert!(
-            cfg_gated_symbol(HOST_LIB, symbol) || cfg_gated_symbol(HOST_LIB, &camelish(symbol)),
-            "`{symbol}` must be gated out of production/default builds"
+            !HOST_LIB.contains(symbol),
+            "removed host shim `{symbol}` must be absent"
         );
     }
     assert!(
@@ -295,14 +293,12 @@ fn production_poc_paths_are_compile_feature_gated_and_runtime_rejected() {
         );
     }
 
-    assert!(
-        HOST_CONFIG.contains("SOLANA_POC_CHAIN_ID") && HOST_CONFIG.contains("poc"),
-        "HostConfig validation must reject SOLANA_POC_CHAIN_ID outside the poc feature"
-    );
-    assert!(
-        HOST_CONFIG.contains("mock_input_enabled") && HOST_CONFIG.contains("test_shims_enabled"),
-        "production initialization must reject enabled mock/test flags"
-    );
+    for removed in ["test_authority", "mock_input_enabled", "test_shims_enabled"] {
+        assert!(
+            !HOST_CONFIG.contains(removed),
+            "removed host config field `{removed}` must be absent"
+        );
+    }
 }
 
 #[test]

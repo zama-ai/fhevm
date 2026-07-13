@@ -35,7 +35,7 @@ pub use crate::constants::*;
 pub struct InitializeHostConfigArgs {
     /// Host-chain id encoded into newly derived handles.
     pub chain_id: u64,
-    /// Authority used by mock and signed encrypted-input bind paths.
+    /// Authority used by signed encrypted-input bind paths.
     pub input_verifier_authority: Pubkey,
     /// EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators.
     pub gateway_chain_id: u64,
@@ -47,12 +47,6 @@ pub struct InitializeHostConfigArgs {
     pub decryption_contract: [u8; 20],
     /// Authority allowed to commit ciphertext material readiness.
     pub material_authority: Pubkey,
-    /// Reserved legacy test authority; retained for account-layout stability.
-    pub test_authority: Pubkey,
-    /// Whether the mock encrypted-input bind path is enabled.
-    pub mock_input_enabled: bool,
-    /// Whether the local zero-birth-entropy fallback is enabled.
-    pub test_shims_enabled: bool,
     /// Whether persistent grants must include a deny-list witness.
     pub grant_deny_list_enabled: bool,
 }
@@ -855,27 +849,8 @@ pub fn computed_eval_handle_for_current_slot_with_chain_id(
     context_id: [u8; 32],
     op_index: u16,
 ) -> Result<[u8; 32]> {
-    computed_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
-        op, lhs, rhs, scalar, fhe_type, chain_id, context_id, op_index, false,
-    )
-}
-
-/// Derives an instruction-local eval handle, optionally using the local-test
-/// zero fallback when explicitly allowed by host config.
-#[allow(clippy::too_many_arguments)]
-pub fn computed_eval_handle_for_current_slot_with_chain_id_and_test_fallback(
-    op: FheBinaryOpCode,
-    lhs: [u8; 32],
-    rhs: [u8; 32],
-    scalar: bool,
-    fhe_type: u8,
-    chain_id: u64,
-    context_id: [u8; 32],
-    op_index: u16,
-    allow_test_zero: bool,
-) -> Result<[u8; 32]> {
     let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash_with_test_fallback(clock.slot, allow_test_zero)?;
+    let previous_bank_hash = previous_bank_hash(clock.slot)?;
     Ok(computed_eval_handle(
         op,
         lhs,
@@ -1339,18 +1314,6 @@ pub fn previous_bank_hash(current_slot: u64) -> Result<[u8; 32]> {
     });
     latest_prior_bank_hash_from_entries(current_slot, entries)
         .ok_or_else(|| error!(ZamaHostError::PreviousBankHashUnavailable))
-}
-
-/// Returns the previous slot hash, allowing a zero-hash fallback only for local
-/// test configurations that explicitly enable test shims.
-pub fn previous_bank_hash_with_test_fallback(
-    current_slot: u64,
-    allow_test_zero: bool,
-) -> Result<[u8; 32]> {
-    if allow_test_zero {
-        return Ok([0; 32]);
-    }
-    previous_bank_hash(current_slot)
 }
 
 fn latest_prior_bank_hash_from_entries<I>(current_slot: u64, entries: I) -> Option<[u8; 32]>

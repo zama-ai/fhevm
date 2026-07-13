@@ -71,9 +71,8 @@ cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener 
 - **Stale or wrong-feature SBF artifacts.** After changing an Anchor program, **rebuild** before
   running runtime tests — a stale `.so` will make tests pass or fail against old code. Prefer
   `bash scripts/check-zama-host-idl.sh`: it checks the default production IDL/ABI surface, then
-  rebuilds the `target/deploy` artifacts with the PoC-only host/token features that Mollusk tests
-  exercise. Plain `anchor build` is fine for production artifacts, but it does not include the
-  local-only runtime-test controls.
+  rebuilds the confidential-token artifact with its PoC-only receiver helpers. The host artifact
+  has no alternate test feature or entropy path.
 - **SPL Token CPIs in token tests.** `token_mollusk` executes real SPL Token CPIs through the
   matching `mollusk-svm-programs-token` program fixture.
 - **`anchor build` vs program ids.** `anchor build` checks that each program's declared id matches

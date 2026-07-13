@@ -467,9 +467,6 @@ fn bootstrap(
                     coprocessor_signer,
                     decryption_contract,
                     material_authority: authority,
-                    test_authority: authority, // inert: test shims OFF
-                    mock_input_enabled: false,
-                    test_shims_enabled: false,
                     grant_deny_list_enabled: false,
                 },
             })
@@ -1698,9 +1695,6 @@ fn ensure_host_config(
                 coprocessor_signer: [0u8; 20],
                 decryption_contract: [0u8; 20],
                 material_authority: payer.pubkey(),
-                test_authority: payer.pubkey(),
-                mock_input_enabled: true,
-                test_shims_enabled: true,
                 grant_deny_list_enabled: false,
             },
         })

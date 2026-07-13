@@ -56,6 +56,12 @@ fn mollusk() -> Mollusk {
     mollusk
 }
 
+fn mollusk_without_previous_bank_hash() -> Mollusk {
+    let mut mollusk = mollusk();
+    mollusk.sysvars.slot_hashes = solana_sdk::slot_hashes::SlotHashes::default();
+    mollusk
+}
+
 fn anchor_ix<A, D>(program_id: Pubkey, accounts: A, args: D) -> Instruction
 where
     A: ToAccountMetas,
@@ -149,10 +155,7 @@ fn host_config_account_with_flags(
                 decryption_contract: DECRYPTION_CONTRACT,
                 current_kms_context_id: 0,
                 material_authority: admin,
-                test_authority: admin,
                 paused,
-                mock_input_enabled: false,
-                test_shims_enabled: true,
                 grant_deny_list_enabled,
                 max_hcu_per_tx: 0,
                 max_hcu_depth_per_tx: 0,
@@ -713,6 +716,62 @@ fn mollusk_create_encrypted_value_rejects_raw_handle_without_provenance() {
         &accounts,
         &[custom_error(
             host::errors::ZamaHostError::RawEncryptedValueLifecycleDisabled,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_fhe_eval_fails_closed_without_previous_bank_hash() {
+    let authority = Pubkey::new_unique();
+    let subject = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let (encrypted_value, _value) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        handle_for_chain(1, 5),
+        &[subject],
+    );
+    let args = FheEvalArgs {
+        context_id: [1; 32],
+        steps: vec![FheEvalStep::TrivialEncrypt {
+            plaintext: [1; 32],
+            fhe_type: 5,
+            output: FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index: 0,
+                output_app_account_authority_index: None,
+                output_acl_domain_key: Pubkey::new_unique(),
+                output_app_account: authority,
+                output_encrypted_value_label: label("balance"),
+                output_subjects: vec![host::AclSubjectEntry { pubkey: subject }],
+                previous_handle: None,
+                previous_subjects: None,
+                make_public: false,
+            },
+        }],
+    };
+    let ix = fhe_eval_ix(
+        authority,
+        subject,
+        authority,
+        host_config,
+        args,
+        vec![writable(encrypted_value)],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (subject, funded_system_account()),
+        (encrypted_value, empty_system_account()),
+        (host_config, host_config_account),
+        (event_authority(host::id()), Account::default()),
+    ];
+
+    mollusk_without_previous_bank_hash().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::PreviousBankHashUnavailable,
         )],
     );
 }
@@ -3025,9 +3084,6 @@ fn mollusk_initialize_host_config_defaults_block_cap_to_unrestricted() {
         coprocessor_signer: [0u8; 20],
         decryption_contract: [0u8; 20],
         material_authority: Pubkey::new_unique(),
-        test_authority: Pubkey::new_unique(),
-        mock_input_enabled: false,
-        test_shims_enabled: false,
         grant_deny_list_enabled: false,
     };
     let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);

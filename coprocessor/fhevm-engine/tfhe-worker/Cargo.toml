@@ -60,7 +60,7 @@ testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
 serde = { workspace = true }
 serial_test = { workspace = true }
-zama-host = { path = "../../../solana/programs/zama-host", features = ["no-entrypoint", "poc"] }
+zama-host = { path = "../../../solana/programs/zama-host", features = ["no-entrypoint"] }
 
 [[bin]]
 name = "tfhe_worker"

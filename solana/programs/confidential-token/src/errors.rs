@@ -93,15 +93,6 @@ pub enum ConfidentialTokenError {
     /// The disclosed handle has not been released for public decrypt.
     #[msg("handle is not released for public decrypt")]
     PublicDecryptNotReleased,
-    /// Transfer callback settlement accounts do not match the prior transfer.
-    #[msg("transfer callback settlement accounts are invalid")]
-    CallbackSettlementMismatch,
-    /// Receiver hook did not return the expected callback witness.
-    #[msg("receiver hook return data is invalid")]
-    ReceiverHookMismatch,
-    /// Receiver hook payload or account list exceeds program limits.
-    #[msg("receiver hook input exceeds program limits")]
-    ReceiverHookInputTooLarge,
     /// Internal FHE eval plan construction failed before the host CPI.
     #[msg("FHE eval plan is invalid")]
     InvalidFheEvalPlan,

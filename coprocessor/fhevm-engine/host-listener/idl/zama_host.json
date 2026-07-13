@@ -1674,346 +1674,321 @@
     },
     {
       "code": 6005,
-      "name": "MockInputDisabled",
-      "msg": "mock input binding is disabled"
-    },
-    {
-      "code": 6006,
-      "name": "MockInputVerifierMismatch",
-      "msg": "mock input verifier authority does not match config"
-    },
-    {
-      "code": 6007,
       "name": "InputVerifierMismatch",
       "msg": "input verifier authority does not match config"
     },
     {
-      "code": 6008,
+      "code": 6006,
       "name": "InvalidInputProof",
       "msg": "input proof is invalid"
     },
     {
-      "code": 6009,
+      "code": 6007,
       "name": "InvalidInputHandleIndex",
       "msg": "input proof handle index is invalid"
     },
     {
-      "code": 6010,
+      "code": 6008,
       "name": "InvalidInputHandle",
       "msg": "input proof selected handle does not match"
     },
     {
-      "code": 6011,
+      "code": 6009,
       "name": "InvalidInputAttestation",
       "msg": "coprocessor input attestation is invalid"
     },
     {
-      "code": 6012,
+      "code": 6010,
       "name": "GatewayVerifierConfigUnset",
       "msg": "gateway verifier config is not set"
     },
     {
-      "code": 6013,
+      "code": 6011,
       "name": "EmptyKmsContext",
       "msg": "KMS context has no signers"
     },
     {
-      "code": 6014,
+      "code": 6012,
       "name": "TooManyKmsSigners",
       "msg": "KMS context exceeds the maximum signer count"
     },
     {
-      "code": 6015,
+      "code": 6013,
       "name": "InvalidKmsThreshold",
       "msg": "KMS context threshold is invalid"
     },
     {
-      "code": 6016,
+      "code": 6014,
       "name": "InvalidKmsContextId",
       "msg": "KMS context id is not the next sequential id"
     },
     {
-      "code": 6017,
+      "code": 6015,
       "name": "CurrentKmsContextCannotBeDestroyed",
       "msg": "current KMS context cannot be destroyed"
     },
     {
-      "code": 6018,
+      "code": 6016,
       "name": "InvalidInputHandleVersion",
       "msg": "input handle version is unsupported"
     },
     {
-      "code": 6019,
+      "code": 6017,
       "name": "InvalidInputHandleChain",
       "msg": "input handle chain id does not match host config"
     },
     {
-      "code": 6020,
+      "code": 6018,
       "name": "InvalidInputHandleType",
       "msg": "input handle FHE type is unsupported"
     },
     {
-      "code": 6021,
+      "code": 6019,
       "name": "UnsupportedFheType",
       "msg": "FHE type is unsupported"
     },
     {
-      "code": 6022,
+      "code": 6020,
       "name": "BinaryOperandTypeMismatch",
       "msg": "binary FHE operand type is incompatible"
     },
     {
-      "code": 6023,
+      "code": 6021,
       "name": "InvalidRandomUpperBound",
       "msg": "bounded random upper bound is invalid"
     },
     {
-      "code": 6024,
+      "code": 6022,
       "name": "InputProofSignatureMissing",
       "msg": "input proof Ed25519 signature is missing or malformed"
     },
     {
-      "code": 6025,
-      "name": "TestShimsDisabled",
-      "msg": "test event shims are disabled"
-    },
-    {
-      "code": 6026,
-      "name": "TestShimAuthorityMismatch",
-      "msg": "test shim authority does not match config"
-    },
-    {
-      "code": 6027,
+      "code": 6023,
       "name": "AppAccountAuthorityMismatch",
       "msg": "ACL app account authority does not match app account"
     },
     {
-      "code": 6028,
+      "code": 6024,
       "name": "PublicDecryptAtBirthUnsupported",
       "msg": "public decrypt cannot be set at encrypted value birth"
     },
     {
-      "code": 6029,
+      "code": 6025,
       "name": "AclDenyRecordMissing",
       "msg": "ACL deny-list account is required"
     },
     {
-      "code": 6030,
+      "code": 6026,
       "name": "AclDenyRecordMismatch",
       "msg": "ACL deny-list account does not match the canonical PDA"
     },
     {
-      "code": 6031,
+      "code": 6027,
       "name": "AclSubjectDenied",
       "msg": "ACL authority subject is deny-listed"
     },
     {
-      "code": 6032,
+      "code": 6028,
       "name": "DelegationPdaMismatch",
       "msg": "delegation record does not match the canonical PDA"
     },
     {
-      "code": 6033,
+      "code": 6029,
       "name": "InvalidDelegation",
       "msg": "delegation tuple is invalid"
     },
     {
-      "code": 6034,
+      "code": 6030,
       "name": "DelegationRevoked",
       "msg": "delegation has already been revoked"
     },
     {
-      "code": 6035,
+      "code": 6031,
       "name": "DelegationUpdatedInCurrentSlot",
       "msg": "delegation was already updated in the current slot"
     },
     {
-      "code": 6036,
+      "code": 6032,
       "name": "PreviousBankHashUnavailable",
       "msg": "previous bank hash is not available"
     },
     {
-      "code": 6037,
+      "code": 6033,
       "name": "PdaCreationMismatch",
       "msg": "PDA creation target is invalid"
     },
     {
-      "code": 6038,
+      "code": 6034,
       "name": "InvalidFheEvalOperationCount",
       "msg": "FHE eval operation count is invalid"
     },
     {
-      "code": 6039,
+      "code": 6035,
       "name": "FheEvalBornPublicFrameTooLarge",
       "msg": "reserved FHE eval produced-public transport error"
     },
     {
-      "code": 6040,
+      "code": 6036,
       "name": "InvalidFheEvalAccount",
       "msg": "FHE eval account reference is invalid"
     },
     {
-      "code": 6041,
+      "code": 6037,
       "name": "FheEvalAllowedLocalMissing",
       "msg": "FHE eval transient operand is missing"
     },
     {
-      "code": 6042,
+      "code": 6038,
       "name": "FheEvalDuplicateHandle",
       "msg": "FHE eval output handle is duplicated"
     },
     {
-      "code": 6043,
+      "code": 6039,
       "name": "FheEvalOutputAlreadyInitialized",
       "msg": "FHE eval durable output ACL record already exists"
     },
     {
-      "code": 6044,
+      "code": 6040,
       "name": "InvalidFheEvalContext",
       "msg": "FHE eval context id is invalid"
     },
     {
-      "code": 6045,
+      "code": 6041,
       "name": "DerivedOutputPublicDecryptDenied",
       "msg": "transient capability cannot authorize public decrypt"
     },
     {
-      "code": 6046,
+      "code": 6042,
       "name": "DuplicateKmsSigner",
       "msg": "KMS context signer set contains a duplicate address"
     },
     {
-      "code": 6047,
+      "code": 6043,
       "name": "InputBindContractMismatch",
       "msg": "attested contract address does not match the output app account"
     },
     {
-      "code": 6048,
-      "name": "InputBindUserNotSubject",
-      "msg": "attested user address is not an output ACL subject"
-    },
-    {
-      "code": 6049,
+      "code": 6044,
       "name": "HcuTransactionLimitExceeded",
       "msg": "FHE op total HCU exceeds the per-transaction limit"
     },
     {
-      "code": 6050,
+      "code": 6045,
       "name": "HcuTransactionDepthLimitExceeded",
       "msg": "FHE op depth HCU exceeds the per-transaction depth limit"
     },
     {
-      "code": 6051,
+      "code": 6046,
       "name": "HcuUnknownCost",
       "msg": "no HCU cost is defined for this op / type / scalar combination"
     },
     {
-      "code": 6052,
+      "code": 6047,
       "name": "HcuLimitOrderingInvalid",
       "msg": "HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx"
     },
     {
-      "code": 6053,
+      "code": 6048,
       "name": "AttestationChainIdMismatch",
       "msg": "attested contract chain id does not match the host chain id"
     },
     {
-      "code": 6054,
+      "code": 6049,
       "name": "RawEncryptedValueLifecycleDisabled",
       "msg": "raw encrypted value lifecycle is disabled; use fhe_eval durable outputs"
     },
     {
-      "code": 6055,
+      "code": 6050,
       "name": "EncryptedValuePdaMismatch",
       "msg": "encrypted value account does not match the canonical PDA"
     },
     {
-      "code": 6056,
+      "code": 6051,
       "name": "EncryptedValueAccountInvalid",
       "msg": "encrypted value account is not a valid EncryptedValue account"
     },
     {
-      "code": 6057,
+      "code": 6052,
       "name": "EncryptedValueSubjectCapacityExceeded",
       "msg": "encrypted value subject capacity exceeded"
     },
     {
-      "code": 6058,
+      "code": 6053,
       "name": "PreviousStateMismatch",
       "msg": "encrypted value previous state does not match the account"
     },
     {
-      "code": 6059,
+      "code": 6054,
       "name": "EncryptedValuePublicHandleMismatch",
       "msg": "encrypted value public handle does not match the account"
     },
     {
-      "code": 6060,
+      "code": 6055,
       "name": "SubjectNotAllowed",
       "msg": "encrypted value subject is not allowed"
     },
     {
-      "code": 6061,
+      "code": 6056,
       "name": "SubjectNotFound",
       "msg": "encrypted value subject is not a current member"
     },
     {
-      "code": 6062,
+      "code": 6057,
       "name": "EncryptedValueEmptySubjects",
       "msg": "encrypted value must be created with at least one subject"
     },
     {
-      "code": 6063,
+      "code": 6058,
       "name": "EncryptedValueLastSubject",
       "msg": "encrypted value must retain at least one subject"
     },
     {
-      "code": 6064,
+      "code": 6059,
       "name": "EncryptedValueMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
     },
     {
-      "code": 6065,
+      "code": 6060,
       "name": "EncryptedValueMmrPeakCapacityExceeded",
       "msg": "encrypted value MMR peak capacity exceeded"
     },
     {
-      "code": 6066,
+      "code": 6061,
       "name": "HcuBlockLimitExceeded",
       "msg": "per-app in-slot HCU exceeds the block cap"
     },
     {
-      "code": 6067,
+      "code": 6062,
       "name": "HcuBlockMeterMissing",
       "msg": "HCU block meter account is required for a metered app"
     },
     {
-      "code": 6068,
+      "code": 6063,
       "name": "HcuBlockMeterMismatch",
       "msg": "HCU block meter account does not match the canonical PDA"
     },
     {
-      "code": 6069,
+      "code": 6064,
       "name": "HcuTrustedAppRecordMismatch",
       "msg": "HCU trusted-app record does not match the canonical PDA"
     },
     {
-      "code": 6070,
+      "code": 6065,
       "name": "HcuBlockCapBelowMaxPerTx",
       "msg": "HCU block cap is below max_hcu_per_tx"
     },
     {
-      "code": 6071,
+      "code": 6066,
       "name": "MulDivDivisorZero",
       "msg": "fheMulDiv divisor must be non-zero"
     },
     {
-      "code": 6072,
+      "code": 6067,
       "name": "DivisorMustBeScalar",
       "msg": "fheDiv/fheRem divisor must be a plaintext scalar"
     },
     {
-      "code": 6073,
+      "code": 6068,
       "name": "DivisionByZero",
       "msg": "fheDiv/fheRem divisor must be non-zero"
     }
@@ -3592,8 +3567,7 @@
         "Singleton host configuration and authority surface.",
         "",
         "`HostConfig` is the runtime switchboard for this PoC. Production-shaped",
-        "instructions reject while paused, and mock/test-only instructions require",
-        "both the corresponding feature gate and configured signer."
+        "instructions reject while paused."
       ],
       "type": {
         "kind": "struct",
@@ -3682,30 +3656,9 @@
             "type": "pubkey"
           },
           {
-            "name": "test_authority",
-            "docs": [
-              "Reserved legacy test authority; retained for account-layout stability."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "paused",
             "docs": [
               "Pauses production-shaped host instructions when true."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "mock_input_enabled",
-            "docs": [
-              "Enables the mock encrypted-input bind instruction."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "test_shims_enabled",
-            "docs": [
-              "Enables the local zero-birth-entropy fallback."
             ],
             "type": "bool"
           },
@@ -3805,13 +3758,6 @@
               "Configured material commitment authority."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "test_authority",
-            "docs": [
-              "Configured test-shim authority."
-            ],
-            "type": "pubkey"
           }
         ]
       }
@@ -3849,20 +3795,6 @@
             "name": "paused",
             "docs": [
               "Current pause state."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "mock_input_enabled",
-            "docs": [
-              "Current mock input gate."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "test_shims_enabled",
-            "docs": [
-              "Current test-shim gate."
             ],
             "type": "bool"
           },
@@ -3922,7 +3854,7 @@
           {
             "name": "input_verifier_authority",
             "docs": [
-              "Authority used by mock and signed encrypted-input bind paths."
+              "Authority used by signed encrypted-input bind paths."
             ],
             "type": "pubkey"
           },
@@ -3975,27 +3907,6 @@
               "Authority allowed to commit ciphertext material readiness."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "test_authority",
-            "docs": [
-              "Reserved legacy test authority; retained for account-layout stability."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "mock_input_enabled",
-            "docs": [
-              "Whether the mock encrypted-input bind path is enabled."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "test_shims_enabled",
-            "docs": [
-              "Whether the local zero-birth-entropy fallback is enabled."
-            ],
-            "type": "bool"
           },
           {
             "name": "grant_deny_list_enabled",

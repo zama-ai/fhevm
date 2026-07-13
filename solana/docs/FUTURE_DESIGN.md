@@ -60,25 +60,12 @@ revalidates confirmed live authorization before plaintext release (DD-024, DD-02
 the listener into the EVM block-status substrate (`host_chain_blocks_valid` +
 `cmd/block_history.rs`) is optional resource-recovery work, not a release-authorization gate.
 
-## 6. Dead enum variants kept for Anchor discriminants
-
-These variants are retained only to preserve Anchor error/enum discriminant ordering; their
-instructions were removed with the transfer-and-call callback flow (DD-011):
-
-- `zama_host` errors: `InputBindUserNotSubject`
-- `confidential_token` errors: `CallbackSettlementMismatch`, `ReceiverHookMismatch`,
-  `ReceiverHookInputTooLarge`
-- `confidential_token` events: `TransferCallbackRefundDebit`, `TransferCallbackRefundCredit` reasons
-
-**Requirement:** delete them at the next deliberate ABI break (when discriminant renumbering is
-already being paid for). Until then they are inert and must not be reintroduced as live paths.
-
 ## Standing open decisions
 
 Carried from `DESIGN_DECISIONS.md` "Open Product Decisions":
 
-- Reject the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID`) unconditionally in production builds; the
-  `poc` cargo feature already compiles out the local test controls and confines the zero-birth-entropy fallback.
+- Replace the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID`) with the repository-wide high-bit
+  Solana chain-id convention.
 - Durable archival / compaction policy for ACL, material, delegation, and replay evidence (no
   `close_acl_record` today).
 - Confidential-balance profile: keep the immediate available-balance profile or move to staged

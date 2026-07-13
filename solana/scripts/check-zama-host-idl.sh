@@ -9,9 +9,9 @@ NO_DNA=1 anchor build --ignore-keys
 python3 scripts/check_solana_abi.py --root "$ROOT"
 
 # Runtime Mollusk tests load ignored SBF artifacts from target/deploy. Keep the
-# production IDL/ABI check above on the default feature set, then rebuild only
-# the local test artifacts with the PoC-only instructions and guards enabled.
-NO_DNA=1 anchor build --ignore-keys --no-idl -p zama_host -- --features poc
+# production IDL/ABI check above on the default feature set, then rebuild the
+# confidential-token artifact with its PoC-only receiver helpers enabled. The
+# host intentionally has no PoC feature or alternate verification path.
 NO_DNA=1 anchor build --ignore-keys --no-idl -p confidential_token -- --features poc
 
 # The IDL diff above only covers structure; event-version constants are runtime
