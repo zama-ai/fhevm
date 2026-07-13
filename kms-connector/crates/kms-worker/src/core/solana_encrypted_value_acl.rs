@@ -100,8 +100,9 @@ impl SolanaAclVerifier {
         Ok(())
     }
 
-    /// Current decrypt: live handle + membership, within the request's domain scope. Reads the
-    /// account fetched at `confirmed` commitment — never a snapshot.
+    /// Current decrypt: live handle + membership, within the request's domain scope. An empty
+    /// domain scope is permissive. Reads the account fetched at `confirmed` commitment — never a
+    /// snapshot.
     pub fn verify_current_user_decrypt(
         &self,
         account_key: SolanaPubkeyBytes,
@@ -113,7 +114,9 @@ impl SolanaAclVerifier {
     ) -> Result<(), SolanaAclVerificationError> {
         let acl = &decoded.acl;
         self.verify_canonical(account_key, owner, acl)?;
-        if !allowed_acl_domain_keys.contains(&acl.acl_domain_key) {
+        if !allowed_acl_domain_keys.is_empty()
+            && !allowed_acl_domain_keys.contains(&acl.acl_domain_key)
+        {
             return Err(SolanaAclVerificationError::DomainNotAllowed);
         }
         authorize_current(acl, handle, subject).map_err(map_acl_error)?;
@@ -121,7 +124,8 @@ impl SolanaAclVerifier {
     }
 
     /// Historical decrypt: a valid historical-access MMR proof against the live confirmed peaks
-    /// (the account passed in, read fresh — not a cached/snapshotted proof-time state).
+    /// (the account passed in, read fresh — not a cached/snapshotted proof-time state). An empty
+    /// domain scope is permissive.
     pub fn verify_historical_user_decrypt(
         &self,
         target: EncryptedValueTarget<'_>,
@@ -130,7 +134,9 @@ impl SolanaAclVerifier {
         proof: &MmrProof,
     ) -> Result<(), SolanaAclVerificationError> {
         self.verify_canonical(target.account_key, target.owner, target.acl)?;
-        if !allowed_acl_domain_keys.contains(&target.acl.acl_domain_key) {
+        if !allowed_acl_domain_keys.is_empty()
+            && !allowed_acl_domain_keys.contains(&target.acl.acl_domain_key)
+        {
             return Err(SolanaAclVerificationError::DomainNotAllowed);
         }
         authorize_historical(
@@ -262,6 +268,10 @@ mod tests {
             v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
                 .is_ok()
         );
+        assert!(
+            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), OWNER, &[])
+                .is_ok()
+        );
         assert_eq!(
             v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), STRANGER, &[DOMAIN])
                 .unwrap_err(),
@@ -378,6 +388,15 @@ mod tests {
         assert!(
             v.verify_historical_user_decrypt(target(h(10)), OWNER, &[DOMAIN], &proof)
                 .is_ok()
+        );
+        assert!(
+            v.verify_historical_user_decrypt(target(h(10)), OWNER, &[], &proof)
+                .is_ok()
+        );
+        assert_eq!(
+            v.verify_historical_user_decrypt(target(h(10)), OWNER, &[[9; 32]], &proof)
+                .unwrap_err(),
+            SolanaAclVerificationError::DomainNotAllowed
         );
         assert!(
             v.verify_historical_user_decrypt(target(h(10)), STRANGER, &[DOMAIN], &proof)
