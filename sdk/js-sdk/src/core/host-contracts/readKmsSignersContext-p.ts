@@ -308,7 +308,7 @@ export async function reconcileKmsSignersContext(
   }
 
   // Reject if extraData serialization version differs.
-  if (relayerKmsExtraData.version !== requestedKmsExtraData.version) {
+  if (relayerKmsExtraData.version !== 0 && relayerKmsExtraData.version !== requestedKmsExtraData.version) {
     throw new Error(
       `ExtraData serialization version mismatch: SDK uses v${requestedKmsExtraData.version}, ` +
         `relayer returned v${relayerKmsExtraData.version}. ` +
