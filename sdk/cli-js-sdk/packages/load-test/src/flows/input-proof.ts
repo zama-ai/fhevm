@@ -110,8 +110,8 @@ export class InputProofExecutor implements FlowExecutor {
       jobId,
       {
         deadlineMs: this.requestTimeoutMs,
+        initialRetryAfterMs: submit.retryAfterMs,
         requestId,
-        expectedRequestId: submit.accepted.requestId,
         signal,
       },
     );

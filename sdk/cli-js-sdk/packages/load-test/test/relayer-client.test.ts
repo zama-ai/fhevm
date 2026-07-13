@@ -143,6 +143,7 @@ describe("RelayerClient", () => {
     ]);
     const outcome = await client.pollJob<InputProofResultJson>("input-proof", "job-poll", {
       deadlineMs: 5000,
+      initialRetryAfterMs: 0,
       minIntervalMs: 10,
     });
     expect(outcome.pollCount).toBe(3);
@@ -150,39 +151,29 @@ describe("RelayerClient", () => {
     expect(outcome.deadlineExceeded).toBe(false);
   });
 
-  it("rejects queued, successful, and failed responses from another request identity", async () => {
-    const cases = [
-      { job: "job-wrong-queued", response: { status: 202, body: { status: "queued", requestId: "wrong" } } },
+  it("accepts rotating per-exchange response request ids", async () => {
+    scripts.set("job-rotating-ids", [
       {
-        job: "job-wrong-success",
-        response: {
-          status: 200,
-          body: {
-            status: "succeeded", requestId: "wrong",
-            result: { accepted: true, extraData: "0x00", handles: [], signatures: [] },
-          },
-        },
+        status: 202,
+        body: { status: "queued", requestId: "poll-request-1" },
+        retryAfterSec: 0.01,
       },
       {
-        job: "job-wrong-failed",
-        response: {
-          status: 500,
-          body: { status: "failed", requestId: "wrong", error: { label: "x", message: "x" } },
+        status: 200,
+        body: {
+          status: "succeeded",
+          requestId: "poll-request-2",
+          result: { accepted: true, extraData: "0x00", handles: [], signatures: [] },
         },
       },
-    ] as const;
-    for (const item of cases) {
-      scripts.set(item.job, [item.response]);
-      const outcome = await client.pollJob<InputProofResultJson>("input-proof", item.job, {
-        deadlineMs: 5_000,
-        minIntervalMs: 10,
-        expectedRequestId: "accepted-request",
-      });
-      expect(outcome).toMatchObject({
-        protocolError: true,
-        errorLabel: "client_response_identity_mismatch",
-      });
-    }
+    ]);
+    const outcome = await client.pollJob<InputProofResultJson>(
+      "input-proof",
+      "job-rotating-ids",
+      { deadlineMs: 5_000, initialRetryAfterMs: 0, minIntervalMs: 1 },
+    );
+    expect(outcome).toMatchObject({ pollCount: 2, deadlineExceeded: false });
+    expect(outcome.result?.accepted).toBe(true);
   });
 
   it("classifies missing queued and success identities as protocol errors", async () => {
@@ -191,7 +182,7 @@ describe("RelayerClient", () => {
     }]);
     const queued = await client.pollJob<InputProofResultJson>(
       "input-proof", "job-missing-queued-id",
-      { deadlineMs: 5_000, minIntervalMs: 10, expectedRequestId: "accepted-request" },
+      { deadlineMs: 5_000, initialRetryAfterMs: 0, minIntervalMs: 10 },
     );
     expect(queued).toMatchObject({ protocolError: true, errorLabel: "client_protocol_error" });
 
@@ -204,7 +195,7 @@ describe("RelayerClient", () => {
     }]);
     const succeeded = await client.pollJob<InputProofResultJson>(
       "input-proof", "job-missing-success-id",
-      { deadlineMs: 5_000, minIntervalMs: 10, expectedRequestId: "accepted-request" },
+      { deadlineMs: 5_000, initialRetryAfterMs: 0, minIntervalMs: 10 },
     );
     expect(succeeded).toMatchObject({ protocolError: true, errorLabel: "client_protocol_error" });
   });
@@ -221,8 +212,8 @@ describe("RelayerClient", () => {
     }]);
     const outcome = await client.pollJob<InputProofResultJson>("input-proof", jobId, {
       deadlineMs: 5_000,
+      initialRetryAfterMs: 0,
       minIntervalMs: 10,
-      expectedRequestId: "accepted-request",
     });
     expect(outcome.result?.accepted).toBe(true);
   });
@@ -240,6 +231,7 @@ describe("RelayerClient", () => {
     ]);
     const outcome = await client.pollJob<InputProofResultJson>("input-proof", "job-fail", {
       deadlineMs: 5000,
+      initialRetryAfterMs: 0,
       minIntervalMs: 10,
     });
     expect(outcome.errorLabel).toBe("response_timed_out");
@@ -261,7 +253,7 @@ describe("RelayerClient", () => {
     const outcome = await client.pollJob<InputProofResultJson>(
       "input-proof",
       "job-fail-no-id",
-      { deadlineMs: 5_000, minIntervalMs: 10, expectedRequestId: "accepted" },
+      { deadlineMs: 5_000, initialRetryAfterMs: 0, minIntervalMs: 10 },
     );
     expect(outcome).toMatchObject({
       errorLabel: "validation_failed",
@@ -277,6 +269,7 @@ describe("RelayerClient", () => {
     }]);
     const queued = await client.pollJob<InputProofResultJson>("input-proof", "job-bad-queued", {
       deadlineMs: 5000,
+      initialRetryAfterMs: 0,
       minIntervalMs: 10,
     });
     expect(queued).toMatchObject({ protocolError: true, errorLabel: "client_protocol_error" });
@@ -287,6 +280,7 @@ describe("RelayerClient", () => {
     }]);
     const succeeded = await client.pollJob<InputProofResultJson>("input-proof", "job-bad-success", {
       deadlineMs: 5000,
+      initialRetryAfterMs: 0,
       minIntervalMs: 10,
     });
     expect(succeeded).toMatchObject({ protocolError: true, errorLabel: "client_protocol_error" });
@@ -302,7 +296,7 @@ describe("RelayerClient", () => {
     const inputProof = await client.pollJob<InputProofResultJson>(
       "input-proof",
       "job-bad-input-proof",
-      { deadlineMs: 5_000, minIntervalMs: 10 },
+      { deadlineMs: 5_000, initialRetryAfterMs: 0, minIntervalMs: 10 },
     );
     expect(inputProof).toMatchObject({
       protocolError: true,
@@ -316,7 +310,7 @@ describe("RelayerClient", () => {
     const failed = await client.pollJob<InputProofResultJson>(
       "input-proof",
       "job-bad-failure",
-      { deadlineMs: 5_000, minIntervalMs: 10 },
+      { deadlineMs: 5_000, initialRetryAfterMs: 0, minIntervalMs: 10 },
     );
     expect(failed).toMatchObject({ protocolError: true, errorLabel: "client_protocol_error" });
   });
@@ -332,10 +326,86 @@ describe("RelayerClient", () => {
     );
     const outcome = await client.pollJob<InputProofResultJson>("input-proof", "job-slow", {
       deadlineMs: 200,
+      initialRetryAfterMs: 0,
       minIntervalMs: 10,
     });
     expect(outcome.deadlineExceeded).toBe(true);
     expect(outcome.errorLabel).toBe("client_poll_deadline_exceeded");
+  });
+
+  it("honors an initial Retry-After before the first GET", async () => {
+    scripts.set("job-initial-delay", [{
+      status: 200,
+      body: {
+        status: "succeeded",
+        requestId: "terminal-request",
+        result: { accepted: true, extraData: "0x00", handles: [], signatures: [] },
+      },
+    }]);
+    const startedAt = performance.now();
+    const outcome = await client.pollJob<InputProofResultJson>(
+      "input-proof",
+      "job-initial-delay",
+      { deadlineMs: 5_000, initialRetryAfterMs: 50, minIntervalMs: 0 },
+    );
+    expect(performance.now() - startedAt).toBeGreaterThanOrEqual(40);
+    expect(outcome).toMatchObject({ pollCount: 1, deadlineExceeded: false });
+  });
+
+  it("uses the fallback interval when the POST omits Retry-After", async () => {
+    const outcome = await client.pollJob<InputProofResultJson>(
+      "input-proof",
+      "job-after-fallback-deadline",
+      { deadlineMs: 30, defaultIntervalMs: 1_000 },
+    );
+    expect(outcome).toMatchObject({
+      pollCount: 0,
+      deadlineExceeded: true,
+      errorLabel: "client_poll_deadline_exceeded",
+    });
+  });
+
+  it("caps the initial Retry-After at the maximum interval", async () => {
+    scripts.set("job-upper-clamped-delay", [{
+      status: 200,
+      body: {
+        status: "succeeded",
+        requestId: "terminal-request",
+        result: { accepted: true, extraData: "0x00", handles: [], signatures: [] },
+      },
+    }]);
+    const outcome = await client.pollJob<InputProofResultJson>(
+      "input-proof",
+      "job-upper-clamped-delay",
+      { deadlineMs: 200, initialRetryAfterMs: 1_000, maxIntervalMs: 20 },
+    );
+    expect(outcome).toMatchObject({ pollCount: 1, deadlineExceeded: false });
+  });
+
+  it("floors the initial Retry-After at the minimum interval", async () => {
+    const outcome = await client.pollJob<InputProofResultJson>(
+      "input-proof",
+      "job-after-minimum-delay-deadline",
+      { deadlineMs: 30, initialRetryAfterMs: 1, minIntervalMs: 50 },
+    );
+    expect(outcome).toMatchObject({
+      pollCount: 0,
+      deadlineExceeded: true,
+      errorLabel: "client_poll_deadline_exceeded",
+    });
+  });
+
+  it("aborts during the initial delay without issuing a GET", async () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 20);
+    const startedAt = performance.now();
+    const outcome = await client.pollJob<InputProofResultJson>(
+      "input-proof",
+      "job-aborted-before-first-poll",
+      { deadlineMs: 5_000, initialRetryAfterMs: 1_000, signal: controller.signal },
+    );
+    expect(performance.now() - startedAt).toBeLessThan(200);
+    expect(outcome).toMatchObject({ pollCount: 0, deadlineExceeded: false, aborted: true });
   });
 
   it("reports readiness", async () => {

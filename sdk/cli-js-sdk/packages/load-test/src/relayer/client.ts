@@ -69,6 +69,8 @@ export type RelayerClientOptions = Readonly<{
 export type PollOptions = Readonly<{
   /** Overall deadline for reaching a terminal state. */
   deadlineMs: number;
+  /** Retry-After from the accepted POST; falls back to `defaultIntervalMs`. */
+  initialRetryAfterMs?: number;
   /** Floor/ceiling applied to server-provided Retry-After waits. */
   minIntervalMs?: number;
   maxIntervalMs?: number;
@@ -77,8 +79,6 @@ export type PollOptions = Readonly<{
   signal?: AbortSignal;
   /** Correlation header sent on every poll. */
   requestId?: string;
-  /** Request identity returned by the accepted POST response. */
-  expectedRequestId?: string;
 }>;
 
 const JSON_HEADERS = { "content-type": "application/json" } as const;
@@ -278,22 +278,23 @@ export class RelayerClient {
     const startedAt = monotonicNowMs();
     let pollCount = 0;
     let lastHttpStatus = 0;
-    let expectedRequestId = options.expectedRequestId;
 
-    const identityMismatch = (
-      responseRequestId: string,
-    ): PollOutcome<NonNullable<Result>> | undefined => {
-      expectedRequestId ??= responseRequestId;
-      if (responseRequestId === expectedRequestId) return undefined;
+    const initialWait = clamp(
+      options.initialRetryAfterMs ?? defaultInterval,
+      minInterval,
+      maxInterval,
+    );
+    const remainingMs = Math.max(0, options.deadlineMs - (monotonicNowMs() - startedAt));
+    await sleep(Math.min(initialWait, remainingMs), options.signal);
+    if (!(options.signal?.aborted ?? false) && initialWait >= remainingMs) {
       return {
         httpStatus: lastHttpStatus,
         pollCount,
-        errorLabel: "client_response_identity_mismatch",
-        errorMessage: "Relayer response request identity changed while polling the accepted job.",
-        deadlineExceeded: false,
-        protocolError: true,
+        errorLabel: "client_poll_deadline_exceeded",
+        deadlineExceeded: true,
+        aborted: false,
       };
-    };
+    }
 
     while (monotonicNowMs() - startedAt < options.deadlineMs) {
       if (options.signal?.aborted) break;
@@ -333,8 +334,6 @@ export class RelayerClient {
             protocolError: true,
           };
         }
-        const mismatch = identityMismatch(queued.data.requestId);
-        if (mismatch) return mismatch;
         const wait = clamp(retryAfterMs ?? defaultInterval, minInterval, maxInterval);
         try {
           await sleep(wait, options.signal);
@@ -358,8 +357,6 @@ export class RelayerClient {
             protocolError: true,
           };
         }
-        const mismatch = identityMismatch(succeeded.data.requestId);
-        if (mismatch) return mismatch;
         return {
           httpStatus,
           pollCount,
@@ -378,10 +375,6 @@ export class RelayerClient {
           deadlineExceeded: false,
           protocolError: true,
         };
-      }
-      if (failed.data.requestId !== undefined) {
-        const mismatch = identityMismatch(failed.data.requestId);
-        if (mismatch) return mismatch;
       }
       return {
         httpStatus,
