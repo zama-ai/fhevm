@@ -1,12 +1,4 @@
-//! Yellowstone gRPC transport for the Solana host listener (Phase 1).
-//!
-//! Drop-in transport alternative to [`crate::solana_listener`]: instead of
-//! RPC-polling `getSignaturesForAddress`, it subscribes to a Yellowstone gRPC
-//! endpoint for transactions touching the tracked program, then feeds the SAME
-//! shared decoder ([`decode_solana_transaction_events`]) and inserter
-//! ([`insert_solana_events`]) the RPC path uses. On-chain events are still
-//! emitted (`emit_cpi!`/`emit!`); only the transport differs, so ingested rows
-//! match the RPC path by construction.
+//! Yellowstone gRPC reconstruction path for the Solana host listener.
 //!
 //! gRPC transaction updates do not carry block time, so we track a
 //! `slot -> block_time` map from `blocks_meta` updates and fall back to a single
@@ -34,8 +26,7 @@ use yellowstone_grpc_proto::prelude::{
 
 use crate::database::tfhe_event_propagate::Database;
 use crate::solana_adapter::{
-    decode_solana_transaction_events, insert_solana_events,
-    solana_transaction_id, SolanaBlockMeta,
+    insert_solana_events, solana_transaction_id, SolanaBlockMeta,
 };
 use crate::solana_slot_hashes::{
     clock_unix_timestamp, previous_bank_hash_from_slot_hashes, CLOCK_SYSVAR,
@@ -159,35 +150,14 @@ pub struct SolanaGrpcListenerConfig {
     pub x_token: Option<String>,
     /// RPC endpoint used only as a `getBlockTime` fallback for block timestamps.
     pub rpc_fallback_url: String,
-    /// Base58 program id whose CPI/log events are ingested (the zama-host id).
+    /// Base58 zama-host program id whose instructions are reconstructed.
     pub program_id: String,
-    /// Commitment level for the subscription.
-    pub commitment: CommitmentLevel,
     /// On-chain HostConfig chain_id used in handle derivation (distinct from the
     /// coprocessor host-chain id). Used by the reconstruction path.
     pub chain_id: u64,
     /// True when the on-chain HostConfig enables zero-birth entropy (test/PoC):
     /// derivation uses previous_bank_hash=[0;32] instead of the SlotHashes value.
     pub zero_birth_entropy: bool,
-    /// When true, ingest events REBUILT off-chain from instructions (compute
-    /// events + acl_record_bound fetches) instead of the emit-decoded events —
-    /// the swap that lets on-chain emits eventually be removed. When false, ingest
-    /// stays emit-based and reconstruction only runs as a shadow-compare.
-    pub reconstruct: bool,
-}
-
-#[cfg(feature = "solana-reconstruct")]
-fn validate_lineage_tracker_commitment(
-    config: &SolanaGrpcListenerConfig,
-) -> Result<()> {
-    if config.commitment != CommitmentLevel::Finalized {
-        anyhow::bail!(
-            "solana gRPC lineage reconstruction requires finalized commitment; \
-             got {:?}",
-            config.commitment
-        );
-    }
-    Ok(())
 }
 
 /// Connects, subscribes, and ingests until `cancel` fires. Reconnects with a
@@ -202,11 +172,8 @@ pub async fn run(
         grpc_url = %config.grpc_url,
         "Starting Solana host listener (Yellowstone gRPC transport)"
     );
-    #[cfg(feature = "solana-reconstruct")]
-    validate_lineage_tracker_commitment(config)?;
-
-    // Confirmed is enough for block-time fallback reads; reconstruction state
-    // safety comes from the subscription commitment validated above.
+    // Authorization is revalidated by KMS before plaintext release. Confirmed
+    // data is sufficient for eager ciphertext-material preparation.
     let rpc = RpcClient::new_with_timeout_and_commitment(
         config.rpc_fallback_url.clone(),
         SOLANA_RPC_REQUEST_TIMEOUT,
@@ -223,9 +190,6 @@ pub async fn run(
     // `slot -> Clock.unix_timestamp` from the Clock sysvar stream (the value the
     // program uses in handle derivation, which differs from getBlockTime).
     let mut slot_clock_ts: HashMap<u64, i64> = HashMap::new();
-    #[cfg(feature = "solana-reconstruct")]
-    let mut encrypted_value_tracker =
-        crate::solana_reconstruct::EncryptedValueLineageTracker::new();
     let mut from_slot: Option<u64> = None;
 
     loop {
@@ -239,8 +203,6 @@ pub async fn run(
             &mut slot_time,
             &mut slot_bank_hash,
             &mut slot_clock_ts,
-            #[cfg(feature = "solana-reconstruct")]
-            &mut encrypted_value_tracker,
             &mut from_slot,
             &cancel,
         )
@@ -276,8 +238,7 @@ pub async fn run(
 /// present in the account list (as program-id placeholders when `None`): the event_cpi
 /// pair follows them, so they can never be truncated off the tail. Returns `None` when
 /// the index is out of range; the caller treats that as a hard problem, since the
-/// durable output would otherwise never be marked allowed and never materialize.
-#[cfg(feature = "solana-reconstruct")]
+/// durable output would otherwise never request ciphertext material.
 fn fhe_eval_durable_encrypted_value(
     accounts: &[[u8; 32]],
     remaining_index: u16,
@@ -296,8 +257,6 @@ async fn subscribe_loop(
     slot_time: &mut HashMap<u64, PrimitiveDateTime>,
     slot_bank_hash: &mut HashMap<u64, [u8; 32]>,
     slot_clock_ts: &mut HashMap<u64, i64>,
-    #[cfg(feature = "solana-reconstruct")]
-    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
     from_slot: &mut Option<u64>,
     cancel: &CancellationToken,
 ) -> Result<()> {
@@ -394,8 +353,6 @@ async fn subscribe_loop(
                                 ingest_transaction(
                                     db, rpc, config, slot, &info, slot_time,
                                     &*slot_bank_hash, &*slot_clock_ts,
-                                    #[cfg(feature = "solana-reconstruct")]
-                                    encrypted_value_tracker,
                                 ),
                             )
                             .await
@@ -514,7 +471,7 @@ fn build_subscribe_request(
         blocks: HashMap::new(),
         blocks_meta,
         entry: HashMap::new(),
-        commitment: Some(config.commitment as i32),
+        commitment: Some(CommitmentLevel::Confirmed as i32),
         accounts_data_slice: vec![],
         ping: None,
         from_slot,
@@ -531,11 +488,7 @@ async fn ingest_transaction(
     slot_time: &mut HashMap<u64, PrimitiveDateTime>,
     slot_bank_hash: &HashMap<u64, [u8; 32]>,
     slot_clock_ts: &HashMap<u64, i64>,
-    #[cfg(feature = "solana-reconstruct")]
-    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
 ) -> std::result::Result<(), IngestFailure> {
-    #[cfg(not(feature = "solana-reconstruct"))]
-    let _ = (slot_bank_hash, slot_clock_ts); // only used by the shadow-compare
     let meta = info
         .meta
         .as_ref()
@@ -548,7 +501,7 @@ async fn ingest_transaction(
     })?;
 
     // Resolved account-key list: static keys ++ ALT writable ++ ALT readonly,
-    // the order `program_id_index` indexes into (matches solana_listener).
+    // the order `program_id_index` indexes into.
     let mut account_keys: Vec<String> = message
         .account_keys
         .iter()
@@ -584,7 +537,6 @@ async fn ingest_transaction(
     // Reconstruction needs each instruction's RESOLVED accounts by address, so
     // build the account-key list in raw 32-byte form (same order as the base58
     // list: static keys ++ ALT writable ++ ALT readonly).
-    #[cfg(feature = "solana-reconstruct")]
     let account_keys_bytes: Vec<[u8; 32]> = message
         .account_keys
         .iter()
@@ -596,10 +548,7 @@ async fn ingest_transaction(
     // Top-level + inner instruction invocations with resolved accounts (a
     // zama-host instruction is called directly as top-level, or via CPI as inner
     // for token flows); scanned by the reconstruction shadow-compare and ingest.
-    #[cfg(feature = "solana-reconstruct")]
-    let all_instructions: Vec<
-        crate::solana_reconstruct::DecodedInstruction,
-    > = {
+    let all_instructions: Vec<crate::solana_reconstruct::DecodedInstruction> = {
         let resolve = |idxs: &[u8]| -> Vec<[u8; 32]> {
             idxs.iter()
                 .filter_map(|&i| account_keys_bytes.get(i as usize).copied())
@@ -658,76 +607,20 @@ async fn ingest_transaction(
         ordered
     };
 
-    // emit! events arrive as `Program data:` log lines.
-    let logs: Vec<String> = if meta.log_messages_none {
-        Vec::new()
-    } else {
-        meta.log_messages.clone()
-    };
-
-    let emit_events = decode_solana_transaction_events(
-        &logs,
-        inner.iter().map(|(p, d)| (p.as_str(), d.as_slice())),
-        &config.program_id,
+    let events = match reconstruct_events_for_insert(
+        config,
+        &all_instructions,
+        slot,
+        slot_bank_hash,
+        slot_clock_ts,
     )
+    .await
     .map_err(|err| {
-        IngestFailure::permanent(err).context("decode host events")
-    })?;
-
-    // Choose the event set to ingest. In `--reconstruct` mode, rebuild it off-chain
-    // (compute events + acl_record_bound fetches) from the instructions and ingest
-    // THAT in place of emit-decode — the swap that lets on-chain emits be removed
-    // (#7). With emits off, emit-decode yields nothing, so reconstruction is decided
-    // here, BEFORE the empty gate below. Fall back to emit-decode only when the
-    // transaction has no instruction family covered by reconstruction; incomplete
-    // covered reconstruction is a fail-closed ingest error.
-    #[cfg(feature = "solana-reconstruct")]
-    let events = if config.reconstruct {
-        match reconstruct_events_for_insert(
-            config,
-            &all_instructions,
-            slot,
-            slot_bank_hash,
-            slot_clock_ts,
-            rpc,
-            encrypted_value_tracker,
-        )
-        .await
-        .map_err(|err| {
-            IngestFailure::fatal(err).context("reconstruct Solana host events")
-        })? {
-            ReconstructionOutcome::Complete(reconstructed) => {
-                info!(
-                    slot,
-                    reconstructed = reconstructed.len(),
-                    emit_decoded = emit_events.len(),
-                    "ingesting reconstructed events (emit-decode swapped out)"
-                );
-                reconstructed
-            }
-            ReconstructionOutcome::NotCovered => {
-                if !emit_events.is_empty() {
-                    warn!(
-                        slot,
-                        "reconstruction not covered for transaction; falling back to emit-decode"
-                    );
-                }
-                emit_events
-            }
-        }
-    } else {
-        let mut events = emit_events;
-        events.extend(
-            crate::solana_reconstruct::decode_encrypted_value_fetch_events(
-                &all_instructions,
-                &config.program_id,
-                encrypted_value_tracker,
-            ),
-        );
-        events
+        IngestFailure::fatal(err).context("reconstruct Solana host events")
+    })? {
+        ReconstructionOutcome::Complete(events) => events,
+        ReconstructionOutcome::NotCovered => Vec::new(),
     };
-    #[cfg(not(feature = "solana-reconstruct"))]
-    let events = emit_events;
 
     if events.is_empty() {
         return Ok(());
@@ -771,7 +664,7 @@ async fn ingest_transaction(
         slot,
         signature = %bs58::encode(&info.signature).into_string(),
         tfhe_events = stats.tfhe_events,
-        acl_events = stats.acl_events,
+        material_requests = stats.material_requests,
         inserted_rows = stats.inserted_rows,
         "ingested Solana host events (gRPC)"
     );
@@ -786,7 +679,6 @@ fn unix_to_pdt(ts: i64) -> Option<PrimitiveDateTime> {
 /// Builds the handle-derivation context for `slot` from the streamed sysvars,
 /// applying the zero-birth-entropy rule. Returns `None` until both the Clock and
 /// (in production mode) the SlotHashes value for the slot have been cached.
-#[cfg(feature = "solana-reconstruct")]
 fn reconstruct_context(
     config: &SolanaGrpcListenerConfig,
     slot: u64,
@@ -809,41 +701,33 @@ fn reconstruct_context(
     })
 }
 
-#[cfg(feature = "solana-reconstruct")]
 #[derive(Debug)]
 enum ReconstructionOutcome {
     Complete(Vec<crate::solana_adapter::SolanaHostEvent>),
     NotCovered,
 }
 
-/// Rebuilds the ingestable event set off-chain from a transaction's instructions,
-/// for `--reconstruct` mode (the swap that replaces emit-decoding). Covers
-/// `fhe_eval`: one compute event per step, plus an `acl_record_bound` allow-fetch
-/// for each `Durable` step (handle = the step result, EncryptedValue account =
-/// the step's `remaining_accounts` entry) — matching what the program's bind
-/// emits, so `is_allowed` and the fetch row land identically.
+/// Rebuilds the ingestable event set off-chain from a transaction's instructions. Covers
+/// `fhe_eval`: one compute event per step, plus a material request for each
+/// `Durable` step's result handle.
 ///
 /// `EncryptedValue` lifecycle instructions are decoded separately from the same
 /// ordered instruction list and appended to the reconstructed event set. Missing
 /// slot derivation context only suppresses `fhe_eval` recomputation; lifecycle
-/// fetches do not need it.
-#[cfg(feature = "solana-reconstruct")]
+/// material requests do not need it.
 async fn reconstruct_events_for_insert(
     config: &SolanaGrpcListenerConfig,
     instructions: &[crate::solana_reconstruct::DecodedInstruction],
     slot: u64,
     slot_bank_hash: &HashMap<u64, [u8; 32]>,
     slot_clock_ts: &HashMap<u64, i64>,
-    _rpc: &RpcClient,
-    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
 ) -> Result<ReconstructionOutcome> {
-    use crate::solana_adapter::SolanaHostEvent;
+    use crate::solana_adapter::{material_request, SolanaHostEvent};
     use crate::solana_reconstruct::{
         decode_encrypted_value_instruction, decode_fhe_eval_args,
-        encrypted_value_account_index, encrypted_value_instruction_fetches,
-        reconstruct_acl_record_bound_fetch, reconstruct_fhe_eval_steps,
-        reconstruct_handle_made_public_fetch,
-        reconstruct_handle_superseded_fetch,
+        encrypted_value_account_index, encrypted_value_material_requests,
+        is_encrypted_value_instruction, is_fhe_eval_instruction,
+        reconstruct_fhe_eval_steps,
     };
 
     // compute_subject is the 2nd named fhe_eval account. (Durable EncryptedValue
@@ -851,34 +735,42 @@ async fn reconstruct_events_for_insert(
     // fhe_eval_durable_encrypted_value.)
     const COMPUTE_SUBJECT_INDEX: usize = 1;
 
-    let has_lifecycle = instructions.iter().any(|ix| {
-        ix.program == config.program_id
-            && decode_encrypted_value_instruction(&ix.data).is_some()
-    });
-    let has_fhe_eval = instructions.iter().any(|ix| {
-        ix.program == config.program_id
-            && decode_fhe_eval_args(&ix.data).is_some()
-    });
+    let host_instructions = instructions
+        .iter()
+        .filter(|ix| ix.program == config.program_id)
+        .collect::<Vec<_>>();
+    for ix in &host_instructions {
+        if is_fhe_eval_instruction(&ix.data)
+            && decode_fhe_eval_args(&ix.data).is_none()
+        {
+            anyhow::bail!(
+                "reconstruct: known fhe_eval discriminator has undecodable arguments in slot {slot}"
+            );
+        }
+        if is_encrypted_value_instruction(&ix.data)
+            && decode_encrypted_value_instruction(&ix.data).is_none()
+        {
+            anyhow::bail!(
+                "reconstruct: known EncryptedValue lifecycle discriminator has undecodable arguments in slot {slot}"
+            );
+        }
+    }
+    let has_lifecycle = host_instructions
+        .iter()
+        .any(|ix| is_encrypted_value_instruction(&ix.data));
+    let has_fhe_eval = host_instructions
+        .iter()
+        .any(|ix| is_fhe_eval_instruction(&ix.data));
     if !has_lifecycle && !has_fhe_eval {
         return Ok(ReconstructionOutcome::NotCovered);
     }
 
-    let Some(ctx) =
-        reconstruct_context(config, slot, slot_bank_hash, slot_clock_ts)
-    else {
-        if has_fhe_eval {
-            anyhow::bail!(
-                "reconstruct: missing slot derivation context for covered fhe_eval in slot {slot}"
-            );
-        }
-        let events =
-            crate::solana_reconstruct::decode_encrypted_value_fetch_events(
-                instructions,
-                &config.program_id,
-                encrypted_value_tracker,
-            );
-        return Ok(ReconstructionOutcome::Complete(events));
-    };
+    let ctx = reconstruct_context(config, slot, slot_bank_hash, slot_clock_ts);
+    if has_fhe_eval && ctx.is_none() {
+        anyhow::bail!(
+            "reconstruct: missing slot derivation context for covered fhe_eval in slot {slot}"
+        );
+    }
 
     let mut events = Vec::new();
 
@@ -887,6 +779,9 @@ async fn reconstruct_events_for_insert(
             continue;
         }
         if let Some(plan) = decode_fhe_eval_args(&ix.data) {
+            let ctx = ctx
+                .as_ref()
+                .expect("covered fhe_eval requires reconstruction context");
             let subject = ix
                 .accounts
                 .get(COMPUTE_SUBJECT_INDEX)
@@ -894,7 +789,7 @@ async fn reconstruct_events_for_insert(
                 .unwrap_or([0u8; 32]);
             // Durable output handles recompute from the plan's value_key + block
             // entropy alone (DD-015): no lineage leaf count, no handle hints.
-            let Some(steps) = reconstruct_fhe_eval_steps(&plan, subject, &ctx)
+            let Some(steps) = reconstruct_fhe_eval_steps(&plan, subject, ctx)
             else {
                 anyhow::bail!(
                     "reconstruct: incomplete fhe_eval reconstruction in slot {slot}; \
@@ -903,53 +798,21 @@ async fn reconstruct_events_for_insert(
             };
             for step in steps {
                 let handle = compute_result_handle(&step.event);
-                let make_public = step.make_public;
                 let previous_handle = step.previous_handle;
                 events.push(step.event);
                 if let (Some(index), Some(handle)) =
                     (step.durable_encrypted_value_index, handle)
                 {
-                    if let Some(encrypted_value) =
-                        fhe_eval_durable_encrypted_value(&ix.accounts, index)
+                    if fhe_eval_durable_encrypted_value(&ix.accounts, index)
+                        .is_some()
                     {
-                        encrypted_value_tracker.record(encrypted_value, handle);
-                        events.push(SolanaHostEvent::FinalizedAccountFetch(
-                            reconstruct_acl_record_bound_fetch(
-                                encrypted_value,
-                                handle,
-                            ),
+                        events.push(SolanaHostEvent::MaterialRequest(
+                            material_request(handle),
                         ));
                         if let Some(previous_handle) = previous_handle {
-                            events.push(
-                                SolanaHostEvent::FinalizedAccountFetch(
-                                    reconstruct_handle_superseded_fetch(
-                                        encrypted_value,
-                                        handle,
-                                    ),
-                                ),
-                            );
-                            events.push(
-                                SolanaHostEvent::FinalizedAccountFetch(
-                                    reconstruct_handle_superseded_fetch(
-                                        encrypted_value,
-                                        previous_handle,
-                                    ),
-                                ),
-                            );
-                        }
-                        // Born-public output: the bind appended a public-decrypt
-                        // leaf for the newly bound handle inline (make_public),
-                        // after any superseded-handle leaves. Mirror it so the
-                        // handle's public-decrypt allow-signal is not missed.
-                        if make_public {
-                            events.push(
-                                SolanaHostEvent::FinalizedAccountFetch(
-                                    reconstruct_handle_made_public_fetch(
-                                        encrypted_value,
-                                        handle,
-                                    ),
-                                ),
-                            );
+                            events.push(SolanaHostEvent::MaterialRequest(
+                                material_request(previous_handle),
+                            ));
                         }
                     } else {
                         anyhow::bail!(
@@ -969,25 +832,23 @@ async fn reconstruct_events_for_insert(
         {
             let encrypted_value_index =
                 encrypted_value_account_index(&instruction);
-            if let Some(encrypted_value) =
-                ix.accounts.get(encrypted_value_index).copied()
-            {
-                events.extend(
-                    encrypted_value_instruction_fetches(
-                        &instruction,
-                        encrypted_value,
-                        encrypted_value_tracker,
-                    )
-                    .into_iter()
-                    .map(SolanaHostEvent::FinalizedAccountFetch),
+            if ix.accounts.get(encrypted_value_index).is_none() {
+                anyhow::bail!(
+                    "reconstruct: EncryptedValue lifecycle account index {encrypted_value_index} \
+                     out of range in slot {slot}; accounts={}",
+                    ix.accounts.len()
                 );
             }
+            events.extend(
+                encrypted_value_material_requests(&instruction)
+                    .into_iter()
+                    .map(SolanaHostEvent::MaterialRequest),
+            );
         }
     }
     Ok(ReconstructionOutcome::Complete(events))
 }
 
-#[cfg(feature = "solana-reconstruct")]
 fn compute_result_handle(
     event: &crate::solana_adapter::SolanaHostEvent,
 ) -> Option<[u8; 32]> {
@@ -1002,7 +863,7 @@ fn compute_result_handle(
         E::FheSum(e) => Some(e.result),
         E::FheIsIn(e) => Some(e.result),
         E::FheMulDiv(e) => Some(e.result),
-        E::FinalizedAccountFetch(_) => None,
+        E::MaterialRequest(_) => None,
     }
 }
 
@@ -1038,33 +899,24 @@ mod ingest_cursor_tests {
     }
 }
 
-#[cfg(all(test, feature = "solana-reconstruct"))]
+#[cfg(test)]
 mod fhe_eval_acl_tests {
     use super::{
         fhe_eval_durable_encrypted_value, reconstruct_events_for_insert,
-        validate_lineage_tracker_commitment, ReconstructionOutcome,
-        SolanaGrpcListenerConfig,
+        ReconstructionOutcome, SolanaGrpcListenerConfig,
     };
     use anchor_lang::AnchorSerialize;
     use sha2::{Digest, Sha256};
-    use solana_client::nonblocking::rpc_client::RpcClient;
     use std::collections::HashMap;
-    use yellowstone_grpc_proto::prelude::CommitmentLevel;
     use zama_host::state::{
         FheBinaryOpCode as PgmBinaryOpCode, FheEvalArgs, FheEvalOperand,
         FheEvalOutput, FheEvalStep,
     };
 
     use crate::database::tfhe_event_propagate::Handle;
-    use crate::generated::{
-        anchor_event_discriminator, ANCHOR_EVENT_IX_TAG_LE,
-    };
-    use crate::solana_adapter::{
-        decode_solana_transaction_events, SolanaHostEvent,
-    };
+    use crate::solana_adapter::SolanaHostEvent;
     use crate::solana_reconstruct::{
-        AllowSubjectsArgs, DecodedInstruction, EncryptedValueLineageTracker,
-        EncryptedValueSubjectGrant, MakeHandlePublicArgs,
+        AllowSubjectsArgs, DecodedInstruction, EncryptedValueSubjectGrant,
         ENCRYPTED_VALUE_ACCOUNT_INDEX,
     };
     use zama_host::state::AclSubjectEntry;
@@ -1079,25 +931,9 @@ mod fhe_eval_acl_tests {
             x_token: None,
             rpc_fallback_url: "http://127.0.0.1:1".to_owned(),
             program_id: ZAMA_HOST.to_owned(),
-            commitment: CommitmentLevel::Finalized,
             chain_id: 12345,
             zero_birth_entropy: true,
-            reconstruct: true,
         }
-    }
-
-    #[test]
-    fn confirmed_commitment_is_rejected_for_lineage_tracker() {
-        let mut config = config();
-        config.commitment = CommitmentLevel::Confirmed;
-
-        let err = validate_lineage_tracker_commitment(&config)
-            .expect_err("confirmed stream data must fail closed");
-
-        assert!(
-            err.to_string().contains("requires finalized commitment"),
-            "unexpected error: {err}"
-        );
     }
 
     const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";
@@ -1114,13 +950,6 @@ mod fhe_eval_acl_tests {
     fn encode_instruction(name: &str, args: impl AnchorSerialize) -> Vec<u8> {
         let mut data = discriminator(name).to_vec();
         args.serialize(&mut data).expect("serialize instruction");
-        data
-    }
-
-    fn encode_cpi_event(name: &str, event: impl AnchorSerialize) -> Vec<u8> {
-        let mut data = ANCHOR_EVENT_IX_TAG_LE.to_vec();
-        data.extend_from_slice(&anchor_event_discriminator(name));
-        event.serialize(&mut data).expect("serialize event");
         data
     }
 
@@ -1189,63 +1018,6 @@ mod fhe_eval_acl_tests {
         )
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-    enum SemanticFact {
-        Binary {
-            op: String,
-            subject: [u8; 32],
-            lhs: [u8; 32],
-            rhs: [u8; 32],
-            scalar: bool,
-            result: [u8; 32],
-        },
-        Fetch {
-            account_key: [u8; 32],
-            kind: String,
-            reason: &'static str,
-            handle: Option<[u8; 32]>,
-            related_account: Option<[u8; 32]>,
-            subject: Option<[u8; 32]>,
-        },
-    }
-
-    fn handle_bytes(handle: Option<Handle>) -> Option<[u8; 32]> {
-        handle.map(|handle| {
-            let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(handle.as_slice());
-            bytes
-        })
-    }
-
-    fn semantic_facts(events: &[SolanaHostEvent]) -> Vec<SemanticFact> {
-        let mut facts = events
-            .iter()
-            .map(|event| match event {
-                SolanaHostEvent::FheBinaryOp(event) => SemanticFact::Binary {
-                    op: format!("{:?}", event.op),
-                    subject: event.subject,
-                    lhs: event.lhs,
-                    rhs: event.rhs,
-                    scalar: event.scalar,
-                    result: event.result,
-                },
-                SolanaHostEvent::FinalizedAccountFetch(fetch) => {
-                    SemanticFact::Fetch {
-                        account_key: fetch.account_key,
-                        kind: format!("{:?}", fetch.kind),
-                        reason: fetch.reason,
-                        handle: handle_bytes(fetch.handle),
-                        related_account: fetch.related_account,
-                        subject: fetch.subject,
-                    }
-                }
-                other => panic!("unexpected event in test fact set: {other:?}"),
-            })
-            .collect::<Vec<_>>();
-        facts.sort();
-        facts
-    }
-
     fn complete_events(outcome: ReconstructionOutcome) -> Vec<SolanaHostEvent> {
         match outcome {
             ReconstructionOutcome::Complete(events) => events,
@@ -1255,132 +1027,14 @@ mod fhe_eval_acl_tests {
         }
     }
 
-    fn multi_instruction_fhe_eval_allow_public_tx() -> Vec<DecodedInstruction> {
-        let output_subject =
-            anchor_lang::prelude::Pubkey::new_from_array(SUBJECT);
-        let plan = FheEvalArgs {
-            context_id: [1; 32],
-            steps: vec![FheEvalStep::Binary {
-                op: PgmBinaryOpCode::Add,
-                lhs: FheEvalOperand::AllowedDurable {
-                    handle: [3; 32],
-                    encrypted_value_index: 0,
-                },
-                rhs: FheEvalOperand::Scalar([1; 32]),
-                output_fhe_type: 5,
-                output: FheEvalOutput::AllowedDurable {
-                    output_encrypted_value_index: 0,
-                    output_app_account_authority_index: None,
-                    output_acl_domain_key:
-                        anchor_lang::prelude::Pubkey::new_from_array([8; 32]),
-                    output_app_account:
-                        anchor_lang::prelude::Pubkey::new_from_array([9; 32]),
-                    output_encrypted_value_label: [10; 32],
-                    output_subjects: vec![AclSubjectEntry::user(
-                        output_subject,
-                    )],
-                    previous_handle: Some([8; 32]),
-                    previous_subjects: Some(vec![output_subject]),
-                    // This fixture publishes the handle via a standalone
-                    // `make_handle_public` instruction (below), not inline.
-                    make_public: false,
-                },
-            }],
-        };
-        // The fhe_eval output handle is derived (DD-015), so the subsequent
-        // lifecycle instructions target the same handle reconstruction computes.
-        let output_handle = derived_add_output_handle();
-        let allow_data = encode_instruction(
-            "allow_subjects",
-            AllowSubjectsArgs {
-                subjects: vec![EncryptedValueSubjectGrant { subject: [7; 32] }],
-            },
-        );
-
-        vec![
-            decoded_ix(
-                encode_instruction("fhe_eval", plan),
-                fhe_eval_accounts(),
-                0,
-                false,
-            ),
-            decoded_ix(allow_data, encrypted_value_accounts(), 1, false),
-            decoded_ix(
-                encode_instruction(
-                    "make_handle_public",
-                    MakeHandlePublicArgs {
-                        handle: output_handle,
-                    },
-                ),
-                encrypted_value_accounts(),
-                2,
-                false,
-            ),
-        ]
-    }
-
-    fn emit_mode_events_for_multi_instruction_tx(
-        instructions: &[DecodedInstruction],
-    ) -> Vec<SolanaHostEvent> {
-        let output_handle = derived_add_output_handle();
-        let cpi_event = encode_cpi_event(
-            "FheBinaryOpEvent",
-            zama_host::FheBinaryOpEvent {
-                version: zama_host::EVENT_VERSION,
-                op: PgmBinaryOpCode::Add,
-                subject: SUBJECT,
-                lhs: [3; 32],
-                rhs: [1; 32],
-                scalar: true,
-                result: output_handle,
-            },
-        );
-        let mut events = decode_solana_transaction_events(
-            &[],
-            [(ZAMA_HOST, cpi_event.as_slice())],
-            ZAMA_HOST,
-        )
-        .expect("emit event should decode");
-        let mut tracker = EncryptedValueLineageTracker::new();
-        tracker.record(ENCRYPTED_VALUE, [8; 32]);
-        events.push(SolanaHostEvent::FinalizedAccountFetch(
-            crate::solana_reconstruct::reconstruct_handle_superseded_fetch(
-                ENCRYPTED_VALUE,
-                output_handle,
-            ),
-        ));
-        events.push(SolanaHostEvent::FinalizedAccountFetch(
-            crate::solana_reconstruct::reconstruct_handle_superseded_fetch(
-                ENCRYPTED_VALUE,
-                [8; 32],
-            ),
-        ));
-        tracker.record(ENCRYPTED_VALUE, output_handle);
-        events.extend(
-            crate::solana_reconstruct::decode_encrypted_value_fetch_events(
-                instructions,
-                ZAMA_HOST,
-                &mut tracker,
-            ),
-        );
-        events.push(SolanaHostEvent::FinalizedAccountFetch(
-            crate::solana_reconstruct::reconstruct_acl_record_bound_fetch(
-                ENCRYPTED_VALUE,
-                output_handle,
-            ),
-        ));
-        events
-    }
-
     #[test]
     fn durable_output_as_sole_remaining_account_resolves() {
         // The trivial-encrypt-eval shape: 10 named accounts (0..=9, including the three
         // HCU accounts and the event_cpi pair) + exactly one remaining account, the
         // durable output EncryptedValue account, at absolute index 10 (remaining_index 0).
         // A stale base (7, the pre-HCU count) read accounts.get(7) here — the
-        // trusted-app-record placeholder, not zama_host-owned — so the finalized fetch
-        // refused the release and the output handle never materialized. This pins the base
-        // at 10.
+        // trusted-app-record placeholder, not the durable EncryptedValue account. This
+        // pins the base at 10.
         let accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
         assert_eq!(
             fhe_eval_durable_encrypted_value(&accounts, 0),
@@ -1417,7 +1071,7 @@ mod fhe_eval_acl_tests {
     }
 
     #[tokio::test]
-    async fn direct_allow_subjects_reconstructs_lifecycle_fetch() {
+    async fn direct_allow_subjects_schedules_no_material() {
         let allow_data = encode_instruction(
             "allow_subjects",
             AllowSubjectsArgs {
@@ -1427,10 +1081,6 @@ mod fhe_eval_acl_tests {
         let instructions =
             vec![decoded_ix(allow_data, encrypted_value_accounts(), 0, false)];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let rpc = RpcClient::new("http://127.0.0.1:1".to_owned());
-        let mut tracker = EncryptedValueLineageTracker::new();
-        tracker.record(ENCRYPTED_VALUE, [4; 32]);
-
         let events = complete_events(
             reconstruct_events_for_insert(
                 &config(),
@@ -1438,30 +1088,68 @@ mod fhe_eval_acl_tests {
                 42,
                 &slot_bank_hash,
                 &slot_clock_ts,
-                &rpc,
-                &mut tracker,
             )
             .await
             .expect("reconstruction should return lifecycle events"),
         );
 
-        assert!(events.iter().any(|event| {
-            matches!(
-                event,
-                SolanaHostEvent::FinalizedAccountFetch(fetch)
-                    if fetch.reason == "subject_allowed"
-                        && fetch.account_key == ENCRYPTED_VALUE
-                        && fetch.handle == Some(Handle::from([4; 32]))
-                        && fetch.subject == Some([7; 32])
+        assert!(events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn known_but_undecodable_instructions_fail_ingest() {
+        let malformed = [
+            discriminator("fhe_eval").to_vec(),
+            discriminator("make_handle_public").to_vec(),
+        ];
+        let (slot_bank_hash, slot_clock_ts) = slot_context();
+
+        for data in malformed {
+            let err = reconstruct_events_for_insert(
+                &config(),
+                &[decoded_ix(data, encrypted_value_accounts(), 0, false)],
+                42,
+                &slot_bank_hash,
+                &slot_clock_ts,
             )
-        }));
+            .await
+            .expect_err(
+                "known discriminator with malformed args must fail ingest",
+            );
+            assert!(
+                err.to_string().contains("undecodable arguments"),
+                "got: {err}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn lifecycle_with_missing_accounts_fails_ingest() {
+        let allow_data = encode_instruction(
+            "allow_subjects",
+            AllowSubjectsArgs {
+                subjects: vec![EncryptedValueSubjectGrant { subject: [7; 32] }],
+            },
+        );
+        let (slot_bank_hash, slot_clock_ts) = slot_context();
+        let err = reconstruct_events_for_insert(
+            &config(),
+            &[decoded_ix(allow_data, vec![[0u8; 32]], 0, false)],
+            42,
+            &slot_bank_hash,
+            &slot_clock_ts,
+        )
+        .await
+        .expect_err("covered lifecycle instruction with missing accounts must fail ingest");
+
+        assert!(err.to_string().contains("account index 2 out of range"));
     }
 
     /// A superseding durable `fhe_eval` output recomputes its handle directly
     /// from the plan's output material + block entropy (DD-015) — no raw update
     /// handle hint and no lineage leaf count. The
-    /// reconstructed compute result, bound-handle fetch, and superseded-handle
-    /// fetches must all come from the `fhe_eval` instruction itself.
+    /// reconstructed compute result and current/historical material requests
+    /// must all come from the `fhe_eval` instruction itself.
     #[tokio::test]
     async fn superseding_fhe_eval_derives_output_handle_without_hint() {
         let expected = derived_add_output_handle();
@@ -1495,10 +1183,6 @@ mod fhe_eval_acl_tests {
         let instructions =
             vec![decoded_ix(fhe_eval_data, fhe_eval_accounts(), 0, false)];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let rpc = RpcClient::new("http://127.0.0.1:1".to_owned());
-        let mut tracker = EncryptedValueLineageTracker::new();
-        tracker.record(ENCRYPTED_VALUE, [8; 32]);
-
         let events = complete_events(
             reconstruct_events_for_insert(
                 &config(),
@@ -1506,8 +1190,6 @@ mod fhe_eval_acl_tests {
                 42,
                 &slot_bank_hash,
                 &slot_clock_ts,
-                &rpc,
-                &mut tracker,
             )
             .await
             .expect(
@@ -1521,34 +1203,26 @@ mod fhe_eval_acl_tests {
                 SolanaHostEvent::FheBinaryOp(op) if op.result == expected
             )
         }));
-        assert!(events.iter().any(|event| {
-            matches!(
-                event,
-                SolanaHostEvent::FinalizedAccountFetch(fetch)
-                    if fetch.reason == "acl_record_bound"
-                        && fetch.account_key == ENCRYPTED_VALUE
-                        && fetch.handle == Some(Handle::from(expected))
-            )
-        }));
-        assert!(events.iter().any(|event| {
-            matches!(
-                event,
-                SolanaHostEvent::FinalizedAccountFetch(fetch)
-                    if fetch.reason == "handle_superseded"
-                        && fetch.handle == Some(Handle::from([8; 32]))
-            )
-        }));
+        let requested_handles = events
+            .iter()
+            .filter_map(|event| match event {
+                SolanaHostEvent::MaterialRequest(request) => {
+                    Some(request.handle)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            requested_handles,
+            vec![Handle::from(expected), Handle::from([8; 32])],
+            "supersession must request the current and previous handles exactly once"
+        );
     }
 
-    /// A durable `fhe_eval` output born public inline (`make_public: true`, with
-    /// no standalone `make_handle_public` instruction) must yield a
-    /// `handle_made_public` allow-fetch for the recomputed output handle, right
-    /// after its `acl_record_bound` fetch — mirroring the inline public-decrypt
-    /// leaf the on-chain bind appends. This is the create case (public leaf at
-    /// index 0); the supersede burn case appends the same public fetch after the
-    /// superseded-handle leaves.
+    /// A durable output born public still requests material for its recomputed
+    /// handle. The durable bind and public transition share that request.
     #[tokio::test]
-    async fn born_public_fhe_eval_output_emits_handle_made_public_fetch() {
+    async fn born_public_fhe_eval_output_requests_material() {
         let plan = FheEvalArgs {
             context_id: [1; 32],
             steps: vec![FheEvalStep::TrivialEncrypt {
@@ -1579,9 +1253,6 @@ mod fhe_eval_acl_tests {
             false,
         )];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let rpc = RpcClient::new("http://127.0.0.1:1".to_owned());
-        let mut tracker = EncryptedValueLineageTracker::new();
-
         let events = complete_events(
             reconstruct_events_for_insert(
                 &config(),
@@ -1589,8 +1260,6 @@ mod fhe_eval_acl_tests {
                 42,
                 &slot_bank_hash,
                 &slot_clock_ts,
-                &rpc,
-                &mut tracker,
             )
             .await
             .expect("born-public create reconstruction should succeed"),
@@ -1605,127 +1274,19 @@ mod fhe_eval_acl_tests {
             })
             .expect("trivial-encrypt compute event with a result handle");
 
-        let bound_pos = events
+        let material_request = events
             .iter()
-            .position(|event| {
+            .find(|event| {
                 matches!(
                     event,
-                    SolanaHostEvent::FinalizedAccountFetch(f)
-                        if f.reason == "acl_record_bound"
-                            && f.account_key == ENCRYPTED_VALUE
-                            && f.handle == Some(Handle::from(bound_handle))
+                    SolanaHostEvent::MaterialRequest(request)
+                        if request.handle == Handle::from(bound_handle)
                 )
             })
-            .expect("acl_record_bound fetch for the bound handle");
-
-        let made_public_pos = events
-            .iter()
-            .position(|event| {
-                matches!(
-                    event,
-                    SolanaHostEvent::FinalizedAccountFetch(f)
-                        if f.reason == "handle_made_public"
-                            && f.account_key == ENCRYPTED_VALUE
-                            && f.handle == Some(Handle::from(bound_handle))
-                )
-            })
-            .expect("handle_made_public fetch for the born-public handle");
-
-        assert!(
-            made_public_pos > bound_pos,
-            "public-decrypt fetch must follow the bind fetch (public leaf is last)"
-        );
-    }
-
-    #[tokio::test]
-    async fn emit_and_reconstruct_multi_instruction_fact_sets_match() {
-        let instructions = multi_instruction_fhe_eval_allow_public_tx();
-        let emit_facts = semantic_facts(
-            &emit_mode_events_for_multi_instruction_tx(&instructions),
-        );
-        let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let rpc = RpcClient::new("http://127.0.0.1:1".to_owned());
-        let mut tracker = EncryptedValueLineageTracker::new();
-        tracker.record(ENCRYPTED_VALUE, [8; 32]);
-
-        let reconstructed = complete_events(reconstruct_events_for_insert(
-            &config(),
-            &instructions,
-            42,
-            &slot_bank_hash,
-            &slot_clock_ts,
-            &rpc,
-            &mut tracker,
-        )
-        .await
-        .expect(
-            "reconstruction should produce the full multi-instruction fact set",
+            .expect("material request for the born-public bound handle");
+        assert!(matches!(
+            material_request,
+            SolanaHostEvent::MaterialRequest(_)
         ));
-        let reconstruct_facts = semantic_facts(&reconstructed);
-
-        // The fhe_eval output handle is derived (DD-015), not the old update
-        // hint [9;32]; every fact carrying that output handle uses it.
-        let output_handle = derived_add_output_handle();
-        let required_facts = [
-            SemanticFact::Binary {
-                op: "Add".to_owned(),
-                subject: SUBJECT,
-                lhs: [3; 32],
-                rhs: [1; 32],
-                scalar: true,
-                result: output_handle,
-            },
-            SemanticFact::Fetch {
-                account_key: ENCRYPTED_VALUE,
-                kind: "EncryptedValueAccount".to_owned(),
-                reason: "acl_record_bound",
-                handle: Some(output_handle),
-                related_account: None,
-                subject: None,
-            },
-            SemanticFact::Fetch {
-                account_key: ENCRYPTED_VALUE,
-                kind: "EncryptedValueAccount".to_owned(),
-                reason: "handle_superseded",
-                handle: Some([8; 32]),
-                related_account: None,
-                subject: None,
-            },
-            SemanticFact::Fetch {
-                account_key: ENCRYPTED_VALUE,
-                kind: "EncryptedValueAccount".to_owned(),
-                reason: "handle_superseded",
-                handle: Some(output_handle),
-                related_account: None,
-                subject: None,
-            },
-            SemanticFact::Fetch {
-                account_key: ENCRYPTED_VALUE,
-                kind: "EncryptedValueAccount".to_owned(),
-                reason: "subject_allowed",
-                handle: Some(output_handle),
-                related_account: None,
-                subject: Some([7; 32]),
-            },
-            SemanticFact::Fetch {
-                account_key: ENCRYPTED_VALUE,
-                kind: "EncryptedValueAccount".to_owned(),
-                reason: "handle_made_public",
-                handle: Some(output_handle),
-                related_account: None,
-                subject: None,
-            },
-        ];
-        for fact in required_facts {
-            assert!(
-                emit_facts.contains(&fact),
-                "emit path missing semantic fact: {fact:?}"
-            );
-            assert!(
-                reconstruct_facts.contains(&fact),
-                "reconstruct path missing semantic fact: {fact:?}"
-            );
-        }
-        assert_eq!(emit_facts, reconstruct_facts);
     }
 }

@@ -13,7 +13,7 @@
 #   2. bootstrap zama-host from the REAL live gateway addresses + ProtocolConfig signer set
 #   3. register the Solana host chain in the coprocessor DB (host_chains i64 + keyset mirror)
 #      and on the gateway (GatewayConfig.addHostChain via the test-suite task)
-#   4. run the Solana host-listener + finalized-account fetcher against the validator + DB
+#   4. run the Solana host-listener against the validator + DB
 # It does NOT touch relayer.yaml / kms-connector.env — fhevm-cli generates those.
 #
 # All addresses/signers are read live (no hardcoded values), so it is reproducible from a clean
@@ -206,25 +206,7 @@ run_logged_background() {
   || { echo "[setup] host-listener (grpc,reconstruct) build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
 run_logged_background /tmp/solana-host-listener.log \
   "$ROOT/coprocessor/fhevm-engine/target/debug/solana_host_listener" \
-    --transport grpc --grpc-url "$GRPC_URL" \
-    --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
-    --host-chain-id="$SID_I64" --reconstruct
-
-# The Solana decrypt pipeline is two-stage: the host-listener ingests events and, for
-# PublicDecryptAllowed / disclose+redeem request events, QUEUES a finalized-account fetch rather
-# than enqueueing SnS work directly (the cert/ACL must be read at finalized commitment). The
-# finalized-account fetcher drains that queue, reads the finalized ACL/witness, and inserts the
-# pbs_computations rows that drive the SnS worker. Without it, computed handles never get a
-# ciphertext128 digest and every decrypt hangs. Build from source for the same generated-decoder
-# reason as the listener.
-echo "==> [5b/5] run Solana finalized-account fetcher"
-pkill -f solana_finalized_account_fetcher 2>/dev/null || true
-sleep 1
-( cd "$ROOT/coprocessor/fhevm-engine" && cargo build -p host-listener --bin solana_finalized_account_fetcher >>/tmp/solana-host-listener-build.log 2>&1 ) \
-  || { echo "[setup] finalized-account fetcher build failed; see /tmp/solana-host-listener-build.log" >&2; tail -20 /tmp/solana-host-listener-build.log >&2; exit 1; }
-: >/tmp/solana-finalized-account-fetcher.log
-run_logged_background /tmp/solana-finalized-account-fetcher.log \
-  "$ROOT/coprocessor/fhevm-engine/target/debug/solana_finalized_account_fetcher" \
+    --grpc-url "$GRPC_URL" \
     --database-url "$DBURL" --url "$VALIDATOR_RPC" --program-id "$ZAMA_HOST_ID" \
     --host-chain-id="$SID_I64"
 

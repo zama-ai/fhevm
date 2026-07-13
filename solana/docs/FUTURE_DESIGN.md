@@ -54,11 +54,11 @@ The Solana input path uses the gateway `InputVerification.verifyProofRequestSola
 `VerifyProofRequestSolana` bytes32 entrypoint (kept, not renamed to V2 — DD-030). User-decrypt uses the
 typed `userDecryptionRequestSolana` entrypoint (DD-026).
 
-**Requirement:** keep the PoC ↔ RFC-021 mirror in sync as the gateway evolves, and wire the Solana
-host-listener into the EVM block-status reorg substrate (`host_chain_blocks_valid` +
-`cmd/block_history.rs`) — today the Solana poller polls at `confirmed` and inserts directly, bypassing
-reorg handling (DD-024, DD-025, DD-028). Decide the finality-gate placement (DD-025 options A–D) and
-the decrypt-release commitment level (`finalized` vs `confirmed`).
+**Requirement:** keep the PoC ↔ RFC-021 mirror in sync as the gateway evolves. The Solana
+host-listener reconstructs from confirmed Yellowstone instructions and inserts directly, while KMS
+revalidates confirmed live authorization before plaintext release (DD-024, DD-025, DD-028). Wiring
+the listener into the EVM block-status substrate (`host_chain_blocks_valid` +
+`cmd/block_history.rs`) is optional resource-recovery work, not a release-authorization gate.
 
 ## 6. Dead enum variants kept for Anchor discriminants
 

@@ -15,14 +15,6 @@ fn generate_zama_host_events() {
     );
 }
 
-fn generate_confidential_token_events() {
-    generate_anchor_events(
-        "confidential_token.json",
-        "confidential_token_events.rs",
-        "ConfidentialTokenEvent",
-    );
-}
-
 fn generate_anchor_events(
     idl_file: &str,
     output_file: &str,
@@ -248,7 +240,7 @@ impl<'a> Cursor<'a> {
     }
 
     // Borsh `Vec<[u8; N]>`: u32 little-endian length, then `len` fixed-size arrays.
-    // Unused in event modules without a `Vec<[u8; N]>` field (e.g. confidential_token).
+    // Not every generated event module uses a `Vec<[u8; N]>` field.
     #[allow(dead_code)]
     fn read_vec_array<const N: usize>(&mut self) -> Option<Vec<[u8; N]>> {
         let len = self.read_u32()? as usize;
@@ -1022,7 +1014,6 @@ fn pascal_case(snake: &str) -> String {
 fn main() {
     println!("cargo::warning=build.rs run ...");
     generate_zama_host_events();
-    generate_confidential_token_events();
     generate_zama_host_instructions();
     generate_solana_abi_schema_hashes();
     build_contracts();

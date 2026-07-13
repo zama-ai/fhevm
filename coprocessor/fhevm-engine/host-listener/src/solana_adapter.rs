@@ -1,28 +1,25 @@
 //! Transport-agnostic core of the Solana ingestion path: Anchor event decoding
-//! (`zama-host` + `confidential-token`) and mapping into the coprocessor
-//! database, shared by every transport ([`crate::solana_listener`] RPC polling,
-//! [`crate::solana_grpc_listener`] Yellowstone, LiteSVM in-process tests) and by
-//! the emitless reconstruction path ([`crate::solana_reconstruct`]).
+//! (`zama-host`) and mapping into the coprocessor
+//! database, shared by Yellowstone ingestion, LiteSVM in-process tests, and the
+//! emitless reconstruction path ([`crate::solana_reconstruct`]).
 //!
 //! Design rationale lives in `solana/docs/DESIGN_DECISIONS.md` (event transport:
-//! DD-003; finalized-fetch decrypt trust model: DD-024).
+//! DD-003; eager ciphertext-material preparation: DD-024).
 
-use std::{collections::HashSet, fmt, ops::DerefMut};
+use std::{collections::HashSet, fmt};
 
 use alloy_primitives::{Address, FixedBytes, Log};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use sha2::{Digest, Sha256};
-use sqlx::{Error as SqlxError, Row};
+use sqlx::Error as SqlxError;
 
 use crate::generated::{
     decode_anchor_cpi_event as decode_zama_host_anchor_cpi_event,
-    decode_anchor_event as decode_zama_host_anchor_event,
-    decode_confidential_token_anchor_cpi_event,
-    decode_confidential_token_anchor_event, ConfidentialTokenEvent,
-    FheBinaryOpCode, FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent,
-    FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
-    FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, TrivialEncryptEvent,
-    ZamaHostEvent, CONFIDENTIAL_TOKEN_EVENT_VERSION, EVENT_VERSION,
+    decode_anchor_event as decode_zama_host_anchor_event, FheBinaryOpCode,
+    FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent, FheRandBoundedEvent,
+    FheRandEvent, FheSumEvent, FheTernaryOpCode, FheTernaryOpEvent,
+    FheUnaryOpCode, FheUnaryOpEvent, TrivialEncryptEvent, ZamaHostEvent,
+    EVENT_VERSION,
 };
 
 use crate::cmd::block_history::BlockSummary;
@@ -33,82 +30,9 @@ use crate::database::tfhe_event_propagate::{
     ClearConst, Database, Handle, LogTfhe, Transaction, TransactionHash,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum SolanaFinalizedAccountFetchKind {
-    EncryptedValueAccount,
-    AclPermission,
-    // Kind 3 is reserved for the deleted material-commitment fetch kind.
-    // Remaining values are persisted in solana_finalized_account_fetches.kind.
-    DisclosureRequest,
-    BurnRedemptionRequest,
-    TokenMint,
-    TokenAccount,
-    BurnRedemption,
-    TransferCallbackSettlement,
-}
-
-impl SolanaFinalizedAccountFetchKind {
-    fn as_i16(self) -> i16 {
-        match self {
-            SolanaFinalizedAccountFetchKind::EncryptedValueAccount => 1,
-            SolanaFinalizedAccountFetchKind::AclPermission => 2,
-            SolanaFinalizedAccountFetchKind::DisclosureRequest => 4,
-            SolanaFinalizedAccountFetchKind::BurnRedemptionRequest => 5,
-            SolanaFinalizedAccountFetchKind::TokenMint => 6,
-            SolanaFinalizedAccountFetchKind::TokenAccount => 7,
-            SolanaFinalizedAccountFetchKind::BurnRedemption => 8,
-            SolanaFinalizedAccountFetchKind::TransferCallbackSettlement => 9,
-        }
-    }
-
-    fn from_i16(value: i16) -> Option<Self> {
-        match value {
-            1 => Some(SolanaFinalizedAccountFetchKind::EncryptedValueAccount),
-            2 => Some(SolanaFinalizedAccountFetchKind::AclPermission),
-            4 => Some(SolanaFinalizedAccountFetchKind::DisclosureRequest),
-            5 => Some(SolanaFinalizedAccountFetchKind::BurnRedemptionRequest),
-            6 => Some(SolanaFinalizedAccountFetchKind::TokenMint),
-            7 => Some(SolanaFinalizedAccountFetchKind::TokenAccount),
-            8 => Some(SolanaFinalizedAccountFetchKind::BurnRedemption),
-            9 => Some(
-                SolanaFinalizedAccountFetchKind::TransferCallbackSettlement,
-            ),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SolanaFinalizedAccountFetch {
-    pub account_key: [u8; 32],
-    pub kind: SolanaFinalizedAccountFetchKind,
-    pub reason: &'static str,
-    pub handle: Option<Handle>,
-    pub related_account: Option<[u8; 32]>,
-    pub subject: Option<[u8; 32]>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SolanaFinalizedAccountFetchJob {
-    pub account_key: [u8; 32],
-    pub kind: SolanaFinalizedAccountFetchKind,
-    pub reason: String,
-    pub handle: Option<Handle>,
-    pub related_account: Option<[u8; 32]>,
-    pub subject: Option<[u8; 32]>,
-    pub transaction_id: TransactionHash,
-    pub block_number: u64,
-    pub attempts: i32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SolanaFinalizedAccountWitness {
-    pub account_key: [u8; 32],
-    pub owner: [u8; 32],
-    pub lamports: u64,
-    pub executable: bool,
-    pub data: Vec<u8>,
-    pub observed_slot: u64,
+pub struct SolanaMaterialRequest {
+    pub handle: Handle,
 }
 
 #[derive(Clone, Debug)]
@@ -122,13 +46,13 @@ pub enum SolanaHostEvent {
     FheSum(FheSumEvent),
     FheIsIn(FheIsInEvent),
     FheMulDiv(FheMulDivEvent),
-    FinalizedAccountFetch(SolanaFinalizedAccountFetch),
+    MaterialRequest(SolanaMaterialRequest),
 }
 
 #[derive(Clone, Debug)]
 pub enum SolanaMappedEvent {
     Tfhe(Log<TfheContractEvents>),
-    FinalizedAccountFetch(SolanaFinalizedAccountFetch),
+    MaterialRequest(SolanaMaterialRequest),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -140,7 +64,7 @@ pub struct SolanaBlockMeta {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SolanaIngestStats {
     pub tfhe_events: usize,
-    pub acl_events: usize,
+    pub material_requests: usize,
     pub inserted_rows: usize,
 }
 
@@ -263,7 +187,7 @@ pub fn decode_anchor_log_events(
 ///   (see [`needs_ordered_db_log_index`]): reject, because their chronological
 ///   interleaving cannot be reconstructed for DB log indexing;
 /// - both present but at most one side carries compute events (e.g. CPI compute
-///   events alongside log-only account-fetch events): concatenate CPI events
+///   events alongside log-only material requests): concatenate CPI events
 ///   first, then log events. Order is unambiguous because only one side needs
 ///   ordered indexing.
 pub fn merge_solana_transport_events(
@@ -301,83 +225,6 @@ fn needs_ordered_db_log_index(event: &SolanaHostEvent) -> bool {
             | SolanaHostEvent::FheIsIn(_)
             | SolanaHostEvent::FheMulDiv(_)
     )
-}
-
-pub fn decode_solana_transaction_account_fetches<'a>(
-    logs: &[String],
-    inner_instructions: impl IntoIterator<Item = (&'a str, &'a [u8])>,
-    host_program_id: &str,
-    confidential_token_program_id: &str,
-) -> Result<Vec<SolanaFinalizedAccountFetch>, SolanaEventDecodeError> {
-    let inner_instructions = inner_instructions.into_iter().collect::<Vec<_>>();
-    let host_events = decode_solana_transaction_events(
-        logs,
-        inner_instructions.iter().copied(),
-        host_program_id,
-    )?;
-    let mut fetches = account_fetches_from_solana_events(host_events);
-    fetches.extend(decode_confidential_token_anchor_cpi_account_fetches(
-        inner_instructions.iter().copied(),
-        confidential_token_program_id,
-    ));
-    fetches.extend(decode_confidential_token_anchor_log_account_fetches(
-        logs,
-        confidential_token_program_id,
-    ));
-    dedup_account_fetches(&mut fetches);
-    Ok(fetches)
-}
-
-pub fn decode_confidential_token_anchor_cpi_account_fetches<'a>(
-    inner_instructions: impl IntoIterator<Item = (&'a str, &'a [u8])>,
-    program_id: &str,
-) -> Vec<SolanaFinalizedAccountFetch> {
-    inner_instructions
-        .into_iter()
-        .filter(|(instruction_program_id, _)| {
-            *instruction_program_id == program_id
-        })
-        .filter_map(|(_, data)| {
-            decode_confidential_token_anchor_cpi_event(data)
-        })
-        .flat_map(decode_confidential_token_account_fetches)
-        .collect()
-}
-
-pub fn decode_confidential_token_anchor_log_account_fetches(
-    logs: &[String],
-    program_id: &str,
-) -> Vec<SolanaFinalizedAccountFetch> {
-    let mut stack = Vec::<&str>::new();
-    let mut fetches = Vec::new();
-
-    for log in logs {
-        if let Some(invoked_program) = parse_program_invoke(log) {
-            stack.push(invoked_program);
-            continue;
-        }
-
-        if let Some(exited_program) = parse_program_exit(log) {
-            pop_program_stack(&mut stack, exited_program);
-            continue;
-        }
-
-        if stack.last().copied() != Some(program_id) {
-            continue;
-        }
-
-        let Some(encoded) = log.strip_prefix("Program data: ") else {
-            continue;
-        };
-        let Ok(data) = BASE64_STANDARD.decode(encoded) else {
-            continue;
-        };
-        if let Some(event) = decode_confidential_token_anchor_event(&data) {
-            fetches.extend(decode_confidential_token_account_fetches(event));
-        }
-    }
-
-    fetches
 }
 
 fn parse_program_invoke(log: &str) -> Option<&str> {
@@ -448,124 +295,17 @@ fn decode_solana_host_events(event: ZamaHostEvent) -> Vec<SolanaHostEvent> {
     }
 }
 
-fn decode_confidential_token_account_fetches(
-    event: ConfidentialTokenEvent,
-) -> Vec<SolanaFinalizedAccountFetch> {
-    if confidential_token_event_version(&event)
-        != CONFIDENTIAL_TOKEN_EVENT_VERSION
-    {
-        return Vec::new();
-    }
-    match event {
-        ConfidentialTokenEvent::AmountDisclosureRequested(event) => {
-            vec![request_witness_fetch(
-                event.request,
-                SolanaFinalizedAccountFetchKind::DisclosureRequest,
-                "amount_disclosure_requested",
-            )]
-        }
-        ConfidentialTokenEvent::BalanceDisclosureRequested(event) => {
-            vec![request_witness_fetch(
-                event.request,
-                SolanaFinalizedAccountFetchKind::DisclosureRequest,
-                "balance_disclosure_requested",
-            )]
-        }
-        ConfidentialTokenEvent::BurnRedemptionRequested(event) => {
-            vec![request_witness_fetch(
-                event.request,
-                SolanaFinalizedAccountFetchKind::BurnRedemptionRequest,
-                "burn_redemption_requested",
-            )]
-        }
-        ConfidentialTokenEvent::AmountDisclosed(_)
-        | ConfidentialTokenEvent::BalanceDisclosed(_)
-        | ConfidentialTokenEvent::BalanceHandleUpdated(_)
-        | ConfidentialTokenEvent::BurnRedeemed(_)
-        | ConfidentialTokenEvent::ConfidentialBurn(_)
-        | ConfidentialTokenEvent::ConfidentialTransfer(_)
-        | ConfidentialTokenEvent::RandomAmountCreated(_)
-        | ConfidentialTokenEvent::TotalSupplyHandleUpdated(_) => Vec::new(),
-    }
-}
-
-fn confidential_token_event_version(event: &ConfidentialTokenEvent) -> u8 {
-    match event {
-        ConfidentialTokenEvent::AmountDisclosed(event) => event.version,
-        ConfidentialTokenEvent::AmountDisclosureRequested(event) => {
-            event.version
-        }
-        ConfidentialTokenEvent::BalanceDisclosed(event) => event.version,
-        ConfidentialTokenEvent::BalanceDisclosureRequested(event) => {
-            event.version
-        }
-        ConfidentialTokenEvent::BalanceHandleUpdated(event) => event.version,
-        ConfidentialTokenEvent::BurnRedeemed(event) => event.version,
-        ConfidentialTokenEvent::BurnRedemptionRequested(event) => event.version,
-        ConfidentialTokenEvent::ConfidentialBurn(event) => event.version,
-        ConfidentialTokenEvent::ConfidentialTransfer(event) => event.version,
-        ConfidentialTokenEvent::RandomAmountCreated(event) => event.version,
-        ConfidentialTokenEvent::TotalSupplyHandleUpdated(event) => {
-            event.version
-        }
-    }
-}
-
-fn account_fetches_from_solana_events(
-    events: impl IntoIterator<Item = SolanaHostEvent>,
-) -> Vec<SolanaFinalizedAccountFetch> {
-    events
-        .into_iter()
-        .filter_map(|event| match event {
-            SolanaHostEvent::FinalizedAccountFetch(fetch) => Some(fetch),
-            _ => None,
-        })
-        .collect()
-}
-
 // Only referenced by `solana_reconstruct` (feature-gated) outside of tests.
 #[cfg_attr(not(feature = "solana-reconstruct"), allow(dead_code))]
-pub(crate) fn acl_record_fetch(
-    acl_record: [u8; 32],
-    handle: [u8; 32],
-    reason: &'static str,
-) -> SolanaFinalizedAccountFetch {
-    SolanaFinalizedAccountFetch {
-        account_key: acl_record,
-        kind: SolanaFinalizedAccountFetchKind::EncryptedValueAccount,
-        reason,
-        handle: Some(Handle::from(handle)),
-        related_account: None,
-        subject: None,
+pub(crate) fn material_request(handle: [u8; 32]) -> SolanaMaterialRequest {
+    SolanaMaterialRequest {
+        handle: Handle::from(handle),
     }
 }
 
-fn request_witness_fetch(
-    request: [u8; 32],
-    kind: SolanaFinalizedAccountFetchKind,
-    reason: &'static str,
-) -> SolanaFinalizedAccountFetch {
-    SolanaFinalizedAccountFetch {
-        account_key: request,
-        kind,
-        reason,
-        handle: None,
-        related_account: None,
-        subject: None,
-    }
-}
-
-fn dedup_account_fetches(fetches: &mut Vec<SolanaFinalizedAccountFetch>) {
+fn dedup_material_requests(requests: &mut Vec<SolanaMaterialRequest>) {
     let mut seen = HashSet::new();
-    fetches.retain(|fetch| {
-        seen.insert((
-            fetch.account_key,
-            fetch.kind,
-            fetch.reason,
-            fetch.handle,
-            fetch.subject,
-        ))
-    });
+    requests.retain(|request| seen.insert(request.handle));
 }
 
 fn zama_host_event_version(event: &ZamaHostEvent) -> u8 {
@@ -618,41 +358,25 @@ pub fn map_solana_event(event: SolanaHostEvent) -> SolanaMappedEvent {
         SolanaHostEvent::FheMulDiv(event) => {
             SolanaMappedEvent::Tfhe(to_fhe_mul_div_event(event))
         }
-        SolanaHostEvent::FinalizedAccountFetch(fetch) => {
-            SolanaMappedEvent::FinalizedAccountFetch(fetch)
+        SolanaHostEvent::MaterialRequest(request) => {
+            SolanaMappedEvent::MaterialRequest(request)
         }
     }
 }
 
-// --- Eager compute scheduling (RFC-024 / Q11 option A) ---------------------
-//
-// Historically, a Solana compute's `is_allowed` bit was derived from allow
-// events observed in the SAME transaction, and a since-deleted
-// `mark_solana_computation_allowed` re-opened it later if the allow instead
-// landed in a following slot. That machinery is now retired as a *scheduling*
-// gate: every Solana
-// computation is inserted eager (`is_allowed = TRUE` unconditionally), so the
-// tfhe-worker schedules it immediately regardless of ACL/allow state. Allow
-// signals (active `fhe_eval` durable outputs plus `allow_subjects`, `remove_subject`,
-// `make_handle_public`; raw create/update only for legacy finalized data) still matter for
-// DECRYPT availability (SNS/ct128 prep, `allowed_handles`) — they are not needed to unblock
-// computation.
-//
-// Reorg unwind for eagerly-scheduled computations remains unimplemented: a
-// computation whose containing block loses a fork race is wasted work, not a
-// correctness bug, because `solana_finalized_account_fetcher` is the sole gate
-// on releasing a decrypt for a *finalized* handle+subject/public state. Eager
-// compute can never cause a wrong decrypt; at worst it burns cycles on a
-// minority fork.
+// Solana computations and ciphertext-material preparation are scheduled as
+// soon as their instruction confirms. The KMS independently validates the live
+// EncryptedValue PDA and any MMR proof before releasing plaintext, so this eager
+// work can waste cycles after a rare rollback but cannot authorize decryption.
 pub fn normalize_solana_events_for_db(
     events: impl IntoIterator<Item = SolanaHostEvent>,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
-) -> (Vec<LogTfhe>, Vec<SolanaFinalizedAccountFetch>) {
+) -> (Vec<LogTfhe>, Vec<SolanaMaterialRequest>) {
     let events = events.into_iter().collect::<Vec<_>>();
 
     let mut tfhe_logs = Vec::new();
-    let mut account_fetches = Vec::new();
+    let mut material_requests = Vec::new();
 
     for (index, event) in events.into_iter().enumerate() {
         match map_solana_event(event) {
@@ -667,47 +391,14 @@ pub fn normalize_solana_events_for_db(
                     index as u64,
                 ));
             }
-            SolanaMappedEvent::FinalizedAccountFetch(fetch) => {
-                account_fetches.push(fetch);
+            SolanaMappedEvent::MaterialRequest(request) => {
+                material_requests.push(request);
             }
         }
     }
 
-    dedup_account_fetches(&mut account_fetches);
-    (tfhe_logs, account_fetches)
-}
-
-/// Whether a finalized-account-fetch reason denotes an ACL allow signal that
-/// feeds decrypt availability (vs. a material-commitment or request witness).
-/// Used only by the finalized decrypt-release consumer now — no longer by any
-/// compute-scheduling path (see the eager-compute note above).
-///
-/// `encrypted_value_created` / `handle_superseded` / `handle_made_public` /
-/// `subject_allowed` name the RFC-024 positive `EncryptedValue` instruction-derived
-/// signals (active durable-output supersession plus `make_handle_public` and
-/// `allow_subjects`; raw create/update only for legacy finalized data); the legacy
-/// `public_decrypt_allowed` / `acl_subject_allowed` / `acl_record_bound` reasons are kept for the
-/// still-IDL-driven decode path pending its RFC-024 instruction-decode rewrite
-/// (tracked separately — see host-listener README/TODO).
-///
-/// TODO(RFC-024 instruction decode): currently unreferenced because nothing
-/// yet emits `SolanaFinalizedAccountFetch::reason` from the new
-/// `EncryptedValue` instructions (`fhe_eval` durable outputs/`allow_subjects`/
-/// `make_handle_public`/`remove_subject`, plus legacy raw create/update if encountered) — see the host-listener
-/// section of the RFC-024 rollout notes. Once that decode lands, this becomes
-/// the finalized-fetcher's filter again.
-#[allow(dead_code)]
-pub(crate) fn is_solana_allow_reason(reason: &str) -> bool {
-    matches!(
-        reason,
-        "public_decrypt_allowed"
-            | "acl_subject_allowed"
-            | "acl_record_bound"
-            | "encrypted_value_created"
-            | "handle_superseded"
-            | "handle_made_public"
-            | "subject_allowed"
-    )
+    dedup_material_requests(&mut material_requests);
+    (tfhe_logs, material_requests)
 }
 
 pub async fn insert_solana_events(
@@ -717,7 +408,7 @@ pub async fn insert_solana_events(
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
 ) -> Result<SolanaIngestStats, SqlxError> {
-    let (mut tfhe_logs, account_fetches) =
+    let (mut tfhe_logs, material_requests) =
         normalize_solana_events_for_db(events, transaction_id, block);
     let mut inserted_rows = 0;
 
@@ -732,21 +423,19 @@ pub async fn insert_solana_events(
             inserted_compute = true;
         }
     }
-    for fetch in &account_fetches {
-        if insert_finalized_account_fetch(
-            tx,
-            fetch,
-            transaction_id,
-            block.block_number,
-        )
-        .await?
+    for request in &material_requests {
+        let handles = vec![request.handle.to_vec()];
+        if db
+            .insert_pbs_computations(
+                tx,
+                &handles,
+                Some(transaction_id.to_vec()),
+                block.block_number,
+            )
+            .await?
         {
             inserted_rows += 1;
         }
-        // No re-open needed: computations are inserted eager (is_allowed=TRUE
-        // unconditionally, see `normalize_solana_events_for_db`), so there is
-        // nothing left to activate here. This fetch only feeds the finalized
-        // decrypt-release gate (`solana_finalized_account_fetcher`).
     }
 
     // Populate the dependence_chain scheduling table the tfhe-worker locks against; without
@@ -775,304 +464,9 @@ pub async fn insert_solana_events(
 
     Ok(SolanaIngestStats {
         tfhe_events: tfhe_logs.len(),
-        acl_events: account_fetches.len(),
+        material_requests: material_requests.len(),
         inserted_rows,
     })
-}
-
-async fn insert_finalized_account_fetch(
-    tx: &mut Transaction<'_>,
-    fetch: &SolanaFinalizedAccountFetch,
-    transaction_id: TransactionHash,
-    block_number: u64,
-) -> Result<bool, SqlxError> {
-    let handle = fetch.handle.map(|handle| handle.to_vec());
-    let handle_key = finalized_fetch_handle_key(fetch.handle, fetch.subject);
-    let related_account = fetch.related_account.map(|account| account.to_vec());
-    let subject = fetch.subject.map(|subject| subject.to_vec());
-    sqlx::query(
-        r#"
-        INSERT INTO solana_finalized_account_fetches (
-            account_key,
-            kind,
-            reason,
-            handle,
-            handle_key,
-            related_account,
-            subject,
-            transaction_id,
-            block_number
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (account_key, kind, reason, handle_key) DO UPDATE SET
-            related_account = COALESCE(
-                EXCLUDED.related_account,
-                solana_finalized_account_fetches.related_account
-            ),
-            subject = COALESCE(EXCLUDED.subject, solana_finalized_account_fetches.subject),
-            transaction_id = EXCLUDED.transaction_id,
-            block_number = EXCLUDED.block_number,
-            status = 'pending',
-            last_seen_at = NOW()
-        "#,
-    )
-    .bind(fetch.account_key.to_vec())
-    .bind(fetch.kind.as_i16())
-    .bind(fetch.reason)
-    .bind(handle)
-    .bind(handle_key)
-    .bind(related_account)
-    .bind(subject)
-    .bind(transaction_id.to_vec())
-    .bind(block_number as i64)
-    .execute(tx.deref_mut())
-    .await
-    .map(|result| result.rows_affected() > 0)
-}
-
-fn finalized_fetch_handle_key(
-    handle: Option<Handle>,
-    subject: Option<[u8; 32]>,
-) -> Vec<u8> {
-    let mut key = Vec::with_capacity(33);
-    match (handle, subject) {
-        (Some(handle), Some(subject)) => {
-            key.push(2);
-            let mut hasher = Sha256::new();
-            hasher.update(handle.as_slice());
-            hasher.update(subject);
-            let digest = hasher.finalize();
-            key.extend_from_slice(&digest[..32]);
-        }
-        (Some(handle), None) => {
-            key.push(1);
-            key.extend_from_slice(handle.as_slice());
-        }
-        (None, Some(subject)) => {
-            key.push(3);
-            key.extend_from_slice(&subject);
-        }
-        (None, None) => {
-            key.push(0);
-            key.extend_from_slice(&[0u8; 32]);
-        }
-    }
-    key
-}
-
-pub async fn claim_pending_finalized_account_fetches(
-    tx: &mut Transaction<'_>,
-    limit: i64,
-) -> Result<Vec<SolanaFinalizedAccountFetchJob>, SqlxError> {
-    let rows = sqlx::query(
-        r#"
-        WITH candidate AS (
-            SELECT account_key, kind, reason, handle_key
-            FROM solana_finalized_account_fetches
-            WHERE status = 'pending'
-               OR (
-                    status = 'processing'
-                    AND last_seen_at < NOW() - INTERVAL '5 minutes'
-               )
-            ORDER BY block_number, last_seen_at
-            LIMIT $1
-            FOR UPDATE SKIP LOCKED
-        )
-        UPDATE solana_finalized_account_fetches AS claimed
-        SET
-            status = 'processing',
-            attempts = claimed.attempts + 1,
-            last_seen_at = NOW()
-        FROM candidate
-        WHERE claimed.account_key = candidate.account_key
-          AND claimed.kind = candidate.kind
-          AND claimed.reason = candidate.reason
-          AND claimed.handle_key = candidate.handle_key
-        RETURNING
-            claimed.account_key,
-            claimed.kind,
-            claimed.reason,
-            claimed.handle,
-            claimed.related_account,
-            claimed.subject,
-            claimed.transaction_id,
-            claimed.block_number,
-            claimed.attempts
-        "#,
-    )
-    .bind(limit)
-    .fetch_all(tx.deref_mut())
-    .await?;
-
-    Ok(rows
-        .into_iter()
-        .map(finalized_account_fetch_job_from_row)
-        .collect())
-}
-
-pub async fn store_finalized_account_witness(
-    tx: &mut Transaction<'_>,
-    witness: &SolanaFinalizedAccountWitness,
-) -> Result<(), SqlxError> {
-    let lamports = i64::try_from(witness.lamports).map_err(|err| {
-        SqlxError::Decode(Box::new(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!(
-                "Solana lamports exceed host-listener BIGINT storage: {err}"
-            ),
-        )))
-    })?;
-    let observed_slot = i64::try_from(witness.observed_slot).map_err(|err| {
-        SqlxError::Decode(Box::new(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("Solana observed slot exceeds host-listener BIGINT storage: {err}"),
-        )))
-    })?;
-    sqlx::query(
-        r#"
-        INSERT INTO solana_finalized_account_witnesses (
-            account_key,
-            owner,
-            lamports,
-            executable,
-            data,
-            observed_slot
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (account_key) DO UPDATE SET
-            owner = EXCLUDED.owner,
-            lamports = EXCLUDED.lamports,
-            executable = EXCLUDED.executable,
-            data = EXCLUDED.data,
-            observed_slot = EXCLUDED.observed_slot,
-            fetched_at = NOW()
-        "#,
-    )
-    .bind(witness.account_key.to_vec())
-    .bind(witness.owner.to_vec())
-    .bind(lamports)
-    .bind(witness.executable)
-    .bind(witness.data.as_slice())
-    .bind(observed_slot)
-    .execute(tx.deref_mut())
-    .await?;
-    Ok(())
-}
-
-pub async fn complete_finalized_account_fetch(
-    tx: &mut Transaction<'_>,
-    job: &SolanaFinalizedAccountFetchJob,
-) -> Result<(), SqlxError> {
-    let handle_key = finalized_fetch_handle_key(job.handle, job.subject);
-    sqlx::query(
-        r#"
-        UPDATE solana_finalized_account_fetches
-        SET status = 'done', last_error = NULL, last_seen_at = NOW()
-        WHERE account_key = $1
-          AND kind = $2
-          AND reason = $3
-          AND handle_key = $4
-        "#,
-    )
-    .bind(job.account_key.to_vec())
-    .bind(job.kind.as_i16())
-    .bind(&job.reason)
-    .bind(handle_key)
-    .execute(tx.deref_mut())
-    .await?;
-    Ok(())
-}
-
-pub async fn fail_finalized_account_fetch(
-    tx: &mut Transaction<'_>,
-    job: &SolanaFinalizedAccountFetchJob,
-    error: &str,
-) -> Result<(), SqlxError> {
-    let handle_key = finalized_fetch_handle_key(job.handle, job.subject);
-    sqlx::query(
-        r#"
-        UPDATE solana_finalized_account_fetches
-        SET status = 'error', last_error = $5, last_seen_at = NOW()
-        WHERE account_key = $1
-          AND kind = $2
-          AND reason = $3
-          AND handle_key = $4
-        "#,
-    )
-    .bind(job.account_key.to_vec())
-    .bind(job.kind.as_i16())
-    .bind(&job.reason)
-    .bind(handle_key)
-    .bind(error)
-    .execute(tx.deref_mut())
-    .await?;
-    Ok(())
-}
-
-pub async fn retry_finalized_account_fetch(
-    tx: &mut Transaction<'_>,
-    job: &SolanaFinalizedAccountFetchJob,
-    error: &str,
-) -> Result<(), SqlxError> {
-    let handle_key = finalized_fetch_handle_key(job.handle, job.subject);
-    sqlx::query(
-        r#"
-        UPDATE solana_finalized_account_fetches
-        SET status = 'pending', last_error = $5, last_seen_at = NOW()
-        WHERE account_key = $1
-          AND kind = $2
-          AND reason = $3
-          AND handle_key = $4
-        "#,
-    )
-    .bind(job.account_key.to_vec())
-    .bind(job.kind.as_i16())
-    .bind(&job.reason)
-    .bind(handle_key)
-    .bind(error)
-    .execute(tx.deref_mut())
-    .await?;
-    Ok(())
-}
-
-fn finalized_account_fetch_job_from_row(
-    row: sqlx::postgres::PgRow,
-) -> SolanaFinalizedAccountFetchJob {
-    let account_key = bytes32_from_vec(row.get::<Vec<u8>, _>("account_key"));
-    let kind_value = row.get::<i16, _>("kind");
-    let kind = SolanaFinalizedAccountFetchKind::from_i16(kind_value).expect(
-        "solana_finalized_account_fetches.kind has no live fetch-kind variant",
-    );
-    let handle = row
-        .get::<Option<Vec<u8>>, _>("handle")
-        .map(bytes32_from_vec)
-        .map(Handle::from);
-    let related_account = row
-        .get::<Option<Vec<u8>>, _>("related_account")
-        .map(bytes32_from_vec);
-    let subject = row
-        .get::<Option<Vec<u8>>, _>("subject")
-        .map(bytes32_from_vec);
-    let transaction_id =
-        Handle::from(bytes32_from_vec(row.get::<Vec<u8>, _>("transaction_id")));
-    let block_number = row.get::<i64, _>("block_number") as u64;
-    SolanaFinalizedAccountFetchJob {
-        account_key,
-        kind,
-        reason: row.get("reason"),
-        handle,
-        related_account,
-        subject,
-        transaction_id,
-        block_number,
-        attempts: row.get("attempts"),
-    }
-}
-
-fn bytes32_from_vec(bytes: Vec<u8>) -> [u8; 32] {
-    bytes
-        .try_into()
-        .expect("Solana finalized-account queue bytea field has length 32")
 }
 
 pub fn to_log_tfhe(
@@ -1438,40 +832,6 @@ mod tests {
     }
 
     #[test]
-    fn subject_scoped_fetches_keep_distinct_queue_keys() {
-        let handle = handle(4);
-        assert_ne!(
-            finalized_fetch_handle_key(Some(handle), Some([6; 32])),
-            finalized_fetch_handle_key(Some(handle), Some([7; 32]))
-        );
-        assert_ne!(
-            finalized_fetch_handle_key(Some(handle), Some([6; 32])),
-            finalized_fetch_handle_key(Some(handle), None)
-        );
-
-        let mut fetches = vec![
-            SolanaFinalizedAccountFetch {
-                account_key: [1; 32],
-                kind: SolanaFinalizedAccountFetchKind::EncryptedValueAccount,
-                reason: "subject_allowed",
-                handle: Some(handle),
-                related_account: None,
-                subject: Some([6; 32]),
-            },
-            SolanaFinalizedAccountFetch {
-                account_key: [1; 32],
-                kind: SolanaFinalizedAccountFetchKind::EncryptedValueAccount,
-                reason: "subject_allowed",
-                handle: Some(handle),
-                related_account: None,
-                subject: Some([7; 32]),
-            },
-        ];
-        dedup_account_fetches(&mut fetches);
-        assert_eq!(fetches.len(), 2);
-    }
-
-    #[test]
     fn decodes_anchor_event_cpi_binary_event_to_existing_tfhe_event() {
         let encoded = anchor_event_cpi(
             "FheBinaryOpEvent",
@@ -1712,11 +1072,7 @@ mod tests {
     }
 
     fn fetch_event(account: u8) -> SolanaHostEvent {
-        SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
-            [account; 32],
-            [account; 32],
-            "test",
-        ))
+        SolanaHostEvent::MaterialRequest(material_request([account; 32]))
     }
 
     #[test]
@@ -1742,7 +1098,7 @@ mod tests {
 
     #[test]
     fn merge_orders_cpi_events_before_log_events_when_one_side_is_compute() {
-        // CPI compute event alongside log-only account-fetch events: neither
+        // CPI compute event alongside log-only material requests: neither
         // transport is preferred, but CPI events are emitted first so the single
         // compute side keeps a deterministic DB log index.
         let merged = merge_solana_transport_events(
@@ -1752,20 +1108,14 @@ mod tests {
         .expect("only the cpi side carries compute events");
 
         assert!(matches!(merged[0], SolanaHostEvent::FheBinaryOp(_)));
-        assert!(matches!(
-            merged[1],
-            SolanaHostEvent::FinalizedAccountFetch(_)
-        ));
-        assert!(matches!(
-            merged[2],
-            SolanaHostEvent::FinalizedAccountFetch(_)
-        ));
+        assert!(matches!(merged[1], SolanaHostEvent::MaterialRequest(_)));
+        assert!(matches!(merged[2], SolanaHostEvent::MaterialRequest(_)));
     }
 
     #[test]
     fn merge_allows_non_compute_events_on_both_transports() {
-        // Account-fetch events are not order-sensitive, so both sides carrying
-        // only fetches is not a mixed-transport conflict.
+        // Material requests are not order-sensitive, so both sides carrying
+        // only requests is not a mixed-transport conflict.
         let merged = merge_solana_transport_events(
             vec![fetch_event(1)],
             vec![fetch_event(2)],
@@ -1905,109 +1255,6 @@ mod tests {
         let encoded = anchor_event_cpi("FheBinaryOpEvent", payload);
 
         assert!(decode_anchor_cpi_event(&encoded).is_none());
-    }
-
-    #[test]
-    fn confidential_token_request_cpi_events_schedule_request_witness_fetches()
-    {
-        let token_program = "ConfToken111111111111111111111111111111111";
-        let amount_event = anchor_event_cpi(
-            "AmountDisclosureRequestedEvent",
-            amount_disclosure_requested_payload(5),
-        );
-        let balance_event = anchor_event_cpi(
-            "BalanceDisclosureRequestedEvent",
-            balance_disclosure_requested_payload(15),
-        );
-        let redemption_event = anchor_event_cpi(
-            "BurnRedemptionRequestedEvent",
-            burn_redemption_requested_payload(25),
-        );
-
-        let fetches = decode_confidential_token_anchor_cpi_account_fetches(
-            [
-                (token_program, amount_event.as_slice()),
-                (token_program, balance_event.as_slice()),
-                (token_program, redemption_event.as_slice()),
-            ],
-            token_program,
-        );
-
-        assert_eq!(fetches.len(), 3);
-        assert_request_fetch(
-            &fetches[0],
-            5,
-            SolanaFinalizedAccountFetchKind::DisclosureRequest,
-            "amount_disclosure_requested",
-        );
-        assert_request_fetch(
-            &fetches[1],
-            15,
-            SolanaFinalizedAccountFetchKind::DisclosureRequest,
-            "balance_disclosure_requested",
-        );
-        assert_request_fetch(
-            &fetches[2],
-            25,
-            SolanaFinalizedAccountFetchKind::BurnRedemptionRequest,
-            "burn_redemption_requested",
-        );
-    }
-
-    #[test]
-    fn confidential_token_request_logs_schedule_request_witness_fetches() {
-        let token_program = "ConfToken111111111111111111111111111111111";
-        let logs = vec![
-            format!("Program {token_program} invoke [1]"),
-            program_data_log(
-                "BalanceDisclosureRequestedEvent",
-                balance_disclosure_requested_payload(19),
-            ),
-            format!("Program {token_program} success"),
-        ];
-
-        let fetches = decode_solana_transaction_account_fetches(
-            &logs,
-            [],
-            "ZamaHost111111111111111111111111111111111",
-            token_program,
-        )
-        .expect("account fetch scheduling should decode");
-
-        assert_eq!(fetches.len(), 1);
-        assert_request_fetch(
-            &fetches[0],
-            19,
-            SolanaFinalizedAccountFetchKind::DisclosureRequest,
-            "balance_disclosure_requested",
-        );
-    }
-
-    #[test]
-    fn confidential_token_response_events_do_not_schedule_closed_request_fetches(
-    ) {
-        let token_program = "ConfToken111111111111111111111111111111111";
-        let amount_event = anchor_event_cpi(
-            "AmountDisclosedEvent",
-            amount_disclosed_payload(31),
-        );
-        let balance_event = anchor_event_cpi(
-            "BalanceDisclosedEvent",
-            balance_disclosed_payload(32),
-        );
-        let redeemed_event =
-            anchor_event_cpi("BurnRedeemedEvent", burn_redeemed_payload(33));
-
-        let fetches = decode_confidential_token_anchor_cpi_account_fetches(
-            [
-                (token_program, amount_event.as_slice()),
-                (token_program, balance_event.as_slice()),
-                (token_program, redeemed_event.as_slice()),
-            ],
-            token_program,
-        );
-
-        assert!(fetches.is_empty());
     }
 
     #[test]
@@ -2194,15 +1441,15 @@ mod tests {
     fn compute_is_eager_regardless_of_same_tx_allow_signal() {
         // Historically, the eval frame's compute would only be marked
         // materializable when an allow for its result landed in the same tx.
-        // Under eager compute (RFC-024 Q11), it is unconditionally allowed;
-        // the finalized fetch below separately gates the decrypt release.
+        // Under eager compute (RFC-024 Q11), it is unconditionally scheduled;
+        // KMS independently gates plaintext release against Solana ACL state.
         let tx_id = solana_transaction_id(&[7_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
         );
 
-        let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
+        let (tfhe_logs, material_requests) = normalize_solana_events_for_db(
             [
                 SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
                     version: EVENT_VERSION,
@@ -2211,11 +1458,7 @@ mod tests {
                     fhe_type: 5,
                     result: [3; 32],
                 }),
-                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
-                    [9; 32],
-                    [3; 32],
-                    "public_decrypt_allowed",
-                )),
+                SolanaHostEvent::MaterialRequest(material_request([3; 32])),
             ],
             tx_id,
             SolanaBlockMeta {
@@ -2229,31 +1472,22 @@ mod tests {
             tfhe_logs[0].is_allowed,
             "eager compute: schedulable independent of the allow signal"
         );
-        // The allow is still queued for the finalized decrypt-release check.
-        assert_eq!(acl_events.len(), 1);
-        assert_eq!(acl_events[0].reason, "public_decrypt_allowed");
+        // The durable handle is queued directly for material preparation.
+        assert_eq!(material_requests.len(), 1);
     }
 
     #[test]
-    fn same_account_update_fetches_keep_distinct_handles_in_one_batch() {
+    fn material_requests_keep_distinct_handles_in_one_batch() {
         let tx_id = solana_transaction_id(&[9_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
         );
 
-        let (_, acl_events) = normalize_solana_events_for_db(
+        let (_, material_requests) = normalize_solana_events_for_db(
             [
-                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
-                    [9; 32],
-                    [1; 32],
-                    "handle_superseded",
-                )),
-                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
-                    [9; 32],
-                    [2; 32],
-                    "handle_superseded",
-                )),
+                SolanaHostEvent::MaterialRequest(material_request([1; 32])),
+                SolanaHostEvent::MaterialRequest(material_request([2; 32])),
             ],
             tx_id,
             SolanaBlockMeta {
@@ -2262,13 +1496,13 @@ mod tests {
             },
         );
 
-        assert_eq!(acl_events.len(), 2);
-        assert!(acl_events
+        assert_eq!(material_requests.len(), 2);
+        assert!(material_requests
             .iter()
-            .any(|fetch| fetch.handle == Some(handle(1))));
-        assert!(acl_events
+            .any(|request| request.handle == handle(1)));
+        assert!(material_requests
             .iter()
-            .any(|fetch| fetch.handle == Some(handle(2))));
+            .any(|request| request.handle == handle(2)));
     }
 
     #[test]
@@ -2290,11 +1524,7 @@ mod tests {
                     fhe_type: 5,
                     result: [3; 32],
                 }),
-                SolanaHostEvent::FinalizedAccountFetch(acl_record_fetch(
-                    [9; 32],
-                    [4; 32],
-                    "public_decrypt_allowed",
-                )),
+                SolanaHostEvent::MaterialRequest(material_request([4; 32])),
             ],
             tx_id,
             SolanaBlockMeta {
@@ -2315,7 +1545,7 @@ mod tests {
             Time::MIDNIGHT,
         );
 
-        let (tfhe_logs, acl_events) = normalize_solana_events_for_db(
+        let (tfhe_logs, material_requests) = normalize_solana_events_for_db(
             [
                 SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
                     version: EVENT_VERSION,
@@ -2352,7 +1582,7 @@ mod tests {
             },
         );
 
-        assert!(acl_events.is_empty());
+        assert!(material_requests.is_empty());
         assert_eq!(tfhe_logs.len(), 3);
         assert_eq!(
             tfhe_logs
@@ -2385,115 +1615,11 @@ mod tests {
         encoded
     }
 
-    fn program_data_log(name: &str, payload: Vec<u8>) -> String {
-        format!(
-            "Program data: {}",
-            BASE64_STANDARD.encode(anchor_event(name, payload))
-        )
-    }
-
     fn anchor_event(name: &str, payload: Vec<u8>) -> Vec<u8> {
         let mut encoded = Vec::new();
         encoded.extend_from_slice(&anchor_event_discriminator(name));
         encoded.extend_from_slice(&payload);
         encoded
-    }
-
-    fn assert_request_fetch(
-        fetch: &SolanaFinalizedAccountFetch,
-        request_byte: u8,
-        kind: SolanaFinalizedAccountFetchKind,
-        reason: &'static str,
-    ) {
-        assert_eq!(fetch.account_key, [request_byte; 32]);
-        assert_eq!(fetch.kind, kind);
-        assert_eq!(fetch.reason, reason);
-        assert_eq!(fetch.handle, None);
-        assert_eq!(fetch.related_account, None);
-        assert_eq!(fetch.subject, None);
-    }
-
-    fn token_payload() -> Vec<u8> {
-        vec![CONFIDENTIAL_TOKEN_EVENT_VERSION]
-    }
-
-    fn amount_disclosure_requested_payload(request_byte: u8) -> Vec<u8> {
-        let mut payload = token_payload();
-        payload.extend_from_slice(&[1; 32]);
-        payload.extend_from_slice(&[2; 32]);
-        payload.extend_from_slice(&[3; 32]);
-        payload.extend_from_slice(&[4; 32]);
-        payload.extend_from_slice(&[request_byte; 32]);
-        payload.extend_from_slice(&[6; 32]);
-        payload.extend_from_slice(&8_u64.to_le_bytes());
-        payload.extend_from_slice(&9_u64.to_le_bytes());
-        payload
-    }
-
-    fn balance_disclosure_requested_payload(request_byte: u8) -> Vec<u8> {
-        let mut payload = token_payload();
-        payload.extend_from_slice(&[10; 32]);
-        payload.extend_from_slice(&[11; 32]);
-        payload.extend_from_slice(&[12; 32]);
-        payload.extend_from_slice(&[13; 32]);
-        payload.extend_from_slice(&[14; 32]);
-        payload.extend_from_slice(&[request_byte; 32]);
-        payload.extend_from_slice(&[16; 32]);
-        payload.extend_from_slice(&18_u64.to_le_bytes());
-        payload.extend_from_slice(&19_u64.to_le_bytes());
-        payload
-    }
-
-    fn burn_redemption_requested_payload(request_byte: u8) -> Vec<u8> {
-        let mut payload = token_payload();
-        payload.extend_from_slice(&[20; 32]);
-        payload.extend_from_slice(&[21; 32]);
-        payload.extend_from_slice(&[22; 32]);
-        payload.extend_from_slice(&[23; 32]);
-        payload.extend_from_slice(&[24; 32]);
-        payload.extend_from_slice(&[25; 32]);
-        payload.extend_from_slice(&[26; 32]);
-        payload.extend_from_slice(&[request_byte; 32]);
-        payload.extend_from_slice(&[28; 32]);
-        payload.extend_from_slice(&30_u64.to_le_bytes());
-        payload.extend_from_slice(&31_u64.to_le_bytes());
-        payload
-    }
-
-    fn amount_disclosed_payload(request_byte: u8) -> Vec<u8> {
-        let mut payload = token_payload();
-        payload.extend_from_slice(&[40; 32]);
-        payload.extend_from_slice(&[41; 32]);
-        payload.extend_from_slice(&[request_byte; 32]);
-        payload.extend_from_slice(&[43; 32]);
-        payload.extend_from_slice(&44_u64.to_le_bytes());
-        payload
-    }
-
-    fn balance_disclosed_payload(request_byte: u8) -> Vec<u8> {
-        let mut payload = token_payload();
-        payload.extend_from_slice(&[50; 32]);
-        payload.extend_from_slice(&[51; 32]);
-        payload.extend_from_slice(&[52; 32]);
-        payload.extend_from_slice(&[53; 32]);
-        payload.extend_from_slice(&[request_byte; 32]);
-        payload.extend_from_slice(&[55; 32]);
-        payload.extend_from_slice(&56_u64.to_le_bytes());
-        payload
-    }
-
-    fn burn_redeemed_payload(request_byte: u8) -> Vec<u8> {
-        let mut payload = token_payload();
-        payload.extend_from_slice(&[60; 32]);
-        payload.extend_from_slice(&[61; 32]);
-        payload.extend_from_slice(&[62; 32]);
-        payload.extend_from_slice(&[63; 32]);
-        payload.extend_from_slice(&[64; 32]);
-        payload.extend_from_slice(&[65; 32]);
-        payload.extend_from_slice(&[request_byte; 32]);
-        payload.extend_from_slice(&[67; 32]);
-        payload.extend_from_slice(&68_u64.to_le_bytes());
-        payload
     }
 
     fn binary_op_payload(

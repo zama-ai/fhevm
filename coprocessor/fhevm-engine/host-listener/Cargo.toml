@@ -32,12 +32,7 @@ path = "src/bin/solana_host_listener.rs"
 name = "solana_host_listener"
 test = false
 bench = false
-
-[[bin]]
-path = "src/bin/solana_finalized_account_fetcher.rs"
-name = "solana_finalized_account_fetcher"
-test = false
-bench = false
+required-features = ["solana-grpc", "solana-reconstruct"]
 
 [dependencies]
 # workspace dependencies
@@ -74,7 +69,6 @@ url = "2.5.7"
 solana-client = "3.0"
 solana-commitment-config = "3.1"
 solana-sdk = "3.0"
-solana-transaction-status = "3.0"
 
 # Yellowstone gRPC transport (optional; enabled via the `solana-grpc` feature).
 tonic = { workspace = true, optional = true }

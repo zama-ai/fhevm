@@ -108,12 +108,11 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 ## 4. Coprocessor / KMS adapter integration
 
 - **Coprocessor host-listener** (`coprocessor/.../host-listener/src/solana_adapter.rs` +
-  `solana_reconstruct.rs`): decodes zama-host Anchor CPI compute-step events (codegen from vendored IDL
-  `idl/zama_host.json`) into TFHE DB rows, and separately decodes the four `EncryptedValue`
-  instructions directly from instruction data (they emit no events by design, DD-033) into new allow
-  reasons (`encrypted_value_created`, `handle_superseded`, `handle_made_public`, `subject_allowed`).
-  Solana computations are inserted eager/schedulable immediately — allow signals no longer gate
-  scheduling, only decrypt availability (DD-034). `cargo check -p host-listener` → exit 0.
+  `solana_reconstruct.rs`): reconstructs compute rows and handle-only ciphertext-material requests
+  from confirmed Yellowstone transaction instructions plus streamed Clock/SlotHashes state. Create,
+  update, make-public, and durable outputs carry the concrete handle(s) to prepare. Subject grants and
+  removals emit no material request because material was prepared at handle birth; KMS checks the live
+  ACL before plaintext release (DD-025/DD-033/DD-034). `cargo check -p host-listener` → exit 0.
   The adapter maps the merged `fhe_eval` operator surface: binary catalog, ternary select, trivial,
   rand/rand-bounded, unary, sum, isIn, and mulDiv.
 - **Relayer MMR proof service** (`relayer/src/solana_proof`): untrusted, relayer-colocated
@@ -133,9 +132,9 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
   decoder, bumping listener event constants, and regenerating the coprocessor IDLs/ABI golden manifest.
 
 **Adapters are present and integrated at the PoC boundary.** Live transport (production Geyser
-provider, full KMS-connector wiring beyond the harness, wiring the Solana poller into the EVM reorg
-substrate, and calling the MMR proof service in-process from the relayer's user-decrypt flow) is
-PRODUCT-OPEN by design (DD-024/DD-025/DD-028/DD-035).
+provider, full KMS-connector wiring beyond the harness, optional reorg resource recovery, and calling
+the MMR proof service in-process from the relayer's user-decrypt flow) is PRODUCT-OPEN by design
+(DD-024/DD-025/DD-028/DD-035).
 
 ---
 
@@ -166,13 +165,14 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
 3. **No per-block HCU / complexity metering.** The host caps total and critical-path HCU per
    `fhe_eval` plan (`HostConfig::max_hcu_per_tx` / `max_hcu_depth_per_tx`, `0` = off) plus the Solana
    compute budget, but there is no EVM-style per-block `HCULimit` plane. Relevant to DoS/cost-bounding.
-4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification + request witnesses.**
-   The listener persists finalized account fetch intents and exposes claim/store/complete helpers. The
-   residual risk is off-chain integration: a deployed fetcher and KMS certificate publication path
-   still need to be wired before the flow is end-to-end production ready.
-5. **The Solana poller is not wired into the EVM reorg substrate** (DD-025/DD-028): it polls at
-   `confirmed` and inserts directly, bypassing the block-status machine. Reorg correctness is an open
-   gap and the residual `native-v0` connector code is dead scaffolding to retire.
+4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification + request accounts.**
+   The deleted coprocessor request-witness store had no consumer. The residual risk is off-chain
+   integration of KMS certificate publication before the flow is end-to-end production ready.
+5. **The confirmed Yellowstone listener is not wired into the EVM reorg substrate**
+   (DD-025/DD-028): it reconstructs instruction effects and inserts directly, bypassing the
+   block-status machine. This is accepted for authorization because KMS revalidates confirmed live
+   state before release; optional reorg unwind remains resource-recovery work. The residual
+   `native-v0` connector code is dead scaffolding to retire.
 6. **Hand-mirrored, version-pinned ABI across repos with no compile-time link** (connector decoders +
    vendored coprocessor IDL). Lengths are checked, but a same-length field reorder in `EncryptedValue`
    would not be caught at build time. Event versions are now pinned by

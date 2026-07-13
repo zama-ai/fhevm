@@ -91,7 +91,7 @@ plain `emit!` logs can be truncated, and Anchor `emit_cpi!` adds nested CPI fram
 Decision:
 
 Events are discovery and indexing signals. Production authorization must be rebuilt from
-finalized or policy-approved transaction/account data and verified against host-owned ACL,
+policy-approved transaction/account data and verified against host-owned ACL,
 material, delegation, and replay witnesses.
 
 Rationale:
@@ -102,8 +102,13 @@ require every production path to spend a self-CPI frame solely for observability
 Consequences:
 
 The PoC can keep Anchor CPI events for tests and local listener compatibility, but production event
-transport should use a Yellowstone/Geyser transaction and account stream with explicit finality,
+transport should use a Yellowstone/Geyser transaction and account stream with explicit commitment,
 reconnect, replay, and account-witness verification policy.
+
+The current PoC listener is built from source by `solana/scripts/poc/setup-solana-side.sh`; the shared
+host-listener container remains EVM-only and intentionally does not package the feature-gated Solana
+binary. A production Solana image and deployment topology remain packaging work, not an implicit
+fallback to the deleted RPC listener.
 
 ## DD-004: Account Metas And Witness Layouts Are ABI
 
@@ -529,8 +534,8 @@ What this means plainly (state it in the debate):
 
 Handles are **block-bound and therefore reorg-unstable on EVERY chain** (EVM and Solana alike): a
 resubmitted or reorged transaction over the same inputs yields a *different* handle. This is reconciled
-by the listener's reorg handling on EVM (block-status machine, DD-025), and is an **open gap on
-Solana** because the Solana poller is not yet wired into that substrate (DD-025, Boundaries).
+by the listener's reorg handling on EVM (block-status machine, DD-025). Solana accepts confirmed
+eager scheduling and leaves reorg unwind as optional resource recovery (DD-025, Boundaries).
 
 Consequences:
 
@@ -857,78 +862,79 @@ Open for debate:
 `MAX_FHE_EVAL_OPS = 16` step cap, and the replay-event transport split (CPI ≤ 8 events vs log) — see
 DD-024.
 
-## DD-024: Finalized-Fetch Decrypt Trust Model (coprocessor side)
+## DD-024: Eager Ciphertext-Material Preparation (coprocessor side)
 
-Status: adopted (reconciliation) — and see DD-025 for the OPEN finality-gate placement.
+Status: adopted
 
 Context:
 
-The host-listener must not trust unfinalized Solana event logs to release a handle for decryption
-(reorg risk). A finalized re-read consumer existed but had been scaffolded, not connected.
+Ciphertext/SnS preparation is expensive but does not authorize plaintext release. The KMS separately
+validates the live `EncryptedValue` PDA and any MMR proof before decrypting.
 
 Decision:
 
-Rich ACL "allow" events schedule a **re-read of the on-chain ACL PDA at `finalized` commitment**. A
-dedicated fetcher (`host-listener/src/bin/solana_finalized_account_fetcher.rs`,
-`run_solana_finalized_account_fetcher`) polls `getMultipleAccounts` at `finalized`, and only a
-confirmed, **`zama_host`-owned** account with a recognized allow reason releases the handle — inserting
-`allowed_handle` + `pbs_computations` (→ SnS ct128 digest) in the same transaction as the witness store.
+Confirmed instruction reconstruction emits concrete material requests at handle birth/update and
+durable binding. The listener inserts those handles directly into `pbs_computations`. Subject grants
+may reuse already-prepared material; revocation never deletes it. No account-fetch queue, witness
+store, retry state machine, or coprocessor-owned ACL decision remains.
 
 Why / what worked:
 
-Anti-reorg: a handle is only released for decryption once the allowing ACL write is finalized. Finality
-lags ~32 slots. Worked once the consumer was actually wired (it had been scaffolded but not connected).
+This removes the finalization delay and duplicate Solana RPC read. A rolled-back computation can waste
+work, but prepared ciphertext material is not authorization and cannot cause plaintext release.
 
 Open for debate:
 
-Removing or relocating this separate coprocessor gate — see DD-025.
+None on the coprocessor side. KMS commitment and authorization semantics are documented separately.
 
 ## DD-025: Where The Release Gate Sits
 
-Status: partially resolved — KMS/proof reads use `confirmed`; the coprocessor gate remains finalized.
+Status: resolved — confirmed/eager materialization, live KMS authorization.
 
 Context:
 
-The current Solana ingestion inserts computations **DORMANT** (`is_allowed = false`,
-`is_completed = true`) and activates them per finalized-allow (`mark_solana_computation_allowed`). This
-does **not compose with transient eval intermediates**: a `confidential_burn`'s burned-amount handle
-depends on transient sub-handles that are never individually allowed, so a per-handle finalized-allow
-gate can't activate the graph that produced the released handle.
+The previous Solana ingestion inserted computations dormant and activated them per finalized allow.
+That did not compose with transient eval intermediates: a `confidential_burn`'s burned-amount handle
+depends on transient sub-handles that are never individually allowed, so a per-handle allow gate could
+not activate the graph that produced the released handle.
 
 Separately, the EVM reorg substrate already implements the recommended shape: a block-status machine
 (`pending → finalized / orphaned` in the `host_chain_blocks_valid` table) plus ancestor catch-up in
-`cmd/block_history.rs`. The **Solana poller (`bin/solana_host_listener.rs`) polls at `confirmed` and
-inserts directly** — it is NOT wired into this substrate.
+`cmd/block_history.rs`. The **Solana listener (`bin/solana_host_listener.rs`) reconstructs from a
+Yellowstone stream at `confirmed` and inserts directly** — it is NOT wired into this substrate.
 
 Options considered:
 
-- **(A) Eager-materialize like EVM, and gate only the decrypt RELEASE on finality. [RECOMMENDED]**
-  Reuses the existing EVM block-status substrate (option A's foundation already exists).
+- (A) Eager-materialize and gate decrypt release on finality. Rejected: prepared material is not an
+  authorization, and the accepted confirmed authorization may release plaintext.
 - (B) Keep the two-step dormant model + add transitive subgraph activation via a recursive CTE
   (activate the whole producing subgraph when the released handle is allowed).
 - (C) Slot-level finality gate.
 - (D) Ingest only at finalized (+~13s latency).
 
-The accepted authorization policy for KMS ACL/proof verification is `confirmed`: a grant legitimately
-observed on a supermajority-confirmed fork is sufficient even if that fork is exceptionally rolled
-back later. The KMS ACL read and all three relayer proof RPC reads (`getSignaturesForAddress`,
-`getTransaction`, and `getAccountInfo`) use that explicit commitment. This does not yet make the
-end-to-end release path `confirmed`: the separate finalized-account fetcher described in DD-024 still
-gates coprocessor material availability until its stacked cleanup lands.
+The accepted design is eager materialization from confirmed instruction reconstruction with no
+separate finality gate; KMS revalidates confirmed authorization at the plaintext-release boundary.
+
+The accepted product rule treats a valid confirmed authorization as sufficient. Coprocessor work is
+therefore scheduled from confirmed ingestion. The KMS ACL read and all three relayer proof RPC reads
+(`getSignaturesForAddress`, `getTransaction`, and `getAccountInfo`) use explicit confirmed commitment;
+KMS remains the only plaintext-release boundary.
 
 Decision provenance: accepted by the Solana feature owner during the review of
 [`zama-ai/fhevm#3122`](https://github.com/zama-ai/fhevm/pull/3122) on 2026-07-13. The accepted trade-off
 is irreversible plaintext release after a valid authorization observed on an exceptionally rolled-back
 confirmed fork; subsequent on-chain actions still follow the surviving fork.
 
-Why this is open:
+Why:
 
-The dormant/activate model and transient eval intermediates were designed separately and don't compose;
-the EVM substrate that would fix it (A) exists but isn't wired to Solana.
+The dormant/activate model and transient eval intermediates were designed separately and do not
+compose. A finality gate adds latency without strengthening the chosen authorization rule: a subject
+authorized in confirmed state was legitimately allowed to receive that plaintext, even if the fork
+later rolls back.
 
 Open for debate:
 
-Pick A/B/C/D. (A) is recommended because the substrate is reusable.
+Reorg unwind may still be added for resource recovery, but is not an authorization dependency.
 
 ## DD-026: Input / Identity Encoding (bytes32 non-EVM) and the Move To Typed User-Decrypt — RESOLVED
 
@@ -1026,8 +1032,9 @@ Status: adopted (reconciliation) — stated so the debate doesn't assume more th
 
 - **KMS connector decrypt** is exercised in the harness, **not** full production KMS-connector wiring.
 - **Solana on-chain REORG handling is NOT wired** into the listener's block-status machine: the Solana
-  poller (`bin/solana_host_listener.rs`) polls at `confirmed` and inserts directly, bypassing the EVM
-  `host_chain_blocks_valid` / `block_history.rs` substrate. Reorg correctness is an **open gap** (DD-025).
+  Yellowstone listener reconstructs at `confirmed` and inserts directly, bypassing the EVM
+  `host_chain_blocks_valid` / `block_history.rs` substrate. KMS authorization remains independent;
+  reorg unwind would recover wasted work (DD-025).
 - **Single local validator** in the harness — real reorgs / finality lag are not exercised end-to-end.
 - **Input proof / transciphering** behind the coprocessor attestation is a PoC shortcut; real ZKPoK +
   transciphering is production work (DD-007).
@@ -1190,15 +1197,16 @@ events do, or stay event-free and let consumers decode instruction data instead.
 Decision:
 
 State-changing `EncryptedValue` lifecycle paths (`fhe_eval` durable outputs, `allow_subjects`, and
-`make_handle_public`) emit no ACL lifecycle Anchor events by design. The host-listener (coprocessor)
-and the relayer's MMR proof service decode them directly from transaction instruction data —
+`make_handle_public`) emit no ACL lifecycle Anchor events by design. The host-listener reconstructs
+compute and material requests from confirmed Yellowstone transaction instructions plus streamed
+Clock/SlotHashes state. The relayer's MMR proof service decodes lifecycle changes from instruction data —
 including inner/CPI instructions, since confidential-token and other app programs invoke them via CPI
 — rather than subscribing to emitted ACL events. Durable `fhe_eval` outputs carry
 `previous_handle`/`previous_subjects` args that are self-describing: verified against account state
 on-chain (redundant there) specifically so every transaction is independently interpretable off-chain,
 letting indexers reconstruct MMR leaves statelessly from instruction data alone, in replay order,
-without reading account state first. Compute-step (`fhe_eval`) events remain (they carry the
-block-entropy output handle), but their transport was later narrowed to `emit_cpi!`-only — see DD-037.
+without reading account state first. Transitional compute-step (`fhe_eval`) CPI events remain for the
+RPC-based relayer, but the host-listener does not consume them — see DD-037.
 
 Rationale:
 
@@ -1212,11 +1220,10 @@ limit CPI depth (DD-008), which is a related but distinct concern from why ACL l
 
 Consequences:
 
-New coprocessor allow reasons: `encrypted_value_created`, `handle_superseded`, `handle_made_public`,
-`subject_allowed`. `make_handle_public`'s leaf handle is derived from replay order alone (no event
-payload to read it from). The host-listener's `solana_reconstruct.rs` decode arms and the relayer's
-`solana_proof::decode` module both parse raw instruction data (Anchor discriminators + borsh args) for
-these four instructions instead of dispatching on event types.
+The coprocessor produces handle-only material requests and inserts them directly into
+`pbs_computations`; it does not derive authorization from instruction names or maintain allow reasons.
+The host-listener's `solana_reconstruct.rs` decode arms and the relayer's `solana_proof::decode` module
+parse raw instruction data (Anchor discriminators + borsh args) instead of dispatching on ACL events.
 
 ## DD-034: Eager Compute Scheduling For Solana (Q11 Option A)
 
@@ -1230,25 +1237,20 @@ longer maps cleanly onto MMR-based historical authorization.
 
 Decision:
 
-Solana computations are inserted eager/schedulable immediately. Allow signals no longer gate FHE
-computation scheduling — only decrypt availability. The finalized-account fetcher (re-reading
-`EncryptedValue` accounts) remains the sole decrypt-release finality gate.
+Solana computations are inserted eager/schedulable immediately. Concrete durable handles are also
+inserted directly into `pbs_computations` for SnS preparation. The coprocessor does not decide decrypt
+availability; KMS reads and validates the live `EncryptedValue` authorization state.
 
 Rationale:
 
-Reorg unwind stays unimplemented on the Solana listener path (DD-025/DD-028 note the same open gap for
-block-status handling generally). Decrypt-release finality is the stated safety net for eager
-scheduling: a minority-fork computation is wasted work — it can be scheduled and even executed
-speculatively — but it is never released as a wrong decrypt, because decrypt release re-reads the
-finalized account rather than trusting the eager schedule. No further rationale beyond this
-wasted-work-not-wrong-decrypt argument was found in the commit history for why "Option A" specifically
-(vs. gating scheduling on some other signal) was chosen over alternatives.
+Reorg unwind stays unimplemented on the Solana listener path (DD-025/DD-028). A minority-fork
+computation can waste work, but KMS authorization is independent of coprocessor scheduling and material
+preparation.
 
 Consequences:
 
-Coprocessor scheduling and decrypt availability are decoupled for Solana; a computation can run before
-its ACL evidence is durably finalized, but nothing can be decrypted until the finalized
-`EncryptedValue` account is re-read and agrees.
+Coprocessor scheduling and decrypt authorization are decoupled for Solana. Material can be prepared
+before a decrypt request; plaintext is released only after KMS authorization succeeds.
 
 ## DD-035: Relayer-Colocated, Untrusted Solana MMR Proof Service
 
@@ -1373,13 +1375,13 @@ mint/token-account/owner accounts used for the SPL vault transfer.) The producti
 
 ## Open Product Decisions
 
-Not settled by the decisions above. Forward requirements and the finality/reorg debate are detailed
+Not settled by the decisions above. Forward requirements and remaining reorg questions are detailed
 in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 
 - Coprocessor input trust: single `coprocessor_signer` at threshold 1 → registered n-of-m set
   (FUTURE_DESIGN §1).
-- Where the finality gate sits and the decrypt-release commitment level (DD-024/DD-025); wiring the
-  Solana poller into the EVM reorg substrate (DD-028).
+- Whether resource-recovery reorg unwind should be added after confirmed eager scheduling
+  (DD-024/DD-025/DD-028).
 - Handle birth entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
   handles are accepted on every chain.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
@@ -1394,11 +1396,11 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
 - Full production KMS-connector wiring and real ZKPoK / transciphering behind the input attestation
   (both PoC shortcuts today, DD-028).
-- Production Yellowstone/Geyser provider finality/replay/reconnect/backfill policy (DD-003).
+- Production Yellowstone/Geyser provider replay/reconnect/backfill policy at confirmed commitment (DD-003).
 - Historical handle discovery conventions for apps and indexers.
 - Production role and governance names for public-decrypt and grant authority.
-- Reorg unwind is unimplemented on the Solana listener path (DD-028/DD-034); decrypt-release finality
-  (re-reading `EncryptedValue` accounts) is the stated safety net today.
+- Reorg unwind is unimplemented on the Solana listener path (DD-028/DD-034); live KMS authorization
+  remains the plaintext-release boundary.
 - `fhe_eval` supports `RandBounded`; the superseded standalone bounded-random instructions were
   removed with the old model (DD-032).
 - The relayer's own Solana user-decrypt path does not yet call the MMR proof service in-process
@@ -1411,8 +1413,6 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   it.
 - Subject-list overflow beyond `MAX_ENCRYPTED_VALUE_SUBJECTS` (8 subjects per `EncryptedValue`) is
   deferred; there is no overflow/paging account yet.
-- Listener-core integration for the new event-free `EncryptedValue` instruction decoding (DD-033) is
-  deferred; today decoding lives in the Solana-specific host-listener path.
 
 ## DD-037: `fhe_eval` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)
 
