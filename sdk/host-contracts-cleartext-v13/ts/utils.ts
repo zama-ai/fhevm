@@ -6,8 +6,15 @@ import type {
   HexString,
   DeployedImplementation,
   TemplateBytecodeField,
-} from './private.js';
-import type { AbstractEthereumProvider, AbstractEthereumSigner, AbstractEthereumUtils } from './public.js';
+  UpgradeTarget,
+} from './types/private.js';
+import type {
+  AbstractEthereumProvider,
+  AbstractEthereumSigner,
+  AbstractEthereumUtils,
+  CleartextAddresses,
+  FhevmAddressesV13,
+} from './types/public.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -210,4 +217,66 @@ export async function deployImplementation(parameters: {
     initData,
     upgradeCalldata,
   };
+}
+
+/** Deploys each target's implementation and encodes its `upgradeToAndCall` (Phase 1; sends nothing). */
+export async function deployImplementations(parameters: {
+  readonly ethUtils: AbstractEthereumUtils;
+  readonly deployer: AbstractEthereumSigner;
+  readonly addressReplacements: readonly AddressReplacement[];
+  readonly targets: readonly UpgradeTarget[];
+}): Promise<readonly DeployedImplementation[]> {
+  const implementations: DeployedImplementation[] = [];
+  for (const target of parameters.targets) {
+    implementations.push(
+      await deployImplementation({
+        ethUtils: parameters.ethUtils,
+        deployer: parameters.deployer,
+        contractName: target.contractName,
+        proxyAddress: target.proxyAddress,
+        template: target.template,
+        abi: target.abi,
+        addressReplacements: parameters.addressReplacements,
+        spec: target.spec,
+      }),
+    );
+  }
+  return implementations;
+}
+
+/**
+ * The eight host addresses baked into every real implementation's bytecode (via `FHEVMHostAddresses.sol`).
+ * References whose offsets are empty for a given template patch as no-ops, so passing all eight is safe.
+ */
+export function buildHostAddressReplacementsV13(parameters: {
+  readonly fhevmAddresses: FhevmAddressesV13;
+  readonly pauserSetAddress: string;
+  // Optional: only the fresh `deploy` materializes the cleartext-infra contracts. The (deferred)
+  // v12→v13 update path omits them until the cleartext-v12 fixture lands (see plan Decision #4).
+  readonly cleartextAddresses?: CleartextAddresses;
+}): AddressReplacement[] {
+  const replacements: AddressReplacement[] = [
+    // v0.12.0
+    { referenceName: 'ACL_ADDRESS', replacement: parameters.fhevmAddresses.aclAddress },
+    { referenceName: 'FHEVM_EXECUTOR_ADDRESS', replacement: parameters.fhevmAddresses.fhevmExecutorAddress },
+    { referenceName: 'KMS_VERIFIER_ADDRESS', replacement: parameters.fhevmAddresses.kmsVerifierAddress },
+    { referenceName: 'INPUT_VERIFIER_ADDRESS', replacement: parameters.fhevmAddresses.inputVerifierAddress },
+    { referenceName: 'HCU_LIMIT_ADDRESS', replacement: parameters.fhevmAddresses.hcuLimitAddress },
+    // v0.13.0
+    { referenceName: 'PROTOCOL_CONFIG_ADDRESS', replacement: parameters.fhevmAddresses.protocolConfigAddress },
+    { referenceName: 'KMS_GENERATION_ADDRESS', replacement: parameters.fhevmAddresses.kmsGenerationAddress },
+    { referenceName: 'PAUSER_SET_ADDRESS', replacement: parameters.pauserSetAddress },
+  ];
+
+  if (parameters.cleartextAddresses !== undefined) {
+    replacements.push(
+      {
+        referenceName: 'CLEARTEXT_ARITHMETIC_ADDRESS',
+        replacement: parameters.cleartextAddresses.cleartextArithmeticAddress,
+      },
+      { referenceName: 'CLEARTEXT_DB_ADDRESS', replacement: parameters.cleartextAddresses.cleartextDbAddress },
+    );
+  }
+
+  return replacements;
 }

@@ -8,6 +8,10 @@ via_ir = false
 src = 'src'
 out = "out"
 bytecode_hash = "none"
+# The TS tarball-consumer fixtures land under test/ts/node_modules. Foundry sweeps `test/` for
+# sources, so skip them — a consumed package (e.g. the cleartext-v12 fixture) uses its own config
+# remapping that this project does not define, which would otherwise break `forge build`.
+skip = ["test/ts/node_modules/**"]
 
 [lint]
 exclude_lints = [

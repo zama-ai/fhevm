@@ -1,0 +1,31 @@
+[profile.default]
+libs = ["dependencies", "node_modules"]
+solc_version = '0.8.24'
+optimizer = true
+optimizer_runs = 800
+evm_version = 'cancun'
+via_ir = false
+src = 'src'
+out = "out"
+bytecode_hash = "none"
+# The TS tarball-consumer fixtures land under test/ts/node_modules. Foundry sweeps `test/` for
+# sources, so skip them — a consumed package uses its own config remapping that this project does
+# not define, which would otherwise break `forge build`.
+skip = ["test/ts/node_modules/**"]
+
+[lint]
+exclude_lints = [
+    "unsafe-typecast", 
+    "incorrect-shift", 
+    "mixed-case-variable", 
+    "mixed-case-function", 
+    "named-struct-fields", 
+    "screaming-snake-case-const",
+    "pascal-case-struct",
+    "asm-keccak256",
+    "unwrapped-modifier-logic",
+    "unsafe-cheatcode"
+]
+
+[dependencies]
+forge-std = "1.11.0"

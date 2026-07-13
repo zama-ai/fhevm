@@ -119,31 +119,36 @@
   },
   {
     "type": "function",
-    "name": "recordIfThenElse",
+    "name": "recordNaryOp",
     "inputs": [
       {
-        "name": "result",
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum FHEVMExecutor.Operators"
+      },
+      {
+        "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "lhs",
+        "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
-        "name": "middle",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
       },
       {
-        "name": "rhs",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "",
+        "type": "uint8",
+        "internalType": "enum FheType"
       }
     ],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -186,6 +191,39 @@
         "name": "seed",
         "type": "bytes16",
         "internalType": "bytes16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "recordTernaryOp",
+    "inputs": [
+      {
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum FHEVMExecutor.Operators"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "middle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -272,6 +310,13 @@
   },
   {
     "type": "function",
+    "name": "reinitializeV2",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "upgradeToAndCall",
     "inputs": [
       {
@@ -322,6 +367,17 @@
         "name": "target",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CleartextOpNotImplemented",
+    "inputs": [
+      {
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum FHEVMExecutor.Operators"
       }
     ]
   },
@@ -391,6 +447,28 @@
   {
     "type": "error",
     "name": "UnsupportedBinaryOp",
+    "inputs": [
+      {
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum FHEVMExecutor.Operators"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedNaryOp",
+    "inputs": [
+      {
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum FHEVMExecutor.Operators"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedTernaryOp",
     "inputs": [
       {
         "name": "op",

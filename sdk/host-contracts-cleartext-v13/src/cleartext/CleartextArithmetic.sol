@@ -24,12 +24,16 @@ import {ACLOwnable} from "../contracts/shared/ACLOwnable.sol";
 contract CleartextArithmetic is ICleartextArithmetic, UUPSUpgradeableEmptyProxy, ACLOwnable {
     error UnsupportedBinaryOp(FHEVMExecutor.Operators op);
     error UnsupportedUnaryOp(FHEVMExecutor.Operators op);
+    error UnsupportedTernaryOp(FHEVMExecutor.Operators op);
+    error UnsupportedNaryOp(FHEVMExecutor.Operators op);
+    /// @dev Cleartext computation for the given v13 operator is not implemented yet.
+    error CleartextOpNotImplemented(FHEVMExecutor.Operators op);
 
     /**
      * @dev Constant used for making sure the version number used in the `reinitializer` modifier is
      * identical between `initializeFromEmptyProxy` and any future `reinitializeVX` method.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -39,6 +43,10 @@ contract CleartextArithmetic is ICleartextArithmetic, UUPSUpgradeableEmptyProxy,
     /// @notice Initializes the contract from an empty proxy. No state to set (stateless/pure math).
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
+
+    /// @notice Re-initializer for the v12→v13 upgrade. Stateless (pure math), so it only bumps the
+    ///         version so the freshly deployed v13 implementation is marked initialized.
+    function reinitializeV2() public virtual onlyACLOwner reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
@@ -108,11 +116,29 @@ contract CleartextArithmetic is ICleartextArithmetic, UUPSUpgradeableEmptyProxy,
     }
 
     /// @inheritdoc ICleartextArithmetic
-    function recordIfThenElse(bytes32 result, bytes32 lhs, bytes32 middle, bytes32 rhs) external override {
+    function recordTernaryOp(FHEVMExecutor.Operators op, bytes32 result, bytes32 lhs, bytes32 middle, bytes32 rhs)
+        external
+        override
+    {
+        if (op != FHEVMExecutor.Operators.fheIfThenElse) revert UnsupportedTernaryOp(op);
         ICleartextDB db = ICleartextDB(cleartextDbAdd);
         uint256 control = db.get(lhs);
         require(control == 0 || control == 1, "Unexpected FheIfThenElse control value");
         db.set(result, (control == 1) ? db.get(middle) : db.get(rhs));
+    }
+
+    /// @inheritdoc ICleartextArithmetic
+    /// @dev TODO(v13): compute the cleartext result — `fheSum` (bit-width overflow semantics) and
+    ///      `fheIsIn` (membership of `value` in `values`). Reverts until implemented.
+    function recordNaryOp(FHEVMExecutor.Operators op, bytes32, bytes32, bytes32[] calldata, FheType)
+        external
+        view
+        override
+    {
+        if (op == FHEVMExecutor.Operators.fheSum || op == FHEVMExecutor.Operators.fheIsIn) {
+            revert CleartextOpNotImplemented(op);
+        }
+        revert UnsupportedNaryOp(op);
     }
 
     // -----------------------------------------------------------------------

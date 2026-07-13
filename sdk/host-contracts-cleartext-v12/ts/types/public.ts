@@ -6,14 +6,9 @@ export type FhevmAddressesV12 = {
   readonly hcuLimitAddress: string;
 };
 
-export type FhevmAddressesV13 = FhevmAddressesV12 & {
-  readonly protocolConfigAddress: string;
-  readonly kmsGenerationAddress: string;
-};
-
 /**
  * Cleartext-only infrastructure addresses (test stack): the arithmetic/persistence contract and the
- * shared cleartext store. Kept separate from `FhevmAddressesV13` so the real host address set stays clean.
+ * shared cleartext store. Kept separate from `FhevmAddressesV12` so the real host address set stays clean.
  */
 export type CleartextAddresses = {
   readonly cleartextArithmeticAddress: string;
@@ -59,3 +54,44 @@ export interface AbstractEthereumSigner {
   // Signer/account-based transaction. msg.sender is the signer/account.
   writeContract(parameters: unknown): Promise<unknown>;
 }
+
+/**
+ * Bootstrap init values for the v12 `KMSVerifier.initializeFromEmptyProxy` /
+ * `InputVerifier.initializeFromEmptyProxy` (identical signatures):
+ * `(address verifyingContractSource, uint64 chainIDSource, address[] initialSigners, uint256 initialThreshold)`.
+ * In v12 both verifiers carry their own signer set + threshold (v13 moved the KMS set to `ProtocolConfig`).
+ */
+export type EIP712VerifierInitConfig = {
+  readonly verifyingContractSource: string;
+  readonly chainIDSource: bigint;
+  readonly initialSigners: readonly string[];
+  readonly initialThreshold: bigint;
+};
+
+/**
+ * Bootstrap init values for `HCULimit.initializeFromEmptyProxy`:
+ * `(uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx)`.
+ */
+export type HCULimitInitConfig = {
+  readonly hcuCapPerBlock: bigint;
+  readonly maxHCUDepthPerTx: bigint;
+  readonly maxHCUPerTx: bigint;
+};
+
+/**
+ * Bootstrap init values for a fresh v12 stack (`deploy`). One entry per proxy that takes init args;
+ * ACL/FHEVMExecutor take none.
+ */
+export type BootstrapConfigV12 = {
+  readonly kmsVerifier: EIP712VerifierInitConfig;
+  readonly inputVerifier: EIP712VerifierInitConfig;
+  readonly hcuLimit: HCULimitInitConfig;
+};
+
+/** Result of `deploy`: the full v12 address set plus the standing admin. */
+export type DeployedV12 = {
+  readonly fhevmAddresses: FhevmAddressesV12;
+  readonly cleartextAddresses: CleartextAddresses;
+  readonly pauserSetAddress: string;
+  readonly aclOwnerAddress: string;
+};

@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["ts/**/*.ts"],
+  "exclude": ["ts/**/*.bench.ts", "ts/**/*.bench-d.ts", "ts/**/*.test.ts", "ts/**/*.test-d.ts", "ts/vitest.config.ts"]
+}
