@@ -573,6 +573,7 @@ pub fn to_fhe_mul_div_event(event: FheMulDivEvent) -> Log<TfheContractEvents> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::tfhe_event_propagate::tfhe_inputs_handle;
     use crate::generated::EVENT_VERSION;
     use time::{Date, Month, PrimitiveDateTime, Time};
 
@@ -929,5 +930,11 @@ mod tests {
             tfhe_logs[2].event.data,
             TfheContractEvents::FheIfThenElse(_)
         ));
+        assert!(tfhe_inputs_handle(&tfhe_logs[0].event.data).is_empty());
+        assert!(tfhe_inputs_handle(&tfhe_logs[1].event.data).is_empty());
+        assert_eq!(
+            tfhe_inputs_handle(&tfhe_logs[2].event.data),
+            vec![handle(1), handle(2), handle(1)]
+        );
     }
 }

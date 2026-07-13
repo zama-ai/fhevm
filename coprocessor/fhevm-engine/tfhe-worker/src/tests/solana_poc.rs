@@ -447,6 +447,7 @@ fn transfer_ix(
 }
 
 /// Coprocessor signing key backing the `fromExternal` amount attestations; its EVM address is the
+/// `coprocessor_signer` configured on the fixture's `host_config`.
 fn coprocessor_signing_key() -> k256::ecdsa::SigningKey {
     k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap()
 }
