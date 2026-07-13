@@ -20,6 +20,7 @@ This repository is a pnpm workspace:
 
 - `packages/toolkit` — importable library layer wrapping `@fhevm/sdk`: config, encryption, decrypt flows, FHETest helpers. No CLI dependencies.
 - `packages/cli` — the `fhevm-sdk` commander CLI, consuming the toolkit via `workspace:*`.
+- `packages/load-test` — private relayer load-test application with validated scenarios, durable pools, collectors, reports, and explicit baselines. It is not an SDK library or published package.
 
 ## Quick Start
 
@@ -42,6 +43,14 @@ For source-mode development without rebuilding, use:
 ```bash
 pnpm --silent run cli:dev
 ```
+
+The separate operator load-test runs from source:
+
+```bash
+pnpm load-test --help
+```
+
+See [`packages/load-test/README.md`](packages/load-test/README.md) before generating pools or running a suite.
 
 To remove the global link later, remove the globally linked package:
 
@@ -216,6 +225,12 @@ fhevm-sdk user-decrypt stored --type uint16 --type uint32
 transport private key for that decrypt request. Use it only for debugging
 duplicated relayer responses and protect it like key material.
 
+Permit summaries report the SDK permit `version` and `durationSeconds`.
+Validation artifacts use schema version 2 so protocol-versioned permits from
+`@fhevm/sdk` 1.1.0-alpha.8 are not confused with older request material. The
+CLI keeps `--duration-days` as a convenience and converts it to seconds before
+calling the toolkit.
+
 ### Delegated User Decrypt
 
 In delegated decrypt, the delegator owns the encrypted data and the delegate signs the decrypt permit.
@@ -258,6 +273,26 @@ saved permit, decrypts the KMS signcrypted shares, and compares plaintexts when
 the artifact contains expected values. Artifacts created from raw `--handle`
 decrypts may not contain expected plaintexts, so those runs report decrypted
 values without `valuesMatch`.
+
+The result's `provenance` field distinguishes cryptographic verification from
+artifact assertions. KMS shares, request handles, transport key, and permit
+signature are cryptographically checked. Expected plaintexts are debugging
+values supplied by the local artifact, not independently authenticated truth.
+For protocol-v2 delegated permits, the saved owner/delegation label is also an
+artifact assertion because the serialized permit does not retain historical ACL
+state. The verifier rejects artifact fields that disagree with derivable signed
+permit material.
+
+The verifier also binds relayer response identity wherever the protocol exposes
+it: it compares the response `requestId` with the artifact and checks the saved
+`jobId` against either a response field or the final URL path segment. The
+returned `responseIdentity` field explicitly reports any identity dimension that
+the available artifact, response, and URL could not bind as `unbound`.
+
+Saved-response reconstruction uses an exact-version compatibility seam for
+`@fhevm/sdk@1.1.0-alpha.8` private branded objects. It is supported only in the
+repository's unbundled Node ESM execution model; bundling it or mixing CJS and
+ESM SDK instances is unsupported and may fail the brand checks.
 
 If an active ACL delegation already exists, delegated decrypt (root or `stored`) only needs delegate credentials plus `--delegator`. If not, provide delegator credentials so the CLI can create the delegation.
 

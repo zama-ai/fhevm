@@ -11,6 +11,7 @@
     "build": "pnpm -r run build",
     "cli": "pnpm --filter cli-fhevm-sdk run cli",
     "cli:dev": "pnpm --filter cli-fhevm-sdk run cli:dev",
+    "load-test": "pnpm --filter @cli-fhevm-sdk/load-test run load-test",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck"
   },
