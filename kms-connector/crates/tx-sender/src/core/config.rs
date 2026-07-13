@@ -1,9 +1,9 @@
 use alloy::transports::http::reqwest::Url;
-#[cfg(debug_assertions)]
+#[cfg(test)]
 use connector_utils::config::serialize_pg_interval;
 use connector_utils::{
     config::{
-        AwsKmsConfig, ContractConfig, DeserializeConfig, Error, KmsWallet, PrivateKey,
+        AwsKmsConfig, ContractConfig, DeserializeConfig, Error, KmsWallet, TestingPrivateKey,
         contract::{
             default_decryption_contract_config, default_kms_generation_contract_config,
             default_protocol_config_contract_config, deserialize_decryption_contract_config,
@@ -15,7 +15,7 @@ use connector_utils::{
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-#[cfg(debug_assertions)]
+#[cfg(test)]
 use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use sqlx::postgres::types::PgInterval;
@@ -23,7 +23,7 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 /// Configuration of the `TransactionSender`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
+#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
     pub database_url: String,
@@ -66,7 +66,7 @@ pub struct Config {
     ///
     /// Intended for **testing purposes only** — production deployments should configure
     /// `aws_kms_config` instead.
-    pub private_key: Option<PrivateKey>,
+    pub private_key: Option<TestingPrivateKey>,
     /// The AWS KMS configuration of the `TransactionSender`'s wallet.
     pub aws_kms_config: Option<AwsKmsConfig>,
 
