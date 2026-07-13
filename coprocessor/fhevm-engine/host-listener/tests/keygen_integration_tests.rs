@@ -358,7 +358,9 @@ impl AwsS3ClientMocked {
                 // /CompressedXofKeySet/<id>.
                 let prefix = match key_type {
                     KeyType::PublicKey => "/PublicKey",
-                    KeyType::ServerKey => "/CompressedXofKeySet",
+                    KeyType::ServerKey | KeyType::CompressedKeySet => {
+                        "/CompressedXofKeySet"
+                    }
                 };
                 let full_key =
                     format!("PUB-p1{}/{}", prefix, key_id_to_aws_key(key_id));
