@@ -60,23 +60,48 @@ export const resolveEnv = (overrides: EnvOverrides = {}): LoadTestEnv => {
   );
   const relayerBUrlRaw =
     overrides.relayerBUrl ?? process.env.LOAD_TEST_RELAYER_B_URL;
+  const relayerBApiPrefixRaw =
+    overrides.relayerBApiPrefix ?? process.env.LOAD_TEST_RELAYER_B_API_PREFIX;
+  const relayerBConfigPathRaw =
+    overrides.relayerBConfigPath ?? process.env.LOAD_TEST_RELAYER_B_CONFIG;
+
+  if (!relayerBUrlRaw) {
+    if (relayerBApiPrefixRaw !== undefined) {
+      throw new Error(
+        "--relayer-b-api-prefix (or LOAD_TEST_RELAYER_B_API_PREFIX) requires --relayer-b " +
+          "(or LOAD_TEST_RELAYER_B_URL) to also be set.",
+      );
+    }
+    if (relayerBConfigPathRaw !== undefined) {
+      throw new Error(
+        "--relayer-b-config (or LOAD_TEST_RELAYER_B_CONFIG) requires --relayer-b " +
+          "(or LOAD_TEST_RELAYER_B_URL) to also be set.",
+      );
+    }
+  }
+
+  const relayerBUrl = relayerBUrlRaw ? normalizeRelayerUrl(relayerBUrlRaw) : undefined;
+  if (relayerBUrl && new URL(relayerBUrl).origin === new URL(relayerUrl).origin) {
+    throw new Error(
+      `--relayer-b (${relayerBUrl}) must not resolve to the same origin as the primary ` +
+        `relayer (${relayerUrl}).`,
+    );
+  }
 
   return {
     network,
     relayerUrl,
     relayerApiPrefix:
       overrides.relayerApiPrefix ?? process.env.LOAD_TEST_RELAYER_API_PREFIX,
-    relayerBUrl: relayerBUrlRaw ? normalizeRelayerUrl(relayerBUrlRaw) : undefined,
-    relayerBApiPrefix:
-      overrides.relayerBApiPrefix ?? process.env.LOAD_TEST_RELAYER_B_API_PREFIX,
+    relayerBUrl,
+    relayerBApiPrefix: relayerBApiPrefixRaw,
     rpcUrl: overrides.rpcUrl ?? process.env[networkConfig.envRpcUrl] ?? undefined,
     contractAddress: overrides.contractAddress as Hex | undefined,
     contractChainId: networkConfig.hostChain.id,
     dataDir: overrides.dataDir ?? process.env.LOAD_TEST_DATA_DIR ?? ".load-test",
     relayerConfigPath:
       overrides.relayerConfigPath ?? process.env.LOAD_TEST_RELAYER_CONFIG,
-    relayerBConfigPath:
-      overrides.relayerBConfigPath ?? process.env.LOAD_TEST_RELAYER_B_CONFIG,
+    relayerBConfigPath: relayerBConfigPathRaw,
   };
 };
 

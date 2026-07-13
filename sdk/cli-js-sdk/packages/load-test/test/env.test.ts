@@ -27,3 +27,48 @@ describe("resolveEnv network precedence", () => {
     expect(resolveEnv({ network: "mainnet" }).network).toBe("mainnet");
   });
 });
+
+describe("resolveEnv A/B target validation", () => {
+  it("rejects --relayer-b-api-prefix without a relayer B URL", () => {
+    expect(() => resolveEnv({ relayerBApiPrefix: "/v2" })).toThrow(
+      /--relayer-b-api-prefix .* requires --relayer-b/,
+    );
+  });
+
+  it("rejects --relayer-b-config without a relayer B URL", () => {
+    expect(() => resolveEnv({ relayerBConfigPath: "/tmp/relayer-b.json" })).toThrow(
+      /--relayer-b-config .* requires --relayer-b/,
+    );
+  });
+
+  it("rejects LOAD_TEST_RELAYER_B_API_PREFIX without LOAD_TEST_RELAYER_B_URL", () => {
+    process.env.LOAD_TEST_RELAYER_B_API_PREFIX = "/v2";
+    expect(() => resolveEnv({})).toThrow(/requires --relayer-b/);
+  });
+
+  it("allows relayer B options when a relayer B URL is configured", () => {
+    const env = resolveEnv({
+      relayerBUrl: "https://candidate.example",
+      relayerBApiPrefix: "/v2",
+      relayerBConfigPath: "/tmp/relayer-b.json",
+    });
+    expect(env.relayerBUrl).toBe("https://candidate.example");
+    expect(env.relayerBApiPrefix).toBe("/v2");
+    expect(env.relayerBConfigPath).toBe("/tmp/relayer-b.json");
+  });
+
+  it("rejects relayer B resolving to the same origin as relayer A", () => {
+    expect(() => resolveEnv({
+      relayerUrl: "https://relayer.example",
+      relayerBUrl: "https://relayer.example/v2",
+    })).toThrow(/must not resolve to the same origin/);
+  });
+
+  it("allows relayer B on a distinct origin", () => {
+    const env = resolveEnv({
+      relayerUrl: "https://relayer.example",
+      relayerBUrl: "https://candidate.example",
+    });
+    expect(env.relayerBUrl).toBe("https://candidate.example");
+  });
+});
