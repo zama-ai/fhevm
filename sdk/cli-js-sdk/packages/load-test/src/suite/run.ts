@@ -253,6 +253,11 @@ const executeSuiteLifecycle = async (
         }
       } else {
         logger.success("All pools ready; nothing to prepare.");
+        if (options.lanes !== undefined) {
+          logger.warn(
+            "--lanes has no effect: pools are already ready, so no preparation is needed.",
+          );
+        }
       }
       interrupted = options.signal?.aborted ?? false;
     }

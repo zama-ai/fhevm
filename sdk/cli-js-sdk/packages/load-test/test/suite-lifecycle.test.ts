@@ -9,6 +9,13 @@ const mocks = vi.hoisted(() => ({
   inspectPoolRequirements: vi.fn(),
   preparePoolRequirements: vi.fn(),
   assertRelayerReadiness: vi.fn(),
+  logger: {
+    error: vi.fn(),
+    info: vi.fn(),
+    start: vi.fn(),
+    success: vi.fn(),
+    warn: vi.fn(),
+  },
 }));
 
 vi.mock("../src/runner/run", () => ({
@@ -25,13 +32,7 @@ vi.mock("../src/runner/readiness", () => ({
   assertRelayerReadiness: mocks.assertRelayerReadiness,
 }));
 vi.mock("../src/shared/logger", () => ({
-  logger: {
-    error: vi.fn(),
-    info: vi.fn(),
-    start: vi.fn(),
-    success: vi.fn(),
-    warn: vi.fn(),
-  },
+  logger: mocks.logger,
 }));
 
 import type { Report } from "../src/report/schema";
@@ -134,6 +135,7 @@ beforeEach(async () => {
     preparation: { status: "completed", finalReady: true },
   });
   mocks.assertRelayerReadiness.mockReset().mockResolvedValue(undefined);
+  for (const method of Object.values(mocks.logger)) method.mockReset();
 });
 
 afterEach(async () => {
@@ -363,6 +365,20 @@ describe("runSuite interruption", () => {
     expect(mocks.executeRun).not.toHaveBeenCalled();
     expect(await readFile(join(dir, "blocked", "suite-summary.md"), "utf8"))
       .toContain("**Status:** ⛔ blocked");
+  });
+
+  it("warns that --lanes has no effect when the plan is already ready", async () => {
+    const suite = suiteSchema.parse({
+      name: "ready-lanes", entries: [{ scenario: "open-steady" }], pauseSec: 0,
+    });
+    await runSuite({
+      env: env(dir), suite, outputRoot: join(dir, "ready-lanes"), prepare: true, lanes: 3,
+    });
+
+    expect(mocks.preparePoolRequirements).not.toHaveBeenCalled();
+    expect(mocks.logger.warn.mock.calls.flat()).toContain(
+      "--lanes has no effect: pools are already ready, so no preparation is needed.",
+    );
   });
 
   it("writes a failed terminal summary when pool planning fails", async () => {

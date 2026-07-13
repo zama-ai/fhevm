@@ -538,6 +538,23 @@ describe("CLI interruption exit behavior", () => {
     expect(mocks.executeRun).toHaveBeenCalledOnce();
   });
 
+  it("warns that --lanes has no effect when the plan is already ready", async () => {
+    mocks.executeRun.mockResolvedValueOnce({
+      report: { thresholds: { passed: true, breaches: [] } },
+      outputDir: "/tmp/ready-run-lanes",
+      status: "completed",
+    });
+
+    await createProgram().parseAsync([
+      "node", "load-test", "scenario", "run", "scenario", "--prepare", "--lanes", "2",
+    ]);
+
+    expect(mocks.preparePoolRequirements).not.toHaveBeenCalled();
+    expect(mocks.logger.warn.mock.calls.flat()).toContain(
+      "--lanes has no effect: pools are already ready, so no preparation is needed.",
+    );
+  });
+
   it("records ready standalone preparation without a readiness gate", async () => {
     await createProgram().parseAsync([
       "node", "load-test", "scenario", "prepare", "scenario",

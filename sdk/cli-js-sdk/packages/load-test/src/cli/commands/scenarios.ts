@@ -172,6 +172,12 @@ const runScenarioAction = async (
         return;
       }
 
+      if (initialPlan.ready && options.lanes !== undefined) {
+        logger.warn(
+          "--lanes has no effect: pools are already ready, so no preparation is needed.",
+        );
+      }
+
       if (!initialPlan.ready && options.prepare) {
         const prepared = await preparePoolRequirements({
           env,
