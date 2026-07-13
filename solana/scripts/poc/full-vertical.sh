@@ -44,15 +44,14 @@ run_public_decrypt_with_proof() {
   local handle="$2"
   local acl="$3"
   local expected="${4:-}"
-  # Proof source (5th arg, default relayer): the e2e sources the MMR proof from the running relayer
-  # proof service. `local` is reserved for the born-public burned leg until the relayer consumes
-  # the host's lifecycle batch, and drives the in-process PoC builder instead. The client retries
-  # a transient `503 lagging` internally (re-invoking here would be unsafe for stateful steps).
-  local proof_source="${5:-relayer}"
+  local expected_leaf_count="${5:-}"
+  local expected_leaf_index="${6:-}"
+  # The e2e sources MMR proofs from the running relayer proof service. The client retries a transient
+  # `503 lagging` internally (re-invoking here would be unsafe for stateful steps).
   local proof
   proof="$(cd "$ROOT/solana/scripts/poc/live-client" && \
     PUBLIC_DECRYPT_PROOF=1 PUB_HANDLE="$handle" PUB_ACL="$acl" \
-    PROOF_SOURCE="$proof_source" RELAYER_URL=http://127.0.0.1:3000 \
+    RELAYER_URL=http://127.0.0.1:3000 \
     ./target/debug/poc-live-client 2>&1)" \
     || fail "$label public proof: $proof"
   echo "$proof" | grep -E 'PUB H|PUB mmrProofBytes' >/dev/null || fail "$label public proof missing fields: $proof"
@@ -74,6 +73,14 @@ run_public_decrypt_with_proof() {
     [ -n "${!required}" ] || fail "$label public proof missing $required: $proof"
   done
   [ "$pub_h" = "$handle" ] || fail "$label public proof handle $pub_h != $handle"
+  if [ -n "$expected_leaf_count" ]; then
+    [ "$pub_leaf_count" = "$expected_leaf_count" ] \
+      || fail "$label public proof leaf_count $pub_leaf_count != $expected_leaf_count"
+  fi
+  if [ -n "$expected_leaf_index" ]; then
+    [ "$pub_leaf_index" = "$expected_leaf_index" ] \
+      || fail "$label public proof leaf_index $pub_leaf_index != $expected_leaf_index"
+  fi
   PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES="$pub_mmr_inclusion_proof_bytes"
 
   local result
@@ -216,7 +223,7 @@ done
 # here; the client retries a transient `503 lagging` internally, so this is not re-invoked on lag.
 hist_proof="$(cd "$ROOT/solana/scripts/poc/live-client" && \
   HISTORICAL_STEP=supersede TE_VALUE="$VALUE" \
-  PROOF_SOURCE=relayer RELAYER_URL=http://127.0.0.1:3000 \
+  RELAYER_URL=http://127.0.0.1:3000 \
   ./target/debug/poc-live-client 2>&1)" || fail "historical supersede/proof command failed: $hist_proof"
 echo "$hist_proof" | grep -E 'HIST H_new|HIST mmrProofBytes' || fail "historical supersede/proof: $hist_proof"
 HIST_H_OLD2="$(hist_field "$hist_proof" H_old)"
@@ -541,12 +548,10 @@ relout="$(lc CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" \
 echo "$relout" | grep -q 'OK request_disclose_amount' || fail "request_disclose_amount witness: $(echo "$relout" | tail -3)"
 echo "    disclosure request witness created (KMS context pinned); handle released for public decrypt"
 
-# Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert.
-# PROOF_SOURCE=local: unlike the compute/input-flow/historical legs (relayer-sourced), the
-# born-public burned handle is derived on-chain from slot entropy and is not carried in instruction
-# data. The host now emits it in a narrow lifecycle batch, but this leg stays on the in-process PoC
-# builder until the immediately stacked relayer slice validates and consumes that batch.
-run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL" "" local
+# Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert. This lineage
+# must contain the produced-public lifecycle leaf followed by the explicit make_handle_public leaf; a
+# proof for a one-leaf lineage would not exercise lifecycle-batch ingestion.
+run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL" "" 2 1
 cr="$PUBLIC_DECRYPT_JSON"
 # The burned handle's public-decrypt MMR proof (DD-036): both the redeem and disclose consume
 # steps authorize by verifying it against the lineage's on-chain peaks. request_burn_redemption
