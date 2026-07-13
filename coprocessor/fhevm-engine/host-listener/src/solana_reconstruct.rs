@@ -53,7 +53,12 @@ pub fn is_fhe_eval_instruction(instruction_data: &[u8]) -> bool {
 /// step's handle and therefore depends on `previous_bank_hash`.
 pub fn decode_fhe_eval_args(instruction_data: &[u8]) -> Option<FheEvalArgs> {
     let payload = instruction_data.strip_prefix(&FHE_EVAL_DISCRIMINATOR)?;
-    FheEvalArgs::try_from_slice(payload).ok()
+    decode_anchor_args(payload)
+}
+
+fn decode_anchor_args<T: AnchorDeserialize>(payload: &[u8]) -> Option<T> {
+    // Match Anchor's generated instruction handler, which accepts trailing bytes.
+    T::deserialize(&mut &payload[..]).ok()
 }
 
 // --- RFC-024 `EncryptedValue` instruction decode -----------------------------
@@ -167,30 +172,19 @@ pub fn decode_encrypted_value_instruction(
     let (discriminator, payload) = data.split_at(8);
     match discriminator {
         d if d == CREATE_ENCRYPTED_VALUE_DISCRIMINATOR => {
-            CreateEncryptedValueArgs::try_from_slice(payload)
-                .ok()
-                .map(EncryptedValueInstruction::Create)
+            decode_anchor_args(payload).map(EncryptedValueInstruction::Create)
         }
         d if d == UPDATE_ENCRYPTED_VALUE_DISCRIMINATOR => {
-            UpdateEncryptedValueArgs::try_from_slice(payload)
-                .ok()
-                .map(EncryptedValueInstruction::Update)
+            decode_anchor_args(payload).map(EncryptedValueInstruction::Update)
         }
         d if d == MAKE_HANDLE_PUBLIC_DISCRIMINATOR => {
-            MakeHandlePublicArgs::try_from_slice(payload)
-                .ok()
+            decode_anchor_args(payload)
                 .map(EncryptedValueInstruction::MakeHandlePublic)
         }
-        d if d == ALLOW_SUBJECTS_DISCRIMINATOR => {
-            AllowSubjectsArgs::try_from_slice(payload)
-                .ok()
-                .map(EncryptedValueInstruction::AllowSubjects)
-        }
-        d if d == REMOVE_SUBJECT_DISCRIMINATOR => {
-            RemoveSubjectArgs::try_from_slice(payload)
-                .ok()
-                .map(EncryptedValueInstruction::RemoveSubject)
-        }
+        d if d == ALLOW_SUBJECTS_DISCRIMINATOR => decode_anchor_args(payload)
+            .map(EncryptedValueInstruction::AllowSubjects),
+        d if d == REMOVE_SUBJECT_DISCRIMINATOR => decode_anchor_args(payload)
+            .map(EncryptedValueInstruction::RemoveSubject),
         _ => None,
     }
 }
@@ -809,6 +803,17 @@ mod encrypted_value_decode_tests {
     }
 
     #[test]
+    fn lifecycle_decode_matches_anchor_trailing_byte_semantics() {
+        let args = MakeHandlePublicArgs { handle: [4; 32] };
+        let mut data = encode(MAKE_HANDLE_PUBLIC_DISCRIMINATOR, args.clone());
+        data.extend_from_slice(&[0xAA, 0xBB]);
+        assert_eq!(
+            decode_encrypted_value_instruction(&data),
+            Some(EncryptedValueInstruction::MakeHandlePublic(args))
+        );
+    }
+
+    #[test]
     fn make_handle_public_malformed_args_fail_closed() {
         let data = MAKE_HANDLE_PUBLIC_DISCRIMINATOR.to_vec();
         assert_eq!(decode_encrypted_value_instruction(&data), None);
@@ -1042,6 +1047,9 @@ mod tests {
         assert_eq!(decoded.steps.len(), 2);
         // Wrong/missing discriminator -> None.
         assert!(decode_fhe_eval_args(&bytes[1..]).is_none());
+
+        bytes.extend_from_slice(&[0xAA, 0xBB]);
+        assert_eq!(decode_fhe_eval_args(&bytes), Some(plan));
     }
 
     #[test]
