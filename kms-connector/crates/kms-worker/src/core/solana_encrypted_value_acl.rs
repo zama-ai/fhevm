@@ -273,7 +273,7 @@ mod tests {
                 .is_ok()
         );
         assert_eq!(
-            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), STRANGER, &[DOMAIN])
+            v.verify_current_user_decrypt(l.account, HOST, &decoded, h(10), STRANGER, &[])
                 .unwrap_err(),
             SolanaAclVerificationError::EncryptedValueSubjectMissing
         );
@@ -322,7 +322,7 @@ mod tests {
         assert_ne!(wrong_account, l.account);
         assert_eq!(
             verifier()
-                .verify_current_user_decrypt(wrong_account, HOST, &decoded, h(10), OWNER, &[DOMAIN])
+                .verify_current_user_decrypt(wrong_account, HOST, &decoded, h(10), OWNER, &[])
                 .unwrap_err(),
             SolanaAclVerificationError::NonCanonicalEncryptedValueAcl
         );
@@ -398,9 +398,10 @@ mod tests {
                 .unwrap_err(),
             SolanaAclVerificationError::DomainNotAllowed
         );
-        assert!(
-            v.verify_historical_user_decrypt(target(h(10)), STRANGER, &[DOMAIN], &proof)
-                .is_err()
+        assert_eq!(
+            v.verify_historical_user_decrypt(target(h(10)), STRANGER, &[], &proof)
+                .unwrap_err(),
+            SolanaAclVerificationError::HistoricalAccessProofInvalid
         );
         assert!(
             v.verify_historical_user_decrypt(target(h(99)), OWNER, &[DOMAIN], &proof)
