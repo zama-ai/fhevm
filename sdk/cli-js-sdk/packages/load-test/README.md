@@ -147,10 +147,14 @@ node --import tsx index.ts scenario run scenarios/my-scenario.json --baseline ba
 
 Built-ins (`scenario list` / `scenario show <name>`): `baseline`, `smoke`,
 `open-steady`, `open-ramp`, `open-spike`, `open-soak`, `open-mixed`,
-`closed-steady`, `closed-ramp`, `closed-soak`, `drain`. Defaults are gentle
-(well under the protocol ceilings of ~20 rps input-proof and ~10 rps combined
-decrypt); a resolved scenario whose peak per-flow rate exceeds a ceiling emits
-an advisory warning but still runs. Custom scenarios are
+`closed-steady`, `closed-ramp`, `closed-soak`, `drain`. Steady-state defaults
+are gentle (well under the protocol ceilings of ~20 rps input-proof and ~10 rps
+combined decrypt), with one intentional exception: the saturation probes
+`open-ramp` and `open-spike` deliberately reach or exceed the ceilings to
+measure capacity and recovery. `open-ramp` steps above the ceiling and so
+emits the advisory ceiling warning by design (expected, not a
+misconfiguration). Any resolved scenario whose peak per-flow rate exceeds a
+ceiling emits that advisory warning but still runs. Custom scenarios are
 JSON documents validated against the schema in `src/scenario/schema.ts` (flow
 mix and weights, load shape, timeouts, thresholds, saturation stop).
 

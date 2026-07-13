@@ -11,11 +11,16 @@ import {
  * afterward so built-in and JSON scenarios follow the same rules.
  *
  * Defaults are deliberately gentle: the tool is used on light workloads first,
- * and every default peak stays well under the protocol ceilings (input-proof
- * ~20 rps; public + user + delegated decrypt combined ~10 rps). Scenarios that
- * probe the ceilings (`open-ramp`, `open-spike`, `drain`) approach but do not
- * casually exceed them. `ceilingWarnings` (see `limits.ts`) flags overrides
- * that push past the ceilings.
+ * and every steady-state default peak stays well under the protocol ceilings
+ * (input-proof ~20 rps; public + user + delegated decrypt combined ~10 rps).
+ * The saturation probes are the intentional exception: `open-ramp` and
+ * `open-spike` deliberately reach or exceed the ceilings to find capacity and
+ * recovery behavior (`open-spike` holds at the ceiling; `open-ramp` steps
+ * above it, and `drain` submits at it). Because `ceilingWarnings` (see
+ * `limits.ts`) fires only strictly above a ceiling, `open-ramp` emits the
+ * advisory warning by design; that is expected, not a misconfiguration.
+ * `ceilingWarnings` also flags any override that pushes a scenario past the
+ * ceilings.
  */
 
 export type BuiltinParams = ScenarioOverrides;
@@ -95,7 +100,7 @@ const factories: Record<string, () => ScenarioInput> = {
     return {
       name: "open-ramp",
       description:
-        "Open model: input-proof stepped 4→24 rps across the ~20 rps ceiling; finds max sustainable throughput",
+        "Open model: input-proof stepped 4→24 rps across the ~20 rps ceiling; finds max sustainable throughput (deliberately exceeds the ceiling on the top steps, so a ceiling warning is expected)",
       flows: [{ flow: "input-proof", weight: 1 }],
       shape: {
         kind: "segments",

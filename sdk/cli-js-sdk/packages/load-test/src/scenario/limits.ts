@@ -59,7 +59,8 @@ export const ceilingWarnings = (scenario: Scenario): readonly string[] => {
   if (inputProofRate > PROTOCOL_LIMITS.inputProofRps) {
     warnings.push(
       `Scenario "${scenario.name}": input-proof peak ~${inputProofRate.toFixed(1)} rps exceeds ` +
-        `the protocol ceiling of ${PROTOCOL_LIMITS.inputProofRps.toString()} rps.`,
+        `the protocol ceiling of ${PROTOCOL_LIMITS.inputProofRps.toString()} rps; expected only ` +
+        `for deliberate saturation probes (e.g. open-ramp, open-spike).`,
     );
   }
 
@@ -67,7 +68,8 @@ export const ceilingWarnings = (scenario: Scenario): readonly string[] => {
   if (decryptRate > PROTOCOL_LIMITS.decryptRps) {
     warnings.push(
       `Scenario "${scenario.name}": combined decrypt peak ~${decryptRate.toFixed(1)} rps exceeds ` +
-        `the protocol ceiling of ${PROTOCOL_LIMITS.decryptRps.toString()} rps.`,
+        `the protocol ceiling of ${PROTOCOL_LIMITS.decryptRps.toString()} rps; expected only ` +
+        `for deliberate saturation probes (e.g. open-ramp, open-spike).`,
     );
   }
 
