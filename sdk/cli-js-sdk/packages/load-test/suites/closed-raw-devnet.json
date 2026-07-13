@@ -1,0 +1,15 @@
+{
+  "name": "closed-raw-devnet",
+  "description": "Prepare and run closed-model raw HTTP relayer scenarios for input-proof and public-decrypt.",
+  "pauseSec": 60,
+  "entries": [
+    {
+      "scenario": "./scenarios/closed-steady-input-proof-20vu-1000.json",
+      "label": "closed-steady-input-proof-20vu-1000"
+    },
+    {
+      "scenario": "./scenarios/closed-steady-public-decrypt-k2-20vu-1000.json",
+      "label": "closed-steady-public-decrypt-k2-20vu-1000"
+    }
+  ]
+}

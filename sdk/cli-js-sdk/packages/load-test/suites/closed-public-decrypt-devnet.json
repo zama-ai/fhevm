@@ -1,0 +1,11 @@
+{
+  "name": "closed-public-decrypt-devnet",
+  "description": "Prepare public FHETest handles and run a 20 VU closed-model devnet scenario with 2-handle requests.",
+  "pauseSec": 0,
+  "entries": [
+    {
+      "scenario": "./scenarios/closed-steady-public-decrypt-k2-20vu-1000.json",
+      "label": "closed-steady-public-decrypt-k2-20vu-1000"
+    }
+  ]
+}

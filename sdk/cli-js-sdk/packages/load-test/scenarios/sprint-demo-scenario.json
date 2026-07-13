@@ -1,0 +1,29 @@
+{
+  "name": "sprint-demo-scenario",
+  "description": "Sprint demo: open model, 2 rps for 30s, split evenly across input-proof, public-decrypt (k=2), and user-decrypt.",
+  "flows": [
+    {
+      "flow": "input-proof",
+      "weight": 1
+    },
+    {
+      "flow": "public-decrypt",
+      "weight": 1,
+      "handlesPerRequest": 2
+    },
+    {
+      "flow": "user-decrypt",
+      "weight": 1
+    }
+  ],
+  "shape": {
+    "kind": "constant",
+    "rps": 3,
+    "durationSec": 600
+  },
+  "thresholds": {
+    "maxErrorRate": 0.01,
+    "maxVerifyFailures": 0,
+    "perFlow": {}
+  }
+}

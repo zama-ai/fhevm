@@ -1,0 +1,20 @@
+{
+  "name": "open-input-proof",
+  "description": "Open model: 1000 requests at 2 rps",
+  "flows": [
+    {
+      "flow": "input-proof",
+      "weight": 1
+    }
+  ],
+  "shape": {
+    "kind": "constant",
+    "rps": 2,
+    "durationSec": 500
+  },
+  "thresholds": {
+    "maxErrorRate": 0.01,
+    "maxVerifyFailures": 0,
+    "perFlow": {}
+  }
+}
