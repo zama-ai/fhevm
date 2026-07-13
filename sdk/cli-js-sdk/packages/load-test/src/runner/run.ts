@@ -22,6 +22,7 @@ import { plannedFlowAllocations } from "../scenario/allocation";
 import { logger } from "../shared/logger";
 import { isoNow } from "../shared/time";
 import { Recorder } from "./recorder";
+import { assertRelayerReadiness } from "./readiness";
 import { runScheduler, type SegmentVerdict } from "./scheduler";
 
 export type RunOptions = Readonly<{
@@ -301,23 +302,13 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
       : undefined;
 
     // ---- Prepare ---------------------------------------------------------
-    if (options.skipReadiness) {
-      logger.warn(
-        "Skipping readiness check (--skip-readiness); assuming the relayer's v2 routes are live.",
-      );
-    } else if (!(await client.isReady())) {
-      throw new Error(
-        `Relayer at ${env.relayerUrl} failed the readiness check (GET /health/readiness). ` +
-          `Older relayers expose health elsewhere (e.g. /liveness, /healthz); pass --skip-readiness to proceed.`,
-      );
-    } else if (clientB && !(await clientB.isReady())) {
-      throw new Error(
-        `Candidate relayer at ${env.relayerBUrl ?? "<unset>"} failed the readiness check (GET /health/readiness). ` +
-          `Older relayers expose health elsewhere (e.g. /liveness, /healthz); pass --skip-readiness to proceed.`,
-      );
-    } else {
-      logger.success("Relayer readiness check passed.");
-    }
+    await assertRelayerReadiness({
+      env,
+      connections: options.connections,
+      skipReadiness: options.skipReadiness,
+      signal: options.signal,
+      clients: { primary: client, ...(clientB ? { candidate: clientB } : {}) },
+    });
     assertNotInterrupted();
 
     const planned = plannedRequestCount(scenario.shape);

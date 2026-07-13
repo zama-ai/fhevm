@@ -6,6 +6,14 @@ const mocks = vi.hoisted(() => ({
   loadScenario: vi.fn(),
   loadSuite: vi.fn(),
   runSuite: vi.fn(),
+  prepareSuite: vi.fn(),
+  resolveSuiteScenarios: vi.fn(),
+  inspectPoolRequirements: vi.fn(),
+  preparePoolRequirements: vi.fn(),
+  formatPoolPlan: vi.fn(),
+  assertRelayerReadiness: vi.fn(),
+  diffReports: vi.fn(),
+  readReport: vi.fn(),
   generateInputProofPool: vi.fn(),
   createHandlePool: vi.fn(),
   openPool: vi.fn(),
@@ -26,7 +34,7 @@ vi.mock("../src/cli/shared", () => ({
   parsePositiveNumber: (value: string) => Number(value),
   parsePositiveIntOrAuto: (value: string) => value === "auto" ? "auto" : Number(value),
   parseValueTypes: (value: string) => value.split(","),
-  readReport: vi.fn(),
+  readReport: mocks.readReport,
 }));
 
 vi.mock("../src/scenario/load", () => ({ loadScenario: mocks.loadScenario }));
@@ -35,8 +43,20 @@ vi.mock("../src/runner/run", () => ({
   RunInterruptedError: class RunInterruptedError extends Error {},
 }));
 vi.mock("../src/suite/load", () => ({ loadSuite: mocks.loadSuite }));
-vi.mock("../src/suite/run", () => ({ runSuite: mocks.runSuite }));
-vi.mock("../src/report/diff", () => ({ diffReports: vi.fn() }));
+vi.mock("../src/suite/run", () => ({
+  runSuite: mocks.runSuite,
+  prepareSuite: mocks.prepareSuite,
+  resolveSuiteScenarios: mocks.resolveSuiteScenarios,
+}));
+vi.mock("../src/pool/planning", () => ({
+  inspectPoolRequirements: mocks.inspectPoolRequirements,
+  preparePoolRequirements: mocks.preparePoolRequirements,
+  formatPoolPlan: mocks.formatPoolPlan,
+}));
+vi.mock("../src/runner/readiness", () => ({
+  assertRelayerReadiness: mocks.assertRelayerReadiness,
+}));
+vi.mock("../src/report/diff", () => ({ diffReports: mocks.diffReports }));
 vi.mock("../src/pool/input-proof", async (importOriginal) => ({
   ...await importOriginal<typeof import("../src/pool/input-proof")>(),
   generateInputProofPool: mocks.generateInputProofPool,
@@ -73,6 +93,26 @@ beforeEach(() => {
     outputRoot: "/tmp/interrupted-suite",
     entries: [],
   });
+  mocks.prepareSuite.mockReset().mockResolvedValue({
+    status: "completed",
+    ready: true,
+    outputRoot: "/tmp/prepared-suite",
+    entries: [],
+  });
+  mocks.resolveSuiteScenarios.mockReset().mockResolvedValue([{ scenario: { name: "scenario" } }]);
+  mocks.inspectPoolRequirements.mockReset().mockResolvedValue({
+    ready: true,
+    items: [],
+    plannedActions: [],
+  });
+  mocks.preparePoolRequirements.mockReset().mockResolvedValue({
+    plan: { ready: true, items: [], plannedActions: [] },
+    preparation: { status: "completed" },
+  });
+  mocks.formatPoolPlan.mockReset().mockReturnValue([]);
+  mocks.assertRelayerReadiness.mockReset().mockResolvedValue(undefined);
+  mocks.diffReports.mockReset().mockReturnValue({ passed: true, notes: [], regressions: [] });
+  mocks.readReport.mockReset().mockResolvedValue({});
   mocks.generateInputProofPool.mockReset().mockResolvedValue(undefined);
   mocks.createHandlePool.mockReset().mockResolvedValue(undefined);
   mocks.openPool.mockReset().mockResolvedValue(undefined);
@@ -93,6 +133,12 @@ describe("CLI interruption exit behavior", () => {
       ?.commands.map((command) => command.name())).toEqual(["add", "inspect"]);
     expect(program.commands.find((command) => command.name() === "report")
       ?.commands.map((command) => command.name())).toEqual(["render", "diff"]);
+    expect(program.commands.find((command) => command.name() === "scenario")
+      ?.commands.map((command) => command.name())).toEqual([
+        "list", "show", "plan", "prepare", "run",
+      ]);
+    expect(program.commands.find((command) => command.name() === "suite")
+      ?.commands.map((command) => command.name())).toEqual(["list", "plan", "prepare", "run"]);
   });
 
   it("renders top-level help and routes a scenario action", async () => {
@@ -109,9 +155,34 @@ describe("CLI interruption exit behavior", () => {
     const action = createProgram();
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     await action.parseAsync(["node", "load-test", "scenario", "show", "scenario"]);
-    expect(mocks.loadScenario).toHaveBeenCalledWith("scenario");
+    expect(mocks.loadScenario).toHaveBeenCalledWith("scenario", {});
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
+  });
+
+  it("keeps help aligned with explicit preparation and shared overrides", () => {
+    const program = createProgram();
+    expect(program.helpInformation()).toContain(
+      "FHEVM relayer load-test tool for legacy and v2 implementations",
+    );
+    const scenario = program.commands.find((command) => command.name() === "scenario")!;
+    const scenarioPlan = scenario.commands.find((command) => command.name() === "plan")!;
+    expect(scenarioPlan.helpInformation()).toContain(
+      "explicit directory for pool-plan.json/.md evidence",
+    );
+    const scenarioRun = scenario.commands.find((command) => command.name() === "run")!;
+    const scenarioHelp = scenarioRun.helpInformation();
+    expect(scenarioHelp).toContain("constant/burst rate; scales segmented rates");
+    expect(scenarioHelp).toContain("steady or per-segment/stage duration");
+    expect(scenarioHelp).toContain("explicitly create missing pools first");
+
+    const rootRun = program.commands.find((command) => command.name() === "run")!;
+    expect(rootRun.description()).toBe("Alias for `scenario run`");
+    const suite = program.commands.find((command) => command.name() === "suite")!;
+    expect(suite.description()).toBe("Plan and run suites; preparation is explicit");
+    const suiteRun = suite.commands.find((command) => command.name() === "run")!;
+    expect(suiteRun.helpInformation()).toContain("never prepare pools implicitly");
+    expect(suiteRun.helpInformation()).toContain("authorize local CPU and funded on-chain pool writes");
   });
 
   it("routes pool add by flow and rejects irrelevant options", async () => {
@@ -189,6 +260,283 @@ describe("CLI interruption exit behavior", () => {
     expect(process.exitCode).toBe(130);
     expect(process.listenerCount("SIGINT")).toBe(sigintListeners);
     expect(process.listenerCount("SIGTERM")).toBe(sigtermListeners);
+  });
+
+  it("uses exit 2 for plan check work and a blocked suite run", async () => {
+    mocks.inspectPoolRequirements.mockResolvedValueOnce({
+      ready: false,
+      items: [{
+        pool: "input-proof",
+        observation: { currentItems: 0 },
+        requirement: { requests: 1 },
+        decision: { deficitItems: 1, refreshRequired: false, detail: "missing" },
+      }],
+    });
+    await createProgram().parseAsync([
+      "node", "load-test", "suite", "plan", "suite", "--check",
+    ]);
+    expect(process.exitCode).toBe(2);
+    expect(mocks.inspectPoolRequirements).toHaveBeenCalledWith(
+      expect.objectContaining({ artifactDir: undefined }),
+    );
+
+    process.exitCode = undefined;
+    mocks.runSuite.mockResolvedValueOnce({
+      status: "blocked", passed: false, outputRoot: "/tmp/blocked", entries: [],
+    });
+    await createProgram().parseAsync(["node", "load-test", "suite", "run", "suite"]);
+    expect(process.exitCode).toBe(2);
+  });
+
+  it("routes dedicated suite preparation with explicit mutation options", async () => {
+    await createProgram().parseAsync([
+      "node", "load-test", "suite", "prepare", "suite", "--lanes", "3",
+    ]);
+    expect(mocks.prepareSuite).toHaveBeenCalledWith(expect.objectContaining({
+      lanes: 3,
+      suite: { name: "suite" },
+    }));
+  });
+
+  it("aborts suite preparation on SIGINT, exits 130, and removes listeners", async () => {
+    let received: AbortSignal | undefined;
+    mocks.prepareSuite.mockImplementationOnce(async (options: { signal: AbortSignal }) => {
+      received = options.signal;
+      await new Promise<void>((resolve) =>
+        options.signal.addEventListener("abort", () => resolve(), { once: true }),
+      );
+      return { status: "interrupted", ready: false, outputRoot: "/tmp/interrupted-prepare" };
+    });
+    const sigintListeners = process.listenerCount("SIGINT");
+    const sigtermListeners = process.listenerCount("SIGTERM");
+    const program = new Command();
+    registerSuiteCommands(program);
+    const parsing = program.parseAsync(["node", "load-test", "suite", "prepare", "suite"]);
+    await vi.waitFor(() => expect(received).toBeDefined());
+    process.emit("SIGINT");
+    await parsing;
+
+    expect(received?.aborted).toBe(true);
+    expect(process.exitCode).toBe(130);
+    expect(process.listenerCount("SIGINT")).toBe(sigintListeners);
+    expect(process.listenerCount("SIGTERM")).toBe(sigtermListeners);
+  });
+
+  it("rejects suite run lanes unless preparation is authorized", async () => {
+    await expect(createProgram().parseAsync([
+      "node", "load-test", "suite", "run", "suite", "--lanes", "2",
+    ])).rejects.toThrow(/only valid with --prepare/);
+    expect(mocks.runSuite).not.toHaveBeenCalled();
+  });
+
+  it("keeps root run as a thin alias with the same resolved overrides", async () => {
+    mocks.executeRun.mockResolvedValue({
+      report: { thresholds: { passed: true, breaches: [] } },
+      outputDir: "/tmp/complete-run",
+      status: "completed",
+    });
+    await createProgram().parseAsync([
+      "node", "load-test", "scenario", "run", "scenario",
+      "--rps", "4", "--duration", "5", "--flow", "input-proof",
+    ]);
+    const canonicalLoad = mocks.loadScenario.mock.calls.at(-1);
+    const canonicalRun = mocks.executeRun.mock.calls.at(-1)?.[0];
+
+    await createProgram().parseAsync([
+      "node", "load-test", "run", "scenario",
+      "--rps", "4", "--duration", "5", "--flow", "input-proof",
+    ]);
+    expect(mocks.loadScenario.mock.calls.at(-1)).toEqual(canonicalLoad);
+    expect(mocks.executeRun.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        scenario: canonicalRun.scenario,
+        connections: canonicalRun.connections,
+        skipReadiness: canonicalRun.skipReadiness,
+      }),
+    );
+  });
+
+  it("keeps scenario plan read-only and uses exit 2 only with --check", async () => {
+    mocks.inspectPoolRequirements.mockResolvedValue({
+      ready: false,
+      items: [{
+        pool: "input-proof",
+        flow: "input-proof",
+        requirement: { requests: 2 },
+        observation: { currentItems: 0, availableItems: 0 },
+        decision: { deficitItems: 2, refreshRequired: false, ready: false, detail: "" },
+      }],
+      plannedActions: [{
+        kind: "generate-input-proof", pool: "input-proof", flow: "input-proof", items: 2,
+      }],
+    });
+
+    await createProgram().parseAsync([
+      "node", "load-test", "scenario", "plan", "scenario",
+    ]);
+    expect(process.exitCode).toBeUndefined();
+    expect(mocks.preparePoolRequirements).not.toHaveBeenCalled();
+    expect(mocks.assertRelayerReadiness).not.toHaveBeenCalled();
+    expect(mocks.executeRun).not.toHaveBeenCalled();
+    expect(mocks.inspectPoolRequirements).toHaveBeenLastCalledWith(
+      expect.objectContaining({ artifactDir: undefined }),
+    );
+
+    await createProgram().parseAsync([
+      "node", "load-test", "scenario", "plan", "scenario", "--out", "/tmp/scenario-plan",
+    ]);
+    expect(mocks.inspectPoolRequirements).toHaveBeenLastCalledWith(
+      expect.objectContaining({ artifactDir: "/tmp/scenario-plan" }),
+    );
+
+    await createProgram().parseAsync([
+      "node", "load-test", "scenario", "plan", "scenario", "--check",
+    ]);
+    expect(process.exitCode).toBe(2);
+    expect(mocks.preparePoolRequirements).not.toHaveBeenCalled();
+  });
+
+  it("blocks a deficient scenario run after persisting its plan root", async () => {
+    mocks.inspectPoolRequirements.mockResolvedValue({
+      ready: false,
+      items: [],
+      plannedActions: [{
+        kind: "create-handles",
+        pool: "public-decrypt-handles",
+        flow: "public-decrypt",
+        items: 3,
+      }],
+    });
+
+    await createProgram().parseAsync([
+      "node", "load-test", "scenario", "run", "scenario",
+    ]);
+
+    expect(process.exitCode).toBe(2);
+    expect(mocks.assertRelayerReadiness).not.toHaveBeenCalled();
+    expect(mocks.preparePoolRequirements).not.toHaveBeenCalled();
+    expect(mocks.executeRun).not.toHaveBeenCalled();
+    expect(mocks.inspectPoolRequirements).toHaveBeenCalledWith(expect.objectContaining({
+      artifactDir: expect.stringMatching(/\.load-test\/runs\/.*-scenario$/),
+    }));
+  });
+
+  it("checks readiness before explicit preparation and reuses one run directory", async () => {
+    const events: string[] = [];
+    mocks.inspectPoolRequirements.mockResolvedValue({
+      ready: false, items: [], plannedActions: [],
+    });
+    mocks.assertRelayerReadiness.mockImplementation(async () => { events.push("readiness"); });
+    mocks.preparePoolRequirements.mockImplementation(async (options) => {
+      await options.beforeActions?.({ ready: false });
+      events.push("prepare");
+      return { plan: { ready: true }, preparation: { status: "completed" } };
+    });
+    mocks.executeRun.mockImplementation(async () => {
+      events.push("execute");
+      return {
+        report: { thresholds: { passed: true, breaches: [] } },
+        outputDir: "/tmp/stable",
+        status: "completed",
+      };
+    });
+
+    await createProgram().parseAsync([
+      "node", "load-test", "scenario", "run", "scenario", "--prepare", "--lanes", "2",
+    ]);
+
+    expect(events).toEqual(["readiness", "prepare", "execute"]);
+    const artifactDir = mocks.preparePoolRequirements.mock.calls[0]?.[0].artifactDir;
+    expect(artifactDir).toMatch(/\.load-test\/runs\/.*-scenario$/);
+    expect(mocks.executeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ outputDir: artifactDir }),
+    );
+  });
+
+  it("uses the preparations root for standalone scenario preparation", async () => {
+    const events: string[] = [];
+    mocks.inspectPoolRequirements.mockResolvedValue({
+      ready: false, items: [], plannedActions: [],
+    });
+    mocks.preparePoolRequirements.mockImplementationOnce(async (options) => {
+      await options.beforeActions?.({ ready: false });
+      events.push("mutate");
+      return { plan: { ready: true }, preparation: { status: "completed" } };
+    });
+    mocks.assertRelayerReadiness.mockImplementationOnce(async () => { events.push("readiness"); });
+    await createProgram().parseAsync([
+      "node", "load-test", "scenario", "prepare", "scenario", "--lanes", "2",
+    ]);
+    const options = mocks.preparePoolRequirements.mock.calls[0]?.[0];
+    expect(options.artifactDir).toMatch(
+      /\.load-test\/preparations\/.*-scenario-scenario$/,
+    );
+    expect(options.lanes).toBe(2);
+    expect(events).toEqual(["readiness", "mutate"]);
+    expect(mocks.executeRun).not.toHaveBeenCalled();
+  });
+
+  it("skips redundant preparation and readiness for an already-ready run", async () => {
+    mocks.executeRun.mockResolvedValueOnce({
+      report: { thresholds: { passed: true, breaches: [] } },
+      outputDir: "/tmp/ready-run",
+      status: "completed",
+    });
+
+    await createProgram().parseAsync([
+      "node", "load-test", "scenario", "run", "scenario", "--prepare",
+    ]);
+
+    expect(mocks.preparePoolRequirements).not.toHaveBeenCalled();
+    expect(mocks.assertRelayerReadiness).not.toHaveBeenCalled();
+    expect(mocks.executeRun).toHaveBeenCalledOnce();
+  });
+
+  it("records ready standalone preparation without a readiness gate", async () => {
+    await createProgram().parseAsync([
+      "node", "load-test", "scenario", "prepare", "scenario",
+    ]);
+
+    expect(mocks.preparePoolRequirements).toHaveBeenCalledOnce();
+    expect(mocks.assertRelayerReadiness).not.toHaveBeenCalled();
+  });
+
+  it("rejects run-only lanes unless preparation is authorized", async () => {
+    await expect(createProgram().parseAsync([
+      "node", "load-test", "scenario", "run", "scenario", "--lanes", "2",
+    ])).rejects.toThrow(/only valid with --prepare/);
+    expect(mocks.inspectPoolRequirements).not.toHaveBeenCalled();
+    expect(mocks.executeRun).not.toHaveBeenCalled();
+  });
+
+  it("preserves threshold and baseline regression exit behavior", async () => {
+    mocks.executeRun.mockResolvedValueOnce({
+      report: { thresholds: { passed: false, breaches: [{}] } },
+      outputDir: "/tmp/threshold-run",
+      status: "completed",
+    });
+    await createProgram().parseAsync([
+      "node", "load-test", "scenario", "run", "scenario",
+    ]);
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = undefined;
+    mocks.executeRun.mockResolvedValueOnce({
+      report: { thresholds: { passed: true, breaches: [] } },
+      outputDir: "/tmp/baseline-run",
+      status: "completed",
+    });
+    mocks.diffReports.mockReturnValueOnce({
+      passed: false,
+      notes: ["comparison note"],
+      regressions: [{ flow: "input-proof", metric: "e2e", baseline: 1, current: 2 }],
+    });
+    await createProgram().parseAsync([
+      "node", "load-test", "run", "scenario", "--baseline", "/tmp/base.json",
+    ]);
+    expect(mocks.readReport).toHaveBeenCalledWith("/tmp/base.json");
+    expect(mocks.diffReports).toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
 
   it("aborts the signal passed to an active run on SIGINT", async () => {

@@ -4,25 +4,22 @@ import { join } from "node:path";
 
 import { runsDir, type LoadTestEnv } from "../env";
 import {
-  createHandlePool,
-  refreshDelegatedHandlePool,
-  type HandlePoolFlow,
-} from "../pool/handles";
-import { generateInputProofPool } from "../pool/input-proof";
+  formatPoolPlan,
+  inspectPoolRequirements,
+  preparePoolRequirements,
+  type PoolPlanArtifact,
+} from "../pool/planning";
 import { diffReports, type DiffResult } from "../report/diff";
 import { readReportFile } from "../report/runtime";
 import type { Report } from "../report/schema";
 import { executeRun, RunInterruptedError } from "../runner/run";
+import { assertRelayerReadiness } from "../runner/readiness";
 import { loadScenario } from "../scenario/load";
 import type { Scenario } from "../scenario/schema";
 import { logger } from "../shared/logger";
 import { safeJoin } from "../shared/paths";
+import { safeArtifactText } from "../shared/safe-artifact";
 import { isoNow, sleep } from "../shared/time";
-import {
-  planPools,
-  requiredDelegationValidUntil,
-  type PoolDeficit,
-} from "./requirements";
 import type { Suite } from "./schema";
 
 export type SuiteRunOptions = Readonly<{
@@ -32,10 +29,8 @@ export type SuiteRunOptions = Readonly<{
   outputRoot?: string;
   /** Directory of committed baseline reports (`<network>/<label>.json`). */
   baselinesDir?: string;
-  /** Prepare pools and exit without running. */
-  prepareOnly?: boolean;
-  /** Fail instead of generating/creating missing pool items. */
-  skipPrepare?: boolean;
+  /** Explicitly authorize pool generation/on-chain writes when work is needed. */
+  prepare?: boolean;
   /** Wallet lanes for on-chain handle creation. */
   lanes?: number;
   connections?: number;
@@ -66,71 +61,17 @@ export type SuiteResult = Readonly<{
   startedAt: string;
   endedAt: string;
   outputRoot: string;
-  status: "completed" | "interrupted" | "failed";
+  status: "completed" | "blocked" | "interrupted" | "failed";
   passed: boolean;
   entries: readonly SuiteEntryResult[];
+  blockedReason?: string;
 }>;
 
-const describePlan = (plan: readonly PoolDeficit[]): void => {
-  for (const item of plan) {
-    const status = item.deficit > 0
-      ? `needs ${item.deficit.toString()} more`
-      : item.refreshRequired
-        ? "needs ACL refresh"
-        : "ready";
-    logger.info(
-      `pool ${item.pool}: ${item.current.toString()} item(s), suite needs ${item.needed.toString()} request(s) — ${status} (${item.detail})`,
-    );
-  }
-};
+const isAbortError = (error: unknown): boolean =>
+  error instanceof Error && error.name === "AbortError";
 
-const preparePools = async (
-  env: LoadTestEnv,
-  plan: readonly PoolDeficit[],
-  scenarios: readonly Scenario[],
-  pauseSec: number,
-  lanes: number | undefined,
-  signal?: AbortSignal,
-): Promise<void> => {
-  for (const item of plan) {
-    if (signal?.aborted) return;
-    if (item.deficit === 0 && !item.refreshRequired) continue;
-    if (item.flow === "input-proof") {
-      logger.start(`Generating ${item.deficit.toString()} input-proof payload(s)…`);
-      await generateInputProofPool(env, {
-        count: item.deficit,
-        signal,
-        onProgress: (done, total) => {
-          if (done % 50 === 0 || done === total) {
-            logger.info(`payloads ${done.toString()}/${total.toString()}`);
-          }
-        },
-      });
-    } else if (item.deficit > 0) {
-      logger.start(
-        `Creating ${item.deficit.toString()} ${item.flow} handle(s) on-chain (funded wallet required)…`,
-      );
-      await createHandlePool(env, {
-        flow: item.flow as HandlePoolFlow,
-        count: item.deficit,
-        lanes,
-        signal,
-        onProgress: (done, total) =>
-          logger.info(`handles ${done.toString()}/${total.toString()}`),
-      });
-    }
-    if (item.flow === "delegated-user-decrypt" && item.requiredValidUntil) {
-      logger.start("Refreshing every delegated pool owner ACL grant…");
-      await refreshDelegatedHandlePool(env, {
-        // Preparation may itself take a long time. Re-anchor the complete
-        // remaining suite horizon immediately before the ACL refresh.
-        requiredValidUntil: requiredDelegationValidUntil(scenarios, { pauseSec }),
-        signal,
-        onProgress: (message) => logger.info(message),
-      });
-    }
-    if (signal?.aborted) return;
-  }
+const describePlan = (plan: PoolPlanArtifact): void => {
+  for (const line of formatPoolPlan(plan)) logger.info(line);
 };
 
 const summarize = (label: string, report: Report, outputDir: string): SuiteEntryResult => {
@@ -170,6 +111,8 @@ const renderSuiteMarkdown = (result: SuiteResult): string => {
     ? "⏹ interrupted"
     : result.status === "failed"
       ? "❌ failed"
+      : result.status === "blocked"
+        ? "⛔ blocked"
       : result.passed
         ? "✅ completed"
         : "❌ completed with breaches";
@@ -178,6 +121,7 @@ const renderSuiteMarkdown = (result: SuiteResult): string => {
     "",
     `- **Window:** ${result.startedAt} → ${result.endedAt}`,
     `- **Status:** ${status}`,
+    ...(result.blockedReason ? [`- **Blocked:** ${result.blockedReason}`] : []),
     "",
     "| Scenario | Workflows | A error | B error | Worst verify failed | Pair divergence | Thresholds | Baseline diff | Report |",
     "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
@@ -210,13 +154,32 @@ const writeSuiteSummary = async (result: SuiteResult): Promise<void> => {
   );
 };
 
+export type ResolvedSuiteEntry = Readonly<{ label: string; scenario: Scenario }>;
+
+/** Resolves and validates every suite entry before pool inspection. */
+export const resolveSuiteScenarios = async (
+  suite: Suite,
+): Promise<ResolvedSuiteEntry[]> => {
+  const resolved: ResolvedSuiteEntry[] = [];
+  for (const entry of suite.entries) {
+    const scenario = await loadScenario(entry.scenario, entry.params);
+    resolved.push({ label: entry.label ?? scenario.name, scenario });
+  }
+  const labels = resolved.map((entry) => entry.label);
+  if (new Set(labels).size !== labels.length) {
+    throw new Error(`Duplicate suite labels: ${labels.join(", ")}. Set distinct "label"s.`);
+  }
+  return resolved;
+};
+
 /**
- * One-command operation: resolve every scenario in the suite, plan and
- * prepare pool deficits, run the scenarios sequentially (pausing between
- * runs so the relayer queue drains), diff against baselines when present,
- * and write a suite-level summary next to the per-run artifacts.
+ * Resolves every scenario, records a live plan, optionally prepares deficits
+ * when explicitly authorized, runs ready scenarios sequentially, compares
+ * baselines when present, and writes a terminal suite summary.
  */
-export const runSuite = async (options: SuiteRunOptions): Promise<SuiteResult> => {
+const executeSuiteLifecycle = async (
+  options: SuiteRunOptions,
+): Promise<SuiteResult> => {
   const { env, suite } = options;
   const startedAt = isoNow();
   const outputRoot =
@@ -224,62 +187,66 @@ export const runSuite = async (options: SuiteRunOptions): Promise<SuiteResult> =
     join(runsDir(env), `${startedAt.replace(/[:.]/g, "-")}-suite-${suite.name}`);
   await mkdir(outputRoot, { recursive: true });
 
-  const resolved: { label: string; scenario: Scenario }[] = [];
+  let resolved: ResolvedSuiteEntry[] = [];
   const entries: SuiteEntryResult[] = [];
   let interrupted = options.signal?.aborted ?? false;
   let passed = true;
   let suiteError: unknown;
-  let prepareOnlyComplete = false;
+  let blockedReason: string | undefined;
 
   try {
-    // ---- Resolve scenarios up front so a typo fails before any preparation.
-    for (const entry of suite.entries) {
-      const scenario = await loadScenario(entry.scenario, entry.params);
-      resolved.push({ label: entry.label ?? scenario.name, scenario });
-    }
-    const labels = resolved.map((entry) => entry.label);
-    if (new Set(labels).size !== labels.length) {
-      throw new Error(`Duplicate suite labels: ${labels.join(", ")}. Set distinct "label"s.`);
-    }
+    // Resolve every entry before pool inspection or mutation.
+    resolved = await resolveSuiteScenarios(suite);
     logger.info(
       `Suite "${suite.name}": ${resolved.map((entry) => entry.label).join(" → ")}`,
     );
 
-    // ---- Plan and prepare pools.
+    // Always persist the live plan under the stable suite root. Mutation is
+    // separately and explicitly authorized by `suite prepare` or --prepare.
     if (!interrupted) {
-      const plan = await planPools(
+      let plan = await inspectPoolRequirements({
         env,
-        resolved.map((entry) => entry.scenario),
-        { pauseSec: suite.pauseSec },
-      );
+        scenarios: resolved.map((entry) => entry.scenario),
+        pauseSec: suite.pauseSec,
+        artifactDir: outputRoot,
+      });
       describePlan(plan);
-      const preparationRequired = plan.some(
-        (item) => item.deficit > 0 || item.refreshRequired,
-      );
-      if (preparationRequired) {
-        if (options.skipPrepare) {
-          throw new Error(
-            "Pools cannot serve this suite and --skip-prepare is set; run `suite plan` for details.",
-          );
-        }
-        try {
-          await preparePools(
-            env,
-            plan,
-            resolved.map((entry) => entry.scenario),
-            suite.pauseSec,
-            options.lanes,
-            options.signal,
-          );
-        } catch (error) {
-          if (
-            options.signal?.aborted &&
-            error instanceof Error &&
-            error.name === "AbortError"
-          ) {
-            interrupted = true;
-          } else {
-            throw error;
+      if (!plan.ready) {
+        const preparationAuthorized = options.prepare === true;
+        if (!preparationAuthorized) {
+          blockedReason =
+            "Pool preparation is required. Inspect pool-plan.md, then rerun with --prepare or use `suite prepare`.";
+          passed = false;
+          logger.warn(blockedReason);
+        } else {
+          try {
+            const prepared = await preparePoolRequirements({
+              env,
+              scenarios: resolved.map((entry) => entry.scenario),
+              pauseSec: suite.pauseSec,
+              artifactDir: outputRoot,
+              lanes: options.lanes,
+              signal: options.signal,
+              onProgress: (message) => logger.info(message),
+              beforeActions: () => assertRelayerReadiness({
+                env,
+                connections: options.connections,
+                skipReadiness: options.skipReadiness,
+                signal: options.signal,
+              }),
+            });
+            plan = prepared.plan;
+          } catch (error) {
+            if (isAbortError(error)) {
+              interrupted = true;
+            } else {
+              throw error;
+            }
+          }
+          if (!interrupted && !plan.ready) {
+            throw new Error(
+              "Pool preparation completed with residual work; refusing suite execution.",
+            );
           }
         }
       } else {
@@ -287,101 +254,100 @@ export const runSuite = async (options: SuiteRunOptions): Promise<SuiteResult> =
       }
       interrupted = options.signal?.aborted ?? false;
     }
-    if (options.prepareOnly) {
-      if (!interrupted) logger.success("Prepare-only requested; pools are ready.");
-      prepareOnlyComplete = true;
-      passed = !interrupted;
-    }
   } catch (error) {
     passed = false;
-    suiteError = error;
+    if (isAbortError(error)) interrupted = true;
+    else suiteError = error;
   }
 
   // ---- Execute sequentially.
-  if (!suiteError && !prepareOnlyComplete) {
+  if (!suiteError && !blockedReason) {
     try {
       for (const [index, { label, scenario }] of resolved.entries()) {
-    if (options.signal?.aborted) {
-      interrupted = true;
-      break;
-    }
-    if (index > 0 && suite.pauseSec > 0) {
-      logger.info(`Pausing ${suite.pauseSec.toString()}s before "${label}"…`);
-      await sleep(suite.pauseSec * 1000, options.signal);
-      if (options.signal?.aborted) {
-        interrupted = true;
-        break;
-      }
-    }
-    logger.start(`Running "${label}" (${(index + 1).toString()}/${resolved.length.toString()})…`);
-    let runResult;
-    try {
-      runResult = await executeRun({
-        scenario,
-        env,
-        outputDir: safeJoin(outputRoot, label),
-        connections: options.connections,
-        skipReadiness: options.skipReadiness,
-        signal: options.signal,
-      });
-    } catch (error) {
-      if (error instanceof RunInterruptedError) {
-        interrupted = true;
-        break;
-      }
-      throw error;
-    }
-    const { report, outputDir } = runResult;
-    const summary = summarize(label, report, outputDir);
-    if (runResult.status === "interrupted" || options.signal?.aborted) {
-      entries.push(summary);
-      interrupted = true;
-      passed = false;
-      break;
-    }
-
-    let diffSummary: SuiteEntryResult["diff"];
-    const baselinePath = options.baselinesDir
-      ? safeJoin(options.baselinesDir, env.network, `${label}.json`)
-      : undefined;
-    if (baselinePath) {
-      let diff: DiffResult | undefined;
-      if (existsSync(baselinePath)) {
-        const baseline = await readReportFile(baselinePath);
-        diff = diffReports(baseline, report);
-        for (const note of diff.notes) logger.warn(note);
-      } else {
-        logger.info(`No baseline at ${baselinePath}; skipping diff.`);
-      }
-      if (diff) {
-        diffSummary = {
-          baseline: baselinePath,
-          passed: diff.passed,
-          regressions: diff.regressions.length,
-        };
-        for (const regression of diff.regressions) {
-          logger.error(
-            `Regression vs baseline: ${regression.flow} ${regression.metric} ` +
-              `${regression.baseline.toString()} -> ${regression.current.toString()}`,
-          );
+        if (options.signal?.aborted) {
+          interrupted = true;
+          break;
         }
-      }
-    }
+        if (index > 0 && suite.pauseSec > 0) {
+          logger.info(`Pausing ${suite.pauseSec.toString()}s before "${label}"…`);
+          await sleep(suite.pauseSec * 1000, options.signal);
+          if (options.signal?.aborted) {
+            interrupted = true;
+            break;
+          }
+        }
+        logger.start(
+          `Running "${label}" (${(index + 1).toString()}/${resolved.length.toString()})…`,
+        );
+        let runResult;
+        try {
+          runResult = await executeRun({
+            scenario,
+            env,
+            outputDir: safeJoin(outputRoot, label),
+            connections: options.connections,
+            skipReadiness: options.skipReadiness,
+            signal: options.signal,
+          });
+        } catch (error) {
+          if (error instanceof RunInterruptedError) {
+            interrupted = true;
+            break;
+          }
+          throw error;
+        }
+        const { report, outputDir } = runResult;
+        const summary = summarize(label, report, outputDir);
+        if (runResult.status === "interrupted" || options.signal?.aborted) {
+          entries.push(summary);
+          interrupted = true;
+          passed = false;
+          break;
+        }
 
-    if (options.signal?.aborted) {
-      entries.push({ ...summary, diff: diffSummary });
-      interrupted = true;
-      passed = false;
-      break;
-    }
+        let diffSummary: SuiteEntryResult["diff"];
+        const baselinePath = options.baselinesDir
+          ? safeJoin(options.baselinesDir, env.network, `${label}.json`)
+          : undefined;
+        if (baselinePath) {
+          let diff: DiffResult | undefined;
+          if (existsSync(baselinePath)) {
+            const baseline = await readReportFile(baselinePath);
+            diff = diffReports(baseline, report);
+            for (const note of diff.notes) logger.warn(note);
+          } else {
+            logger.info(`No baseline at ${baselinePath}; skipping diff.`);
+          }
+          if (diff) {
+            diffSummary = {
+              baseline: baselinePath,
+              passed: diff.passed,
+              regressions: diff.regressions.length,
+            };
+            for (const regression of diff.regressions) {
+              logger.error(
+                `Regression vs baseline: ${regression.flow} ${regression.metric} ` +
+                  `${regression.baseline.toString()} -> ${regression.current.toString()}`,
+              );
+            }
+          }
+        }
 
-    const entry = { ...summary, diff: diffSummary };
-    entries.push(entry);
-    if (!entry.thresholdsPassed || entry.diff?.passed === false) passed = false;
+        if (options.signal?.aborted) {
+          entries.push({ ...summary, diff: diffSummary });
+          interrupted = true;
+          passed = false;
+          break;
+        }
+
+        const entry = { ...summary, diff: diffSummary };
+        entries.push(entry);
+        if (!entry.thresholdsPassed || entry.diff?.passed === false) passed = false;
       }
     } catch (error) {
       passed = false;
-      suiteError = error;
+      if (isAbortError(error)) interrupted = true;
+      else suiteError = error;
     }
   }
 
@@ -390,9 +356,16 @@ export const runSuite = async (options: SuiteRunOptions): Promise<SuiteResult> =
     startedAt,
     endedAt: isoNow(),
     outputRoot,
-    status: interrupted ? "interrupted" : suiteError ? "failed" : "completed",
-    passed: passed && !interrupted,
+    status: interrupted
+      ? "interrupted"
+      : suiteError
+        ? "failed"
+        : blockedReason
+          ? "blocked"
+          : "completed",
+    passed: passed && !interrupted && !blockedReason,
     entries,
+    ...(blockedReason ? { blockedReason } : {}),
   };
   try {
     await writeSuiteSummary(result);
@@ -408,5 +381,125 @@ export const runSuite = async (options: SuiteRunOptions): Promise<SuiteResult> =
   }
   logger.success(`Suite summary written to ${join(outputRoot, "suite-summary.md")}`);
   if (suiteError) throw suiteError;
+  return result;
+};
+
+export const runSuite = (options: SuiteRunOptions): Promise<SuiteResult> =>
+  executeSuiteLifecycle(options);
+
+export type SuitePrepareOptions = Omit<SuiteRunOptions, "baselinesDir" | "prepare">;
+
+export type SuitePreparationResult = Readonly<{
+  suite: string;
+  startedAt: string;
+  endedAt: string;
+  outputRoot: string;
+  status: "completed" | "interrupted" | "failed";
+  ready: boolean;
+  error?: string;
+}>;
+
+const renderSuitePreparationMarkdown = (result: SuitePreparationResult): string => `${[
+  `# Suite Pool Preparation — ${result.suite}`,
+  "",
+  `- **Window:** ${result.startedAt} → ${result.endedAt}`,
+  `- **Status:** ${result.status}`,
+  `- **Final readiness:** ${result.ready ? "ready" : "not ready"}`,
+  ...(result.error ? [`- **Error:** ${result.error}`] : []),
+].join("\n")}\n`;
+
+const writeSuitePreparationResult = async (
+  result: SuitePreparationResult,
+): Promise<void> => {
+  await writeFile(
+    join(result.outputRoot, "suite-preparation.json"),
+    `${JSON.stringify(result, null, 2)}\n`,
+  );
+  await writeFile(
+    join(result.outputRoot, "suite-preparation.md"),
+    renderSuitePreparationMarkdown(result),
+  );
+};
+
+/** Explicit preparation lifecycle; never writes a workload suite summary. */
+export const prepareSuite = async (
+  options: SuitePrepareOptions,
+): Promise<SuitePreparationResult> => {
+  const startedAt = isoNow();
+  const outputRoot = options.outputRoot ?? join(
+    options.env.dataDir,
+    "preparations",
+    `${startedAt.replace(/[:.]/g, "-")}-suite-${options.suite.name}`,
+  );
+  await mkdir(outputRoot, { recursive: true });
+  let operationError: unknown;
+  let interrupted = options.signal?.aborted ?? false;
+  let ready = false;
+
+  try {
+    options.signal?.throwIfAborted();
+    const resolved = await resolveSuiteScenarios(options.suite);
+    const scenarios = resolved.map((entry) => entry.scenario);
+    const initial = await inspectPoolRequirements({
+      env: options.env,
+      scenarios,
+      pauseSec: options.suite.pauseSec,
+      artifactDir: outputRoot,
+    });
+    describePlan(initial);
+    options.signal?.throwIfAborted();
+    // Always invoke the preparer, including a ready/no-op plan, so every
+    // explicit prepare command has durable preparation.json/.md evidence.
+    const prepared = await preparePoolRequirements({
+      env: options.env,
+      scenarios,
+      pauseSec: options.suite.pauseSec,
+      artifactDir: outputRoot,
+      lanes: options.lanes,
+      signal: options.signal,
+      onProgress: (message) => logger.info(message),
+      beforeActions: () => assertRelayerReadiness({
+        env: options.env,
+        connections: options.connections,
+        skipReadiness: options.skipReadiness,
+        signal: options.signal,
+      }),
+    });
+    ready = prepared.plan.ready;
+    if (!ready) {
+      throw new Error("Pool preparation completed with residual work.");
+    }
+  } catch (error) {
+    operationError = error;
+    interrupted = isAbortError(error);
+  }
+
+  const result: SuitePreparationResult = {
+    suite: options.suite.name,
+    startedAt,
+    endedAt: isoNow(),
+    outputRoot,
+    status: interrupted ? "interrupted" : operationError ? "failed" : "completed",
+    ready: ready && !operationError,
+    ...(operationError
+      ? { error: safeArtifactText(operationError instanceof Error ? operationError.message : operationError) }
+      : {}),
+  };
+  let persistenceError: unknown;
+  try {
+    await writeSuitePreparationResult(result);
+  } catch (error) {
+    persistenceError = error;
+  }
+  if (operationError && persistenceError) {
+    throw new AggregateError(
+      [operationError, persistenceError],
+      "Suite preparation failed and its terminal evidence could not be persisted",
+      { cause: operationError },
+    );
+  }
+  if (operationError && !interrupted) throw operationError;
+  if (persistenceError) throw persistenceError;
+  logger.success(`Suite preparation evidence written to ${outputRoot}`);
   return result;
 };

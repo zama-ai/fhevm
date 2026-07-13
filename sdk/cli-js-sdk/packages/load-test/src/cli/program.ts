@@ -13,7 +13,7 @@ import { registerBaselineCommands } from "./commands/baseline";
 export const createProgram = (): Command => {
   const program = new Command()
     .name("load-test")
-    .description("Relayer v2 load-test tool (open, closed, and drain models over FHETest flows)")
+    .description("FHEVM relayer load-test tool for legacy and v2 implementations")
     .addOption(new Option("-n, --network <network>", "network to target").choices(NETWORKS).default(DEFAULT_NETWORK))
     .option("--relayer-url <url>", "relayer base URL override")
     .option("--relayer-api-prefix <prefix>", "primary relayer API route prefix (raw flows only)")
