@@ -35,6 +35,9 @@
 
 mod support;
 
+#[path = "support/cost_snapshot.rs"]
+mod cost_snapshot;
+
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
     Discriminator, InstructionData, ToAccountMetas,
@@ -553,9 +556,16 @@ struct TokenFixture {
 
 impl TokenFixture {
     fn new() -> Self {
-        let owner = Pubkey::new_unique();
-        let bob_owner = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        Self::with_keys(
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+        )
+    }
+
+    /// Fixed-key variant for cost snapshots: PDA bump searches are part of the
+    /// measured compute, so profile addresses must not change between runs.
+    fn with_keys(owner: Pubkey, bob_owner: Pubkey, mint: Pubkey) -> Self {
         let compute_signer = token::compute_signer_address(mint).0;
         let host_config = host::host_config_address().0;
         let alice_token = token::token_account_address(mint, owner).0;
@@ -3303,4 +3313,61 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
         host::hcu_block_meter_address(fixture.alice_token).0
     )
     .is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Cost snapshots (tests/support/cost_snapshot.rs). Dedicated tests so cost
+// drift never fails a behavior test; update with ZAMA_UPDATE_COST_SNAPSHOT=1.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cost_snapshot_confidential_transfer_direct() {
+    let fixture = TokenFixture::with_keys(
+        Pubkey::new_from_array([0x11; 32]),
+        Pubkey::new_from_array([0x12; 32]),
+        Pubkey::new_from_array([0x13; 32]),
+    );
+    let context = mollusk().with_context(fixture.base_accounts());
+    let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
+    let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
+    let transfer = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        attestation,
+    );
+
+    let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+
+    cost_snapshot::assert_cost_snapshot(
+        "token_mollusk",
+        "confidential_transfer/direct",
+        &transfer,
+        &result,
+    );
+}
+
+#[test]
+fn cost_snapshot_initialize_token_account() {
+    let fixture = TokenFixture::with_keys(
+        Pubkey::new_from_array([0x11; 32]),
+        Pubkey::new_from_array([0x12; 32]),
+        Pubkey::new_from_array([0x13; 32]),
+    );
+    let owner = Pubkey::new_from_array([0x14; 32]);
+    let (token_account, _bump) = token::token_account_address(fixture.mint, owner);
+    let balance_encrypted_value =
+        token::balance_encrypted_value_address(fixture.mint, token_account).0;
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(owner, system_account(5_000_000_000));
+    accounts.insert(token_account, system_account(0));
+    accounts.insert(balance_encrypted_value, system_account(0));
+    let context = mollusk().with_context(accounts);
+    let ix = initialize_token_account_ix(owner, fixture.mint, fixture.host_config, 0);
+
+    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
+
+    cost_snapshot::assert_cost_snapshot("token_mollusk", "initialize_token_account", &ix, &result);
 }

@@ -21,6 +21,9 @@
 //! rewrite (`AclPermission` overflow, `AclRecord` material sealing) with no
 //! surviving equivalent to port.
 
+#[path = "support/cost_snapshot.rs"]
+mod cost_snapshot;
+
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
     Discriminator, InstructionData, ToAccountMetas,
@@ -3118,9 +3121,13 @@ struct EvalFixture {
 impl EvalFixture {
     /// A fixture whose config carries a per-app block cap; per-frame HCU limits stay off.
     fn with_block_cap(cap: u64) -> Self {
+        Self::with_block_cap_keys(cap, Pubkey::new_unique(), Pubkey::new_unique())
+    }
+
+    /// Fixed-key variant for cost snapshots: PDA bump searches are part of the
+    /// measured compute, so profile addresses must not change between runs.
+    fn with_block_cap_keys(cap: u64, authority: Pubkey, hcu_authority: Pubkey) -> Self {
         let program_id = host::id();
-        let authority = Pubkey::new_unique();
-        let hcu_authority = Pubkey::new_unique();
         let app_account = authority;
         let (host_config, host_config_account) = host_config_account_with_block_cap(authority, cap);
         let balance_label = label("balance-hcu-fixture");
@@ -3901,4 +3908,28 @@ fn mollusk_fhe_eval_meter_accumulation_overflow_fails_closed() {
         u64::MAX - 1_000
     );
     fixture.assert_no_output(&result);
+}
+
+// ---------------------------------------------------------------------------
+// Cost snapshots (tests/support/cost_snapshot.rs). Dedicated tests so cost
+// drift never fails a behavior test; update with ZAMA_UPDATE_COST_SNAPSHOT=1.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cost_snapshot_fhe_eval_three_op_frame() {
+    // Unrestricted HCU cap, no optional meter/trust accounts: the minimal
+    // canonical eval frame (`EvalFixture::success_steps`) with one durable
+    // output binding.
+    let fixture = EvalFixture::with_block_cap_keys(
+        u64::MAX,
+        Pubkey::new_from_array([0x21; 32]),
+        Pubkey::new_from_array([0x22; 32]),
+    );
+    let ix = fixture.block_cap_instruction(None, None);
+
+    let result = fixture
+        .context
+        .process_and_validate_instruction(&ix, &[Check::success()]);
+
+    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_eval/three_op_frame", &ix, &result);
 }

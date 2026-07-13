@@ -1,0 +1,12 @@
+{
+  "confidential_transfer/direct": {
+    "compute_units": 349021,
+    "instruction_data_bytes": 223,
+    "unique_accounts": 15
+  },
+  "initialize_token_account": {
+    "compute_units": 68235,
+    "instruction_data_bytes": 16,
+    "unique_accounts": 12
+  }
+}
