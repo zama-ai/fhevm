@@ -12,8 +12,8 @@
 //!   PDA before trusting the bytes (see [`crate::core::event_processor::decryption`]).
 
 use crate::core::solana_acl::SolanaPubkeyBytes;
-use anyhow::{anyhow, bail, Context};
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
+use anyhow::{Context, anyhow, bail};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use serde_json::Value;
 use solana_pubkey::Pubkey;
 use url::Url;

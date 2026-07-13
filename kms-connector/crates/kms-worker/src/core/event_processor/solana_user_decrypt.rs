@@ -898,9 +898,9 @@ mod tests {
                 assert!(msg.contains("live confirmed leaf_count=4"), "got: {msg}");
                 assert!(msg.contains("normal attempt budget"), "got: {msg}");
             }
-            other => panic!(
-                "equal-count confirmed fork disagreement must be retryable, got {other:?}"
-            ),
+            other => {
+                panic!("equal-count confirmed fork disagreement must be retryable, got {other:?}")
+            }
         }
     }
 
