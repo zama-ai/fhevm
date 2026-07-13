@@ -348,11 +348,19 @@ fn classify_mmr_verification_failure(
         crate::core::solana_acl::SolanaAclVerificationError::HistoricalAccessProofInvalid
             | crate::core::solana_acl::SolanaAclVerificationError::PublicDecryptProofInvalid
     );
-    if proof_invalid && proof_leaf_count >= live_leaf_count {
+    if proof_invalid && proof_leaf_count == live_leaf_count {
         ProcessingError::Recoverable(anyhow!(
-            "Solana MMR proof does not verify against the KMS confirmed view: proof leaf_count={proof_leaf_count}, \
-             live confirmed leaf_count={live_leaf_count}; retrying within the normal attempt budget \
-             while confirmed views converge ({error})"
+            "Solana MMR proof does not verify against an equal-count KMS confirmed view \
+             (classification=confirmed_equal_count): proof leaf_count={proof_leaf_count}, live \
+             confirmed leaf_count={live_leaf_count}; retrying within the configured decryption \
+             attempt budget while confirmed views converge ({error})"
+        ))
+    } else if proof_invalid && proof_leaf_count > live_leaf_count {
+        ProcessingError::Recoverable(anyhow!(
+            "Solana MMR proof is ahead of the KMS confirmed view \
+             (classification=confirmed_proof_ahead): proof leaf_count={proof_leaf_count}, live \
+             confirmed leaf_count={live_leaf_count}; retrying within the configured decryption \
+             attempt budget while the KMS view catches up ({error})"
         ))
     } else if proof_invalid && proof_leaf_count < live_leaf_count {
         ProcessingError::Irrecoverable(anyhow!(
@@ -896,7 +904,10 @@ mod tests {
                 let msg = e.to_string();
                 assert!(msg.contains("proof leaf_count=4"), "got: {msg}");
                 assert!(msg.contains("live confirmed leaf_count=4"), "got: {msg}");
-                assert!(msg.contains("normal attempt budget"), "got: {msg}");
+                assert!(
+                    msg.contains("classification=confirmed_equal_count"),
+                    "got: {msg}"
+                );
             }
             other => {
                 panic!("equal-count confirmed fork disagreement must be retryable, got {other:?}")
@@ -917,7 +928,10 @@ mod tests {
                 let msg = e.to_string();
                 assert!(msg.contains("proof leaf_count=2"), "got: {msg}");
                 assert!(msg.contains("live confirmed leaf_count=1"), "got: {msg}");
-                assert!(msg.contains("normal attempt budget"), "got: {msg}");
+                assert!(
+                    msg.contains("classification=confirmed_proof_ahead"),
+                    "got: {msg}"
+                );
             }
             other => panic!("a proof ahead of confirmed state must be recoverable, got {other:?}"),
         }

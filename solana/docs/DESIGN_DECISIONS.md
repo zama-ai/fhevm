@@ -916,6 +916,11 @@ back later. The KMS ACL read and all three relayer proof RPC reads (`getSignatur
 end-to-end release path `confirmed`: the separate finalized-account fetcher described in DD-024 still
 gates coprocessor material availability until its stacked cleanup lands.
 
+Decision provenance: accepted by the Solana feature owner during the review of
+[`zama-ai/fhevm#3122`](https://github.com/zama-ai/fhevm/pull/3122) on 2026-07-13. The accepted trade-off
+is irreversible plaintext release after a valid authorization observed on an exceptionally rolled-back
+confirmed fork; subsequent on-chain actions still follow the surviving fork.
+
 Why this is open:
 
 The dormant/activate model and transient eval intermediates were designed separately and don't compose;

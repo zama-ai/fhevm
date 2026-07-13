@@ -60,6 +60,23 @@ The e2e `reconstruct=true` arm exercises host-listener reconstruction against th
 closed rather than yielding a wrong proof, which the KMS then re-verifies against confirmed peaks anyway
 (DD-035).
 
+## Confirmed-view operations
+
+An equal-leaf-count proof mismatch is retried as
+`classification=confirmed_equal_count`; a proof ahead of the KMS view is retried as
+`classification=confirmed_proof_ahead`. Both use the ordinary configured decryption budget
+(`max_decryption_attempts`, default 20) and fast event polling interval (default 3 seconds). Actual
+wall-clock exhaustion also depends on batch load and processing time; there is no separate hidden
+fork-retry loop. Deterministic mismatches remain fail-closed, but the classification distinguishes
+them from ordinary proof-ahead catch-up in logs.
+
+A persistent relayer `corrupt_cache` response means the file-backed proof cache disagrees with the
+confirmed on-chain peaks after targeted catch-up. Recovery is operational, not an authorization
+fallback: stop the relayer, remove the JSON file configured by `solana_proof.leaf_store_path`, and
+restart it so the cache is replayed from the configured `start_signature` (or from the oldest retained
+program signature when absent). Until replay catches up, proof requests fail closed; the KMS never
+trusts the cache without re-verifying the proof against live chain state.
+
 ## Deliberately deferred (filed as follow-ups, not gaps in the merge)
 
 - **Explicit Mollusk CU-trace assertions.** CU fit is currently implicit (Mollusk enforces the budget,
