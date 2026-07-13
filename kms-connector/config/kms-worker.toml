@@ -167,8 +167,9 @@ chain_id = 12345
 # live event-processing path still needs KMS Core native work-item dispatch and tx-sender/relayer
 # publication.
 chain_kind = "evm"
-# Address of the ACL contract (required for EVM chains, ignored for Solana chains)
+# Address of the ACL contract (required for EVM chains, forbidden for Solana chains)
 # Format: hex string with 0x prefix
 acl_address = "0x0000000000000000000000000000000000000000"
-# Required for Solana chains. Base58 ZamaHost program id expected to own ACL/material witnesses.
+# Required for Solana chains and forbidden for EVM chains. Base58 ZamaHost program id expected to
+# own ACL/material witnesses.
 # solana_host_program_id = "11111111111111111111111111111111"

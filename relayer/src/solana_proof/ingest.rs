@@ -22,6 +22,8 @@ pub enum IngestError {
     Decode(#[from] crate::solana_proof::decode::DecodeError),
     #[error("replay error: {0}")]
     Replay(#[from] crate::solana_proof::replay::ReplayError),
+    #[error("transaction {signature} is temporarily unavailable")]
+    TransactionUnavailable { signature: String },
     #[error("poll backlog exceeds the per-cycle ceiling ({max}); refusing to advance to avoid silently skipping signatures — run an explicit backfill")]
     BacklogExceeded { max: usize },
 }
@@ -270,9 +272,11 @@ pub async fn poll_once<C: ChainFetcher, S: LeafStore>(
     let mut processed = 0usize;
 
     for signature in &signatures {
-        let Some(tx) = fetcher.get_transaction(signature).await? else {
-            continue;
-        };
+        let tx = fetcher.get_transaction(signature).await?.ok_or_else(|| {
+            IngestError::TransactionUnavailable {
+                signature: signature.clone(),
+            }
+        })?;
         let decoded = decode_program_instructions(program_id, &tx.instructions)?;
         let mut lineages = Vec::new();
         for lineage in unique_lineages(&decoded) {
@@ -337,9 +341,11 @@ pub async fn catch_up_lineage<C: ChainFetcher, S: LeafStore>(
         if seen.contains(&signature) {
             continue;
         }
-        let Some(tx) = fetcher.get_transaction(&signature).await? else {
-            continue;
-        };
+        let tx = fetcher.get_transaction(&signature).await?.ok_or_else(|| {
+            IngestError::TransactionUnavailable {
+                signature: signature.clone(),
+            }
+        })?;
         let decoded = decode_program_instructions(program_id, &tx.instructions)?;
         let Some(lineage_update) =
             build_lineage_signature_update(store, lineage, &signature, &decoded, true).await?
@@ -745,6 +751,176 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn poll_once_stops_at_missing_transaction_then_recovers_oldest_first() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x07);
+        let owner = pk(0x30);
+        let chain = FakeChain::new(program_id);
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        store
+            .set_replay_state(
+                lineage,
+                LineageReplayState {
+                    current_handle: Some(pk(0x20)),
+                    subjects: vec![owner],
+                },
+            )
+            .await
+            .unwrap();
+        chain.push_tx(
+            "sig1",
+            1,
+            &[lineage],
+            vec![update_ix(
+                program_id,
+                lineage,
+                pk(0x21),
+                pk(0x20),
+                vec![owner],
+            )],
+        );
+        chain.push_tx(
+            "sig2",
+            2,
+            &[lineage],
+            vec![make_public_ix(program_id, lineage, pk(0x21))],
+        );
+        let missing = chain.transactions.lock().unwrap().remove("sig1").unwrap();
+
+        let error = poll_once(&chain, &store, program_id, 100, MAX_POLL_BACKLOG_PER_CYCLE)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            IngestError::TransactionUnavailable { signature } if signature == "sig1"
+        ));
+        assert!(store.get_cursor().await.unwrap().is_none());
+        assert!(store.get_events(lineage).await.unwrap().is_empty());
+
+        chain
+            .transactions
+            .lock()
+            .unwrap()
+            .insert("sig1".to_string(), missing);
+        assert_eq!(
+            poll_once(&chain, &store, program_id, 100, MAX_POLL_BACKLOG_PER_CYCLE)
+                .await
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            store.get_events(lineage).await.unwrap(),
+            vec![
+                LineageEvent::handle_superseded(pk(0x20), &[owner]),
+                LineageEvent::MarkedPublic { handle: pk(0x21) },
+            ]
+        );
+        let cursor = store.get_cursor().await.unwrap().unwrap();
+        assert_eq!(cursor.last_signature.as_deref(), Some("sig2"));
+        assert_eq!(cursor.last_slot, 2);
+    }
+
+    #[tokio::test]
+    async fn poll_once_commits_valid_transaction_before_later_gap() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x08);
+        let owner = pk(0x30);
+        let chain = FakeChain::new(program_id);
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        store
+            .set_replay_state(
+                lineage,
+                LineageReplayState {
+                    current_handle: Some(pk(0x20)),
+                    subjects: vec![owner],
+                },
+            )
+            .await
+            .unwrap();
+        chain.push_tx(
+            "sig1",
+            1,
+            &[lineage],
+            vec![update_ix(
+                program_id,
+                lineage,
+                pk(0x21),
+                pk(0x20),
+                vec![owner],
+            )],
+        );
+        chain.push_tx(
+            "sig2",
+            2,
+            &[lineage],
+            vec![make_public_ix(program_id, lineage, pk(0x21))],
+        );
+        chain.push_tx(
+            "sig3",
+            3,
+            &[lineage],
+            vec![update_ix(
+                program_id,
+                lineage,
+                pk(0x22),
+                pk(0x21),
+                vec![owner],
+            )],
+        );
+        let missing = chain.transactions.lock().unwrap().remove("sig2").unwrap();
+
+        let error = poll_once(&chain, &store, program_id, 100, MAX_POLL_BACKLOG_PER_CYCLE)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            IngestError::TransactionUnavailable { signature } if signature == "sig2"
+        ));
+        assert_eq!(
+            store.get_events(lineage).await.unwrap(),
+            vec![LineageEvent::handle_superseded(pk(0x20), &[owner])]
+        );
+        assert_eq!(
+            store.get_seen_signatures(lineage).await.unwrap(),
+            vec!["sig1".to_string()]
+        );
+        let cursor = store.get_cursor().await.unwrap().unwrap();
+        assert_eq!(cursor.last_signature.as_deref(), Some("sig1"));
+        assert_eq!(cursor.last_slot, 1);
+
+        chain
+            .transactions
+            .lock()
+            .unwrap()
+            .insert("sig2".to_string(), missing);
+        assert_eq!(
+            poll_once(&chain, &store, program_id, 100, MAX_POLL_BACKLOG_PER_CYCLE)
+                .await
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            store.get_events(lineage).await.unwrap(),
+            vec![
+                LineageEvent::handle_superseded(pk(0x20), &[owner]),
+                LineageEvent::MarkedPublic { handle: pk(0x21) },
+                LineageEvent::handle_superseded(pk(0x21), &[owner]),
+            ]
+        );
+        let cursor = store.get_cursor().await.unwrap().unwrap();
+        assert_eq!(cursor.last_signature.as_deref(), Some("sig3"));
+        assert_eq!(cursor.last_slot, 3);
+    }
+
+    #[tokio::test]
     async fn catch_up_lineage_ingests_only_new_signatures_for_that_lineage() {
         let program_id = pk(0x99);
         let lineage = pk(0x03);
@@ -788,6 +964,68 @@ mod tests {
         let events = store.get_events(lineage).await.unwrap();
         assert_eq!(
             events,
+            vec![LineageEvent::MarkedPublic { handle: pk(0x20) }]
+        );
+    }
+
+    #[tokio::test]
+    async fn catch_up_lineage_retries_unavailable_transaction_without_marking_it_seen() {
+        let program_id = pk(0x99);
+        let lineage = pk(0x09);
+        let chain = FakeChain::new(program_id);
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        store
+            .set_replay_state(
+                lineage,
+                LineageReplayState {
+                    current_handle: Some(pk(0x20)),
+                    subjects: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        chain.push_tx(
+            "sig1",
+            1,
+            &[lineage],
+            vec![make_public_ix(program_id, lineage, pk(0x20))],
+        );
+        let missing = chain.transactions.lock().unwrap().remove("sig1").unwrap();
+
+        let error = catch_up_lineage(&chain, &store, program_id, lineage, 1000)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            IngestError::TransactionUnavailable { signature } if signature == "sig1"
+        ));
+        assert!(store.get_seen_signatures(lineage).await.unwrap().is_empty());
+        assert!(store.get_events(lineage).await.unwrap().is_empty());
+
+        chain
+            .transactions
+            .lock()
+            .unwrap()
+            .insert("sig1".to_string(), missing);
+        assert_eq!(
+            catch_up_lineage(&chain, &store, program_id, lineage, 1000)
+                .await
+                .unwrap(),
+            CatchUpOutcome {
+                processed: 1,
+                budget_exhausted: false,
+            }
+        );
+        assert_eq!(
+            store.get_seen_signatures(lineage).await.unwrap(),
+            vec!["sig1".to_string()]
+        );
+        assert_eq!(
+            store.get_events(lineage).await.unwrap(),
             vec![LineageEvent::MarkedPublic { handle: pk(0x20) }]
         );
     }

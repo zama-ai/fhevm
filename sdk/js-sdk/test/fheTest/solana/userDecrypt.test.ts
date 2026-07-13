@@ -34,6 +34,7 @@ const { createFhevmDecryptClient, solanaSignerFromSecretKey, setFhevmRuntimeConf
 const { defineFhevmSolanaChain } = await import('@fhevm/sdk/chains');
 const { solanaUserDecryptSigningPreimage, solanaUserDecryptClientId } =
   await import('../../../src/core/coprocessor/SolanaUserDecrypt-p.js');
+const { generateSolanaTransportKeyPair } = await import('../../../src/solana/deSigncrypt.js');
 
 const SEED = new Uint8Array(32).fill(0x42);
 const ZERO_BYTES32 = '0x' + '00'.repeat(32);
@@ -104,6 +105,7 @@ describe('createFhevmDecryptClient(...).userDecrypt', () => {
   beforeEach(() => {
     postedBody = undefined;
     postedUrl = undefined;
+    vi.mocked(generateSolanaTransportKeyPair).mockClear();
 
     try {
       setFhevmRuntimeConfig({});
@@ -141,6 +143,20 @@ describe('createFhevmDecryptClient(...).userDecrypt', () => {
 
   afterEach(() => {
     fetchSpy.mockRestore();
+  });
+
+  it('rejects invalid handle counts before transport-key generation or relayer access', async () => {
+    const signer = solanaSignerFromSecretKey(SEED);
+    const client = createFhevmDecryptClient({ signer, chain: testChain });
+    const handleHex = buildHandleHex();
+
+    await expect(client.userDecrypt({ handles: [] })).rejects.toThrow('Exactly one handle is required');
+    await expect(client.userDecrypt({ handles: [handleHex, handleHex] })).rejects.toThrow(
+      'Exactly one handle is required',
+    );
+
+    expect(generateSolanaTransportKeyPair).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('posts the v3 Solana request and returns the aggregated shares', async () => {

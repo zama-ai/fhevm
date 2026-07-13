@@ -1,5 +1,5 @@
 use crate::core::{
-    config::{Config, HostChainKind},
+    config::Config,
     event_processor::{
         CiphertextManager, ProcessingError, RequestCheckError, RequestCheckKind,
         context::ContextManager,
@@ -9,7 +9,6 @@ use crate::core::{
         },
     },
     solana_acl::HandleBytes,
-    solana_v2_fetcher::SolanaV2Fetcher,
 };
 use alloy::{
     consensus::Transaction,
@@ -39,6 +38,12 @@ use tracing::info;
 use user_decryption_signature::{compute_user_decrypt_digest, verify_signature};
 
 #[derive(Clone)]
+pub enum HostChainAclBackend<HP: Provider> {
+    Evm(ACLInstance<HP>),
+    Solana(SolanaHost),
+}
+
+#[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
 pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
     /// The EIP712 domain of the `Decryption` contract.
@@ -50,12 +55,8 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
     /// The instance of the `Decryption` contract used to check decryption were not already done.
     decryption_contract: DecryptionInstance<GP>,
 
-    /// The instances of the host chains `ACL` contracts used to check the decryption ACL.
-    acl_contracts: HashMap<u64, ACLInstance<HP>>,
-
-    /// Solana host chains keyed by chain id: the ZamaHost program id and a `finalized`-commitment
-    /// account fetcher used for the Solana user-decryption ACL check.
-    solana_hosts: HashMap<u64, SolanaHost>,
+    /// The configured ACL backend for each host chain.
+    host_chain_backends: HashMap<u64, HostChainAclBackend<HP>>,
 
     /// The entity used to verify and collect the ciphertexts of decryption requests.
     ciphertext_manager: CiphertextManager<GP>,
@@ -74,7 +75,7 @@ where
         config: &Config,
         context_manager: C,
         gateway_provider: GP,
-        acl_contracts: HashMap<u64, ACLInstance<HP>>,
+        host_chain_backends: HashMap<u64, HostChainAclBackend<HP>>,
         ciphertext_manager: CiphertextManager<GP>,
     ) -> Self {
         let domain = Eip712DomainMsg {
@@ -91,10 +92,33 @@ where
             domain,
             context_manager,
             decryption_contract,
-            acl_contracts,
-            solana_hosts: build_solana_hosts(config),
+            host_chain_backends,
             ciphertext_manager,
             erc1271_gas_limit: config.erc1271_gas_limit,
+        }
+    }
+
+    fn host_chain_backend(
+        &self,
+        chain_id: u64,
+    ) -> Result<&HostChainAclBackend<HP>, RequestCheckError> {
+        self.host_chain_backends.get(&chain_id).ok_or_else(|| {
+            RequestCheckError::recoverable(
+                RequestCheckKind::Acl,
+                anyhow!("No host-chain ACL backend configured for chain id {chain_id}"),
+            )
+        })
+    }
+
+    fn evm_acl_backend(&self, chain_id: u64) -> Result<&ACLInstance<HP>, RequestCheckError> {
+        match self.host_chain_backend(chain_id)? {
+            HostChainAclBackend::Evm(acl) => Ok(acl),
+            HostChainAclBackend::Solana(_) => Err(RequestCheckError::irrecoverable(
+                RequestCheckKind::Acl,
+                anyhow!(
+                    "Host chain {chain_id} uses the Solana ACL backend, but this request requires EVM"
+                ),
+            )),
         }
     }
 
@@ -113,33 +137,27 @@ where
             let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
                 .map_err(|e| RequestCheckError::irrecoverable(RequestCheckKind::Acl, e))?;
 
-            // Solana host: the EVM ACL contract does not exist on this chain. Public access is
-            // proven by a `PublicDecryptLeaf` MMR proof in `extraData`, verified against the live
-            // finalized lineage account.
-            if let Some(host) = self.solana_hosts.get(&ct_chain_id) {
-                check_solana_handles_public_decrypt(host, &[ct.ctHandle.0], extra_data)
-                    .await
-                    .map_err(|e| RequestCheckError::from_processing(RequestCheckKind::Acl, e))?;
-                continue;
-            }
-
-            let acl_contract = self.acl_contracts.get(&ct_chain_id).ok_or_else(|| {
-                RequestCheckError::recoverable(
-                    RequestCheckKind::Acl,
-                    anyhow!("No ACL contract config found for chain id {ct_chain_id}"),
-                )
-            })?;
-
-            if !acl_contract
-                .isAllowedForDecryption(ct.ctHandle)
-                .call()
-                .await
-                .map_err(RequestCheckError::network)?
-            {
-                return Err(RequestCheckError::recoverable(
-                    RequestCheckKind::Acl,
-                    anyhow!("Decryption is not allowed for {}", ct.ctHandle),
-                ));
+            match self.host_chain_backend(ct_chain_id)? {
+                HostChainAclBackend::Solana(host) => {
+                    check_solana_handles_public_decrypt(host, &[ct.ctHandle.0], extra_data)
+                        .await
+                        .map_err(|e| {
+                            RequestCheckError::from_processing(RequestCheckKind::Acl, e)
+                        })?;
+                }
+                HostChainAclBackend::Evm(acl_contract) => {
+                    if !acl_contract
+                        .isAllowedForDecryption(ct.ctHandle)
+                        .call()
+                        .await
+                        .map_err(RequestCheckError::network)?
+                    {
+                        return Err(RequestCheckError::recoverable(
+                            RequestCheckKind::Acl,
+                            anyhow!("Decryption is not allowed for {}", ct.ctHandle),
+                        ));
+                    }
+                }
             }
         }
 
@@ -190,12 +208,7 @@ where
         for ct in sns_ciphertexts {
             let ct_chain_id = extract_chain_id_from_handle(ct.ctHandle.as_slice())
                 .map_err(|e| RequestCheckError::irrecoverable(RequestCheckKind::Acl, e))?;
-            let acl_contract = self.acl_contracts.get(&ct_chain_id).ok_or_else(|| {
-                RequestCheckError::recoverable(
-                    RequestCheckKind::Acl,
-                    anyhow!("No ACL contract config found for chain id {ct_chain_id}"),
-                )
-            })?;
+            let acl_contract = self.evm_acl_backend(ct_chain_id)?;
             let contract_address = contracts_map.get(ct.ctHandle.as_slice()).ok_or_else(|| {
                 RequestCheckError::irrecoverable(
                     RequestCheckKind::Acl,
@@ -387,12 +400,7 @@ where
             ));
         }
 
-        let acl_contract = self.acl_contracts.get(&chain_id).ok_or_else(|| {
-            RequestCheckError::recoverable(
-                RequestCheckKind::Acl,
-                anyhow!("No ACL contract config found for chain id {chain_id}"),
-            )
-        })?;
+        let acl_contract = self.evm_acl_backend(chain_id)?;
 
         // RFC-012: EIP-712 signature verification with ecrecover → ERC-1271 fallback.
         // The domain takes name/version/verifyingContract from `self.domain` (already validated
@@ -517,16 +525,17 @@ where
             ));
         }
 
-        let host = self.solana_hosts.get(&chain_id).ok_or_else(|| {
-            // Fail closed: a Solana request for an unconfigured / program-id-less host cannot be
-            // authorized.
-            RequestCheckError::irrecoverable(
-                RequestCheckKind::Acl,
-                anyhow!(
-                    "No Solana host configuration (with ZamaHost program id) for chain id {chain_id}"
-                ),
-            )
-        })?;
+        let host = match self.host_chain_backend(chain_id)? {
+            HostChainAclBackend::Solana(host) => host,
+            HostChainAclBackend::Evm(_) => {
+                return Err(RequestCheckError::irrecoverable(
+                    RequestCheckKind::Acl,
+                    anyhow!(
+                        "Host chain {chain_id} uses the EVM ACL backend, but this request requires Solana"
+                    ),
+                ));
+            }
+        };
 
         // ed25519 binding — the check that closes the substitution bug. Pure, no I/O.
         let auth = verify_solana_user_decrypt_signature(request, chain_id)
@@ -792,30 +801,6 @@ where
     }
 }
 
-/// Builds the per-chain Solana host map from config: only `chain_kind = Solana` entries that
-/// carry a `solana_host_program_id`. A Solana host configured without a program id is skipped,
-/// so a Solana request for that chain fails closed at lookup time rather than being authorized
-/// against an unverifiable program.
-fn build_solana_hosts(config: &Config) -> HashMap<u64, SolanaHost> {
-    let client = reqwest::Client::new();
-    config
-        .host_chains
-        .iter()
-        .filter(|h| h.chain_kind == HostChainKind::Solana)
-        .filter_map(|h| {
-            h.solana_host_program_id.map(|program_id| {
-                (
-                    h.chain_id,
-                    SolanaHost {
-                        program_id,
-                        fetcher: SolanaV2Fetcher::new(h.url.clone(), client.clone()),
-                    },
-                )
-            })
-        })
-        .collect()
-}
-
 fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
     // relayer-sdk <=0.4.2 sends 0x00 but verifies the KMS signature against empty extraData.
     if extra_data.as_ref() == [0x00] {
@@ -855,6 +840,7 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::solana_v2_fetcher::SolanaV2Fetcher;
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
         signers::{SignerSync, local::PrivateKeySigner},
@@ -867,7 +853,10 @@ mod tests {
     };
     use fhevm_gateway_bindings::decryption::{
         Decryption::CtHandleContractPair,
-        IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
+        IDecryption::{
+            RequestValiditySeconds, UserDecryptionRequestPayload,
+            UserDecryptionRequestSolanaPayload,
+        },
     };
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
@@ -881,6 +870,18 @@ mod tests {
         Irrecoverable,
     }
 
+    fn assert_irrecoverable_contains(result: Result<(), ProcessingError>, expected: &str) {
+        match result {
+            Err(ProcessingError::Irrecoverable(error)) => {
+                assert!(
+                    error.to_string().contains(expected),
+                    "unexpected error: {error}"
+                );
+            }
+            other => panic!("expected irrecoverable error containing '{expected}', got {other:?}"),
+        }
+    }
+
     struct MockContextManager;
 
     impl ContextManager for MockContextManager {
@@ -889,27 +890,56 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy)]
+    enum TestHostBackend {
+        Evm,
+        Solana,
+        Missing,
+    }
+
     fn setup_test_processor(
         asserter: Asserter,
         sns_ct: &SnsCiphertextMaterial,
+    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
+    {
+        setup_test_processor_with_backend(asserter, sns_ct, TestHostBackend::Evm)
+    }
+
+    fn setup_test_processor_with_backend(
+        asserter: Asserter,
+        sns_ct: &SnsCiphertextMaterial,
+        backend: TestHostBackend,
     ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
     {
         let mock_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter);
         let chain_id = extract_chain_id_from_handle(sns_ct.ctHandle.as_slice()).unwrap();
-        let acl_contracts = HashMap::from([(
-            chain_id,
-            ACL::new(Address::default(), mock_provider.clone()),
-        )]);
         let config = Config::default();
+        let host_chain_backends = match backend {
+            TestHostBackend::Evm => HashMap::from([(
+                chain_id,
+                HostChainAclBackend::Evm(ACL::new(Address::default(), mock_provider.clone())),
+            )]),
+            TestHostBackend::Solana => HashMap::from([(
+                chain_id,
+                HostChainAclBackend::Solana(SolanaHost {
+                    program_id: [7; 32],
+                    fetcher: SolanaV2Fetcher::new(
+                        config.host_chains[0].url.clone(),
+                        reqwest::Client::new(),
+                    ),
+                }),
+            )]),
+            TestHostBackend::Missing => HashMap::new(),
+        };
         let ciphertext_manager =
             CiphertextManager::disabled(mock_provider.clone(), reqwest::Client::new());
         DecryptionProcessor::new(
             &config,
             MockContextManager,
             mock_provider,
-            acl_contracts,
+            host_chain_backends,
             ciphertext_manager,
         )
     }
@@ -1172,6 +1202,167 @@ mod tests {
                 ownerAddress: owner_address,
             }],
             payload,
+        }
+    }
+
+    fn make_solana_request(sns_ct: &SnsCiphertextMaterial) -> UserDecryptionRequestSolana {
+        let payload = UserDecryptionRequestSolanaPayload {
+            requestValidity: RequestValiditySeconds {
+                startTimestamp: U256::from((Utc::now().timestamp() - 60) as u64),
+                durationSeconds: U256::from(3_600),
+            },
+            ..Default::default()
+        };
+        UserDecryptionRequestSolana {
+            decryptionId: U256::from(1),
+            snsCtMaterials: vec![sns_ct.clone()],
+            handles: vec![HandleEntry {
+                handle: sns_ct.ctHandle,
+                contractAddress: Address::ZERO,
+                ownerAddress: Address::ZERO,
+            }],
+            payload,
+        }
+    }
+
+    #[tokio::test]
+    async fn public_decryption_dispatches_to_solana_backend() {
+        let sns_ct = rand_sns_ct();
+        let processor =
+            setup_test_processor_with_backend(Asserter::new(), &sns_ct, TestHostBackend::Solana);
+
+        let result = processor
+            .check_ciphertexts_allowed_for_public_decryption(&[sns_ct], &[0])
+            .await
+            .map_err(RequestCheckError::record);
+
+        match result {
+            Err(ProcessingError::Irrecoverable(error)) => {
+                assert!(
+                    error
+                        .to_string()
+                        .contains("requires a PublicDecryptLeaf MMR proof")
+                );
+            }
+            other => panic!("expected Solana public-decrypt rejection, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_user_decryption_rejects_solana_backend() {
+        let sns_ct = rand_sns_ct();
+        let processor =
+            setup_test_processor_with_backend(Asserter::new(), &sns_ct, TestHostBackend::Solana);
+        let calldata = userDecryptionRequestCall {
+            ctHandleContractPairs: vec![CtHandleContractPair {
+                ctHandle: sns_ct.ctHandle,
+                contractAddress: rand_address(),
+            }],
+            ..Default::default()
+        }
+        .abi_encode();
+
+        let result = processor
+            .check_ciphertexts_allowed_for_user_decryption(calldata, &[sns_ct], Address::ZERO)
+            .await
+            .map_err(RequestCheckError::record);
+
+        assert_irrecoverable_contains(result, "request requires EVM");
+    }
+
+    #[tokio::test]
+    async fn rfc016_user_decryption_rejects_solana_backend() {
+        let sns_ct = rand_sns_ct();
+        let processor =
+            setup_test_processor_with_backend(Asserter::new(), &sns_ct, TestHostBackend::Solana);
+        let signer = PrivateKeySigner::random();
+        let request = make_v2_request(
+            &sns_ct,
+            signer.address(),
+            signer.address(),
+            &signer,
+            vec![],
+            -60,
+            3_600,
+        );
+
+        let result = processor
+            .check_user_decryption_request_v2(&request)
+            .await
+            .map_err(RequestCheckError::record);
+
+        assert_irrecoverable_contains(result, "request requires EVM");
+    }
+
+    #[tokio::test]
+    async fn solana_user_decryption_rejects_evm_backend() {
+        let sns_ct = rand_sns_ct();
+        let processor = setup_test_processor(Asserter::new(), &sns_ct);
+        let request = make_solana_request(&sns_ct);
+
+        let result = processor
+            .check_user_decryption_request_solana(&request)
+            .await
+            .map_err(RequestCheckError::record);
+
+        assert_irrecoverable_contains(result, "request requires Solana");
+    }
+
+    #[tokio::test]
+    async fn unknown_backend_is_recoverable_for_all_decryption_families() {
+        let sns_ct = rand_sns_ct();
+        let processor =
+            setup_test_processor_with_backend(Asserter::new(), &sns_ct, TestHostBackend::Missing);
+        let calldata = userDecryptionRequestCall {
+            ctHandleContractPairs: vec![CtHandleContractPair {
+                ctHandle: sns_ct.ctHandle,
+                contractAddress: rand_address(),
+            }],
+            ..Default::default()
+        }
+        .abi_encode();
+        let signer = PrivateKeySigner::random();
+        let evm_v2_request = make_v2_request(
+            &sns_ct,
+            signer.address(),
+            signer.address(),
+            &signer,
+            vec![],
+            -60,
+            3_600,
+        );
+        let solana_request = make_solana_request(&sns_ct);
+
+        let public = processor
+            .check_ciphertexts_allowed_for_public_decryption(std::slice::from_ref(&sns_ct), &[0])
+            .await
+            .map_err(RequestCheckError::record);
+        let legacy = processor
+            .check_ciphertexts_allowed_for_user_decryption(
+                calldata,
+                std::slice::from_ref(&sns_ct),
+                Address::ZERO,
+            )
+            .await
+            .map_err(RequestCheckError::record);
+        let evm_v2 = processor
+            .check_user_decryption_request_v2(&evm_v2_request)
+            .await
+            .map_err(RequestCheckError::record);
+        let solana = processor
+            .check_user_decryption_request_solana(&solana_request)
+            .await
+            .map_err(RequestCheckError::record);
+
+        for result in [public, legacy, evm_v2, solana] {
+            match result {
+                Err(ProcessingError::Recoverable(error)) => assert!(
+                    error
+                        .to_string()
+                        .contains("No host-chain ACL backend configured")
+                ),
+                other => panic!("expected recoverable unknown-backend error, got {other:?}"),
+            }
         }
     }
 

@@ -21,7 +21,7 @@ use kms_worker::core::{
     Config, CtAttestationConfig, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
     event_processor::{
         CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-        KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
+        HostChainAclBackend, KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
     },
 };
 use sqlx::{Pool, Postgres};
@@ -66,11 +66,15 @@ where
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
     let context_manager = DbContextManager::new(db.clone(), &config, provider.clone());
+    let host_chain_backends = acl_contracts_mock
+        .into_iter()
+        .map(|(chain_id, acl)| (chain_id, HostChainAclBackend::Evm(acl)))
+        .collect();
     let decryption_processor = DecryptionProcessor::new(
         &config,
         context_manager.clone(),
         provider.clone(),
-        acl_contracts_mock,
+        host_chain_backends,
         ciphertext_manager,
     );
     let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);

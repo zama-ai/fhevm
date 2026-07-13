@@ -279,7 +279,8 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
     }
 }
 
-fn assert_ternary_operand_types(
+/// Checks ternary operand metadata against the declared result type.
+pub fn assert_ternary_operand_types(
     control: [u8; 32],
     if_true: [u8; 32],
     if_false: [u8; 32],
