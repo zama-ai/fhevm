@@ -179,7 +179,9 @@ const runScenarioAction = async (
       }
 
       if (!initialPlan.ready && options.prepare) {
-        const prepared = await preparePoolRequirements({
+        // preparePoolRequirements throws when the re-inspected live plan is
+        // not ready, so a returning call is always a ready plan.
+        await preparePoolRequirements({
           env,
           scenarios: [scenario],
           artifactDir: outputDir,
@@ -196,9 +198,6 @@ const runScenarioAction = async (
             });
           },
         });
-        if (!prepared.plan.ready) {
-          throw new Error("Pool preparation finished without a ready live plan.");
-        }
       }
 
       signal.throwIfAborted();
@@ -332,7 +331,9 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
         });
         for (const line of formatPoolPlan(initial)) logger.info(line);
         signal.throwIfAborted();
-        const result = await preparePoolRequirements({
+        // preparePoolRequirements throws when the re-inspected live plan is
+        // not ready, so a returning call is always a ready plan.
+        await preparePoolRequirements({
           env,
           scenarios: [resolved],
           artifactDir,
@@ -350,7 +351,6 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
           },
         });
         logger.success(`Pool preparation complete; artifacts: ${artifactDir}`);
-        if (!result.plan.ready) throw new Error("Pool preparation did not produce a ready plan.");
       },
     );
   });

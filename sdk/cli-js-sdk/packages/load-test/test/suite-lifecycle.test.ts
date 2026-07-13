@@ -330,23 +330,24 @@ describe("runSuite interruption", () => {
     )).toMatchObject({ status: "failed", passed: false });
   });
 
-  it("refuses execution when preparation reports residual work", async () => {
+  it("trusts a ready plan from preparation and proceeds to execution", async () => {
     mocks.inspectPoolRequirements.mockResolvedValueOnce(blockedPlan);
     mocks.preparePoolRequirements.mockImplementationOnce(async (options) => {
       await options.beforeActions?.(blockedPlan);
       return {
-        plan: blockedPlan,
-        preparation: { status: "failed", finalReady: false },
+        plan: readyPlan,
+        preparation: { status: "completed", finalReady: true },
       };
     });
     const suite = suiteSchema.parse({
-      name: "residual", entries: [{ scenario: "open-steady" }], pauseSec: 0,
+      name: "prepared", entries: [{ scenario: "open-steady" }], pauseSec: 0,
     });
 
-    await expect(runSuite({
-      env: env(dir), suite, outputRoot: join(dir, "residual"), prepare: true,
-    })).rejects.toThrow(/residual work/);
-    expect(mocks.executeRun).not.toHaveBeenCalled();
+    const result = await runSuite({
+      env: env(dir), suite, outputRoot: join(dir, "prepared"), prepare: true,
+    });
+    expect(result.status).toBe("completed");
+    expect(mocks.executeRun).toHaveBeenCalledOnce();
   });
 
   it("blocks an ordinary run without mutating when preparation is required", async () => {

@@ -222,6 +222,8 @@ const executeSuiteLifecycle = async (
           logger.warn(blockedReason);
         } else {
           try {
+            // preparePoolRequirements throws when the re-inspected live plan
+            // is not ready, so a returning call is always a ready plan.
             const prepared = await preparePoolRequirements({
               env,
               scenarios: resolved.map((entry) => entry.scenario),
@@ -244,11 +246,6 @@ const executeSuiteLifecycle = async (
             } else {
               throw error;
             }
-          }
-          if (!interrupted && !plan.ready) {
-            throw new Error(
-              "Pool preparation completed with residual work; refusing suite execution.",
-            );
           }
         }
       } else {
@@ -472,10 +469,9 @@ export const prepareSuite = async (
         signal: options.signal,
       }),
     });
+    // preparePoolRequirements throws when the re-inspected live plan is not
+    // ready, so a returning call is always a ready plan.
     ready = prepared.plan.ready;
-    if (!ready) {
-      throw new Error("Pool preparation completed with residual work.");
-    }
   } catch (error) {
     operationError = error;
     interrupted = isAbortError(error);
