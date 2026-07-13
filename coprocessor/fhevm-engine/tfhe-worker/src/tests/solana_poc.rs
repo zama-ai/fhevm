@@ -171,12 +171,7 @@ struct TransferOutputAccounts {
     transferred: Pubkey,
 }
 
-fn seed_host_config(
-    svm: &mut LiteSVM,
-    program_id: Pubkey,
-    admin: Pubkey,
-    input_verifier_authority: Pubkey,
-) -> Pubkey {
+fn seed_host_config(svm: &mut LiteSVM, program_id: Pubkey, admin: Pubkey) -> Pubkey {
     let (host_config, bump) = Pubkey::find_program_address(&[host::HOST_CONFIG_SEED], &program_id);
     svm.set_account(
         host_config,
@@ -185,7 +180,6 @@ fn seed_host_config(
             data: serialized_account(HostConfig {
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
-                input_verifier_authority,
                 // Coprocessor `fromExternal` verifier: transfers bind the amount via a
                 // secp256k1 EIP-712 attestation that fhe_eval re-verifies in-frame.
                 gateway_chain_id: SECP_GATEWAY_CHAIN_ID,
@@ -193,7 +187,6 @@ fn seed_host_config(
                 coprocessor_signer: secp_evm_address(&coprocessor_signing_key()),
                 decryption_contract: [0u8; 20],
                 current_kms_context_id: 0,
-                material_authority: input_verifier_authority,
                 paused: false,
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: 0,
@@ -248,7 +241,7 @@ fn token_fixture() -> TokenFixture {
     let underlying_mint = Keypair::new();
     svm.airdrop(&alice.pubkey(), 2_000_000_000).unwrap();
     svm.airdrop(&bob.pubkey(), 1_000_000_000).unwrap();
-    let host_config = seed_host_config(&mut svm, host_program_id, alice.pubkey(), alice.pubkey());
+    let host_config = seed_host_config(&mut svm, host_program_id, alice.pubkey());
     create_spl_mint(&mut svm, &alice, &underlying_mint, 6);
     let compute_signer = token::compute_signer_address(mint.pubkey()).0;
     let total_supply_authority = token::total_supply_authority_address(mint.pubkey()).0;

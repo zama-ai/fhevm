@@ -12,8 +12,6 @@ pub struct HostConfig {
     pub admin: Pubkey,
     /// Host-chain id included in handle derivation.
     pub chain_id: u64,
-    /// Configured authority for input verification paths.
-    pub input_verifier_authority: Pubkey,
     /// EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators.
     pub gateway_chain_id: u64,
     /// EVM `InputVerification` contract address: the EIP-712 verifying contract for
@@ -29,8 +27,6 @@ pub struct HostConfig {
     /// signer set + thresholds live in the `KmsContext` PDA at this id; 0 means none
     /// defined yet. Updated by `define_kms_context`.
     pub current_kms_context_id: u64,
-    /// Configured authority for material-commitment paths.
-    pub material_authority: Pubkey,
     /// Pauses production-shaped host instructions when true.
     pub paused: bool,
     /// Enables deny-list checks for persistent grant authorities.
@@ -50,9 +46,7 @@ pub struct HostConfig {
 }
 
 impl HostConfig {
-    // + max_hcu_per_tx (8) + max_hcu_depth_per_tx (8): 191 -> 207.
-    // + hcu_block_cap_per_app (8): 207 -> 215.
-    pub const SPACE: usize = 32 + 8 + 32 + 8 + 20 + 20 + 20 + 8 + 32 + 1 + 1 + 8 + 8 + 8 + 8 + 1;
+    pub const SPACE: usize = 32 + 8 + 8 + 20 + 20 + 20 + 8 + 1 + 1 + 8 + 8 + 8 + 8 + 1;
 }
 
 #[cfg(test)]
@@ -60,27 +54,22 @@ mod tests {
     use super::*;
     use anchor_lang::AccountSerialize;
 
-    // After removing the three PoC-only fields, the per-app block cap still grows `HostConfig`
-    // by exactly one u64 (8 bytes): SPACE goes 207 -> 215. The cap value encodes "unrestricted"
-    // and "ban", so no extra bool byte. A serialized account must be exactly `8 + SPACE`; a short
-    // SPACE would truncate the singleton.
+    // Removing the two inert authority pubkeys shrinks the account by 64 bytes. A serialized
+    // account must be exactly `8 + SPACE`; a short SPACE would truncate the singleton.
     #[test]
-    fn host_config_space_is_215_after_poc_field_removal() {
-        // The prior SPACE was 241 (all fields through the two per-frame HCU limits).
-        const PRIOR_SPACE: usize = 207;
-        assert_eq!(HostConfig::SPACE, PRIOR_SPACE + 8);
-        assert_eq!(HostConfig::SPACE, 215);
+    fn host_config_space_is_151_after_dead_authority_removal() {
+        const PRIOR_SPACE: usize = 215;
+        assert_eq!(HostConfig::SPACE, PRIOR_SPACE - 64);
+        assert_eq!(HostConfig::SPACE, 151);
 
         let cfg = HostConfig {
             admin: Pubkey::new_unique(),
             chain_id: 1,
-            input_verifier_authority: Pubkey::new_unique(),
             gateway_chain_id: 0,
             input_verification_contract: [0u8; 20],
             coprocessor_signer: [0u8; 20],
             decryption_contract: [0u8; 20],
             current_kms_context_id: 0,
-            material_authority: Pubkey::new_unique(),
             paused: false,
             grant_deny_list_enabled: false,
             max_hcu_per_tx: 0,

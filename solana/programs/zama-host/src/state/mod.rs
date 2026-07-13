@@ -35,8 +35,6 @@ pub use crate::constants::*;
 pub struct InitializeHostConfigArgs {
     /// Host-chain id encoded into newly derived handles.
     pub chain_id: u64,
-    /// Authority used by signed encrypted-input bind paths.
-    pub input_verifier_authority: Pubkey,
     /// EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators.
     pub gateway_chain_id: u64,
     /// EVM `InputVerification` contract address (EIP-712 verifying contract).
@@ -45,8 +43,6 @@ pub struct InitializeHostConfigArgs {
     pub coprocessor_signer: [u8; 20],
     /// EVM `Decryption` contract address (EIP-712 verifying contract for KMS certs).
     pub decryption_contract: [u8; 20],
-    /// Authority allowed to commit ciphertext material readiness.
-    pub material_authority: Pubkey,
     /// Whether persistent grants must include a deny-list witness.
     pub grant_deny_list_enabled: bool,
 }

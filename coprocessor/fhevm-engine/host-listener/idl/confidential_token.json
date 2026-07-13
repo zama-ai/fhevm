@@ -3874,13 +3874,6 @@
             "type": "u64"
           },
           {
-            "name": "input_verifier_authority",
-            "docs": [
-              "Configured authority for input verification paths."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "gateway_chain_id",
             "docs": [
               "EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators."
@@ -3934,13 +3927,6 @@
               "defined yet. Updated by `define_kms_context`."
             ],
             "type": "u64"
-          },
-          {
-            "name": "material_authority",
-            "docs": [
-              "Configured authority for material-commitment paths."
-            ],
-            "type": "pubkey"
           },
           {
             "name": "paused",

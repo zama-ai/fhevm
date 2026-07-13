@@ -39,10 +39,6 @@ pub struct HostConfigInitializedEvent {
     pub admin: Pubkey,
     /// Host-chain id used by handle derivation.
     pub chain_id: u64,
-    /// Configured input verifier authority.
-    pub input_verifier_authority: Pubkey,
-    /// Configured material commitment authority.
-    pub material_authority: Pubkey,
 }
 
 /// Emitted when host config flags change.

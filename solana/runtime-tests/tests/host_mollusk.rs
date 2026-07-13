@@ -148,13 +148,11 @@ fn host_config_account_with_flags(
             data: serialized_account(HostConfig {
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
-                input_verifier_authority: admin,
                 gateway_chain_id: GATEWAY_CHAIN_ID,
                 input_verification_contract: INPUT_VERIFICATION_CONTRACT,
                 coprocessor_signer: [0u8; 20],
                 decryption_contract: DECRYPTION_CONTRACT,
                 current_kms_context_id: 0,
-                material_authority: admin,
                 paused,
                 grant_deny_list_enabled,
                 max_hcu_per_tx: 0,
@@ -3078,12 +3076,10 @@ fn mollusk_initialize_host_config_defaults_block_cap_to_unrestricted() {
     let (host_config, _) = host::host_config_address();
     let args = host::InitializeHostConfigArgs {
         chain_id: host::SOLANA_POC_CHAIN_ID,
-        input_verifier_authority: Pubkey::new_unique(),
         gateway_chain_id: 0,
         input_verification_contract: [0u8; 20],
         coprocessor_signer: [0u8; 20],
         decryption_contract: [0u8; 20],
-        material_authority: Pubkey::new_unique(),
         grant_deny_list_enabled: false,
     };
     let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);

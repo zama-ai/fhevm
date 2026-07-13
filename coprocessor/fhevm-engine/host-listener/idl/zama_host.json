@@ -3587,13 +3587,6 @@
             "type": "u64"
           },
           {
-            "name": "input_verifier_authority",
-            "docs": [
-              "Configured authority for input verification paths."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "gateway_chain_id",
             "docs": [
               "EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators."
@@ -3647,13 +3640,6 @@
               "defined yet. Updated by `define_kms_context`."
             ],
             "type": "u64"
-          },
-          {
-            "name": "material_authority",
-            "docs": [
-              "Configured authority for material-commitment paths."
-            ],
-            "type": "pubkey"
           },
           {
             "name": "paused",
@@ -3744,20 +3730,6 @@
               "Host-chain id used by handle derivation."
             ],
             "type": "u64"
-          },
-          {
-            "name": "input_verifier_authority",
-            "docs": [
-              "Configured input verifier authority."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "material_authority",
-            "docs": [
-              "Configured material commitment authority."
-            ],
-            "type": "pubkey"
           }
         ]
       }
@@ -3852,13 +3824,6 @@
             "type": "u64"
           },
           {
-            "name": "input_verifier_authority",
-            "docs": [
-              "Authority used by signed encrypted-input bind paths."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "gateway_chain_id",
             "docs": [
               "EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators."
@@ -3900,13 +3865,6 @@
                 20
               ]
             }
-          },
-          {
-            "name": "material_authority",
-            "docs": [
-              "Authority allowed to commit ciphertext material readiness."
-            ],
-            "type": "pubkey"
           },
           {
             "name": "grant_deny_list_enabled",
