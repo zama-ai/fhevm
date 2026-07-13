@@ -1,8 +1,15 @@
 import type { LatencyStats } from "./histogram";
 import type { FlowReport, Report, TargetReport } from "./schema";
 import type { CounterDelta, GaugePeak, HistogramQuantiles } from "./prom-analysis";
+import { MIN_DISPATCH_HEALTH_SAMPLES } from "../collectors/injector-runtime";
+import { plannedRequestCount } from "../scenario/schema";
 
 /** Renders report.json into the human-readable report.md. */
+
+// Percentiles from tiny samples look precise while mostly restating individual
+// observations. Below this boundary the Markdown uses n/mean/max descriptions;
+// report.json still retains every computed percentile for machine consumers.
+const DISTRIBUTION_MIN_COUNT = 20;
 
 const ms = (value: number | undefined): string =>
   value === undefined ? "-" : `${Math.round(value).toString()} ms`;
@@ -58,12 +65,68 @@ const boundedCount = (value: number, lowerBound: boolean | undefined): string =>
 const boundedRate = (value: number | undefined, lowerBound: boolean | undefined): string =>
   value === undefined ? "-" : `${lowerBound ? "at least " : ""}${value.toString()}/s`;
 
+const compactList = (values: readonly string[], limit = 6): string => {
+  if (values.length === 0) return "none";
+  const shown = values.slice(0, limit);
+  const remaining = values.length - shown.length;
+  return `${shown.join(", ")}${remaining > 0 ? `, +${remaining.toString()} more` : ""}`;
+};
+
+const signalLabel = (signal: string): string =>
+  signal
+    .replace(/^v2/, "v2 ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase();
+
+const metricsCoverage = (target: TargetReport): string | undefined => {
+  const metrics = target.metrics;
+  if (!metrics) return undefined;
+  const collection = metrics.collection ?? { successfulScrapes: 0, failedScrapes: 0 };
+  if (collection.successfulScrapes === 0) {
+    return `${target.target} unavailable (0/${(collection.successfulScrapes + collection.failedScrapes).toString()} scrapes)`;
+  }
+  const capabilities = Object.entries(metrics.capabilities.signals);
+  const available = capabilities.filter(([, capability]) => capability.available).length;
+  return `${target.target} ${available === capabilities.length ? "complete" : "partial"} (${available.toString()}/${capabilities.length.toString()} mapped signals)`;
+};
+
+const executiveLatencyEvidence = (report: Report): string | undefined => {
+  const samples = report.targets.flatMap((target) =>
+    target.flows.map((flow) => ({
+      label: `${target.target}/${flow.flow}`,
+      count: flow.e2eLatency?.count ?? 0,
+    })),
+  );
+  if (samples.length === 0 || samples.every((sample) => sample.count >= DISTRIBUTION_MIN_COUNT)) {
+    return undefined;
+  }
+  const summary = compactList(samples.map((sample) => `${sample.label} n=${sample.count.toString()}`));
+  return `descriptive only (${summary}); fewer than ${DISTRIBUTION_MIN_COUNT.toString()} successful e2e observations do not support a percentile performance conclusion`;
+};
+
+const observedLatency = (stats: LatencyStats | undefined): string => {
+  if (!stats) return "-";
+  if (stats.count === 1) return `n=1 · observed ${ms(stats.maxMs)}`;
+  return `n=${stats.count.toString()} · mean ${ms(stats.meanMs)} · max ${ms(stats.maxMs)}`;
+};
+
+const percentileLatency = (stats: LatencyStats | undefined): string =>
+  stats
+    ? `n=${stats.count.toString()} · p50 ${ms(stats.p50Ms)} · p90 ${ms(stats.p90Ms)} · p95 ${ms(stats.p95Ms)} · p99 ${ms(stats.p99Ms)}`
+    : "-";
+
+const latencyEvidence = (stats: LatencyStats | undefined): string =>
+  stats && stats.count >= DISTRIBUTION_MIN_COUNT
+    ? percentileLatency(stats)
+    : observedLatency(stats);
+
 const pushCounterMetrics = (
   lines: string[], title: string, entries: readonly CounterDelta[],
 ): void => {
-  if (entries.length === 0) return;
+  const observed = entries.filter((entry) => entry.delta !== 0);
+  if (observed.length === 0) return;
   lines.push(`#### ${title}`, "", "| Labels | Delta | Lower bound? |", "| --- | ---: | --- |");
-  for (const entry of entries) {
+  for (const entry of observed) {
     lines.push(`| ${metricLabels(entry.labels)} | ${entry.delta.toString()} | ${estimateNote(entry)} |`);
   }
   lines.push("");
@@ -72,10 +135,14 @@ const pushCounterMetrics = (
 const pushHistogramMetrics = (
   lines: string[], title: string, entries: readonly HistogramQuantiles[],
 ): void => {
-  if (entries.length === 0) return;
-  lines.push(`#### ${title}`, "", "| Labels | Count | p50 | p90 | p95 | p99 | Lower bound? |", "| --- | ---: | ---: | ---: | ---: | ---: | --- |");
-  for (const entry of entries) {
-    lines.push(`| ${metricLabels(entry.labels)} | ${entry.count.toString()} | ${seconds(entry.p50)} | ${seconds(entry.p90)} | ${seconds(entry.p95)} | ${seconds(entry.p99)} | ${estimateNote(entry)} |`);
+  const observed = entries.filter((entry) => entry.count > 0);
+  if (observed.length === 0) return;
+  lines.push(`#### ${title}`, "", "| Labels | Evidence | Latency | Lower bound? |", "| --- | --- | --- | --- |");
+  for (const entry of observed) {
+    const latency = entry.count >= DISTRIBUTION_MIN_COUNT
+      ? `p50 ${seconds(entry.p50)} · p90 ${seconds(entry.p90)} · p95 ${seconds(entry.p95)} · p99 ${seconds(entry.p99)}`
+      : "too few observations for a distribution";
+    lines.push(`| ${metricLabels(entry.labels)} | n=${entry.count.toString()} | ${latency} | ${estimateNote(entry)} |`);
   }
   lines.push("");
 };
@@ -83,6 +150,8 @@ const pushHistogramMetrics = (
 const pushGaugeMetrics = (
   lines: string[], title: string, entries: readonly GaugePeak[],
 ): void => {
+  // A zero gauge is an observed state, not an absent signal. In particular,
+  // wallet lease ownership and queue depth are operationally meaningful at 0.
   if (entries.length === 0) return;
   lines.push(`#### ${title}`, "", "| Labels | Peak | Last |", "| --- | ---: | ---: |");
   for (const entry of entries) {
@@ -92,9 +161,7 @@ const pushGaugeMetrics = (
 };
 
 const latencyRow = (label: string, stats: LatencyStats | undefined): string =>
-  stats
-    ? `| ${label} | ${stats.count.toString()} | ${ms(stats.meanMs)} | ${ms(stats.p50Ms)} | ${ms(stats.p90Ms)} | ${ms(stats.p95Ms)} | ${ms(stats.p99Ms)} | ${ms(stats.maxMs)} |`
-    : `| ${label} | - | - | - | - | - | - | - |`;
+  `| ${label} | ${latencyEvidence(stats)} |`;
 
 const stageTarget = (
   stage: NonNullable<TargetReport["clientStages"]>[number]["stage"],
@@ -110,10 +177,91 @@ const stageTarget = (
 const targetLabel = (target: TargetReport): string =>
   `${target.target}: ${target.url}${target.apiPrefix ? ` (${target.apiPrefix})` : ""}`;
 
+const injectorAssessment = (report: Report): string | undefined => {
+  const injector = report.injector;
+  if (!injector) return undefined;
+  const validity: Readonly<Record<string, string>> = {
+    healthy: "valid",
+    degraded: "use with caution",
+    unhealthy: "invalid",
+    indeterminate: "not established",
+    unavailable: "unknown",
+  };
+  return `${validity[injector.health.verdict] ?? "unknown"} (${injector.health.verdict})` +
+    (injector.health.reasons.length > 0 ? ` — ${injector.health.reasons.join(" ")}` : "");
+};
+
+const pushInjectorAppendix = (lines: string[], report: Report): void => {
+  const injector = report.injector;
+  if (!injector) return;
+  lines.push("## Appendix: Injector Runtime Diagnostics");
+  lines.push("");
+  lines.push(`Assessment: **${injector.health.verdict}**. ${injector.health.reasons.join(" ")}`);
+  lines.push("");
+  lines.push("| Signal | Value |");
+  lines.push("| --- | ---: |");
+  lines.push(`| Runtime samples | ${injector.sampleCount.toString()} |`);
+  if (injector.healthSampleCount !== undefined) {
+    lines.push(`| Runtime health samples | ${injector.healthSampleCount.toString()} |`);
+  }
+  const dispatchLags = injector.scheduler.dispatchLagMs;
+  if (dispatchLags.length >= MIN_DISPATCH_HEALTH_SAMPLES) {
+    lines.push(`| Dispatch lag p95 | ${ms(injector.dispatchLagP95Ms)} |`);
+    lines.push(`| Dispatch lag p99 | ${ms(injector.dispatchLagP99Ms)} |`);
+  } else if (dispatchLags.length > 0) {
+    const max = Math.max(...dispatchLags);
+    if (dispatchLags.length === 1) {
+      lines.push(`| Dispatch lag observations | n=1 · observed ${ms(max)} |`);
+    } else {
+      const mean = dispatchLags.reduce((total, value) => total + value, 0) / dispatchLags.length;
+      lines.push(
+        `| Dispatch lag observations | n=${dispatchLags.length.toString()} · mean ${ms(mean)} · max ${ms(max)} |`,
+      );
+    }
+  } else {
+    lines.push("| Dispatch lag observations | none |");
+  }
+  lines.push(`| Peak event-loop lag p99 | ${ms(injector.maxEventLoopLagP99Ms)} |`);
+  lines.push(`| Peak event-loop utilization | ${percent(injector.peakEventLoopUtilization)} |`);
+  lines.push(`| Peak RSS | ${mib(injector.peakRssBytes)} |`);
+  lines.push(`| CPU user | ${injector.cpuUserMicros?.toString() ?? "-"} µs |`);
+  lines.push(`| CPU system | ${injector.cpuSystemMicros?.toString() ?? "-"} µs |`);
+  lines.push(`| GC count | ${injector.gcCount.toString()} |`);
+  lines.push(`| GC duration | ${ms(injector.gcDurationMs)} |`);
+  lines.push(`| Peak inflight | ${injector.scheduler.peakInflight.toString()} |`);
+  lines.push(`| Backpressure events | ${injector.scheduler.backpressureEvents.toString()} |`);
+  lines.push(`| Dropped | ${injector.scheduler.dropped.toString()} |`);
+  lines.push(`| Abandoned | ${injector.scheduler.abandoned.toString()} |`);
+  lines.push("");
+};
+
 const flowByName = (
   target: TargetReport | undefined,
   flow: string,
 ): FlowReport | undefined => target?.flows.find((candidate) => candidate.flow === flow);
+
+const correctnessSummary = (report: Report): string => {
+  const flows = report.targets.flatMap((target) => target.flows);
+  const submitted = flows.reduce((total, flow) => total + flow.submitted, 0);
+  const succeeded = flows.reduce((total, flow) => total + flow.succeeded, 0);
+  const verifyFailed = flows.reduce((total, flow) => total + flow.verifyFailed, 0);
+  const passed = submitted > 0 && succeeded === submitted && verifyFailed === 0;
+  return `${passed ? "PASS" : "FAIL"} — ${succeeded.toString()}/${submitted.toString()} target ` +
+    `request${submitted === 1 ? "" : "s"} succeeded; ${verifyFailed.toString()} verification ` +
+    `failure${verifyFailed === 1 ? "" : "s"}`;
+};
+
+const isFullySuccessfulDualReport = (report: Report): boolean => {
+  if (!report.targets.some((target) => target.target === "B")) return false;
+  return report.targets.every((target) =>
+    target.flows.length > 0 && target.flows.every((flow) =>
+      flow.submitted > 0 &&
+      flow.succeeded === flow.submitted &&
+      flow.errorRate === 0 &&
+      report.targets.every((candidate) => flowByName(candidate, flow.flow) !== undefined)
+    ),
+  );
+};
 
 const latencyMetric = (
   stats: LatencyStats | undefined,
@@ -162,6 +310,10 @@ const pushSideBySideSummary = (lines: string[], report: Report): void => {
 
   lines.push("## Client Latency Comparison");
   lines.push("");
+  lines.push(
+    `Percentile distributions are shown only with at least ${DISTRIBUTION_MIN_COUNT.toString()} observations; smaller samples show observed mean/max values.`,
+  );
+  lines.push("");
   lines.push("| Flow | Metric | A | B | B - A | B vs A |");
   lines.push("| --- | --- | ---: | ---: | ---: | ---: |");
   for (const flow of flows) {
@@ -177,27 +329,35 @@ const pushSideBySideSummary = (lines: string[], report: Report): void => {
         `| ${flow} | ${metricName} | ${ms(aValue)} | ${ms(bValue)} | ${comparison.delta} | ${comparison.relative} |`,
       );
     };
-    for (const metric of ["p50Ms", "p90Ms", "p95Ms", "p99Ms"] as const) {
-      pushLatency(
-        `submit ${metric.replace("Ms", "")}`,
-        latencyMetric(aFlow?.submitLatency, metric),
-        latencyMetric(bFlow?.submitLatency, metric),
-      );
-    }
-    for (const metric of ["p50Ms", "p90Ms", "p95Ms", "p99Ms"] as const) {
-      pushLatency(
-        `e2e ${metric.replace("Ms", "")}`,
-        latencyMetric(aFlow?.e2eLatency, metric),
-        latencyMetric(bFlow?.e2eLatency, metric),
-      );
+    for (const [phase, aStats, bStats] of [
+      ["submit", aFlow?.submitLatency, bFlow?.submitLatency],
+      ["e2e", aFlow?.e2eLatency, bFlow?.e2eLatency],
+    ] as const) {
+      const enough =
+        (aStats?.count ?? 0) >= DISTRIBUTION_MIN_COUNT &&
+        (bStats?.count ?? 0) >= DISTRIBUTION_MIN_COUNT;
+      if (!enough) {
+        lines.push(
+          `| ${flow} | ${phase} descriptive (n=${aStats?.count.toString() ?? "-"}/${bStats?.count.toString() ?? "-"}) | ` +
+            `${latencyEvidence(aStats)} | ${latencyEvidence(bStats)} | - | - |`,
+        );
+        continue;
+      }
+      for (const metric of ["p50Ms", "p90Ms", "p95Ms", "p99Ms"] as const) {
+        pushLatency(
+          `${phase} ${metric.replace("Ms", "")}`,
+          latencyMetric(aStats, metric),
+          latencyMetric(bStats, metric),
+        );
+      }
     }
   }
   lines.push("");
 
   lines.push("## Polling Comparison");
   lines.push("");
-  lines.push("| Flow | A mean | B mean | Delta | A p95 | B p95 | Delta |");
-  lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: |");
+  lines.push("| Flow | Evidence | A mean | B mean | Delta | A tail | B tail | Delta |");
+  lines.push("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |");
   for (const flow of flows) {
     const aFlow = flowByName(a, flow);
     const bFlow = flowByName(b, flow);
@@ -206,16 +366,20 @@ const pushSideBySideSummary = (lines: string[], report: Report): void => {
       bFlow?.pollsPerRequest?.mean,
       signedDecimal,
     );
-    const p95 = comparisonValues(
-      aFlow?.pollsPerRequest?.p95,
-      bFlow?.pollsPerRequest?.p95,
+    const enough =
+      (aFlow?.pollsPerRequest?.count ?? 0) >= DISTRIBUTION_MIN_COUNT &&
+      (bFlow?.pollsPerRequest?.count ?? 0) >= DISTRIBUTION_MIN_COUNT;
+    const aTail = enough ? aFlow?.pollsPerRequest?.p95 : aFlow?.pollsPerRequest?.max;
+    const bTail = enough ? bFlow?.pollsPerRequest?.p95 : bFlow?.pollsPerRequest?.max;
+    const tail = comparisonValues(
+      aTail,
+      bTail,
       signedDecimal,
     );
     lines.push(
-      `| ${flow} | ${decimal(aFlow?.pollsPerRequest?.mean)} | ` +
+      `| ${flow} | n=${aFlow?.pollsPerRequest?.count.toString() ?? "-"}/${bFlow?.pollsPerRequest?.count.toString() ?? "-"} · ${enough ? "p95" : "observed max"} | ${decimal(aFlow?.pollsPerRequest?.mean)} | ` +
         `${decimal(bFlow?.pollsPerRequest?.mean)} | ${mean.delta} | ` +
-        `${decimal(aFlow?.pollsPerRequest?.p95)} | ` +
-        `${decimal(bFlow?.pollsPerRequest?.p95)} | ${p95.delta} |`,
+        `${decimal(aTail)} | ${decimal(bTail)} | ${tail.delta} |`,
     );
   }
   lines.push("");
@@ -243,32 +407,28 @@ const pushSingleTargetSummary = (
 
   lines.push("## Client Latency");
   lines.push("");
-  lines.push("| Flow | Metric | Value |");
-  lines.push("| --- | --- | ---: |");
+  lines.push(
+    `Percentile distributions are shown only with at least ${DISTRIBUTION_MIN_COUNT.toString()} observations.`,
+  );
+  lines.push("");
+  lines.push("| Flow | Phase | Evidence |");
+  lines.push("| --- | --- | --- |");
   for (const flow of flows) {
     const aFlow = flowByName(a, flow);
-    for (const metric of ["p50Ms", "p90Ms", "p95Ms", "p99Ms"] as const) {
-      lines.push(
-        `| ${flow} | submit ${metric.replace("Ms", "")} | ${ms(latencyMetric(aFlow?.submitLatency, metric))} |`,
-      );
-    }
-    for (const metric of ["p50Ms", "p90Ms", "p95Ms", "p99Ms"] as const) {
-      lines.push(
-        `| ${flow} | e2e ${metric.replace("Ms", "")} | ${ms(latencyMetric(aFlow?.e2eLatency, metric))} |`,
-      );
-    }
+    lines.push(`| ${flow} | submit | ${latencyEvidence(aFlow?.submitLatency)} |`);
+    lines.push(`| ${flow} | e2e | ${latencyEvidence(aFlow?.e2eLatency)} |`);
   }
   lines.push("");
 
   lines.push("## Polling");
   lines.push("");
-  lines.push("| Flow | mean | p95 |");
-  lines.push("| --- | ---: | ---: |");
+  lines.push("| Flow | Evidence | Mean | Tail |");
+  lines.push("| --- | --- | ---: | ---: |");
   for (const flow of flows) {
     const aFlow = flowByName(a, flow);
     lines.push(
-      `| ${flow} | ${decimal(aFlow?.pollsPerRequest?.mean)} | ` +
-        `${decimal(aFlow?.pollsPerRequest?.p95)} |`,
+      `| ${flow} | n=${aFlow?.pollsPerRequest?.count.toString() ?? "-"} · ${(aFlow?.pollsPerRequest?.count ?? 0) >= DISTRIBUTION_MIN_COUNT ? "p95" : "observed max"} | ${decimal(aFlow?.pollsPerRequest?.mean)} | ` +
+        `${decimal((aFlow?.pollsPerRequest?.count ?? 0) >= DISTRIBUTION_MIN_COUNT ? aFlow?.pollsPerRequest?.p95 : aFlow?.pollsPerRequest?.max)} |`,
     );
   }
   lines.push("");
@@ -278,10 +438,6 @@ const pushOutcomeComparison = (lines: string[], report: Report): void => {
   const a = report.targets.find((target) => target.target === "A");
   const b = report.targets.find((target) => target.target === "B");
   if (!b) return;
-  lines.push("## Outcome Comparison");
-  lines.push("");
-  lines.push("| Flow | Outcome | A | B | B - A |");
-  lines.push("| --- | --- | ---: | ---: | ---: |");
   const flows = [
     ...new Set(report.targets.flatMap((target) => target.flows.map((flow) => flow.flow))),
   ].sort();
@@ -294,6 +450,17 @@ const pushOutcomeComparison = (lines: string[], report: Report): void => {
     ["protocol_error", "protocolErrors"],
     ["aborted", "aborted"],
   ] as const;
+  const hasDistinctOutcomeEvidence = flows.some((flow) => {
+    const aFlow = flowByName(a, flow);
+    const bFlow = flowByName(b, flow);
+    return !aFlow || !bFlow || aFlow.succeeded !== bFlow.succeeded ||
+      outcomes.slice(1).some(([, key]) => (aFlow[key] ?? 0) > 0 || (bFlow[key] ?? 0) > 0);
+  });
+  if (!hasDistinctOutcomeEvidence) return;
+  lines.push("## Outcome Comparison");
+  lines.push("");
+  lines.push("| Flow | Outcome | A | B | B - A |");
+  lines.push("| --- | --- | ---: | ---: | ---: |");
   for (const flow of flows) {
     const aFlow = flowByName(a, flow);
     const bFlow = flowByName(b, flow);
@@ -316,23 +483,36 @@ const pushPairComparison = (lines: string[], report: Report): void => {
     "Deltas are client-observed `B - A` for the paired workload item; SDK drivers execute independent target journeys, and e2e values include polling quantization.",
   );
   lines.push("");
-  lines.push("| Flow | Pairs | Both succeeded | A only succeeded | B only succeeded | Both failed | Different outcome | E2E delta mean | p50 | p90 | p95 | p99 | max |");
-  lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+  lines.push(
+    `Percentile deltas require at least ${DISTRIBUTION_MIN_COUNT.toString()} paired successful observations; smaller samples are descriptive only.`,
+  );
+  lines.push("");
+  lines.push("| Flow | Pairs | Both succeeded | A only succeeded | B only succeeded | Both failed | Different outcome | E2E evidence |");
+  lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |");
   for (const flow of report.comparison.flows) {
+    const delta = flow.e2eLatencyDelta;
+    const evidence = !delta
+      ? "no paired success latency"
+      : delta.count === 1
+        ? `n=1 · observed delta ${signed(delta.meanMs, " ms")}`
+        : delta.count < DISTRIBUTION_MIN_COUNT
+          ? `n=${delta.count.toString()} · mean ${signed(delta.meanMs, " ms")} · observed max ${signed(delta.maxMs, " ms")}`
+          : `n=${delta.count.toString()} · mean ${signed(delta.meanMs, " ms")} · p50 ${signed(delta.p50Ms, " ms")} · p90 ${signed(delta.p90Ms, " ms")} · p95 ${signed(delta.p95Ms, " ms")} · p99 ${signed(delta.p99Ms, " ms")} · max ${signed(delta.maxMs, " ms")}`;
     lines.push(
-      `| ${flow.flow} | ${flow.pairs.toString()} | ${flow.bothSucceeded.toString()} | ${flow.aOnlySucceeded.toString()} | ${flow.bOnlySucceeded.toString()} | ${flow.bothFailed.toString()} | ${flow.differentTerminalOutcome.toString()} | ${signed(flow.e2eLatencyDelta?.meanMs, " ms")} | ${signed(flow.e2eLatencyDelta?.p50Ms, " ms")} | ${signed(flow.e2eLatencyDelta?.p90Ms, " ms")} | ${signed(flow.e2eLatencyDelta?.p95Ms, " ms")} | ${signed(flow.e2eLatencyDelta?.p99Ms, " ms")} | ${signed(flow.e2eLatencyDelta?.maxMs, " ms")} |`,
+      `| ${flow.flow} | ${flow.pairs.toString()} | ${flow.bothSucceeded.toString()} | ${flow.aOnlySucceeded.toString()} | ${flow.bOnlySucceeded.toString()} | ${flow.bothFailed.toString()} | ${flow.differentTerminalOutcome.toString()} | ${evidence} |`,
     );
   }
   lines.push("");
 };
 
-const pushTargetDetails = (lines: string[], target: TargetReport): void => {
+const pushTargetDetails = (lines: string[], target: TargetReport, report: Report): void => {
   lines.push(`## Target ${target.target} Details`);
   lines.push("");
   lines.push(`Relayer: ${targetLabel(target)}`);
   lines.push("");
 
-  for (const flow of target.flows) {
+  const suppressSuccessfulDualClientDetail = isFullySuccessfulDualReport(report);
+  for (const flow of suppressSuccessfulDualClientDetail ? [] : target.flows) {
     lines.push(`### ${target.target} ${flow.flow} (${flow.driver})`);
     lines.push("");
     lines.push(
@@ -343,16 +523,18 @@ const pushTargetDetails = (lines: string[], target: TargetReport): void => {
         `error rate ${percent(flow.errorRate)}`,
     );
     lines.push("");
-    lines.push("| Latency | Count | Mean | p50 | p90 | p95 | p99 | Max |");
-    lines.push("| --- | --- | --- | --- | --- | --- | --- | --- |");
+    lines.push("| Latency | Evidence |");
+    lines.push("| --- | --- |");
     lines.push(latencyRow("Submit (POST)", flow.submitLatency));
     lines.push(latencyRow("End-to-end*", flow.e2eLatency));
     lines.push("");
     lines.push("*end-to-end is quantized to the poll interval; relayer-side histograms are poll-free.");
     if (flow.pollsPerRequest) {
       lines.push("");
+      const enough = flow.pollsPerRequest.count >= DISTRIBUTION_MIN_COUNT;
       lines.push(
-        `Polls per request: mean ${flow.pollsPerRequest.mean.toString()}, p95 ${flow.pollsPerRequest.p95.toString()}.`,
+        `Polls per request: n=${flow.pollsPerRequest.count.toString()}, mean ${flow.pollsPerRequest.mean.toString()}, ` +
+          `${enough ? `p95 ${flow.pollsPerRequest.p95.toString()}` : `observed max ${flow.pollsPerRequest.max.toString()}`}.`,
       );
     }
     const errorLabels = Object.entries(flow.byErrorLabel);
@@ -367,16 +549,17 @@ const pushTargetDetails = (lines: string[], target: TargetReport): void => {
     lines.push("");
   }
 
-  if (target.clientStages && target.clientStages.length > 0) {
+  const showClientStages = target.clientStages && target.clientStages.length > 0 &&
+    !(suppressSuccessfulDualClientDetail && target.clientStages.length === 1);
+  if (showClientStages && target.clientStages) {
     lines.push(`### ${target.target} Client Results by Load Stage`);
     lines.push("");
-    lines.push("| Stage | Target | Flow | Driver | Submitted | Error rate | e2e p50 | e2e p90 | e2e p95 | e2e p99 |");
-    lines.push("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |");
+    lines.push("| Stage | Target | Flow | Driver | Submitted | Error rate | E2E evidence |");
+    lines.push("| --- | --- | --- | --- | ---: | ---: | --- |");
     for (const stage of target.clientStages) {
       lines.push(
         `| ${stage.stage.label} | ${stageTarget(stage.stage)} | ${stage.flow} | ${stage.driver} | ` +
-          `${stage.submitted.toString()} | ${percent(stage.errorRate)} | ${ms(stage.e2eLatency?.p50Ms)} | ` +
-          `${ms(stage.e2eLatency?.p90Ms)} | ${ms(stage.e2eLatency?.p95Ms)} | ${ms(stage.e2eLatency?.p99Ms)} |`,
+          `${stage.submitted.toString()} | ${percent(stage.errorRate)} | ${latencyEvidence(stage.e2eLatency)} |`,
       );
     }
     lines.push("");
@@ -385,12 +568,12 @@ const pushTargetDetails = (lines: string[], target: TargetReport): void => {
   if (target.correlation && target.correlation.length > 0) {
     lines.push(`### ${target.target} Poll Quantization`);
     lines.push("");
-    lines.push("| Flow | Matched | Client e2e p50 | Server e2e p50 | Poll overhead p50 | Overhead p95 |");
-    lines.push("| --- | ---: | ---: | ---: | ---: | ---: |");
+    lines.push("| Flow | Matched | Client E2E | Server E2E | Poll overhead |");
+    lines.push("| --- | ---: | --- | --- | --- |");
     for (const c of target.correlation) {
       lines.push(
-        `| ${c.flow} | ${c.matched.toString()} | ${ms(c.clientE2e?.p50Ms)} | ${ms(c.serverE2e?.p50Ms)} | ` +
-          `${ms(c.pollOverhead?.p50Ms)} | ${ms(c.pollOverhead?.p95Ms)} |`,
+        `| ${c.flow} | ${c.matched.toString()} | ${latencyEvidence(c.clientE2e)} | ${latencyEvidence(c.serverE2e)} | ` +
+          `${latencyEvidence(c.pollOverhead)} |`,
       );
     }
     lines.push("");
@@ -399,12 +582,12 @@ const pushTargetDetails = (lines: string[], target: TargetReport): void => {
   if (target.stages && target.stages.length > 0) {
     lines.push(`### ${target.target} Pipeline Stages (database timestamps)`);
     lines.push("");
-    lines.push("| Flow | Stage | Count | Retried | p50 | p90 | p95 | p99 | Max | Share |");
-    lines.push("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+    lines.push("| Flow | Stage | Count | Retried | Evidence | Share |");
+    lines.push("| --- | --- | ---: | ---: | --- | ---: |");
     for (const stage of target.stages) {
       lines.push(
         `| ${stage.flow} | ${stage.stage} | ${stage.stats.count.toString()} | ${stage.retriedCount.toString()} | ` +
-          `${ms(stage.stats.p50Ms)} | ${ms(stage.stats.p90Ms)} | ${ms(stage.stats.p95Ms)} | ${ms(stage.stats.p99Ms)} | ${ms(stage.stats.maxMs)} | ${pct(stage.shareOfE2ePct)} |`,
+          `${latencyEvidence(stage.stats)} | ${pct(stage.shareOfE2ePct)} |`,
       );
     }
     lines.push("");
@@ -417,50 +600,71 @@ const pushTargetDetails = (lines: string[], target: TargetReport): void => {
     const collection = metrics.collection ?? { successfulScrapes: 0, failedScrapes: 0 };
     lines.push(`### ${target.target} Relayer Metrics (run-window deltas)`);
     lines.push("");
-    lines.push(
-      `Scrapes: ${collection.successfulScrapes.toString()} successful, ` +
-        `${collection.failedScrapes.toString()} failed.` +
-        (collection.lastAttemptSucceeded !== undefined
-          ? ` Last attempt: ${collection.lastAttemptSucceeded ? "succeeded" : "failed"}${collection.lastAttemptAt ? ` at ${collection.lastAttemptAt}` : ""}.`
-          : "") +
-        (collection.lastError
-          ? ` Most recent failure${collection.lastFailureAt ? ` at ${collection.lastFailureAt}` : ""}: ${collection.lastError.replace(/\r?\n/g, " ")}`
-          : ""),
-    );
-    lines.push("");
-    lines.push(`Detected profile: **${metrics.capabilities.profile}**.`);
-    lines.push("");
-    if (metrics.capabilities.discoveredFamilies.length > 0) {
-      lines.push(`Retained/discovered families: ${metrics.capabilities.discoveredFamilies.join(", ")}.`);
+    if (collection.successfulScrapes === 0) {
+      const attempts = collection.successfulScrapes + collection.failedScrapes;
+      const failure = (collection.lastError?.replace(/\r?\n/g, " ") ?? "no successful response")
+        .replace(/[.!?]+$/, "");
+      lines.push(
+        `**Unavailable:** 0/${attempts.toString()} scrapes succeeded; ${failure}` +
+          `${collection.lastFailureAt ? ` (last failure ${collection.lastFailureAt})` : ""}. ` +
+          `No relayer-side performance, saturation, or resource conclusions were drawn for target ${target.target}.`,
+      );
       lines.push("");
-    }
-    lines.push("| Capability | Available | Family / reason |");
-    lines.push("| --- | --- | --- |");
-    for (const [signal, capability] of Object.entries(metrics.capabilities.signals)) {
-      lines.push(`| ${signal} | ${capability.available ? "yes" : "no"} | ${capability.family ?? capability.reason ?? "-"} |`);
-    }
-    lines.push("");
-    if (metrics.e2eDurations.length > 0) {
-      lines.push("| Flow | Terminal status | Count | p50 | p90 | p95 | p99 | Lower bound? |");
-      lines.push("| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |");
-      for (const entry of metrics.e2eDurations) {
+    } else {
+      const capabilities = Object.entries(metrics.capabilities.signals);
+      const available = capabilities
+        .filter(([, capability]) => capability.available)
+        .map(([signal]) => signalLabel(signal));
+      const missing = capabilities
+        .filter(([, capability]) => !capability.available)
+        .map(([signal]) => signalLabel(signal));
+      lines.push(
+        `Collection: ${collection.failedScrapes > 0 ? "**partial**" : "successful"} ` +
+          `(${collection.successfulScrapes.toString()} successful, ${collection.failedScrapes.toString()} failed scrape(s)); ` +
+          `profile **${metrics.capabilities.profile}**.`,
+      );
+      lines.push(`Available coverage: ${compactList(available)}.`);
+      lines.push(`Missing coverage: ${compactList(missing)}. Full capability reasons remain in report.json.`);
+      if (collection.lastError) {
         lines.push(
-          `| ${entry.labels.flow ?? "?"} | ${entry.labels.terminal_status ?? "?"} | ${entry.count.toString()} | ` +
-            `${seconds(entry.p50)} | ${seconds(entry.p90)} | ${seconds(entry.p95)} | ${seconds(entry.p99)} | ${estimateNote(entry)} |`,
+          `Most recent scrape failure${collection.lastFailureAt ? ` at ${collection.lastFailureAt}` : ""}: ` +
+            `${collection.lastError.replace(/\r?\n/g, " ")}`,
         );
       }
       lines.push("");
+    if (metrics.e2eDurations.length > 0) {
+      const entries = metrics.e2eDurations.filter((entry) => entry.count > 0);
+      if (entries.length > 0) {
+      lines.push("| Flow | Terminal status | Evidence | Latency | Lower bound? |");
+      lines.push("| --- | --- | --- | --- | --- |");
+      for (const entry of entries) {
+        const latency = entry.count >= DISTRIBUTION_MIN_COUNT
+          ? `p50 ${seconds(entry.p50)} · p90 ${seconds(entry.p90)} · p95 ${seconds(entry.p95)} · p99 ${seconds(entry.p99)}`
+          : "too few observations for a distribution";
+        lines.push(
+          `| ${entry.labels.flow ?? "?"} | ${entry.labels.terminal_status ?? "?"} | n=${entry.count.toString()} | ` +
+            `${latency} | ${estimateNote(entry)} |`,
+        );
+      }
+      lines.push("");
+      }
     }
     if (metrics.stageDurations.length > 0) {
-      lines.push("| Flow | Stage | Count | p50 | p90 | p95 | p99 | Lower bound? |");
-      lines.push("| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |");
-      for (const entry of metrics.stageDurations) {
+      const entries = metrics.stageDurations.filter((entry) => entry.count > 0);
+      if (entries.length > 0) {
+      lines.push("| Flow | Stage | Evidence | Latency | Lower bound? |");
+      lines.push("| --- | --- | --- | --- | --- |");
+      for (const entry of entries) {
+        const latency = entry.count >= DISTRIBUTION_MIN_COUNT
+          ? `p50 ${seconds(entry.p50)} · p90 ${seconds(entry.p90)} · p95 ${seconds(entry.p95)} · p99 ${seconds(entry.p99)}`
+          : "too few observations for a distribution";
         lines.push(
-          `| ${entry.labels.flow ?? "?"} | ${entry.labels.stage ?? "?"} | ${entry.count.toString()} | ` +
-            `${seconds(entry.p50)} | ${seconds(entry.p90)} | ${seconds(entry.p95)} | ${seconds(entry.p99)} | ${estimateNote(entry)} |`,
+          `| ${entry.labels.flow ?? "?"} | ${entry.labels.stage ?? "?"} | n=${entry.count.toString()} | ` +
+            `${latency} | ${estimateNote(entry)} |`,
         );
       }
       lines.push("");
+      }
     }
     pushCounterMetrics(lines, "Terminal counters", metrics.terminalTotals);
     pushCounterMetrics(lines, "Reclaims", metrics.reclaims);
@@ -501,7 +705,7 @@ const pushTargetDetails = (lines: string[], target: TargetReport): void => {
       }
       lines.push("");
     }
-    if (metrics.http) {
+    if (metrics.http && metrics.http.totalRequests > 0) {
       const http = metrics.http;
       lines.push(`### ${target.target} HTTP requests (relayer-side)`);
       lines.push("");
@@ -517,7 +721,7 @@ const pushTargetDetails = (lines: string[], target: TargetReport): void => {
       lines.push("");
       lines.push("| Endpoint | Status | Count | Lower bound? |");
       lines.push("| --- | --- | ---: | --- |");
-      for (const entry of http.byEndpointStatus) {
+      for (const entry of http.byEndpointStatus.filter((entry) => entry.delta !== 0)) {
         lines.push(
           `| ${entry.labels.endpoint ?? "?"} | ${entry.labels.status ?? "?"} | ${entry.delta.toString()} | ${estimateNote(entry)} |`,
         );
@@ -552,6 +756,7 @@ const pushTargetDetails = (lines: string[], target: TargetReport): void => {
         lines.push(`| Max FDs | - | ${proc.maxFds.toString()} | ${proc.maxFds.toString()} | - | - |`);
       }
       lines.push("");
+    }
     }
   } else {
     lines.push(`### ${target.target} Relayer Metrics`);
@@ -597,38 +802,43 @@ export const renderMarkdownReport = (report: Report): string => {
 
   lines.push(`# Load Test Report - ${run.scenario.name}`);
   lines.push("");
+  lines.push("## Executive Summary");
+  lines.push("");
   lines.push(`- **Network:** ${run.network}`);
   lines.push(`- **Relayers:** ${report.targets.map(targetLabel).join(" · ")}`);
   lines.push(`- **Model:** ${run.model}`);
   lines.push(`- **Status:** ${run.status}`);
   lines.push(`- **Window:** ${run.startedAt} -> ${run.endedAt}`);
   lines.push(
-    `- **Workflows:** ${run.submitted.toString()} submitted of ${run.plannedRequests.toString()} planned · achieved ${run.achievedWorkflowsPerSec.toString()} workflows/s` +
+    `- **Workflows:** ${run.submitted.toString()} submitted of ${run.plannedRequests.toString()} planned · achieved ${run.achievedWorkflowsPerSec.toString()} ${run.achievedWorkflowsPerSec === 1 ? "workflow/s" : "workflows/s"}` +
       (run.abandoned > 0 ? ` · **${run.abandoned.toString()} abandoned at drain timeout**` : ""),
   );
-  if (run.stoppedAtSegment !== undefined) {
+  const finitePlan = plannedRequestCount(run.scenario.shape);
+  const submissionWasPartial = finitePlan === undefined || run.submitted < finitePlan;
+  if (submissionWasPartial && run.stoppedAtSegment !== undefined) {
     lines.push(
       `- **Saturation stop:** submission halted after segment ${run.stoppedAtSegment.toString()} (queue depth grew).`,
     );
   }
-  if (run.poolExhausted) {
+  if (submissionWasPartial && run.poolExhausted) {
     lines.push("- **Pool exhausted mid-run** - results cover a partial run.");
   }
   lines.push(
     `- **Thresholds:** ${report.thresholds.passed ? "passed" : `${report.thresholds.breaches.length.toString()} breach(es)`}`,
   );
-  if (report.diagnosis) lines.push(`- **Verdict:** ${report.diagnosis.verdict}`);
-  if (report.injector) {
-    lines.push(
-      `- **Injector health:** ${report.injector.health.verdict}` +
-        (report.injector.health.reasons.length > 0
-          ? ` - ${report.injector.health.reasons.join(" ")}`
-          : ""),
-    );
-  }
+  lines.push(`- **Correctness:** ${correctnessSummary(report)}`);
+  const latencyEvidenceSummary = executiveLatencyEvidence(report);
+  if (latencyEvidenceSummary) lines.push(`- **Performance evidence:** ${latencyEvidenceSummary}.`);
+  const assessment = injectorAssessment(report);
+  if (assessment) lines.push(`- **Injector assessment:** ${assessment}`);
+  const coverage = report.targets.map(metricsCoverage).filter((value): value is string => value !== undefined);
+  if (coverage.length > 0) lines.push(`- **Relayer telemetry:** ${coverage.join(" · ")}`);
   lines.push("");
 
-  if (report.diagnosis) {
+  if (
+    report.diagnosis &&
+    (report.diagnosis.flags.length > 0 || report.diagnosis.recommendations.length > 0)
+  ) {
     const { diagnosis } = report;
     lines.push("## Diagnosis");
     lines.push("");
@@ -641,31 +851,6 @@ export const renderMarkdownReport = (report: Report): string => {
       lines.push("");
       for (const rec of diagnosis.recommendations) lines.push(`- ${rec}`);
     }
-    lines.push("");
-  }
-
-  if (report.injector) {
-    const injector = report.injector;
-    lines.push("## Injector Runtime");
-    lines.push("");
-    lines.push(`Health: **${injector.health.verdict}**. ${injector.health.reasons.join(" ")}`);
-    lines.push("");
-    lines.push("| Signal | Value |");
-    lines.push("| --- | ---: |");
-    lines.push(`| Runtime samples | ${injector.sampleCount.toString()} |`);
-    lines.push(`| Dispatch lag p95 | ${ms(injector.dispatchLagP95Ms)} |`);
-    lines.push(`| Dispatch lag p99 | ${ms(injector.dispatchLagP99Ms)} |`);
-    lines.push(`| Peak event-loop lag p99 | ${ms(injector.maxEventLoopLagP99Ms)} |`);
-    lines.push(`| Peak event-loop utilization | ${percent(injector.peakEventLoopUtilization)} |`);
-    lines.push(`| Peak RSS | ${mib(injector.peakRssBytes)} |`);
-    lines.push(`| CPU user | ${injector.cpuUserMicros?.toString() ?? "-"} µs |`);
-    lines.push(`| CPU system | ${injector.cpuSystemMicros?.toString() ?? "-"} µs |`);
-    lines.push(`| GC count | ${injector.gcCount.toString()} |`);
-    lines.push(`| GC duration | ${ms(injector.gcDurationMs)} |`);
-    lines.push(`| Peak inflight | ${injector.scheduler.peakInflight.toString()} |`);
-    lines.push(`| Backpressure events | ${injector.scheduler.backpressureEvents.toString()} |`);
-    lines.push(`| Dropped | ${injector.scheduler.dropped.toString()} |`);
-    lines.push(`| Abandoned | ${injector.scheduler.abandoned.toString()} |`);
     lines.push("");
   }
 
@@ -685,7 +870,8 @@ export const renderMarkdownReport = (report: Report): string => {
   pushSideBySideSummary(lines, report);
   pushOutcomeComparison(lines, report);
   pushPairComparison(lines, report);
-  for (const target of report.targets) pushTargetDetails(lines, target);
+  for (const target of report.targets) pushTargetDetails(lines, target, report);
+  pushInjectorAppendix(lines, report);
 
   return `${lines.join("\n")}\n`;
 };

@@ -5,6 +5,7 @@ import type {
   StageReport,
 } from "./schema";
 import type { GaugePeak, HistogramQuantiles } from "./prom-analysis";
+import { plannedRequestCount } from "../scenario/schema";
 
 /**
  * Synthesizes the "what happened and why" verdict from the assembled report.
@@ -118,6 +119,8 @@ export const buildDiagnosis = (report: ReportCore): Diagnosis => {
   const totalErrors = allFlows.reduce((t, entry) => t + (entry.flow.submitted - entry.flow.succeeded), 0);
   const verifyFailed = allFlows.reduce((t, entry) => t + entry.flow.verifyFailed, 0);
   const errorRate = totalSubmitted === 0 ? 0 : totalErrors / totalSubmitted;
+  const finitePlan = plannedRequestCount(report.run.scenario.shape);
+  const submissionWasPartial = finitePlan === undefined || report.run.submitted < finitePlan;
 
   if (verifyFailed > 0) {
     flags.push({
@@ -134,7 +137,7 @@ export const buildDiagnosis = (report: ReportCore): Diagnosis => {
       message: `Error rate ${(errorRate * 100).toFixed(2)}% (${totalErrors.toString()}/${totalSubmitted.toString()}).`,
     });
   }
-  if (report.run.poolExhausted) {
+  if (submissionWasPartial && report.run.poolExhausted) {
     flags.push({
       severity: "warn",
       message: "A single-use pool ran dry mid-run; results cover only a partial run.",
@@ -246,7 +249,7 @@ export const buildDiagnosis = (report: ReportCore): Diagnosis => {
       message: `Backlog grew through the run (peaked at ${maxPending.toString()}, ended at ${endPending.toString()}) — arrival rate exceeded sustainable throughput.`,
     });
   }
-  if (report.run.stoppedAtSegment !== undefined) {
+  if (submissionWasPartial && report.run.stoppedAtSegment !== undefined) {
     flags.push({
       severity: "info",
       message: `Ramp stopped at segment ${report.run.stoppedAtSegment.toString()} on the saturation signal — max sustainable rate is near the previous step.`,

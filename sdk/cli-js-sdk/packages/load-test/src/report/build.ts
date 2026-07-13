@@ -10,7 +10,12 @@ import type { RelayerConfigSnapshot } from "../collectors/relayer-config";
 import type { QueueDepthSample } from "../collectors/types";
 import type { RequestRecord } from "../flows/types";
 import type { FlowKind } from "../relayer/types";
-import { plannedRequestCount, shapeModel, type Scenario } from "../scenario/schema";
+import {
+  plannedRequestCount,
+  shapeDurationSec,
+  shapeModel,
+  type Scenario,
+} from "../scenario/schema";
 import { LatencyHistogram, statsOf, type LatencyStats } from "./histogram";
 import {
   counterDeltas,
@@ -574,6 +579,45 @@ export type BuildReportInput = Readonly<{
   targets: readonly BuildReportTargetInput[];
 }>;
 
+/**
+ * Model-aware workflow rate.
+ *
+ * Open models deliver arrivals over the configured load window. Their final
+ * dispatch can legitimately occur well before the window ends (for example,
+ * the only arrival in a 1 rps × 1 s run is at t=0), so the scheduler's dispatch
+ * span is not a valid denominator for a completed schedule. Completion is based
+ * on delivering all planned arrivals: an interruption or pool-exhaustion flag
+ * raised later during drain must not retroactively shorten that load window. An
+ * open schedule with fewer submitted than planned arrivals instead uses its
+ * actual submission elapsed time so it does not pretend that load was offered
+ * for the unexecuted remainder. Closed models are response-bound and report
+ * completed-workflow throughput over their measured execution span. Bursts have
+ * no configured duration and therefore retain measured injection rate.
+ */
+const achievedWorkflowsPerSec = (input: BuildReportInput): number => {
+  const model = shapeModel(input.scenario.shape);
+  const configuredDurationSec = shapeDurationSec(input.scenario.shape);
+  const measuredDurationSec = input.submissionDurationMs / 1000;
+  const planned = plannedRequestCount(input.scenario.shape);
+  const completedOpenSchedule =
+    model === "open" &&
+    planned !== undefined &&
+    input.submitted >= planned;
+
+  const [workflows, durationSec] =
+    model === "open"
+      ? [
+          input.submitted,
+          completedOpenSchedule ? configuredDurationSec : measuredDurationSec,
+        ]
+      : model === "closed"
+        ? [input.completed, measuredDurationSec]
+        : [input.submitted, measuredDurationSec];
+
+  if (durationSec === undefined || durationSec <= 0) return 0;
+  return Math.round((workflows / durationSec) * 100) / 100;
+};
+
 export const buildReport = (input: BuildReportInput): Report => {
   const targets: TargetReport[] = input.targets.map((targetInput) => {
     const targetRecords = recordsForTarget(input.records, targetInput.target);
@@ -628,10 +672,7 @@ export const buildReport = (input: BuildReportInput): Report => {
       abandoned: input.abandoned,
       poolExhausted: input.poolExhausted,
       submissionDurationMs: input.submissionDurationMs,
-      achievedWorkflowsPerSec:
-        input.submissionDurationMs > 0
-          ? Math.round((input.submitted / (input.submissionDurationMs / 1000)) * 100) / 100
-          : 0,
+      achievedWorkflowsPerSec: achievedWorkflowsPerSec(input),
       stoppedAtSegment: input.stoppedAtSegment,
     },
     targets,

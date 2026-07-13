@@ -53,6 +53,269 @@ const build = (records: RequestRecord[], testScenario = scenario) => {
 };
 
 describe("buildReport", () => {
+  it("normalizes open-model delivery rate to the configured load window", () => {
+    const oneSecond = scenarioSchema.parse({
+      name: "one-second",
+      flows: [{ flow: "input-proof", weight: 1 }],
+      shape: { kind: "constant", rps: 1, durationSec: 1 },
+    });
+    const report = buildReport({
+      scenario: oneSecond,
+      network: "testnet",
+      relayerUrl: "http://localhost:3000",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:01.000Z",
+      records: [record({})],
+      submitted: 1,
+      completed: 1,
+      abandoned: 0,
+      poolExhausted: false,
+      // The sole open-model arrival is scheduled at t=0. This dispatch span
+      // must not inflate the delivered rate to 1 / 0.035 = 28.57 workflows/s.
+      submissionDurationMs: 35,
+      targets: [{ target: "A", relayerUrl: "http://localhost:3000" }],
+    });
+
+    expect(report.run.achievedWorkflowsPerSec).toBe(1);
+  });
+
+  it("uses the full configured window across open-model segments", () => {
+    const segmented = scenarioSchema.parse({
+      name: "segmented",
+      flows: [{ flow: "input-proof", weight: 1 }],
+      shape: {
+        kind: "segments",
+        segments: [
+          { fromRps: 2, toRps: 2, durationSec: 1 },
+          { fromRps: 4, toRps: 4, durationSec: 2 },
+        ],
+      },
+    });
+    const records = Array.from({ length: 10 }, (_, index) => record({ index }));
+    const report = buildReport({
+      scenario: segmented,
+      network: "testnet",
+      relayerUrl: "http://localhost:3000",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:03.000Z",
+      records,
+      submitted: records.length,
+      completed: records.length,
+      abandoned: 0,
+      poolExhausted: false,
+      submissionDurationMs: 2_800,
+      targets: [{ target: "A", relayerUrl: "http://localhost:3000" }],
+    });
+
+    expect(report.run.achievedWorkflowsPerSec).toBe(3.33);
+  });
+
+  it.each([
+    {
+      label: "saturation-stopped",
+      runState: { stoppedAtSegment: 1 },
+    },
+    {
+      label: "interrupted",
+      runState: { interrupted: true },
+    },
+    {
+      label: "pool-exhausted",
+      runState: { poolExhausted: true },
+    },
+    {
+      label: "otherwise partial",
+      runState: {},
+    },
+  ] as const)("uses actual elapsed delivery time for a $label open schedule", ({ runState }) => {
+    const partial = scenarioSchema.parse({
+      name: "partial-open",
+      flows: [{ flow: "input-proof", weight: 1 }],
+      shape: {
+        kind: "segments",
+        segments: [
+          { fromRps: 10, toRps: 10, durationSec: 5 },
+          { fromRps: 10, toRps: 10, durationSec: 5 },
+        ],
+      },
+    });
+    const records = Array.from({ length: 4 }, (_, index) => record({ index }));
+    const report = buildReport({
+      scenario: partial,
+      network: "testnet",
+      relayerUrl: "http://localhost:3000",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:02.000Z",
+      records,
+      submitted: records.length,
+      completed: records.length,
+      abandoned: 0,
+      poolExhausted: false,
+      submissionDurationMs: 2_000,
+      targets: [{ target: "A", relayerUrl: "http://localhost:3000" }],
+      ...runState,
+    });
+
+    expect(report.run.achievedWorkflowsPerSec).toBe(2);
+    const markdown = renderMarkdownReport(report);
+    if ("stoppedAtSegment" in runState) {
+      expect(markdown).toContain("**Saturation stop:** submission halted");
+      expect(markdown).toContain("Ramp stopped at segment");
+    }
+    if ("poolExhausted" in runState) {
+      expect(markdown).toContain("**Pool exhausted mid-run**");
+      expect(markdown).toContain("results cover only a partial run");
+    }
+  });
+
+  it.each([
+    { label: "interrupted during drain", runState: { interrupted: true } },
+    { label: "pool exhaustion reported after delivery", runState: { poolExhausted: true } },
+    { label: "a late saturation-stop flag", runState: { stoppedAtSegment: 1 } },
+  ] as const)("keeps the configured open window when all arrivals were submitted despite $label", ({ runState }) => {
+    const complete = scenarioSchema.parse({
+      name: "complete-open",
+      flows: [{ flow: "input-proof", weight: 1 }],
+      shape: { kind: "constant", rps: 1, durationSec: 1 },
+    });
+    const report = buildReport({
+      scenario: complete,
+      network: "testnet",
+      relayerUrl: "http://localhost:3000",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:01.000Z",
+      records: [record({})],
+      submitted: 1,
+      completed: 1,
+      abandoned: 0,
+      poolExhausted: false,
+      submissionDurationMs: 35,
+      targets: [{ target: "A", relayerUrl: "http://localhost:3000" }],
+      ...runState,
+    });
+
+    expect(report.run.achievedWorkflowsPerSec).toBe(1);
+    const markdown = renderMarkdownReport(report);
+    expect(markdown).not.toContain("**Saturation stop:**");
+    expect(markdown).not.toContain("**Pool exhausted mid-run**");
+    expect(markdown).not.toContain("submission halted");
+    expect(markdown).not.toContain("Ramp stopped at segment");
+    expect(markdown).not.toContain("results cover only a partial run");
+  });
+
+  it.each([
+    { label: "pool exhaustion", runState: { poolExhausted: true } },
+    { label: "a saturation stop", runState: { stoppedAtSegment: 0 } },
+  ] as const)("retains $label warnings for a duration-bound closed model", ({ runState }) => {
+    const durationBound = scenarioSchema.parse({
+      name: "closed-duration",
+      flows: [{ flow: "input-proof", weight: 1 }],
+      shape: { kind: "closed", vus: 1, durationSec: 10, thinkTimeMs: 0 },
+    });
+    const report = buildReport({
+      scenario: durationBound,
+      network: "testnet",
+      relayerUrl: "http://localhost:3000",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:01.000Z",
+      records: [record({})],
+      submitted: 1,
+      completed: 1,
+      abandoned: 0,
+      poolExhausted: false,
+      submissionDurationMs: 1_000,
+      targets: [{ target: "A", relayerUrl: "http://localhost:3000" }],
+      ...runState,
+    });
+
+    // Duration-bound closed models have no finite planned arrival count. The
+    // displayed fallback equals submitted, but must not suppress run warnings.
+    expect(report.run.plannedRequests).toBe(report.run.submitted);
+    const markdown = renderMarkdownReport(report);
+    if ("poolExhausted" in runState) {
+      expect(markdown).toContain("**Pool exhausted mid-run**");
+      expect(markdown).toContain("results cover only a partial run");
+    }
+    if ("stoppedAtSegment" in runState) {
+      expect(markdown).toContain("**Saturation stop:** submission halted");
+      expect(markdown).toContain("Ramp stopped at segment");
+    }
+  });
+
+  it("returns zero for a partial open schedule with no measurable elapsed time", () => {
+    const partial = scenarioSchema.parse({
+      name: "zero-elapsed",
+      flows: [{ flow: "input-proof", weight: 1 }],
+      shape: { kind: "constant", rps: 10, durationSec: 10 },
+    });
+    const report = buildReport({
+      scenario: partial,
+      network: "testnet",
+      relayerUrl: "http://localhost:3000",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:00.000Z",
+      records: [],
+      submitted: 0,
+      completed: 0,
+      abandoned: 0,
+      poolExhausted: true,
+      submissionDurationMs: 0,
+      targets: [{ target: "A", relayerUrl: "http://localhost:3000" }],
+    });
+
+    expect(report.run.achievedWorkflowsPerSec).toBe(0);
+  });
+
+  it("reports completed-workflow throughput for closed models", () => {
+    const closed = scenarioSchema.parse({
+      name: "closed",
+      flows: [{ flow: "input-proof", weight: 1 }],
+      shape: { kind: "closed", vus: 2, durationSec: 10, thinkTimeMs: 0 },
+    });
+    const records = Array.from({ length: 4 }, (_, index) => record({ index }));
+    const report = buildReport({
+      scenario: closed,
+      network: "testnet",
+      relayerUrl: "http://localhost:3000",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:04.000Z",
+      records,
+      submitted: 4,
+      completed: 3,
+      abandoned: 1,
+      poolExhausted: false,
+      submissionDurationMs: 4_000,
+      targets: [{ target: "A", relayerUrl: "http://localhost:3000" }],
+    });
+
+    expect(report.run.achievedWorkflowsPerSec).toBe(0.75);
+  });
+
+  it("retains measured injection rate for durationless drain bursts", () => {
+    const burst = scenarioSchema.parse({
+      name: "burst",
+      flows: [{ flow: "input-proof", weight: 1 }],
+      shape: { kind: "burst", count: 10 },
+    });
+    const records = Array.from({ length: 10 }, (_, index) => record({ index }));
+    const report = buildReport({
+      scenario: burst,
+      network: "testnet",
+      relayerUrl: "http://localhost:3000",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:04.000Z",
+      records,
+      submitted: records.length,
+      completed: records.length,
+      abandoned: 0,
+      poolExhausted: false,
+      submissionDurationMs: 500,
+      targets: [{ target: "A", relayerUrl: "http://localhost:3000" }],
+    });
+
+    expect(report.run.achievedWorkflowsPerSec).toBe(20);
+  });
+
   it("round-trips through the strict versioned runtime schema", () => {
     const report = build([record({})]);
     expect(parseReport(JSON.parse(JSON.stringify(report)))).toEqual(report);
@@ -125,8 +388,8 @@ describe("buildReport", () => {
     expect(markdown).toContain("## Client Outcome Summary");
     expect(markdown).toContain("## Client Latency Comparison");
     expect(markdown).toContain("## Polling Comparison");
-    expect(markdown).toContain("| input-proof | e2e p50 | 1500 ms | 1800 ms | +300 ms | +20.0% |");
-    expect(markdown).toContain("| input-proof | 2.00 | 4.00 | +2.00 | 2.00 | 5.00 | +3.00 |");
+    expect(markdown).toContain("| input-proof | e2e descriptive (n=1/1) | n=1 · observed 1500 ms | n=1 · observed 1800 ms | - | - |");
+    expect(markdown).toContain("| input-proof | n=2/2 · observed max | 2.00 | 4.00 | +2.00 | 2.00 | 5.00 | +3.00 |");
     expect(markdown).toContain("## Paired Latency Delta");
     expect(markdown).toContain("Deltas are client-observed `B - A` for the paired workload item");
   });
@@ -330,6 +593,176 @@ describe("renderMarkdownReport", () => {
     expect(markdown).toContain("### A Client Results by Load Stage");
     expect(markdown).toContain("| 10vu | 10 VUs | input-proof | raw-http |");
   });
+
+  it("uses descriptive evidence for small samples and percentiles from 20 observations", () => {
+    const small = renderMarkdownReport(build([record({})]));
+    expect(small).toContain("n=1 · observed 1500 ms");
+    expect(small).not.toContain("| input-proof | e2e | n=1 · p50");
+    expect(small).toContain("**Correctness:** PASS — 1/1 target request succeeded; 0 verification failures");
+    expect(small).toContain("**Performance evidence:** descriptive only (A/input-proof n=1)");
+    expect(small).toContain("do not support a percentile performance conclusion");
+
+    const records = Array.from({ length: 20 }, (_, index) => record({
+      index,
+      e2eLatencyMs: 1_000 + index,
+      outcomeB: "succeeded",
+      submitLatencyMsB: 60 + index,
+      e2eLatencyMsB: 1_100 + index,
+      pollCountB: 3,
+      verifiedB: true,
+    }));
+    const sufficient = renderMarkdownReport(build(records));
+    expect(sufficient).toContain("| input-proof | e2e p50 |");
+    expect(sufficient).toContain("n=20 · mean +100 ms · p50 +100 ms");
+    expect(sufficient).not.toContain("**Performance evidence:** descriptive only");
+  });
+
+  it("keeps a successful dual-target report concise without losing staged evidence", () => {
+    const oneStage = renderMarkdownReport(build([record({
+      loadStage: { index: 0, label: "steady", model: "open", targetRps: 1 },
+      outcomeB: "succeeded",
+      submitLatencyMsB: 60,
+      e2eLatencyMsB: 1_600,
+      pollCountB: 3,
+      verifiedB: true,
+    })]));
+    expect(oneStage).toContain("**Correctness:** PASS — 2/2 target requests succeeded; 0 verification failures");
+    expect(oneStage).not.toContain("## Outcome Comparison");
+    expect(oneStage).not.toContain("### A input-proof (raw-http)");
+    expect(oneStage).not.toContain("### B input-proof (raw-http)");
+    expect(oneStage).not.toContain("Client Results by Load Stage");
+
+    const multipleStages = renderMarkdownReport(build([
+      record({
+        index: 0,
+        loadStage: { index: 0, label: "1rps", model: "open", targetRps: 1 },
+        outcomeB: "succeeded", submitLatencyMsB: 60, e2eLatencyMsB: 1_600,
+        pollCountB: 3, verifiedB: true,
+      }),
+      record({
+        index: 1,
+        loadStage: { index: 1, label: "2rps", model: "open", targetRps: 2 },
+        outcomeB: "succeeded", submitLatencyMsB: 70, e2eLatencyMsB: 1_700,
+        pollCountB: 3, verifiedB: true,
+      }),
+    ]));
+    expect(multipleStages).toContain("### A Client Results by Load Stage");
+    expect(multipleStages).toContain("### B Client Results by Load Stage");
+  });
+
+  it("reports correctness failures and uses a singular workflow rate", () => {
+    const failed = build([record({
+      outcome: "verify_failed",
+      verified: false,
+      errorLabel: "values_mismatch",
+    })]);
+    const report = {
+      ...failed,
+      run: { ...failed.run, achievedWorkflowsPerSec: 1 },
+    };
+    const markdown = renderMarkdownReport(report);
+    expect(markdown).toContain("**Correctness:** FAIL — 0/1 target request succeeded; 1 verification failure");
+    expect(markdown).toContain("achieved 1 workflow/s");
+    expect(markdown).not.toContain("achieved 1 workflows/s");
+  });
+
+  it("omits an empty diagnosis and moves injector details to the final appendix", () => {
+    const report = {
+      ...build([record({})]),
+      injector: {
+        sampleCount: 2,
+        scheduler: {
+          dispatchLagMs: [1], peakInflight: 1, backpressureEvents: 0, dropped: 0, abandoned: 0,
+        },
+        dispatchLagP95Ms: 1,
+        dispatchLagP99Ms: 1,
+        maxEventLoopLagP99Ms: 1,
+        peakEventLoopUtilization: 0.1,
+        peakRssBytes: 1_048_576,
+        cpuUserMicros: 10,
+        cpuSystemMicros: 5,
+        gcCount: 0,
+        gcDurationMs: 0,
+        health: { verdict: "indeterminate" as const, reasons: ["Observation window was too short."] },
+      },
+    };
+    const markdown = renderMarkdownReport(report);
+    expect(markdown).not.toContain("## Diagnosis");
+    expect(markdown).toContain("**Injector assessment:** not established (indeterminate)");
+    expect(markdown).toContain("## Appendix: Injector Runtime Diagnostics");
+    expect(markdown).toContain("Dispatch lag observations | n=1 · observed 1 ms");
+    expect(markdown).not.toContain("| Dispatch lag p99 |");
+    expect(markdown.indexOf("## Appendix: Injector Runtime Diagnostics"))
+      .toBeGreaterThan(markdown.indexOf("## Target A Details"));
+  });
+
+  it("uses the injector health evidence floor before rendering dispatch percentiles", () => {
+    const base = build([record({})]);
+    const injector = {
+      sampleCount: 10,
+      healthSampleCount: 10,
+      scheduler: {
+        dispatchLagMs: Array.from({ length: 99 }, () => 5),
+        peakInflight: 1,
+        backpressureEvents: 0,
+        dropped: 0,
+        abandoned: 0,
+      },
+      dispatchLagP95Ms: 5,
+      dispatchLagP99Ms: 5,
+      maxEventLoopLagP99Ms: 1,
+      peakEventLoopUtilization: 0.1,
+      peakRssBytes: 1_048_576,
+      cpuUserMicros: 10,
+      cpuSystemMicros: 5,
+      gcCount: 0,
+      gcDurationMs: 0,
+      health: { verdict: "indeterminate" as const, reasons: ["Need 100 dispatches."] },
+    };
+    const insufficient = renderMarkdownReport({ ...base, injector });
+    expect(insufficient).toContain("Dispatch lag observations | n=99");
+    expect(insufficient).not.toContain("| Dispatch lag p99 |");
+
+    const sufficient = renderMarkdownReport({
+      ...base,
+      injector: {
+        ...injector,
+        scheduler: { ...injector.scheduler, dispatchLagMs: [...injector.scheduler.dispatchLagMs, 5] },
+        health: { verdict: "healthy" as const, reasons: [] },
+      },
+    });
+    expect(sufficient).toContain("| Dispatch lag p99 | 5 ms |");
+  });
+
+  it("collapses wholly unavailable relayer metrics to one impact statement", () => {
+    const report = buildReport({
+      scenario,
+      network: "testnet",
+      relayerUrl: "http://localhost:3000",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:10.000Z",
+      records: [record({})], submitted: 1, completed: 1, abandoned: 0,
+      poolExhausted: false, submissionDurationMs: 1000,
+      targets: [{
+        target: "A",
+        relayerUrl: "http://localhost:3000",
+        metricsCollection: {
+          successfulScrapes: 0,
+          failedScrapes: 2,
+          lastAttemptSucceeded: false,
+          lastAttemptAt: "2026-01-01T00:00:10.000Z",
+          lastFailureAt: "2026-01-01T00:00:10.000Z",
+          lastError: "Prometheus scrape returned HTTP 404.",
+        },
+      }],
+    });
+    const markdown = renderMarkdownReport(report);
+    expect(markdown).toContain("**Unavailable:** 0/2 scrapes succeeded");
+    expect(markdown).not.toContain("HTTP 404..");
+    expect(markdown).toContain("No relayer-side performance, saturation, or resource conclusions");
+    expect(markdown).not.toContain("| Capability | Available");
+    expect(markdown).not.toContain("Detected profile");
+  });
 });
 
 describe("buildReport — collector-derived sections", () => {
@@ -358,6 +791,10 @@ describe("buildReport — collector-derived sections", () => {
           {
             labels: { queue_type: "input_proof_tx_throttler" },
             value: tMs === 0 ? "2" : "7",
+          },
+          {
+            labels: { queue_type: "idle_tx_throttler" },
+            value: "0",
           },
         ],
       },
@@ -421,8 +858,15 @@ describe("buildReport — collector-derived sections", () => {
         peak: 7,
         last: 7,
       },
+      {
+        labels: { queue: "idle_tx_throttler" },
+        peak: 0,
+        last: 0,
+      },
     ]);
-    expect(renderMarkdownReport(report)).toContain("Legacy throttler queue depth");
+    const markdown = renderMarkdownReport(report);
+    expect(markdown).toContain("Legacy throttler queue depth");
+    expect(markdown).toContain("| queue=idle_tx_throttler | 0 | 0 |");
   });
 
   it("qualifies HTTP totals and rates after a response counter reset", () => {
@@ -477,8 +921,8 @@ describe("buildReport — collector-derived sections", () => {
     expect(md).not.toContain("Limiter / semaphore utilization");
     expect(md).toContain("HTTP requests (relayer-side)");
     expect(md).toContain("Queue Depth / Backlog");
-    expect(md).toContain("Last attempt: succeeded at 2026-01-01T00:00:10.000Z");
-    expect(md).toContain("Most recent failure at 2026-01-01T00:00:05.000Z: temporary timeout");
+    expect(md).toContain("Collection: **partial** (2 successful, 1 failed scrape(s))");
+    expect(md).toContain("Most recent scrape failure at 2026-01-01T00:00:05.000Z: temporary timeout");
   });
 });
 
@@ -494,6 +938,8 @@ input_proof_request_duration_seconds_count ${value.toString()}
 relayer_transaction_count{transaction_type="input_proof",status="confirmed"} ${value.toString()}
 # TYPE relayer_recovery_runs_total counter
 relayer_recovery_runs_total{request_type="input_proof",result="ok"} ${value.toString()}
+# TYPE relayer_wallet_lease_owned gauge
+relayer_wallet_lease_owned{wallet="primary"} 0
 # TYPE relayer_wallet_lease_transitions_total counter
 relayer_wallet_lease_transitions_total{result="acquired"} ${value.toString()}
 # TYPE relayer_db_errors_total counter
@@ -523,6 +969,57 @@ relayer_db_errors_total{operation="lease_acquire"} ${value.toString()}
     const markdown = renderMarkdownReport(report);
     expect(markdown).toContain("V2 transaction outcomes");
     expect(markdown).toContain("V2 wallet lease transitions");
-    expect(markdown).toContain("Detected profile: **v2**");
+    expect(markdown).toContain("profile **v2**");
+  });
+
+  it("omits zero-delta metric rows and low-count percentile claims", () => {
+    const report = buildReport({
+      scenario,
+      network: "testnet",
+      relayerUrl: "http://localhost:3000",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:10.000Z",
+      records: [record({})], submitted: 1, completed: 1, abandoned: 0,
+      poolExhausted: false, submissionDurationMs: 1000,
+      targets: [{
+        target: "A", relayerUrl: "http://localhost:3000",
+        metricsSnapshots: [{ tMs: 0, families: metrics(10) }, { tMs: 10_000, families: metrics(10) }],
+      }],
+    });
+    const parsed = parseReport(JSON.parse(JSON.stringify(report)));
+    const parsedMetrics = parsed.targets[0]?.metrics;
+    expect(parsed).toEqual(report);
+    expect(parsedMetrics?.v2?.inputProofInserted[0]?.delta).toBe(0);
+    expect(parsedMetrics?.v2?.walletLeaseOwned).toEqual([
+      { labels: { wallet: "primary" }, peak: 0, last: 0 },
+    ]);
+    expect(parsedMetrics?.capabilities.signals.v2TransactionDuration?.reason)
+      .toContain("was not present");
+
+    const markdown = renderMarkdownReport(report);
+    expect(markdown).not.toContain("| (none) | 0 |");
+    expect(markdown).not.toContain("#### V2 input-proof inserts");
+    expect(markdown).not.toContain("#### V2 input-proof duration");
+    expect(markdown).toContain("#### V2 wallet lease owned");
+    expect(markdown).toContain("| wallet=primary | 0 | 0 |");
+
+    const target = parsed.targets[0];
+    if (!target?.metrics) throw new Error("Expected relayer metrics.");
+    const limiterReport = {
+      ...parsed,
+      targets: [{
+        ...target,
+        metrics: {
+          ...target.metrics,
+          limiterUtilization: [
+            { labels: { limiter: "input_proof_broadcast", state: "in_use" }, peak: 0, last: 0 },
+            { labels: { limiter: "input_proof_broadcast", state: "max" }, peak: 10, last: 10 },
+          ],
+        },
+      }],
+    };
+    expect(renderMarkdownReport(limiterReport)).toContain(
+      "| input_proof_broadcast | 0 | 10 | no |",
+    );
   });
 });

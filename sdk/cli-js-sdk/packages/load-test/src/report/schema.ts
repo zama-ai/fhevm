@@ -230,7 +230,11 @@ export type Report = Readonly<{
     abandoned: number;
     poolExhausted: boolean;
     submissionDurationMs: number;
-    /** Completed load-test workflows submitted per second; not HTTP req/s. */
+    /**
+     * Model-aware workflow rate: delivered arrivals over the configured open
+     * window, completed throughput for closed runs, or burst injection rate.
+     * This is never the target's raw HTTP request rate.
+     */
     achievedWorkflowsPerSec: number;
     /** Set when ramp saturation feedback stopped submission early. */
     stoppedAtSegment?: number;
