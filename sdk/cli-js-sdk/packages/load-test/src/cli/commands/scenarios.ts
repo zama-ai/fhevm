@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { runsDir } from "../../env";
 import { FLOWS } from "../../relayer/types";
+import { isUserInterruption } from "../../runner/interrupt";
 import type { ScenarioOverrides } from "../../scenario/overrides";
 import type { Scenario } from "../../scenario/schema";
 import { isoNow } from "../../shared/time";
@@ -93,11 +94,6 @@ const timestampedDirectory = (
     `${isoNow().replace(/[:.]/g, "-")}-${kind === "scenario" ? "scenario-" : ""}${scenario.name}`,
   );
 
-const isInterruption = (error: unknown, signal: AbortSignal): boolean =>
-  signal.aborted || (error instanceof Error && (
-    error.name === "AbortError" || error.name === "RunInterruptedError"
-  ));
-
 const withSignals = async <T>(
   logger: CliLogger,
   message: string,
@@ -113,7 +109,7 @@ const withSignals = async <T>(
   try {
     return await action(controller.signal);
   } catch (error) {
-    if (isInterruption(error, controller.signal)) {
+    if (isUserInterruption(error, controller.signal)) {
       process.exitCode = 130;
       logger.warn("Scenario operation interrupted.");
       return undefined;

@@ -12,7 +12,8 @@ import {
 import { diffReports, type DiffResult } from "../report/diff";
 import { readReportFile } from "../report/runtime";
 import type { Report } from "../report/schema";
-import { executeRun, RunInterruptedError } from "../runner/run";
+import { executeRun } from "../runner/run";
+import { isUserInterruption, RunInterruptedError } from "../runner/interrupt";
 import { assertRelayerReadiness } from "../runner/readiness";
 import { ceilingWarnings } from "../scenario/limits";
 import { loadScenario } from "../scenario/load";
@@ -67,9 +68,6 @@ export type SuiteResult = Readonly<{
   entries: readonly SuiteEntryResult[];
   blockedReason?: string;
 }>;
-
-const isAbortError = (error: unknown): boolean =>
-  error instanceof Error && error.name === "AbortError";
 
 const describePlan = (plan: PoolPlanArtifact): void => {
   for (const line of formatPoolPlan(plan)) logger.info(line);
@@ -241,7 +239,7 @@ const executeSuiteLifecycle = async (
             });
             plan = prepared.plan;
           } catch (error) {
-            if (isAbortError(error)) {
+            if (isUserInterruption(error, options.signal)) {
               interrupted = true;
             } else {
               throw error;
@@ -260,7 +258,7 @@ const executeSuiteLifecycle = async (
     }
   } catch (error) {
     passed = false;
-    if (isAbortError(error)) interrupted = true;
+    if (isUserInterruption(error, options.signal)) interrupted = true;
     else suiteError = error;
   }
 
@@ -350,7 +348,7 @@ const executeSuiteLifecycle = async (
       }
     } catch (error) {
       passed = false;
-      if (isAbortError(error)) interrupted = true;
+      if (isUserInterruption(error, options.signal)) interrupted = true;
       else suiteError = error;
     }
   }
@@ -474,7 +472,7 @@ export const prepareSuite = async (
     ready = prepared.plan.ready;
   } catch (error) {
     operationError = error;
-    interrupted = isAbortError(error);
+    interrupted = isUserInterruption(error, options.signal);
   }
 
   const result: SuitePreparationResult = {

@@ -24,6 +24,9 @@ import { isoNow } from "../shared/time";
 import { Recorder } from "./recorder";
 import { assertRelayerReadiness } from "./readiness";
 import { runScheduler, type SegmentVerdict } from "./scheduler";
+import { RunInterruptedError } from "./interrupt";
+
+export { RunInterruptedError } from "./interrupt";
 
 export type RunOptions = Readonly<{
   scenario: Scenario;
@@ -48,13 +51,6 @@ export type RunResult = Readonly<{
   outputDir: string;
   status: "completed" | "interrupted";
 }>;
-
-export class RunInterruptedError extends Error {
-  constructor() {
-    super("Load-test run was interrupted before execution could start.");
-    this.name = "RunInterruptedError";
-  }
-}
 
 /**
  * Saturation feedback for ramp scenarios: queue depth growing monotonically

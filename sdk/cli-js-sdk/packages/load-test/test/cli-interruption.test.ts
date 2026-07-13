@@ -653,6 +653,22 @@ describe("CLI interruption exit behavior", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it("surfaces an operational AbortError as a failure when no signal fired", async () => {
+    // undici's RequestAbortedError reports name === "AbortError" even though it
+    // is operational and no user signal aborted. It must propagate as a real
+    // failure, not be silently reclassified as a 130 interruption.
+    const operational = new Error("other side closed");
+    operational.name = "AbortError";
+    mocks.executeRun.mockReset().mockRejectedValueOnce(operational);
+    const program = new Command();
+    registerScenarioCommands(program);
+
+    await expect(
+      program.parseAsync(["node", "load-test", "scenario", "run", "scenario"]),
+    ).rejects.toThrow("other side closed");
+    expect(process.exitCode).not.toBe(130);
+  });
+
   it("aborts the signal passed to an active run on SIGINT", async () => {
     let received: AbortSignal | undefined;
     mocks.executeRun.mockImplementationOnce(async (options: { signal: AbortSignal }) => {

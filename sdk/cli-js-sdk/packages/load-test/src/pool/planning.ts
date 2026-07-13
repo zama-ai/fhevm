@@ -6,6 +6,7 @@ import { resolveNetworkConfig } from "@cli-fhevm-sdk/toolkit";
 
 import type { LoadTestEnv } from "../env";
 import type { FlowKind } from "../relayer/types";
+import { isUserInterruption } from "../runner/interrupt";
 import type { Scenario } from "../scenario/schema";
 import { safeArtifactText } from "../shared/safe-artifact";
 import { createHandlePool, refreshDelegatedHandlePool, type HandlePoolFlow } from "./handles";
@@ -447,9 +448,6 @@ export const inspectPoolRequirements = async (
 const errorText = (error: unknown): string =>
   safeArtifactText(error instanceof Error ? error.message : error) ?? "Unknown error";
 
-const interrupted = (error: unknown): boolean =>
-  error instanceof Error && error.name === "AbortError";
-
 /**
  * Explicitly prepares live pools from a freshly computed plan, then computes
  * a second live plan. Stored plan artifacts are evidence only and are never
@@ -535,7 +533,7 @@ export const preparePoolRequirements = async (
         ...actionEvidence,
         startedAt: actionStartedAt,
         endedAt: operations.now().toISOString(),
-        status: interrupted(error) ? "interrupted" : "failed",
+        status: isUserInterruption(error, options.signal) ? "interrupted" : "failed",
         ...(planned.items !== undefined ? { actualItems: confirmedItems } : {}),
         error: errorText(error),
       });
@@ -560,7 +558,7 @@ export const preparePoolRequirements = async (
     startedAt,
     endedAt: operations.now().toISOString(),
     status: failure
-      ? interrupted(failure)
+      ? isUserInterruption(failure, options.signal)
         ? "interrupted"
         : "failed"
       : "completed",
