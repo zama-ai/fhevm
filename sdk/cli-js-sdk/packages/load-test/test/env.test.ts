@@ -46,6 +46,17 @@ describe("resolveEnv A/B target validation", () => {
     expect(() => resolveEnv({})).toThrow(/requires --relayer-b-url/);
   });
 
+  it("treats blank relayer B env vars as unset when no B URL is configured", () => {
+    // Empty/whitespace ENV vars must count as unset here, mirroring how an
+    // empty LOAD_TEST_RELAYER_B_URL is already ignored, so they never hard-fail
+    // an otherwise B-less command.
+    process.env.LOAD_TEST_RELAYER_B_URL = "";
+    process.env.LOAD_TEST_RELAYER_B_API_PREFIX = "";
+    process.env.LOAD_TEST_RELAYER_B_CONFIG = "   ";
+    const env = resolveEnv({});
+    expect(env.relayerBUrl).toBeUndefined();
+  });
+
   it("allows relayer B options when a relayer B URL is configured", () => {
     const env = resolveEnv({
       relayerBUrl: "https://candidate.example",

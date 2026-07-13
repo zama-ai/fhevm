@@ -69,14 +69,29 @@ export const resolveEnv = (overrides: EnvOverrides = {}): LoadTestEnv => {
   const relayerBConfigPathRaw =
     overrides.relayerBConfigPath ?? process.env.LOAD_TEST_RELAYER_B_CONFIG;
 
+  // A candidate-only var (B API prefix or B config) requires a B URL. For this
+  // guard a var counts as "provided" only when it carries a real value: a CLI
+  // flag keeps its literal semantics (an explicit empty --relayer-b-api-prefix
+  // still opts out of /v2 downstream), but an empty or whitespace-only ENV var
+  // is treated as unset — matching how an empty LOAD_TEST_RELAYER_B_URL is
+  // already ignored — so it never hard-fails an otherwise B-less command.
+  const envProvided = (value: string | undefined): boolean =>
+    value !== undefined && value.trim() !== "";
+  const relayerBApiPrefixProvided =
+    overrides.relayerBApiPrefix !== undefined ||
+    envProvided(process.env.LOAD_TEST_RELAYER_B_API_PREFIX);
+  const relayerBConfigProvided =
+    overrides.relayerBConfigPath !== undefined ||
+    envProvided(process.env.LOAD_TEST_RELAYER_B_CONFIG);
+
   if (!relayerBUrlRaw) {
-    if (relayerBApiPrefixRaw !== undefined) {
+    if (relayerBApiPrefixProvided) {
       throw new Error(
         "--relayer-b-api-prefix (or LOAD_TEST_RELAYER_B_API_PREFIX) requires --relayer-b-url " +
           "(or LOAD_TEST_RELAYER_B_URL) to also be set.",
       );
     }
-    if (relayerBConfigPathRaw !== undefined) {
+    if (relayerBConfigProvided) {
       throw new Error(
         "--relayer-b-config (or LOAD_TEST_RELAYER_B_CONFIG) requires --relayer-b-url " +
           "(or LOAD_TEST_RELAYER_B_URL) to also be set.",
