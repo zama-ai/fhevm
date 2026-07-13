@@ -71,6 +71,70 @@ fn handle_rpc_failure<E: std::fmt::Display>(
     }
 }
 
+/// Sync anchor to seed `host_listener_poller_state` with when no persisted
+/// anchor exists. Unlike the listener's --start-at-block, the flag is
+/// initialization-only: an existing anchor row always wins, so restarts never
+/// rewind or skip. On a fresh database the flag beats blocks recorded by the
+/// WS listener, making the seed deterministic; >= 0 is an absolute height,
+/// negative means that many blocks behind the current head.
+#[derive(Debug, PartialEq, Eq)]
+enum StartAnchor {
+    Block(i64),
+    BehindHead(u64),
+}
+
+fn resolve_start_anchor(
+    initial_start_block: Option<i64>,
+    last_valid_block: Option<i64>,
+) -> StartAnchor {
+    match (initial_start_block, last_valid_block) {
+        (Some(block), _) if block >= 0 => StartAnchor::Block(block),
+        (Some(delta), _) => StartAnchor::BehindHead(delta.unsigned_abs()),
+        (None, Some(block)) => StartAnchor::Block(block),
+        (None, None) => StartAnchor::Block(0),
+    }
+}
+
+#[cfg(test)]
+mod start_anchor_tests {
+    use super::{resolve_start_anchor, StartAnchor};
+
+    #[test]
+    fn flag_wins_over_ws_listener_blocks() {
+        assert_eq!(
+            resolve_start_anchor(Some(7), Some(42)),
+            StartAnchor::Block(7)
+        );
+        assert_eq!(
+            resolve_start_anchor(Some(-7), Some(42)),
+            StartAnchor::BehindHead(7)
+        );
+    }
+
+    #[test]
+    fn non_negative_flag_is_absolute() {
+        assert_eq!(resolve_start_anchor(Some(7), None), StartAnchor::Block(7));
+        assert_eq!(resolve_start_anchor(Some(0), None), StartAnchor::Block(0));
+    }
+
+    #[test]
+    fn negative_flag_is_behind_head() {
+        assert_eq!(
+            resolve_start_anchor(Some(-10_000), None),
+            StartAnchor::BehindHead(10_000)
+        );
+    }
+
+    #[test]
+    fn no_flag_falls_back_to_ws_listener_blocks_then_genesis() {
+        assert_eq!(
+            resolve_start_anchor(None, Some(42)),
+            StartAnchor::Block(42)
+        );
+        assert_eq!(resolve_start_anchor(None, None), StartAnchor::Block(0));
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PollerConfig {
     pub url: String,
@@ -91,6 +155,9 @@ pub struct PollerConfig {
     /// Higher values = less throttling.
     pub rpc_compute_units_per_second: u64,
     pub health_port: u16,
+    /// Initial sync anchor when no poller state exists yet
+    /// (initialization-only; >= 0 absolute, negative from head).
+    pub initial_start_block: Option<i64>,
     // Dependence chain settings
     pub dependence_cache_size: u16,
     pub dependence_by_connexity: bool,
@@ -226,7 +293,20 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         Some(block) => u64::try_from(block)
             .context("last_caught_up_block cannot be negative")?,
         None => {
-            let initial = db.read_last_valid_block().await.unwrap_or(0);
+            let initial = match resolve_start_anchor(
+                config.initial_start_block,
+                db.read_last_valid_block().await,
+            ) {
+                StartAnchor::Block(block) => block,
+                StartAnchor::BehindHead(delta) => {
+                    let head = client.latest_block_number().await.context(
+                        "Failed to fetch head to resolve negative initial-start-block",
+                    )?;
+                    i64::try_from(head.saturating_sub(delta)).context(
+                        "start block computed from head is out of range",
+                    )?
+                }
+            };
             db.poller_set_last_caught_up_block(chain_id, initial)
                 .await?;
             db.tick.update();
