@@ -75,7 +75,7 @@ export class PublicDecryptExecutor implements FlowExecutor {
     const store = await PoolStore.openIfExists<FheHandlePoolItem>(dir);
     if (!store) {
       throw new Error(
-        `No public-decrypt handle pool at ${dir}. Create one: load-test pool add --flow public-decrypt --count <n>.`,
+        `No public-decrypt handle pool at ${dir}. Create one: load-test pool add public-decrypt --count <n>.`,
       );
     }
     this.items = await store.loadItems();
@@ -97,7 +97,7 @@ export class PublicDecryptExecutor implements FlowExecutor {
           `the scenario needs ${planned.toString()}. Add at least ${handlesToAdd.toString()} handle(s) ` +
           `for ${neededTotalHandles.toString()} total handle(s), which provides ${targetCombinations.toString()} ` +
           `${this.handlesPerRequest.toString()}-handle combination(s): ` +
-          `load-test pool add --flow public-decrypt --count ${handlesToAdd.toString()}.`,
+          `load-test pool add public-decrypt --count ${handlesToAdd.toString()}.`,
       );
     }
 

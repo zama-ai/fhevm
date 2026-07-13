@@ -229,7 +229,7 @@ export class UserDecryptExecutor implements FlowExecutor {
     const store = await PoolStore.openIfExists<FheHandlePoolItem>(dir);
     if (!store) {
       throw new Error(
-        `No ${this.flow} handle pool at ${dir}. Create one: load-test pool add --flow ${this.flow} --count <n>.`,
+        `No ${this.flow} handle pool at ${dir}. Create one: load-test pool add ${this.flow} --count <n>.`,
       );
     }
     this.items = await store.loadItems();

@@ -131,8 +131,12 @@ describe("CLI interruption exit behavior", () => {
     expect(program.commands.map((command) => command.name())).toEqual([
       "pool", "scenario", "suite", "report", "baseline",
     ]);
-    expect(program.commands.find((command) => command.name() === "pool")
-      ?.commands.map((command) => command.name())).toEqual(["add", "inspect"]);
+    const pool = program.commands.find((command) => command.name() === "pool")!;
+    expect(pool.commands.map((command) => command.name())).toEqual(["add", "status"]);
+    expect(pool.commands.find((command) => command.name() === "add")
+      ?.commands.map((command) => command.name())).toEqual([
+        "input-proof", "public-decrypt", "user-decrypt", "delegated-user-decrypt",
+      ]);
     expect(program.commands.find((command) => command.name() === "report")
       ?.commands.map((command) => command.name())).toEqual(["render", "diff"]);
     expect(program.commands.find((command) => command.name() === "scenario")
@@ -236,10 +240,9 @@ describe("CLI interruption exit behavior", () => {
     expect(suiteRun.helpInformation()).toContain("authorize local CPU and funded on-chain");
   });
 
-  it("routes pool add by flow and rejects irrelevant options", async () => {
+  it("routes pool add subcommands and scopes flags to each flow", async () => {
     await createProgram().parseAsync([
-      "node", "load-test", "pool", "add",
-      "--flow", "input-proof", "--count", "2", "--threads", "3",
+      "node", "load-test", "pool", "add", "input-proof", "--count", "2", "--threads", "3",
     ]);
     expect(mocks.generateInputProofPool).toHaveBeenCalledWith(
       expect.anything(),
@@ -247,24 +250,37 @@ describe("CLI interruption exit behavior", () => {
     );
     expect(mocks.createHandlePool).not.toHaveBeenCalled();
 
-    await expect(createProgram().parseAsync([
-      "node", "load-test", "pool", "add",
-      "--flow", "input-proof", "--count", "1", "--lanes", "2",
-    ])).rejects.toThrow(/not valid for input-proof/);
-    await expect(createProgram().parseAsync([
-      "node", "load-test", "pool", "add",
-      "--flow", "user-decrypt", "--count", "1", "--threads", "2",
-    ])).rejects.toThrow(/only valid for input-proof/);
-    await expect(createProgram().parseAsync([
-      "node", "load-test", "pool", "add",
-      "--flow", "public-decrypt", "--count", "1", "--delegation-days", "2",
-    ])).rejects.toThrow(/only valid for delegated-user-decrypt/);
+    await createProgram().parseAsync([
+      "node", "load-test", "pool", "add", "delegated-user-decrypt",
+      "--count", "4", "--lanes", "2", "--delegation-days", "5",
+    ]);
+    expect(mocks.createHandlePool).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        flow: "delegated-user-decrypt", count: 4, lanes: 2, delegationDurationDays: 5,
+      }),
+    );
+
+    // Each subcommand exposes exactly the flags its flow consumes; irrelevant
+    // flags are absent from the option surface (and rejected as unknown).
+    const add = createProgram().commands.find((command) => command.name() === "pool")!
+      .commands.find((command) => command.name() === "add")!;
+    const inputProof = add.commands.find((command) => command.name() === "input-proof")!;
+    expect(inputProof.helpInformation()).toContain("--threads");
+    expect(inputProof.helpInformation()).not.toContain("--lanes");
+    expect(inputProof.helpInformation()).not.toContain("--delegation-days");
+    const publicDecrypt = add.commands.find((command) => command.name() === "public-decrypt")!;
+    expect(publicDecrypt.helpInformation()).toContain("--lanes");
+    expect(publicDecrypt.helpInformation()).toContain("--encrypt-concurrency");
+    expect(publicDecrypt.helpInformation()).not.toContain("--threads");
+    expect(publicDecrypt.helpInformation()).not.toContain("--delegation-days");
+    const delegated = add.commands.find((command) => command.name() === "delegated-user-decrypt")!;
+    expect(delegated.helpInformation()).toContain("--delegation-days");
   });
 
   it("rejects resource flags above their ceilings", async () => {
     await expect(createProgram().parseAsync([
-      "node", "load-test", "pool", "add",
-      "--flow", "input-proof", "--count", "1", "--threads", "129",
+      "node", "load-test", "pool", "add", "input-proof", "--count", "1", "--threads", "129",
     ])).rejects.toThrow(/--threads must be at most 128/);
 
     await expect(createProgram().parseAsync([
@@ -295,7 +311,7 @@ describe("CLI interruption exit behavior", () => {
         : undefined,
     );
 
-    await createProgram().parseAsync(["node", "load-test", "pool", "inspect"]);
+    await createProgram().parseAsync(["node", "load-test", "pool", "status"]);
     const output = mocks.logger.info.mock.calls.flat().join("\n");
     expect(output).toContain("owner 0 ACL healthy until");
     expect(output).toContain("owner 1 ACL expired at");

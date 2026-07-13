@@ -10,7 +10,7 @@ node --import tsx index.ts suite run standard --relayer-url <relayer> --prepare
 ```
 
 Relayer, network, and data-dir flags now attach to the commands that resolve an
-environment (`pool add/inspect`, `scenario plan/prepare/run`,
+environment (`pool add/status`, `scenario plan/prepare/run`,
 `suite plan/prepare/run`), so pass them after the subcommand rather than before
 it.
 
@@ -179,11 +179,11 @@ Exit codes are suitable for automation:
 
 ```bash
 # Pools
-node --import tsx index.ts pool add --flow input-proof --count 2000   # off-chain, CPU-bound
-node --import tsx index.ts pool add --flow public-decrypt --count 40
-node --import tsx index.ts pool add --flow user-decrypt --count 4
-node --import tsx index.ts pool add --flow delegated-user-decrypt --count 4
-node --import tsx index.ts pool inspect
+node --import tsx index.ts pool add input-proof --count 2000   # off-chain, CPU-bound
+node --import tsx index.ts pool add public-decrypt --count 40
+node --import tsx index.ts pool add user-decrypt --count 4
+node --import tsx index.ts pool add delegated-user-decrypt --count 4
+node --import tsx index.ts pool status
 
 # Single scenario
 node --import tsx index.ts scenario plan open-steady --rps 20 --duration 600 --check --out /tmp/open-steady-plan
@@ -199,14 +199,15 @@ node --import tsx index.ts report diff <baseline.json> <report.json>
 ```
 
 Read-only commands (`scenario list`, `scenario plan`, `suite list`, `suite
-plan`, `baseline list`, `pool inspect`, `report diff`) accept `--format
+plan`, `baseline list`, `pool status`, `report diff`) accept `--format
 text|json`. In `json` mode they emit a single JSON document to stdout with log
 lines suppressed, for `jq`/CI consumption; errors still print to stderr.
 
-Flow-specific pool options are enforced: `--threads` applies only to
-input-proof generation, handle concurrency/lane options apply only to handle
-pools, and `--delegation-days` applies only to delegated-user-decrypt. Inspect
-reports every delegated owner ACL as healthy, expired, or missing.
+`pool add` has one subcommand per flow, and each exposes only the flags it
+consumes: `--threads` on `input-proof`; `--lanes`/`--encrypt-concurrency` on the
+on-chain decrypt flows; `--delegation-days` additionally on
+`delegated-user-decrypt`. All accept `--count` and `--value-types`. `pool
+status` reports every delegated owner ACL as healthy, expired, or missing.
 
 Choose the model by the product question:
 

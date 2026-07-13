@@ -82,7 +82,7 @@ describe("parseValueTypes", () => {
 
   it("rejects duplicate types", () => {
     expect(() => parseValueTypes("uint64,bool,uint64")).toThrow(
-      /Duplicate value type "uint64" in --types/,
+      /Duplicate value type "uint64" in --value-types/,
     );
   });
 });

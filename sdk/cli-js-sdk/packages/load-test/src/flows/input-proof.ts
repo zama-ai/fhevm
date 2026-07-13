@@ -38,7 +38,7 @@ export class InputProofExecutor implements FlowExecutor {
     const store = await PoolStore.openIfExists<InputProofPoolItem>(dir);
     if (!store) {
       throw new Error(
-        `No input-proof pool at ${dir}. Generate one: load-test pool add --flow input-proof --count <n>.`,
+        `No input-proof pool at ${dir}. Generate one: load-test pool add input-proof --count <n>.`,
       );
     }
     this.items = await store.loadItems();
@@ -49,7 +49,7 @@ export class InputProofExecutor implements FlowExecutor {
       throw new Error(
         `Input-proof pool has ${remaining.toString()} unused payload(s); the scenario needs ` +
           `${planned.toString()}. Payloads are single-use (relayer dedup is permanent); ` +
-          `top up with: load-test pool add --flow input-proof --count ${(planned - Number(remaining)).toString()}.`,
+          `top up with: load-test pool add input-proof --count ${(planned - Number(remaining)).toString()}.`,
       );
     }
   }

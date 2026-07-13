@@ -90,20 +90,21 @@ All commands run from this directory with `node --import tsx index.ts …`
 
 ```bash
 # Single-use input-proof payloads (CPU-bound; uses a worker pool)
-node --import tsx index.ts pool add --flow input-proof --count 2000 --types uint64
+node --import tsx index.ts pool add input-proof --count 2000 --value-types uint64
 
 # Decrypt handle pools (on-chain FHETest transactions; the expensive step)
-node --import tsx index.ts pool add --flow public-decrypt --count 20 --lanes 4
-node --import tsx index.ts pool add --flow user-decrypt --count 4
-node --import tsx index.ts pool add --flow delegated-user-decrypt --count 4
+node --import tsx index.ts pool add public-decrypt --count 20 --lanes 4
+node --import tsx index.ts pool add user-decrypt --count 4
+node --import tsx index.ts pool add delegated-user-decrypt --count 4
 
-node --import tsx index.ts pool inspect
+node --import tsx index.ts pool status
 ```
 
-`pool add` rejects options that do not apply to the selected flow: `--threads`
-is input-proof-only, lane/encryption options are handle-only, and
-`--delegation-days` is delegated-user-decrypt-only. `pool inspect` labels each
-delegated owner ACL as healthy, expired, or missing.
+`pool add` has one subcommand per flow, and each exposes only the flags that
+flow consumes: `input-proof` takes `--threads`; the on-chain decrypt flows take
+`--lanes` and `--encrypt-concurrency`; `delegated-user-decrypt` additionally
+takes `--delegation-days`. All accept `--count` and `--value-types`. `pool
+status` labels each delegated owner ACL as healthy, expired, or missing.
 
 A pool of *n* public handles serves C(n, k) unique k-handle public-decrypt
 requests (`handlesPerRequest` in the scenario), so handle creation amortizes
@@ -170,7 +171,7 @@ being ignored:
   entry's weight and `handlesPerRequest`; multi-flow scenarios reject it.
 
 Read-only commands (`scenario list`, `scenario plan`, `suite list`, `suite
-plan`, `baseline list`, `pool inspect`, `report diff`) accept `--format
+plan`, `baseline list`, `pool status`, `report diff`) accept `--format
 text|json`. In `json` mode they print exactly one JSON document to stdout and
 suppress the info/success/warning log lines, so the output is safe to pipe into
 `jq` or a script; errors still go to stderr.

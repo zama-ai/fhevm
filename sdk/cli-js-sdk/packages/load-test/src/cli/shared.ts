@@ -161,7 +161,7 @@ export const parseValueTypes = (value: string): string[] => {
     }
     if (seen.has(type)) {
       throw new Error(
-        `Duplicate value type "${type}" in --types. Each type must appear at most once, ` +
+        `Duplicate value type "${type}" in --value-types. Each type must appear at most once, ` +
           "since it silently weights round-robin generation.",
       );
     }

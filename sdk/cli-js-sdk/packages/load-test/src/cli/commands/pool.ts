@@ -1,4 +1,4 @@
-import { Option, type Command } from "@commander-js/extra-typings";
+import type { Command, CommandUnknownOpts } from "@commander-js/extra-typings";
 import { readdir } from "node:fs/promises";
 
 import {
@@ -17,35 +17,54 @@ const MAX_THREADS = 128;
 const MAX_LANES = 64;
 const MAX_ENCRYPT_CONCURRENCY = 256;
 
-const FLOWS = ["input-proof", "public-decrypt", "user-decrypt", "delegated-user-decrypt"] as const;
+type PoolAddFlow = "input-proof" | "public-decrypt" | "user-decrypt" | "delegated-user-decrypt";
 
-type PoolAddOptions = Readonly<{
-  flow: (typeof FLOWS)[number];
+type PoolAddFlags = Readonly<{
+  count: number;
+  valueTypes?: readonly string[];
   threads?: number;
   lanes?: number;
   encryptConcurrency?: number | "auto";
   delegationDays?: number;
 }>;
 
-export const validatePoolAddOptions = (options: PoolAddOptions): void => {
-  if (options.flow === "input-proof") {
-    if (
-      options.lanes !== undefined ||
-      options.encryptConcurrency !== undefined ||
-      options.delegationDays !== undefined
-    ) {
-      throw new Error(
-        "--lanes, --encrypt-concurrency, and --delegation-days are not valid for input-proof pools.",
-      );
-    }
+/**
+ * Shared pool-add action. Each `pool add <flow>` subcommand exposes only the
+ * flags that flow actually consumes, so validity is enforced by the option
+ * surface rather than by rejecting irrelevant flags at runtime.
+ */
+const runPoolAdd = async (
+  flow: PoolAddFlow,
+  options: PoolAddFlags,
+  command: CommandUnknownOpts,
+): Promise<void> => {
+  const env = await envFromCommand(command);
+  const { logger } = await import("../../shared/logger");
+  if (flow === "input-proof") {
+    const { generateInputProofPool } = await import("../../pool/input-proof");
+    await generateInputProofPool(env, {
+      count: options.count,
+      valueTypes: options.valueTypes as never,
+      threads: options.threads,
+      onProgress: (done, total) => {
+        if (done % 25 === 0 || done === total) {
+          logger.info(`generated ${done.toString()}/${total.toString()} payload(s)`);
+        }
+      },
+    });
     return;
   }
-  if (options.threads !== undefined) {
-    throw new Error("--threads is only valid for input-proof pools.");
-  }
-  if (options.flow !== "delegated-user-decrypt" && options.delegationDays !== undefined) {
-    throw new Error("--delegation-days is only valid for delegated-user-decrypt pools.");
-  }
+  const { createHandlePool } = await import("../../pool/handles");
+  await createHandlePool(env, {
+    flow,
+    count: options.count,
+    valueTypes: options.valueTypes as never,
+    lanes: options.lanes,
+    encryptConcurrency: options.encryptConcurrency,
+    delegationDurationDays: options.delegationDays,
+    onProgress: (done, total) =>
+      logger.info(`created ${done.toString()}/${total.toString()} handle(s)`),
+  });
 };
 
 export const describeAclExpiration = (
@@ -61,51 +80,43 @@ export const describeAclExpiration = (
 export const registerPoolCommands = (program: Command): void => {
   const pool = program.command("pool").description("Manage payload and handle pools");
 
-  withEnvOptions(pool.command("add")
-    .description("Add flow-appropriate items to a pool (proof payloads or on-chain handles)"))
-    .addOption(new Option("--flow <flow>", "flow the pool serves").choices([...FLOWS]).makeOptionMandatory())
-    .requiredOption("--count <n>", "pool items to add", parsePositiveInt)
-    .option("--types <list>", "comma-separated FHE value types", parseValueTypes)
-    .option("--threads <n>", "input-proof worker threads", parseBoundedInt("--threads", MAX_THREADS))
-    .option("--lanes <n>", "handle-pool wallet lanes (HD accounts)", parseBoundedInt("--lanes", MAX_LANES))
-    .option(
-      "--encrypt-concurrency <n|auto>",
-      "handle preparation concurrency per wallet lane",
-      parseBoundedIntOrAuto("--encrypt-concurrency", MAX_ENCRYPT_CONCURRENCY),
-    )
-    .option("--delegation-days <n>", "delegated-user-decrypt ACL duration", parsePositiveInt)
-    .action(async (options, command) => {
-      validatePoolAddOptions(options);
-      const env = await envFromCommand(command);
-      const { logger } = await import("../../shared/logger");
-      if (options.flow === "input-proof") {
-        const { generateInputProofPool } = await import("../../pool/input-proof");
-        await generateInputProofPool(env, {
-          count: options.count,
-          valueTypes: options.types as never,
-          threads: options.threads,
-          onProgress: (done, total) => {
-            if (done % 25 === 0 || done === total) {
-              logger.info(`generated ${done.toString()}/${total.toString()} payload(s)`);
-            }
-          },
-        });
-        return;
-      }
-      const { createHandlePool } = await import("../../pool/handles");
-      await createHandlePool(env, {
-        flow: options.flow,
-        count: options.count,
-        valueTypes: options.types as never,
-        lanes: options.lanes,
-        encryptConcurrency: options.encryptConcurrency,
-        delegationDurationDays: options.delegationDays,
-        onProgress: (done, total) =>
-          logger.info(`created ${done.toString()}/${total.toString()} handle(s)`),
-      });
-    });
+  const add = pool.command("add").description("Add flow-appropriate pool items (proof payloads or on-chain handles)");
 
-  withFormatOption(withEnvOptions(pool.command("inspect").description("Show flow-aware capacity, consumption, owners, and ACL health")))
+  /** Shared handle-pool flags consumed by every on-chain decrypt flow. */
+  const withHandleFlags = <T extends CommandUnknownOpts>(command: T): T => {
+    command
+      .requiredOption("--count <n>", "handles to add", parsePositiveInt)
+      .option("--value-types <list>", "comma-separated FHE value types", parseValueTypes)
+      .option("--lanes <n>", "handle-pool wallet lanes (HD accounts)", parseBoundedInt("--lanes", MAX_LANES))
+      .option(
+        "--encrypt-concurrency <n|auto>",
+        "handle preparation concurrency per wallet lane",
+        parseBoundedIntOrAuto("--encrypt-concurrency", MAX_ENCRYPT_CONCURRENCY),
+      );
+    return command;
+  };
+
+  withEnvOptions(add.command("input-proof").description("Generate single-use input-proof payloads (local CPU)"))
+    .requiredOption("--count <n>", "payloads to add", parsePositiveInt)
+    .option("--value-types <list>", "comma-separated FHE value types", parseValueTypes)
+    .option("--threads <n>", "input-proof worker threads", parseBoundedInt("--threads", MAX_THREADS))
+    .action((options, command) => runPoolAdd("input-proof", options as PoolAddFlags, command));
+
+  withHandleFlags(
+    withEnvOptions(add.command("public-decrypt").description("Create reusable public FHETest handles (on-chain)")),
+  ).action((options, command) => runPoolAdd("public-decrypt", options as PoolAddFlags, command));
+
+  withHandleFlags(
+    withEnvOptions(add.command("user-decrypt").description("Create reusable private FHETest handles (on-chain)")),
+  ).action((options, command) => runPoolAdd("user-decrypt", options as PoolAddFlags, command));
+
+  withHandleFlags(
+    withEnvOptions(add.command("delegated-user-decrypt").description("Create reusable delegated handles with ACL delegation (on-chain)")),
+  )
+    .option("--delegation-days <n>", "delegated-user-decrypt ACL duration", parsePositiveInt)
+    .action((options, command) => runPoolAdd("delegated-user-decrypt", options as PoolAddFlags, command));
+
+  withFormatOption(withEnvOptions(pool.command("status").description("Show flow-aware capacity, consumption, owners, and ACL health")))
     .action(async (options, command) => {
       const json = await useJsonOutput(options);
       const env = await envFromCommand(command);
