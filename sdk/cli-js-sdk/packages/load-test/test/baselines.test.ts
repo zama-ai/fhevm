@@ -151,6 +151,27 @@ describe("baseline blessing", () => {
       .rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("rejects a blocked suite cleanly instead of with a raw ZodError", async () => {
+    // A blocked suite is emitted with no entries; the strict schema's
+    // entries.min(1) must not mask the clean status rejection.
+    const suiteOutput = join(dir, "suite");
+    await mkdir(suiteOutput, { recursive: true });
+    await writeFile(join(suiteOutput, "suite-summary.json"), JSON.stringify({
+      suite: "suite",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:02.000Z",
+      outputRoot: suiteOutput,
+      status: "blocked",
+      passed: false,
+      entries: [],
+      blockedReason: "Pool preparation is required.",
+    }));
+    await expect(blessSuiteBaselines({
+      suiteOutput,
+      baselinesDir: join(dir, "baselines"),
+    })).rejects.toThrow("Cannot bless a suite with status blocked.");
+  });
+
   it("refuses to overwrite a corrupt existing baseline", async () => {
     const suiteOutput = await writeSuite();
     const destination = join(dir, "baselines", "testnet", "entry.json");

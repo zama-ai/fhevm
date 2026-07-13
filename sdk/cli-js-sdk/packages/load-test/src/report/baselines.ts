@@ -23,12 +23,14 @@ const suiteEntrySchema = z.object({
   }).strict().optional(),
 }).passthrough();
 
+const suiteStatusSchema = z.enum(["completed", "blocked", "interrupted", "failed"]);
+
 const suiteSummarySchema = z.object({
   suite: artifactSlugSchema,
   startedAt: z.iso.datetime(),
   endedAt: z.iso.datetime(),
   outputRoot: z.string(),
-  status: z.enum(["completed", "interrupted", "failed"]),
+  status: suiteStatusSchema,
   passed: z.boolean(),
   entries: z.array(suiteEntrySchema).min(1),
 }).strict();
@@ -66,6 +68,16 @@ export const blessSuiteBaselines = async (
     summaryValue = JSON.parse(await readFile(summaryPath, "utf8")) as unknown;
   } catch (error) {
     throw new Error(`Could not read completed suite summary at ${summaryPath}.`, { cause: error });
+  }
+  // A non-completed suite (blocked/interrupted/failed) is never bless-able and
+  // may legitimately carry no entries, so reject it on status alone before the
+  // strict schema runs — otherwise an empty `entries` array surfaces as a raw
+  // ZodError instead of the clean "Cannot bless…" message.
+  const earlyStatus = suiteStatusSchema.safeParse(
+    (summaryValue as { status?: unknown } | null)?.status,
+  );
+  if (earlyStatus.success && earlyStatus.data !== "completed") {
+    throw new Error(`Cannot bless a suite with status ${earlyStatus.data}.`);
   }
   const summary = suiteSummarySchema.parse(summaryValue);
   if (summary.status !== "completed") {
