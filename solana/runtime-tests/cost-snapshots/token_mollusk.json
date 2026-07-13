@@ -4,6 +4,11 @@
     "instruction_data_bytes": 223,
     "unique_accounts": 15
   },
+  "confidential_transfer/steady_state": {
+    "compute_units": 366493,
+    "instruction_data_bytes": 223,
+    "unique_accounts": 15
+  },
   "initialize_token_account": {
     "compute_units": 68235,
     "instruction_data_bytes": 16,

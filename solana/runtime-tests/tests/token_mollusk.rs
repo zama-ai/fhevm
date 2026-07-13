@@ -3347,6 +3347,32 @@ fn cost_snapshot_confidential_transfer_direct() {
         &transfer,
         &result,
     );
+
+    // Steady state: the first transfer birthed the transferred-amount
+    // `EncryptedValue` at its canonical per-(mint, source) PDA; later
+    // transfers supersede every touched lineage in place and create no
+    // accounts. Snapshot the second transfer separately.
+    let second_handle = handle_for_chain(22, BALANCE_FHE_TYPE);
+    let second_attestation =
+        amount_attestation_for(second_handle, fixture.owner, fixture.compute_signer);
+    let second_transfer = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        second_attestation,
+    );
+
+    let second_result =
+        context.process_and_validate_instruction(&second_transfer, &[Check::success()]);
+
+    cost_snapshot::assert_cost_snapshot(
+        "token_mollusk",
+        "confidential_transfer/steady_state",
+        &second_transfer,
+        &second_result,
+    );
 }
 
 #[test]
