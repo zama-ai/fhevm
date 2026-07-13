@@ -13,7 +13,9 @@ use connector_utils::{
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+#[cfg(debug_assertions)]
+use serde::Serialize;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 /// Configuration of the `GatewayListener`.

@@ -1,4 +1,6 @@
 use alloy::transports::http::reqwest::Url;
+#[cfg(debug_assertions)]
+use connector_utils::config::serialize_pg_interval;
 use connector_utils::{
     config::{
         AwsKmsConfig, ContractConfig, DeserializeConfig, Error, KmsWallet, PrivateKey,
@@ -8,12 +10,14 @@ use connector_utils::{
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size, deserialize_pg_interval, serialize_pg_interval,
+        default_database_pool_size, deserialize_pg_interval,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-use serde::{Deserialize, Deserializer, Serialize};
+#[cfg(debug_assertions)]
+use serde::Serialize;
+use serde::{Deserialize, Deserializer};
 use sqlx::postgres::types::PgInterval;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
