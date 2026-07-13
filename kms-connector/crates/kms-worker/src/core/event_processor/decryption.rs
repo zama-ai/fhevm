@@ -1390,12 +1390,6 @@ mod tests {
             .unwrap();
     }
 
-    // -------------------------------------------------------------------------
-    // `fetch_calldata` hardening: the legacy path recovers the ACL data from the transaction
-    // calldata, so the calldata is accepted only when the transaction targeted the Decryption
-    // contract directly.
-    // -------------------------------------------------------------------------
-
     /// Where the legacy request transaction was sent, relative to the Decryption contract.
     enum TxTarget {
         /// Sent directly to the Decryption contract (the only accepted case).
