@@ -101,7 +101,7 @@ impl SolanaAclVerifier {
     }
 
     /// Current decrypt: live handle + membership, within the request's domain scope. Reads the
-    /// account fetched at `finalized` commitment — never a snapshot.
+    /// account fetched at `confirmed` commitment — never a snapshot.
     pub fn verify_current_user_decrypt(
         &self,
         account_key: SolanaPubkeyBytes,
@@ -120,7 +120,7 @@ impl SolanaAclVerifier {
         Ok(())
     }
 
-    /// Historical decrypt: a valid historical-access MMR proof against the LIVE finalized peaks
+    /// Historical decrypt: a valid historical-access MMR proof against the live confirmed peaks
     /// (the account passed in, read fresh — not a cached/snapshotted proof-time state).
     pub fn verify_historical_user_decrypt(
         &self,
@@ -144,7 +144,7 @@ impl SolanaAclVerifier {
     }
 
     /// Exact public decrypt: a valid public-decrypt MMR proof for the exact handle, against the
-    /// LIVE finalized peaks. There is no live "is_public" flag — public-ness is only provable via
+    /// live confirmed peaks. There is no live "is_public" flag — public-ness is only provable via
     /// a `PublicDecryptLeaf` MMR leaf.
     pub fn verify_public_decrypt_exact(
         &self,

@@ -58,7 +58,7 @@ pub async fn build_proof<C: ChainFetcher, S: LeafStore>(
     };
 
     // The caller can request a historical leaf immediately after submitting its
-    // superseding transaction. Until that transaction is finalized, the live
+    // superseding transaction. Until that transaction is confirmed, the live
     // lineage has not yet advanced to the requested index.
     if leaf_index >= on_chain.leaf_count {
         return Err(lagging());
@@ -721,7 +721,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn returns_lagging_until_requested_leaf_is_finalized() {
+    async fn returns_lagging_until_requested_leaf_is_confirmed() {
         let program_id = pk(0x99);
         let lineage = pk(0x04);
         let chain = FakeChain::new(program_id);

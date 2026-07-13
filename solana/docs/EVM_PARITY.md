@@ -58,7 +58,7 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 | `ACL.allow(handle, account)` | persistent grant; caller must be allowed | `allow_subjects` — authority `Signer` must already be in the `EncryptedValue.subjects` allowed set + canonical PDA + deny-list + pause; append-only and idempotent, capped at `MAX_ENCRYPTED_VALUE_SUBJECTS=8` (DD-032) | **MET** |
 | `ACL.allowForDecryption(handles[])` | mark publicly decryptable | `make_handle_public` — any allowed subject can seal an exact-handle `PublicDecryptLeaf` into the MMR; that handle's publicness is then **permanent** and survives a later durable-output supersession (append-only leaf, the KMS honors historical public leaves), while staying exact-handle scoped so a superseding handle is not itself public (DD-005's live flag superseded, DD-032) | **MET** (DIVERGENCE: per-handle) |
 | `ACL.allowTransient(handle, account)` | tx-local grant | no durable analog; instruction-local `AllowedLocal` within one `fhe_eval`, plus CPI signer propagation within one instruction | **DIVERGENCE** (no tstore; DD-008) |
-| `ACL.isAllowed(handle, account)` | transient OR persistent | live path: canonical `EncryptedValue` PDA + `current_handle` match + subject membership; historical path: MMR `HistoricalAccessLeaf` inclusion proof against live finalized peaks (DD-032) | **MET** |
+| `ACL.isAllowed(handle, account)` | transient OR persistent | live path: canonical `EncryptedValue` PDA + `current_handle` match + subject membership; historical path: MMR `HistoricalAccessLeaf` inclusion proof against live confirmed peaks (DD-032) | **MET** |
 | `ACL.isAllowedForDecryption(handle)` | public-decrypt flag | exact-handle `PublicDecryptLeaf` MMR inclusion proof (no live flag — DD-032) | **MET** (DIVERGENCE: proof, not a stored flag) |
 | `ACL.persistAllowed` / `allowedTransient` | read pair | inline subject lookup on `EncryptedValue.subjects`; transient = instruction-local `AllowedLocal` | **MET** / **DIVERGENCE** |
 | `ACL.cleanTransientStorage()` | wipe tx transient (AA bundling) | nothing to reclaim — `AllowedLocal` values are instruction-scoped and never persisted (the one-shot `TransientSession` account tier was removed, DD-008) | **DIVERGENCE** (no durable transient state) |
@@ -122,8 +122,8 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
   does not yet call it in-process.
 - **KMS connector** (`kms-connector/crates/kms-worker/src/core/solana_*.rs` and
   `kms-connector/crates/tx-sender/src/core/solana_native.rs`): witness decoders +
-  `SolanaAclVerifier`, now dual-path against `EncryptedValue` (live finalized-account read, or an MMR
-  inclusion proof re-verified against live finalized peaks via the shared `zama_solana_acl` crate,
+  `SolanaAclVerifier`, now dual-path against `EncryptedValue` (live confirmed-account read, or an MMR
+  inclusion proof re-verified against live confirmed peaks via the shared `zama_solana_acl` crate,
   DD-032). Decrypt reuses the unified Gateway V2 path with a typed Solana user-decrypt entrypoint and
   on-chain secp256k1 cert verification (DD-012/DD-021/DD-026); the older `native-v0` request/response
   subsystem remains as library/store code but is not the chosen path and is not wired into the

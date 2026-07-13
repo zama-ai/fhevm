@@ -881,11 +881,11 @@ lags ~32 slots. Worked once the consumer was actually wired (it had been scaffol
 
 Open for debate:
 
-The RELEASE commitment level (finalized ~13s vs confirmed) — see DD-025.
+Removing or relocating this separate coprocessor gate — see DD-025.
 
-## DD-025: WHERE The Finality Gate Sits (BIG OPEN debate item)
+## DD-025: Where The Release Gate Sits
 
-Status: OPEN — recommended direction recorded, not yet implemented.
+Status: partially resolved — KMS/proof reads use `confirmed`; the coprocessor gate remains finalized.
 
 Context:
 
@@ -909,8 +909,17 @@ Options considered:
 - (C) Slot-level finality gate.
 - (D) Ingest only at finalized (+~13s latency).
 
-Also OPEN — the RELEASE commitment level: `finalized` (~13s, safe) vs `confirmed` (~1–2s, but a
-confirmed-then-reorged release is an irreversible decrypt). Most Solana dapps run at `confirmed`.
+The accepted authorization policy for KMS ACL/proof verification is `confirmed`: a grant legitimately
+observed on a supermajority-confirmed fork is sufficient even if that fork is exceptionally rolled
+back later. The KMS ACL read and all three relayer proof RPC reads (`getSignaturesForAddress`,
+`getTransaction`, and `getAccountInfo`) use that explicit commitment. This does not yet make the
+end-to-end release path `confirmed`: the separate finalized-account fetcher described in DD-024 still
+gates coprocessor material availability until its stacked cleanup lands.
+
+Decision provenance: accepted by the Solana feature owner during the review of
+[`zama-ai/fhevm#3122`](https://github.com/zama-ai/fhevm/pull/3122) on 2026-07-13. The accepted trade-off
+is irreversible plaintext release after a valid authorization observed on an exceptionally rolled-back
+confirmed fork; subsequent on-chain actions still follow the surviving fork.
 
 Why this is open:
 
@@ -919,7 +928,7 @@ the EVM substrate that would fix it (A) exists but isn't wired to Solana.
 
 Open for debate:
 
-Pick A/B/C/D and the release commitment level. (A) is recommended because the substrate is reusable.
+Pick A/B/C/D. (A) is recommended because the substrate is reusable.
 
 ## DD-026: Input / Identity Encoding (bytes32 non-EVM) and the Move To Typed User-Decrypt — RESOLVED
 
@@ -1262,9 +1271,9 @@ Solana user-decrypt path lands and can call `build_proof` in-process instead.
 
 Rationale (verbatim from the commit message): this service is in the same trust class as the relayer
 already occupies — availability-critical, but never an authorization anchor. The KMS connector
-re-verifies every proof against live finalized on-chain peaks (DD-032), so a bad or compromised proof
+re-verifies every proof against live confirmed on-chain peaks (DD-032), so a bad or compromised proof
 service can only cause a decrypt to fail, never to wrongly authorize one. Proof building cross-checks
-its reconstructed peaks against the live finalized account and triggers targeted catch-up ingestion on
+its reconstructed peaks against the live confirmed account and triggers targeted catch-up ingestion on
 divergence before refusing a proof, rather than trusting its own replay blindly.
 
 Consequences:

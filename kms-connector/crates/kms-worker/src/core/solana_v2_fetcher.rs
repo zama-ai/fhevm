@@ -1,13 +1,13 @@
 //! Minimal Solana account fetcher for the V2 user-decryption ACL check.
 //!
 //! Reads a single ZamaHost `EncryptedValue` account from the configured Solana host-chain RPC at
-//! **`finalized`** commitment, via the JSON-RPC `getAccountInfo` method. It is intentionally tiny:
+//! **`confirmed`** commitment, via the JSON-RPC `getAccountInfo` method. It is intentionally tiny:
 //! the connector only needs to read account bytes + owner; it does not need the full Solana SDK
 //! RPC client, which is not in the connector's dependency set.
 //!
 //! Security-relevant choices:
-//! - commitment is pinned to `finalized` so the connector never authorizes against a slot that can
-//!   still be rolled back;
+//! - commitment is pinned to `confirmed`: a valid grant observed on a supermajority-confirmed fork
+//!   is sufficient authorization even if that fork is exceptionally rolled back later;
 //! - the caller verifies `owner == ZamaHost program id` and re-derives the canonical EncryptedValue
 //!   PDA before trusting the bytes (see [`crate::core::event_processor::decryption`]).
 
@@ -18,9 +18,8 @@ use serde_json::Value;
 use solana_pubkey::Pubkey;
 use url::Url;
 
-/// The Solana commitment level used for every ACL read. Authorizing decryption against anything
-/// weaker than `finalized` would let a rolled-back slot grant access.
-pub const SOLANA_COMMITMENT_FINALIZED: &str = "finalized";
+/// The Solana commitment level used for every ACL read.
+pub const SOLANA_COMMITMENT_CONFIRMED: &str = "confirmed";
 
 /// A fetched Solana account: its owner program and raw data bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,7 +28,7 @@ pub struct SolanaAccount {
     pub data: Vec<u8>,
 }
 
-/// Fetches account data via Solana JSON-RPC `getAccountInfo` at `finalized` commitment.
+/// Fetches account data via Solana JSON-RPC `getAccountInfo` at `confirmed` commitment.
 #[derive(Clone, Debug)]
 pub struct SolanaV2Fetcher {
     url: Url,
@@ -41,7 +40,7 @@ impl SolanaV2Fetcher {
         Self { url, client }
     }
 
-    /// Builds the JSON-RPC `getAccountInfo` request body for `account`, pinned to `finalized`
+    /// Builds the JSON-RPC `getAccountInfo` request body for `account`, pinned to `confirmed`
     /// commitment and base64 encoding. Split out so it can be asserted in unit tests without a
     /// live RPC.
     pub fn account_info_request_body(account: &SolanaPubkeyBytes) -> Value {
@@ -53,13 +52,13 @@ impl SolanaV2Fetcher {
                 Pubkey::new_from_array(*account).to_string(),
                 {
                     "encoding": "base64",
-                    "commitment": SOLANA_COMMITMENT_FINALIZED,
+                    "commitment": SOLANA_COMMITMENT_CONFIRMED,
                 }
             ],
         })
     }
 
-    /// Fetches `account` at `finalized` commitment. Returns `Ok(None)` when the account does not
+    /// Fetches `account` at `confirmed` commitment. Returns `Ok(None)` when the account does not
     /// exist, `Err` on transport / decoding failures.
     pub async fn get_account(
         &self,
@@ -145,7 +144,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn request_pins_finalized_commitment() {
+    fn request_pins_confirmed_commitment() {
         let account = [3u8; 32];
         let body = SolanaV2Fetcher::account_info_request_body(&account);
 
@@ -155,8 +154,8 @@ mod tests {
             params[0].as_str().unwrap(),
             Pubkey::new_from_array(account).to_string()
         );
-        assert_eq!(params[1]["commitment"], SOLANA_COMMITMENT_FINALIZED);
-        assert_eq!(params[1]["commitment"], "finalized");
+        assert_eq!(params[1]["commitment"], SOLANA_COMMITMENT_CONFIRMED);
+        assert_eq!(params[1]["commitment"], "confirmed");
         assert_eq!(params[1]["encoding"], "base64");
     }
 

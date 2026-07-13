@@ -36,7 +36,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    handles directly; fails closed on incomplete plans.
 5. **Off-chain proof service — relayer** (`relayer/src/solana_proof`): ingest (atomic, gap-free,
    fail-closed), decode (incl. `emit_cpi!` op-event resolution for born-public handles), replay, and
-   `build_verified_proof` cross-check against finalized peaks (a wrong record surfaces as
+   `build_verified_proof` cross-check against confirmed peaks (a wrong record surfaces as
    `PeaksDiverged`/`CorruptCache`, never a bad proof).
 6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `plan_contracts.rs`): vendored IDLs and the
    Borsh golden manifest must match the freshly-built Anchor IDLs; EVENT_VERSION consistency across
@@ -57,8 +57,25 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 The rewrite's central correctness bet is that off-chain consumers reproduce on-chain MMR state exactly.
 The e2e `reconstruct=true` arm exercises host-listener reconstruction against the full stack, while
 `build_verified_proof` cross-checks reconstructed peaks against final chain state. A divergence fails
-closed rather than yielding a wrong proof, which the KMS then re-verifies against finalized peaks anyway
+closed rather than yielding a wrong proof, which the KMS then re-verifies against confirmed peaks anyway
 (DD-035).
+
+## Confirmed-view operations
+
+An equal-leaf-count proof mismatch is retried as
+`classification=confirmed_equal_count`; a proof ahead of the KMS view is retried as
+`classification=confirmed_proof_ahead`. Both use the ordinary configured decryption budget
+(`max_decryption_attempts`, default 20) and fast event polling interval (default 3 seconds). Actual
+wall-clock exhaustion also depends on batch load and processing time; there is no separate hidden
+fork-retry loop. Deterministic mismatches remain fail-closed, but the classification distinguishes
+them from ordinary proof-ahead catch-up in logs.
+
+A persistent relayer `corrupt_cache` response means the file-backed proof cache disagrees with the
+confirmed on-chain peaks after targeted catch-up. Recovery is operational, not an authorization
+fallback: stop the relayer, remove the JSON file configured by `solana_proof.leaf_store_path`, and
+restart it so the cache is replayed from the configured `start_signature` (or from the oldest retained
+program signature when absent). Until replay catches up, proof requests fail closed; the KMS never
+trusts the cache without re-verifying the proof against live chain state.
 
 ## Deliberately deferred (filed as follow-ups, not gaps in the merge)
 

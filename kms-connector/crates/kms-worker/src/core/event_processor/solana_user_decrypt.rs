@@ -36,11 +36,11 @@
 //! authorizes exactly one handle, so multi-handle Solana requests are out of scope for this
 //! rewrite):
 //!
-//! - **current-handle** (`mmr_proof_bytes` empty): the lineage account, fetched at `finalized`
+//! - **current-handle** (`mmr_proof_bytes` empty): the lineage account, fetched at `confirmed`
 //!   commitment, is checked for canonical PDA derivation + program ownership + `current_handle ==
 //!   handle` + `subject ∈ subjects` ([`dispatch_solana_current`]).
 //! - **historical / public** (`mmr_proof_bytes` non-empty): the request carries an MMR inclusion
-//!   proof, verified against the LIVE finalized peaks (the account is always freshly fetched, never
+//!   proof, verified against the live confirmed peaks (the account is always freshly fetched, never
 //!   a cached/proof-time snapshot) via the shared crate's `authorize_historical` /
 //!   `authorize_public` ([`dispatch_solana_mmr_proof`]). There is no live "is public" flag any
 //!   more — public-ness is only provable via a `PublicDecryptLeaf` MMR leaf.
@@ -50,12 +50,12 @@
 //! [`dispatch_solana_mmr_proof`] verifies the proof against the live peaks FIRST. Only after a
 //! inclusion-proof failure does the proof's leaf count classify the result:
 //! - **proof count < live count**: terminal; the immutable queued proof is stale.
-//! - **proof count == live count**: terminal; the proof is invalid for the live state.
-//! - **proof count > live count**: recoverable through the ordinary bounded attempt budget; the
-//!   KMS finalized view is behind the proof service, so the same proof may verify after catch-up.
+//! - **proof count >= live count**: recoverable through the ordinary bounded attempt budget; the
+//!   proof service and KMS may be observing different confirmed forks or the KMS may be behind, so
+//!   the same proof may verify after catch-up.
 //!
 //! Domain, owner, canonical-account, bump, and inconsistent-MMR failures remain terminal regardless
-//! of the two counts because finalized-view catch-up cannot repair them.
+//! of the two counts because confirmed-view catch-up cannot repair them.
 //!
 //! A proof that still verifies against the live peaks despite `proof_leaf_count != leaf_count` (count
 //! drifted but the relevant mountain never merged) is accepted — verify-first, never rebuilt from
@@ -107,7 +107,7 @@ pub struct VerifiedSolanaAuth {
 }
 
 /// Per-chain Solana host configuration needed to authorize a user-decrypt request: the expected
-/// ZamaHost program id and a `finalized`-commitment account fetcher.
+/// ZamaHost program id and a `confirmed`-commitment account fetcher.
 #[derive(Clone, Debug)]
 pub struct SolanaHost {
     pub program_id: SolanaPubkeyBytes,
@@ -182,7 +182,7 @@ pub fn require_single_handle(handles: &[HandleBytes]) -> Result<HandleBytes, Pro
     }
 }
 
-/// Fetches the `EncryptedValue` lineage for `value_key` at `finalized` commitment and decodes it.
+/// Fetches the `EncryptedValue` lineage for `value_key` at `confirmed` commitment and decodes it.
 /// Never a snapshot: every call re-reads the live account, which is what lets
 /// [`dispatch_solana_mmr_proof`] verify against the LIVE peaks.
 async fn fetch_encrypted_value_acl(
@@ -198,7 +198,7 @@ async fn fetch_encrypted_value_acl(
         .map_err(ProcessingError::Recoverable)?
         .ok_or_else(|| {
             ProcessingError::Recoverable(anyhow!(
-                "Solana EncryptedValue lineage account {} not found at finalized commitment",
+                "Solana EncryptedValue lineage account {} not found at confirmed commitment",
                 Pubkey::new_from_array(account_key),
             ))
         })?;
@@ -335,9 +335,9 @@ fn dispatch_solana_public_mmr_proof(
         .map_err(|e| classify_mmr_verification_failure(e, proof_leaf_count, acl.leaf_count))
 }
 
-/// Verify-first failure classification. Only an inclusion-proof mismatch ahead of the KMS finalized
-/// view can heal through catch-up, so it gets an ordinary bounded retry. All other verifier errors,
-/// and proof mismatches at or behind the live count, are terminal.
+/// Verify-first failure classification. An inclusion-proof mismatch at or ahead of the KMS
+/// confirmed view can heal through catch-up or a confirmed-fork change, so it gets an ordinary
+/// bounded retry. All other verifier errors, and proof mismatches behind the live count, are terminal.
 fn classify_mmr_verification_failure(
     error: crate::core::solana_acl::SolanaAclVerificationError,
     proof_leaf_count: u64,
@@ -348,31 +348,35 @@ fn classify_mmr_verification_failure(
         crate::core::solana_acl::SolanaAclVerificationError::HistoricalAccessProofInvalid
             | crate::core::solana_acl::SolanaAclVerificationError::PublicDecryptProofInvalid
     );
-    if proof_invalid && proof_leaf_count > live_leaf_count {
+    if proof_invalid && proof_leaf_count == live_leaf_count {
         ProcessingError::Recoverable(anyhow!(
-            "Solana MMR proof is ahead of the KMS finalized view: proof leaf_count={proof_leaf_count}, \
-             live finalized leaf_count={live_leaf_count}; retrying within the normal attempt budget \
-             while finalized state catches up ({error})"
+            "Solana MMR proof does not verify against an equal-count KMS confirmed view \
+             (classification=confirmed_equal_count): proof leaf_count={proof_leaf_count}, live \
+             confirmed leaf_count={live_leaf_count}; retrying within the configured decryption \
+             attempt budget while confirmed views converge ({error})"
+        ))
+    } else if proof_invalid && proof_leaf_count > live_leaf_count {
+        ProcessingError::Recoverable(anyhow!(
+            "Solana MMR proof is ahead of the KMS confirmed view \
+             (classification=confirmed_proof_ahead): proof leaf_count={proof_leaf_count}, live \
+             confirmed leaf_count={live_leaf_count}; retrying within the configured decryption \
+             attempt budget while the KMS view catches up ({error})"
         ))
     } else if proof_invalid && proof_leaf_count < live_leaf_count {
         ProcessingError::Irrecoverable(anyhow!(
             "Solana MMR proof is stale and immutable: proof leaf_count={proof_leaf_count}, live \
-             finalized leaf_count={live_leaf_count} ({error})"
-        ))
-    } else if proof_invalid {
-        ProcessingError::Irrecoverable(anyhow!(
-            "Solana MMR proof is invalid at live finalized leaf_count={live_leaf_count} ({error})"
+             confirmed leaf_count={live_leaf_count} ({error})"
         ))
     } else {
         ProcessingError::Irrecoverable(anyhow!(
             "Solana MMR authorization failed irrecoverably: proof leaf_count={proof_leaf_count}, \
-             live finalized leaf_count={live_leaf_count} ({error})"
+             live confirmed leaf_count={live_leaf_count} ({error})"
         ))
     }
 }
 
 /// Full Solana user-decryption ACL check for one request: fetches the named `EncryptedValue`
-/// lineage at `finalized` commitment and dispatches to the current or MMR-proof path.
+/// lineage at `confirmed` commitment and dispatches to the current or MMR-proof path.
 pub async fn check_solana_handles_acl(
     host: &SolanaHost,
     handles: &[HandleBytes],
@@ -835,7 +839,7 @@ mod tests {
             &public_blob,
         )
         .expect_err("a PublicDecryptLeaf for the old handle must not authorize the rotated handle");
-        assert!(matches!(err, ProcessingError::Irrecoverable(_)));
+        assert!(matches!(err, ProcessingError::Recoverable(_)));
 
         let mut non_public_lineage = lineage(h(30), &[owner]);
         non_public_lineage.rotate(h(31));
@@ -850,7 +854,7 @@ mod tests {
             &historical_leaf_blob,
         )
         .expect_err("a historical-access leaf must not authorize public decrypt");
-        assert!(matches!(err, ProcessingError::Irrecoverable(_)));
+        assert!(matches!(err, ProcessingError::Recoverable(_)));
     }
 
     // (3) STALE TERMINAL
@@ -888,7 +892,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_proof_at_live_leaf_count_is_terminal() {
+    fn invalid_proof_at_live_leaf_count_uses_normal_recoverable_budget() {
         let err = classify_mmr_verification_failure(
             crate::core::solana_acl::SolanaAclVerificationError::HistoricalAccessProofInvalid,
             4,
@@ -896,14 +900,18 @@ mod tests {
         );
 
         match err {
-            ProcessingError::Irrecoverable(e) => {
+            ProcessingError::Recoverable(e) => {
                 let msg = e.to_string();
+                assert!(msg.contains("proof leaf_count=4"), "got: {msg}");
+                assert!(msg.contains("live confirmed leaf_count=4"), "got: {msg}");
                 assert!(
-                    msg.contains("invalid at live finalized leaf_count=4"),
+                    msg.contains("classification=confirmed_equal_count"),
                     "got: {msg}"
                 );
             }
-            other => panic!("an invalid proof at the live count must be terminal, got {other:?}"),
+            other => {
+                panic!("equal-count confirmed fork disagreement must be retryable, got {other:?}")
+            }
         }
     }
 
@@ -919,10 +927,13 @@ mod tests {
             ProcessingError::Recoverable(e) => {
                 let msg = e.to_string();
                 assert!(msg.contains("proof leaf_count=2"), "got: {msg}");
-                assert!(msg.contains("live finalized leaf_count=1"), "got: {msg}");
-                assert!(msg.contains("normal attempt budget"), "got: {msg}");
+                assert!(msg.contains("live confirmed leaf_count=1"), "got: {msg}");
+                assert!(
+                    msg.contains("classification=confirmed_proof_ahead"),
+                    "got: {msg}"
+                );
             }
-            other => panic!("a proof ahead of finalized state must be recoverable, got {other:?}"),
+            other => panic!("a proof ahead of confirmed state must be recoverable, got {other:?}"),
         }
     }
 

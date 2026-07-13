@@ -139,6 +139,8 @@ where
 
             match self.host_chain_backend(ct_chain_id)? {
                 HostChainAclBackend::Solana(host) => {
+                    // Public access is proven by a PublicDecryptLeaf MMR proof and verified
+                    // against the live confirmed lineage account.
                     check_solana_handles_public_decrypt(host, &[ct.ctHandle.0], extra_data)
                         .await
                         .map_err(|e| {
@@ -491,7 +493,7 @@ where
     /// 2. ed25519 signature over the canonical preimage — binds `publicKey`, handles, identity,
     ///    nonce, allowed domains, and validity window to the claimed Solana identity (closes the
     ///    publicKey-substitution / relayer-bypass bug),
-    /// 3. per-handle ACL read at `finalized` commitment with owner + canonical-PDA checks and the
+    /// 3. per-handle ACL read at `confirmed` commitment with owner + canonical-PDA checks and the
     ///    domain-scoped verifier (identity as subject).
     #[tracing::instrument(skip_all)]
     pub async fn check_user_decryption_request_solana(
@@ -541,7 +543,7 @@ where
         let auth = verify_solana_user_decrypt_signature(request, chain_id)
             .map_err(|e| RequestCheckError::from_processing(RequestCheckKind::Signature, e))?;
 
-        // ACL phase: read each handle's record at finalized commitment and run the domain-scoped
+        // ACL phase: read each handle's record at confirmed commitment and run the domain-scoped
         // verifier with the identity as subject.
         let handles: Vec<HandleBytes> = request.handles.iter().map(|e| e.handle.0).collect();
         check_solana_handles_acl(host, &handles, &auth)
