@@ -30,6 +30,13 @@ use crate::solana_adapter::{
 /// dropped/reorged transaction) so the queue cannot hot-loop forever.
 const MAX_FINALIZATION_ATTEMPTS: i32 = 60;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FinalizedAccountFetchAction {
+    Process,
+    Retry,
+    Fail,
+}
+
 #[derive(Clone, Debug)]
 pub struct SolanaFinalizedAccountFetcherConfig {
     pub rpc_url: String,
@@ -632,10 +639,12 @@ where
     // the RPC against not-yet-finalized accounts.
     let mut terminal = 0usize;
     for (job, account) in jobs.iter().zip(accounts) {
-        match account {
-            Some(account)
-                if !finalized_slot_covers_job(job, account.observed_slot) =>
-            {
+        let action = finalized_account_fetch_action(
+            job,
+            account.as_ref().map(|account| account.observed_slot),
+        );
+        match (account, action) {
+            (Some(account), FinalizedAccountFetchAction::Retry) => {
                 retry_finalized_account_fetch(
                     &mut tx,
                     job,
@@ -646,7 +655,19 @@ where
                 )
                 .await?;
             }
-            Some(account) => {
+            (Some(account), FinalizedAccountFetchAction::Fail) => {
+                fail_finalized_account_fetch(
+                    &mut tx,
+                    job,
+                    &format!(
+                        "finalized account context slot {} still predates job block {} after max attempts",
+                        account.observed_slot, job.block_number
+                    ),
+                )
+                .await?;
+                terminal += 1;
+            }
+            (Some(account), FinalizedAccountFetchAction::Process) => {
                 let witness = SolanaFinalizedAccountWitness {
                     account_key: job.account_key,
                     owner: account.owner,
@@ -698,25 +719,27 @@ where
                 }
                 terminal += 1;
             }
-            None => {
+            (None, FinalizedAccountFetchAction::Retry) => {
                 // The allow may simply not have finalized yet: retry until the
                 // attempt budget is spent, then fail hard.
-                if job.attempts < MAX_FINALIZATION_ATTEMPTS {
-                    retry_finalized_account_fetch(
-                        &mut tx,
-                        job,
-                        "account not yet found at finalized commitment; awaiting finalization",
-                    )
-                    .await?;
-                } else {
-                    fail_finalized_account_fetch(
-                        &mut tx,
-                        job,
-                        "account not found at finalized commitment after max attempts",
-                    )
-                    .await?;
-                    terminal += 1;
-                }
+                retry_finalized_account_fetch(
+                    &mut tx,
+                    job,
+                    "account not yet found at finalized commitment; awaiting finalization",
+                )
+                .await?;
+            }
+            (None, FinalizedAccountFetchAction::Fail) => {
+                fail_finalized_account_fetch(
+                    &mut tx,
+                    job,
+                    "account not found at finalized commitment after max attempts",
+                )
+                .await?;
+                terminal += 1;
+            }
+            (None, FinalizedAccountFetchAction::Process) => {
+                unreachable!("a missing account cannot be ready for processing")
             }
         }
     }
@@ -730,6 +753,19 @@ fn finalized_slot_covers_job(
     observed_slot: u64,
 ) -> bool {
     observed_slot >= job.block_number
+}
+
+fn finalized_account_fetch_action(
+    job: &SolanaFinalizedAccountFetchJob,
+    observed_slot: Option<u64>,
+) -> FinalizedAccountFetchAction {
+    if observed_slot.is_some_and(|slot| finalized_slot_covers_job(job, slot)) {
+        FinalizedAccountFetchAction::Process
+    } else if job.attempts < MAX_FINALIZATION_ATTEMPTS {
+        FinalizedAccountFetchAction::Retry
+    } else {
+        FinalizedAccountFetchAction::Fail
+    }
 }
 
 async fn retry_jobs(
@@ -916,6 +952,41 @@ mod tests {
         assert!(!finalized_slot_covers_job(&job, account.observed_slot));
         job.block_number = account.observed_slot;
         assert!(finalized_slot_covers_job(&job, account.observed_slot));
+    }
+
+    #[test]
+    fn finalized_account_fetch_transition_is_bounded_and_fail_closed() {
+        let mut job = acl_record_job(
+            "encrypted_value_created",
+            Some(Handle::from([6; 32])),
+        );
+        job.block_number = 43;
+        job.attempts = MAX_FINALIZATION_ATTEMPTS - 1;
+        assert_eq!(
+            finalized_account_fetch_action(&job, Some(42)),
+            FinalizedAccountFetchAction::Retry
+        );
+        assert_eq!(
+            finalized_account_fetch_action(&job, None),
+            FinalizedAccountFetchAction::Retry
+        );
+
+        job.attempts = MAX_FINALIZATION_ATTEMPTS;
+        assert_eq!(
+            finalized_account_fetch_action(&job, Some(42)),
+            FinalizedAccountFetchAction::Fail
+        );
+        assert_eq!(
+            finalized_account_fetch_action(&job, None),
+            FinalizedAccountFetchAction::Fail
+        );
+
+        // The witness/material path is reached only once the finalized RPC
+        // context covers the queued event, even after the retry budget expires.
+        assert_eq!(
+            finalized_account_fetch_action(&job, Some(43)),
+            FinalizedAccountFetchAction::Process
+        );
     }
 
     #[test]

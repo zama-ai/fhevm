@@ -10,12 +10,6 @@ pub enum ProcessingError {
     Irrecoverable(anyhow::Error),
     #[error("Processing failed: {0}")]
     Recoverable(anyhow::Error),
-    /// Recoverable, but exempt from the attempt budget: the failure is provably a stale-proof
-    /// retry (e.g. a Solana MMR proof built against a chain tip the lineage has since advanced
-    /// past) rather than a bad request, so retrying it must not count against
-    /// `max_decryption_attempts`. See `solana_user_decrypt`'s freshness contract.
-    #[error("Processing failed (budget-exempt retry): {0}")]
-    RecoverableBudgetExempt(anyhow::Error),
 }
 
 impl ProcessingError {

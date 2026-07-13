@@ -66,14 +66,6 @@ where
                 event.mark_as_failed(&self.db_pool).await;
                 None
             }
-            // Budget-exempt recoverable errors (e.g. a stale Solana MMR proof) always get
-            // retried, regardless of the attempt counter: the counter isn't even incremented for
-            // them (see `inner_process`), so this arm must never apply the attempt-budget cutoff.
-            (Err(ProcessingError::RecoverableBudgetExempt(e)), _) => {
-                error!("{}", ProcessingError::RecoverableBudgetExempt(e));
-                event.mark_as_pending(&self.db_pool).await;
-                None
-            }
             // For now, we only check the error counter for public and user decryptions as they are
             // the most frequent operations, and we want to avoid infinite retry loop for them.
             // For key management operations, as they are not frequent at all, we currently rely on
@@ -249,11 +241,8 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         &mut self,
         event: &mut ProtocolEvent,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
-        let request = self.prepare_request(event).await.inspect_err(|e| {
-            // Budget-exempt errors (stale proof, legitimate retry) must not consume attempts.
-            if !matches!(e, ProcessingError::RecoverableBudgetExempt(_)) {
-                event.error_counter += 1;
-            }
+        let request = self.prepare_request(event).await.inspect_err(|_| {
+            event.error_counter += 1;
         })?;
 
         if !event.already_sent {
