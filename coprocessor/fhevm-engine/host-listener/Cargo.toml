@@ -32,12 +32,7 @@ path = "src/bin/solana_host_listener.rs"
 name = "solana_host_listener"
 test = false
 bench = false
-
-[[bin]]
-path = "src/bin/solana_finalized_account_fetcher.rs"
-name = "solana_finalized_account_fetcher"
-test = false
-bench = false
+required-features = ["solana-grpc", "solana-reconstruct"]
 
 [dependencies]
 # workspace dependencies

@@ -166,10 +166,9 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
 3. **No per-block HCU / complexity metering.** The host caps total and critical-path HCU per
    `fhe_eval` plan (`HostConfig::max_hcu_per_tx` / `max_hcu_depth_per_tx`, `0` = off) plus the Solana
    compute budget, but there is no EVM-style per-block `HCULimit` plane. Relevant to DoS/cost-bounding.
-4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification + request witnesses.**
-   The listener persists finalized account fetch intents and exposes claim/store/complete helpers. The
-   residual risk is off-chain integration: a deployed fetcher and KMS certificate publication path
-   still need to be wired before the flow is end-to-end production ready.
+4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification + request accounts.**
+   The deleted coprocessor request-witness store had no consumer. The residual risk is off-chain
+   integration of KMS certificate publication before the flow is end-to-end production ready.
 5. **The Solana poller is not wired into the EVM reorg substrate** (DD-025/DD-028): it polls at
    `confirmed` and inserts directly, bypassing the block-status machine. Reorg correctness is an open
    gap and the residual `native-v0` connector code is dead scaffolding to retire.

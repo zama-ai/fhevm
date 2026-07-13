@@ -286,7 +286,7 @@ async fn ingest_signature(
         signature = %signature,
         slot = block.block_number,
         tfhe_events = stats.tfhe_events,
-        acl_events = stats.acl_events,
+        material_requests = stats.material_requests,
         inserted_rows = stats.inserted_rows,
         "Ingested Solana host events"
     );
@@ -307,7 +307,7 @@ async fn ingest_signature(
 /// Separately, the RFC-024 ACL/allow lifecycle is EVENT-FREE: allow signals
 /// (public-decrypt / made-public / disclose+redeem requests) are recovered by
 /// decoding the `EncryptedValue` instructions via
-/// [`crate::solana_reconstruct::decode_encrypted_value_fetch_events`], compiled in
+/// [`crate::solana_reconstruct::decode_encrypted_value_material_request_events`], compiled in
 /// under `solana-reconstruct`. That decode is required in EVERY transport (RPC
 /// included) — without the feature the listener ingests compute but drives no
 /// decrypts, so builds that need decrypts must enable it.
@@ -393,7 +393,7 @@ fn extract_host_events_with_tracker(
     let events = {
         let mut events = events;
         events.extend(
-            crate::solana_reconstruct::decode_encrypted_value_fetch_events(
+            crate::solana_reconstruct::decode_encrypted_value_material_request_events(
                 &all_instructions,
                 &program_id,
                 encrypted_value_tracker,

@@ -18,7 +18,7 @@ use host_listener::{
     solana_adapter::{
         decode_anchor_cpi_events, decode_anchor_log_events, decode_solana_transaction_events,
         insert_solana_events, normalize_solana_events_for_db, solana_transaction_id,
-        SolanaBlockMeta, SolanaFinalizedAccountFetchKind, SolanaHostEvent,
+        SolanaBlockMeta, SolanaHostEvent,
     },
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
@@ -113,7 +113,7 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     db_tx.commit().await?;
 
     assert_eq!(stats.tfhe_events, 5);
-    assert_eq!(stats.acl_events, 0);
+    assert_eq!(stats.material_requests, 0);
 
     wait_until_computed(&harness.app).await?;
     assert!(kms_like_user_decrypt_check(
@@ -288,19 +288,10 @@ fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
     assert_eq!(tfhe_logs.len(), 1);
     assert_eq!(account_fetches.len(), 1);
     assert_eq!(
-        account_fetches[0].account_key,
-        output_encrypted_value.to_bytes()
-    );
-    assert_eq!(
-        account_fetches[0].kind,
-        SolanaFinalizedAccountFetchKind::EncryptedValueAccount
-    );
-    assert_eq!(account_fetches[0].reason, "acl_record_bound");
-    assert_eq!(
         account_fetches[0].handle,
-        tfhe_result_handle(&tfhe_logs[0].event.data)
+        tfhe_result_handle(&tfhe_logs[0].event.data).unwrap()
     );
-    assert!(!tfhe_logs[0].is_allowed);
+    assert!(tfhe_logs[0].is_allowed);
 }
 
 #[test]
@@ -369,10 +360,8 @@ fn solana_worker_replay_shape_preserves_eval_dependencies_and_eager_schedules_co
     );
     // Eager compute (RFC-024 Q11 option A): every compute log is schedulable the moment the
     // compute confirms — `is_allowed` is the tfhe-worker's scheduling gate, decoupled from any
-    // same-tx ACL allow-signal. It is NOT decrypt authorization: release stays gated on the
-    // finalized on-chain ACL via `solana_finalized_account_fetcher`, so eager scheduling can never
-    // cause a wrong decrypt. Hence all four are `is_allowed = true` (matches the adapter-level
-    // sibling tests). This retires the earlier "compute alone must not grant is_allowed" contract.
+    // same-tx ACL allow-signal. It is NOT decrypt authorization: KMS validates the live
+    // EncryptedValue account before release. Hence all four are `is_allowed = true`.
     assert_eq!(
         tfhe_logs
             .iter()

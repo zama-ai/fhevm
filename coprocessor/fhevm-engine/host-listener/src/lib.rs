@@ -7,8 +7,7 @@ pub mod health_check;
 pub mod kms_generation;
 pub mod poller;
 pub mod solana_adapter;
-pub mod solana_finalized_account_fetcher;
-#[cfg(feature = "solana-grpc")]
+#[cfg(all(feature = "solana-grpc", feature = "solana-reconstruct"))]
 pub mod solana_grpc_listener;
 pub mod solana_listener;
 #[cfg(feature = "solana-reconstruct")]
