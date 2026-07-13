@@ -101,6 +101,22 @@ describe("compat", () => {
     ]);
   });
 
+  test("drops seed-start-block for legacy host-listener-poller images", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-supported",
+        lockName: "latest-supported.json",
+        env: {
+          COPROCESSOR_HOST_LISTENER_VERSION: "v0.13.0",
+        } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.coprocessorDropFlags["host-listener-poller"]).toContain("--seed-start-block");
+  });
+
   test("drops signer flags for legacy sns-worker images", () => {
     const policy = compatPolicyForState({
       versions: {
