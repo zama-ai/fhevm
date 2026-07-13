@@ -104,7 +104,7 @@ const stackSpecFromResolved = (input: {
   requiresGitHub: boolean;
 }): StackSpec => {
   if (input.scenario.kind === "blue-green") {
-    // Synthesise N BCS instances so the multi-op compose gen applies; GCS is layered on in buildCoprocessorOverride.
+    // Synthesize N BCS instances so the multi-op compose gen applies; GCS is layered on in buildCoprocessorOverride.
     const bg = input.scenario;
     const bcsAsCoprocessor: ResolvedCoprocessorScenario = {
       version: 1,
