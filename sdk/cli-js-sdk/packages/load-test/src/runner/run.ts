@@ -346,6 +346,8 @@ export const executeRun = async (options: RunOptions): Promise<RunResult> => {
     );
 
     // ---- Collect (start) --------------------------------------------------
+    // TODO: the /metrics path is assumed identical across implementations;
+    // support a future per-target { metricsUrl } override for A and B.
     logger.start("Starting collectors.");
     collectorRuntimes.push({
       target: "A",

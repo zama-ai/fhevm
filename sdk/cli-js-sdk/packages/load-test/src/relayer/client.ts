@@ -394,6 +394,8 @@ export class RelayerClient {
     };
   }
 
+  // TODO: readiness path is hardcoded; some relayer implementations expose a
+  // different one. Support a future per-target { healthPath } override.
   /** GET /health/readiness; returns true on HTTP 200. */
   async isReady(): Promise<boolean> {
     try {
@@ -408,6 +410,8 @@ export class RelayerClient {
     }
   }
 
+  // TODO: metrics path is hardcoded; the metrics URL may differ per relayer
+  // implementation. Support a future per-target { metricsUrl } override.
   /** Raw Prometheus exposition text from GET /metrics. */
   async metricsText(): Promise<string> {
     const response = await this.pool.request({ path: "/metrics", method: "GET" });

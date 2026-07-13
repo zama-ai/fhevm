@@ -16,6 +16,8 @@ export type RelayerReadinessOptions = Readonly<{
   clients?: RelayerReadinessClients;
 }>;
 
+// TODO: clients share one HTTP contract, but readiness/metrics URLs may differ
+// per implementation; thread a future per-target { healthPath, metricsUrl } here.
 const createClients = (options: RelayerReadinessOptions): RelayerReadinessClients => ({
   primary: new RelayerClient({
     baseUrl: options.env.relayerUrl,
