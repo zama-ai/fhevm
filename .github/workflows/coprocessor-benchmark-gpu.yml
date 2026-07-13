@@ -148,9 +148,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake pkg-config libssl-dev \
-                                  libclang-dev docker-compose-v2 docker.io acl
+                                  libclang-dev acl
+          if ! command -v docker >/dev/null 2>&1; then
+            sudo apt-get install -y docker.io
+          fi
+          if ! docker compose version >/dev/null 2>&1; then
+            if dpkg-query --show --showformat='${Status}' containerd.io 2>/dev/null | grep -q "ok installed"; then
+              sudo apt-get install -y docker-compose-plugin
+            else
+              sudo apt-get install -y docker-compose-v2
+            fi
+          fi
+          sudo systemctl start docker
           sudo usermod -aG docker "$USER"
-          newgrp docker
           sudo setfacl --modify user:"$USER":rw /var/run/docker.sock
           cargo +stable install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
 
@@ -211,7 +221,7 @@ jobs:
 
       - name: Run benchmarks on GPU
         run: |
-          BENCHMARK_TYPE="${BENCHMARK_TYPE}" FHEVM_BENCH_EXTENDED=1 make -e "benchmark_${BENCHMARKS}_gpu"
+          BENCHMARK_TYPE="${BENCHMARK_TYPE}" make -e "benchmark_${BENCHMARKS}_gpu"
         working-directory: coprocessor/fhevm-engine/tfhe-worker
         env:
           BENCHMARKS: ${{ inputs.benchmarks }}

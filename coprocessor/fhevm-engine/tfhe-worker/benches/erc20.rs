@@ -18,6 +18,7 @@ use fhevm_engine_common::utils::safe_deserialize_key;
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{Handle, ProducerBlock};
+use std::collections::HashSet;
 use std::time::SystemTime;
 use tfhe::prelude::CiphertextList;
 use tfhe::xof_key_set::CompressedXofKeySet;
@@ -47,40 +48,6 @@ fn main() {
     }
 
     if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
-        for num_elems in [10, 50, 200, 500] {
-            group.throughput(Throughput::Elements(num_elems));
-            let bench_id =
-                format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems");
-            group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(schedule_erc20_whitepaper(
-                        b,
-                        num_elems as usize,
-                        bench_id.clone(),
-                    ))
-                    .unwrap();
-            });
-
-            group.throughput(Throughput::Elements(num_elems));
-            let bench_id = format!(
-                "{bench_name}::throughput::dependent_whitepaper::FHEUint64::{num_elems}_elems"
-            );
-            group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new()
-                    .unwrap()
-                    .block_on(schedule_dependent_erc20_whitepaper(
-                        b,
-                        num_elems as usize,
-                        bench_id.clone(),
-                    ));
-            });
-        }
-    }
-
-    if (ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL")
-        && std::env::var("FHEVM_BENCH_EXTENDED").as_deref() == Ok("1")
-    {
         let num_elems = 300;
         group.throughput(Throughput::Elements(num_elems));
         let bench_id = format!(
@@ -113,15 +80,15 @@ fn main() {
                 .unwrap();
         });
 
-        let num_elems = 5000;
+        let num_elems = 500;
         group.throughput(Throughput::Elements(num_elems));
         let bench_id = format!(
-            "{bench_name}::throughput::independent::FHEUint64::{num_elems}_elems::500_per_block"
+            "{bench_name}::throughput::independent::FHEUint64::{num_elems}_elems::50_per_block"
         );
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             Runtime::new()
                 .unwrap()
-                .block_on(schedule_erc20_independent_5000(
+                .block_on(schedule_erc20_independent_500(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
@@ -129,23 +96,7 @@ fn main() {
                 .unwrap();
         });
 
-        let num_elems = 10000;
-        group.throughput(Throughput::Elements(num_elems));
-        let bench_id = format!(
-            "{bench_name}::throughput::mixed::FHEUint64::{num_elems}_elems::1000_per_block::50x20_dependent"
-        );
-        group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-            Runtime::new()
-                .unwrap()
-                .block_on(schedule_erc20_mixed_10000(
-                    b,
-                    num_elems as usize,
-                    bench_id.clone(),
-                ))
-                .unwrap();
-        });
-
-        let num_elems = 2000;
+        let num_elems = 400;
         group.throughput(Throughput::Elements(num_elems));
         let bench_id = format!(
             "{bench_name}::throughput::realistic::FHEUint64::{num_elems}_elems::40_per_block::10x4_dependent"
@@ -153,7 +104,7 @@ fn main() {
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             Runtime::new()
                 .unwrap()
-                .block_on(schedule_erc20_realistic_2000(
+                .block_on(schedule_erc20_realistic_400(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
@@ -182,13 +133,6 @@ fn next_log_index() -> u64 {
 struct BenchmarkBlock {
     hash: B256,
     number: u64,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum TransferCircuit {
-    CoprocessorCmux,
-    NoCmux,
-    TfheRsWhitepaper,
 }
 
 #[derive(Clone, Copy)]
@@ -325,7 +269,6 @@ async fn seed_input_ciphertext(
 async fn schedule_erc20(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
-    circuit: TransferCircuit,
     dependent: bool,
     block_size: usize,
     chain_len: usize,
@@ -352,9 +295,13 @@ async fn schedule_erc20(
             let transfers_in_block = remaining.min(block_size);
             let chains_in_block = transfers_in_block.div_ceil(chain_len);
             let block = benchmark_block(&mut handle_counter, block_index as u64 + 1);
-            let chain_ids = (0..chains_in_block)
-                .map(|_| next_handle(&mut handle_counter))
-                .collect();
+            let chain_ids = if dependent {
+                (0..chains_in_block)
+                    .map(|_| next_handle(&mut handle_counter))
+                    .collect()
+            } else {
+                Vec::new()
+            };
             (block, chain_ids)
         })
         .collect();
@@ -364,85 +311,75 @@ async fn schedule_erc20(
         .await?
         .expect("new_transaction() returns Some on a live stack");
     let mut seeded_boundary_inputs = 0_usize;
-    let transfer_inputs = if circuit == TransferCircuit::TfheRsWhitepaper {
-        // tfhe-rs encrypts three independent non-trivial FheUint64 values for
-        // every independent transfer. For a dependency chain, only its first
-        // balances enter from the block boundary; every transfer still gets a
-        // distinct encrypted amount. Reusing the real noisy ciphertext bytes
-        // as templates keeps setup tractable, while unique handles force the
-        // coprocessor to materialize each logical input independently.
-        let mut inputs = Vec::with_capacity(num_samples);
-        let mut chain_roots: Vec<Option<(Handle, Handle)>> = vec![None; chains_per_block];
-        for i in 0..num_samples {
-            let index_in_block = i % block_size;
-            let chain_index = index_in_block / chain_len;
-            let chain_position = index_in_block % chain_len;
-            if index_in_block == 0 {
-                chain_roots.fill(None);
-            }
-
-            let (from_balance, to_balance) = if dependent && chain_position > 0 {
-                chain_roots[chain_index].expect("dependency chain root inputs")
-            } else {
-                let from_balance = next_handle(&mut handle_counter);
-                let to_balance = next_handle(&mut handle_counter);
-                seed_input_ciphertext(&listener_db, &mut tx, &from_balance, &input_ciphertexts[0])
-                    .await?;
-                seed_input_ciphertext(&listener_db, &mut tx, &to_balance, &input_ciphertexts[2])
-                    .await?;
-                seeded_boundary_inputs += 2;
-                if dependent {
-                    chain_roots[chain_index] = Some((from_balance, to_balance));
-                }
-                (from_balance, to_balance)
-            };
-            let amount = next_handle(&mut handle_counter);
-            seed_input_ciphertext(&listener_db, &mut tx, &amount, &input_ciphertexts[1]).await?;
-            seeded_boundary_inputs += 1;
-            inputs.push(EncryptedTransferInputs {
-                from_balance,
-                to_balance,
-                amount,
-            });
+    // Every independent transfer has three unique boundary handles. A
+    // dependency chain only shares its two initial balances; each transfer
+    // still has a unique encrypted amount. The ciphertext bytes are reusable
+    // templates, but scheduling and dependency resolution are handle-based.
+    let mut transfer_inputs = Vec::with_capacity(num_samples);
+    let mut chain_roots: Vec<Option<(Handle, Handle)>> = vec![None; chains_per_block];
+    for i in 0..num_samples {
+        let index_in_block = i % block_size;
+        let chain_index = index_in_block / chain_len;
+        let chain_position = index_in_block % chain_len;
+        if index_in_block == 0 {
+            chain_roots.fill(None);
         }
-        inputs
-    } else {
-        // The legacy coprocessor scenarios intentionally deduplicate all
-        // boundary inputs to three shared real noisy ciphertexts.
-        let shared = EncryptedTransferInputs {
-            from_balance: next_handle(&mut handle_counter),
-            amount: next_handle(&mut handle_counter),
-            to_balance: next_handle(&mut handle_counter),
-        };
-        for (handle, ciphertext) in [shared.from_balance, shared.amount, shared.to_balance]
-            .iter()
-            .zip(input_ciphertexts.iter())
-        {
-            seed_input_ciphertext(&listener_db, &mut tx, handle, ciphertext).await?;
-        }
-        vec![shared; num_samples]
-    };
 
-    if circuit == TransferCircuit::TfheRsWhitepaper {
-        let expected_balance_inputs = if dependent {
-            (0..block_count)
-                .map(|block_index| {
-                    let transfers = (num_samples - block_index * block_size).min(block_size);
-                    2 * transfers.div_ceil(chain_len)
-                })
-                .sum::<usize>()
+        let (from_balance, to_balance) = if dependent && chain_position > 0 {
+            chain_roots[chain_index].expect("dependency chain root inputs")
         } else {
-            2 * num_samples
+            let from_balance = next_handle(&mut handle_counter);
+            let to_balance = next_handle(&mut handle_counter);
+            seed_input_ciphertext(&listener_db, &mut tx, &from_balance, &input_ciphertexts[0])
+                .await?;
+            seed_input_ciphertext(&listener_db, &mut tx, &to_balance, &input_ciphertexts[2])
+                .await?;
+            seeded_boundary_inputs += 2;
+            if dependent {
+                chain_roots[chain_index] = Some((from_balance, to_balance));
+            }
+            (from_balance, to_balance)
         };
+        let amount = next_handle(&mut handle_counter);
+        seed_input_ciphertext(&listener_db, &mut tx, &amount, &input_ciphertexts[1]).await?;
+        seeded_boundary_inputs += 1;
+        transfer_inputs.push(EncryptedTransferInputs {
+            from_balance,
+            to_balance,
+            amount,
+        });
+    }
+
+    let expected_balance_inputs = if dependent {
+        (0..block_count)
+            .map(|block_index| {
+                let transfers = (num_samples - block_index * block_size).min(block_size);
+                2 * transfers.div_ceil(chain_len)
+            })
+            .sum::<usize>()
+    } else {
+        2 * num_samples
+    };
+    assert_eq!(
+        seeded_boundary_inputs,
+        expected_balance_inputs + num_samples,
+        "whitepaper boundary input count"
+    );
+    if !dependent {
+        let unique_inputs = transfer_inputs
+            .iter()
+            .flat_map(|inputs| [inputs.from_balance, inputs.to_balance, inputs.amount])
+            .collect::<HashSet<_>>();
         assert_eq!(
-            seeded_boundary_inputs,
-            expected_balance_inputs + num_samples,
-            "tfhe-rs parity boundary input count"
+            unique_inputs.len(),
+            3 * num_samples,
+            "independent transfers must not share input handles"
         );
     }
     let mut prev_from: Vec<Option<Handle>> = vec![None; chains_per_block];
     let mut prev_to: Vec<Option<Handle>> = vec![None; chains_per_block];
     let mut tfhe_rs_counts = TfheRsWhitepaperCounts::default();
+    let mut independent_transaction_ids = HashSet::with_capacity(num_samples);
 
     for i in 0..num_samples {
         let block_index = i / block_size;
@@ -458,7 +395,12 @@ async fn schedule_erc20(
         let tx_id = if dependent {
             chain_ids[chain_index]
         } else {
-            next_handle(&mut handle_counter)
+            let tx_id = next_handle(&mut handle_counter);
+            assert!(
+                independent_transaction_ids.insert(tx_id),
+                "independent transfers must have distinct transaction/DCID handles"
+            );
+            tx_id
         };
         let from_balance = if dependent {
             if let Some(h) = prev_from[chain_index] {
@@ -499,264 +441,100 @@ async fn schedule_erc20(
             false,
         )
         .await?;
-        if circuit == TransferCircuit::TfheRsWhitepaper {
-            tfhe_rs_counts.ge += 1;
-        }
+        tfhe_rs_counts.ge += 1;
 
-        let new_to;
-        let new_from;
-        if circuit == TransferCircuit::CoprocessorCmux {
-            let to_target = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+        // Exact tfhe-rs GPU whitepaper circuit:
+        //   has_funds = from.ge(amount)
+        //   zero = FheUint64::encrypt_trivial(0)
+        //   selected = has_funds.select(amount, zero)
+        //   new_to = to + selected
+        //   new_from = from - selected
+        let zero_amount = next_handle(&mut handle_counter);
+        utils::insert_tfhe_event(
+            &listener_db,
+            &mut tx,
+            log_with_tx(
+                tx_id,
+                tfhe_event(TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
                         caller,
-                        lhs: to_balance,
-                        rhs: transfer_amount,
-                        scalarByte: scalar_flag(false),
-                        result: to_target,
-                    })),
-                    block,
-                ),
-                tx_id,
-                false,
-            )
-            .await?;
-            new_to = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::FheIfThenElse(
-                        TfheContract::FheIfThenElse {
-                            caller,
-                            control: has_funds,
-                            ifTrue: to_target,
-                            ifFalse: to_balance,
-                            result: new_to,
-                        },
-                    )),
-                    block,
-                ),
-                tx_id,
-                true,
-            )
-            .await?;
-
-            let from_target = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
-                        caller,
-                        lhs: from_balance,
-                        rhs: transfer_amount,
-                        scalarByte: scalar_flag(false),
-                        result: from_target,
-                    })),
-                    block,
-                ),
-                tx_id,
-                false,
-            )
-            .await?;
-            new_from = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::FheIfThenElse(
-                        TfheContract::FheIfThenElse {
-                            caller,
-                            control: has_funds,
-                            ifTrue: from_target,
-                            ifFalse: from_balance,
-                            result: new_from,
-                        },
-                    )),
-                    block,
-                ),
-                tx_id,
-                true,
-            )
-            .await?;
-        } else if circuit == TransferCircuit::TfheRsWhitepaper {
-            // Exact tfhe-rs GPU whitepaper circuit:
-            //   has_funds = from.ge(amount)
-            //   zero = FheUint64::encrypt_trivial(0)
-            //   selected = has_funds.select(amount, zero)
-            //   new_to = to + selected
-            //   new_from = from - selected
-            let zero_amount = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::TrivialEncrypt(
-                        TfheContract::TrivialEncrypt {
-                            caller,
-                            pt: as_scalar_uint(&BigInt::from(0_u64)),
-                            toType: to_ty(5),
-                            result: zero_amount,
-                        },
-                    )),
-                    block,
-                ),
-                tx_id,
-                false,
-            )
-            .await?;
-            tfhe_rs_counts.trivial_zero += 1;
-
-            let selected_amount = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::FheIfThenElse(
-                        TfheContract::FheIfThenElse {
-                            caller,
-                            control: has_funds,
-                            ifTrue: transfer_amount,
-                            ifFalse: zero_amount,
-                            result: selected_amount,
-                        },
-                    )),
-                    block,
-                ),
-                tx_id,
-                false,
-            )
-            .await?;
-            tfhe_rs_counts.select += 1;
-
-            new_to = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
-                        caller,
-                        lhs: to_balance,
-                        rhs: selected_amount,
-                        scalarByte: scalar_flag(false),
-                        result: new_to,
-                    })),
-                    block,
-                ),
-                tx_id,
-                true,
-            )
-            .await?;
-            tfhe_rs_counts.add += 1;
-
-            new_from = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
-                        caller,
-                        lhs: from_balance,
-                        rhs: selected_amount,
-                        scalarByte: scalar_flag(false),
-                        result: new_from,
-                    })),
-                    block,
-                ),
-                tx_id,
-                true,
-            )
-            .await?;
-            tfhe_rs_counts.sub += 1;
-        } else {
-            let funds_u64 = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
-                        caller,
-                        ct: has_funds,
+                        pt: as_scalar_uint(&BigInt::from(0_u64)),
                         toType: to_ty(5),
-                        result: funds_u64,
-                    })),
-                    block,
-                ),
+                        result: zero_amount,
+                    },
+                )),
+                block,
+            ),
+            tx_id,
+            false,
+        )
+        .await?;
+        tfhe_rs_counts.trivial_zero += 1;
+
+        let selected_amount = next_handle(&mut handle_counter);
+        utils::insert_tfhe_event(
+            &listener_db,
+            &mut tx,
+            log_with_tx(
                 tx_id,
-                false,
-            )
-            .await?;
-            let selected_amount = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
+                tfhe_event(TfheContractEvents::FheIfThenElse(
+                    TfheContract::FheIfThenElse {
                         caller,
-                        lhs: transfer_amount,
-                        rhs: funds_u64,
-                        scalarByte: scalar_flag(false),
+                        control: has_funds,
+                        ifTrue: transfer_amount,
+                        ifFalse: zero_amount,
                         result: selected_amount,
-                    })),
-                    block,
-                ),
+                    },
+                )),
+                block,
+            ),
+            tx_id,
+            false,
+        )
+        .await?;
+        tfhe_rs_counts.select += 1;
+
+        let new_to = next_handle(&mut handle_counter);
+        utils::insert_tfhe_event(
+            &listener_db,
+            &mut tx,
+            log_with_tx(
                 tx_id,
-                false,
-            )
-            .await?;
-            new_to = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
-                        caller,
-                        lhs: to_balance,
-                        rhs: selected_amount,
-                        scalarByte: scalar_flag(false),
-                        result: new_to,
-                    })),
-                    block,
-                ),
+                tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                    caller,
+                    lhs: to_balance,
+                    rhs: selected_amount,
+                    scalarByte: scalar_flag(false),
+                    result: new_to,
+                })),
+                block,
+            ),
+            tx_id,
+            true,
+        )
+        .await?;
+        tfhe_rs_counts.add += 1;
+
+        let new_from = next_handle(&mut handle_counter);
+        utils::insert_tfhe_event(
+            &listener_db,
+            &mut tx,
+            log_with_tx(
                 tx_id,
-                true,
-            )
-            .await?;
-            new_from = next_handle(&mut handle_counter);
-            utils::insert_tfhe_event(
-                &listener_db,
-                &mut tx,
-                log_with_tx(
-                    tx_id,
-                    tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
-                        caller,
-                        lhs: from_balance,
-                        rhs: selected_amount,
-                        scalarByte: scalar_flag(false),
-                        result: new_from,
-                    })),
-                    block,
-                ),
-                tx_id,
-                true,
-            )
-            .await?;
-        }
+                tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
+                    caller,
+                    lhs: from_balance,
+                    rhs: selected_amount,
+                    scalarByte: scalar_flag(false),
+                    result: new_from,
+                })),
+                block,
+            ),
+            tx_id,
+            true,
+        )
+        .await?;
+        tfhe_rs_counts.sub += 1;
 
         let chain_complete = !dependent || chain_position + 1 == chain_len || i + 1 == num_samples;
         if chain_complete {
@@ -768,8 +546,13 @@ async fn schedule_erc20(
             prev_to[chain_index] = Some(new_to);
         }
     }
-    if circuit == TransferCircuit::TfheRsWhitepaper {
-        tfhe_rs_counts.assert_exact(num_samples);
+    tfhe_rs_counts.assert_exact(num_samples);
+    if !dependent {
+        assert_eq!(
+            independent_transaction_ids.len(),
+            num_samples,
+            "independent transfers must map one-to-one to transaction/DCID handles"
+        );
     }
     tx.commit().await?;
 
@@ -812,84 +595,11 @@ async fn schedule_erc20_whitepaper(
     schedule_erc20(
         bencher,
         num_tx,
-        TransferCircuit::TfheRsWhitepaper,
         false,
         num_tx,
         1,
         &bench_id,
         "erc20-transfer",
-    )
-    .await
-}
-
-async fn schedule_erc20_no_cmux(
-    bencher: &mut Bencher<'_, WallTime>,
-    num_tx: usize,
-    bench_id: String,
-) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_erc20(
-        bencher,
-        num_tx,
-        TransferCircuit::NoCmux,
-        false,
-        num_tx,
-        1,
-        &bench_id,
-        "erc20-transfer",
-    )
-    .await
-}
-
-async fn schedule_dependent_erc20_whitepaper(
-    bencher: &mut Bencher<'_, WallTime>,
-    num_tx: usize,
-    bench_id: String,
-) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_erc20(
-        bencher,
-        num_tx,
-        TransferCircuit::TfheRsWhitepaper,
-        true,
-        num_tx,
-        num_tx,
-        &bench_id,
-        "erc20-transfer",
-    )
-    .await
-}
-
-async fn schedule_dependent_erc20_no_cmux(
-    bencher: &mut Bencher<'_, WallTime>,
-    num_tx: usize,
-    bench_id: String,
-) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_erc20(
-        bencher,
-        num_tx,
-        TransferCircuit::NoCmux,
-        true,
-        num_tx,
-        num_tx,
-        &bench_id,
-        "erc20-transfer",
-    )
-    .await
-}
-
-async fn schedule_erc20_independent_5000(
-    bencher: &mut Bencher<'_, WallTime>,
-    num_tx: usize,
-    bench_id: String,
-) -> Result<(), Box<dyn std::error::Error>> {
-    schedule_erc20(
-        bencher,
-        num_tx,
-        TransferCircuit::TfheRsWhitepaper,
-        false,
-        500,
-        1,
-        &bench_id,
-        "erc20-independent-5000-500-per-block",
     )
     .await
 }
@@ -902,7 +612,6 @@ async fn schedule_erc20_independent_300(
     schedule_erc20(
         bencher,
         num_tx,
-        TransferCircuit::TfheRsWhitepaper,
         false,
         300,
         1,
@@ -920,7 +629,6 @@ async fn schedule_erc20_dependent_300(
     schedule_erc20(
         bencher,
         num_tx,
-        TransferCircuit::TfheRsWhitepaper,
         true,
         300,
         50,
@@ -930,7 +638,7 @@ async fn schedule_erc20_dependent_300(
     .await
 }
 
-async fn schedule_erc20_mixed_10000(
+async fn schedule_erc20_independent_500(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
     bench_id: String,
@@ -938,17 +646,16 @@ async fn schedule_erc20_mixed_10000(
     schedule_erc20(
         bencher,
         num_tx,
-        TransferCircuit::TfheRsWhitepaper,
-        true,
-        1000,
-        20,
+        false,
+        50,
+        1,
         &bench_id,
-        "erc20-mixed-10000-1000-per-block-50x20-dependent",
+        "erc20-independent-500-50-per-block",
     )
     .await
 }
 
-async fn schedule_erc20_realistic_2000(
+async fn schedule_erc20_realistic_400(
     bencher: &mut Bencher<'_, WallTime>,
     num_tx: usize,
     bench_id: String,
@@ -956,65 +663,11 @@ async fn schedule_erc20_realistic_2000(
     schedule_erc20(
         bencher,
         num_tx,
-        TransferCircuit::TfheRsWhitepaper,
         true,
         40,
         4,
         &bench_id,
-        "erc20-realistic-2000-40-per-block-10x4-dependent",
-    )
-    .await
-}
-
-async fn schedule_tfhe_rs_whitepaper_scenario(
-    bencher: &mut Bencher<'_, WallTime>,
-    num_tx: usize,
-    scenario: &str,
-    bench_id: String,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let (dependent, block_size, chain_len, display_name) = match scenario {
-        "independent_300" => (
-            false,
-            300,
-            1,
-            "tfhe-rs-whitepaper-independent-300-300-per-block",
-        ),
-        "dependent_300" => (
-            true,
-            300,
-            50,
-            "tfhe-rs-whitepaper-dependent-300-300-per-block-6x50-dependent",
-        ),
-        "realistic_2000" => (
-            true,
-            40,
-            4,
-            "tfhe-rs-whitepaper-realistic-2000-40-per-block-10x4-dependent",
-        ),
-        "independent_5000" => (
-            false,
-            500,
-            1,
-            "tfhe-rs-whitepaper-independent-5000-500-per-block",
-        ),
-        "mixed_10000" => (
-            true,
-            1000,
-            20,
-            "tfhe-rs-whitepaper-mixed-10000-1000-per-block-50x20-dependent",
-        ),
-        _ => return Err(format!("unknown tfhe-rs ERC20 scenario: {scenario}").into()),
-    };
-
-    schedule_erc20(
-        bencher,
-        num_tx,
-        TransferCircuit::TfheRsWhitepaper,
-        dependent,
-        block_size,
-        chain_len,
-        &bench_id,
-        display_name,
+        "erc20-realistic-400-40-per-block-10x4-dependent",
     )
     .await
 }
