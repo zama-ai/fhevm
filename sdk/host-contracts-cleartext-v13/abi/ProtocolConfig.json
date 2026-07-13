@@ -1,0 +1,849 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "UPGRADE_INTERFACE_VERSION",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "defineNewKmsContext",
+    "inputs": [
+      {
+        "name": "kmsNodes",
+        "type": "tuple[]",
+        "internalType": "struct KmsNode[]",
+        "components": [
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "ipAddress",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "storageUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      },
+      {
+        "name": "thresholds",
+        "type": "tuple",
+        "internalType": "struct IProtocolConfig.KmsThresholds",
+        "components": [
+          {
+            "name": "publicDecryption",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "userDecryption",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kmsGen",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "mpc",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "destroyKmsContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getCurrentKmsContextId",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getKmsGenThreshold",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getKmsNodeForContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "txSender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct KmsNode",
+        "components": [
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "ipAddress",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "storageUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getKmsNodesForContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct KmsNode[]",
+        "components": [
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "ipAddress",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "storageUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getKmsSigners",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getKmsSignersForContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getMpcThreshold",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPublicDecryptionThreshold",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPublicDecryptionThresholdForContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getUserDecryptionThreshold",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getUserDecryptionThresholdForContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getVersion",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "initializeFromEmptyProxy",
+    "inputs": [
+      {
+        "name": "initialKmsNodes",
+        "type": "tuple[]",
+        "internalType": "struct KmsNode[]",
+        "components": [
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "ipAddress",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "storageUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      },
+      {
+        "name": "initialThresholds",
+        "type": "tuple",
+        "internalType": "struct IProtocolConfig.KmsThresholds",
+        "components": [
+          {
+            "name": "publicDecryption",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "userDecryption",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kmsGen",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "mpc",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "initializeFromMigration",
+    "inputs": [
+      {
+        "name": "existingContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "existingKmsNodes",
+        "type": "tuple[]",
+        "internalType": "struct KmsNode[]",
+        "components": [
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "ipAddress",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "storageUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      },
+      {
+        "name": "existingThresholds",
+        "type": "tuple",
+        "internalType": "struct IProtocolConfig.KmsThresholds",
+        "components": [
+          {
+            "name": "publicDecryption",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "userDecryption",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kmsGen",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "mpc",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "isKmsSigner",
+    "inputs": [
+      {
+        "name": "signer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isKmsSignerForContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "signer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isKmsTxSenderForContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "txSender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isValidKmsContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proxiableUUID",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "upgradeToAndCall",
+    "inputs": [
+      {
+        "name": "newImplementation",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "KmsContextDestroyed",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "NewKmsContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "kmsNodes",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct KmsNode[]",
+        "components": [
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "ipAddress",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "storageUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      },
+      {
+        "name": "thresholds",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct IProtocolConfig.KmsThresholds",
+        "components": [
+          {
+            "name": "publicDecryption",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "userDecryption",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kmsGen",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "mpc",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Upgraded",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AddressEmptyCode",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CurrentKmsContextCannotBeDestroyed",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC1967InvalidImplementation",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC1967NonPayable",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyKmsNodes",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FailedCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidHighThreshold",
+    "inputs": [
+      {
+        "name": "thresholdName",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "threshold",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "nodeCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidKmsContext",
+    "inputs": [
+      {
+        "name": "kmsContextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidNullThreshold",
+    "inputs": [
+      {
+        "name": "thresholdName",
+        "type": "string",
+        "internalType": "string"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "KmsNodeNullSigner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "KmsNodeNullTxSender",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "KmsSignerAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "signer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "KmsTxSenderAlreadyRegistered",
+    "inputs": [
+      {
+        "name": "txSender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotHostOwner",
+    "inputs": [
+      {
+        "name": "sender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotInitializingFromEmptyProxy",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnauthorizedCallContext",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnsupportedProxiableUUID",
+    "inputs": [
+      {
+        "name": "slot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  }
+]

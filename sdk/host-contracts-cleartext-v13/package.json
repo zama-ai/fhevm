@@ -1,0 +1,63 @@
+{
+  "name": "@fhevm/host-contracts-cleartext",
+  "version": "0.13.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "clean": "rm -rf *.tsbuildinfo internal/*.tsbuildinfo test/*.tsbuildinfo ts/*.tsbuildinfo ts/_esm ts/_cjs ts/_types test/ts/.consumer test/ts/.tarballs test/ts/.vitest-cache test/ts/node_modules",
+    "build": "npm run clean && npm run prettier:check && npm run lint && npm run build:cjs && npm run build:esm && npm run build:types",
+    "build:cjs": "tsc --project ./tsconfig.build.cjs.json --module commonjs --moduleResolution node --outDir ./ts/_cjs --removeComments --verbatimModuleSyntax false && printf '{\"type\":\"commonjs\"}' > ./ts/_cjs/package.json",
+    "build:esm": "tsc --project ./tsconfig.build.esm.json --outDir ./ts/_esm && printf '{\"type\": \"module\",\"sideEffects\":false}' > ./ts/_esm/package.json",
+    "build:types": "tsc --project ./tsconfig.build.esm.json --declarationDir ./ts/_types --emitDeclarationOnly --declaration --declarationMap",
+    "build:tarball": "npm run build:templates && npm run build && npm run pack:tarball",
+    "pack:tarball": "node internal/createPackageTarball.ts",
+    "build:forge": "forge clean && forge build",
+    "build:templates": "forge clean && forge build && node internal/generateTemplates.ts",
+    "generate:templates": "node internal/generateTemplates.ts",
+    "clean:tarball-consumer": "rm -rf test/ts/.consumer test/ts/.tarballs test/ts/.vitest-cache test/ts/node_modules",
+    "prepare:tarball-consumer": "node internal/prepareTarballConsumer.ts",
+    "test": "npm run test:templates && npm run test:tarball",
+    "test:templates": "npm run clean:tarball-consumer && npm run build:templates && node --test --test-concurrency=1 test/*.test.ts",
+    "test:tarball": "npm run clean:tarball-consumer && npm run build:templates && npm run build && npm run prepare:tarball-consumer && npm run lint:tarball-consumer && vitest run --config test/ts/vitest.config.ts",
+    "lint": "eslint --config ./eslint.config.js --ignore-pattern test/ts/tarball-consumer.test.ts --ignore-pattern test/ts/acl-owner-upgrade.test.ts --ignore-pattern test/ts/deploy-v13.test.ts --ignore-pattern test/ts/viemEthereumLib.ts --ignore-pattern test/ts/ethUtils.ts && tsc -b ./tsconfig.json --noEmit",
+    "lint:tarball-consumer": "eslint --config ./eslint.config.js test/ts/*.ts && tsc --project test/ts/tsconfig.json --noEmit",
+    "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
+    "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
+  },
+  "files": [
+    "src",
+    "abi",
+    "templates",
+    "ts",
+    "foundry.toml",
+    "remappings.txt",
+    "!**/tsconfig*.json",
+    "!**/*.tsbuildinfo",
+    "!**/test/**/*"
+  ],
+  "exports": {
+    "./ts": {
+      "types": "./ts/_types/index.d.ts",
+      "import": "./ts/_esm/index.js",
+      "require": "./ts/_cjs/index.js"
+    },
+    "./abi/*.json": "./abi/*.json",
+    "./templates/*.json": "./templates/*.json"
+  },
+  "dependencies": {
+    "encrypted-types": "^0.0.4",
+    "@openzeppelin/contracts": "5.1.0",
+    "@openzeppelin/contracts-upgradeable": "5.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.0.2",
+    "prettier": "^3.6.2",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.2",
+    "tsx": "^4.23.0",
+    "viem": "^2.53.1",
+    "vitest": "^4.0.18"
+  }
+}
