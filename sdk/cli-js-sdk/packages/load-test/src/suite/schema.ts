@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { flowKindSchema } from "../scenario/schema";
+import { scenarioOverrideSchema } from "../scenario/overrides";
 import { artifactSlugSchema } from "../shared/paths";
 
 /**
@@ -14,14 +14,7 @@ export const suiteEntrySchema = z.object({
   /** Built-in scenario name or path to a scenario JSON file. */
   scenario: z.string().min(1),
   /** Built-in parameter overrides (same knobs as `run` CLI flags). */
-  params: z
-    .object({
-      rps: z.number().positive().optional(),
-      durationSec: z.number().positive().optional(),
-      count: z.number().int().positive().optional(),
-      flow: flowKindSchema.optional(),
-    })
-    .default({}),
+  params: scenarioOverrideSchema.default({}),
   /** Report/baseline key; defaults to the resolved scenario name. */
   label: artifactSlugSchema.optional(),
 });

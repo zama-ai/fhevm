@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 
 import {
   createBuiltinScenario,
-  type BuiltinParams,
 } from "./builtin";
+import { applyScenarioOverrides, type ScenarioOverrides } from "./overrides";
 import { scenarioSchema, type Scenario } from "./schema";
 
 /**
@@ -13,11 +13,11 @@ import { scenarioSchema, type Scenario } from "./schema";
  */
 export const loadScenario = async (
   ref: string,
-  params: BuiltinParams = {},
+  params: ScenarioOverrides = {},
 ): Promise<Scenario> => {
   if (ref.endsWith(".json") || ref.includes("/")) {
     const text = await readFile(ref, "utf8");
-    return scenarioSchema.parse(JSON.parse(text));
+    return applyScenarioOverrides(scenarioSchema.parse(JSON.parse(text)), params);
   }
   return createBuiltinScenario(ref, params);
 };

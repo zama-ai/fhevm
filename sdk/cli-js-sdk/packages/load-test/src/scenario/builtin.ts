@@ -1,28 +1,17 @@
-import type { FlowKind } from "../relayer/types";
 import { scenarioSchema, type Scenario, type ScenarioInput } from "./schema";
+import {
+  applyScenarioOverrides,
+  scenarioOverrideSchema,
+  type ScenarioOverrides,
+} from "./overrides";
 
 /**
- * Built-in scenario matrix from the load-test design (§3.3). Each factory
- * accepts the knobs that vary between runs; everything else is fixed so two
- * runs of the same built-in are comparable.
+ * Built-in scenario matrix from the load-test design (§3.3). Factories return
+ * canonical defaults; the shared model-aware override resolver is applied
+ * afterward so built-in and JSON scenarios follow the same rules.
  */
 
-export type BuiltinParams = Readonly<{
-  /** Target arrival rate in requests/second (steady, soak, mixed). */
-  rps?: number;
-  /** Active clients for closed-model scenarios. */
-  vus?: number;
-  /** Pause between completed workflows in closed-model scenarios. */
-  thinkTimeMs?: number;
-  /** Optional total request cap for closed-model scenarios. */
-  maxIterations?: number;
-  /** Submission-phase duration in seconds. */
-  durationSec?: number;
-  /** Flow selection for single-flow scenarios (steady, drain). */
-  flow?: FlowKind;
-  /** Request count for drain. */
-  count?: number;
-}>;
+export type BuiltinParams = ScenarioOverrides;
 
 /**
  * Public-decrypt requests consume unique handle combinations (relayer dedup
@@ -43,44 +32,44 @@ const allFlows = (weight: number): ScenarioInput["flows"] => [
   { flow: "delegated-user-decrypt", weight },
 ];
 
-const factories: Record<string, (params: BuiltinParams) => ScenarioInput> = {
+const factories: Record<string, () => ScenarioInput> = {
   /** Sanity + per-stage reference: 1 req/s per flow for 2 minutes. */
-  baseline: (params) => ({
+  baseline: () => ({
     name: "baseline",
     description: "Open model: 1 req/s per flow; sanity check and per-stage reference numbers",
     flows: allFlows(1),
     shape: {
       kind: "constant",
       rps: 4,
-      durationSec: params.durationSec ?? 120,
+      durationSec: 120,
     },
     thresholds: { maxErrorRate: 0, maxVerifyFailures: 0, perFlow: {} },
   }),
 
   /** SLO compliance at expected load: fixed N req/s for 10 minutes. */
-  "open-steady": (params) => ({
-    name: `open-steady-${(params.rps ?? 10).toString()}`,
+  "open-steady": () => ({
+    name: "open-steady-10",
     description: "Open model: fixed arrival rate; SLO compliance at expected load",
-    flows: [{ flow: params.flow ?? "input-proof", weight: 1 }],
+    flows: [{ flow: "input-proof", weight: 1 }],
     shape: {
       kind: "constant",
-      rps: params.rps ?? 10,
-      durationSec: params.durationSec ?? 600,
+      rps: 10,
+      durationSec: 600,
     },
   }),
 
   /**
    * Max sustainable throughput: stepped rate; stops early when the queue-depth
-   * collector sees sustained growth (requires the DB or metrics collector).
+   * collector sees sustained growth (requires compatible Prometheus metrics).
    */
-  "open-ramp": (params) => {
-    const startRps = params.rps ?? 5;
-    const stepDurationSec = params.durationSec ?? 120;
+  "open-ramp": () => {
+    const startRps = 5;
+    const stepDurationSec = 120;
     const steps = 8;
     return {
       name: "open-ramp",
       description: "Open model: stepped arrival rate until queue depth grows; finds max sustainable throughput",
-      flows: [{ flow: params.flow ?? "input-proof", weight: 1 }],
+      flows: [{ flow: "input-proof", weight: 1 }],
       shape: {
         kind: "segments",
         segments: Array.from({ length: steps }, (_, index) => ({
@@ -96,37 +85,37 @@ const factories: Record<string, (params: BuiltinParams) => ScenarioInput> = {
   },
 
   /** Recovery behavior: baseline, 10x for 60s, baseline again. */
-  "open-spike": (params) => {
-    const baseRps = params.rps ?? 2;
+  "open-spike": () => {
+    const baseRps = 2;
     return {
       name: "open-spike",
       description: "Open model: baseline, 10x arrival spike for 60s, baseline; measures recovery",
-      flows: [{ flow: params.flow ?? "input-proof", weight: 1 }],
+      flows: [{ flow: "input-proof", weight: 1 }],
       shape: {
         kind: "segments",
         segments: [
-          { fromRps: baseRps, toRps: baseRps, durationSec: params.durationSec ?? 120 },
+          { fromRps: baseRps, toRps: baseRps, durationSec: 120 },
           { fromRps: baseRps * 10, toRps: baseRps * 10, durationSec: 60 },
-          { fromRps: baseRps, toRps: baseRps, durationSec: params.durationSec ?? 120 },
+          { fromRps: baseRps, toRps: baseRps, durationSec: 120 },
         ],
       },
     };
   },
 
   /** Leaks and drift: moderate rate for at least an hour; read process metrics. */
-  "open-soak": (params) => ({
+  "open-soak": () => ({
     name: "open-soak",
     description: "Open model: moderate arrival rate for >= 60 min; watches for leaks and drift via process metrics",
-    flows: [{ flow: params.flow ?? "input-proof", weight: 1 }],
+    flows: [{ flow: "input-proof", weight: 1 }],
     shape: {
       kind: "constant",
-      rps: params.rps ?? 5,
-      durationSec: params.durationSec ?? 3600,
+      rps: 5,
+      durationSec: 3600,
     },
   }),
 
   /** Interference between flows at a realistic input:user:public ratio. */
-  "open-mixed": (params) => ({
+  "open-mixed": () => ({
     name: "open-mixed",
     description: "Open model: input-proof:user-decrypt:public-decrypt mix; flow interference",
     flows: [
@@ -140,56 +129,53 @@ const factories: Record<string, (params: BuiltinParams) => ScenarioInput> = {
     ],
     shape: {
       kind: "constant",
-      rps: params.rps ?? 10,
-      durationSec: params.durationSec ?? 600,
+      rps: 10,
+      durationSec: 600,
     },
   }),
 
   /** Fixed active client loops: request → terminal/timeout → optional think time → next. */
-  "closed-steady": (params) => ({
-    name: `closed-steady-${(params.vus ?? 10).toString()}vu`,
+  "closed-steady": () => ({
+    name: "closed-steady-10vu",
     description: "Closed model: fixed active clients; resulting throughput and latency are outputs",
-    flows: [{ flow: params.flow ?? "user-decrypt", weight: 1 }],
+    flows: [{ flow: "user-decrypt", weight: 1 }],
     shape: {
       kind: "closed",
-      vus: params.vus ?? 10,
-      durationSec: params.durationSec ?? 600,
-      thinkTimeMs: params.thinkTimeMs ?? 0,
-      maxIterations: params.maxIterations,
+      vus: 10,
+      durationSec: 600,
+      thinkTimeMs: 0,
     },
   }),
 
   /** Finds how many active clients remain within acceptable latency/error bounds. */
-  "closed-ramp": (params) => {
-    const startVus = params.vus ?? 5;
-    const stepDurationSec = params.durationSec ?? 120;
+  "closed-ramp": () => {
+    const startVus = 5;
+    const stepDurationSec = 120;
     return {
       name: "closed-ramp",
       description: "Closed model: stepped active clients; finds acceptable client concurrency",
-      flows: [{ flow: params.flow ?? "user-decrypt", weight: 1 }],
+      flows: [{ flow: "user-decrypt", weight: 1 }],
       shape: {
         kind: "closed",
         stages: Array.from({ length: 6 }, (_, index) => ({
           vus: startVus * (index + 1),
           durationSec: stepDurationSec,
         })),
-        thinkTimeMs: params.thinkTimeMs ?? 0,
-        maxIterations: params.maxIterations,
+        thinkTimeMs: 0,
       },
     };
   },
 
   /** Long fixed-client run for SDK/client behavior, leaks, and drift. */
-  "closed-soak": (params) => ({
+  "closed-soak": () => ({
     name: "closed-soak",
     description: "Closed model: active SDK clients for >= 60 min; watches latency, errors, leaks, and drift",
-    flows: [{ flow: params.flow ?? "user-decrypt", weight: 1 }],
+    flows: [{ flow: "user-decrypt", weight: 1 }],
     shape: {
       kind: "closed",
-      vus: params.vus ?? 10,
-      durationSec: params.durationSec ?? 3600,
-      thinkTimeMs: params.thinkTimeMs ?? 0,
-      maxIterations: params.maxIterations,
+      vus: 10,
+      durationSec: 3600,
+      thinkTimeMs: 0,
     },
   }),
 
@@ -197,14 +183,14 @@ const factories: Record<string, (params: BuiltinParams) => ScenarioInput> = {
    * Backlog correctness: submit N near-instantly, then poll all to completion.
    * Validates the configured throttle; `ramp` measures capacity.
    */
-  drain: (params) => ({
+  drain: () => ({
     name: "drain",
     description: "Drain model: submit N near-instantly, poll all to completion; validates configured drain rate",
-    flows: [{ flow: params.flow ?? "input-proof", weight: 1 }],
+    flows: [{ flow: "input-proof", weight: 1 }],
     shape: {
       kind: "burst",
-      count: params.count ?? 500,
-      maxRps: params.rps ?? 100,
+      count: 500,
+      maxRps: 100,
     },
     drainTimeoutSec: 3600,
     thresholds: { maxErrorRate: 0, maxVerifyFailures: 0, perFlow: {} },
@@ -223,5 +209,19 @@ export const createBuiltinScenario = (
       `Unknown scenario "${name}". Built-ins: ${BUILTIN_SCENARIOS.join(", ")}.`,
     );
   }
-  return scenarioSchema.parse(factory(params));
+  const overrides = scenarioOverrideSchema.parse(params);
+  const resolved = applyScenarioOverrides(scenarioSchema.parse(factory()), overrides);
+  if (name === "open-steady" && resolved.shape.kind === "constant") {
+    return scenarioSchema.parse({
+      ...resolved,
+      name: `open-steady-${resolved.shape.rps.toString()}`,
+    });
+  }
+  if (name === "closed-steady" && resolved.shape.kind === "closed") {
+    return scenarioSchema.parse({
+      ...resolved,
+      name: `closed-steady-${resolved.shape.vus?.toString() ?? "staged"}vu`,
+    });
+  }
+  return resolved;
 };
