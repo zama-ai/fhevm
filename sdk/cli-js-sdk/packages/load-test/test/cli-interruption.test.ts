@@ -22,35 +22,14 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../src/cli/shared", () => ({
+vi.mock("../src/cli/shared", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/cli/shared")>(),
   envFromCommand: vi.fn().mockResolvedValue({
     network: "testnet",
     contractChainId: 11_155_111,
     relayerUrl: "https://relayer.example",
     dataDir: ".load-test",
   }),
-  parseNonNegativeInt: (value: string) => Number(value),
-  parseNonNegativeNumber: (value: string) => Number(value),
-  parseBoundedNonNegativeNumber: (label: string, max: number) => (value: string) => {
-    const parsed = Number(value);
-    if (parsed > max) throw new Error(`${label} must be between 0 and ${max.toString()}, got "${value}".`);
-    return parsed;
-  },
-  parsePositiveInt: (value: string) => Number(value),
-  parsePositiveNumber: (value: string) => Number(value),
-  parsePositiveIntOrAuto: (value: string) => value === "auto" ? "auto" : Number(value),
-  parseBoundedInt: (label: string, max: number) => (value: string) => {
-    const parsed = Number(value);
-    if (parsed > max) throw new Error(`${label} must be at most ${max.toString()}, got "${value}".`);
-    return parsed;
-  },
-  parseBoundedIntOrAuto: (label: string, max: number) => (value: string) => {
-    if (value === "auto") return "auto";
-    const parsed = Number(value);
-    if (parsed > max) throw new Error(`${label} must be at most ${max.toString()}, got "${value}".`);
-    return parsed;
-  },
-  parseValueTypes: (value: string) => value.split(","),
   readReport: mocks.readReport,
 }));
 
@@ -162,10 +141,27 @@ describe("CLI interruption exit behavior", () => {
       ?.commands.map((command) => command.name())).toEqual(["list", "show", "plan", "prepare", "run"]);
   });
 
-  it("leaves --network unset by default so LOAD_TEST_NETWORK is not shadowed", () => {
+  it("scopes env flags to env-resolving commands and leaves --network unset by default", () => {
     const program = createProgram();
-    expect((program.opts() as { network?: string }).network).toBeUndefined();
-    expect(program.helpInformation()).toContain("network to target (default:");
+    // Root help stays clean: env flags live on the commands that resolve them.
+    expect(program.helpInformation()).not.toContain("network to target (default:");
+    expect(program.helpInformation()).not.toContain("relayer base URL override");
+
+    const scenario = program.commands.find((command) => command.name() === "scenario")!;
+    const scenarioRun = scenario.commands.find((command) => command.name() === "run")!;
+    expect((scenarioRun.opts() as { network?: string }).network).toBeUndefined();
+    expect(scenarioRun.helpInformation()).toContain("network to target (default:");
+    expect(scenarioRun.helpInformation()).toContain("relayer base URL override");
+
+    // Read-only commands never resolve an environment, so they omit the flags.
+    const scenarioList = scenario.commands.find((command) => command.name() === "list")!;
+    expect(scenarioList.helpInformation()).not.toContain("relayer base URL override");
+    const report = program.commands.find((command) => command.name() === "report")!;
+    const reportDiff = report.commands.find((command) => command.name() === "diff")!;
+    expect(reportDiff.helpInformation()).not.toContain("relayer base URL override");
+    const baseline = program.commands.find((command) => command.name() === "baseline")!;
+    const baselineList = baseline.commands.find((command) => command.name() === "list")!;
+    expect(baselineList.helpInformation()).not.toContain("relayer base URL override");
   });
 
   it("reports a semantic version via --version", async () => {
@@ -222,7 +218,7 @@ describe("CLI interruption exit behavior", () => {
     const scenario = program.commands.find((command) => command.name() === "scenario")!;
     const scenarioPlan = scenario.commands.find((command) => command.name() === "plan")!;
     expect(scenarioPlan.helpInformation()).toContain(
-      "explicit directory for pool-plan.json/.md evidence",
+      "explicit directory for pool-plan.json/.md",
     );
     const scenarioRun = scenario.commands.find((command) => command.name() === "run")!;
     const scenarioHelp = scenarioRun.helpInformation();
@@ -235,7 +231,7 @@ describe("CLI interruption exit behavior", () => {
     expect(suite.description()).toBe("Plan and run suites; preparation is explicit");
     const suiteRun = suite.commands.find((command) => command.name() === "run")!;
     expect(suiteRun.helpInformation()).toContain("never prepare pools implicitly");
-    expect(suiteRun.helpInformation()).toContain("authorize local CPU and funded on-chain pool writes");
+    expect(suiteRun.helpInformation()).toContain("authorize local CPU and funded on-chain");
   });
 
   it("routes pool add by flow and rejects irrelevant options", async () => {

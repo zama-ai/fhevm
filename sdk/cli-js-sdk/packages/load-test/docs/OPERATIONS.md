@@ -5,9 +5,14 @@ when the plan requires it:
 
 ```bash
 cd sdk/cli-js-sdk/packages/load-test
-node --import tsx index.ts --relayer-url <relayer> suite plan standard --check
-node --import tsx index.ts --relayer-url <relayer> suite run standard --prepare
+node --import tsx index.ts suite plan standard --relayer-url <relayer> --check
+node --import tsx index.ts suite run standard --relayer-url <relayer> --prepare
 ```
+
+Relayer, network, and data-dir flags now attach to the commands that resolve an
+environment (`pool add/inspect`, `scenario plan/prepare/run`,
+`suite plan/prepare/run`), so pass them after the subcommand rather than before
+it.
 
 The first command is read-only and exits 2 when work is required. After
 reviewing the disclosed local CPU and funded on-chain actions, `--prepare`

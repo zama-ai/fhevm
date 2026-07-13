@@ -7,6 +7,7 @@ import {
   parseBoundedIntOrAuto,
   parsePositiveInt,
   parseValueTypes,
+  withEnvOptions,
 } from "../shared";
 
 const MAX_THREADS = 128;
@@ -57,8 +58,8 @@ export const describeAclExpiration = (
 export const registerPoolCommands = (program: Command): void => {
   const pool = program.command("pool").description("Manage payload and handle pools");
 
-  pool.command("add")
-    .description("Add flow-appropriate items to a pool (proof payloads or on-chain handles)")
+  withEnvOptions(pool.command("add")
+    .description("Add flow-appropriate items to a pool (proof payloads or on-chain handles)"))
     .addOption(new Option("--flow <flow>", "flow the pool serves").choices([...FLOWS]).makeOptionMandatory())
     .requiredOption("--count <n>", "pool items to add", parsePositiveInt)
     .option("--types <list>", "comma-separated FHE value types", parseValueTypes)
@@ -101,7 +102,7 @@ export const registerPoolCommands = (program: Command): void => {
       });
     });
 
-  pool.command("inspect").description("Show flow-aware capacity, consumption, owners, and ACL health")
+  withEnvOptions(pool.command("inspect").description("Show flow-aware capacity, consumption, owners, and ACL health"))
     .action(async (_options, command) => {
       const env = await envFromCommand(command);
       const [{ poolDir }, { HANDLE_POOLS }, { INPUT_PROOF_POOL }, { PoolStore }, { binomial }, { logger }] = await Promise.all([

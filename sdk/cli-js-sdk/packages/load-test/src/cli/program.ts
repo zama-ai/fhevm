@@ -1,7 +1,6 @@
 import "./env-file";
 
-import { DEFAULT_NETWORK, NETWORKS } from "@cli-fhevm-sdk/toolkit/types";
-import { Command, Option } from "@commander-js/extra-typings";
+import { Command } from "@commander-js/extra-typings";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -20,18 +19,7 @@ export const createProgram = (): Command => {
   const program = new Command()
     .name("load-test")
     .description("FHEVM relayer load-test tool for legacy and v2 implementations")
-    .version(packageVersion)
-    .addOption(
-      new Option("-n, --network <network>", `network to target (default: ${DEFAULT_NETWORK})`).choices(NETWORKS),
-    )
-    .option("--relayer-url <url>", "relayer base URL override")
-    .option("--relayer-api-prefix <prefix>", "primary relayer API route prefix (raw flows only)")
-    .option("--relayer-b <url>", "candidate relayer base URL for paired dispatch")
-    .option("--relayer-b-api-prefix <prefix>", "candidate API route prefix (raw flows only)")
-    .option("--rpc-url <url>", "host chain RPC URL override")
-    .option("--data-dir <dir>", "pools and run artifacts root (default .load-test)")
-    .option("--relayer-config <path>", "primary relayer config file to snapshot")
-    .option("--relayer-b-config <path>", "candidate relayer config file to snapshot");
+    .version(packageVersion);
 
   const command = program as unknown as Command;
   registerPoolCommands(command);

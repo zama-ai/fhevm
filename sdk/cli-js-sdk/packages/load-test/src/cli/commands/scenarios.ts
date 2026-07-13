@@ -13,6 +13,7 @@ import {
   parsePositiveInt,
   parsePositiveNumber,
   readReport,
+  withEnvOptions,
 } from "../shared";
 
 const MAX_CONNECTIONS = 1024;
@@ -238,9 +239,9 @@ const runScenarioAction = async (
 
 /** Registers the canonical `scenario run` action. */
 export const registerScenarioRunCommand = (parent: CommandUnknownOpts): void => {
-  const command = addScenarioOverrideOptions(
+  const command = withEnvOptions(addScenarioOverrideOptions(
     parent.command("run <scenario>").description("Run a scenario (built-in name or scenario JSON path)"),
-  )
+  ))
     .option("--out <dir>", "output directory override")
     .option("--connections <n>", "max sockets toward the relayer", parseBoundedInt("--connections", MAX_CONNECTIONS))
     .option("--baseline <path>", "baseline report.json")
@@ -276,10 +277,10 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
     console.log(JSON.stringify(await loadResolvedScenario(ref, options), null, 2));
   });
 
-  const plan = addScenarioOverrideOptions(
+  const plan = withEnvOptions(addScenarioOverrideOptions(
     scenarios.command("plan <ref>")
       .description("Inspect pool requirements without creating payloads, handles, or ACL grants"),
-  )
+  ))
     .option("--check", "exit 2 when pool preparation is required")
     .option("--out <dir>", "explicit directory for pool-plan.json/.md evidence");
   plan.action(async (ref, options, command) => {
@@ -298,10 +299,10 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
     if (options.check && !result.ready) process.exitCode = 2;
   });
 
-  const prepare = addScenarioOverrideOptions(
+  const prepare = withEnvOptions(addScenarioOverrideOptions(
     scenarios.command("prepare <ref>")
       .description("Create missing pools and ACL grants; may send funded on-chain transactions"),
-  )
+  ))
     .option("--out <dir>", "preparation artifact directory override")
     .option("--lanes <n>", "funded wallet lanes for on-chain handle creation", parseBoundedInt("--lanes", MAX_LANES))
     .option("--connections <n>", "max sockets used for relayer readiness", parseBoundedInt("--connections", MAX_CONNECTIONS))

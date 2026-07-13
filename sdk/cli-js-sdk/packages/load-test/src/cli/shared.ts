@@ -1,11 +1,12 @@
-import { FHE_VALUE_TYPES } from "@cli-fhevm-sdk/toolkit/types";
+import { DEFAULT_NETWORK, FHE_VALUE_TYPES, NETWORKS } from "@cli-fhevm-sdk/toolkit/types";
+import { Option, type CommandUnknownOpts } from "@commander-js/extra-typings";
 import { join } from "node:path";
 
 import type { EnvOverrides, LoadTestEnv } from "../env";
 import type { Report } from "../report/schema";
 import { readReportFile } from "../report/runtime";
 
-type GlobalOptions = Readonly<{
+type EnvCommandOptions = Readonly<{
   network?: string;
   relayerUrl?: string;
   relayerApiPrefix?: string;
@@ -17,20 +18,42 @@ type GlobalOptions = Readonly<{
   relayerBConfig?: string;
 }>;
 
+/**
+ * Attaches the relayer/network/data-dir options to exactly the commands that
+ * resolve a {@link LoadTestEnv}. Read-only commands (report, baseline, scenario
+ * and suite show/list) never call {@link envFromCommand}, so they omit these
+ * flags to keep their help output focused.
+ */
+export const withEnvOptions = <T extends CommandUnknownOpts>(command: T): T => {
+  command
+    .addOption(
+      new Option("-n, --network <network>", `network to target (default: ${DEFAULT_NETWORK})`).choices(NETWORKS),
+    )
+    .option("--relayer-url <url>", "relayer base URL override")
+    .option("--relayer-api-prefix <prefix>", "primary relayer API route prefix (raw flows only)")
+    .option("--relayer-b <url>", "candidate relayer base URL for paired dispatch")
+    .option("--relayer-b-api-prefix <prefix>", "candidate API route prefix (raw flows only)")
+    .option("--rpc-url <url>", "host chain RPC URL override")
+    .option("--data-dir <dir>", "pools and run artifacts root (default .load-test)")
+    .option("--relayer-config <path>", "primary relayer config file to snapshot")
+    .option("--relayer-b-config <path>", "candidate relayer config file to snapshot");
+  return command;
+};
+
 export const envFromCommand = async (command: {
   optsWithGlobals(): unknown;
 }): Promise<LoadTestEnv> => {
-  const globals = command.optsWithGlobals() as GlobalOptions;
+  const options = command.optsWithGlobals() as EnvCommandOptions;
   const overrides: EnvOverrides = {
-    network: globals.network,
-    relayerUrl: globals.relayerUrl,
-    relayerApiPrefix: globals.relayerApiPrefix,
-    relayerBUrl: globals.relayerB,
-    relayerBApiPrefix: globals.relayerBApiPrefix,
-    rpcUrl: globals.rpcUrl,
-    dataDir: globals.dataDir,
-    relayerConfigPath: globals.relayerConfig,
-    relayerBConfigPath: globals.relayerBConfig,
+    network: options.network,
+    relayerUrl: options.relayerUrl,
+    relayerApiPrefix: options.relayerApiPrefix,
+    relayerBUrl: options.relayerB,
+    relayerBApiPrefix: options.relayerBApiPrefix,
+    rpcUrl: options.rpcUrl,
+    dataDir: options.dataDir,
+    relayerConfigPath: options.relayerConfig,
+    relayerBConfigPath: options.relayerBConfig,
   };
   const { resolveEnv } = await import("../env");
   return resolveEnv(overrides);

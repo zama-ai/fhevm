@@ -1,6 +1,6 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import { envFromCommand, parseBoundedInt } from "../shared";
+import { envFromCommand, parseBoundedInt, withEnvOptions } from "../shared";
 
 const MAX_CONNECTIONS = 1024;
 const MAX_LANES = 64;
@@ -34,7 +34,7 @@ export const registerSuiteCommands = (program: Command): void => {
       }, null, 2));
     });
 
-  suite.command("plan <ref>").description("Inspect pool requirements without pool mutation")
+  withEnvOptions(suite.command("plan <ref>").description("Inspect pool requirements without pool mutation"))
     .option("--check", "exit 2 when preparation work is required")
     .option("--out <dir>", "explicit directory for pool-plan.json/.md evidence")
     .action(async (ref, options, command) => {
@@ -58,7 +58,7 @@ export const registerSuiteCommands = (program: Command): void => {
       if (options.check && !plan.ready) process.exitCode = 2;
     });
 
-  suite.command("prepare <ref>").description("Prepare pools with local CPU/funded on-chain writes and persist evidence")
+  withEnvOptions(suite.command("prepare <ref>").description("Prepare pools with local CPU/funded on-chain writes and persist evidence"))
     .option("--out <dir>", "output root")
     .option("--skip-readiness", "skip GET /health/readiness before mutation")
     .option("--lanes <n>", "wallet lanes for handle creation", parseBoundedInt("--lanes", MAX_LANES))
@@ -88,7 +88,7 @@ export const registerSuiteCommands = (program: Command): void => {
       logger.info(`Suite preparation artifacts: ${result.outputRoot}`);
     });
 
-  suite.command("run <ref>").description("Plan and run when ready; never prepare pools implicitly")
+  withEnvOptions(suite.command("run <ref>").description("Plan and run when ready; never prepare pools implicitly"))
     .option("--out <dir>", "output root")
     .option("--baselines-dir <dir>", "baseline reports root", "baselines")
     .option("--prepare", "authorize local CPU and funded on-chain pool writes before execution")
