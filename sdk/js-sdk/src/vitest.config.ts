@@ -6,7 +6,7 @@ export default defineConfig({
     exclude: ['src/index.hello.test.ts', 'src/wasm/**/type-check.test.ts'],
     reporters: ['verbose'],
     passWithNoTests: false,
-    typecheck: { enabled: true },
+    typecheck: { enabled: true, tsconfig: 'tsconfig.type-tests.json' },
     coverage: {
       provider: 'v8',
       reporter: ['text'],

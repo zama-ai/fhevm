@@ -5,11 +5,8 @@ import type { FhevmProtocolContext } from '../../../core/types/coreFhevmClient.j
 import type { FhevmRuntime, WithDecrypt } from '../../../core/types/coreFhevmRuntime.js';
 import type { SolanaUserDecryptParameters, SolanaUserDecryptResult } from '../../actions/userDecrypt.js';
 import type { GenerateTransportKeyPairReturnType } from '../../../core/actions/decrypt/generateTransportKeyPair.js';
-import type { WithTkmsVersion } from '../../../core/types/coreFhevmClient.js';
-import { asFhevmWith, setResolvedTkmsVersion } from '../../../core/runtime/CoreFhevm-p.js';
-import {
-  generateTransportKeyPair as generateTransportKeyPair_,
-} from '../../../core/kms/TransportKeyPair-p.js';
+import { asFhevmWith, getResolvedTkmsVersion, setResolvedTkmsVersion } from '../../../core/runtime/CoreFhevm-p.js';
+import { generateTransportKeyPair as generateTransportKeyPair_ } from '../../../core/kms/TransportKeyPair-p.js';
 import { decryptModule } from '../../../core/modules/decrypt/module/index.js';
 import { hyperWasmResolveTkmsModuleVersion } from '../../../core/runtime/HyperWasmSolver-p.js';
 import { userDecrypt } from '../../actions/userDecrypt.js';
@@ -53,10 +50,7 @@ async function _initDecrypt(fhevm: FhevmBase<undefined, FhevmRuntime, OptionalNa
 
   await f.runtime.decrypt.initTkmsModule({ tkmsVersion });
 
-  // `fhevm` is the same CoreFhevmImpl instance `_initDecrypt` was called with.
-  // Cast satisfies the FhevmBase<FhevmChain, ..., NativeClient> signature; instanceof check
-  // inside setResolvedTkmsVersion validates identity at runtime.
-  setResolvedTkmsVersion(fhevm as unknown as FhevmBase, tkmsVersion);
+  setResolvedTkmsVersion(fhevm, tkmsVersion);
 }
 
 /**
@@ -86,11 +80,11 @@ export function solanaDecryptActions(
         generateTransportKeyPair: async () => {
           // Auto-init: await fhevm.ready so tkmsVersion is stored and TKMS WASM is loaded.
           await (fhevm as Fhevm<undefined, FhevmRuntime, undefined>).ready;
-          // Solana has no EVM FhevmChain/NativeClient. generateTransportKeyPair's body uses only
-          // `runtime` + `tkmsVersion` (chain/client are unused required params), so pass them as
-          // never. Read tkmsVersion directly from fhevm after ready has resolved it.
-          const tkmsVersion = (fhevm as unknown as WithTkmsVersion).tkmsVersion;
-          return generateTransportKeyPair_({ runtime, chain: {} as never, client: {} as never, tkmsVersion });
+          const tkmsVersion = getResolvedTkmsVersion(fhevm);
+          if (tkmsVersion === undefined) {
+            throw new Error('TKMS version is unresolved after client initialization');
+          }
+          return generateTransportKeyPair_({ runtime, tkmsVersion });
         },
       },
       runtime,
