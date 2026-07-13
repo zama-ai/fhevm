@@ -13,8 +13,9 @@ use connector_utils::{
 };
 use kms_grpc::{
     kms::v1::{
-        CrsGenRequest, KeyGenPreprocRequest, KeyGenRequest, NewMpcContextRequest,
-        NewMpcEpochRequest, PublicDecryptionRequest, RequestId, UserDecryptionRequest,
+        CrsGenRequest, DestroyMpcContextRequest, DestroyMpcEpochRequest, KeyGenPreprocRequest,
+        KeyGenRequest, NewMpcContextRequest, NewMpcEpochRequest, PublicDecryptionRequest,
+        RequestId, UserDecryptionRequest,
     },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
@@ -109,6 +110,8 @@ impl KmsClient {
                 }
             }
             KmsGrpcRequest::NewMpcEpoch(req) => self.request_new_mpc_epoch(req).await,
+            KmsGrpcRequest::DestroyMpcContext(req) => self.request_destroy_mpc_context(req).await,
+            KmsGrpcRequest::DestroyMpcEpoch(req) => self.request_destroy_mpc_epoch(req).await,
         }
     }
 
@@ -141,6 +144,11 @@ impl KmsClient {
                 Err(e) => (0, Err(e)),
             },
             KmsGrpcRequest::NewMpcEpoch(req) => self.poll_epoch_result_response(req).await,
+            // Like aborts, destructions have no result-polling endpoint on the Core: the
+            // send-side ack is the only signal.
+            KmsGrpcRequest::DestroyMpcContext(_) | KmsGrpcRequest::DestroyMpcEpoch(_) => {
+                (0, Ok(KmsGrpcResponse::NoResponseExpected))
+            }
         }
     }
 
@@ -463,6 +471,48 @@ impl KmsClient {
                 async move { client.new_mpc_context(request).await }
             },
             EventType::NewKmsContext,
+        )
+        .await
+    }
+
+    async fn request_destroy_mpc_context(
+        &self,
+        request: &DestroyMpcContextRequest,
+    ) -> (i16, Result<(), ProcessingError>) {
+        let Some(context_id) = request.context_id.clone() else {
+            return irrecoverable_error(anyhow!("Missing context_id in DestroyMpcContextRequest"));
+        };
+        let inner_client = self.choose_client(context_id);
+
+        send_request_with_retries(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.destroy_mpc_context(request).await }
+            },
+            EventType::KmsContextDestroyed,
+        )
+        .await
+    }
+
+    async fn request_destroy_mpc_epoch(
+        &self,
+        request: &DestroyMpcEpochRequest,
+    ) -> (i16, Result<(), ProcessingError>) {
+        let Some(epoch_id) = request.epoch_id.clone() else {
+            return irrecoverable_error(anyhow!("Missing epoch_id in DestroyMpcEpochRequest"));
+        };
+        let inner_client = self.choose_client(epoch_id);
+
+        send_request_with_retries(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.destroy_mpc_epoch(request).await }
+            },
+            EventType::KmsEpochDestroyed,
         )
         .await
     }
