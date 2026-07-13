@@ -21,7 +21,7 @@ import { serviceNameList } from "../generate/compose";
 import { generateRuntime } from "../generate";
 import { resolveScenarioForOptions, stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
 import { effectiveOverrides, listScenarioSummaries } from "../scenario/resolve";
-import { run, runStreaming } from "../utils/process";
+import { composeEnv, run, runStreaming } from "../utils/process";
 import { loadState, markStep, saveState } from "../state/state";
 import {
   BootstrapTimeout,
@@ -462,24 +462,44 @@ const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
     Array.from({ length: topologyForState(state).count }, (_, index) => coprocessorDatabaseName(index)).map(coprocessorDbSeeded),
   )).every(Boolean);
 
-/** Bumps versioning past the v0.14 seed so HEAD workers don't enter GCS mode; blue-green keeps the seed (FSM drives it). */
-const HEAD_STACK_VERSION = "v0.15";
+/** Reads the compiled-in stack version from the resolved tfhe-worker image (source of truth for any pin). */
+const coprocessorBinaryStackVersion = async (): Promise<{ major: number; minor: number } | undefined> => {
+  const result = await run(
+    [...dockerArgs("coprocessor"), "run", "--rm", "--no-deps", "coprocessor-tfhe-worker", "tfhe_worker", "--stack-version"],
+    { env: await composeEnv("coprocessor"), allowFailure: true },
+  );
+  const match = result.stdout.match(/(\d+)\.(\d+)\.\d+/);
+  if (result.code !== 0 || !match) {
+    return undefined;
+  }
+  return { major: Number(match[1]), minor: Number(match[2]) };
+};
+
+/** Aligns versioning with the deployed binary's family so workers boot in normal mode; blue-green keeps the migration seed (FSM drives it). */
 const seedVersioningForNonBlueGreen = async (state: State) => {
   if (state.scenario.kind === "blue-green") return;
-  // Pre-0.15 bundles either want the v0.14 seed (retirement fence) or predate the versioning table.
+  // Pre-0.14 bundles predate the versioning table (and the retirement fence).
   const bundleVersion = state.versions.env.COPROCESSOR_TFHE_WORKER_VERSION ?? "";
-  if (versionBeforeReleaseFamily(bundleVersion, [0, 15, 0], { unparsed: "modern" })) return;
+  if (versionBeforeReleaseFamily(bundleVersion, [0, 14, 0], { unparsed: "modern" })) return;
+  const binary = await coprocessorBinaryStackVersion();
+  if (!binary) {
+    console.log("[coprocessor] could not read the binary stack version; leaving versioning at the migration seed");
+    return;
+  }
+  const live = `v${binary.major}.${binary.minor}`;
+  if (live === "v0.14") return;
   const topology = topologyForState(state);
   for (let index = 0; index < topology.count; index += 1) {
     const db = coprocessorDatabaseName(index);
     const result = await postgresExec(db, [
       "-c",
-      `UPDATE versioning SET stack_version = '${HEAD_STACK_VERSION}', updated_at = NOW() WHERE singleton = TRUE AND stack_version = 'v0.14';`,
+      `UPDATE versioning SET stack_version = '${live}', updated_at = NOW() WHERE singleton = TRUE AND stack_version = 'v0.14';`,
     ]);
     if (result.code !== 0) {
       throw new PreflightError(`versioning seed failed for ${db}: ${(result.stderr || result.stdout).trim()}`);
     }
   }
+  console.log(`[coprocessor] versioning seeded to ${live} (binary-reported)`);
 };
 
 const restartZkproofWorker = async (index: number, reason: string) => {
