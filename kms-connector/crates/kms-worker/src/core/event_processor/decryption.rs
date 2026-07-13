@@ -661,19 +661,35 @@ where
         Ok(sns_ciphertext_materials)
     }
 
+    /// Fetches the calldata of a given transaction.
+    ///
+    /// Only allows transactions sent directly to the `Decryption` contract.
     pub async fn fetch_calldata(
         &self,
         tx_hash: FixedBytes<32>,
     ) -> Result<Vec<u8>, ProcessingError> {
-        self.decryption_contract
+        let decryption_address = *self.decryption_contract.address();
+
+        let tx = self
+            .decryption_contract
             .provider()
             .get_transaction_by_hash(tx_hash)
             .await
             .map_err(|e| ProcessingError::Recoverable(anyhow::Error::from(e)))?
             .ok_or_else(|| {
                 ProcessingError::Irrecoverable(anyhow!("No transaction found with hash {tx_hash}!"))
-            })
-            .map(|tx| tx.input().to_vec())
+            })?;
+
+        if tx.to() != Some(decryption_address) {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "Transaction {tx_hash} was sent to {:?} rather than directly to the Decryption \
+                contract {decryption_address}: its calldata cannot be associated with the user \
+                decryption event.",
+                tx.to(),
+            )));
+        }
+
+        Ok(tx.input().to_vec())
     }
 }
 
@@ -705,12 +721,13 @@ mod tests {
     use super::*;
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
+        rpc::types::Transaction as RpcTransaction,
         signers::{SignerSync, local::PrivateKeySigner},
         sol_types::SolValue,
         transports::http::reqwest,
     };
     use connector_utils::{
-        tests::rand::{rand_address, rand_public_key, rand_sns_ct, rand_u256},
+        tests::rand::{rand_address, rand_digest, rand_public_key, rand_sns_ct, rand_u256},
         types::extra_data::ExtraData,
     };
     use fhevm_gateway_bindings::decryption::{
@@ -742,6 +759,15 @@ mod tests {
         sns_ct: &SnsCiphertextMaterial,
     ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
     {
+        setup_test_processor_with_config(asserter, sns_ct, Config::default())
+    }
+
+    fn setup_test_processor_with_config(
+        asserter: Asserter,
+        sns_ct: &SnsCiphertextMaterial,
+        config: Config,
+    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
+    {
         let mock_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter);
@@ -750,7 +776,6 @@ mod tests {
             chain_id,
             ACL::new(Address::default(), mock_provider.clone()),
         )]);
-        let config = Config::default();
         let ciphertext_manager =
             CiphertextManager::disabled(mock_provider.clone(), reqwest::Client::new());
         DecryptionProcessor::new(
@@ -1363,5 +1388,97 @@ mod tests {
             .check_user_decryption_request_v2(&request)
             .await
             .unwrap();
+    }
+
+    // -------------------------------------------------------------------------
+    // `fetch_calldata` hardening: the legacy path recovers the ACL data from the transaction
+    // calldata, so the calldata is accepted only when the transaction targeted the Decryption
+    // contract directly.
+    // -------------------------------------------------------------------------
+
+    /// Where the legacy request transaction was sent, relative to the Decryption contract.
+    enum TxTarget {
+        /// Sent directly to the Decryption contract (the only accepted case).
+        Decryption,
+        /// Sent to some intermediary contract.
+        Intermediary,
+        /// Contract-creation transaction (`to` is `None`). Should be unreachable in theory.
+        Creation,
+    }
+
+    /// Only calldata coming from a transaction sent directly to the Decryption contract can be
+    /// associated with the user decryption event, so any other target is rejected.
+    #[rstest]
+    #[case::accepts_direct_decryption_tx(TxTarget::Decryption, true)]
+    #[case::rejects_tx_not_sent_to_decryption_contract(TxTarget::Intermediary, false)]
+    #[case::rejects_contract_creation_tx(TxTarget::Creation, false)]
+    #[tokio::test]
+    async fn fetch_calldata_only_accepts_direct_decryption_tx(
+        #[case] target: TxTarget,
+        #[case] should_succeed: bool,
+    ) {
+        let asserter = Asserter::new();
+        let decryption_address = rand_address();
+        let mut config = Config::default();
+        config.decryption_contract.address = decryption_address;
+        let processor = setup_test_processor_with_config(asserter.clone(), &rand_sns_ct(), config);
+
+        let tx_hash = rand_digest();
+        let calldata = legacy_request_calldata(rand_sns_ct().ctHandle);
+
+        let to = match target {
+            TxTarget::Decryption => Some(decryption_address),
+            TxTarget::Intermediary => Some(rand_address()),
+            TxTarget::Creation => None,
+        };
+        asserter.push_success(&mock_legacy_request_tx(tx_hash, to, &calldata));
+
+        let result = processor.fetch_calldata(tx_hash).await;
+        if should_succeed {
+            assert_eq!(result.unwrap(), calldata);
+        } else {
+            match result {
+                Err(ProcessingError::Irrecoverable(_)) => (),
+                other => panic!("Expected Irrecoverable error, got: {other:?}"),
+            }
+        }
+    }
+
+    /// Builds the mocked `eth_getTransactionByHash` response for a legacy user decryption
+    /// request carrying `calldata`, sent to `to` (`None` models a contract-creation tx).
+    fn mock_legacy_request_tx(
+        tx_hash: FixedBytes<32>,
+        to: Option<Address>,
+        calldata: &[u8],
+    ) -> RpcTransaction {
+        serde_json::from_value(serde_json::json!({
+            "hash": tx_hash,
+            "nonce": "0x0",
+            "blockHash": null,
+            "blockNumber": null,
+            "transactionIndex": null,
+            "from": Address::ZERO,
+            "to": to,
+            "value": "0x0",
+            "gasPrice": "0x0",
+            "gas": "0x0",
+            "input": format!("0x{}", hex::encode(calldata)),
+            "v": "0x1b",
+            "r": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "s": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "type": "0x0"
+        }))
+        .unwrap()
+    }
+
+    fn legacy_request_calldata(handle: FixedBytes<32>) -> Vec<u8> {
+        userDecryptionRequestCall {
+            ctHandleContractPairs: vec![CtHandleContractPair {
+                ctHandle: handle,
+                contractAddress: rand_address(),
+            }],
+            ..Default::default()
+        }
+        .abi_encode()
     }
 }
