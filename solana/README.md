@@ -24,8 +24,8 @@ programs/confidential-deposit-app  Reference app showing Solana-native compositi
 crates/zama-fhe                 App-facing SDK: typed `EvalBuilder`, `Encrypted<T>`, `DurableSlot`,
                                 `AccessPolicy`, and a `cpi`-feature account resolver for `fhe_eval` plans.
 crates/solana-ed25519-instruction  Ed25519 instruction-sysvar helpers.
-runtime-tests                   Mollusk suites (host_mollusk, token_mollusk) + plan_contracts
-                                (ABI/IDL drift assertions).
+runtime-tests                   Fast evaluator/plan contracts plus real-SBF Mollusk host/token
+                                suites; see docs/TESTING.md for the evidence each layer provides.
 scripts/poc                     Live end-to-end scripts against a local validator + fhevm-cli stack.
 geyser                          Yellowstone plugin build helpers for the account/event stream.
 ```
@@ -49,16 +49,9 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Adapter tests live in sibling workspaces and need offline SQLx metadata:
-
-```bash
-cd ../kms-connector            && SQLX_OFFLINE=true cargo test -p kms-worker solana_
-cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener solana_adapter::tests::
-```
-
 If the ZamaHost Anchor IDL changes intentionally, refresh the vendored listener snapshot with
-`bash scripts/sync-zama-host-idl.sh`. See [`docs/TESTING.md`](docs/TESTING.md) for the layout,
-Mollusk specifics, and build traps.
+`bash scripts/sync-zama-host-idl.sh`. See [`docs/TESTING.md`](docs/TESTING.md) for exact focused
+commands, what each test layer proves, Mollusk specifics, and build traps.
 
 Live end-to-end run against a local validator (mainnet-safe, validator pinned to `127.0.0.1:8899`):
 
