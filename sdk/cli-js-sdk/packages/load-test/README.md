@@ -297,6 +297,9 @@ suite, publish all of its threshold-passing reports in one explicit operation:
 ```bash
 node --import tsx index.ts baseline bless runs/<suite-dir> --baselines-dir baselines
 # Add --accept-regressions only when intentionally accepting measured regressions.
+
+node --import tsx index.ts baseline list --baselines-dir baselines
+# Prints <network>/<label> and its last-updated time for every stored baseline.
 ```
 
 Blessing recomputes each candidate against the baseline currently at the
