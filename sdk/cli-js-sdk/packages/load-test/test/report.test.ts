@@ -563,6 +563,31 @@ describe("diffReports", () => {
     const diff = diffReports(baseline, broken);
     expect(diff.regressions.some((r) => r.metric === "verifyFailed")).toBe(true);
   });
+
+  it("accepts a zero tolerance for either dimension", () => {
+    const baseline = build([record({})]);
+    const same = build([record({})]);
+    expect(diffReports(baseline, same, {
+      latencyTolerance: 0,
+      errorRateTolerance: 0,
+    }).passed).toBe(true);
+  });
+
+  it("rejects an errorRateTolerance outside [0, 1]", () => {
+    const baseline = build([record({})]);
+    const current = build([record({})]);
+    expect(() => diffReports(baseline, current, { errorRateTolerance: 1.5 }))
+      .toThrow(/errorRateTolerance must be between 0 and 1/);
+    expect(() => diffReports(baseline, current, { errorRateTolerance: -0.1 }))
+      .toThrow(/errorRateTolerance must be between 0 and 1/);
+  });
+
+  it("rejects a negative latencyTolerance", () => {
+    const baseline = build([record({})]);
+    const current = build([record({})]);
+    expect(() => diffReports(baseline, current, { latencyTolerance: -0.1 }))
+      .toThrow(/latencyTolerance must be >= 0/);
+  });
 });
 
 describe("renderMarkdownReport", () => {

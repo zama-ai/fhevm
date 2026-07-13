@@ -23,9 +23,9 @@ export type DiffResult = Readonly<{
 }>;
 
 export type DiffOptions = Readonly<{
-  /** Allowed relative latency increase before flagging (default 0.20). */
+  /** Allowed relative latency increase before flagging; >= 0 (default 0.20). */
   latencyTolerance?: number;
-  /** Allowed absolute error-rate increase before flagging (default 0.01). */
+  /** Allowed absolute error-rate increase before flagging; in [0, 1] (default 0.01). */
   errorRateTolerance?: number;
 }>;
 
@@ -36,6 +36,18 @@ export const diffReports = (
 ): DiffResult => {
   const latencyTolerance = options.latencyTolerance ?? 0.2;
   const errorRateTolerance = options.errorRateTolerance ?? 0.01;
+  if (!Number.isFinite(latencyTolerance) || latencyTolerance < 0) {
+    throw new Error(`latencyTolerance must be >= 0, got ${latencyTolerance.toString()}.`);
+  }
+  if (
+    !Number.isFinite(errorRateTolerance) ||
+    errorRateTolerance < 0 ||
+    errorRateTolerance > 1
+  ) {
+    throw new Error(
+      `errorRateTolerance must be between 0 and 1, got ${errorRateTolerance.toString()}.`,
+    );
+  }
   const regressions: Regression[] = [];
   const notes: string[] = [];
 

@@ -289,6 +289,8 @@ Command exit codes are stable for automation:
 
 ```bash
 node --import tsx index.ts report diff baselines/testnet/open-steady.json runs/<dir>/report.json
+# --max-latency-increase <fraction>: allowed relative p95/p99 latency increase (default 0.20)
+# --max-error-rate-increase <fraction>: allowed absolute error-rate increase, range [0, 1] (default 0.01)
 ```
 
 Baseline reads are strictly schema-validated. After reviewing a completed

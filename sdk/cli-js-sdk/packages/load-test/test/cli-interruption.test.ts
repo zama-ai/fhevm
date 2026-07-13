@@ -30,6 +30,12 @@ vi.mock("../src/cli/shared", () => ({
     dataDir: ".load-test",
   }),
   parseNonNegativeInt: (value: string) => Number(value),
+  parseNonNegativeNumber: (value: string) => Number(value),
+  parseBoundedNonNegativeNumber: (label: string, max: number) => (value: string) => {
+    const parsed = Number(value);
+    if (parsed > max) throw new Error(`${label} must be between 0 and ${max.toString()}, got "${value}".`);
+    return parsed;
+  },
   parsePositiveInt: (value: string) => Number(value),
   parsePositiveNumber: (value: string) => Number(value),
   parsePositiveIntOrAuto: (value: string) => value === "auto" ? "auto" : Number(value),

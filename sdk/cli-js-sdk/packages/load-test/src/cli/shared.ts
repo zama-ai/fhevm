@@ -82,6 +82,26 @@ export const parseNonNegativeInt = (value: string): number => {
   return parsed;
 };
 
+export const parseNonNegativeNumber = (value: string): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`Expected a non-negative number, got "${value}".`);
+  }
+  return parsed;
+};
+
+/** `parseNonNegativeNumber`, additionally bounded to an inclusive `[0, max]` range. */
+export const parseBoundedNonNegativeNumber = (
+  label: string,
+  max: number,
+) => (value: string): number => {
+  const parsed = parseNonNegativeNumber(value);
+  if (parsed > max) {
+    throw new Error(`${label} must be between 0 and ${max.toString()}, got "${value}".`);
+  }
+  return parsed;
+};
+
 export const parseValueTypes = (value: string): string[] => {
   const types = value.split(",").map((entry) => entry.trim());
   for (const type of types) {
