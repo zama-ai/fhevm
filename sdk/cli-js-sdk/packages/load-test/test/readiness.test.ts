@@ -107,7 +107,7 @@ describe("assertRelayerReadiness", () => {
     }
     expect(thrown).toBeInstanceOf(AggregateError);
     expect((thrown as AggregateError).cause).toBeInstanceOf(Error);
-    expect(((thrown as AggregateError).cause as Error).message).toBe("Relayer at https://legacy.example failed the readiness check (GET /health/readiness). Older relayers expose health elsewhere (e.g. /liveness, /healthz); pass --skip-readiness to proceed.");
+    expect(((thrown as AggregateError).cause as Error).message).toBe("Relayer at https://legacy.example failed the readiness check (GET /health/readiness). Older relayers expose health elsewhere (e.g. /liveness, /healthz); pass --no-readiness-check to proceed.");
     expect((thrown as AggregateError).errors).toEqual([
       expect.any(Error), primaryCloseFailure, candidateCloseFailure,
     ]);

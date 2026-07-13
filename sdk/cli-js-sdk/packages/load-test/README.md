@@ -294,7 +294,7 @@ Command exit codes are stable for automation:
   merely reported work).
 - `1`: operational failure, threshold breach, baseline regression, or
   preparation that did not produce readiness.
-- `2`: `plan --check` found required work, or `run` recorded the plan and was
+- `2`: `plan --require-ready` found required work, or `run` recorded the plan and was
   safely blocked before pool preparation and workload execution because
   preparation was not explicitly authorized.
 - `130`: interrupted by the operator.

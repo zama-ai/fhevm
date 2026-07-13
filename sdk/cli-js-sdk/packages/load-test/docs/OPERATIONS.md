@@ -5,7 +5,7 @@ when the plan requires it:
 
 ```bash
 cd sdk/cli-js-sdk/packages/load-test
-node --import tsx index.ts suite plan standard --relayer-url <relayer> --check
+node --import tsx index.ts suite plan standard --relayer-url <relayer> --require-ready
 node --import tsx index.ts suite run standard --relayer-url <relayer> --prepare
 ```
 
@@ -45,7 +45,7 @@ addresses to fund.
 ```bash
 node --import tsx index.ts suite list            # what exists
 node --import tsx index.ts suite show standard   # resolved suite JSON, including resolved entries
-node --import tsx index.ts suite plan standard   # read-only; add --check for CI exit 2
+node --import tsx index.ts suite plan standard   # read-only; add --require-ready for CI exit 2
 node --import tsx index.ts suite prepare standard # explicit preparation; does not run
 node --import tsx index.ts suite run standard    # runs only when pools are ready
 node --import tsx index.ts suite run standard --prepare # explicitly prepare + run
@@ -63,12 +63,12 @@ Built-in suites and when to run them:
 The commands have deliberately separate authority:
 
 - `suite plan` never creates payloads, handles, ACL grants, or an output
-  directory unless `--out <dir>` is supplied. `--check` exits 2 if preparation
+  directory unless `--out <dir>` is supplied. `--require-ready` exits 2 if preparation
   is required.
 - `suite prepare` is the explicit prepare-only operation. Input-proof work is
   local and CPU-bound; handle creation and delegated ACL refreshes send funded
   host-chain transactions. Readiness is checked before mutation unless
-  `--skip-readiness` is deliberately supplied.
+  `--no-readiness-check` is deliberately supplied.
 - `suite run` always records a live plan, but without `--prepare` it blocks
   with exit 2 instead of preparing pools when work is required. `--prepare`
   authorizes the disclosed local/on-chain work before execution.
@@ -186,7 +186,7 @@ node --import tsx index.ts pool add delegated-user-decrypt --count 4
 node --import tsx index.ts pool status
 
 # Single scenario
-node --import tsx index.ts scenario plan open-steady --rps 20 --duration 600 --check --out /tmp/open-steady-plan
+node --import tsx index.ts scenario plan open-steady --rps 20 --duration 600 --require-ready --out /tmp/open-steady-plan
 node --import tsx index.ts scenario prepare open-steady --rps 20 --duration 600
 node --import tsx index.ts scenario run open-steady --rps 20 --duration 600 --baseline baselines/testnet/open-steady-20.json
 node --import tsx index.ts scenario run closed-steady --vus 20 --duration 600 --flow user-decrypt
@@ -374,7 +374,7 @@ like user-decrypt) and stays reachable via `--flow delegated-user-decrypt`.
 
 | Symptom | Cause / fix |
 | --- | --- |
-| `failed the readiness check` | target does not expose `GET /health/readiness` or is down; verify its health surface, then use `--skip-readiness` only when another check proves it ready |
+| `failed the readiness check` | target does not expose `GET /health/readiness` or is down; verify its health surface, then use `--no-readiness-check` only when another check proves it ready |
 | `Pool preparation is required` | inspect `pool-plan.md`, then run `suite prepare`, `scenario prepare`, or rerun with explicit `--prepare` |
 | `Lane X holds 0 ETH` | fund the printed address; lanes are HD indices 0..lanes-1 of `MNEMONIC` |
 | many `client_poll_deadline_exceeded` | requests outlived `requestTimeoutSec` — relayer saturated or timeout too tight for the load |

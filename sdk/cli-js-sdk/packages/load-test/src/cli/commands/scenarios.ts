@@ -34,22 +34,22 @@ type ScenarioCommandOptions = Readonly<{
 
 type ScenarioPlanOptions = ScenarioCommandOptions & Readonly<{
   out?: string;
-  check?: boolean;
+  requireReady?: boolean;
 }>;
 
 type ScenarioRunOptions = ScenarioCommandOptions & Readonly<{
   out?: string;
-  connections?: number;
+  maxConnections?: number;
   baseline?: string;
-  skipReadiness?: boolean;
+  readinessCheck?: boolean;
   prepare?: boolean;
   lanes?: number;
 }>;
 
 type ScenarioPrepareOptions = ScenarioCommandOptions & Readonly<{
   out?: string;
-  connections?: number;
-  skipReadiness?: boolean;
+  maxConnections?: number;
+  readinessCheck?: boolean;
   lanes?: number;
 }>;
 
@@ -196,8 +196,8 @@ const runScenarioAction = async (
             const { assertRelayerReadiness } = await import("../../runner/readiness");
             await assertRelayerReadiness({
               env,
-              connections: options.connections,
-              skipReadiness: Boolean(options.skipReadiness),
+              connections: options.maxConnections,
+              skipReadiness: !options.readinessCheck,
               signal,
             });
           },
@@ -213,8 +213,8 @@ const runScenarioAction = async (
         scenario,
         env,
         outputDir,
-        connections: options.connections,
-        skipReadiness: Boolean(options.skipReadiness),
+        connections: options.maxConnections,
+        skipReadiness: !options.readinessCheck,
         signal,
       });
       const { report } = runResult;
@@ -246,9 +246,9 @@ export const registerScenarioRunCommand = (parent: CommandUnknownOpts): void => 
     parent.command("run <scenario>").description("Run a scenario (built-in name or scenario JSON path)"),
   ))
     .option("--out <dir>", "output directory override")
-    .option("--connections <n>", "max sockets toward the relayer", parseBoundedInt("--connections", MAX_CONNECTIONS))
+    .option("--max-connections <n>", "max sockets per relayer target (paired A/B uses up to 2×)", parseBoundedInt("--max-connections", MAX_CONNECTIONS))
     .option("--baseline <path>", "baseline report.json")
-    .option("--skip-readiness", "skip GET /health/readiness")
+    .option("--no-readiness-check", "skip GET /health/readiness")
     .option(
       "--prepare",
       "explicitly create missing pools first (may use local CPU and send funded on-chain transactions)",
@@ -290,7 +290,7 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
     scenarios.command("plan <ref>")
       .description("Inspect pool requirements without creating payloads, handles, or ACL grants"),
   )))
-    .option("--check", "exit 2 when pool preparation is required")
+    .option("--require-ready", "exit 2 when pool preparation is required")
     .option("--out <dir>", "explicit directory for pool-plan.json/.md evidence");
   plan.action(async (ref, options, command) => {
     const json = await useJsonOutput(options);
@@ -307,7 +307,7 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
     });
     if (json) emitJson(result);
     else for (const line of formatPoolPlan(result)) logger.info(line);
-    if (options.check && !result.ready) process.exitCode = 2;
+    if (options.requireReady && !result.ready) process.exitCode = 2;
   });
 
   const prepare = withEnvOptions(addScenarioOverrideOptions(
@@ -316,8 +316,8 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
   ))
     .option("--out <dir>", "preparation artifact directory override")
     .option("--lanes <n>", "funded wallet lanes for on-chain handle creation", parseBoundedInt("--lanes", MAX_LANES))
-    .option("--connections <n>", "max sockets used for relayer readiness", parseBoundedInt("--connections", MAX_CONNECTIONS))
-    .option("--skip-readiness", "skip GET /health/readiness before preparation");
+    .option("--max-connections <n>", "max sockets per relayer target for readiness (paired A/B uses up to 2×)", parseBoundedInt("--max-connections", MAX_CONNECTIONS))
+    .option("--no-readiness-check", "skip GET /health/readiness before preparation");
   prepare.action(async (ref, options, command) => {
     const env = await envFromCommand(command);
     const [{ formatPoolPlan, inspectPoolRequirements, preparePoolRequirements }, { logger }] = await Promise.all([
@@ -353,8 +353,8 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
             const { assertRelayerReadiness } = await import("../../runner/readiness");
             await assertRelayerReadiness({
               env,
-              connections: options.connections,
-              skipReadiness: Boolean(options.skipReadiness),
+              connections: options.maxConnections,
+              skipReadiness: !options.readinessCheck,
               signal,
             });
           },

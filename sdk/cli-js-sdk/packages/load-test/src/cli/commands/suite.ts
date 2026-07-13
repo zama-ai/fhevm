@@ -57,7 +57,7 @@ export const registerSuiteCommands = (program: Command): void => {
     });
 
   withFormatOption(withEnvOptions(suite.command("plan <ref>").description("Inspect pool requirements without pool mutation")))
-    .option("--check", "exit 2 when preparation work is required")
+    .option("--require-ready", "exit 2 when preparation work is required")
     .option("--out <dir>", "explicit directory for pool-plan.json/.md evidence")
     .action(async (ref, options, command) => {
       const json = await useJsonOutput(options);
@@ -82,14 +82,14 @@ export const registerSuiteCommands = (program: Command): void => {
           ? "Pools are ready."
           : "Run `suite prepare <ref>` or `suite run <ref> --prepare` after reviewing the plan.");
       }
-      if (options.check && !plan.ready) process.exitCode = 2;
+      if (options.requireReady && !plan.ready) process.exitCode = 2;
     });
 
   withEnvOptions(suite.command("prepare <ref>").description("Prepare pools with local CPU/funded on-chain writes and persist evidence"))
     .option("--out <dir>", "output root")
-    .option("--skip-readiness", "skip GET /health/readiness before mutation")
+    .option("--no-readiness-check", "skip GET /health/readiness before mutation")
     .option("--lanes <n>", "wallet lanes for handle creation", parseBoundedInt("--lanes", MAX_LANES))
-    .option("--connections <n>", "max sockets for the readiness gate", parseBoundedInt("--connections", MAX_CONNECTIONS))
+    .option("--max-connections <n>", "max sockets per relayer target for the readiness gate (paired A/B uses up to 2×)", parseBoundedInt("--max-connections", MAX_CONNECTIONS))
     .action(async (ref, options, command) => {
       const env = await envFromCommand(command);
       const [{ loadSuite }, { prepareSuite }, { logger }] = await Promise.all([
@@ -103,8 +103,8 @@ export const registerSuiteCommands = (program: Command): void => {
         result = await prepareSuite({
           env, suite: await loadSuite(ref), outputRoot: options.out as string | undefined,
           lanes: options.lanes as number | undefined,
-          connections: options.connections as number | undefined,
-          skipReadiness: Boolean(options.skipReadiness), signal: controller.signal,
+          connections: options.maxConnections as number | undefined,
+          skipReadiness: !options.readinessCheck, signal: controller.signal,
         });
       } finally {
         process.removeListener("SIGINT", onSignal);
@@ -119,9 +119,9 @@ export const registerSuiteCommands = (program: Command): void => {
     .option("--out <dir>", "output root")
     .option("--baselines-dir <dir>", "baseline reports root", "baselines")
     .option("--prepare", "authorize local CPU and funded on-chain pool writes before execution")
-    .option("--skip-readiness", "skip GET /health/readiness")
+    .option("--no-readiness-check", "skip GET /health/readiness")
     .option("--lanes <n>", "wallet lanes for handle creation", parseBoundedInt("--lanes", MAX_LANES))
-    .option("--connections <n>", "max sockets toward the relayer", parseBoundedInt("--connections", MAX_CONNECTIONS))
+    .option("--max-connections <n>", "max sockets per relayer target (paired A/B uses up to 2×)", parseBoundedInt("--max-connections", MAX_CONNECTIONS))
     .action(async (ref, options, command) => {
       if (options.lanes !== undefined && !options.prepare) {
         throw new Error("--lanes is only valid with --prepare for suite run.");
@@ -139,8 +139,8 @@ export const registerSuiteCommands = (program: Command): void => {
           env, suite: await loadSuite(ref), outputRoot: options.out as string | undefined,
           baselinesDir: options.baselinesDir as string,
           prepare: Boolean(options.prepare),
-          lanes: options.lanes as number | undefined, connections: options.connections as number | undefined,
-          skipReadiness: Boolean(options.skipReadiness), signal: controller.signal,
+          lanes: options.lanes as number | undefined, connections: options.maxConnections as number | undefined,
+          skipReadiness: !options.readinessCheck, signal: controller.signal,
         });
       } finally {
         process.removeListener("SIGINT", onSignal);

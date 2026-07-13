@@ -284,8 +284,8 @@ describe("CLI interruption exit behavior", () => {
     ])).rejects.toThrow(/--threads must be at most 128/);
 
     await expect(createProgram().parseAsync([
-      "node", "load-test", "scenario", "run", "scenario", "--connections", "1025",
-    ])).rejects.toThrow(/--connections must be at most 1024/);
+      "node", "load-test", "scenario", "run", "scenario", "--max-connections", "1025",
+    ])).rejects.toThrow(/--max-connections must be at most 1024/);
 
     await expect(createProgram().parseAsync([
       "node", "load-test", "scenario", "run", "scenario", "--prepare", "--lanes", "65",
@@ -355,7 +355,7 @@ describe("CLI interruption exit behavior", () => {
       }],
     });
     await createProgram().parseAsync([
-      "node", "load-test", "suite", "plan", "suite", "--check",
+      "node", "load-test", "suite", "plan", "suite", "--require-ready",
     ]);
     expect(process.exitCode).toBe(2);
     expect(mocks.inspectPoolRequirements).toHaveBeenCalledWith(
@@ -453,7 +453,7 @@ describe("CLI interruption exit behavior", () => {
     expect(mocks.formatPoolPlan).not.toHaveBeenCalled();
   });
 
-  it("keeps scenario plan read-only and uses exit 2 only with --check", async () => {
+  it("keeps scenario plan read-only and uses exit 2 only with --require-ready", async () => {
     mocks.inspectPoolRequirements.mockResolvedValue({
       ready: false,
       items: [{
@@ -487,7 +487,7 @@ describe("CLI interruption exit behavior", () => {
     );
 
     await createProgram().parseAsync([
-      "node", "load-test", "scenario", "plan", "scenario", "--check",
+      "node", "load-test", "scenario", "plan", "scenario", "--require-ready",
     ]);
     expect(process.exitCode).toBe(2);
     expect(mocks.preparePoolRequirements).not.toHaveBeenCalled();

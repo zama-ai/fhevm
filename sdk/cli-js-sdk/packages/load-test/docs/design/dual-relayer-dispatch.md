@@ -54,5 +54,7 @@ pre-job failures are `submit_failed`, and plaintext mismatches are
   expected plaintexts, or insufficient per-owner ACL delegation before load
   starts. Delegation state is checked both in pool metadata and on-chain.
 - Primary and candidate relayer origins must differ.
+- `--max-connections` bounds sockets **per relayer target**, so a paired A/B run
+  can open up to twice that many connections in aggregate (one pool per target).
 - The two targets should use equivalent ingress paths and authentication so
   latency deltas reflect relayer behavior rather than proxy differences.

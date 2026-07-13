@@ -10,13 +10,13 @@ import {
 
 describe("parseBoundedInt", () => {
   it("accepts positive integers at or below the ceiling", () => {
-    expect(parseBoundedInt("--connections", 1024)("1")).toBe(1);
-    expect(parseBoundedInt("--connections", 1024)("1024")).toBe(1024);
+    expect(parseBoundedInt("--max-connections", 1024)("1")).toBe(1);
+    expect(parseBoundedInt("--max-connections", 1024)("1024")).toBe(1024);
   });
 
   it("rejects values above the ceiling with a clear, labeled message", () => {
-    expect(() => parseBoundedInt("--connections", 1024)("1025")).toThrow(
-      /--connections must be at most 1024, got "1025"/,
+    expect(() => parseBoundedInt("--max-connections", 1024)("1025")).toThrow(
+      /--max-connections must be at most 1024, got "1025"/,
     );
   });
 
