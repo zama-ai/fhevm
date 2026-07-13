@@ -2236,6 +2236,8 @@ fn born_public_frame(step_count: usize, born_public_steps: &[usize]) -> BornPubl
 fn born_public_events(
     result: &mollusk_svm::result::InstructionResult,
 ) -> Vec<host::PublicOutputsProducedEvent> {
+    let message = result.message.as_ref().expect("compiled Mollusk message");
+    let account_keys = message.account_keys();
     let prefix = anchor_lang::event::EVENT_IX_TAG_LE
         .iter()
         .copied()
@@ -2249,6 +2251,9 @@ fn born_public_events(
         .inner_instructions
         .iter()
         .filter_map(|inner| {
+            if account_keys.get(inner.instruction.program_id_index as usize) != Some(&host::id()) {
+                return None;
+            }
             let payload = inner.instruction.data.strip_prefix(prefix.as_slice())?;
             host::PublicOutputsProducedEvent::deserialize(&mut &*payload).ok()
         })
@@ -2270,13 +2275,16 @@ fn assert_born_public_batch(
                 .copied(),
         )
         .collect::<Vec<_>>();
+    let message = result.message.as_ref().expect("compiled Mollusk message");
+    let account_keys = message.account_keys();
     let inner = result
         .inner_instructions
         .iter()
-        .find(|inner| inner.instruction.data.starts_with(&prefix))
+        .find(|inner| {
+            account_keys.get(inner.instruction.program_id_index as usize) == Some(&host::id())
+                && inner.instruction.data.starts_with(&prefix)
+        })
         .expect("produced-public lifecycle inner instruction");
-    let message = result.message.as_ref().expect("compiled Mollusk message");
-    let account_keys = message.account_keys();
     assert_eq!(
         account_keys.get(inner.instruction.program_id_index as usize),
         Some(&host::id())
