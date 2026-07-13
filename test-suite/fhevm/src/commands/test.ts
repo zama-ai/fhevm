@@ -1078,6 +1078,18 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
     );
   }
 
+  // Cutover NULL-re-arms digests so the promoted stack re-uploads ct128 and re-commits
+  // its digests on-chain. Until that drains, S3 bytes and on-chain digests disagree and
+  // KMS attestation rejects decryption — wait it out before verifying.
+  for (const db of operatorDatabases) {
+    await waitUntil({
+      label: `${db}  digest re-commit drained`,
+      timeoutSecs: 300,
+      check: async () =>
+        (await psqlQuery(db, "SELECT count(*) FROM public.ciphertext_digest WHERE txn_is_sent = false;")) === "0",
+    });
+  }
+
   console.log(`  cross-cutover verify: decrypt Alice's balance on promoted stack`);
   const verifyResult = await run(["./fhevm-cli", "test", "cross-cutover-verify"], { allowFailure: true });
   if (verifyResult.code !== 0) {
