@@ -30,32 +30,32 @@ pub enum KmsWallet {
 /// Configuring a raw private key is intended for **testing purposes only**.
 /// Production deployments should use an AWS KMS signer instead (see [`AwsKmsConfig`]).
 ///
-/// The inner secret is kept private and the [`Debug`] implementation redacts it, so the key
-/// is never leaked through debug logs.
+/// The [`Debug`] implementation redacts the inner secret, so the key is not leaked through debug
+/// logs.
 #[derive(Clone, Deserialize, PartialEq)]
 #[cfg_attr(debug_assertions, derive(Serialize))]
 #[serde(transparent)]
-pub struct PrivateKey(String);
+pub struct TestingPrivateKey(String);
 
-impl PrivateKey {
+impl TestingPrivateKey {
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
-impl std::fmt::Debug for PrivateKey {
+impl std::fmt::Debug for TestingPrivateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("PrivateKey(<redacted>)")
     }
 }
 
-impl From<String> for PrivateKey {
+impl From<String> for TestingPrivateKey {
     fn from(value: String) -> Self {
         Self(value)
     }
 }
 
-impl From<&str> for PrivateKey {
+impl From<&str> for TestingPrivateKey {
     fn from(value: &str) -> Self {
         Self(value.to_string())
     }
