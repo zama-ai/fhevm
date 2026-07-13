@@ -1,16 +1,16 @@
 {
   "confidential_transfer/direct": {
-    "compute_units": 349021,
+    "compute_units": 332805,
     "instruction_data_bytes": 223,
     "unique_accounts": 15
   },
   "confidential_transfer/steady_state": {
-    "compute_units": 366493,
+    "compute_units": 350274,
     "instruction_data_bytes": 223,
     "unique_accounts": 15
   },
   "initialize_token_account": {
-    "compute_units": 68235,
+    "compute_units": 65393,
     "instruction_data_bytes": 16,
     "unique_accounts": 12
   }

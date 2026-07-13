@@ -16,6 +16,7 @@ solana-program = "3.0.0"
 solana-sha256-hasher = "3.1.0"
 solana-compute-budget-interface = "3.0.0"
 solana-sdk = "3.0.0"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zama-host = { path = "../programs/zama-host", features = ["no-entrypoint"] }
 zama-solana-acl = { path = "../crates/zama-solana-acl" }

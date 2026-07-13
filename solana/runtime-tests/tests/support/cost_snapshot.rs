@@ -12,12 +12,16 @@
 //! Accept a new baseline with:
 //!
 //! ```text
+//! solana --version # must match CI: 2.1.0
+//! anchor --version # must match CI: 1.0.2
+//! cargo clean
+//! bash scripts/check-zama-host-idl.sh
 //! ZAMA_UPDATE_COST_SNAPSHOT=1 cargo test -p zama-solana-runtime-tests cost_snapshot_
 //! ```
 //!
-//! and commit the updated JSON. Costs are deterministic for a pinned
-//! toolchain; the compute-unit band only absorbs cross-toolchain rebuild
-//! variation. Account count and data size are exact.
+//! and commit the updated JSON. Build the programs first so the snapshot is
+//! measured against the current source rather than stale `target/deploy`
+//! artifacts. Costs are exact for the pinned toolchain.
 //!
 //! Profiles use fixed fixture keys because on-chain PDA bump searches are part
 //! of the measured compute: absolute values therefore include an
@@ -26,13 +30,11 @@
 //! commits, not the absolute number.
 
 use mollusk_svm::result::InstructionResult;
+use serde::{Deserialize, Serialize};
 use solana_sdk::instruction::Instruction;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
-
-/// Allowed relative compute-unit drift before the check fails.
-const COMPUTE_UNIT_TOLERANCE_PCT: u64 = 2;
 
 const UPDATE_ENV: &str = "ZAMA_UPDATE_COST_SNAPSHOT";
 
@@ -56,7 +58,7 @@ pub fn assert_cost_snapshot(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-    if std::env::var_os(UPDATE_ENV).is_some() {
+    if std::env::var(UPDATE_ENV).is_ok_and(|value| value == "1") {
         let mut entries = read_entries(&path).unwrap_or_default();
         entries.insert(profile.to_string(), measured);
         write_entries(&path, &entries);
@@ -90,15 +92,14 @@ pub fn assert_cost_snapshot(
             expected.instruction_data_bytes, measured.instruction_data_bytes
         ));
     }
-    let drift = measured.compute_units.abs_diff(expected.compute_units);
-    if drift * 100 > expected.compute_units * COMPUTE_UNIT_TOLERANCE_PCT {
+    if measured.compute_units != expected.compute_units {
         let direction = if measured.compute_units > expected.compute_units {
             "regression"
         } else {
             "improvement — re-check packing decisions derived from the old cost"
         };
         failures.push(format!(
-            "compute units drifted beyond {COMPUTE_UNIT_TOLERANCE_PCT}%: {} -> {} ({direction})",
+            "compute units changed: {} -> {} ({direction})",
             expected.compute_units, measured.compute_units
         ));
     }
@@ -111,7 +112,7 @@ pub fn assert_cost_snapshot(
     );
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 struct Cost {
     compute_units: u64,
     unique_accounts: usize,
@@ -138,51 +139,17 @@ fn snapshot_path(snapshot: &str) -> PathBuf {
         .join(format!("{snapshot}.json"))
 }
 
-fn read_entries(path: &PathBuf) -> Option<std::collections::BTreeMap<String, Cost>> {
+fn read_entries(path: &PathBuf) -> Option<BTreeMap<String, Cost>> {
     let text = std::fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text)
-        .unwrap_or_else(|err| panic!("invalid cost snapshot {}: {err}", path.display()));
-    let object = value
-        .as_object()
-        .unwrap_or_else(|| panic!("cost snapshot {} is not a JSON object", path.display()));
-    let mut entries = std::collections::BTreeMap::new();
-    for (profile, cost) in object {
-        let field = |name: &str| {
-            cost.get(name)
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "cost snapshot {} profile {profile:?} is missing field {name:?}",
-                        path.display()
-                    )
-                })
-        };
-        entries.insert(
-            profile.clone(),
-            Cost {
-                compute_units: field("compute_units"),
-                unique_accounts: field("unique_accounts") as usize,
-                instruction_data_bytes: field("instruction_data_bytes") as usize,
-            },
-        );
-    }
-    Some(entries)
+    Some(
+        serde_json::from_str(&text)
+            .unwrap_or_else(|err| panic!("invalid cost snapshot {}: {err}", path.display())),
+    )
 }
 
-fn write_entries(path: &PathBuf, entries: &std::collections::BTreeMap<String, Cost>) {
-    let mut object = serde_json::Map::new();
-    for (profile, cost) in entries {
-        object.insert(
-            profile.clone(),
-            serde_json::json!({
-                "compute_units": cost.compute_units,
-                "unique_accounts": cost.unique_accounts,
-                "instruction_data_bytes": cost.instruction_data_bytes,
-            }),
-        );
-    }
+fn write_entries(path: &PathBuf, entries: &BTreeMap<String, Cost>) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let mut text = serde_json::to_string_pretty(&serde_json::Value::Object(object)).unwrap();
+    let mut text = serde_json::to_string_pretty(entries).unwrap();
     text.push('\n');
     std::fs::write(path, text).unwrap();
 }
