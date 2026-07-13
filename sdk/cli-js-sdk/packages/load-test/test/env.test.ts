@@ -31,19 +31,19 @@ describe("resolveEnv network precedence", () => {
 describe("resolveEnv A/B target validation", () => {
   it("rejects --relayer-b-api-prefix without a relayer B URL", () => {
     expect(() => resolveEnv({ relayerBApiPrefix: "/v2" })).toThrow(
-      /--relayer-b-api-prefix .* requires --relayer-b/,
+      /--relayer-b-api-prefix .* requires --relayer-b-url/,
     );
   });
 
   it("rejects --relayer-b-config without a relayer B URL", () => {
     expect(() => resolveEnv({ relayerBConfigPath: "/tmp/relayer-b.json" })).toThrow(
-      /--relayer-b-config .* requires --relayer-b/,
+      /--relayer-b-config .* requires --relayer-b-url/,
     );
   });
 
   it("rejects LOAD_TEST_RELAYER_B_API_PREFIX without LOAD_TEST_RELAYER_B_URL", () => {
     process.env.LOAD_TEST_RELAYER_B_API_PREFIX = "/v2";
-    expect(() => resolveEnv({})).toThrow(/requires --relayer-b/);
+    expect(() => resolveEnv({})).toThrow(/requires --relayer-b-url/);
   });
 
   it("allows relayer B options when a relayer B URL is configured", () => {

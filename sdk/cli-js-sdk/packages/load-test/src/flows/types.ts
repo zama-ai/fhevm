@@ -65,7 +65,7 @@ export type RequestRecord = Readonly<{
 }> &
   RelayerLegRecord &
   Readonly<{
-    /** Candidate relayer leg, present only when `--relayer-b` is configured. */
+    /** Candidate relayer leg, present only when `--relayer-b-url` is configured. */
     echoedRequestIdB?: string;
     jobIdB?: string;
     submitHttpStatusB?: number;

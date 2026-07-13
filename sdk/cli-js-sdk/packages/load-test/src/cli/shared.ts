@@ -10,7 +10,7 @@ type EnvCommandOptions = Readonly<{
   network?: string;
   relayerUrl?: string;
   relayerApiPrefix?: string;
-  relayerB?: string;
+  relayerBUrl?: string;
   relayerBApiPrefix?: string;
   rpcUrl?: string;
   dataDir?: string;
@@ -31,7 +31,7 @@ export const withEnvOptions = <T extends CommandUnknownOpts>(command: T): T => {
     )
     .option("--relayer-url <url>", "relayer base URL override")
     .option("--relayer-api-prefix <prefix>", "primary relayer API route prefix (raw flows only)")
-    .option("--relayer-b <url>", "candidate relayer base URL for paired dispatch")
+    .option("--relayer-b-url <url>", "candidate relayer base URL for paired dispatch")
     .option("--relayer-b-api-prefix <prefix>", "candidate API route prefix (raw flows only)")
     .option("--rpc-url <url>", "host chain RPC URL override")
     .option("--data-dir <dir>", "pools and run artifacts root (default .load-test)")
@@ -48,7 +48,7 @@ export const envFromCommand = async (command: {
     network: options.network,
     relayerUrl: options.relayerUrl,
     relayerApiPrefix: options.relayerApiPrefix,
-    relayerBUrl: options.relayerB,
+    relayerBUrl: options.relayerBUrl,
     relayerBApiPrefix: options.relayerBApiPrefix,
     rpcUrl: options.rpcUrl,
     dataDir: options.dataDir,

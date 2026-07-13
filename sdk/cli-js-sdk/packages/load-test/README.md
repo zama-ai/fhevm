@@ -51,7 +51,7 @@ not a retry index or duration; reports expose count statistics without `Ms`
 suffixes. Aborted legs are reported separately and excluded from workload error
 rate denominators.
 
-With `--relayer-b`, SDK-driven A/B measurements are independent target legs
+With `--relayer-b-url`, SDK-driven A/B measurements are independent target legs
 over the same claimed workload item. User/delegated legs generate independent
 transport keys and permits; they are not byte-identical raw dispatches and must
 not be assumed to deduplicate. See
@@ -79,7 +79,7 @@ Environment (read from the workspace-root `.env` or the environment):
   `--rpc-url` are both absent.
 - `ZAMA_FHEVM_API_KEY` — optional SDK and raw-relayer API-key authentication.
 - `ZAMA_FHEVM_API_KEY_B` — optional distinct API key for the candidate relayer
-  (`--relayer-b`); falls back to `ZAMA_FHEVM_API_KEY` when unset.
+  (`--relayer-b-url`); falls back to `ZAMA_FHEVM_API_KEY` when unset.
 - `LOAD_TEST_RELAYER_URL`, `LOAD_TEST_NETWORK`, `LOAD_TEST_DATA_DIR`,
   `LOAD_TEST_RELAYER_CONFIG` — defaults for the matching CLI flags.
 

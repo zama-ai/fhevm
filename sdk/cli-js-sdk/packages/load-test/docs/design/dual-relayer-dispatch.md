@@ -2,7 +2,7 @@
 
 Status: implemented.
 
-When `--relayer-b` is configured, one scheduler tick produces a paired record
+When `--relayer-b-url` is configured, one scheduler tick produces a paired record
 for target A (primary) and target B (candidate). The pair shares one workload
 item and correlation id, but transport semantics depend on the driver.
 

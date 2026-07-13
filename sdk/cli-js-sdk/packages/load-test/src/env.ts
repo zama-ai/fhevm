@@ -68,13 +68,13 @@ export const resolveEnv = (overrides: EnvOverrides = {}): LoadTestEnv => {
   if (!relayerBUrlRaw) {
     if (relayerBApiPrefixRaw !== undefined) {
       throw new Error(
-        "--relayer-b-api-prefix (or LOAD_TEST_RELAYER_B_API_PREFIX) requires --relayer-b " +
+        "--relayer-b-api-prefix (or LOAD_TEST_RELAYER_B_API_PREFIX) requires --relayer-b-url " +
           "(or LOAD_TEST_RELAYER_B_URL) to also be set.",
       );
     }
     if (relayerBConfigPathRaw !== undefined) {
       throw new Error(
-        "--relayer-b-config (or LOAD_TEST_RELAYER_B_CONFIG) requires --relayer-b " +
+        "--relayer-b-config (or LOAD_TEST_RELAYER_B_CONFIG) requires --relayer-b-url " +
           "(or LOAD_TEST_RELAYER_B_URL) to also be set.",
       );
     }
@@ -83,7 +83,7 @@ export const resolveEnv = (overrides: EnvOverrides = {}): LoadTestEnv => {
   const relayerBUrl = relayerBUrlRaw ? normalizeRelayerUrl(relayerBUrlRaw) : undefined;
   if (relayerBUrl && new URL(relayerBUrl).origin === new URL(relayerUrl).origin) {
     throw new Error(
-      `--relayer-b (${relayerBUrl}) must not resolve to the same origin as the primary ` +
+      `--relayer-b-url (${relayerBUrl}) must not resolve to the same origin as the primary ` +
         `relayer (${relayerUrl}).`,
     );
   }
