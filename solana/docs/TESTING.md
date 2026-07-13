@@ -65,6 +65,34 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+### Native unit coverage
+
+CI publishes component-level native Rust line coverage. Run the same measurement locally with:
+
+```bash
+cargo llvm-cov \
+  --workspace \
+  --exclude zama-solana-runtime-tests \
+  --json \
+  --summary-only \
+  --output-path /tmp/solana-native-coverage.json
+```
+
+This is intentionally an informational signal without a coverage floor. Mollusk executes the
+programs from prebuilt SBF artifacts, not the instrumented native libraries, so it cannot attribute
+runtime execution to the program instruction source. Including `zama-solana-runtime-tests` would
+instead count the Rust test harness and make the total look healthier without measuring more
+on-chain code. Use the component table to find native unit-test gaps, and use the Mollusk suites to
+validate account, CPI, PDA, ACL, event, and persistence behavior.
+
+The report includes inline `#[cfg(test)]` modules that live in instrumented source files. Their
+lines can raise a component percentage, so the table is a gap-finding signal rather than a measure
+of product-code coverage.
+
+The host-listener and relayer live in separate workspaces and are not folded into this number. Their
+Solana modules need separately scoped reports in their own workflows; combining their package-wide
+coverage with this workspace would not produce a meaningful floor.
+
 The adapters live in sibling workspaces and need offline SQLx metadata (no live DB):
 
 ```bash
