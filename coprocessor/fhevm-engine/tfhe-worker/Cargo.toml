@@ -45,8 +45,6 @@ scheduler = { path = "../scheduler" }
 nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu", "scheduler/gpu", "fhevm-engine-common/gpu", "test-harness/gpu"]
 bench = []
-latency = ["fhevm-engine-common/latency"]
-throughput = ["fhevm-engine-common/throughput"]
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["async_futures"] }

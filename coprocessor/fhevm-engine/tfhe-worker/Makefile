@@ -1,6 +1,5 @@
 
 DB_URL ?= DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coprocessor
-OPTIMIZATION_TARGET ?= throughput
 
 .PHONY: build
 build:
@@ -42,19 +41,19 @@ clean_run:
 
 .PHONY: benchmark_erc20_gpu # Run ECR20 transfer benchmarks on GPU
 benchmark_erc20_gpu:
-	RUSTFLAGS="-C target-cpu=native" $(DB_URL) cargo +nightly bench --bench erc20 --features=gpu,bench,$(OPTIMIZATION_TARGET) -- --quick
+	RUSTFLAGS="-C target-cpu=native" $(DB_URL) cargo +nightly bench --bench erc20 --features=gpu,bench -- --quick
 
 .PHONY: benchmark_dex_gpu # Run DEX benchmarks on GPU
 benchmark_dex_gpu:
-	RUSTFLAGS="-C target-cpu=native" $(DB_URL) cargo +nightly bench --bench dex --features=gpu,bench,$(OPTIMIZATION_TARGET) -- --quick
+	RUSTFLAGS="-C target-cpu=native" $(DB_URL) cargo +nightly bench --bench dex --features=gpu,bench -- --quick
 
 .PHONY: benchmark_synthetics_gpu # Run all benchmarks on GPU
 benchmark_synthetics_gpu:
-	RUSTFLAGS="-C target-cpu=native" $(DB_URL) cargo +nightly bench --bench synthetics --features=gpu,bench,$(OPTIMIZATION_TARGET) -- --quick
+	RUSTFLAGS="-C target-cpu=native" $(DB_URL) cargo +nightly bench --bench synthetics --features=gpu,bench -- --quick
 
 .PHONY: benchmark_all_gpu # Run all benchmarks on GPU
 benchmark_all_gpu:
-	RUSTFLAGS="-C target-cpu=native" $(DB_URL) cargo +nightly bench --bench erc20 --bench dex --bench synthetics --features=gpu,bench,$(OPTIMIZATION_TARGET) -- --quick
+	RUSTFLAGS="-C target-cpu=native" $(DB_URL) cargo +nightly bench --bench erc20 --bench dex --bench synthetics --features=gpu,bench -- --quick
 
 
 .PHONY: benchmark_erc20_cpu # Run ECR20 transfer benchmarks on CPU

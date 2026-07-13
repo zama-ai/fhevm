@@ -32,16 +32,11 @@ fn main() {
         .measurement_time(std::time::Duration::from_secs(1000))
         .configure_from_args();
     let bench_name = "erc20::transfer";
-    let bench_optimization_target = if cfg!(feature = "latency") {
-        "opt_latency"
-    } else {
-        "opt_throughput"
-    };
 
     let mut group = c.benchmark_group(bench_name);
     if ecfg.benchmark_type == "LATENCY" || ecfg.benchmark_type == "ALL" {
         let num_elems = 1;
-        let bench_id = format!("{bench_name}::latency::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+        let bench_id = format!("{bench_name}::latency::whitepaper::FHEUint64::{num_elems}_elems");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             let _ = Runtime::new().unwrap().block_on(schedule_erc20_whitepaper(
                 b,
@@ -55,7 +50,7 @@ fn main() {
         for num_elems in [10, 50, 200, 500] {
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
-                format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+                format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 Runtime::new()
                     .unwrap()
@@ -69,7 +64,7 @@ fn main() {
 
             group.throughput(Throughput::Elements(num_elems));
             let bench_id = format!(
-                "{bench_name}::throughput::dependent_whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}"
+                "{bench_name}::throughput::dependent_whitepaper::FHEUint64::{num_elems}_elems"
             );
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 let _ = Runtime::new()
@@ -89,7 +84,7 @@ fn main() {
         let num_elems = 300;
         group.throughput(Throughput::Elements(num_elems));
         let bench_id = format!(
-            "{bench_name}::throughput::independent::FHEUint64::{num_elems}_elems::300_per_block::{bench_optimization_target}"
+            "{bench_name}::throughput::independent::FHEUint64::{num_elems}_elems::300_per_block"
         );
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             Runtime::new()
@@ -105,7 +100,7 @@ fn main() {
         let num_elems = 300;
         group.throughput(Throughput::Elements(num_elems));
         let bench_id = format!(
-            "{bench_name}::throughput::dependent::FHEUint64::{num_elems}_elems::300_per_block::6x50_dependent::{bench_optimization_target}"
+            "{bench_name}::throughput::dependent::FHEUint64::{num_elems}_elems::300_per_block::6x50_dependent"
         );
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             Runtime::new()
@@ -121,7 +116,7 @@ fn main() {
         let num_elems = 5000;
         group.throughput(Throughput::Elements(num_elems));
         let bench_id = format!(
-            "{bench_name}::throughput::independent::FHEUint64::{num_elems}_elems::500_per_block::{bench_optimization_target}"
+            "{bench_name}::throughput::independent::FHEUint64::{num_elems}_elems::500_per_block"
         );
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             Runtime::new()
@@ -137,7 +132,7 @@ fn main() {
         let num_elems = 10000;
         group.throughput(Throughput::Elements(num_elems));
         let bench_id = format!(
-            "{bench_name}::throughput::mixed::FHEUint64::{num_elems}_elems::1000_per_block::50x20_dependent::{bench_optimization_target}"
+            "{bench_name}::throughput::mixed::FHEUint64::{num_elems}_elems::1000_per_block::50x20_dependent"
         );
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             Runtime::new()
@@ -153,7 +148,7 @@ fn main() {
         let num_elems = 2000;
         group.throughput(Throughput::Elements(num_elems));
         let bench_id = format!(
-            "{bench_name}::throughput::realistic::FHEUint64::{num_elems}_elems::40_per_block::10x4_dependent::{bench_optimization_target}"
+            "{bench_name}::throughput::realistic::FHEUint64::{num_elems}_elems::40_per_block::10x4_dependent"
         );
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             Runtime::new()
