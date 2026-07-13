@@ -319,7 +319,7 @@ const applyInstanceAdjustments = (
 // Suffixes of services that only run on the GCS fleet in blue-green mode.
 export const GCS_ONLY_SUFFIXES = new Set(["upgrade-controller", "consensus-detector"]);
 
-/** Blue-green container names per operator: BCS (previous-release shape) + full GCS fleet reusing BCS's db-migration. */
+/** Blue-green container names per operator: BCS (previous-release shape) + GCS fleet reusing BCS's db-migration. */
 export const blueGreenServiceNames = (
   state: Pick<State, "scenario" | "versions">,
   options: { includeMigration: boolean },

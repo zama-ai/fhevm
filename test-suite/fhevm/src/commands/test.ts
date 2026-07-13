@@ -122,7 +122,9 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "negative-acl": "Run negative ACL scenarios.",
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
   "confidential-bridge": "Run confidential bridge cross-chain decrypt coverage (multi-chain).",
-  "blue-green": "Run the Blue-Green upgrade end-to-end (fires proposeCoprocessorUpgrade on-chain, waits for cutover, asserts final state). Requires `--scenario blue-green*`.",
+  "blue-green":
+    "Run the Blue-Green upgrade end-to-end (fires proposeCoprocessorUpgrade on-chain, waits for cutover, " +
+    "asserts final state). Requires `--scenario blue-green*`.",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
@@ -829,7 +831,10 @@ const startContinuousErc20Traffic = (streams: number): TrafficStream => {
       let result = await run(["./fhevm-cli", "test", "erc20"], { allowFailure: true });
       for (let attempt = 1; attempt <= TRAFFIC_MAX_RETRIES && result.code !== 0 && !stopped; attempt += 1) {
         counter.retries += 1;
-        console.warn(`${label} erc20 exited ${result.code}, retry ${attempt}/${TRAFFIC_MAX_RETRIES} after ${TRAFFIC_RETRY_BACKOFF_MS}ms`);
+        console.warn(
+          `${label} erc20 exited ${result.code}, ` +
+            `retry ${attempt}/${TRAFFIC_MAX_RETRIES} after ${TRAFFIC_RETRY_BACKOFF_MS}ms`,
+        );
         await Bun.sleep(TRAFFIC_RETRY_BACKOFF_MS);
         result = await run(["./fhevm-cli", "test", "erc20"], { allowFailure: true });
       }
@@ -842,7 +847,12 @@ const startContinuousErc20Traffic = (streams: number): TrafficStream => {
         counter.failures += 1;
         console.warn(`${label} erc20 failed after ${TRAFFIC_MAX_RETRIES} retries (code=${result.code})`);
         stopped = true;
-        rejectErrored(new Error(`traffic stream ${streamIdx} failed after ${TRAFFIC_MAX_RETRIES} retries at iteration ${counter.iterations}`));
+        rejectErrored(
+          new Error(
+            `traffic stream ${streamIdx} failed after ${TRAFFIC_MAX_RETRIES} retries ` +
+              `at iteration ${counter.iterations}`,
+          ),
+        );
         break;
       }
       if (stopped) break;
@@ -983,12 +993,13 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
   }
 
   console.log(
-    `\n[5/8] start ${BLUE_GREEN_TRAFFIC_STREAMS} background stream(s) + cross-cutover chain (depth ${CROSS_CUTOVER_CHAIN_DEPTH})`,
+    `\n[5/8] start ${BLUE_GREEN_TRAFFIC_STREAMS} background stream(s) ` +
+      `+ cross-cutover chain (depth ${CROSS_CUTOVER_CHAIN_DEPTH})`,
   );
   const traffic = startContinuousErc20Traffic(BLUE_GREEN_TRAFFIC_STREAMS);
   let trafficStats: { iterations: number; retries: number; failures: number };
   try {
-    // The chain is a stress signal — a fence hit mid-transfer is expected; [8/8] verifies against actual transferCount.
+    // The chain is a stress signal — a fence hit mid-transfer is expected; [8/8] verifies actual transferCount.
     const chainPromise = (async () => {
       for (let step = 1; step <= CROSS_CUTOVER_CHAIN_DEPTH; step += 1) {
         console.log(`  cross-cutover transfer ${step}/${CROSS_CUTOVER_CHAIN_DEPTH}`);
@@ -1002,14 +1013,16 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
           if (lastCode === 0) break;
           if (attempt < TRAFFIC_MAX_RETRIES) {
             console.warn(
-              `  cross-cutover transfer ${step} exited ${lastCode}, retry ${attempt}/${TRAFFIC_MAX_RETRIES} after ${TRAFFIC_RETRY_BACKOFF_MS}ms`,
+              `  cross-cutover transfer ${step} exited ${lastCode}, ` +
+                `retry ${attempt}/${TRAFFIC_MAX_RETRIES} after ${TRAFFIC_RETRY_BACKOFF_MS}ms`,
             );
             await Bun.sleep(TRAFFIC_RETRY_BACKOFF_MS);
           }
         }
         if (lastCode !== 0) {
           console.warn(
-            `  cross-cutover chain stopped at step ${step} after ${TRAFFIC_MAX_RETRIES} retries (code=${lastCode}) — likely fenced mid-transfer; verify step will decrypt against actual completed count`,
+            `  cross-cutover chain stopped at step ${step} after ${TRAFFIC_MAX_RETRIES} retries (code=${lastCode}) ` +
+              `— likely fenced mid-transfer; verify step will decrypt against actual completed count`,
           );
           return;
         }
@@ -1055,7 +1068,8 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
 
   console.log(`\n[8/8] stop background traffic + cross-cutover verify + continuity check`);
   console.log(
-    `  traffic stopped: ${trafficStats.iterations} iterations across ${BLUE_GREEN_TRAFFIC_STREAMS} stream(s), ${trafficStats.retries} retried, ${trafficStats.failures} failed after retry`,
+    `  traffic stopped: ${trafficStats.iterations} iterations across ${BLUE_GREEN_TRAFFIC_STREAMS} stream(s), ` +
+      `${trafficStats.retries} retried, ${trafficStats.failures} failed after retry`,
   );
   if (trafficStats.failures > 0) {
     throw new Error(

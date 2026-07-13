@@ -179,8 +179,7 @@ const upCommandDefinition = {
     scenario: { type: "string", description: "Scenario preset name or path." },
     "bcs-tag": {
       type: "string",
-      description:
-        "Override BCS registry tag for blue-green scenarios. Accepts a release tag (v0.13.1), a 7-char short SHA (1a3646e), or a full 40-char SHA (auto-shortened to the 7-char form CI publishes). Forces `bcs.source` to registry mode with the resolved tag, replacing whatever the scenario yaml declares. Only applies to blue-green scenarios.",
+      description: "Override the BCS registry tag for blue-green scenarios (release tag or commit SHA).",
     },
     resume: { type: "boolean", description: "Resume from persisted state." },
     "dry-run": { type: "boolean", description: "Print the resolved plan and stop before mutating state." },

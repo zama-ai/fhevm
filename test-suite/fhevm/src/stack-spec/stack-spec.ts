@@ -57,11 +57,16 @@ export const resolveScenarioForOptions = async (
     if (kind === "blue-green") {
       // --build's implicit all-group overrides are fine (GCS builds from HEAD); only explicit --override conflicts.
       if (!options.build && options.overrides.some((override) => override.group === "coprocessor")) {
-        throw new PreflightError("--override coprocessor is not supported with blue-green scenarios (BCS/GCS sources are scenario-defined)");
+        throw new PreflightError(
+          "--override coprocessor is not supported with blue-green scenarios (BCS/GCS sources are scenario-defined)",
+        );
       }
       const loaded = await loadBlueGreenScenario(sourcePath);
       const resolved = options.bcsTag
-        ? { ...loaded, bcs: { ...loaded.bcs, source: { mode: "registry" as const, tag: normalizeBcsTag(options.bcsTag) } } }
+        ? {
+            ...loaded,
+            bcs: { ...loaded.bcs, source: { mode: "registry" as const, tag: normalizeBcsTag(options.bcsTag) } },
+          }
         : loaded;
       const source = resolved.bcs.source;
       // Pre-0.14 images lack the upgrade protocol (versioning table, FSM, retirement fence).

@@ -6,7 +6,12 @@ import YAML from "yaml";
 import { generateComposeOverrides, loadMergedComposeDoc, serviceNameList } from "./generate/compose";
 import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
-import { parseBlueGreenScenario, parseCoprocessorScenario, resolveBlueGreenScenario, resolveScenarioFile } from "./scenario/resolve";
+import {
+  parseBlueGreenScenario,
+  parseCoprocessorScenario,
+  resolveBlueGreenScenario,
+  resolveScenarioFile,
+} from "./scenario/resolve";
 import { stackSpecForState } from "./stack-spec/stack-spec";
 import { testDefaultScenario } from "./test-fixtures";
 import { withTempStateDir } from "./test-state";

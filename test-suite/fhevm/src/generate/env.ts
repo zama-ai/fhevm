@@ -457,7 +457,9 @@ const buildInstanceEnvs = async (
       continue;
     }
     const next = { ...envs["coprocessor"] };
-    next.DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/${coprocessorDatabaseName(index)}`;
+    const dbName = coprocessorDatabaseName(index);
+    const dbCreds = `${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}`;
+    next.DATABASE_URL = `postgresql://${dbCreds}@${POSTGRES_HOST}/${dbName}`;
     next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
     next.BUCKET_NAME_CT128 = opBucket;
     const instance = plan.coprocessor.instances.find((item) => item.index === index);

@@ -459,13 +459,18 @@ const coprocessorDbSeeded = async (database: string) => {
 
 const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
   (await Promise.all(
-    Array.from({ length: topologyForState(state).count }, (_, index) => coprocessorDatabaseName(index)).map(coprocessorDbSeeded),
+    Array.from({ length: topologyForState(state).count }, (_, index) => coprocessorDatabaseName(index)).map(
+      coprocessorDbSeeded,
+    ),
   )).every(Boolean);
 
 /** Reads the compiled-in stack version from the resolved tfhe-worker image (source of truth for any pin). */
 const coprocessorBinaryStackVersion = async (): Promise<{ major: number; minor: number } | undefined> => {
   const result = await run(
-    [...dockerArgs("coprocessor"), "run", "--rm", "--no-deps", "coprocessor-tfhe-worker", "tfhe_worker", "--stack-version"],
+    [
+      ...dockerArgs("coprocessor"),
+      "run", "--rm", "--no-deps", "coprocessor-tfhe-worker", "tfhe_worker", "--stack-version",
+    ],
     { env: await composeEnv("coprocessor"), allowFailure: true },
   );
   const match = result.stdout.match(/(\d+)\.(\d+)\.\d+/);
@@ -475,7 +480,7 @@ const coprocessorBinaryStackVersion = async (): Promise<{ major: number; minor: 
   return { major: Number(match[1]), minor: Number(match[2]) };
 };
 
-/** Aligns versioning with the deployed binary's family so workers boot in normal mode; blue-green keeps the migration seed (FSM drives it). */
+/** Aligns versioning with the binary's family so workers boot in normal mode; blue-green keeps the migration seed. */
 const seedVersioningForNonBlueGreen = async (state: State) => {
   if (state.scenario.kind === "blue-green") return;
   // Pre-0.14 bundles predate the versioning table (and the retirement fence).
@@ -493,7 +498,8 @@ const seedVersioningForNonBlueGreen = async (state: State) => {
     const db = coprocessorDatabaseName(index);
     const result = await postgresExec(db, [
       "-c",
-      `UPDATE versioning SET stack_version = '${live}', updated_at = NOW() WHERE singleton = TRUE AND stack_version = 'v0.14';`,
+      `UPDATE versioning SET stack_version = '${live}', updated_at = NOW()` +
+        ` WHERE singleton = TRUE AND stack_version = 'v0.14';`,
     ]);
     if (result.code !== 0) {
       throw new PreflightError(`versioning seed failed for ${db}: ${(result.stderr || result.stdout).trim()}`);
