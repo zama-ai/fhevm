@@ -526,10 +526,28 @@ export type CreateCoreFhevmParameters<
   readonly options?: FhevmOptions | undefined;
 };
 
+export function createCoreFhevm<runtime extends FhevmRuntime>(
+  ownerToken: symbol,
+  parameters: {
+    readonly chain?: undefined;
+    readonly client?: undefined;
+    readonly runtime: runtime;
+    readonly options?: FhevmOptions | undefined;
+  },
+): Fhevm<undefined, runtime, undefined>;
+
+export function createCoreFhevm<chain extends FhevmChain, runtime extends FhevmRuntime, client extends NativeClient>(
+  ownerToken: symbol,
+  parameters: CreateCoreFhevmParameters<chain, runtime, client> & {
+    readonly chain: chain;
+    readonly client: client;
+  },
+): Fhevm<chain, runtime, client>;
+
 export function createCoreFhevm<chain extends FhevmChain, runtime extends FhevmRuntime, client extends NativeClient>(
   ownerToken: symbol,
   parameters: CreateCoreFhevmParameters<chain, runtime, client>,
-): Fhevm<chain, runtime, client> {
+): Fhevm<chain, runtime, client> | Fhevm<undefined, runtime, undefined> {
   // Pre-populate the global FheEncryptionKey cache if the caller provided one.
   // Avoids a 50MB fetch later when encrypt is first called.
   // No-op if an entry already exists for this relayerUrl (first write wins).
@@ -604,12 +622,18 @@ export function setResolvedProtocolVersion(fhevm: FhevmBase, protocolVersion: Pr
   f[SET_PROTOCOL_VERSION](protocolVersion);
 }
 
-export function setResolvedTfheVersion(fhevm: FhevmBase, tfheVersion: TfheVersion): void {
+export function setResolvedTfheVersion(
+  fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
+  tfheVersion: TfheVersion,
+): void {
   const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_TFHE_VERSION]: SetTfheVersionFn };
   f[SET_TFHE_VERSION](tfheVersion);
 }
 
-export function setResolvedTkmsVersion(fhevm: FhevmBase, tkmsVersion: TkmsVersion): void {
+export function setResolvedTkmsVersion(
+  fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
+  tkmsVersion: TkmsVersion,
+): void {
   const f = asCoreFhevm(fhevm) as CoreFhevm & { readonly [SET_TKMS_VERSION]: SetTkmsVersionFn };
   f[SET_TKMS_VERSION](tkmsVersion);
 }

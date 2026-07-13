@@ -1,7 +1,13 @@
 import type { Bytes32Hex } from '../../../core/types/primitives.js';
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
 import type { FhevmChain } from '../../../core/types/fhevmChain.js';
-import type { Fhevm, FhevmBase, FhevmExtension, OptionalNativeClient, WithTfheVersion } from '../../../core/types/coreFhevmClient.js';
+import type {
+  Fhevm,
+  FhevmBase,
+  FhevmExtension,
+  OptionalNativeClient,
+  WithTfheVersion,
+} from '../../../core/types/coreFhevmClient.js';
 import type { FhevmRuntime, WithEncrypt } from '../../../core/types/coreFhevmRuntime.js';
 import type { SolanaEncryptInputParameters, SolanaEncryptInputResult } from '../../actions/encryptInput.js';
 import { asFhevmWith, setResolvedTfheVersion } from '../../../core/runtime/CoreFhevm-p.js';
@@ -31,10 +37,7 @@ async function _initEncrypt(fhevm: FhevmBase<undefined, FhevmRuntime, OptionalNa
 
   await f.runtime.encrypt.initTfheModule({ tfheVersion });
 
-  // `f` is the same CoreFhevmImpl instance as `fhevm` (asFhevmWith narrows, not wraps).
-  // The cast satisfies the FhevmBase<FhevmChain, ..., NativeClient> signature; the runtime
-  // instanceof check inside setResolvedTfheVersion validates identity at runtime.
-  setResolvedTfheVersion(fhevm as unknown as FhevmBase, tfheVersion);
+  setResolvedTfheVersion(fhevm, tfheVersion);
 }
 
 /**

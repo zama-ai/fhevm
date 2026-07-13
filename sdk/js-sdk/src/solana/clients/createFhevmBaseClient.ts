@@ -26,7 +26,7 @@ export function createFhevmBaseClient<chain extends FhevmSolanaChain>(parameters
   const c = createCoreFhevm(PRIVATE_SOLANA_TOKEN, {
     runtime: getSolanaRuntime(),
     options: parameters.options,
-  }) as unknown as Fhevm<undefined, FhevmRuntime, undefined>;
+  });
 
   Object.defineProperty(c, 'solanaChain', {
     value: parameters.chain,

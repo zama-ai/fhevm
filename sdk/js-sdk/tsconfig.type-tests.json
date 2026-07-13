@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": ["src/**/*.test-d.ts"],
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "ESNext.Disposable"]
+  }
+}
