@@ -69,7 +69,6 @@ url = "2.5.7"
 solana-client = "3.0"
 solana-commitment-config = "3.1"
 solana-sdk = "3.0"
-solana-transaction-status = "3.0"
 
 # Yellowstone gRPC transport (optional; enabled via the `solana-grpc` feature).
 tonic = { workspace = true, optional = true }

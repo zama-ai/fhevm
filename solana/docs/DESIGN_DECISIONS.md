@@ -900,12 +900,15 @@ Yellowstone stream at `confirmed` and inserts directly** — it is NOT wired int
 
 Options considered:
 
-- **(A) Eager-materialize like EVM, and gate only the decrypt RELEASE on finality. [RECOMMENDED]**
-  Reuses the existing EVM block-status substrate (option A's foundation already exists).
+- (A) Eager-materialize and gate decrypt release on finality. Rejected: prepared material is not an
+  authorization, and the accepted confirmed authorization may release plaintext.
 - (B) Keep the two-step dormant model + add transitive subgraph activation via a recursive CTE
   (activate the whole producing subgraph when the released handle is allowed).
 - (C) Slot-level finality gate.
 - (D) Ingest only at finalized (+~13s latency).
+
+The accepted design is eager materialization from confirmed instruction reconstruction with no
+separate finality gate; KMS revalidates confirmed authorization at the plaintext-release boundary.
 
 The accepted product rule treats a valid confirmed authorization as sufficient. Coprocessor work is
 therefore scheduled from confirmed ingestion. The KMS ACL read and all three relayer proof RPC reads
@@ -919,8 +922,10 @@ confirmed fork; subsequent on-chain actions still follow the surviving fork.
 
 Why:
 
-The dormant/activate model and transient eval intermediates were designed separately and don't compose;
-the EVM substrate that would fix it (A) exists but isn't wired to Solana.
+The dormant/activate model and transient eval intermediates were designed separately and do not
+compose. A finality gate adds latency without strengthening the chosen authorization rule: a subject
+authorized in confirmed state was legitimately allowed to receive that plaintext, even if the fork
+later rolls back.
 
 Open for debate:
 

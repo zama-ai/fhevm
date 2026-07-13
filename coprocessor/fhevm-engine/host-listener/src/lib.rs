@@ -9,7 +9,6 @@ pub mod poller;
 pub mod solana_adapter;
 #[cfg(all(feature = "solana-grpc", feature = "solana-reconstruct"))]
 pub mod solana_grpc_listener;
-pub mod solana_listener;
 #[cfg(feature = "solana-reconstruct")]
 pub mod solana_reconstruct;
 pub mod solana_slot_hashes;

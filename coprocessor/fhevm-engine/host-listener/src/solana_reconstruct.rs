@@ -39,21 +39,6 @@ pub struct ReconstructContext {
     pub unix_timestamp: i64,
 }
 
-/// The material request for a durable output handle reconstructed from
-/// `fhe_eval`.
-pub fn reconstruct_acl_record_bound_material_request(
-    bound_handle: [u8; 32],
-) -> SolanaMaterialRequest {
-    material_request(bound_handle)
-}
-
-/// A material request for either side of a durable-handle supersession.
-pub fn reconstruct_handle_superseded_material_request(
-    handle: [u8; 32],
-) -> SolanaMaterialRequest {
-    material_request(handle)
-}
-
 /// Discriminator for the `fhe_eval` instruction (sha256("global:fhe_eval")[..8]).
 const FHE_EVAL_DISCRIMINATOR: [u8; 8] = [176, 42, 63, 177, 244, 167, 120, 109];
 
@@ -1010,12 +995,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn acl_record_bound_material_request_matches_event_path() {
-        let handle = [9u8; 32];
-        let request = reconstruct_acl_record_bound_material_request(handle);
-        assert_eq!(request.handle, Handle::from(handle));
-    }
     #[test]
     fn fhe_eval_plan_round_trips_via_program_type() {
         use anchor_lang::AnchorSerialize;

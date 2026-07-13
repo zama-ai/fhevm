@@ -1,8 +1,7 @@
 //! Transport-agnostic core of the Solana ingestion path: Anchor event decoding
 //! (`zama-host`) and mapping into the coprocessor
-//! database, shared by every transport ([`crate::solana_listener`] RPC polling,
-//! [`crate::solana_grpc_listener`] Yellowstone, LiteSVM in-process tests) and by
-//! the emitless reconstruction path ([`crate::solana_reconstruct`]).
+//! database, shared by Yellowstone ingestion, LiteSVM in-process tests, and the
+//! emitless reconstruction path ([`crate::solana_reconstruct`]).
 //!
 //! Design rationale lives in `solana/docs/DESIGN_DECISIONS.md` (event transport:
 //! DD-003; eager ciphertext-material preparation: DD-024).

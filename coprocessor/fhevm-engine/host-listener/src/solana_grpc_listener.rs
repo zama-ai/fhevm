@@ -501,7 +501,7 @@ async fn ingest_transaction(
     })?;
 
     // Resolved account-key list: static keys ++ ALT writable ++ ALT readonly,
-    // the order `program_id_index` indexes into (matches solana_listener).
+    // the order `program_id_index` indexes into.
     let mut account_keys: Vec<String> = message
         .account_keys
         .iter()
@@ -722,13 +722,11 @@ async fn reconstruct_events_for_insert(
     slot_bank_hash: &HashMap<u64, [u8; 32]>,
     slot_clock_ts: &HashMap<u64, i64>,
 ) -> Result<ReconstructionOutcome> {
-    use crate::solana_adapter::SolanaHostEvent;
+    use crate::solana_adapter::{material_request, SolanaHostEvent};
     use crate::solana_reconstruct::{
         decode_encrypted_value_instruction, decode_fhe_eval_args,
         encrypted_value_account_index, encrypted_value_material_requests,
-        reconstruct_acl_record_bound_material_request,
         reconstruct_fhe_eval_steps,
-        reconstruct_handle_superseded_material_request,
     };
 
     // compute_subject is the 2nd named fhe_eval account. (Durable EncryptedValue
@@ -796,20 +794,11 @@ async fn reconstruct_events_for_insert(
                         .is_some()
                     {
                         events.push(SolanaHostEvent::MaterialRequest(
-                            reconstruct_acl_record_bound_material_request(
-                                handle,
-                            ),
+                            material_request(handle),
                         ));
                         if let Some(previous_handle) = previous_handle {
                             events.push(SolanaHostEvent::MaterialRequest(
-                                reconstruct_handle_superseded_material_request(
-                                    handle,
-                                ),
-                            ));
-                            events.push(SolanaHostEvent::MaterialRequest(
-                                reconstruct_handle_superseded_material_request(
-                                    previous_handle,
-                                ),
+                                material_request(previous_handle),
                             ));
                         }
                     } else {
@@ -1147,20 +1136,20 @@ mod fhe_eval_acl_tests {
                 SolanaHostEvent::FheBinaryOp(op) if op.result == expected
             )
         }));
-        assert!(events.iter().any(|event| {
-            matches!(
-                event,
-                SolanaHostEvent::MaterialRequest(request)
-                    if request.handle == Handle::from(expected)
-            )
-        }));
-        assert!(events.iter().any(|event| {
-            matches!(
-                event,
-                SolanaHostEvent::MaterialRequest(request)
-                    if request.handle == Handle::from([8; 32])
-            )
-        }));
+        let requested_handles = events
+            .iter()
+            .filter_map(|event| match event {
+                SolanaHostEvent::MaterialRequest(request) => {
+                    Some(request.handle)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            requested_handles,
+            vec![Handle::from(expected), Handle::from([8; 32])],
+            "supersession must request the current and previous handles exactly once"
+        );
     }
 
     /// A durable output born public still requests material for its recomputed

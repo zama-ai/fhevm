@@ -67,7 +67,9 @@ this note records the operational model in one place.
 - Solana programs enforce authorization. The relayer, proof builder, host-listener ingestion, and
   coprocessor scheduling are untrusted for authorization. KMS ACL/proof verification reads confirmed
   on-chain facts, including live `EncryptedValue` state or MMR proof validity, before releasing
-  plaintext. A separate coprocessor finalized-account gate still exists pending its own cleanup.
+  plaintext. The host-listener reconstructs compute work and handle-only ciphertext-material requests
+  from confirmed Yellowstone instructions. Subject grants and removals schedule no material work:
+  material was requested when the handle was created, while KMS reads the live ACL at release time.
 - Materiality is not Solana host state. DD-031 moved ciphertext material commitments to the gateway
   `CiphertextCommits`; Solana ACL state answers only who may use or decrypt a handle.
 - The relayer-colocated MMR proof service is an untrusted helper (DD-035). The end-to-end decrypt flow
