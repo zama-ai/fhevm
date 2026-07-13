@@ -1,57 +1,68 @@
-#[cfg(feature = "emit-events")]
-use super::event_budget::should_emit_eval_events_as_cpi;
 use super::*;
+use anchor_lang::solana_program::{
+    instruction::{AccountMeta, Instruction},
+    program::invoke_signed,
+};
 
-// With `emit-events` off the funnel is a no-op, so these payloads are built (in
-// the walk) but never read — expected in that config.
-#[cfg_attr(not(feature = "emit-events"), allow(dead_code))]
-pub(super) enum EvalEvent {
-    Binary(FheBinaryOpEvent),
-    Ternary(FheTernaryOpEvent),
-    Trivial(TrivialEncryptEvent),
-    Rand(FheRandEvent),
-    Unary(FheUnaryOpEvent),
-    RandBounded(FheRandBoundedEvent),
-    Sum(FheSumEvent),
-    IsIn(FheIsInEvent),
-    MulDiv(FheMulDivEvent),
-}
-
-/// With `emit-events` disabled, off-chain reconstruction (Yellowstone gRPC) is the
-/// sole event source for `fhe_eval`, so this is a no-op.
-#[cfg(not(feature = "emit-events"))]
-pub(super) fn emit_eval_events<'info>(
-    _ctx: &Context<'info, FheEval<'info>>,
-    _events: Vec<EvalEvent>,
-) -> Result<()> {
-    Ok(())
-}
-
-#[cfg(feature = "emit-events")]
-pub(super) fn emit_eval_events<'info>(
+pub(super) fn emit_public_outputs_produced<'info>(
     ctx: &Context<'info, FheEval<'info>>,
-    events: Vec<EvalEvent>,
+    outputs: Vec<ProducedPublicOutput>,
 ) -> Result<()> {
-    // `emit_cpi!` only (no `emit!` log fallback — no consumer reads logs). A frame
-    // with more events than a CPI transport can hold on the 32KiB heap carries no
-    // event; born-public outputs are kept out of such frames by
-    // `assert_born_public_frame_transportable`, and every other durable handle
-    // reconstructs from instruction data.
-    if !should_emit_eval_events_as_cpi(events.len()) {
+    if outputs.is_empty() {
         return Ok(());
     }
-    for event in events {
-        match event {
-            EvalEvent::Binary(event) => emit_cpi!(event),
-            EvalEvent::Ternary(event) => emit_cpi!(event),
-            EvalEvent::Trivial(event) => emit_cpi!(event),
-            EvalEvent::Rand(event) => emit_cpi!(event),
-            EvalEvent::RandBounded(event) => emit_cpi!(event),
-            EvalEvent::Unary(event) => emit_cpi!(event),
-            EvalEvent::Sum(event) => emit_cpi!(event),
-            EvalEvent::IsIn(event) => emit_cpi!(event),
-            EvalEvent::MulDiv(event) => emit_cpi!(event),
-        }
-    }
+    let instruction = public_outputs_produced_event_instruction(outputs);
+    invoke_signed(
+        &instruction,
+        &[ctx.accounts.event_authority.to_account_info()],
+        &[&[b"__event_authority", &[crate::EVENT_AUTHORITY_AND_BUMP.1]]],
+    )?;
     Ok(())
+}
+
+fn public_outputs_produced_event_instruction(outputs: Vec<ProducedPublicOutput>) -> Instruction {
+    let event = PublicOutputsProducedEvent {
+        version: PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION,
+        outputs,
+    };
+    let data = anchor_lang::event::EVENT_IX_TAG_LE
+        .iter()
+        .copied()
+        .chain(anchor_lang::Event::data(&event))
+        .collect::<Vec<_>>();
+    Instruction::new_with_bytes(
+        crate::ID,
+        &data,
+        vec![AccountMeta::new_readonly(
+            crate::EVENT_AUTHORITY_AND_BUMP.0,
+            true,
+        )],
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maximum_batch_has_one_signed_readonly_event_authority_and_fits_cpi_data() {
+        let outputs = (0..MAX_FHE_EVAL_OPS)
+            .map(|index| ProducedPublicOutput {
+                step_index: index as u16,
+                encrypted_value: Pubkey::new_unique(),
+                output_handle: [index as u8; 32],
+            })
+            .collect();
+        let instruction = public_outputs_produced_event_instruction(outputs);
+
+        assert_eq!(instruction.program_id, crate::ID);
+        assert_eq!(instruction.accounts.len(), 1);
+        assert_eq!(
+            instruction.accounts[0].pubkey,
+            crate::EVENT_AUTHORITY_AND_BUMP.0
+        );
+        assert!(instruction.accounts[0].is_signer);
+        assert!(!instruction.accounts[0].is_writable);
+        assert_eq!(instruction.data.len(), 1_077);
+    }
 }

@@ -25,13 +25,18 @@ PROGRAMS = {
         "target_idl": "target/idl/zama_host.json",
         "vendored_idl": "../coprocessor/fhevm-engine/host-listener/idl/zama_host.json",
         "constants": "programs/zama-host/src/constants.rs",
-        "event_version_const": "EVENT_VERSION",
+        "event_version_consts": {
+            "zama_host": "EVENT_VERSION",
+            "zama_host_public_outputs_produced": "PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION",
+        },
     },
     "confidential_token": {
         "target_idl": "target/idl/confidential_token.json",
         "vendored_idl": "../coprocessor/fhevm-engine/host-listener/idl/confidential_token.json",
         "constants": "programs/confidential-token/src/constants.rs",
-        "event_version_const": "APP_EVENT_VERSION",
+        "event_version_consts": {
+            "confidential_token": "APP_EVENT_VERSION",
+        },
     },
 }
 
@@ -40,6 +45,7 @@ PINNED_SCHEMAS = [
     ("zama_host", "account", "KmsContext", True),
     ("zama_host", "type", "InitializeHostConfigArgs", True),
     ("zama_host", "type", "FheEvalArgs", True),
+    ("zama_host", "event", "PublicOutputsProducedEvent", True),
     ("zama_host", "type", "EncryptedValueSubjectGrant", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
     ("zama_host", "instruction_args", "fhe_eval", True),
@@ -339,17 +345,17 @@ def encode_type(idl_type: Any, types: dict[str, Any], seed: int) -> bytes:
 
 def event_versions(root: pathlib.Path) -> dict[str, int]:
     versions = {}
-    for program, spec in PROGRAMS.items():
+    for spec in PROGRAMS.values():
         constants = root / spec["constants"]
-        const_name = spec["event_version_const"]
-        pattern = re.compile(rf"pub const {re.escape(const_name)}: u8 = ([0-9]+);")
-        for line in constants.read_text(encoding="utf-8").splitlines():
-            match = pattern.search(line)
-            if match:
-                versions[program] = int(match.group(1))
-                break
-        else:
-            raise RuntimeError(f"could not find {const_name} in {constants}")
+        source = constants.read_text(encoding="utf-8")
+        for version_name, const_name in spec["event_version_consts"].items():
+            pattern = re.compile(
+                rf"pub const {re.escape(const_name)}: u8 = ([0-9]+);"
+            )
+            match = pattern.search(source)
+            if not match:
+                raise RuntimeError(f"could not find {const_name} in {constants}")
+            versions[version_name] = int(match.group(1))
     return versions
 
 

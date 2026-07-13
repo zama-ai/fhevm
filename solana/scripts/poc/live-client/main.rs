@@ -64,8 +64,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // TRIVIAL_ENCRYPT drives a real zama-host FHE op (trivial encryption): the program
-    // computes the result handle on-chain and emits a TrivialEncryptEvent the live
-    // host-listener ingests into the coprocessor DB for the tfhe-worker to materialize.
+    // computes the result handle on-chain and the live host-listener reconstructs the
+    // operation from the successful instruction for the tfhe-worker to materialize.
     if std::env::var("TRIVIAL_ENCRYPT").is_ok() {
         trivial_encrypt_and_bind(&host, &payer, host_config)?;
         return Ok(());
@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-plan executor
     // (fhe_eval): a single TrivialEncrypt step with a durable output ACL record. The host computes
-    // the result handle on-chain and emits the same TrivialEncryptEvent the host-listener ingests,
+    // the result handle on-chain and the host-listener reconstructs the successful frame,
     // exercising the #2755 eval path instead of the standalone trivial_encrypt_and_bind.
     if std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
         trivial_encrypt_eval(&host, &payer, host_config)?;
@@ -507,9 +507,9 @@ fn bootstrap(
 }
 
 /// Drives a real zama-host trivial-encrypt FHE op: the program computes the result handle
-/// on-chain (entropy-bound, no client pre-computation) and emits a TrivialEncryptEvent over
-/// emit_cpi. The live host-listener ingests it into the coprocessor DB, where the tfhe-worker
-/// materializes the trivial ciphertext. TE_VALUE selects the euint64 plaintext (default 42).
+/// on-chain (entropy-bound, no client pre-computation). The live host-listener reconstructs the
+/// successful instruction into the coprocessor DB, where the tfhe-worker materializes the trivial
+/// ciphertext. TE_VALUE selects the euint64 plaintext (default 42).
 fn trivial_encrypt_and_bind(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
@@ -601,9 +601,9 @@ fn trivial_encrypt_eval_with_label(
 /// Eval-based compute leg: drives a single-step fhe_eval plan (one TrivialEncrypt step with a
 /// durable output ACL record) instead of the standalone trivial_encrypt_and_bind. The host runs
 /// the eval executor, computes the result handle on-chain, creates the durable output ACL record
-/// (passed as the sole remaining_account), and emits the same TrivialEncryptEvent the live
-/// host-listener ingests for the tfhe-worker to materialize. TE_VALUE selects the euint64
-/// plaintext; TE_ALLOW marks it publicly decryptable afterward.
+/// (passed as the sole remaining_account). The live host-listener reconstructs the successful
+/// frame for the tfhe-worker to materialize. TE_VALUE selects the euint64 plaintext; TE_ALLOW
+/// marks it publicly decryptable afterward.
 fn trivial_encrypt_eval(
     host: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
@@ -727,8 +727,8 @@ fn build_public_decrypt_proof(
 ///   (`GET /internal/solana/mmr-proof`). This is what the e2e uses — the relayer, not the PoC,
 ///   produces the accepted proof.
 /// - `Local`: synthesize the proof in-process by reconstructing the lineage from thin chain facts.
-///   Reserved for the born-public burned leg (unresolvable over RPC in the emitless arm — see the
-///   follow-up issue) and the unit tests. Selected explicitly via `PROOF_SOURCE=local`.
+///   Reserved for the born-public burned leg until the relayer consumes the host lifecycle batch,
+///   and for unit tests. Selected explicitly via `PROOF_SOURCE=local`.
 enum ProofSource {
     Relayer,
     Local,
@@ -1003,7 +1003,7 @@ fn historical_supersede_step(
 /// scratch PDA — and the durable output is pinned to the attested acl_domain_key (the input's domain;
 /// the on-chain binding rejects any other). The attestation is supplied via the same BIND_* env vars
 /// the standalone input-verify leg uses; TE_ADD is the scalar addend (default 2). The host-listener
-/// ingests the emitted FheBinaryOpEvent so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
+/// reconstructs the successful frame so the tfhe-worker materializes (input + TE_ADD); TE_ALLOW
 /// then makes the result publicly decryptable.
 fn fhe_eval_verified_input_add(
     host: &Program<Rc<Keypair>>,

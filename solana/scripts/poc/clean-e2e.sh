@@ -70,10 +70,9 @@ PY
 
 # 3. Bring the Solana side-stack online against the freshly-deployed live backend.
 #    Reads gateway addresses + KMS/coprocessor signer set live, so it tracks the new signer.
-#    RECONSTRUCT=1 (adjacent CI run) deploys an emitless zama-host on the geyser-plugin
-#    validator and ingests via gRPC reconstruction; it force-builds emitless, so SKIP_BUILD
-#    is moot there. Default (unset) keeps the SKIP_BUILD=1 native/emit path unchanged.
-RECONSTRUCT="${RECONSTRUCT:-0}" SKIP_BUILD=1 "$ROOT/solana/scripts/poc/setup-solana-side.sh"
+#    The sole supported path deploys a reconstruction-first zama-host on the geyser-plugin validator and
+#    ingests ordinary computation facts through Yellowstone reconstruction.
+"$ROOT/solana/scripts/poc/setup-solana-side.sh"
 
 echo "[clean-e2e] stack ready. Drive the full vertical (input -> compute -> public/user-decrypt ->"
 echo "  input-flow -> consume), user-decrypt is now PURE-SDK (no kms checkout):"

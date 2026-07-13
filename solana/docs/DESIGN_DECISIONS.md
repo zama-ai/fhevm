@@ -731,10 +731,10 @@ avoids that rent cost without adding a close/refund path, while retaining the va
 
 Consequences:
 
-Indexers that replay transfer math must read the host `FheBinaryOpEvent` and `FheTernaryOpEvent` stream
-for the scratch handles; there is intentionally no ACL permission record for decrypting the scratch
-success/debit values after the transaction. The burn flow still uses its own durable scratch records
-today and should be considered separately if its rent profile becomes a product issue.
+Indexers replay transfer math from the `fhe_eval` plan and Yellowstone-provided entropy; there is
+intentionally no ACL permission record for decrypting the scratch success/debit values after the
+transaction. The burn flow still uses its own durable scratch records today and should be considered
+separately if its rent profile becomes a product issue.
 
 ## DD-020: VerifierSet Removed → Canonical KMS Context Singleton
 
@@ -1204,8 +1204,8 @@ including inner/CPI instructions, since confidential-token and other app program
 `previous_handle`/`previous_subjects` args that are self-describing: verified against account state
 on-chain (redundant there) specifically so every transaction is independently interpretable off-chain,
 letting indexers reconstruct MMR leaves statelessly from instruction data alone, in replay order,
-without reading account state first. Transitional compute-step (`fhe_eval`) CPI events remain for the
-RPC-based relayer, but the host-listener does not consume them — see DD-037.
+without reading account state first. Ordinary compute facts are reconstructed from the plan and
+Yellowstone sysvars; only produced-public output handles use the narrow lifecycle batch in DD-038.
 
 Rationale:
 
@@ -1415,7 +1415,7 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 
 ## DD-037: `fhe_eval` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)
 
-Status: adopted
+Status: superseded by DD-038
 
 Context:
 
@@ -1464,3 +1464,21 @@ Consequences:
   validation, not an argument.
 - #1665 must remove the op event only after migrating the relayer off it — treat the event as an ABI
   surface whose last consumer must move first.
+
+## DD-038: One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events
+
+Status: adopted
+
+Ordinary `fhe_eval` computation facts remain reconstructed from instruction data plus Yellowstone
+sysvars. The host no longer produces the general per-operation event stream or its eight-event
+transport guard. Instead, a frame with one or more `make_public` durable outputs emits exactly one
+versioned Anchor self-CPI event after successful execution. Its ordered records contain only the
+zero-based step index, the host-owned `EncryptedValue` account, and the host-derived output handle;
+a frame with no produced public output emits no lifecycle event.
+
+This narrow batch exists because block-entropy output handles are absent from instruction arguments.
+At the maximum `MAX_FHE_EVAL_OPS` frame, 16 records serialize to one 1,077-byte CPI instruction,
+avoiding the old one-CPI-per-step heap growth. The event is unconditional when optional
+`emit-events` features are disabled. Consumers must still validate the host program, its canonical
+event-authority PDA, transaction success, record ordering, and one-to-one agreement with durable
+`make_public` outputs; the event grants no authority by itself.

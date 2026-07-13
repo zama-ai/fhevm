@@ -22,7 +22,8 @@
 //! surviving equivalent to port.
 
 use anchor_lang::{
-    prelude::system_program, AccountDeserialize, AccountSerialize, InstructionData, ToAccountMetas,
+    prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
+    Discriminator, InstructionData, ToAccountMetas,
 };
 use mollusk_svm::{result::Check, Mollusk};
 use solana_sdk::{
@@ -2153,6 +2154,239 @@ fn mollusk_fhe_eval_supersedes_durable_output_with_previous_state() {
     assert_ne!(updated_output.current_handle, output_handle);
     // Supersession appends one historical leaf for the sole USE subject.
     assert_eq!(updated_output.leaf_count, 1);
+}
+
+// ---------------------------------------------------------------------------
+// fhe_eval: narrow produced-public lifecycle batch
+// ---------------------------------------------------------------------------
+
+struct BornPublicFrame {
+    instruction: Instruction,
+    accounts: Vec<(Pubkey, Account)>,
+    outputs: Vec<(u16, Pubkey)>,
+}
+
+fn born_public_frame(step_count: usize, born_public_steps: &[usize]) -> BornPublicFrame {
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let mut output_metas = Vec::new();
+    let mut output_accounts = Vec::new();
+    let mut outputs = Vec::new();
+    let mut steps = Vec::with_capacity(step_count);
+
+    for step_index in 0..step_count {
+        let output = if born_public_steps.contains(&step_index) {
+            let output_label = label(&format!("born-public-{step_index}"));
+            let value_key = zama_solana_acl::derive_value_key(
+                authority.to_bytes(),
+                authority.to_bytes(),
+                output_label,
+            );
+            let output_address = host::encrypted_value_address(value_key).0;
+            let output_index = output_metas.len() as u16;
+            output_metas.push(writable(output_address));
+            output_accounts.push((output_address, empty_system_account()));
+            outputs.push((step_index as u16, output_address));
+            FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index: output_index,
+                output_app_account_authority_index: None,
+                output_acl_domain_key: authority,
+                output_app_account: authority,
+                output_encrypted_value_label: output_label,
+                output_subjects: vec![host::AclSubjectEntry { pubkey: authority }],
+                previous_handle: None,
+                previous_subjects: None,
+                make_public: true,
+            }
+        } else {
+            FheEvalOutput::AllowedLocal
+        };
+        steps.push(FheEvalStep::TrivialEncrypt {
+            plaintext: [(step_index + 1) as u8; 32],
+            fhe_type: 5,
+            output,
+        });
+    }
+
+    let instruction = fhe_eval_ix(
+        authority,
+        authority,
+        authority,
+        host_config,
+        FheEvalArgs {
+            context_id: label("born-public-frame"),
+            steps,
+        },
+        output_metas,
+    );
+    let mut accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (host_config, host_config_account),
+        (event_authority(host::id()), Account::default()),
+    ];
+    accounts.extend(output_accounts);
+    BornPublicFrame {
+        instruction,
+        accounts,
+        outputs,
+    }
+}
+
+fn born_public_events(
+    result: &mollusk_svm::result::InstructionResult,
+) -> Vec<host::PublicOutputsProducedEvent> {
+    let message = result.message.as_ref().expect("compiled Mollusk message");
+    let account_keys = message.account_keys();
+    let prefix = anchor_lang::event::EVENT_IX_TAG_LE
+        .iter()
+        .copied()
+        .chain(
+            host::PublicOutputsProducedEvent::DISCRIMINATOR
+                .iter()
+                .copied(),
+        )
+        .collect::<Vec<_>>();
+    result
+        .inner_instructions
+        .iter()
+        .filter_map(|inner| {
+            if account_keys.get(inner.instruction.program_id_index as usize) != Some(&host::id()) {
+                return None;
+            }
+            let payload = inner.instruction.data.strip_prefix(prefix.as_slice())?;
+            host::PublicOutputsProducedEvent::deserialize(&mut &*payload).ok()
+        })
+        .collect()
+}
+
+fn assert_born_public_batch(
+    result: &mollusk_svm::result::InstructionResult,
+    expected_outputs: &[(u16, Pubkey)],
+) {
+    let events = born_public_events(result);
+    assert_eq!(events.len(), 1, "expected exactly one lifecycle batch");
+    let prefix = anchor_lang::event::EVENT_IX_TAG_LE
+        .iter()
+        .copied()
+        .chain(
+            host::PublicOutputsProducedEvent::DISCRIMINATOR
+                .iter()
+                .copied(),
+        )
+        .collect::<Vec<_>>();
+    let message = result.message.as_ref().expect("compiled Mollusk message");
+    let account_keys = message.account_keys();
+    let inner = result
+        .inner_instructions
+        .iter()
+        .find(|inner| {
+            account_keys.get(inner.instruction.program_id_index as usize) == Some(&host::id())
+                && inner.instruction.data.starts_with(&prefix)
+        })
+        .expect("produced-public lifecycle inner instruction");
+    assert_eq!(
+        account_keys.get(inner.instruction.program_id_index as usize),
+        Some(&host::id())
+    );
+    assert_eq!(inner.instruction.accounts.len(), 1);
+    assert_eq!(
+        account_keys.get(inner.instruction.accounts[0] as usize),
+        Some(&event_authority(host::id()))
+    );
+    let event = &events[0];
+    assert_eq!(event.version, host::PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION);
+    assert_eq!(event.outputs.len(), expected_outputs.len());
+    for (record, (step_index, encrypted_value)) in event.outputs.iter().zip(expected_outputs.iter())
+    {
+        assert_eq!(record.step_index, *step_index);
+        assert_eq!(record.encrypted_value, *encrypted_value);
+        assert_eq!(
+            record.output_handle,
+            read_encrypted_value(result, *encrypted_value).current_handle
+        );
+    }
+}
+
+#[test]
+fn mollusk_fhe_eval_without_born_public_output_emits_no_lifecycle_batch() {
+    let frame = born_public_frame(1, &[]);
+    let result = mollusk().process_and_validate_instruction(
+        &frame.instruction,
+        &frame.accounts,
+        &[Check::success()],
+    );
+    assert!(born_public_events(&result).is_empty());
+}
+
+#[test]
+fn mollusk_fhe_eval_emits_one_born_public_lifecycle_batch() {
+    let frame = born_public_frame(1, &[0]);
+    let result = mollusk().process_and_validate_instruction(
+        &frame.instruction,
+        &frame.accounts,
+        &[Check::success()],
+    );
+    assert_born_public_batch(&result, &frame.outputs);
+}
+
+#[test]
+fn mollusk_fhe_eval_batches_multiple_born_public_outputs_in_step_order() {
+    let frame = born_public_frame(3, &[0, 2]);
+    let result = mollusk().process_and_validate_instruction(
+        &frame.instruction,
+        &frame.accounts,
+        &[Check::success()],
+    );
+    assert_born_public_batch(&result, &frame.outputs);
+}
+
+#[test]
+fn mollusk_fhe_eval_maximum_born_public_frame_fits_one_cpi() {
+    let born_public_steps = (0..host::MAX_FHE_EVAL_OPS).collect::<Vec<_>>();
+    let frame = born_public_frame(host::MAX_FHE_EVAL_OPS, &born_public_steps);
+    let result = mollusk().process_and_validate_instruction(
+        &frame.instruction,
+        &frame.accounts,
+        &[Check::success()],
+    );
+    assert_born_public_batch(&result, &frame.outputs);
+}
+
+#[test]
+fn mollusk_fhe_eval_wrong_event_authority_fails_without_output() {
+    let mut frame = born_public_frame(1, &[0]);
+    let wrong_event_authority = Pubkey::new_unique();
+    let event_authority_meta = frame
+        .instruction
+        .accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == event_authority(host::id()))
+        .expect("event authority account meta");
+    event_authority_meta.pubkey = wrong_event_authority;
+    frame
+        .accounts
+        .push((wrong_event_authority, Account::default()));
+
+    let result = mollusk().process_instruction(&frame.instruction, &frame.accounts);
+    assert!(result.program_result.is_err());
+    assert!(born_public_events(&result).is_empty());
+    let output = result.get_account(&frame.outputs[0].1).unwrap();
+    assert_eq!(output.owner, system_program::ID);
+    assert!(output.data.is_empty());
+}
+
+#[test]
+fn mollusk_transaction_later_failure_rolls_back_born_public_output() {
+    let frame = born_public_frame(1, &[0]);
+    let transaction = mollusk().process_transaction_instructions(
+        &[frame.instruction.clone(), frame.instruction],
+        &frame.accounts,
+    );
+    assert!(transaction.program_result.is_err());
+    let output = transaction.get_account(&frame.outputs[0].1).unwrap();
+    assert_eq!(output.owner, system_program::ID);
+    assert!(output.data.is_empty());
 }
 
 // ===========================================================================

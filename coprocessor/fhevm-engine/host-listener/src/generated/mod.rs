@@ -24,9 +24,31 @@ pub use solana_abi_schema_hashes::{
 pub use zama_host_events::{
     FheBinaryOpCode, FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent,
     FheRandBoundedEvent, FheRandEvent, FheSumEvent, FheTernaryOpCode,
-    FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, TrivialEncryptEvent,
-    EVENT_VERSION,
+    FheTernaryOpEvent, FheUnaryOpCode, FheUnaryOpEvent, ProducedPublicOutput,
+    PublicOutputsProducedEvent, TrivialEncryptEvent, EVENT_VERSION,
+    PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION,
 };
 pub use zama_host_instructions::{
     decode_zama_host_instruction, ZamaHostInstruction,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ProducedPublicOutput, PublicOutputsProducedEvent,
+        PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION,
+    };
+
+    #[test]
+    fn generated_public_outputs_produced_event_includes_nested_records() {
+        let event = PublicOutputsProducedEvent {
+            version: PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION,
+            outputs: vec![ProducedPublicOutput {
+                step_index: 2,
+                encrypted_value: [3; 32],
+                output_handle: [4; 32],
+            }],
+        };
+        assert_eq!(event.outputs[0].step_index, 2);
+    }
+}

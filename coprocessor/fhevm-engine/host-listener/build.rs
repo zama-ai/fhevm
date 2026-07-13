@@ -22,7 +22,6 @@ fn generate_anchor_event_types(idl_file: &str, output_file: &str) {
     let idl: Value = serde_json::from_str(&idl).unwrap_or_else(|err| {
         panic!("failed to parse {}: {err}", idl_path.display())
     });
-
     let types = idl["types"]
         .as_array()
         .expect("Anchor IDL must contain types")
@@ -33,25 +32,55 @@ fn generate_anchor_event_types(idl_file: &str, output_file: &str) {
     let events = idl["events"]
         .as_array()
         .expect("Anchor IDL must contain events");
-    let event_enum_types = event_enum_types(&types, events);
+    let mut event_enums = Vec::new();
+    let mut event_structs = Vec::new();
+    for event in events {
+        let event_name = event["name"].as_str().expect("event must have name");
+        for field in fields_for_event(&types, event_name) {
+            collect_defined_types(
+                &types,
+                &field["type"],
+                &mut event_enums,
+                &mut event_structs,
+            );
+        }
+    }
 
     let mut output = format!(
         r#"// Generated from `host-listener/idl/{idl_file}` by `host-listener/build.rs`.
 // Do not edit by hand.
 
 pub const EVENT_VERSION: u8 = 1;
+pub const PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION: u8 = 1;
 
 "#,
     );
 
-    for (enum_name, variants) in &event_enum_types {
+    for enum_name in &event_enums {
         output.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq)]\n");
         output.push_str("pub enum ");
         output.push_str(enum_name);
         output.push_str(" {\n");
-        for variant in variants {
+        for variant in enum_variants(&types, enum_name) {
             output.push_str("    ");
             output.push_str(variant);
+            output.push_str(",\n");
+        }
+        output.push_str("}\n\n");
+    }
+
+    for struct_name in &event_structs {
+        output.push_str("#[derive(Clone, Debug, PartialEq, Eq)]\n");
+        output.push_str("pub struct ");
+        output.push_str(struct_name);
+        output.push_str(" {\n");
+        for field in fields_for_event(&types, struct_name) {
+            output.push_str("    pub ");
+            output.push_str(
+                field["name"].as_str().expect("field must have a name"),
+            );
+            output.push_str(": ");
+            output.push_str(&rust_type(&field["type"]));
             output.push_str(",\n");
         }
         output.push_str("}\n\n");
@@ -182,58 +211,6 @@ pub struct SolanaAbiSchema {
     });
 }
 
-fn event_enum_types<'a>(
-    types: &'a HashMap<&str, &'a Value>,
-    events: &[Value],
-) -> Vec<(&'a str, Vec<&'a str>)> {
-    let mut enum_names = Vec::<&str>::new();
-    for event in events {
-        let event_name = event["name"].as_str().expect("event must have name");
-        for field in fields_for_event(types, event_name) {
-            collect_defined_event_enums(types, &field["type"], &mut enum_names);
-        }
-    }
-    enum_names
-        .into_iter()
-        .map(|name| {
-            let enum_type = types
-                .get(name)
-                .unwrap_or_else(|| panic!("IDL must define enum {name}"));
-            let variants = enum_type["type"]["variants"]
-                .as_array()
-                .unwrap_or_else(|| panic!("IDL type {name} must be an enum"))
-                .iter()
-                .map(|variant| {
-                    if variant.get("fields").is_some() {
-                        panic!("event enum {name} must use fieldless variants")
-                    }
-                    variant["name"]
-                        .as_str()
-                        .expect("enum variant must have a name")
-                })
-                .collect();
-            (name, variants)
-        })
-        .collect()
-}
-
-fn collect_defined_event_enums<'a>(
-    types: &'a HashMap<&str, &'a Value>,
-    idl_type: &'a Value,
-    enum_names: &mut Vec<&'a str>,
-) {
-    if let Some(defined) = idl_type["defined"]["name"].as_str() {
-        let ty = types
-            .get(defined)
-            .unwrap_or_else(|| panic!("IDL must define {defined}"));
-        if ty["type"]["kind"].as_str() == Some("enum")
-            && !enum_names.contains(&defined)
-        {
-            enum_names.push(defined);
-        }
-    }
-}
-
 fn fields_for_event<'a>(
     types: &'a HashMap<&str, &'a Value>,
     event_name: &str,
@@ -250,6 +227,7 @@ fn rust_type(idl_type: &Value) -> String {
     if let Some(primitive) = idl_type.as_str() {
         return match primitive {
             "u8" => "u8".to_string(),
+            "u16" => "u16".to_string(),
             "u64" => "u64".to_string(),
             "bool" => "bool".to_string(),
             "pubkey" => "[u8; 32]".to_string(),

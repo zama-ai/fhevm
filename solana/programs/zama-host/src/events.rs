@@ -8,6 +8,26 @@ use anchor_lang::prelude::*;
 
 use crate::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 
+/// One public durable output produced by an `fhe_eval` frame.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ProducedPublicOutput {
+    /// Zero-based step index within the frame.
+    pub step_index: u16,
+    /// Host-owned durable `EncryptedValue` account bound by the step.
+    pub encrypted_value: Pubkey,
+    /// Block-entropy-derived output handle written to the account.
+    pub output_handle: [u8; 32],
+}
+
+/// Emitted once for the public outputs produced by an `fhe_eval` frame.
+#[event]
+pub struct PublicOutputsProducedEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Produced public outputs in frame step order.
+    pub outputs: Vec<ProducedPublicOutput>,
+}
+
 /// Emitted when the singleton host config is initialized.
 #[event]
 pub struct HostConfigInitializedEvent {

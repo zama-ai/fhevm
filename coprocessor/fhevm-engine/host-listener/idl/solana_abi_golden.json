@@ -2,7 +2,8 @@
   "description": "Pinned Solana Anchor schema hashes and deterministic Borsh golden fixtures for off-chain listener/KMS layout mirrors.",
   "event_versions": {
     "confidential_token": 1,
-    "zama_host": 1
+    "zama_host": 1,
+    "zama_host_public_outputs_produced": 1
   },
   "pending_schemas": [],
   "schemas": [
@@ -381,6 +382,14 @@
       "name": "NewKmsContextEvent",
       "program": "zama_host",
       "schema_hash": "3fbd2cb6813ae4a9f64a0abda87f3023591218aa932e299c8358cef3f361a256"
+    },
+    {
+      "category": "event",
+      "fixture_hex": "2a5222c7ee366ab50101000000120003030303030303030303030303030303030303030303030303030303030303030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223",
+      "fixture_len": 79,
+      "name": "PublicOutputsProducedEvent",
+      "program": "zama_host",
+      "schema_hash": "6bbe522d3ea9d324d0eef718b45f1c14be10fe66683650f504914ebde96509d4"
     },
     {
       "category": "event",

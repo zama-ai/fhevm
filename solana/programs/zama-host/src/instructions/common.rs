@@ -14,7 +14,7 @@ use crate::{
         MAX_ACL_SUBJECTS,
     },
 };
-#[cfg(feature = "emit-events")]
+#[cfg(any(feature = "emit-events", test))]
 use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
 
 pub(super) fn assert_no_remaining_accounts(remaining_accounts: &[AccountInfo]) -> Result<()> {

@@ -160,11 +160,10 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
         Ok(ResolvedOperand::encrypted(attestation.input_handle, true))
     }
 
-    fn record_op_event(&mut self, _event: EvalEvent) {}
-
     fn accept_output<'info>(
         &mut self,
         ctx: &Context<'info, FheEval<'info>>,
+        _op_index: u16,
         result: [u8; 32],
         output: &FheEvalOutput,
         output_public_decrypt_allowed: bool,

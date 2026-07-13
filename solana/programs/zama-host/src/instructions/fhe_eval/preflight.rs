@@ -1,4 +1,3 @@
-use super::event_budget::assert_born_public_frame_transportable;
 use super::*;
 
 pub(super) fn preflight_eval_frame<'info>(
@@ -26,7 +25,6 @@ fn preflight_eval_frame_accounts(
     for (index, step) in args.steps.iter().enumerate() {
         preflight_eval_step(step, index, &mut preflight)?;
     }
-    assert_born_public_frame_transportable(args)?;
     preflight.finish()
 }
 
