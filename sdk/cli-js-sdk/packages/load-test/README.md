@@ -140,9 +140,12 @@ node --import tsx index.ts run drain --count 1000 --rps 200
 node --import tsx index.ts run scenarios/my-scenario.json --baseline baselines/testnet/open-steady.json
 ```
 
-Built-ins (`scenario list` / `scenario show <name>`): `baseline`,
+Built-ins (`scenario list` / `scenario show <name>`): `baseline`, `smoke`,
 `open-steady`, `open-ramp`, `open-spike`, `open-soak`, `open-mixed`,
-`closed-steady`, `closed-ramp`, `closed-soak`, `drain`. Custom scenarios are
+`closed-steady`, `closed-ramp`, `closed-soak`, `drain`. Defaults are gentle
+(well under the protocol ceilings of ~20 rps input-proof and ~10 rps combined
+decrypt); a resolved scenario whose peak per-flow rate exceeds a ceiling emits
+an advisory warning but still runs. Custom scenarios are
 JSON documents validated against the schema in `src/scenario/schema.ts` (flow
 mix and weights, load shape, timeouts, thresholds, saturation stop).
 

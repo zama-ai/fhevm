@@ -49,10 +49,10 @@ Built-in suites and when to run them:
 
 | Suite | Contents | Duration | Question it answers |
 | --- | --- | --- | --- |
-| `smoke` | open steady 1 req/s ×60s, drain 20 | ~3 min | is this deployment functional? |
-| `standard` | baseline, open-steady-10, open-mixed-10, drain-500 | ~45 min | did anything regress? (nightly set) |
-| `capacity` | open-ramp (stops at saturation), open-spike | ≤ ~40 min | what is max sustainable throughput, and does it recover? |
-| `endurance` | open-soak 5 req/s ×60 min | ~70 min | leaks/drift in the relayer process? |
+| `smoke` | burst of ~5 requests per flow (ip/pd/ud) | ~1 min | is this deployment functional end-to-end? |
+| `standard` | baseline, open-steady-5, open-mixed (6 rps), drain-200 | ~15 min | did anything regress? (nightly set) |
+| `capacity` | open-ramp (stops at saturation), open-spike | ≤ ~40 min | what is max sustainable throughput near the ~20 rps ceiling, and does it recover? |
+| `endurance` | open-soak 3 req/s ×60 min | ~70 min | leaks/drift in the relayer process? |
 
 The commands have deliberately separate authority:
 
@@ -314,7 +314,7 @@ time or queue went.
 node --import tsx index.ts suite run standard --prepare --out runs/before # old build
 # deploy the new build
 node --import tsx index.ts suite run standard --prepare --out runs/after
-node --import tsx index.ts report diff runs/before/open-steady-10/report.json runs/after/open-steady-10/report.json
+node --import tsx index.ts report diff runs/before/open-steady/report.json runs/after/open-steady/report.json
 ```
 
 **Capacity check on a new environment:** plan and explicitly prepare first,
@@ -339,6 +339,25 @@ completed output, review it, then use
 the destination and refuses symlinked artifact path components; it does not
 trust suite-summary diff metadata to authorize replacement. Corrupt or
 incompatible existing baselines are never overwritten.
+
+## Migration: gentler defaults
+
+Built-in defaults were lowered to stay well under the protocol ceilings
+(~20 rps input-proof; ~10 rps combined public + user + delegated decrypt).
+Two default baseline keys changed:
+
+- `open-steady` now resolves to `open-steady-5` (was `open-steady-10`).
+- `closed-steady` now resolves to `closed-steady-5vu` (was `closed-steady-10vu`).
+
+Other defaults also softened: `baseline` is 3 rps ×60s (ip/pd/ud), `open-mixed`
+is 6 rps over equal ip/ud/pd thirds ×300s, `open-soak` is 3 rps, `drain` is
+`count 200 @ 20 rps`, and the `standard` suite runs in ~15 min. `smoke` is now
+a burst scenario/suite (~5 requests per flow) rather than an open-steady run.
+
+To reproduce the old baseline keys, re-baseline against the new keys, or pass
+`--rps 10` / `--vus 10` (e.g. `run open-steady --rps 10` → `open-steady-10`).
+`delegated-user-decrypt` is excluded from every default flow mix (it behaves
+like user-decrypt) and stays reachable via `--flow delegated-user-decrypt`.
 
 ## 6. Troubleshooting
 

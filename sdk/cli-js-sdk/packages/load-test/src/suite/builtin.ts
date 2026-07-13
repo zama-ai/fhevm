@@ -7,52 +7,52 @@ import { suiteSchema, type Suite } from "./schema";
  */
 
 const definitions: Record<string, unknown> = {
-  /** ~3 min. Quick functional pass: is the deployment healthy at trivial load? */
+  /** ~1 min. Fast end-to-end correctness across all flows. */
   smoke: {
     name: "smoke",
-    description: "open steady 1 req/s input-proof for 60s plus a tiny drain; deployment sanity in ~3 min",
-    pauseSec: 10,
-    entries: [
-      { scenario: "open-steady", params: { rps: 1, durationSec: 60 }, label: "smoke-open-steady-1" },
-      { scenario: "drain", params: { count: 20, rps: 20 }, label: "smoke-drain-20" },
-    ],
+    description: "burst of ~5 requests per flow (ip/pd/ud); end-to-end correctness across all flows in ~1 min",
+    pauseSec: 0,
+    entries: [{ scenario: "smoke", label: "smoke" }],
   },
 
   /**
-   * ~45 min. The nightly regression set: per-flow reference numbers, SLO
+   * ~15 min. The nightly regression set: per-flow reference numbers, SLO
    * compliance at expected load, flow interference, and backlog correctness.
    */
   standard: {
     name: "standard",
-    description: "baseline + open-steady-10 + open-mixed-10 + drain-500; the regression set (~45 min)",
+    description: "baseline + open-steady-5 + open-mixed (6 rps) + drain-200; the regression set (~15 min)",
+    pauseSec: 30,
     entries: [
-      { scenario: "baseline" },
-      { scenario: "open-steady", params: { rps: 10, durationSec: 600 } },
-      { scenario: "open-mixed", params: { rps: 10, durationSec: 600 } },
-      { scenario: "drain", params: { count: 500, rps: 100 } },
+      { scenario: "baseline", label: "baseline" },
+      { scenario: "open-steady", params: { rps: 5, durationSec: 300 }, label: "open-steady" },
+      { scenario: "open-mixed", params: { rps: 6, durationSec: 300 }, label: "open-mixed" },
+      { scenario: "drain", params: { count: 200, rps: 20 }, label: "drain" },
     ],
   },
 
   /**
-   * Open-ended (ramp stops at saturation). Finds max sustainable throughput,
-   * then checks recovery from a burst above it. Early stopping requires a
-   * compatible queue-depth signal from the Prometheus collector.
+   * Open-ended (ramp stops at saturation). Finds max sustainable throughput
+   * near the ~20 rps input-proof ceiling, then checks recovery from a spike to
+   * it. Early stopping requires a compatible queue-depth signal from the
+   * Prometheus collector.
    */
   capacity: {
     name: "capacity",
-    description: "ramp to saturation + spike recovery; capacity discovery (up to ~40 min)",
+    description: "open-ramp to saturation + open-spike recovery; capacity discovery near the ~20 rps ceiling",
     pauseSec: 120,
     entries: [
-      { scenario: "open-ramp", params: { rps: 5, durationSec: 120 } },
-      { scenario: "open-spike", params: { rps: 2, durationSec: 120 } },
+      { scenario: "open-ramp" },
+      { scenario: "open-spike" },
     ],
   },
 
   /** ≥ 60 min. Leak and drift detection via the relayer process metrics. */
   endurance: {
     name: "endurance",
-    description: "60 min open soak at 5 req/s; watches process metrics for leaks and drift",
-    entries: [{ scenario: "open-soak", params: { rps: 5, durationSec: 3600 } }],
+    description: "60 min open soak at 3 req/s input-proof; watches process metrics for leaks and drift",
+    pauseSec: 30,
+    entries: [{ scenario: "open-soak", params: { rps: 3, durationSec: 3600 } }],
   },
 };
 
