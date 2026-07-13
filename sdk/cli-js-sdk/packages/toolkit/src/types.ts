@@ -112,6 +112,7 @@ export type DecryptedValue = Readonly<{
  * The transport private key is intentionally omitted.
  */
 export type DecryptionPermitSummary = Readonly<{
+  version: 1 | 2;
   isDelegated: boolean;
   signerAddress: Hex;
   encryptedDataOwnerAddress: Hex;
@@ -119,7 +120,8 @@ export type DecryptionPermitSummary = Readonly<{
   signature: Hex;
   contractAddresses: readonly string[];
   startTimestamp: number;
-  durationDays: number;
+  /** Signed permit lifetime in the canonical SDK unit. */
+  durationSeconds: number;
 }>;
 
 /**
@@ -130,7 +132,7 @@ export type DecryptionPermitSummary = Readonly<{
  * not print this object to normal stdout or commit it to source control.
  */
 export type UserDecryptValidationArtifact = Readonly<{
-  schemaVersion: 1;
+  schemaVersion: 2;
   flow: "user-decrypt" | "delegated-user-decrypt";
   network: NetworkName;
   relayer?: Readonly<{

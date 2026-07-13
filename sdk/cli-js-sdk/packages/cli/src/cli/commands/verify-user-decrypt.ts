@@ -4,12 +4,12 @@ import type { UserDecryptValidationArtifact } from "@cli-fhevm-sdk/toolkit/types
 import { getGlobalOptions } from "../options";
 import { printJson, readJsonFile } from "../output";
 
-const parseArtifact = (value: unknown): UserDecryptValidationArtifact => {
+export const parseArtifact = (value: unknown): UserDecryptValidationArtifact => {
   if (
     typeof value === "object" &&
     value !== null &&
     !Array.isArray(value) &&
-    (value as { schemaVersion?: unknown }).schemaVersion === 1
+    (value as { schemaVersion?: unknown }).schemaVersion === 2
   ) {
     return value as UserDecryptValidationArtifact;
   }

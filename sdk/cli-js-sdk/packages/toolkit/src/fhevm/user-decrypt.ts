@@ -56,12 +56,20 @@ export const decryptUserValues = async (
     encryptedValues: readonly Hex[];
     signer: Account;
     ownerAddress: Hex;
-    durationDays: number;
+    durationSeconds: number;
     network: NetworkName;
     includeValidationArtifact?: boolean;
     onProgress?: ProgressReporter;
   },
 ): Promise<UserDecryptResult> => {
+  if (
+    !Number.isSafeInteger(options.durationSeconds) ||
+    options.durationSeconds <= 0
+  ) {
+    throw new RangeError(
+      `Permit duration must be a positive safe integer in seconds, received ${options.durationSeconds.toString()}.`,
+    );
+  }
   options.onProgress?.("Creating FHEVM decrypt client");
   const client = createFhevmDecryptClient({
     chain: context.chain,
@@ -95,7 +103,7 @@ export const decryptUserValues = async (
     ? await client.signDecryptionPermit({
         transportKeyPair,
         contractAddresses: [context.contractAddress],
-        durationDays: options.durationDays,
+        durationSeconds: options.durationSeconds,
         startTimestamp,
         signerAddress: options.signer.address,
         signer: options.signer,
@@ -103,7 +111,7 @@ export const decryptUserValues = async (
     : await client.signDecryptionPermit({
         transportKeyPair,
         contractAddresses: [context.contractAddress],
-        durationDays: options.durationDays,
+        durationSeconds: options.durationSeconds,
         startTimestamp,
         signerAddress: options.signer.address,
         signer: options.signer,
@@ -141,12 +149,12 @@ export const decryptUserValues = async (
     clearValues: serializedClearValues,
     permit: summarizePermit(signedPermit, {
       contractAddresses: [context.contractAddress],
-      durationDays: options.durationDays,
+      durationSeconds: options.durationSeconds,
       startTimestamp,
     }),
     validationArtifact: options.includeValidationArtifact
       ? ({
-          schemaVersion: 1,
+          schemaVersion: 2,
           flow: signedPermit.isDelegated
             ? "delegated-user-decrypt"
             : "user-decrypt",
@@ -172,7 +180,7 @@ export const decryptUserValues = async (
           }),
           permit: summarizePermit(signedPermit, {
             contractAddresses: [context.contractAddress],
-            durationDays: options.durationDays,
+            durationSeconds: options.durationSeconds,
             startTimestamp,
           }),
         } satisfies UserDecryptValidationArtifact)
@@ -182,6 +190,7 @@ export const decryptUserValues = async (
 
 const summarizePermit = (
   permit: {
+    version: 1 | 2;
     isDelegated: boolean;
     signerAddress: string;
     encryptedDataOwnerAddress: string;
@@ -190,10 +199,11 @@ const summarizePermit = (
   },
   signedParameters: {
     contractAddresses: readonly string[];
-    durationDays: number;
+    durationSeconds: number;
     startTimestamp: number;
   },
 ): DecryptionPermitSummary => ({
+  version: permit.version,
   isDelegated: permit.isDelegated,
   signerAddress: permit.signerAddress as Hex,
   encryptedDataOwnerAddress: permit.encryptedDataOwnerAddress as Hex,
@@ -201,5 +211,5 @@ const summarizePermit = (
   signature: permit.signature as Hex,
   contractAddresses: signedParameters.contractAddresses,
   startTimestamp: signedParameters.startTimestamp,
-  durationDays: signedParameters.durationDays,
+  durationSeconds: signedParameters.durationSeconds,
 });

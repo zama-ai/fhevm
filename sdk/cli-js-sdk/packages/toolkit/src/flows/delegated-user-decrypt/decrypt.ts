@@ -10,7 +10,7 @@ export const decryptDelegatedHandles = (
   options: {
     encryptedValues: readonly Hex[];
     delegatorAddress: Hex;
-    durationDays: number;
+    durationSeconds: number;
     network: NetworkName;
     includeValidationArtifact?: boolean;
     onProgress?: ProgressReporter;
@@ -20,7 +20,7 @@ export const decryptDelegatedHandles = (
     encryptedValues: options.encryptedValues,
     signer: delegateContext.account,
     ownerAddress: options.delegatorAddress,
-    durationDays: options.durationDays,
+    durationSeconds: options.durationSeconds,
     network: options.network,
     includeValidationArtifact: options.includeValidationArtifact,
     onProgress: options.onProgress,

@@ -71,7 +71,7 @@ export const storedDelegatedUserDecrypt = async (
   const decrypted = await decryptDelegatedHandles(delegateContext, {
     encryptedValues: storedHandles.map((handle) => handle.handle),
     delegatorAddress,
-    durationDays: options.durationDays,
+    durationSeconds: options.permitDurationSeconds,
     network: options.network,
     includeValidationArtifact: options.includeValidationArtifact,
     onProgress: options.onProgress,

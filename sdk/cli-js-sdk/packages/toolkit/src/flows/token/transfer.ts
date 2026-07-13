@@ -13,7 +13,7 @@ import {
 } from "../../token/writes";
 
 const EUINT64_UPPER_BOUND = 1n << 64n;
-const DEFAULT_PERMIT_DURATION_DAYS = 1;
+const DEFAULT_PERMIT_DURATION_SECONDS = 86_400;
 
 /**
  * Options for an ERC-7984 confidential transfer.
@@ -32,7 +32,8 @@ export type TransferTokenOptions = ClientOptions &
     amount: bigint;
     from?: Hex;
     verify?: boolean;
-    durationDays?: number;
+    /** SDK permit lifetime for optional balance verification. */
+    permitDurationSeconds?: number;
     privateKey?: Hex;
     mnemonic?: string;
     onProgress?: ProgressReporter;
@@ -71,7 +72,7 @@ const userDecryptAmount = async (
   options: {
     handle: Hex;
     signer: Account;
-    durationDays: number;
+    durationSeconds: number;
     network: ClientOptions["network"];
     label: string;
     onProgress?: ProgressReporter;
@@ -82,7 +83,7 @@ const userDecryptAmount = async (
     encryptedValues: [options.handle],
     signer: options.signer,
     ownerAddress: options.signer.address,
-    durationDays: options.durationDays,
+    durationSeconds: options.durationSeconds,
     network: options.network,
     onProgress: options.onProgress,
   });
@@ -113,7 +114,8 @@ export const transferToken = async (
   const { account, chain, contractAddress, fhevm, publicClient, walletClient } =
     createWalletContext(options);
   const from = options.from ?? account.address;
-  const durationDays = options.durationDays ?? DEFAULT_PERMIT_DURATION_DAYS;
+  const permitDurationSeconds =
+    options.permitDurationSeconds ?? DEFAULT_PERMIT_DURATION_SECONDS;
   const decryptContext: DecryptContext = { chain, contractAddress, publicClient };
 
   let balanceBefore: bigint | undefined;
@@ -127,7 +129,7 @@ export const transferToken = async (
     balanceBefore = await userDecryptAmount(decryptContext, {
       handle: balanceHandleBefore,
       signer: account,
-      durationDays,
+      durationSeconds: permitDurationSeconds,
       network: options.network,
       label: "Decrypting sender balance before transfer",
       onProgress: options.onProgress,
@@ -196,7 +198,7 @@ export const transferToken = async (
     const balanceAfter = await userDecryptAmount(decryptContext, {
       handle: balanceHandleAfter,
       signer: account,
-      durationDays,
+      durationSeconds: permitDurationSeconds,
       network: options.network,
       label: "Decrypting sender balance after transfer",
       onProgress: options.onProgress,

@@ -19,7 +19,8 @@ export type StoredUserDecryptOptions = ClientOptions &
     contractAddress?: Hex;
     privateKey?: Hex;
     mnemonic?: string;
-    durationDays: number;
+    /** SDK permit lifetime in seconds. */
+    durationSeconds: number;
     includeValidationArtifact?: boolean;
     onProgress?: ProgressReporter;
   }>;
@@ -48,7 +49,7 @@ export const storedUserDecrypt = async (
       encryptedValues: storedHandles.map((handle) => handle.handle),
       signer: account,
       ownerAddress: account.address,
-      durationDays: options.durationDays,
+      durationSeconds: options.durationSeconds,
       network: options.network,
       includeValidationArtifact: options.includeValidationArtifact,
       onProgress: options.onProgress,

@@ -31,6 +31,9 @@ const devnet = defineFhevmChain({
       kmsVerifier: {
         address: "0x3F3819BeBE4bD0EFEf8078Df6f9B574ADa80CCA4",
       },
+      protocolConfig: {
+        address: "0x51f9AFBc89Ea792e1a21a12AB802ab58D4dbee83",
+      },
     },
     relayerUrl: "https://relayer.dev.zama.cloud",
     gateway: {
@@ -59,6 +62,9 @@ const devnetAmoy = defineFhevmChain({
       },
       kmsVerifier: {
         address: "0x2D7Ae863BF7537402AB6025bEbB4668dd9F9F4b6",
+      },
+      protocolConfig: {
+        address: "0x4CcF009Aba90D04f52b31fc7aDdE240578aFe10F",
       },
     },
     relayerUrl: "https://relayer.dev.zama.cloud",

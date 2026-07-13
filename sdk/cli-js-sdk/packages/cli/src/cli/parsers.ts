@@ -34,6 +34,20 @@ export const parsePositiveInteger = (value: string): number => {
   throw new InvalidArgumentError(`Invalid positive integer: ${value}`);
 };
 
+export const daysToSeconds = (days: number): number => {
+  const seconds = days * 86_400;
+  if (
+    !Number.isSafeInteger(days) ||
+    days <= 0 ||
+    !Number.isSafeInteger(seconds)
+  ) {
+    throw new InvalidArgumentError(
+      `Permit duration in days is outside the supported range: ${days.toString()}`,
+    );
+  }
+  return seconds;
+};
+
 const EUINT64_UPPER_BOUND = 1n << 64n;
 
 export const parseTokenAmount = (value: string): bigint => {

@@ -21,7 +21,8 @@ export type DelegatedUserDecryptBaseOptions = ClientOptions &
     delegatorMnemonic?: string;
     privateKey?: Hex;
     mnemonic?: string;
-    durationDays: number;
+    /** SDK permit lifetime in seconds; separate from ACL delegation duration. */
+    permitDurationSeconds: number;
     delegationDurationDays: number;
     includeValidationArtifact?: boolean;
     onProgress?: ProgressReporter;

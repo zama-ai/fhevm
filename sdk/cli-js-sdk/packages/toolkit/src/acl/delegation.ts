@@ -91,14 +91,21 @@ export const ensureUserDecryptionDelegation = async (
     onProgress?: ProgressReporter;
   },
 ): Promise<DelegationStatus> => {
+  if (!Number.isSafeInteger(options.durationDays) || options.durationDays <= 0) {
+    throw new RangeError(
+      `Delegation duration must be a positive safe integer in days, received ${options.durationDays.toString()}.`,
+    );
+  }
   const aclAddress = aclAddressOf(context);
   const currentExpiration = await getUserDecryptionDelegationExpirationDate(
     context,
     options,
   );
   const block = await context.publicClient.getBlock();
+  const durationSeconds = BigInt(options.durationDays) * 86_400n;
+  const requiredExpiration = block.timestamp + durationSeconds;
 
-  if (currentExpiration > block.timestamp) {
+  if (currentExpiration >= requiredExpiration) {
     options.onProgress?.(
       `Delegation already active until ${currentExpiration.toString()}`,
     );
@@ -117,8 +124,7 @@ export const ensureUserDecryptionDelegation = async (
     );
   }
 
-  const durationSeconds = BigInt(options.durationDays) * 86_400n;
-  const expirationDate = block.timestamp + durationSeconds;
+  const expirationDate = requiredExpiration;
   const transactionHash = await delegateForUserDecryption(
     options.delegatorContext,
     {

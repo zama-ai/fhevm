@@ -20,10 +20,14 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  },
   "dependencies": {
-    "@fhevm/sdk": "1.1.0-alpha.4",
+    "@fhevm/sdk": "1.1.0-alpha.8",
     "viem": "^2.50.4"
   }
 }

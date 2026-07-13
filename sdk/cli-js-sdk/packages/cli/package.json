@@ -12,17 +12,18 @@
     "build": "tsdown",
     "cli": "node dist/index.mjs",
     "cli:dev": "node --import tsx index.ts",
-    "test": "node --import tsx --test test/*.test.ts",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "tsdown": "^0.22.2",
-    "tsx": "^4.21.0"
+    "tsx": "^4.21.0",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@cli-fhevm-sdk/toolkit": "workspace:*",
     "@commander-js/extra-typings": "^15.0.0",
-    "@fhevm/sdk": "1.1.0-alpha.4",
+    "@fhevm/sdk": "1.1.0-alpha.8",
     "@pnpm/tabtab": "^0.5.4",
     "commander": "^15.0.0",
     "consola": "^3.4.2",

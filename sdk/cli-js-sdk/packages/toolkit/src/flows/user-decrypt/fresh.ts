@@ -26,7 +26,8 @@ export type FreshUserDecryptOptions = ClientOptions &
     value?: FheClearValue;
     privateKey?: Hex;
     mnemonic?: string;
-    durationDays: number;
+    /** SDK permit lifetime in seconds. */
+    durationSeconds: number;
     includeValidationArtifact?: boolean;
     onProgress?: ProgressReporter;
   }>;
@@ -63,7 +64,7 @@ export const freshUserDecrypt = async (
       encryptedValues: [handle.handle],
       signer: context.account,
       ownerAddress: context.account.address,
-      durationDays: options.durationDays,
+      durationSeconds: options.durationSeconds,
       network: options.network,
       includeValidationArtifact: options.includeValidationArtifact,
       onProgress: options.onProgress,
