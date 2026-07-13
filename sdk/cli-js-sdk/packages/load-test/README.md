@@ -209,8 +209,13 @@ Each run writes to `<data-dir>/runs/<timestamp>-<scenario>/`:
 - `report.md` — human rendering (also produced by `report render <dir>`).
 - `requests.jsonl` — one record per request (sent/echoed request ids, jobId,
   submit latency, poll count, terminal latency, outcome, error label).
+- `requests-a.jsonl` and, for dual-target runs, `requests-b.jsonl` — the same
+  per-request records split by target, for isolated per-leg analysis.
 - `metrics-a.jsonl` and, for dual-target runs, `metrics-b.jsonl` — retained
   Prometheus collector time series.
+- `injector-runtime.jsonl` — the load-test process's own runtime samples
+  (event-loop lag/utilization, CPU, RSS, GC) plus scheduler dispatch-lag,
+  backpressure, drop, and abandon accounting, independent of the relayer.
 
 Planning and preparation evidence uses the same stable names:
 
