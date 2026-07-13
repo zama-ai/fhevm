@@ -36,7 +36,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    handles directly; fails closed on incomplete plans.
 5. **Off-chain proof service — relayer** (`relayer/src/solana_proof`): ingest (atomic, gap-free,
    fail-closed), decode (incl. `emit_cpi!` op-event resolution for born-public handles), replay, and
-   `build_verified_proof` cross-check against finalized peaks (a wrong record surfaces as
+   `build_verified_proof` cross-check against confirmed peaks (a wrong record surfaces as
    `PeaksDiverged`/`CorruptCache`, never a bad proof).
 6. **ABI / IDL golden** (`scripts/check-zama-host-idl.sh`, `plan_contracts.rs`): vendored IDLs and the
    Borsh golden manifest must match the freshly-built Anchor IDLs; EVENT_VERSION consistency across
@@ -57,7 +57,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 The rewrite's central correctness bet is that off-chain consumers reproduce on-chain MMR state exactly.
 The e2e `reconstruct=true` arm exercises host-listener reconstruction against the full stack, while
 `build_verified_proof` cross-checks reconstructed peaks against final chain state. A divergence fails
-closed rather than yielding a wrong proof, which the KMS then re-verifies against finalized peaks anyway
+closed rather than yielding a wrong proof, which the KMS then re-verifies against confirmed peaks anyway
 (DD-035).
 
 ## Deliberately deferred (filed as follow-ups, not gaps in the merge)

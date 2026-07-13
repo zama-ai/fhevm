@@ -49,7 +49,7 @@ this note records the operational model in one place.
 
 - Historical authorization is handle-scoped and permanent. When a handle is superseded, the program
   seals one `HistoricalAccessLeaf` per then-allowed subject into the value's MMR. Historical reads roll
-  forward by proving inclusion against finalized on-chain peaks.
+  forward by proving inclusion against confirmed on-chain peaks.
 - Public decrypt is exact-handle. `make_handle_public` seals a `PublicDecryptLeaf` for the current
   handle only; a later handle update does not inherit public decryptability. An `fhe_eval` durable
   output may instead be *born* public by setting `make_public` on the output: after the new handle is
@@ -65,13 +65,14 @@ this note records the operational model in one place.
   caller/authority for grant and eval flows; it blocks new action and is not an erasure mechanism for
   already sealed history.
 - Solana programs enforce authorization. The relayer, proof builder, host-listener ingestion, and
-  coprocessor scheduling are untrusted for authorization. KMS release must verify finalized on-chain
-  facts, including live `EncryptedValue` state or MMR proof validity, before releasing plaintext.
+  coprocessor scheduling are untrusted for authorization. KMS ACL/proof verification reads confirmed
+  on-chain facts, including live `EncryptedValue` state or MMR proof validity, before releasing
+  plaintext. A separate coprocessor finalized-account gate still exists pending its own cleanup.
 - Materiality is not Solana host state. DD-031 moved ciphertext material commitments to the gateway
   `CiphertextCommits`; Solana ACL state answers only who may use or decrypt a handle.
 - The relayer-colocated MMR proof service is an untrusted helper (DD-035). The end-to-end decrypt flow
   fetches historical and public MMR proofs from this service (`GET /internal/solana/mmr-proof`); the
-  KMS re-verifies each proof against finalized on-chain peaks before releasing plaintext. One case is
+  KMS re-verifies each proof against confirmed on-chain peaks before releasing plaintext. One case is
   still built by the test client rather than the service: the amount burned during an unwrap, whose
   handle comes from block randomness and appears only in an event, so the events-off build has nothing
   for the service to read (tracked in fhevm-internal#1675).
@@ -112,7 +113,7 @@ flowchart LR
         H0["HistoricalAccessLeaf<br/>handle=H1, subject=A"] --> H1["HistoricalAccessLeaf<br/>handle=H1, subject=B"] --> P0["PublicDecryptLeaf<br/>handle=H2 (born public)"]
     end
     append --> peaks["on-chain: peaks[] (≤64) + leaf_count"]
-    peaks --> verify["off-chain: reconstruct leaves → build MMR proof<br/>→ KMS verifies inclusion vs finalized peaks"]
+    peaks --> verify["off-chain: reconstruct leaves → build MMR proof<br/>→ KMS verifies inclusion vs confirmed peaks"]
 ```
 
 ### Handle derivation (no per-output binding — DD-015)
@@ -130,9 +131,9 @@ flowchart TD
 flowchart TD
     req["decrypt request (handle, subject)"] --> kind{authorization kind}
     kind -->|"current"| ac["authorize_current:<br/>handle == current_handle<br/>AND subject ∈ subjects<br/>(no proof)"]
-    kind -->|"historical"| ah["authorize_historical:<br/>MMR proof of HistoricalAccessLeaf(handle, subject)<br/>vs finalized peaks — survives supersession/removal"]
-    kind -->|"public"| ap["authorize_public:<br/>MMR proof of PublicDecryptLeaf(handle)<br/>vs finalized peaks — exact handle, no live flag"]
-    ac & ah & ap --> kms["KMS re-verifies against finalized on-chain state before releasing plaintext"]
+    kind -->|"historical"| ah["authorize_historical:<br/>MMR proof of HistoricalAccessLeaf(handle, subject)<br/>vs confirmed peaks — survives supersession/removal"]
+    kind -->|"public"| ap["authorize_public:<br/>MMR proof of PublicDecryptLeaf(handle)<br/>vs confirmed peaks — exact handle, no live flag"]
+    ac & ah & ap --> kms["KMS re-verifies against confirmed on-chain state before releasing plaintext"]
 ```
 
 ### Burn → Redeem (Vector-2 closed, DD-036)
@@ -164,7 +165,7 @@ sequenceDiagram
 flowchart TD
     prog["zama-host fhe_eval"] -->|"emit_cpi! (≤8-event frames only;<br/>no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
     prog -->|"instruction data (args)"| ix["fhe_eval durable-output / make_public args"]
-    ev --> relayer["relayer proof service (RPC polling today):<br/>resolves born-public handle from op-event,<br/>reconstructs MMR, cross-checks vs finalized peaks"]
+    ev --> relayer["relayer proof service (RPC polling today):<br/>resolves born-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
     ix --> listener["host-listener indexer:<br/>Yellowstone gRPC reconstruction-only<br/>(SlotHashes+Clock sysvar streams → block entropy;<br/>never reads events)"]
     relayer -.->|"migrate to Carbon/Geyser,<br/>then drop op-event ABI"| followup["fhevm-internal#1665"]
 ```
@@ -204,7 +205,7 @@ to a follow-up.
 - DD-032: introduced stable `EncryptedValue` lineages, single allowed-subject ACL, and MMR leaves.
 - DD-033: lifecycle instructions emit no events; indexers replay instruction data.
 - DD-034: Solana compute is scheduled eagerly (`is_allowed` is a scheduling gate, not decrypt auth).
-- DD-035: proof building is relayer-colocated and untrusted; KMS re-verifies proofs against finalized
+- DD-035: proof building is relayer-colocated and untrusted; KMS re-verifies proofs against confirmed
   chain state.
 - DD-036: burn-redemption consume authorizes by MMR public-decrypt proof (born-public delta), not the
   live handle — closes the Vector-2 fund-stranding window.

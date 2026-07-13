@@ -16,6 +16,8 @@ use serde_json::json;
 
 use crate::solana_proof::decode::RawInstruction;
 
+const SOLANA_PROOF_COMMITMENT: &str = "confirmed";
+
 #[derive(thiserror::Error, Debug)]
 pub enum ChainError {
     #[error("RPC transport error: {0}")]
@@ -61,7 +63,7 @@ pub trait ChainFetcher: Send + Sync {
         signature: &str,
     ) -> Result<Option<ChainTransaction>, ChainError>;
 
-    /// Fetches and decodes the live `EncryptedValue` account at finalized commitment.
+    /// Fetches and decodes the live `EncryptedValue` account at confirmed commitment.
     async fn get_lineage_state(
         &self,
         address: [u8; 32],
@@ -139,6 +141,42 @@ fn base58_encode(bytes: &[u8; 32]) -> String {
     let mut out: Vec<u8> = std::iter::repeat_n(ALPHABET[0], leading_zeros).collect();
     out.extend(digits.iter().rev().map(|&d| ALPHABET[d as usize]));
     String::from_utf8(out).unwrap()
+}
+
+fn signatures_params(
+    address: &[u8; 32],
+    before: Option<&str>,
+    until: Option<&str>,
+    limit: usize,
+) -> serde_json::Value {
+    let mut opts = serde_json::Map::new();
+    opts.insert("commitment".to_string(), json!(SOLANA_PROOF_COMMITMENT));
+    opts.insert("limit".to_string(), json!(limit));
+    if let Some(before) = before {
+        opts.insert("before".to_string(), json!(before));
+    }
+    if let Some(until) = until {
+        opts.insert("until".to_string(), json!(until));
+    }
+    json!([base58_encode(address), opts])
+}
+
+fn transaction_params(signature: &str) -> serde_json::Value {
+    json!([
+        signature,
+        {
+            "encoding": "json",
+            "maxSupportedTransactionVersion": 0,
+            "commitment": SOLANA_PROOF_COMMITMENT,
+        }
+    ])
+}
+
+fn account_info_params(address: &[u8; 32]) -> serde_json::Value {
+    json!([
+        base58_encode(address),
+        {"encoding": "base64", "commitment": SOLANA_PROOF_COMMITMENT}
+    ])
 }
 
 #[derive(Deserialize)]
@@ -259,18 +297,10 @@ impl ChainFetcher for RpcChainFetcher {
         until: Option<&str>,
         limit: usize,
     ) -> Result<Vec<String>, ChainError> {
-        let mut opts = serde_json::Map::new();
-        opts.insert("limit".to_string(), json!(limit));
-        if let Some(before) = before {
-            opts.insert("before".to_string(), json!(before));
-        }
-        if let Some(until) = until {
-            opts.insert("until".to_string(), json!(until));
-        }
         let result = self
             .call(
                 "getSignaturesForAddress",
-                json!([base58_encode(&address), opts]),
+                signatures_params(&address, before, until, limit),
             )
             .await?;
         let entries: Vec<SignatureEntry> =
@@ -283,13 +313,7 @@ impl ChainFetcher for RpcChainFetcher {
         signature: &str,
     ) -> Result<Option<ChainTransaction>, ChainError> {
         let result = self
-            .call(
-                "getTransaction",
-                json!([
-                    signature,
-                    {"encoding": "json", "maxSupportedTransactionVersion": 0, "commitment": "finalized"}
-                ]),
-            )
+            .call("getTransaction", transaction_params(signature))
             .await?;
         if result.is_null() {
             return Ok(None);
@@ -343,10 +367,7 @@ impl ChainFetcher for RpcChainFetcher {
         address: [u8; 32],
     ) -> Result<Option<OnChainLineageState>, ChainError> {
         let result = self
-            .call(
-                "getAccountInfo",
-                json!([base58_encode(&address), {"encoding": "base64", "commitment": "finalized"}]),
-            )
+            .call("getAccountInfo", account_info_params(&address))
             .await?;
         if result.is_null() || result.get("value").map(|v| v.is_null()).unwrap_or(true) {
             return Ok(None);
@@ -468,5 +489,24 @@ mod tests {
     fn base64_decode_matches_known_vector() {
         // "hello" base64-encoded.
         assert_eq!(base64_decode("aGVsbG8=").unwrap(), b"hello".to_vec());
+    }
+
+    #[test]
+    fn proof_rpc_params_pin_confirmed_commitment() {
+        let address = [42u8; 32];
+
+        let signatures = signatures_params(&address, Some("before"), Some("until"), 25);
+        assert_eq!(signatures[1]["commitment"], "confirmed");
+        assert_eq!(signatures[1]["limit"], 25);
+        assert_eq!(signatures[1]["before"], "before");
+        assert_eq!(signatures[1]["until"], "until");
+
+        let transaction = transaction_params("signature");
+        assert_eq!(transaction[1]["commitment"], "confirmed");
+        assert_eq!(transaction[1]["encoding"], "json");
+
+        let account = account_info_params(&address);
+        assert_eq!(account[1]["commitment"], "confirmed");
+        assert_eq!(account[1]["encoding"], "base64");
     }
 }
