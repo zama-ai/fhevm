@@ -9,8 +9,8 @@ application programs such as `confidential-token`.
 ```text
 HostConfig
   PDA("host-config")
-  stores chain id, admin authority, input verifier authority,
-  test authority, pause state, and feature gates for mock/test/deny-list behavior
+  stores chain id, protocol authorities, pause state, HCU limits,
+  and the persistent-grant deny-list policy
 
 EncryptedValue
   PDA("encrypted-value", value_key)

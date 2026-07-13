@@ -528,8 +528,8 @@ eager scheduling and leaves reorg unwind as optional resource recovery (DD-025, 
 Consequences:
 
 Handle byte layout remains stable; handle birth is not idempotent across slots/blocks. The
-`PreviousBankHashUnavailable` fail-closed surface (real chains) and the chain-id-confined zero-entropy
-fallback (PoC chain only, DD-014) remain as designed.
+`PreviousBankHashUnavailable` fail-closed surface remains as designed; handle derivation never falls
+back to zero entropy (DD-014).
 
 Binding removal (durable-output handle binding deleted entirely):
 
