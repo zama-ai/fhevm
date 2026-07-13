@@ -276,6 +276,50 @@ async function setAnvilIntervalMining(seconds: number) {
   await ethers.provider.send('evm_setIntervalMining', [seconds]);
 }
 
+async function resetAuctionBenchmarkStorage(
+  contractAddress: string,
+  bidderAddresses: string[],
+  prices: number[],
+  walletCount: number,
+) {
+  const abi = ethers.AbiCoder.defaultAbiCoder();
+  const mappingSlot = (type: string, value: string | number, slot: number) =>
+    ethers.keccak256(abi.encode([type, 'uint256'], [value, slot]));
+  const slots = new Set<string>([ethers.zeroPadValue(ethers.toBeHex(0), 32)]);
+  for (const bidder of bidderAddresses) {
+    for (const slot of [1, 2, 3, 6]) slots.add(mappingSlot('address', bidder, slot));
+  }
+  for (const price of new Set(prices)) {
+    slots.add(mappingSlot('uint64', price, 4));
+    slots.add(mappingSlot('uint64', price, 5));
+  }
+  for (let walletIndex = 0; walletIndex < walletCount; walletIndex += 1) {
+    slots.add(mappingSlot('uint256', walletIndex, 7));
+  }
+  const zero = `0x${'00'.repeat(32)}`;
+  // Anvil state overrides are not transactionally grouped. Apply them in
+  // order: concurrent writes have occasionally returned successfully while
+  // leaving one mapping slot unchanged.
+  for (const slot of slots) {
+    try {
+      await ethers.provider.send('anvil_setStorageAt', [contractAddress, slot, zero]);
+    } catch {
+      await ethers.provider.send('hardhat_setStorageAt', [contractAddress, slot, zero]);
+    }
+  }
+  const nonZeroSlots = (
+    await mapLimit([...slots], 64, async (slot) => ({
+      slot,
+      value: await ethers.provider.getStorage(contractAddress, slot),
+    }))
+  ).filter(({ value }) => value !== zero);
+  if (nonZeroSlots.length > 0) {
+    throw new Error(`Failed to reset ${nonZeroSlots.length} Auction benchmark storage slots`);
+  }
+  await ethers.provider.send('evm_mine', []);
+  benchLog('reset benchmark contract storage', { slots: slots.size, bidders: bidderAddresses.length });
+}
+
 async function waitForTransactionReceipt(tx: TransactionResponse, timeoutMs: number): Promise<TransactionReceipt> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -303,6 +347,44 @@ async function mineUntilSubmittedBidsHaveReceipts(submitted: SubmittedBid[], max
       );
     }
   }
+}
+
+async function submitBidsInManualBlocks(
+  prepared: PreparedBid[],
+  bidsPerBlock: number,
+  bidConcurrency: number,
+  sendBid: (preparedBid: PreparedBid) => Promise<SubmittedBid>,
+  awaitReceipt: (
+    preparedBid: PreparedBid,
+    tx: TransactionResponse,
+    submittedAtMs: number,
+    submittedAtDbMs?: number,
+  ) => Promise<BidTiming>,
+): Promise<{ timings: BidTiming[]; minedBlocks: number }> {
+  const timings: BidTiming[] = [];
+  let minedBlocks = 0;
+  for (let i = 0; i < prepared.length; i += bidsPerBlock) {
+    const batch = prepared.slice(i, i + bidsPerBlock);
+    const submitted = (await mapPreparedBidsByBidder(batch, Math.min(bidConcurrency, bidsPerBlock), sendBid)).filter(
+      (bid): bid is SubmittedBid => bid !== undefined,
+    );
+    await ethers.provider.send('evm_mine', []);
+    minedBlocks += 1;
+    const receipts = await mapLimit(
+      submitted,
+      bidConcurrency,
+      async ({ preparedBid, tx, submittedAtMs, submittedAtDbMs }) =>
+        awaitReceipt(preparedBid, tx, submittedAtMs, submittedAtDbMs),
+    );
+    timings.push(...receipts);
+    benchLog('manual-mine block submitted', {
+      start: i,
+      count: batch.length,
+      blockNumber: receipts[0]?.blockNumber ?? null,
+      total: prepared.length,
+    });
+  }
+  return { timings, minedBlocks };
 }
 
 async function submitBidsAtSteadyRate(
@@ -700,6 +782,7 @@ describe('Confidential auction bid benchmark', function () {
     ]);
     const bidConcurrency = envInt('AUCTION_BENCH_BID_CONCURRENCY', 1000);
     const steadyBidsPerBlock = envInt('AUCTION_BENCH_STEADY_BIDS_PER_BLOCK', bidConcurrency);
+    const manualMineBidsPerBlock = envNonNegativeInt('AUCTION_BENCH_MANUAL_MINE_BIDS_PER_BLOCK', 0);
     const proofConcurrency = envInt('AUCTION_BENCH_PROOF_CONCURRENCY', 10);
     const fundConcurrency = envInt('AUCTION_BENCH_FUND_CONCURRENCY', 200);
     const pollIntervalMs = envInt('AUCTION_BENCH_POLL_INTERVAL_MS', 1000);
@@ -718,6 +801,7 @@ describe('Confidential auction bid benchmark', function () {
     );
     const initialPaymentBalance = envInt('AUCTION_BENCH_INITIAL_PAYMENT_BALANCE', maxPrice * quantity * bidsPerBidder);
     const walletCount = envInt('AUCTION_BENCH_WALLET_COUNT', 32);
+    const resetContractState = process.env.AUCTION_BENCH_RESET_CONTRACT_STATE === '1';
     const proofCachePath = process.env.AUCTION_BENCH_PROOF_CACHE;
     const sdkAuth = relayerApiKey ? { __type: 'ApiKeyHeader' as const, value: relayerApiKey } : undefined;
     const sdkConfig: SdkConfig = {
@@ -744,10 +828,12 @@ describe('Confidential auction bid benchmark', function () {
       submissionMode,
       bidConcurrency,
       steadyBidsPerBlock,
+      manualMineBidsPerBlock,
       proofConcurrency,
       minPrice,
       maxPrice,
       quantity,
+      resetContractState,
       proofCachePath: proofCachePath ?? null,
     });
 
@@ -814,6 +900,15 @@ describe('Confidential auction bid benchmark', function () {
         price: normalPrice(minPrice, maxPrice),
       };
     });
+
+    if (resetContractState) {
+      await resetAuctionBenchmarkStorage(
+        contractAddress,
+        bidders.map((bidder) => bidder.address),
+        bidSeeds.map((seed) => seed.price),
+        walletCount,
+      );
+    }
 
     let generatedProofs = 0;
     let checkpointedEntries = cachedEntries.length;
@@ -987,8 +1082,9 @@ describe('Confidential auction bid benchmark', function () {
         automineDisabled = true;
       }
 
+      const useManualMineBlocks = submissionMode === 'manual-mine' && manualMineBidsPerBlock > 0;
       const submitted =
-        submissionMode === 'await-receipt' || submissionMode === 'steady-rate'
+        submissionMode === 'await-receipt' || submissionMode === 'steady-rate' || useManualMineBlocks
           ? []
           : await mapPreparedBidsByBidder(prepared, bidConcurrency, sendBid);
       benchLog('submitted bids', {
@@ -996,7 +1092,29 @@ describe('Confidential auction bid benchmark', function () {
         submissionMode,
       });
 
-      if (submissionMode === 'manual-mine') {
+      let manualBlockTimings: BidTiming[] | undefined;
+      if (useManualMineBlocks) {
+        const expectedBlocks = Math.ceil(prepared.length / manualMineBidsPerBlock);
+        if (expectedBlocks > manualMineMaxBlocks) {
+          throw new Error(
+            `Manual-mine block size requires ${expectedBlocks} blocks, above AUCTION_BENCH_MANUAL_MINE_MAX_BLOCKS=${manualMineMaxBlocks}`,
+          );
+        }
+        const result = await submitBidsInManualBlocks(
+          prepared,
+          manualMineBidsPerBlock,
+          bidConcurrency,
+          sendBid,
+          awaitReceipt,
+        );
+        manualBlockTimings = result.timings;
+        manualMineBlocks = result.minedBlocks;
+        benchLog('manual mined bid blocks', {
+          manualMineBlocks,
+          bidsPerBlock: manualMineBidsPerBlock,
+          submitted: prepared.length,
+        });
+      } else if (submissionMode === 'manual-mine') {
         manualMineBlocks = await mineUntilSubmittedBidsHaveReceipts(submitted, manualMineMaxBlocks);
         benchLog('manual mined bids', {
           manualMineBlocks,
@@ -1005,7 +1123,8 @@ describe('Confidential auction bid benchmark', function () {
       }
 
       timings =
-        submissionMode === 'steady-rate'
+        manualBlockTimings ??
+        (submissionMode === 'steady-rate'
           ? await submitBidsAtSteadyRate(prepared, steadyBidsPerBlock, bidConcurrency, sendBid, awaitReceipt)
           : submissionMode === 'await-receipt'
             ? await mapPreparedBidsByBidder(prepared, bidConcurrency, async (preparedBid) => {
@@ -1014,7 +1133,7 @@ describe('Confidential auction bid benchmark', function () {
               })
             : await mapLimit(submitted, bidConcurrency, async ({ preparedBid, tx, submittedAtMs, submittedAtDbMs }) =>
                 awaitReceipt(preparedBid, tx, submittedAtMs, submittedAtDbMs),
-              );
+              ));
     } finally {
       if (intervalMiningChanged) {
         await setAnvilIntervalMining(manualMineRestoreIntervalSeconds);
@@ -1128,6 +1247,8 @@ describe('Confidential auction bid benchmark', function () {
       manualMineBlocks,
       manualMineMaxBlocks,
       manualMineIntervalSeconds,
+      manualMineBidsPerBlock,
+      resetContractState,
       priceDistribution: {
         minPrice,
         maxPrice,

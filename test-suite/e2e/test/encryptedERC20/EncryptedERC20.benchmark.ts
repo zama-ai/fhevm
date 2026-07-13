@@ -379,6 +379,43 @@ async function mineUntilSubmittedTransfersHaveReceipts(submitted: SubmittedTrans
   }
 }
 
+async function submitTransfersInManualBlocks(
+  prepared: PreparedTransfer[],
+  transfersPerBlock: number,
+  transferConcurrency: number,
+  sendTransfer: (preparedTransfer: PreparedTransfer) => Promise<SubmittedTransfer>,
+  awaitReceipt: (
+    preparedTransfer: PreparedTransfer,
+    tx: TransactionResponse,
+    submittedAtMs: number,
+    submittedAtDbMs?: number,
+  ) => Promise<TransferTiming & { blockNumber: number }>,
+  onReceipts?: (receipts: (TransferTiming & { blockNumber: number })[]) => void,
+): Promise<{ timings: (TransferTiming & { blockNumber: number })[]; minedBlocks: number }> {
+  const timings: (TransferTiming & { blockNumber: number })[] = [];
+  let minedBlocks = 0;
+  for (let i = 0; i < prepared.length; i += transfersPerBlock) {
+    const batch = prepared.slice(i, i + transfersPerBlock);
+    const submitted = await mapLimit(batch, Math.min(transferConcurrency, transfersPerBlock), sendTransfer);
+    await ethers.provider.send('evm_mine', []);
+    minedBlocks += 1;
+    const receipts = await Promise.all(
+      submitted.map(({ preparedTransfer, tx, submittedAtMs, submittedAtDbMs }) =>
+        awaitReceipt(preparedTransfer, tx, submittedAtMs, submittedAtDbMs),
+      ),
+    );
+    timings.push(...receipts);
+    onReceipts?.(receipts);
+    benchLog('manual-mine block submitted', {
+      start: i,
+      count: batch.length,
+      blockNumber: receipts[0]?.blockNumber ?? null,
+      total: prepared.length,
+    });
+  }
+  return { timings, minedBlocks };
+}
+
 async function submitTransfersAtSteadyRate(
   prepared: PreparedTransfer[],
   transfersPerBlock: number,
@@ -1046,6 +1083,7 @@ describe('EncryptedERC20 benchmark', function () {
     const fundConcurrency = envInt('ERC20_BENCH_FUND_CONCURRENCY', 200);
     const mintBatchSize = envInt('ERC20_BENCH_MINT_BATCH_SIZE', 25);
     const steadyTransfersPerBlock = envInt('ERC20_BENCH_STEADY_TRANSFERS_PER_BLOCK', transferConcurrency);
+    const manualMineTransfersPerBlock = envNonNegativeInt('ERC20_BENCH_MANUAL_MINE_TRANSFERS_PER_BLOCK', 0);
     const manualMineMaxBlocks = envInt('ERC20_BENCH_MANUAL_MINE_MAX_BLOCKS', 20);
     const manualMineIntervalSeconds = envInt('ERC20_BENCH_MANUAL_MINE_INTERVAL_SECONDS', 1);
     const manualMineRestoreIntervalSeconds = envNonNegativeInt('ERC20_BENCH_MANUAL_MINE_RESTORE_INTERVAL_SECONDS', 1);
@@ -1082,6 +1120,7 @@ describe('EncryptedERC20 benchmark', function () {
       transferSubmissionMode,
       transferConcurrency,
       steadyTransfersPerBlock,
+      manualMineTransfersPerBlock,
       proofConcurrency,
       proofThreads,
       proofCachePath: proofCachePath ?? null,
@@ -1313,8 +1352,9 @@ describe('EncryptedERC20 benchmark', function () {
         automineDisabled = true;
       }
 
+      const useManualMineBlocks = transferSubmissionMode === 'manual-mine' && manualMineTransfersPerBlock > 0;
       const submitted =
-        transferSubmissionMode === 'await-receipt' || transferSubmissionMode === 'steady-rate'
+        transferSubmissionMode === 'await-receipt' || transferSubmissionMode === 'steady-rate' || useManualMineBlocks
           ? []
           : await mapLimit(prepared, transferConcurrency, sendTransfer);
       benchLog('submitted transfers', {
@@ -1322,7 +1362,30 @@ describe('EncryptedERC20 benchmark', function () {
         transferSubmissionMode,
       });
 
-      if (transferSubmissionMode === 'manual-mine') {
+      let manualBlockTimings: (TransferTiming & { blockNumber: number })[] | undefined;
+      if (useManualMineBlocks) {
+        const expectedBlocks = Math.ceil(prepared.length / manualMineTransfersPerBlock);
+        if (expectedBlocks > manualMineMaxBlocks) {
+          throw new Error(
+            `Manual-mine block size requires ${expectedBlocks} blocks, above ERC20_BENCH_MANUAL_MINE_MAX_BLOCKS=${manualMineMaxBlocks}`,
+          );
+        }
+        const result = await submitTransfersInManualBlocks(
+          prepared,
+          manualMineTransfersPerBlock,
+          transferConcurrency,
+          sendTransfer,
+          awaitReceipt,
+          (receipts) => observedTimings.push(...receipts),
+        );
+        manualBlockTimings = result.timings;
+        manualMineBlocks = result.minedBlocks;
+        benchLog('manual mined transfer blocks', {
+          manualMineBlocks,
+          transfersPerBlock: manualMineTransfersPerBlock,
+          submitted: prepared.length,
+        });
+      } else if (transferSubmissionMode === 'manual-mine') {
         manualMineBlocks = await mineUntilSubmittedTransfersHaveReceipts(submitted, manualMineMaxBlocks);
         benchLog('manual mined transfers', {
           manualMineBlocks,
@@ -1331,7 +1394,8 @@ describe('EncryptedERC20 benchmark', function () {
       }
 
       timingsWithBlocks =
-        transferSubmissionMode === 'steady-rate'
+        manualBlockTimings ??
+        (transferSubmissionMode === 'steady-rate'
           ? await submitTransfersAtSteadyRate(
               prepared,
               steadyTransfersPerBlock,
@@ -1354,7 +1418,7 @@ describe('EncryptedERC20 benchmark', function () {
                   observedTimings.push(timing);
                   return timing;
                 },
-              );
+              ));
 
       await pipelinePoll;
     } finally {
@@ -1527,6 +1591,7 @@ describe('EncryptedERC20 benchmark', function () {
       concurrency: {
         transfer: transferConcurrency,
         steadyTransfersPerBlock,
+        manualMineTransfersPerBlock,
         proofGeneration: proofConcurrency,
         proofRetries,
         funding: fundConcurrency,
