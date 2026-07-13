@@ -14,14 +14,14 @@ describe("SDK progress provenance", () => {
     })).toEqual({ requestId: "request-a", jobId: "job-a" });
   });
 
-  it("rejects a public-decrypt terminal request or job identity mismatch", () => {
+  it("allows per-response request identities while requiring a stable job identity", () => {
     const initial = { requestId: "request-a", jobId: "job-a" };
     expect(sdkTerminalIdentityError(initial, {
       type: "succeeded", method: "GET", requestId: "request-b", jobId: "job-a",
-    })).toMatch(/did not match/);
+    })).toBeUndefined();
     expect(sdkTerminalIdentityError(initial, {
       type: "succeeded", method: "GET", requestId: "request-a", jobId: "job-b",
-    })).toMatch(/did not match/);
+    })).toMatch(/job identity did not match/);
   });
 
   it("rejects missing POST acceptance or terminal success identity", () => {
@@ -31,6 +31,6 @@ describe("SDK progress provenance", () => {
     expect(sdkTerminalIdentityError(
       { requestId: "request-a", jobId: "job-a" },
       { type: "succeeded", method: "GET", jobId: "job-a" },
-    )).toMatch(/did not match/);
+    )).toMatch(/HTTP request identity/);
   });
 });

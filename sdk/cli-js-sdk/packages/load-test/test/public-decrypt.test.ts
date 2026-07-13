@@ -50,7 +50,30 @@ describe("publicValuesMatch", () => {
     ).toBe(false);
   });
 
-  it("keeps POST provenance and rejects mismatched terminal SDK identity", async () => {
+  it.each([
+    {
+      label: "accepts rotating HTTP request identities for one job",
+      terminalRequestId: "terminal-request",
+      terminalJobId: "post-job",
+      outcome: "succeeded",
+      errorLabel: undefined,
+      verified: true,
+    },
+    {
+      label: "rejects a mismatched terminal job identity",
+      terminalRequestId: "post-request",
+      terminalJobId: "wrong-job",
+      outcome: "protocol_error",
+      errorLabel: "client_response_identity_mismatch",
+      verified: false,
+    },
+  ] as const)("keeps POST telemetry and $label", async ({
+    terminalRequestId,
+    terminalJobId,
+    outcome,
+    errorLabel,
+    verified,
+  }) => {
     const decryptPublicValuesWithSignatures = vi.fn().mockImplementation(
       async (parameters: Record<string, unknown>) => {
         const onProgress = (
@@ -68,7 +91,7 @@ describe("publicValuesMatch", () => {
         });
         onProgress({
           type: "succeeded", method: "GET", status: 200,
-          requestId: "wrong-request", jobId: "post-job", elapsed: 3, retryCount: 2,
+          requestId: terminalRequestId, jobId: terminalJobId, elapsed: 3, retryCount: 2,
         });
         return { clearValues: [{ type: "uint64", value: 42n }] };
       },
@@ -107,9 +130,9 @@ describe("publicValuesMatch", () => {
       echoedRequestId: "post-request",
       jobId: "post-job",
       submitLatencyMs: 1,
-      outcome: "protocol_error",
-      errorLabel: "client_response_identity_mismatch",
-      verified: false,
+      outcome,
+      ...(errorLabel ? { errorLabel } : {}),
+      verified,
     });
   });
 });

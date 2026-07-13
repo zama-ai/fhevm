@@ -18,7 +18,12 @@ export const captureInitialPostIdentity = (
     : undefined;
 };
 
-/** A successful SDK result is trusted only when it belongs to the accepted job. */
+/**
+ * A successful SDK result is trusted only when it belongs to the accepted job.
+ * `requestId` identifies an individual HTTP exchange: some relayers echo a
+ * caller-provided correlation id, while others generate a fresh id per
+ * response. The POST's `jobId` is the stable asynchronous operation identity.
+ */
 export const sdkTerminalIdentityError = (
   initial: ProgressIdentity | undefined,
   terminal: SdkProgress | undefined,
@@ -27,8 +32,11 @@ export const sdkTerminalIdentityError = (
   if (terminal?.type !== "succeeded") {
     return "SDK returned clear values without terminal success provenance.";
   }
-  if (terminal.requestId !== initial.requestId || terminal.jobId !== initial.jobId) {
-    return "SDK terminal progress identity did not match the initial POST acceptance.";
+  if (typeof terminal.requestId !== "string") {
+    return "SDK terminal success did not report an HTTP request identity.";
+  }
+  if (terminal.jobId !== initial.jobId) {
+    return "SDK terminal progress job identity did not match the initial POST acceptance.";
   }
   return undefined;
 };

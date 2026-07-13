@@ -95,7 +95,7 @@ const progress = {
     method: "GET",
     operation: "USER_DECRYPT",
     status: 200,
-    requestId: "echoed",
+    requestId: "terminal-http-request",
     jobId: "job",
     elapsed: 100,
     retryCount: 2,
@@ -313,7 +313,7 @@ describe("UserDecryptExecutor", () => {
   it.each([
     ["user-decrypt", false],
     ["delegated-user-decrypt", true],
-  ] as const)("rejects mismatched SDK terminal provenance for %s", async (_flow, delegated) => {
+  ] as const)("rejects mismatched SDK terminal job provenance for %s", async (_flow, delegated) => {
     mocks.openIfExists.mockResolvedValue({
       meta: meta(delegated),
       loadItems: vi.fn().mockResolvedValue([item()]),
@@ -325,7 +325,7 @@ describe("UserDecryptExecutor", () => {
           parameters.options as { onProgress: (value: unknown) => void }
         ).onProgress;
         onProgress(progress.queued);
-        onProgress({ ...progress.succeeded, requestId: "different-request" });
+        onProgress({ ...progress.succeeded, jobId: "different-job" });
         return [{ type: "uint64", value: 42n }];
       },
     );
