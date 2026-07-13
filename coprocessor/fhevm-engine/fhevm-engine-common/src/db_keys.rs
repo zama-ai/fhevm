@@ -8,7 +8,7 @@ use std::{num::NonZeroUsize, ops::DerefMut, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::info;
 
-#[cfg(all(feature = "gpu", not(feature = "latency")))]
+#[cfg(feature = "gpu")]
 use tfhe::core_crypto::gpu::get_number_of_gpus;
 use tfhe::xof_key_set::CompressedXofKeySet;
 
@@ -280,18 +280,6 @@ impl DbKeyCache {
                 })?
                 .into_raw_parts();
 
-            #[cfg(feature = "latency")]
-            let gpu_sks = vec![
-                kxs.decompress_to_gpu()
-                    .map_err(|err| {
-                        anyhow::anyhow!(
-                            "failed to decompress CompressedXofKeySet to CudaServerKey: {err}"
-                        )
-                    })?
-                    .into_raw_parts()
-                    .1,
-            ];
-            #[cfg(not(feature = "latency"))]
             let gpu_sks = {
                 let num_gpus = get_number_of_gpus() as u64;
                 (0..num_gpus)
