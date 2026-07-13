@@ -28,11 +28,11 @@ describe("shared scenario overrides", () => {
   it("preserves the canonical mixed workload before applying overrides", () => {
     const mixed = createBuiltinScenario("open-mixed");
     expect(mixed.flows).toEqual([
-      { flow: "input-proof", weight: 6, handlesPerRequest: 1 },
-      { flow: "user-decrypt", weight: 3, handlesPerRequest: 1 },
-      { flow: "public-decrypt", weight: 1, handlesPerRequest: 2 },
+      { flow: "input-proof", weight: 2, handlesPerRequest: 1 },
+      { flow: "user-decrypt", weight: 2, handlesPerRequest: 1 },
+      { flow: "public-decrypt", weight: 2, handlesPerRequest: 2 },
     ]);
-    expect(mixed.shape).toEqual({ kind: "constant", rps: 10, durationSec: 600 });
+    expect(mixed.shape).toEqual({ kind: "constant", rps: 6, durationSec: 300 });
   });
 
   it("applies standalone overrides to custom JSON before planning", async () => {
@@ -106,7 +106,7 @@ describe("shared scenario overrides", () => {
     const closed = createBuiltinScenario("closed-ramp", { vus: 3, durationSec: 7 });
     expect(closed.shape.kind).toBe("closed");
     if (closed.shape.kind !== "closed") throw new Error("Expected closed shape.");
-    expect(closed.shape.stages?.map((stage) => stage.vus)).toEqual([3, 6, 9, 12, 15, 18]);
+    expect(closed.shape.stages?.map((stage) => stage.vus)).toEqual([3, 6, 9, 12, 15]);
     expect(closed.shape.stages?.every((stage) => stage.durationSec === 7)).toBe(true);
   });
 

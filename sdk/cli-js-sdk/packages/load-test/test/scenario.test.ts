@@ -50,8 +50,8 @@ describe("builtin scenarios", () => {
     const ramp = createBuiltinScenario("closed-ramp", { vus: 2, durationSec: 30 });
     expect(ramp.shape.kind).toBe("closed");
     if (ramp.shape.kind !== "closed") throw new Error("expected closed shape");
-    expect(ramp.shape.stages?.map((stage) => stage.vus)).toEqual([2, 4, 6, 8, 10, 12]);
-    expect(shapeDurationSec(ramp.shape)).toBe(180);
+    expect(ramp.shape.stages?.map((stage) => stage.vus)).toEqual([2, 4, 6, 8, 10]);
+    expect(shapeDurationSec(ramp.shape)).toBe(150);
   });
 
   it("advertised builtins distinguish open, closed, and drain models", () => {
@@ -62,7 +62,7 @@ describe("builtin scenarios", () => {
       } else if (name.startsWith("closed-")) {
         expect(scenario.shape.kind).toBe("closed");
       } else {
-        expect(name).toBe("drain");
+        expect(["drain", "smoke"]).toContain(name);
         expect(scenario.shape.kind).toBe("burst");
       }
     }

@@ -85,7 +85,11 @@ beforeEach(() => {
     outputDir: "/tmp/interrupted-run",
     status: "interrupted",
   });
-  mocks.loadScenario.mockReset().mockResolvedValue({ name: "scenario" });
+  mocks.loadScenario.mockReset().mockResolvedValue({
+    name: "scenario",
+    flows: [{ flow: "input-proof", weight: 1, handlesPerRequest: 1 }],
+    shape: { kind: "constant", rps: 1, durationSec: 1 },
+  });
   mocks.loadSuite.mockReset().mockResolvedValue({ name: "suite" });
   mocks.runSuite.mockReset().mockResolvedValue({
     status: "interrupted",
