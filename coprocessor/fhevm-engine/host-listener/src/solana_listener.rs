@@ -79,9 +79,6 @@ pub async fn run(
     );
 
     let mut cursor: Option<Signature> = None;
-    #[cfg(feature = "solana-reconstruct")]
-    let mut encrypted_value_tracker =
-        crate::solana_reconstruct::EncryptedValueLineageTracker::new();
     let mut ticker = tokio::time::interval(config.poll_interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -117,14 +114,7 @@ pub async fn run(
         for signature in signatures {
             let result = match tokio::time::timeout(
                 SOLANA_RPC_AWAIT_TIMEOUT,
-                ingest_signature(
-                    db,
-                    rpc,
-                    config,
-                    &signature,
-                    #[cfg(feature = "solana-reconstruct")]
-                    &mut encrypted_value_tracker,
-                ),
+                ingest_signature(db, rpc, config, &signature),
             )
             .await
             {
@@ -237,8 +227,6 @@ async fn ingest_signature(
     rpc: &RpcClient,
     config: &SolanaListenerConfig,
     signature: &Signature,
-    #[cfg(feature = "solana-reconstruct")]
-    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
 ) -> std::result::Result<(), SignatureIngestError> {
     let confirmed = rpc
         .get_transaction_with_config(
@@ -253,14 +241,11 @@ async fn ingest_signature(
         .with_context(|| format!("get_transaction {signature}"))
         .map_err(SignatureIngestError::Retry)?;
 
-    let (events, block) = extract_host_events_with_tracker(
-        &confirmed,
-        &config.program_id,
-        #[cfg(feature = "solana-reconstruct")]
-        encrypted_value_tracker,
-    )
-    .with_context(|| format!("decode CPI events for transaction {signature}"))
-    .map_err(SignatureIngestError::Skip)?;
+    let (events, block) = extract_host_events(&confirmed, &config.program_id)
+        .with_context(|| {
+            format!("decode CPI events for transaction {signature}")
+        })
+        .map_err(SignatureIngestError::Skip)?;
 
     if events.is_empty() {
         return Ok(());
@@ -314,24 +299,6 @@ async fn ingest_signature(
 pub fn extract_host_events(
     confirmed: &EncodedConfirmedTransactionWithStatusMeta,
     program_id: &Pubkey,
-) -> Result<(Vec<SolanaHostEvent>, SolanaBlockMeta)> {
-    #[cfg(feature = "solana-reconstruct")]
-    {
-        let mut tracker =
-            crate::solana_reconstruct::EncryptedValueLineageTracker::new();
-        extract_host_events_with_tracker(confirmed, program_id, &mut tracker)
-    }
-    #[cfg(not(feature = "solana-reconstruct"))]
-    {
-        extract_host_events_with_tracker(confirmed, program_id)
-    }
-}
-
-fn extract_host_events_with_tracker(
-    confirmed: &EncodedConfirmedTransactionWithStatusMeta,
-    program_id: &Pubkey,
-    #[cfg(feature = "solana-reconstruct")]
-    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
 ) -> Result<(Vec<SolanaHostEvent>, SolanaBlockMeta)> {
     let block = block_meta(confirmed)?;
     let meta = confirmed
@@ -396,7 +363,6 @@ fn extract_host_events_with_tracker(
             crate::solana_reconstruct::decode_encrypted_value_material_request_events(
                 &all_instructions,
                 &program_id,
-                encrypted_value_tracker,
             ),
         );
         events

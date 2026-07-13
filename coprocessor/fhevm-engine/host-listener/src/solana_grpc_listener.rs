@@ -190,8 +190,6 @@ pub async fn run(
     // `slot -> Clock.unix_timestamp` from the Clock sysvar stream (the value the
     // program uses in handle derivation, which differs from getBlockTime).
     let mut slot_clock_ts: HashMap<u64, i64> = HashMap::new();
-    let mut encrypted_value_tracker =
-        crate::solana_reconstruct::EncryptedValueLineageTracker::new();
     let mut from_slot: Option<u64> = None;
 
     loop {
@@ -205,7 +203,6 @@ pub async fn run(
             &mut slot_time,
             &mut slot_bank_hash,
             &mut slot_clock_ts,
-            &mut encrypted_value_tracker,
             &mut from_slot,
             &cancel,
         )
@@ -260,7 +257,6 @@ async fn subscribe_loop(
     slot_time: &mut HashMap<u64, PrimitiveDateTime>,
     slot_bank_hash: &mut HashMap<u64, [u8; 32]>,
     slot_clock_ts: &mut HashMap<u64, i64>,
-    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
     from_slot: &mut Option<u64>,
     cancel: &CancellationToken,
 ) -> Result<()> {
@@ -357,7 +353,6 @@ async fn subscribe_loop(
                                 ingest_transaction(
                                     db, rpc, config, slot, &info, slot_time,
                                     &*slot_bank_hash, &*slot_clock_ts,
-                                    encrypted_value_tracker,
                                 ),
                             )
                             .await
@@ -493,7 +488,6 @@ async fn ingest_transaction(
     slot_time: &mut HashMap<u64, PrimitiveDateTime>,
     slot_bank_hash: &HashMap<u64, [u8; 32]>,
     slot_clock_ts: &HashMap<u64, i64>,
-    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
 ) -> std::result::Result<(), IngestFailure> {
     let meta = info
         .meta
@@ -619,8 +613,6 @@ async fn ingest_transaction(
         slot,
         slot_bank_hash,
         slot_clock_ts,
-        rpc,
-        encrypted_value_tracker,
     )
     .await
     .map_err(|err| {
@@ -729,8 +721,6 @@ async fn reconstruct_events_for_insert(
     slot: u64,
     slot_bank_hash: &HashMap<u64, [u8; 32]>,
     slot_clock_ts: &HashMap<u64, i64>,
-    _rpc: &RpcClient,
-    encrypted_value_tracker: &mut crate::solana_reconstruct::EncryptedValueLineageTracker,
 ) -> Result<ReconstructionOutcome> {
     use crate::solana_adapter::SolanaHostEvent;
     use crate::solana_reconstruct::{
@@ -770,7 +760,6 @@ async fn reconstruct_events_for_insert(
             crate::solana_reconstruct::decode_encrypted_value_material_request_events(
                 instructions,
                 &config.program_id,
-                encrypted_value_tracker,
             );
         return Ok(ReconstructionOutcome::Complete(events));
     };
@@ -803,10 +792,9 @@ async fn reconstruct_events_for_insert(
                 if let (Some(index), Some(handle)) =
                     (step.durable_encrypted_value_index, handle)
                 {
-                    if let Some(encrypted_value) =
-                        fhe_eval_durable_encrypted_value(&ix.accounts, index)
+                    if fhe_eval_durable_encrypted_value(&ix.accounts, index)
+                        .is_some()
                     {
-                        encrypted_value_tracker.record(encrypted_value, handle);
                         events.push(SolanaHostEvent::MaterialRequest(
                             reconstruct_acl_record_bound_material_request(
                                 handle,
@@ -842,17 +830,11 @@ async fn reconstruct_events_for_insert(
         {
             let encrypted_value_index =
                 encrypted_value_account_index(&instruction);
-            if let Some(encrypted_value) =
-                ix.accounts.get(encrypted_value_index).copied()
-            {
+            if ix.accounts.get(encrypted_value_index).is_some() {
                 events.extend(
-                    encrypted_value_material_requests(
-                        &instruction,
-                        encrypted_value,
-                        encrypted_value_tracker,
-                    )
-                    .into_iter()
-                    .map(SolanaHostEvent::MaterialRequest),
+                    encrypted_value_material_requests(&instruction)
+                        .into_iter()
+                        .map(SolanaHostEvent::MaterialRequest),
                 );
             }
         }
@@ -918,7 +900,6 @@ mod fhe_eval_acl_tests {
     };
     use anchor_lang::AnchorSerialize;
     use sha2::{Digest, Sha256};
-    use solana_client::nonblocking::rpc_client::RpcClient;
     use std::collections::HashMap;
     use zama_host::state::{
         FheBinaryOpCode as PgmBinaryOpCode, FheEvalArgs, FheEvalOperand,
@@ -928,8 +909,8 @@ mod fhe_eval_acl_tests {
     use crate::database::tfhe_event_propagate::Handle;
     use crate::solana_adapter::SolanaHostEvent;
     use crate::solana_reconstruct::{
-        AllowSubjectsArgs, DecodedInstruction, EncryptedValueLineageTracker,
-        EncryptedValueSubjectGrant, ENCRYPTED_VALUE_ACCOUNT_INDEX,
+        AllowSubjectsArgs, DecodedInstruction, EncryptedValueSubjectGrant,
+        ENCRYPTED_VALUE_ACCOUNT_INDEX,
     };
     use zama_host::state::AclSubjectEntry;
 
@@ -1083,7 +1064,7 @@ mod fhe_eval_acl_tests {
     }
 
     #[tokio::test]
-    async fn direct_allow_subjects_reconstructs_material_request() {
+    async fn direct_allow_subjects_schedules_no_material() {
         let allow_data = encode_instruction(
             "allow_subjects",
             AllowSubjectsArgs {
@@ -1093,10 +1074,6 @@ mod fhe_eval_acl_tests {
         let instructions =
             vec![decoded_ix(allow_data, encrypted_value_accounts(), 0, false)];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let rpc = RpcClient::new("http://127.0.0.1:1".to_owned());
-        let mut tracker = EncryptedValueLineageTracker::new();
-        tracker.record(ENCRYPTED_VALUE, [4; 32]);
-
         let events = complete_events(
             reconstruct_events_for_insert(
                 &config(),
@@ -1104,20 +1081,12 @@ mod fhe_eval_acl_tests {
                 42,
                 &slot_bank_hash,
                 &slot_clock_ts,
-                &rpc,
-                &mut tracker,
             )
             .await
             .expect("reconstruction should return lifecycle events"),
         );
 
-        assert!(events.iter().any(|event| {
-            matches!(
-                event,
-                SolanaHostEvent::MaterialRequest(request)
-                    if request.handle == Handle::from([4; 32])
-            )
-        }));
+        assert!(events.is_empty());
     }
 
     /// A superseding durable `fhe_eval` output recomputes its handle directly
@@ -1158,10 +1127,6 @@ mod fhe_eval_acl_tests {
         let instructions =
             vec![decoded_ix(fhe_eval_data, fhe_eval_accounts(), 0, false)];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let rpc = RpcClient::new("http://127.0.0.1:1".to_owned());
-        let mut tracker = EncryptedValueLineageTracker::new();
-        tracker.record(ENCRYPTED_VALUE, [8; 32]);
-
         let events = complete_events(
             reconstruct_events_for_insert(
                 &config(),
@@ -1169,8 +1134,6 @@ mod fhe_eval_acl_tests {
                 42,
                 &slot_bank_hash,
                 &slot_clock_ts,
-                &rpc,
-                &mut tracker,
             )
             .await
             .expect(
@@ -1200,8 +1163,6 @@ mod fhe_eval_acl_tests {
         }));
     }
 
-    /// A durable `fhe_eval` output born public inline (`make_public: true`, with
-    /// no standalone `make_handle_public` instruction) must yield a
     /// A durable output born public still requests material for its recomputed
     /// handle. The durable bind and public transition share that request.
     #[tokio::test]
@@ -1236,9 +1197,6 @@ mod fhe_eval_acl_tests {
             false,
         )];
         let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let rpc = RpcClient::new("http://127.0.0.1:1".to_owned());
-        let mut tracker = EncryptedValueLineageTracker::new();
-
         let events = complete_events(
             reconstruct_events_for_insert(
                 &config(),
@@ -1246,8 +1204,6 @@ mod fhe_eval_acl_tests {
                 42,
                 &slot_bank_hash,
                 &slot_clock_ts,
-                &rpc,
-                &mut tracker,
             )
             .await
             .expect("born-public create reconstruction should succeed"),
