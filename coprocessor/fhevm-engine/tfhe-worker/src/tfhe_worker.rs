@@ -365,6 +365,15 @@ async fn query_ciphertexts<'a>(
     // before activation) still live in `public.ciphertexts` and must be
     // fetched explicitly. We do this as a two-step query: try GCS first,
     // then fetch the missing handles from `public.ciphertexts`.
+    //
+    // The public fallback is *block-gated*: `public.ciphertexts` is the live
+    // BCS table and keeps growing throughout the dry-run, so an unbounded read
+    // could surface a ciphertext BCS produced *after* the snapshot point.
+    // Importing such post-start state (which differs across operators and, for
+    // a breaking upgrade, differs byte-for-byte from GCS's own re-derivation)
+    // would break the consensus gate. We therefore serve a fallback row only
+    // when it is not known to have been produced after its track's start block
+    // — see the query below.
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
         HashMap::with_capacity(cts_to_query.len());
 
@@ -391,14 +400,66 @@ async fn query_ciphertexts<'a>(
             .cloned()
             .collect();
         if !missing.is_empty() {
-            // Fully qualified — bypass search_path so this read is unambiguous
-            // even if the connection's search_path changes.
+            // Per-track start-block bounds for this GCS upgrade. `upgrade_state`
+            // is a shared (non-duplicated) control-plane table; read it fully
+            // qualified so the result is unambiguous regardless of search_path.
+            let gate: Option<(Option<i64>, Option<i64>, Option<i64>)> = sqlx::query_as(
+                "SELECT start_block, gw_start_block, host_chain_id
+                 FROM public.upgrade_state
+                 WHERE stack_role = 'GCS'",
+            )
+            .fetch_optional(trx.as_mut())
+            .await
+            .map_err(|err| {
+                error!(target: "tfhe_worker", { error = %err }, "error while reading GCS upgrade_state bounds");
+                err
+            })?;
+
+            let (start_block, gw_start_block, host_chain_id) = match gate {
+                Some((Some(sb), Some(gw), Some(hc))) => (sb, gw, hc),
+                other => {
+                    // Fail safe: without complete bounds we cannot prove a
+                    // public row is pre-snapshot, so we serve none. The
+                    // dependent computation then stalls (no consensus) rather
+                    // than risking divergence — the intended safety behaviour.
+                    warn!(target: "tfhe_worker", { row = ?other, missing = missing.len() },
+                        "GCS upgrade_state bounds incomplete; skipping public.ciphertexts fallback");
+                    return Ok(ciphertext_map);
+                }
+            };
+
+            // Block-gated fallback into the live `public.ciphertexts`. Fully
+            // qualified to bypass search_path. A missing handle is served only
+            // if it is NOT known to have been produced after its track's start
+            // block. A pre-snapshot row either carries no block lineage
+            // (ancient / not-yet-bound, block_number NULL) or lineage at/below
+            // the bound; any post-start BCS write carries lineage strictly
+            // above it:
+            //   - compute outputs -> public.computations.block_number, scoped to
+            //     this upgrade's host chain (host `start_block`);
+            //   - ZK input ctxts  -> public.input_handles.block_number, which is
+            //     the *Gateway* block (`gw_start_block`).
+            // Inputs never have a `computations` row and outputs never have an
+            // `input_handles` row, so the two guards route by source without an
+            // explicit `is_input` branch.
             let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(
-                "SELECT handle, ciphertext, ciphertext_type
-                 FROM public.ciphertexts
-                 WHERE handle = ANY($1::BYTEA[])",
+                "SELECT c.handle, c.ciphertext, c.ciphertext_type
+                 FROM public.ciphertexts c
+                 WHERE c.handle = ANY($1::BYTEA[])
+                   AND NOT EXISTS (
+                       SELECT 1 FROM public.computations comp
+                       WHERE comp.output_handle = c.handle
+                         AND comp.host_chain_id = $2
+                         AND comp.block_number > $3)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM public.input_handles ih
+                       WHERE ih.handle = c.handle
+                         AND ih.block_number > $4)",
             )
             .bind(&missing)
+            .bind(host_chain_id)
+            .bind(start_block)
+            .bind(gw_start_block)
             .fetch_all(trx.as_mut())
             .await
             .map_err(|err| {
