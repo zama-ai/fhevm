@@ -178,9 +178,8 @@ pub async fn run_http_server(
         // Add OpenAPI documentation
         .merge(openapi_middleware());
 
-    // Solana MMR proof service: only mounted when a deployment configures it
-    // (interim internal endpoint until the Solana user-decrypt path calls it
-    // in-process; see relayer/src/solana_proof/http.rs).
+    // Solana MMR proof service: mounted only when configured. Clients use this
+    // endpoint to obtain the proof included in the signed user-decrypt request.
     if let Some(service) = solana_proof_service {
         info!("Solana MMR proof service enabled at /internal/solana/mmr-proof");
         app = app.merge(crate::solana_proof::http::router(service));

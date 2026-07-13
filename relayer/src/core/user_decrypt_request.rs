@@ -182,7 +182,8 @@ mod tests {
     use crate::core::event::{
         HandleContractPair, HandleEntry, RequestValidity, RequestValiditySeconds,
     };
-    use alloy::primitives::{Address, Bytes, U256};
+    use crate::core::job_id::JobId;
+    use alloy::primitives::{Address, Bytes, B256, U256};
 
     fn sample_legacy_direct() -> UserDecryptRequest {
         UserDecryptRequest::LegacyDirect {
@@ -240,6 +241,34 @@ mod tests {
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
         }
+    }
+
+    fn sample_solana_unified(extra_data: Bytes) -> UserDecryptRequest {
+        UserDecryptRequest::SolanaUnifiedV1 {
+            handles: vec![HandleEntry {
+                ct_handle: U256::from(123),
+                contract_address: Address::from([1; 20]),
+                owner_address: Address::from([2; 20]),
+            }],
+            user_identity: B256::from([2; 32]),
+            allowed_acl_domain_keys: vec![B256::from([1; 32])],
+            request_validity: RequestValiditySeconds {
+                start_timestamp: U256::from(1000),
+                duration_seconds: U256::from(604_800),
+            },
+            nonce: B256::from([3; 32]),
+            signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
+            public_key: Bytes::from(vec![0xab, 0xcd]),
+            extra_data,
+        }
+    }
+
+    fn solana_proof_extra_data(proof: u8) -> Bytes {
+        let mut data = vec![0x03];
+        data.extend_from_slice(&[0; 32 + 32 + 8]);
+        data.extend_from_slice(&1u32.to_be_bytes());
+        data.push(proof);
+        data.into()
     }
 
     #[test]
@@ -333,5 +362,42 @@ mod tests {
         assert_ne!(direct, delegated);
         assert_ne!(direct, unified);
         assert_ne!(delegated, unified);
+    }
+
+    #[test]
+    fn solana_request_domain_and_proof_pin_job_identity() {
+        let first = sample_solana_unified(solana_proof_extra_data(0xaa));
+        let second = sample_solana_unified(solana_proof_extra_data(0xbb));
+        let first_hash = first.content_hash();
+        let second_hash = second.content_hash();
+
+        // This golden digest makes the Solana variant/domain separator load-bearing,
+        // rather than relying on unlike EVM and Solana payloads to hash differently.
+        assert_eq!(
+            hex::encode(first_hash),
+            "71f74ed228523685ec6de56b3b50753553a12214504d46b0f15e496e3b6f7c8c"
+        );
+        assert_ne!(first_hash, second_hash);
+        assert_ne!(JobId::from(first_hash), JobId::from(second_hash));
+    }
+
+    #[test]
+    fn solana_excluded_fields_do_not_affect_content_hash() {
+        let first = sample_solana_unified(solana_proof_extra_data(0xaa));
+        let mut second = first.clone();
+        if let UserDecryptRequest::SolanaUnifiedV1 {
+            signature,
+            request_validity,
+            ..
+        } = &mut second
+        {
+            *signature = Bytes::from(vec![0xff; 4]);
+            *request_validity = RequestValiditySeconds {
+                start_timestamp: U256::from(999_999),
+                duration_seconds: U256::from(99_999),
+            };
+        }
+
+        assert_eq!(first.content_hash(), second.content_hash());
     }
 }
