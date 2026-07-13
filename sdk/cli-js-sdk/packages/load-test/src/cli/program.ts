@@ -2,6 +2,8 @@ import "./env-file";
 
 import { DEFAULT_NETWORK, NETWORKS } from "@cli-fhevm-sdk/toolkit/types";
 import { Command, Option } from "@commander-js/extra-typings";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { registerPoolCommands } from "./commands/pool";
 import { registerRunCommand } from "./commands/run";
@@ -10,10 +12,16 @@ import { registerSuiteCommands } from "./commands/suite";
 import { registerReportCommands } from "./commands/report";
 import { registerBaselineCommands } from "./commands/baseline";
 
+const packageJsonPath = fileURLToPath(new URL("../../package.json", import.meta.url));
+const packageVersion = (
+  JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version?: string }
+).version ?? "0.0.0";
+
 export const createProgram = (): Command => {
   const program = new Command()
     .name("load-test")
     .description("FHEVM relayer load-test tool for legacy and v2 implementations")
+    .version(packageVersion)
     .addOption(
       new Option("-n, --network <network>", `network to target (default: ${DEFAULT_NETWORK})`).choices(NETWORKS),
     )

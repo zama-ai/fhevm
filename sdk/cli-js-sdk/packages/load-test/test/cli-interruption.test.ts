@@ -151,6 +151,16 @@ describe("CLI interruption exit behavior", () => {
     expect(program.helpInformation()).toContain("network to target (default:");
   });
 
+  it("reports a semantic version via --version", async () => {
+    const program = createProgram();
+    let output = "";
+    program.configureOutput({ writeOut: (value) => { output += value; } });
+    program.exitOverride();
+    await expect(program.parseAsync(["node", "load-test", "--version"]))
+      .rejects.toMatchObject({ code: "commander.version" });
+    expect(output.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
   it("renders top-level help and routes a scenario action", async () => {
     const help = createProgram();
     let output = "";
