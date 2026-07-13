@@ -104,10 +104,18 @@ export const parseBoundedNonNegativeNumber = (
 
 export const parseValueTypes = (value: string): string[] => {
   const types = value.split(",").map((entry) => entry.trim());
+  const seen = new Set<string>();
   for (const type of types) {
     if (!(FHE_VALUE_TYPES as readonly string[]).includes(type)) {
       throw new Error(`Unknown value type "${type}". Expected: ${FHE_VALUE_TYPES.join(", ")}.`);
     }
+    if (seen.has(type)) {
+      throw new Error(
+        `Duplicate value type "${type}" in --types. Each type must appear at most once, ` +
+          "since it silently weights round-robin generation.",
+      );
+    }
+    seen.add(type);
   }
   return types;
 };

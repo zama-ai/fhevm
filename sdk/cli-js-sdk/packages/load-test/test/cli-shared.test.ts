@@ -5,6 +5,7 @@ import {
   parseBoundedIntOrAuto,
   parseBoundedNonNegativeNumber,
   parseNonNegativeNumber,
+  parseValueTypes,
 } from "../src/cli/shared";
 
 describe("parseBoundedInt", () => {
@@ -66,6 +67,22 @@ describe("parseBoundedNonNegativeNumber", () => {
   it("rejects negative values", () => {
     expect(() => parseBoundedNonNegativeNumber("--max-error-rate-increase", 1)("-0.1")).toThrow(
       /non-negative number/,
+    );
+  });
+});
+
+describe("parseValueTypes", () => {
+  it("accepts a comma-separated list of unique known types", () => {
+    expect(parseValueTypes("uint64,bool,uint8")).toEqual(["uint64", "bool", "uint8"]);
+  });
+
+  it("rejects unknown types", () => {
+    expect(() => parseValueTypes("uint64,not-a-type")).toThrow(/Unknown value type/);
+  });
+
+  it("rejects duplicate types", () => {
+    expect(() => parseValueTypes("uint64,bool,uint64")).toThrow(
+      /Duplicate value type "uint64" in --types/,
     );
   });
 });
