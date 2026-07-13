@@ -115,6 +115,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   operators: "Run manual operator workflows.",
   "hcu-block-cap": "Run HCU block cap scenarios.",
   erc20: "Run ERC20 transfer coverage.",
+  "erc20-benchmark": "Run independent encrypted ERC20 transfer throughput and latency benchmark.",
+  "auction-benchmark": "Run confidential auction bid throughput and latency benchmark.",
   "negative-acl": "Run negative ACL scenarios.",
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
   "confidential-bridge": "Run confidential bridge cross-chain decrypt coverage (multi-chain).",
@@ -483,6 +485,12 @@ const waitForDriftRevertStatus = async (
 };
 
 /** Builds the `docker exec` argv used to run tests inside the test-suite container. */
+const benchmarkEnvExecArgs = () =>
+  Object.keys(process.env)
+    .filter((name) => name.startsWith("ERC20_BENCH_") || name.startsWith("AUCTION_BENCH_"))
+    .sort()
+    .flatMap((name) => ["-e", `${name}=${process.env[name] ?? ""}`]);
+
 export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] = []) => [
   "docker",
   "exec",
@@ -490,6 +498,7 @@ export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] =
   "npm_config_update_notifier=false",
   "-e",
   "NPM_CONFIG_UPDATE_NOTIFIER=false",
+  ...benchmarkEnvExecArgs(),
   ...extraExecArgs,
   TEST_SUITE_CONTAINER,
   ...tail,

@@ -2,7 +2,7 @@ import '@nomicfoundation/hardhat-toolbox';
 import 'chai-as-promised';
 import dotenv from 'dotenv';
 import type { HardhatUserConfig } from 'hardhat/config';
-import { task, vars } from 'hardhat/config';
+import { task, vars } from 'hardhat/config.js';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 
@@ -180,7 +180,7 @@ const config: HardhatUserConfig = {
   defaultNetwork: DEFAULT_NETWORK,
   mocha: {
     timeout: 300000,
-    rootHooks: require('./test/consensusWatchdog').mochaHooks,
+    rootHooks: require('./test/consensusWatchdog.ts').mochaHooks,
   },
   gasReporter: {
     currency: 'USD',

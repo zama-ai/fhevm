@@ -110,7 +110,16 @@ export const createInstance = async () => {
 };
 
 // Export coprocessor config addresses for smoke tests
-export { aclAddress, coprocessorAddress, kmsVerifierAddress, protocolConfigAddress };
+export {
+  aclAddress,
+  coprocessorAddress,
+  gatewayChainID,
+  hostChainID,
+  inputAdd as inputVerifierContractAddress,
+  kmsVerifierAddress,
+  protocolConfigAddress,
+  verifyingContractAddressInputVerification,
+};
 
 // Values the unified user-decryption helper needs to build and
 // submit requests directly against the relayer's `/v3/user-decrypt` endpoint
