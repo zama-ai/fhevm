@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.is_valid AS \"context_is_valid!\", e.is_valid AS \"epoch_is_valid?\",\n                e.context_id AS \"epoch_context_id?\"\n            FROM kms_context c\n            LEFT JOIN kms_epoch e ON e.id = $2\n            WHERE c.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "context_is_valid!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "epoch_is_valid?",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "epoch_context_id?",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "10b25eb515104cb0ad7eb5f429851909a9a1ce0d3b0d183f89a90c84c342d692"
+}

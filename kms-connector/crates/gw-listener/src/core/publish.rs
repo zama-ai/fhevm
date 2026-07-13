@@ -19,7 +19,9 @@ use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
         AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
     },
-    protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
+    protocol_config::ProtocolConfig::{
+        KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
+    },
 };
 use sqlx::{
     PgExecutor, Pool, Postgres,
@@ -55,6 +57,17 @@ pub async fn publish_batch(
 ) -> anyhow::Result<()> {
     let mut tx = db_pool.begin().await?;
     for event in events {
+        // Destruction events also invalidate the local validation cache
+        match &event.kind {
+            ProtocolEventKind::KmsContextDestroyed(e) => {
+                invalidate_kms_context(&mut *tx, e.kmsContextId).await?
+            }
+            ProtocolEventKind::KmsEpochDestroyed(e) => {
+                invalidate_kms_epoch(&mut *tx, e.epochId).await?
+            }
+            _ => {}
+        }
+
         publish_event_inner(&mut *tx, event).await?;
     }
     update_last_block_polled(&mut *tx, chain, Some(block_number)).await?;
@@ -104,6 +117,12 @@ async fn publish_event_inner<'e>(
         }
         ProtocolEventKind::NewKmsEpoch(e) => {
             publish_new_kms_epoch(executor, e, tx_hash, created_at, otlp_ctx).await
+        }
+        ProtocolEventKind::KmsContextDestroyed(e) => {
+            publish_kms_context_destroyed(executor, e, tx_hash, created_at, otlp_ctx).await
+        }
+        ProtocolEventKind::KmsEpochDestroyed(e) => {
+            publish_kms_epoch_destroyed(executor, e, tx_hash, created_at, otlp_ctx).await
         }
     }
     .map_err(|err| anyhow!("Failed to publish event: {err}"))?;
@@ -414,24 +433,38 @@ pub async fn publish_context_and_epoch(
 ) -> anyhow::Result<()> {
     info!("Publishing KMS context #{context_id} (epoch #{epoch_id}) in DB...");
     let now = Utc::now();
-    let query_result = sqlx::query!(
-        "INSERT INTO kms_context(id, epoch_id, is_valid, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+    let mut tx = db_pool.begin().await?;
+    let context_result = sqlx::query!(
+        "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
+        VALUES ($1, TRUE, $2, $2) ON CONFLICT DO NOTHING",
         context_id.as_le_slice(),
-        epoch_id.as_le_slice(),
-        true,
-        now,
         now,
     )
-    .execute(db_pool)
+    .execute(&mut *tx)
     .await?;
+    let epoch_result = sqlx::query!(
+        "INSERT INTO kms_epoch(id, context_id, is_valid, created_at, updated_at)
+        VALUES ($1, $2, TRUE, $3, $3) ON CONFLICT DO NOTHING",
+        epoch_id.as_le_slice(),
+        context_id.as_le_slice(),
+        now,
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
 
-    if query_result.rows_affected() == 1 {
-        info!("KMS context #{context_id} (epoch #{epoch_id}) was successfully published!");
-    } else {
-        debug!("KMS context #{context_id} (epoch #{epoch_id}) was not published: {query_result:?}");
-    }
+    log_cache_insert_outcome(&context_result, &format!("KMS context #{context_id}"));
+    log_cache_insert_outcome(&epoch_result, &format!("KMS epoch #{epoch_id}"));
     Ok(())
+}
+
+/// Logs the outcome of a single-row insert in the context/epoch validation cache.
+fn log_cache_insert_outcome(query_result: &PgQueryResult, entity: &str) {
+    match query_result.rows_affected() {
+        1 => info!("{entity} was successfully published!"),
+        0 => info!("{entity} was already in the validation cache"),
+        _ => warn!("Unexpected query result while publishing {entity}: {query_result:?}"),
+    }
 }
 
 async fn publish_new_kms_context<'e>(
@@ -496,61 +529,87 @@ async fn publish_new_kms_epoch<'e>(
     .map_err(anyhow::Error::from)
 }
 
-/// Action derived from a decoded Ethereum log.
-#[derive(Clone, Debug, PartialEq)]
-pub enum EthereumEventAction {
-    /// Store the event in the DB, for the kms-worker to forward it to the KMS Core.
-    // Boxed to keep the enum small: `ProtocolEvent` is an order of magnitude bigger than
-    // the other variant (`clippy::large_enum_variant`).
-    StoreEvent(Box<ProtocolEvent>),
-    /// Mark a destroyed KMS context as invalid in the `kms_context` table; this implies that
-    /// all its associated epoch IDs also become invalid.
-    ///
-    /// Context destruction is the only invalidation that can ever happen: once active, an
-    /// epoch stays active on-chain until its context is destroyed (RFC-005 leaves epoch
-    /// expiration/cleanup out of scope).
-    InvalidateContext(U256),
+async fn publish_kms_context_destroyed<'e>(
+    executor: impl PgExecutor<'e>,
+    event: KmsContextDestroyed,
+    tx_hash: Option<FixedBytes<32>>,
+    created_at: DateTime<Utc>,
+    otlp_ctx: PropagationContext,
+) -> anyhow::Result<PgQueryResult> {
+    sqlx::query!(
+        "INSERT INTO kms_context_destroyed(context_id, tx_hash, created_at, otlp_context)
+        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        event.kmsContextId.as_le_slice(),
+        tx_hash.map(|h| h.to_vec()),
+        created_at,
+        bc2wrap::serialize(&otlp_ctx)?,
+    )
+    .execute(executor)
+    .await
+    .map_err(anyhow::Error::from)
 }
 
-/// Applies all the Ethereum log actions and updates the last block polled in a single
-/// transaction. On failure, the transaction is rolled back automatically.
-#[tracing::instrument(skip_all)]
-pub async fn publish_ethereum_batch(
-    db_pool: &Pool<Postgres>,
-    actions: Vec<EthereumEventAction>,
-    block_number: u64,
-) -> anyhow::Result<()> {
-    let mut tx = db_pool.begin().await?;
-    for action in actions {
-        match action {
-            EthereumEventAction::StoreEvent(event) => publish_event_inner(&mut *tx, *event).await?,
-            EthereumEventAction::InvalidateContext(context_id) => {
-                invalidate_kms_context(&mut *tx, context_id).await?
-            }
-        }
-    }
-    update_last_block_polled(&mut *tx, ChainName::Ethereum, Some(block_number)).await?;
-    tx.commit().await?;
-    Ok(())
+async fn publish_kms_epoch_destroyed<'e>(
+    executor: impl PgExecutor<'e>,
+    event: KmsEpochDestroyed,
+    tx_hash: Option<FixedBytes<32>>,
+    created_at: DateTime<Utc>,
+    otlp_ctx: PropagationContext,
+) -> anyhow::Result<PgQueryResult> {
+    sqlx::query!(
+        "INSERT INTO kms_epoch_destroyed(epoch_id, tx_hash, created_at, otlp_context)
+        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        event.epochId.as_le_slice(),
+        tx_hash.map(|h| h.to_vec()),
+        created_at,
+        bc2wrap::serialize(&otlp_ctx)?,
+    )
+    .execute(executor)
+    .await
+    .map_err(anyhow::Error::from)
 }
 
-/// Marks a destroyed KMS context as invalid; this implies that all its associated epoch IDs
-/// also become invalid.
+/// Marks a destroyed KMS context as invalid in the `kms_context` validation cache.
+///
+/// The invalidation is upserted so the destruction is recorded even if the context was not cached.
 async fn invalidate_kms_context<'e>(
     executor: impl PgExecutor<'e>,
     context_id: U256,
 ) -> anyhow::Result<()> {
-    let query_result = sqlx::query!(
-        "UPDATE kms_context SET is_valid = FALSE, updated_at = $2 WHERE id = $1",
+    let now = Utc::now();
+    sqlx::query!(
+        "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
+        VALUES ($1, FALSE, $2, $2)
+        ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2",
         context_id.as_le_slice(),
-        Utc::now(),
+        now,
     )
     .execute(executor)
     .await?;
 
-    info!(
-        "KMS context #{context_id} destroyed: {} epoch(s) invalidated in DB",
-        query_result.rows_affected()
-    );
+    info!("KMS context #{context_id} marked as destroyed in DB");
+    Ok(())
+}
+
+/// Marks a destroyed KMS epoch as invalid in the `kms_epoch` validation cache.
+///
+/// The invalidation is upserted so the destruction is recorded even if the epoch was never cached;
+/// `context_id` stays NULL in that case, as the event does not carry it.
+async fn invalidate_kms_epoch<'e>(
+    executor: impl PgExecutor<'e>,
+    epoch_id: U256,
+) -> anyhow::Result<()> {
+    let now = Utc::now();
+    sqlx::query!(
+        "INSERT INTO kms_epoch(id, is_valid, created_at, updated_at)
+        VALUES ($1, FALSE, $2, $2)
+        ON CONFLICT (id) DO UPDATE SET is_valid = FALSE, updated_at = $2",
+        epoch_id.as_le_slice(),
+        now,
+    )
+    .execute(executor)
+    .await?;
+
+    info!("KMS epoch #{epoch_id} marked as destroyed in DB");
     Ok(())
 }
