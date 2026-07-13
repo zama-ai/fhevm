@@ -25,15 +25,17 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    doc-sync guard (keeps `MMR_ACL_MVP.md`'s liveness numbers honest).
 2. **On-chain integration — Mollusk** (`solana/runtime-tests/tests/{host,token}_mollusk.rs`): runs the
    **real compiled `.so`** (built `--features poc`) against Mollusk. Covers all three auth paths, the
-   full token flows (wrap / transfer / burn→redeem / disclose), and the guards: born-public frame
-   guard, consume-once replay markers, expired-request rejection, handle supersession. Because Mollusk
+   full token flows (wrap / transfer / burn→redeem / disclose), the produced-public lifecycle batch
+   (zero/one/multiple/max-size/fail-closed), consume-once replay markers, expired-request rejection,
+   and handle supersession. Because Mollusk
    enforces the 1.4M CU budget, every passing test is also an implicit CU-fits assertion.
-3. **Handle-derivation / event-transport** (`zama-host` lib unit): `event_budget` born-public frame
-   guard, `should_emit_eval_events_as_cpi` threshold, handle-derivation determinism.
-4. **Off-chain reconstruction — host-listener** (`coprocessor/fhevm-engine/host-listener`, features
-   `solana-grpc,solana-reconstruct`): reconstructs MMR leaves from instruction data + sysvar-streamed
-   block entropy (Yellowstone gRPC), with no dependence on emitted events. Derives supersede/born-public
-   handles directly; fails closed on incomplete plans.
+3. **Handle-derivation / lifecycle transport** (`zama-host` lib unit): the maximum 16-record batch's
+    exact 1,077-byte CPI envelope and signer/readonly event-authority metadata, plus handle-derivation
+    determinism.
+4. **Off-chain reconstruction — host-listener** (`coprocessor/fhevm-engine/host-listener`, feature
+    `solana-grpc`, which includes reconstruction): reconstructs MMR leaves from instruction data +
+    sysvar-streamed block entropy (Yellowstone gRPC), with no dependence on emitted events. Derives
+    supersede/produced-public handles directly; fails closed on incomplete plans.
 5. **Off-chain proof service — relayer** (`relayer/src/solana_proof`): ingest (atomic, gap-free,
    fail-closed), decode (incl. `emit_cpi!` op-event resolution for born-public handles), replay, and
    `build_verified_proof` cross-check against confirmed peaks (a wrong record surfaces as
@@ -42,7 +44,8 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    Borsh golden manifest must match the freshly-built Anchor IDLs; EVENT_VERSION consistency across
    zama-host / confidential-token / host-listener is asserted (a mismatch would silently drop events).
 7. **End-to-end** (`.github/workflows/solana-e2e.yml`, `full-vertical.sh`): the Yellowstone-only
-   `reconstruct=true` arm runs zama-host EMITLESS and feeds the coprocessor through Yellowstone gRPC
+   path feeds ordinary computation facts through Yellowstone gRPC reconstruction while retaining only
+   the narrow produced-public lifecycle batch required by the relayer
    reconstruction. It drives the **decrypt vertical** against a local validator + full coprocessor/KMS
    stack — compute → public-decrypt (relayer MMR proof) → user-decrypt (current) → historical-user-decrypt
    (superseded handle + live MMR proof) — exercising all three authorization paths.

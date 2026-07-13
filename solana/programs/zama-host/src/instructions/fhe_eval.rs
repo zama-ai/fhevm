@@ -9,16 +9,12 @@ use super::encrypted_value::{
 use super::input_verification::{verify_input_attestation, InputVerifierParams};
 use crate::{
     errors::ZamaHostError,
-    events::{
-        FheBinaryOpEvent, FheIsInEvent, FheMulDivEvent, FheRandBoundedEvent, FheRandEvent,
-        FheSumEvent, FheTernaryOpEvent, FheUnaryOpEvent, TrivialEncryptEvent,
-    },
+    events::{ProducedPublicOutput, PublicOutputsProducedEvent},
     state::*,
 };
 
 mod admission;
 mod block_cap;
-mod event_budget;
 mod event_transport;
 mod handles;
 mod hcu;
@@ -26,8 +22,7 @@ mod preflight;
 mod walk;
 
 use admission::admit_eval_frame;
-use event_budget::eval_event_capacity;
-use event_transport::{emit_eval_events, EvalEvent};
+use event_transport::emit_public_outputs_produced;
 use handles::EvalHandleContext;
 use preflight::preflight_eval_frame;
 use walk::{walk_eval_frame, EvalStepVisitor};
@@ -100,8 +95,9 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
     // an over-budget frame before execution burns CU or creates any ACL record.
     let frame_total = admit_eval_frame(&ctx, &args, subject, &handle_context)?;
     block_cap::check(&ctx, frame_total, current_slot)?;
-    let events = execute_eval_frame(&ctx, &args, subject, current_slot, &handle_context)?;
-    emit_eval_events(&ctx, events)?;
+    let born_public_outputs =
+        execute_eval_frame(&ctx, &args, subject, current_slot, &handle_context)?;
+    emit_public_outputs_produced(&ctx, born_public_outputs)?;
     Ok(())
 }
 
@@ -112,11 +108,10 @@ fn execute_eval_frame<'info>(
     subject: Pubkey,
     current_slot: u64,
     handle_context: &EvalHandleContext<'_>,
-) -> Result<Vec<EvalEvent>> {
+) -> Result<Vec<ProducedPublicOutput>> {
     let mut execution = EvalExecutionState::new(
         ctx.remaining_accounts,
         args.steps.len(),
-        eval_event_capacity(args),
         subject,
         handle_context.chain_id,
         InputVerifierParams::from_config(&ctx.accounts.host_config),
@@ -129,12 +124,12 @@ fn execute_eval_frame<'info>(
 }
 
 /// Execution phase: resolves operands while marking the dynamic accounts used,
-/// creates durable output ACL records, and buffers the events for transport.
+/// creates durable output ACL records, and buffers produced-public lifecycle records.
 struct EvalExecutionState<'a, 'info> {
     remaining_accounts: &'a [AccountInfo<'info>],
     remaining_accounts_used: Vec<bool>,
     produced: Vec<ProducedValue>,
-    events: Vec<EvalEvent>,
+    born_public_outputs: Vec<ProducedPublicOutput>,
     subject: Pubkey,
     chain_id: u64,
     verifier_params: InputVerifierParams,
@@ -149,7 +144,6 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
     fn new(
         remaining_accounts: &'a [AccountInfo<'info>],
         step_count: usize,
-        event_capacity: usize,
         subject: Pubkey,
         chain_id: u64,
         verifier_params: InputVerifierParams,
@@ -158,7 +152,7 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
             remaining_accounts,
             remaining_accounts_used: vec![false; remaining_accounts.len()],
             produced: Vec::with_capacity(step_count),
-            events: Vec::with_capacity(event_capacity),
+            born_public_outputs: Vec::new(),
             subject,
             chain_id,
             verifier_params,
@@ -176,12 +170,12 @@ impl<'a, 'info> EvalExecutionState<'a, 'info> {
         Ok(account)
     }
 
-    fn finish(self) -> Result<Vec<EvalEvent>> {
+    fn finish(self) -> Result<Vec<ProducedPublicOutput>> {
         require!(
             self.remaining_accounts_used.iter().all(|used| *used),
             ZamaHostError::InvalidFheEvalAccount
         );
-        Ok(self.events)
+        Ok(self.born_public_outputs)
     }
 }
 
@@ -246,26 +240,27 @@ impl EvalStepVisitor for EvalExecutionState<'_, '_> {
         Ok(ResolvedOperand::encrypted(attestation.input_handle, true))
     }
 
-    fn record_op_event(&mut self, event: EvalEvent) {
-        self.events.push(event);
-    }
-
     #[inline(never)]
     fn accept_output<'info>(
         &mut self,
         ctx: &Context<'info, FheEval<'info>>,
+        op_index: u16,
         result: [u8; 32],
         output: &FheEvalOutput,
         output_public_decrypt_allowed: bool,
     ) -> Result<()> {
-        accept_eval_output(
+        let born_public_output = accept_eval_output(
             ctx,
             &mut self.remaining_accounts_used,
             &mut self.produced,
             result,
             output,
             output_public_decrypt_allowed,
+            op_index,
         )?;
+        if let Some(record) = born_public_output {
+            self.born_public_outputs.push(record);
+        }
         if let FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
             previous_handle: Some(previous_handle),
@@ -304,14 +299,15 @@ fn accept_eval_output<'info>(
     result: [u8; 32],
     output: &FheEvalOutput,
     output_public_decrypt_allowed: bool,
-) -> Result<()> {
+    op_index: u16,
+) -> Result<Option<ProducedPublicOutput>> {
     require!(
         !produced.iter().any(|value| value.handle == result),
         ZamaHostError::FheEvalDuplicateHandle
     );
 
-    match output {
-        FheEvalOutput::AllowedLocal => {}
+    let born_public_output = match output {
+        FheEvalOutput::AllowedLocal => None,
         FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
             output_app_account_authority_index,
@@ -329,7 +325,7 @@ fn accept_eval_output<'info>(
                 *output_app_account_authority_index,
                 *output_app_account,
             )?;
-            bind_eval_output(
+            let encrypted_value = bind_eval_output(
                 ctx,
                 remaining_accounts_used,
                 *output_encrypted_value_index,
@@ -342,7 +338,12 @@ fn accept_eval_output<'info>(
                 previous_handle,
                 previous_subjects,
                 *make_public,
-            )?
+            )?;
+            make_public.then(|| ProducedPublicOutput {
+                step_index: op_index,
+                encrypted_value,
+                output_handle: result,
+            })
         }
     };
 
@@ -350,7 +351,7 @@ fn accept_eval_output<'info>(
         handle: result,
         public_decrypt_allowed: output_public_decrypt_allowed,
     });
-    Ok(())
+    Ok(born_public_output)
 }
 
 fn durable_output_authority<'info>(
@@ -472,7 +473,7 @@ fn bind_eval_output<'info>(
     previous_handle: &Option<[u8; 32]>,
     previous_subjects: &Option<Vec<Pubkey>>,
     make_public: bool,
-) -> Result<()> {
+) -> Result<Pubkey> {
     assert_output_acl_metadata(app_account_authority, output_app_account, output_subjects)?;
 
     let output_info = remaining_account(
@@ -553,7 +554,7 @@ fn bind_eval_output<'info>(
         )?;
         write_account(output_info, &value)?;
     }
-    Ok(())
+    Ok(output_info.key())
 }
 
 /// Shared create-or-supersede plan validation against an existing lineage.

@@ -33,9 +33,9 @@ DEPLOYER_KEYPAIR="$HOME/.config/solana/id.json"
 SID_U64=9223372036854788153
 SID_I64=-9223372036854763463
 
-# Yellowstone-only ingestion (DD-037): deploy an EMITLESS zama-host (no `emit-events`) and feed
-# the coprocessor purely via the gRPC Yellowstone transport with off-chain event RECONSTRUCTION —
-# no on-chain emit-decode. That needs the geyser plugin on the validator, so the host is a native
+# Yellowstone-first ingestion: disable optional host events and feed ordinary computation facts
+# to the coprocessor via gRPC Yellowstone reconstruction. The narrow born-public lifecycle batch
+# remains enabled for its non-reconstructible handles. That needs the geyser plugin, so the host is a native
 # solana-test-validator (agave 2.1.21, multi-arch incl. Apple Silicon) loading the external
 # Yellowstone plugin via --geyser-plugin-config (RPC 8899 + gRPC 10000). It binds 0.0.0.0 so the
 # dockerized KMS worker reaches RPC over host.docker.internal:8899 — the rest of the fhevm-cli
@@ -55,7 +55,7 @@ KMS_SIGNERS="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getKmsSigners()(address[])' 
 echo "    gateway_chain_id=$GATEWAY_CHAIN_ID input_verification=$INPUT_VERIFICATION_ADDRESS"
 echo "    decryption=$DECRYPTION_ADDRESS coprocessor_signer=$COPROCESSOR_SIGNER kms_signers=$KMS_SIGNERS"
 
-echo "==> [2/5] fresh validator (Yellowstone geyser) + EMITLESS program deploy"
+echo "==> [2/5] fresh validator (Yellowstone geyser) + reconstruction-first program deploy"
 # Seed the committed well-known PoC program keypairs so the build reuses them and the deployed
 # program IDs match each `declare_id!` (see scripts/poc/test-keypairs/README.md). `-n` keeps any
 # pre-existing local keypair; on a fresh checkout it seeds the committed test keys.
@@ -98,18 +98,18 @@ until curl -s -m2 "$VALIDATOR_RPC" -X POST -H 'Content-Type: application/json' \
   sleep 1
 done
 solana airdrop 500 -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" >/dev/null 2>&1 || true
-# EMITLESS build: drop the default `emit-events` feature on zama-host so the deployed
-# program emits NOTHING — off-chain reconstruction from instructions is the sole event
-# source. anchor build gives per-crate feature control (cargo build-sbf builds the whole
-# workspace, so it can't disable defaults for just one crate); anchor-cli is installed by
-# the workflow. The other programs keep their defaults.
-echo "    building EMITLESS zama_host (--no-default-features) + default-feature deps"
+# RECONSTRUCTION-FIRST build: drop optional administrative/config events from zama-host.
+# Yellowstone reconstructs ordinary `fhe_eval` computation facts from instructions; the narrow
+# born-public lifecycle batch remains enabled because its block-entropy handles are not present in
+# instruction data. anchor build gives per-crate feature control (cargo build-sbf builds the whole
+# workspace, so it can't disable defaults for just one crate). The other programs keep defaults.
+echo "    building reconstruction-first zama_host (--no-default-features) + default-feature deps"
 # confidential_token is built with `--features poc`: the e2e drives the create_random_amount
 # demo helper, which is gated out of production builds.
 ( cd "$SOLANA" \
     && anchor build --ignore-keys --no-idl -p zama_host -- --no-default-features \
     && anchor build --ignore-keys --no-idl -p confidential_token -- --features poc ) \
-  || { echo "[setup] emitless anchor build failed" >&2; exit 1; }
+  || { echo "[setup] reconstruction-first anchor build failed" >&2; exit 1; }
 # --use-rpc: deploy over RPC (8899) since the container doesn't publish the TPU ports.
 for p in zama_host confidential_token; do
   solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" --use-rpc \

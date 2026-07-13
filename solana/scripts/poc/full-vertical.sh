@@ -45,8 +45,8 @@ run_public_decrypt_with_proof() {
   local acl="$3"
   local expected="${4:-}"
   # Proof source (5th arg, default relayer): the e2e sources the MMR proof from the running relayer
-  # proof service. `local` is reserved for the born-public burned leg (unresolvable over RPC in the
-  # emitless arm — see follow-up) and drives the in-process PoC builder instead. The client retries
+  # proof service. `local` is reserved for the born-public burned leg until the relayer consumes
+  # the host's lifecycle batch, and drives the in-process PoC builder instead. The client retries
   # a transient `503 lagging` internally (re-invoking here would be unsafe for stateful steps).
   local proof_source="${5:-relayer}"
   local proof
@@ -543,10 +543,9 @@ echo "    disclosure request witness created (KMS context pinned); handle releas
 
 # Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert.
 # PROOF_SOURCE=local: unlike the compute/input-flow/historical legs (relayer-sourced), the
-# born-public burned handle is derived on-chain from slot entropy and carried in NO instruction
-# arg, so in the emitless arm the relayer cannot resolve it over RPC (no op event). This leg stays
-# on the in-process PoC builder pending the relayer follow-up (Carbon sysvar reconstruction or an
-# untrusted verified handle-hint) — see fhevm-internal issue.
+# born-public burned handle is derived on-chain from slot entropy and is not carried in instruction
+# data. The host now emits it in a narrow lifecycle batch, but this leg stays on the in-process PoC
+# builder until the immediately stacked relayer slice validates and consumes that batch.
 run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL" "" local
 cr="$PUBLIC_DECRYPT_JSON"
 # The burned handle's public-decrypt MMR proof (DD-036): both the redeem and disclose consume

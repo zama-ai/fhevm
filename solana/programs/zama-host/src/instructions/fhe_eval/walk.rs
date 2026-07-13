@@ -39,15 +39,12 @@ pub(super) trait EvalStepVisitor {
         attestation: &CoprocessorInputAttestation,
     ) -> Result<ResolvedOperand>;
 
-    /// Records the per-op event for the produced handle. Admission ignores it;
-    /// execution buffers it for transport.
-    fn record_op_event(&mut self, event: EvalEvent);
-
     /// Validates and applies a produced output (instruction-local or durable).
     /// Admission validates and plans; execution validates and mutates.
     fn accept_output<'info>(
         &mut self,
         ctx: &Context<'info, FheEval<'info>>,
+        op_index: u16,
         result: [u8; 32],
         output: &FheEvalOutput,
         output_public_decrypt_allowed: bool,
@@ -99,7 +96,7 @@ pub(super) trait EvalStepVisitor {
 }
 
 /// Drives a visitor over every plan step: resolve operands, assert operand
-/// types, compute the produced handle, record its event, and accept the output.
+/// types, compute the produced handle, and accept the output.
 pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
     visitor: &mut V,
     ctx: &Context<'info, FheEval<'info>>,
@@ -117,7 +114,6 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
         host_config.max_hcu_depth_per_tx,
     )?;
 
-    let subject = visitor.subject();
     for (index, step) in args.steps.iter().enumerate() {
         let op_index = index as u16;
         match step {
@@ -146,17 +142,9 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     handle_context,
                     op_index,
                 );
-                visitor.record_op_event(EvalEvent::Binary(FheBinaryOpEvent {
-                    version: EVENT_VERSION,
-                    op: *op,
-                    subject: subject.to_bytes(),
-                    lhs: lhs.handle,
-                    rhs: rhs.handle,
-                    scalar: rhs.scalar,
-                    result,
-                }));
                 visitor.accept_output(
                     ctx,
+                    op_index,
                     result,
                     output,
                     inputs_allow_public_decrypt(&lhs, &rhs),
@@ -188,17 +176,9 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     handle_context,
                     op_index,
                 );
-                visitor.record_op_event(EvalEvent::Ternary(FheTernaryOpEvent {
-                    version: EVENT_VERSION,
-                    op: *op,
-                    subject: subject.to_bytes(),
-                    control: control.handle,
-                    if_true: if_true.handle,
-                    if_false: if_false.handle,
-                    result,
-                }));
                 visitor.accept_output(
                     ctx,
+                    op_index,
                     result,
                     output,
                     inputs3_allow_public_decrypt(&control, &if_true, &if_false),
@@ -212,27 +192,13 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                 assert_supported_fhe_type(*fhe_type)?;
                 let result =
                     expected_trivial_eval_result(*plaintext, *fhe_type, handle_context, op_index);
-                visitor.record_op_event(EvalEvent::Trivial(TrivialEncryptEvent {
-                    version: EVENT_VERSION,
-                    subject: subject.to_bytes(),
-                    plaintext: *plaintext,
-                    fhe_type: *fhe_type,
-                    result,
-                }));
-                visitor.accept_output(ctx, result, output, false)?;
+                visitor.accept_output(ctx, op_index, result, output, false)?;
             }
             FheEvalStep::Rand { fhe_type, output } => {
                 assert_supported_rand_type(*fhe_type)?;
                 let seed = expected_rand_eval_seed(handle_context, op_index);
                 let result = computed_rand_handle(seed, *fhe_type, handle_context.chain_id);
-                visitor.record_op_event(EvalEvent::Rand(FheRandEvent {
-                    version: EVENT_VERSION,
-                    subject: subject.to_bytes(),
-                    seed,
-                    fhe_type: *fhe_type,
-                    result,
-                }));
-                visitor.accept_output(ctx, result, output, false)?;
+                visitor.accept_output(ctx, op_index, result, output, false)?;
             }
             FheEvalStep::Unary {
                 op,
@@ -250,14 +216,13 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     op_index,
                     output,
                 );
-                visitor.record_op_event(EvalEvent::Unary(FheUnaryOpEvent {
-                    version: EVENT_VERSION,
-                    op: *op,
-                    subject: subject.to_bytes(),
-                    operand: operand.handle,
+                visitor.accept_output(
+                    ctx,
+                    op_index,
                     result,
-                }));
-                visitor.accept_output(ctx, result, output, operand.public_decrypt_allowed)?;
+                    output,
+                    operand.public_decrypt_allowed,
+                )?;
             }
             FheEvalStep::RandBounded {
                 upper_bound,
@@ -272,15 +237,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     *fhe_type,
                     handle_context.chain_id,
                 );
-                visitor.record_op_event(EvalEvent::RandBounded(FheRandBoundedEvent {
-                    version: EVENT_VERSION,
-                    subject: subject.to_bytes(),
-                    upper_bound: *upper_bound,
-                    seed,
-                    fhe_type: *fhe_type,
-                    result,
-                }));
-                visitor.accept_output(ctx, result, output, false)?;
+                visitor.accept_output(ctx, op_index, result, output, false)?;
             }
             FheEvalStep::Sum {
                 operands,
@@ -301,14 +258,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     op_index,
                     output,
                 );
-                visitor.record_op_event(EvalEvent::Sum(FheSumEvent {
-                    version: EVENT_VERSION,
-                    subject: subject.to_bytes(),
-                    operands: operand_handles,
-                    fhe_type: *fhe_type,
-                    result,
-                }));
-                visitor.accept_output(ctx, result, output, public_decrypt)?;
+                visitor.accept_output(ctx, op_index, result, output, public_decrypt)?;
             }
             FheEvalStep::IsIn {
                 value,
@@ -333,15 +283,7 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     op_index,
                     output,
                 );
-                visitor.record_op_event(EvalEvent::IsIn(FheIsInEvent {
-                    version: EVENT_VERSION,
-                    subject: subject.to_bytes(),
-                    value: value_resolved.handle,
-                    set: set_handles,
-                    fhe_type: *fhe_type,
-                    result,
-                }));
-                visitor.accept_output(ctx, result, output, public_decrypt)?;
+                visitor.accept_output(ctx, op_index, result, output, public_decrypt)?;
             }
             FheEvalStep::MulDiv {
                 factor1,
@@ -369,17 +311,9 @@ pub(super) fn walk_eval_frame<'info, V: EvalStepVisitor>(
                     op_index,
                     output,
                 );
-                visitor.record_op_event(EvalEvent::MulDiv(FheMulDivEvent {
-                    version: EVENT_VERSION,
-                    subject: subject.to_bytes(),
-                    factor1: factor1.handle,
-                    factor2: factor2.handle,
-                    divisor: *divisor,
-                    scalar: factor2.scalar,
-                    result,
-                }));
                 visitor.accept_output(
                     ctx,
+                    op_index,
                     result,
                     output,
                     inputs_allow_public_decrypt(&factor1, &factor2),

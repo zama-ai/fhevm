@@ -10,13 +10,9 @@ mod support;
 use std::{collections::HashMap, path::PathBuf, sync::Once};
 
 use anchor_lang::{
-    prelude::system_program, AccountSerialize, AnchorDeserialize, Discriminator, InstructionData,
-    ToAccountMetas,
+    prelude::system_program, AccountDeserialize, AccountSerialize, InstructionData, ToAccountMetas,
 };
-use mollusk_svm::{
-    result::{Check, InstructionResult},
-    Mollusk,
-};
+use mollusk_svm::{result::Check, Mollusk};
 use solana_program::keccak::hashv as keccak_hashv;
 use solana_sdk::{
     account::Account,
@@ -49,8 +45,13 @@ fn encrypted_encrypted_add_executes_then_reads_cleartext_outcome() {
     });
 
     outcome.assert_u64(5, 42);
-    let event: host::FheBinaryOpEvent = outcome.event();
-    assert_binary_event(&outcome, &event, FheBinaryOpCode::Add, &lhs, &rhs, 5);
+    outcome.assert_handle(expected_binary_handle(
+        FheBinaryOpCode::Add,
+        operand_handle(&lhs),
+        operand_handle(&rhs),
+        false,
+        5,
+    ));
 }
 
 #[test]
@@ -67,8 +68,13 @@ fn encrypted_scalar_add_executes_then_reads_cleartext_outcome() {
     });
 
     outcome.assert_u64(5, 42);
-    let event: host::FheBinaryOpEvent = outcome.event();
-    assert_binary_event(&outcome, &event, FheBinaryOpCode::Add, &lhs, &rhs, 5);
+    outcome.assert_handle(expected_binary_handle(
+        FheBinaryOpCode::Add,
+        operand_handle(&lhs),
+        operand_handle(&rhs),
+        true,
+        5,
+    ));
 }
 
 #[test]
@@ -85,8 +91,13 @@ fn comparison_executes_then_reads_bool_outcome() {
     });
 
     outcome.assert_u64(0, 1);
-    let event: host::FheBinaryOpEvent = outcome.event();
-    assert_binary_event(&outcome, &event, FheBinaryOpCode::Eq, &lhs, &rhs, 0);
+    outcome.assert_handle(expected_binary_handle(
+        FheBinaryOpCode::Eq,
+        operand_handle(&lhs),
+        operand_handle(&rhs),
+        false,
+        0,
+    ));
 }
 
 #[test]
@@ -101,14 +112,11 @@ fn cast_executes_then_reads_widened_outcome() {
     });
 
     outcome.assert_u64(5, 255);
-    let event: host::FheUnaryOpEvent = outcome.event();
-    outcome.assert_envelope(event.version, event.subject);
-    assert_eq!(event.op, FheUnaryOpCode::Cast);
-    assert_eq!(event.operand, operand_handle(&operand));
-    assert_eq!(
-        event.result,
-        expected_unary_handle(event.op, event.operand, 5)
-    );
+    outcome.assert_handle(expected_unary_handle(
+        FheUnaryOpCode::Cast,
+        operand_handle(&operand),
+        5,
+    ));
 }
 
 #[test]
@@ -123,14 +131,11 @@ fn unary_not_executes_then_reads_width_bounded_outcome() {
     });
 
     outcome.assert_u64(2, 0b1111_0101);
-    let event: host::FheUnaryOpEvent = outcome.event();
-    outcome.assert_envelope(event.version, event.subject);
-    assert_eq!(event.op, FheUnaryOpCode::Not);
-    assert_eq!(event.operand, operand_handle(&operand));
-    assert_eq!(
-        event.result,
-        expected_unary_handle(event.op, event.operand, 2)
-    );
+    outcome.assert_handle(expected_unary_handle(
+        FheUnaryOpCode::Not,
+        operand_handle(&operand),
+        2,
+    ));
 }
 
 #[test]
@@ -148,15 +153,11 @@ fn membership_executes_then_reads_present_outcome() {
     });
 
     outcome.assert_u64(0, 1);
-    let event: host::FheIsInEvent = outcome.event();
-    outcome.assert_envelope(event.version, event.subject);
-    assert_eq!(event.value, operand_handle(&value));
-    assert_eq!(event.set, operand_handles(&set));
-    assert_eq!(event.fhe_type, 5);
-    assert_eq!(
-        event.result,
-        expected_is_in_handle(event.value, &event.set, 5)
-    );
+    outcome.assert_handle(expected_is_in_handle(
+        operand_handle(&value),
+        &operand_handles(&set),
+        5,
+    ));
 }
 
 #[test]
@@ -167,11 +168,7 @@ fn random_executes_then_binds_seed_and_type() {
     });
 
     assert_eq!(outcome.only_cleartext().fhe_type, 5);
-    let event: host::FheRandEvent = outcome.event();
-    outcome.assert_envelope(event.version, event.subject);
-    assert_eq!(event.seed, expected_rand_seed());
-    assert_eq!(event.fhe_type, 5);
-    assert_eq!(event.result, expected_rand_handle(event.seed, 5));
+    outcome.assert_handle(expected_rand_handle(expected_rand_seed(), 5));
 }
 
 #[test]
@@ -183,15 +180,11 @@ fn bounded_random_executes_then_binds_bound_into_result_handle() {
     });
 
     assert!(outcome.only_u64() < 16);
-    let event: host::FheRandBoundedEvent = outcome.event();
-    outcome.assert_envelope(event.version, event.subject);
-    assert_eq!(event.upper_bound, be(16));
-    assert_eq!(event.seed, expected_rand_seed());
-    assert_eq!(event.fhe_type, 5);
-    assert_eq!(
-        event.result,
-        expected_rand_bounded_handle(event.upper_bound, event.seed, 5)
-    );
+    outcome.assert_handle(expected_rand_bounded_handle(
+        be(16),
+        expected_rand_seed(),
+        5,
+    ));
 }
 
 #[test]
@@ -245,25 +238,6 @@ fn readonly_durable_output_is_rejected() {
             output,
         },
         host::errors::ZamaHostError::InvalidFheEvalAccount,
-    );
-}
-
-fn assert_binary_event(
-    outcome: &EvalOutcome,
-    event: &host::FheBinaryOpEvent,
-    op: FheBinaryOpCode,
-    lhs: &FheEvalOperand,
-    rhs: &FheEvalOperand,
-    output_type: u8,
-) {
-    outcome.assert_envelope(event.version, event.subject);
-    assert_eq!(event.op, op);
-    assert_eq!(event.lhs, operand_handle(lhs));
-    assert_eq!(event.rhs, operand_handle(rhs));
-    assert_eq!(event.scalar, matches!(rhs, FheEvalOperand::Scalar(_)));
-    assert_eq!(
-        event.result,
-        expected_binary_handle(op, event.lhs, event.rhs, event.scalar, output_type,)
     );
 }
 
@@ -344,7 +318,38 @@ impl EvalFlow {
         }
     }
 
-    fn execute(self, step: FheEvalStep) -> EvalOutcome {
+    fn writable_durable_output(&mut self) -> (FheEvalOutput, Pubkey) {
+        let label = [100; 32];
+        let value_key = zama_solana_acl::derive_value_key(
+            self.authority.to_bytes(),
+            self.authority.to_bytes(),
+            label,
+        );
+        let address = host::encrypted_value_address(value_key).0;
+        let output_encrypted_value_index = self.remaining.len() as u16;
+        self.remaining.push(AccountMeta::new(address, false));
+        self.accounts.push((address, empty_system_account()));
+        (
+            FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index,
+                output_app_account_authority_index: None,
+                output_acl_domain_key: self.authority,
+                output_app_account: self.authority,
+                output_encrypted_value_label: label,
+                output_subjects: vec![host::AclSubjectEntry {
+                    pubkey: self.authority,
+                }],
+                previous_handle: None,
+                previous_subjects: None,
+                make_public: false,
+            },
+            address,
+        )
+    }
+
+    fn execute(mut self, mut step: FheEvalStep) -> EvalOutcome {
+        let (output, output_address) = self.writable_durable_output();
+        *step_output_mut(&mut step) = output;
         let (args, instruction) = self.instruction(step);
         let result = mollusk().process_and_validate_instruction(
             &instruction,
@@ -353,10 +358,14 @@ impl EvalFlow {
         );
         let cleartext = evaluate(&args, &self.cleartext)
             .expect("accepted host plan must have valid cleartext semantics");
+        let output_account = result.get_account(&output_address).unwrap();
+        let mut output_data: &[u8] = &output_account.data;
+        let output_handle = host::EncryptedValue::try_deserialize(&mut output_data)
+            .expect("durable result account")
+            .current_handle;
         EvalOutcome {
-            subject: self.authority,
-            result,
             cleartext,
+            output_handle,
         }
     }
 
@@ -396,9 +405,8 @@ impl EvalFlow {
 }
 
 struct EvalOutcome {
-    subject: Pubkey,
-    result: InstructionResult,
     cleartext: Vec<TypedClearValue>,
+    output_handle: [u8; 32],
 }
 
 impl EvalOutcome {
@@ -418,16 +426,22 @@ impl EvalOutcome {
         assert_eq!(self.only_u64(), value);
     }
 
-    fn assert_envelope(&self, version: u8, subject: [u8; 32]) {
-        assert_eq!(version, host::EVENT_VERSION);
-        assert_eq!(subject, self.subject.to_bytes());
+    fn assert_handle(&self, expected: [u8; 32]) {
+        assert_eq!(self.output_handle, expected);
     }
+}
 
-    fn event<T>(&self) -> T
-    where
-        T: AnchorDeserialize + Discriminator,
-    {
-        event(&self.result)
+fn step_output_mut(step: &mut FheEvalStep) -> &mut FheEvalOutput {
+    match step {
+        FheEvalStep::Binary { output, .. }
+        | FheEvalStep::Ternary { output, .. }
+        | FheEvalStep::TrivialEncrypt { output, .. }
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::Unary { output, .. }
+        | FheEvalStep::RandBounded { output, .. }
+        | FheEvalStep::Sum { output, .. }
+        | FheEvalStep::IsIn { output, .. }
+        | FheEvalStep::MulDiv { output, .. } => output,
     }
 }
 
@@ -587,27 +601,6 @@ fn operand_handle(operand: &FheEvalOperand) -> [u8; 32] {
 
 fn operand_handles(operands: &[FheEvalOperand]) -> Vec<[u8; 32]> {
     operands.iter().map(operand_handle).collect()
-}
-
-fn event<T>(result: &InstructionResult) -> T
-where
-    T: AnchorDeserialize + Discriminator,
-{
-    let prefix = anchor_lang::event::EVENT_IX_TAG_LE
-        .iter()
-        .copied()
-        .chain(T::DISCRIMINATOR.iter().copied())
-        .collect::<Vec<_>>();
-    let events = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| {
-            let payload = inner.instruction.data.strip_prefix(prefix.as_slice())?;
-            T::deserialize(&mut &*payload).ok()
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(events.len(), 1, "expected one emitted operation event");
-    events.into_iter().next().unwrap()
 }
 
 fn expected_binary_handle(

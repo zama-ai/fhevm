@@ -1607,6 +1607,19 @@
       ]
     },
     {
+      "name": "PublicOutputsProducedEvent",
+      "discriminator": [
+        42,
+        82,
+        34,
+        199,
+        238,
+        54,
+        106,
+        181
+      ]
+    },
+    {
       "name": "TrivialEncryptEvent",
       "discriminator": [
         157,
@@ -1832,7 +1845,7 @@
     {
       "code": 6039,
       "name": "FheEvalBornPublicFrameTooLarge",
-      "msg": "FHE eval born-public output requires a CPI-transportable frame"
+      "msg": "reserved FHE eval produced-public transport error"
     },
     {
       "code": 6040,
@@ -4164,6 +4177,74 @@
               "User-decrypt signature threshold."
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProducedPublicOutput",
+      "docs": [
+        "One public durable output produced by an `fhe_eval` frame."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "step_index",
+            "docs": [
+              "Zero-based step index within the frame."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "encrypted_value",
+            "docs": [
+              "Host-owned durable `EncryptedValue` account bound by the step."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "output_handle",
+            "docs": [
+              "Block-entropy-derived output handle written to the account."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PublicOutputsProducedEvent",
+      "docs": [
+        "Emitted once for the public outputs produced by an `fhe_eval` frame."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "outputs",
+            "docs": [
+              "Produced public outputs in frame step order."
+            ],
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "ProducedPublicOutput"
+                }
+              }
+            }
           }
         ]
       }

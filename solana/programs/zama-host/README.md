@@ -62,12 +62,12 @@ per-output authority account in `remaining_accounts`) preserves the membership-b
 public-decrypt rules enforced by the current host without reviving unsigned
 `authorized_app_accounts`.
 
-Worker-replay (compute-step) events are emitted through Anchor event CPI only while the frame stays
-within the CPI event cap. Larger non-born-public frames emit no replay payloads; indexers reconstruct
-their compute events, MMR leaves, and durable-output binds from instruction data alone
-(`docs/DESIGN_DECISIONS.md` DD-033/DD-037). Born-public durable outputs need the CPI op event to
-recover the new handle, so oversized born-public frames are rejected fail-closed. The
-`EncryptedValue` ACL lifecycle itself emits **no events at all, by design**.
+Ordinary compute facts, MMR leaves, and durable-output binds are reconstructed from instruction data;
+the host emits no per-operation replay stream. A frame with born-public durable outputs emits exactly
+one versioned Anchor CPI lifecycle batch containing their ordered step index, host-owned
+`EncryptedValue` account, and host-derived output handle. A frame without born-public outputs emits
+no lifecycle batch. The bounded 16-output maximum fits one CPI; other `EncryptedValue` lifecycle
+paths remain event-free (`docs/DESIGN_DECISIONS.md` DD-033/DD-038).
 
 Admission invariants for `fhe_eval`:
 

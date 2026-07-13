@@ -126,10 +126,9 @@ pub enum ZamaHostError {
     /// An FHE eval instruction exceeded the supported operation count.
     #[msg("FHE eval operation count is invalid")]
     InvalidFheEvalOperationCount,
-    /// A born-public (`make_public`) durable output appeared in an eval frame too
-    /// large to carry its event via `emit_cpi!`, so an off-chain proof builder
-    /// could never recover the block-entropy handle. Rejected at write time.
-    #[msg("FHE eval born-public output requires a CPI-transportable frame")]
+    /// Retired error slot retained to preserve later Anchor error discriminants.
+    /// Born-public outputs now use one bounded lifecycle batch per eval frame.
+    #[msg("reserved FHE eval produced-public transport error")]
     FheEvalBornPublicFrameTooLarge,
     /// An FHE eval instruction referenced a missing or malformed dynamic account.
     #[msg("FHE eval account reference is invalid")]

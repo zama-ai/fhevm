@@ -2,6 +2,8 @@
 
 /// Version byte written to host protocol events.
 pub const EVENT_VERSION: u8 = 1;
+/// Version of the produced-public `fhe_eval` lifecycle batch.
+pub const PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION: u8 = 1;
 /// Maximum durable subjects on an `EncryptedValue` lineage (mirrors
 /// `zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS`).
 pub const MAX_ACL_SUBJECTS: usize = zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS;

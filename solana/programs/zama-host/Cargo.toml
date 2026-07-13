@@ -19,9 +19,9 @@ no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
 # Enables local-only mock input and zero-birth-entropy controls.
 poc = []
-# Emit on-chain events (`emit_cpi!`/`emit!`). Default-on so all existing builds
-# behave identically; disable with `--no-default-features` to let off-chain
-# reconstruction be the sole event source (Yellowstone gRPC path).
+# Emit optional administrative/config events. The narrow born-public `fhe_eval`
+# lifecycle batch is unconditional because its output handles cannot be reconstructed
+# from instruction data alone.
 emit-events = []
 
 [dependencies]
