@@ -53,6 +53,8 @@ use tracing::{info, warn};
 #[case::new_kms_epoch(TestEventType::NewKmsEpoch, false)]
 #[case::abort_keygen(TestEventType::AbortKeygen, false)]
 #[case::abort_crsgen(TestEventType::AbortCrsgen, false)]
+#[case::kms_context_destroyed(TestEventType::KmsContextDestroyed, false)]
+#[case::kms_epoch_destroyed(TestEventType::KmsEpochDestroyed, false)]
 #[case::public_decryption_already_sent(TestEventType::PublicDecryption, true)]
 #[case::user_decryption_already_sent(TestEventType::UserDecryption, true)]
 #[case::user_decryption_v2_already_sent(TestEventType::UserDecryptionV2, true)]
@@ -63,6 +65,8 @@ use tracing::{info, warn};
 #[case::new_kms_epoch_already_sent(TestEventType::NewKmsEpoch, true)]
 #[case::abort_keygen_already_sent(TestEventType::AbortKeygen, true)]
 #[case::abort_crsgen_already_sent(TestEventType::AbortCrsgen, true)]
+#[case::kms_context_destroyed_already_sent(TestEventType::KmsContextDestroyed, true)]
+#[case::kms_epoch_destroyed_already_sent(TestEventType::KmsEpochDestroyed, true)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_processing_request(
@@ -182,10 +186,13 @@ async fn test_processing_request(
     // Waiting for kms_worker to process the request
     if matches!(
         event_type,
-        TestEventType::AbortKeygen | TestEventType::AbortCrsgen
+        TestEventType::AbortKeygen
+            | TestEventType::AbortCrsgen
+            | TestEventType::KmsContextDestroyed
+            | TestEventType::KmsEpochDestroyed
     ) {
-        // Abort events yield no response row, so just wait for it to be `completed`
-        wait_for_abort_completed(test_instance.db(), event_type).await?;
+        // Abort and destruction events yield no response row, so just wait for it to be `completed`
+        wait_for_no_response_event_completed(test_instance.db(), event_type).await?;
     } else {
         let response = wait_for_response_in_db(test_instance.db(), &request).await?;
         check_response_data(&request, response)?;
@@ -221,6 +228,10 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         ProtocolEventKind::NewKmsEpoch(r) => (r.epochId, "NewMpcEpoch", "GetEpochResult"),
         ProtocolEventKind::AbortKeygen(r) => (r.prepKeygenId, "AbortKeyGen", "unreachable"),
         ProtocolEventKind::AbortCrsgen(r) => (r.crsId, "AbortCrsGen", "unreachable"),
+        ProtocolEventKind::KmsContextDestroyed(r) => {
+            (r.kmsContextId, "DestroyMpcContext", "unreachable")
+        }
+        ProtocolEventKind::KmsEpochDestroyed(r) => (r.epochId, "DestroyMpcEpoch", "unreachable"),
     };
     let request_id = Some(u256_to_request_id(request_id_u256));
 
@@ -265,7 +276,9 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
             ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
             ProtocolEventKind::NewKmsContext(_)
             | ProtocolEventKind::AbortKeygen(_)
-            | ProtocolEventKind::AbortCrsgen(_) => then.error(
+            | ProtocolEventKind::AbortCrsgen(_)
+            | ProtocolEventKind::KmsContextDestroyed(_)
+            | ProtocolEventKind::KmsEpochDestroyed(_) => then.error(
                 StatusCode::BAD_REQUEST,
                 "No response expected response from kms-core",
             ),
@@ -290,8 +303,11 @@ async fn wait_for_response_in_db(
         ProtocolEventKind::Crsgen(_) => "SELECT * FROM crsgen_responses",
         ProtocolEventKind::NewKmsContext(_) => "SELECT * FROM new_kms_context_responses",
         ProtocolEventKind::NewKmsEpoch(_) => "SELECT * FROM epoch_result_responses",
-        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
-            unreachable!("abort events produce no response row")
+        ProtocolEventKind::AbortKeygen(_)
+        | ProtocolEventKind::AbortCrsgen(_)
+        | ProtocolEventKind::KmsContextDestroyed(_)
+        | ProtocolEventKind::KmsEpochDestroyed(_) => {
+            unreachable!("abort and destruction events produce no response row")
         }
     };
     let response = loop {
@@ -323,8 +339,11 @@ async fn wait_for_response_in_db(
                 ProtocolEventKind::NewKmsEpoch(_) => {
                     break kms_response::from_epoch_result_row(&result[0])?;
                 }
-                ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
-                    unreachable!("abort events produce no response row")
+                ProtocolEventKind::AbortKeygen(_)
+                | ProtocolEventKind::AbortCrsgen(_)
+                | ProtocolEventKind::KmsContextDestroyed(_)
+                | ProtocolEventKind::KmsEpochDestroyed(_) => {
+                    unreachable!("abort and destruction events produce no response row")
                 }
             };
         }
@@ -377,8 +396,11 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             epoch_id: r.epochId,
             grpc_response: GrpcEpochResultResponse::default(),
         },
-        ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
-            unreachable!("abort events produce no response to check")
+        ProtocolEventKind::AbortKeygen(_)
+        | ProtocolEventKind::AbortCrsgen(_)
+        | ProtocolEventKind::KmsContextDestroyed(_)
+        | ProtocolEventKind::KmsEpochDestroyed(_) => {
+            unreachable!("abort and destruction events produce no response to check")
         }
     };
     assert_eq!(response.kind, KmsResponseKind::process(expected_response)?);
@@ -386,11 +408,11 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
     Ok(())
 }
 
-async fn wait_for_abort_completed(
+async fn wait_for_no_response_event_completed(
     db: &Pool<Postgres>,
     event_type: TestEventType,
 ) -> anyhow::Result<()> {
-    info!("Waiting for abort request to be marked as completed in DB...");
+    info!("Waiting for request to be marked as completed in DB...");
     let query = match event_type {
         TestEventType::AbortKeygen => {
             "SELECT COUNT(prep_keygen_id) FROM abort_keygen_requests WHERE status = 'completed'"
@@ -398,15 +420,23 @@ async fn wait_for_abort_completed(
         TestEventType::AbortCrsgen => {
             "SELECT COUNT(crs_id) FROM abort_crsgen_requests WHERE status = 'completed'"
         }
-        _ => unreachable!("wait_for_abort_completed only handles abort events"),
+        TestEventType::KmsContextDestroyed => {
+            "SELECT COUNT(context_id) FROM kms_context_destroyed WHERE status = 'completed'"
+        }
+        TestEventType::KmsEpochDestroyed => {
+            "SELECT COUNT(epoch_id) FROM kms_epoch_destroyed WHERE status = 'completed'"
+        }
+        _ => unreachable!(
+            "wait_for_no_response_event_completed only handles abort and destruction events"
+        ),
     };
     loop {
         let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
         if count > 0 {
-            info!("Abort request marked as completed in DB!");
+            info!("Request marked as completed in DB!");
             return Ok(());
         }
-        warn!("Abort request not yet marked as completed in DB...");
+        warn!("Request not yet marked as completed in DB...");
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
