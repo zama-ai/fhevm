@@ -854,9 +854,9 @@ Host GPU workers should be started through the local systemd launcher so they
 survive the shell/tool session:
 
 ```bash
-/home/ubuntu/fhevm/.fhevm/runtime/gpu-workers/start-gpu-workers.sh start
-/home/ubuntu/fhevm/.fhevm/runtime/gpu-workers/start-gpu-workers.sh status
-/home/ubuntu/fhevm/.fhevm/runtime/gpu-workers/start-gpu-workers.sh stop
+/home/ubuntu/fhevm/test-suite/fhevm/scripts/gpu-workers.sh start
+/home/ubuntu/fhevm/test-suite/fhevm/scripts/gpu-workers.sh status
+/home/ubuntu/fhevm/test-suite/fhevm/scripts/gpu-workers.sh stop
 ```
 
 The launcher maps TFHE to GPU0 and ZK/SNS to GPU1, uses the local v0.14 GPU
@@ -880,13 +880,13 @@ sns_worker: GPU feature is enabled, num_gpus=1, streaming_multiprocessors=114
 sns_worker: Decompressed compressed_xof_keyset to CudaServerKey
 ```
 
-During the clean reset later on 2026-07-09, the runtime reset had removed
-`.fhevm/runtime/gpu-workers`. Restore only `run-worker.sh` and
-`start-gpu-workers.sh` from
-`.fhevm/reset-backups/20260709-133434Z/runtime/gpu-workers`; do not copy stale
-PID files or old large logs. After stopping Docker CPU workers and starting the
-host services, health checks passed on ports `18080`, `18081`, and `18082`, and
-SNS again decompressed the compressed XOF keyset to `CudaServerKey`.
+During the clean reset later on 2026-07-09, the runtime-only launcher was
+removed along with `.fhevm`. The launcher now lives at
+`test-suite/fhevm/scripts/gpu-workers.sh`, so use that tracked script after a
+reset rather than restoring stale runtime files. After stopping Docker CPU
+workers and starting the host services, health checks passed on ports `18080`,
+`18081`, and `18082`, and SNS again decompressed the compressed XOF keyset to
+`CudaServerKey`.
 
 The light e2e suite passed with the host GPU workers active:
 
@@ -1791,7 +1791,7 @@ symptom was `computations` being repopulated immediately while `verify_proofs`
 and `input_handles` stayed empty. The working lightweight reset sequence was:
 
 ```bash
-.fhevm/runtime/gpu-workers/start-gpu-workers.sh stop
+test-suite/fhevm/scripts/gpu-workers.sh stop
 docker stop coprocessor-host-listener coprocessor-host-listener-consumer coprocessor-host-listener-poller
 
 # Mine more empty blocks than the host-listener reorg recovery window, currently 50.
@@ -1823,7 +1823,7 @@ VALUES (12345,$latest);
 "
 
 docker start coprocessor-host-listener coprocessor-host-listener-consumer coprocessor-host-listener-poller
-.fhevm/runtime/gpu-workers/start-gpu-workers.sh start
+test-suite/fhevm/scripts/gpu-workers.sh start
 ```
 
 After this sequence, it is acceptable for `host_chain_blocks_valid` to contain
