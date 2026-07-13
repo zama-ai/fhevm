@@ -292,16 +292,19 @@ export class UserDecryptExecutor implements FlowExecutor {
       }
     }
 
-    this.targetA = this.dependencies.createSdkClient(contextA);
+    const targetA = this.dependencies.createSdkClient(contextA);
+    let targetB: UserDecryptSdkClient | undefined;
     if (this.clientB) {
       const contextB = createClientContext({
         ...contextOptions,
         relayerUrl: this.clientB.baseUrl,
       });
-      this.targetB = this.dependencies.createSdkClient(contextB);
+      targetB = this.dependencies.createSdkClient(contextB);
     }
-    await Promise.all([this.targetA.ready, this.targetB?.ready]);
+    await Promise.all([targetA.ready, targetB?.ready]);
     signal?.throwIfAborted();
+    this.targetA = targetA;
+    this.targetB = targetB;
   }
 
   private async executeLeg(

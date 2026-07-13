@@ -123,6 +123,16 @@ const sdkClient = (value = 42n): UserDecryptSdkClient => ({
 const client = (baseUrl: string) =>
   ({ baseUrl, apiPrefix: "/v2" }) as never;
 
+const deferred = <T = void>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+};
+
 describe("UserDecryptExecutor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -198,6 +208,70 @@ describe("UserDecryptExecutor", () => {
       targetB.signDecryptionPermit as ReturnType<typeof vi.fn>
     ).mock.calls[0]?.[0].transportKeyPair;
     expect(targetAKey).not.toBe(targetBKey);
+  });
+
+  it("waits for both SDK clients before permitting A/B user-decrypt actions", async () => {
+    mocks.openIfExists.mockResolvedValue({
+      meta: meta(),
+      loadItems: vi.fn().mockResolvedValue([item()]),
+    });
+    const readyA = deferred();
+    const readyB = deferred();
+    const targetA = { ...sdkClient(), ready: readyA.promise };
+    const targetB = { ...sdkClient(), ready: readyB.promise };
+    const executor = new UserDecryptExecutor(
+      env(true),
+      client("https://a.example"),
+      client("https://b.example"),
+      5_000,
+      false,
+      {
+        createSdkClient: vi.fn()
+          .mockReturnValueOnce(targetA)
+          .mockReturnValueOnce(targetB),
+      },
+    );
+
+    const preparing = executor.prepare(1);
+    await vi.waitFor(() => expect(mocks.createClientContext).toHaveBeenCalledTimes(2));
+    readyA.resolve();
+    await Promise.resolve();
+    await expect(
+      executor.execute(0, new AbortController().signal),
+    ).rejects.toThrow("Executor not prepared");
+    expect(targetA.generateTransportKeyPair).not.toHaveBeenCalled();
+    expect(targetB.generateTransportKeyPair).not.toHaveBeenCalled();
+    readyB.resolve();
+    await preparing;
+
+    await executor.execute(0, new AbortController().signal);
+    expect(targetA.generateTransportKeyPair).toHaveBeenCalledTimes(1);
+    expect(targetB.generateTransportKeyPair).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails prepare without starting user-decrypt actions when SDK readiness fails", async () => {
+    mocks.openIfExists.mockResolvedValue({
+      meta: meta(),
+      loadItems: vi.fn().mockResolvedValue([item()]),
+    });
+    const readinessError = new Error("SDK decrypt client failed to initialize");
+    const target = { ...sdkClient(), ready: Promise.reject(readinessError) };
+    const executor = new UserDecryptExecutor(
+      env(),
+      client("https://a.example"),
+      undefined,
+      5_000,
+      false,
+      { createSdkClient: vi.fn().mockReturnValue(target) },
+    );
+
+    await expect(executor.prepare(1)).rejects.toBe(readinessError);
+    await expect(
+      executor.execute(0, new AbortController().signal),
+    ).rejects.toThrow("Executor not prepared");
+    expect(target.generateTransportKeyPair).not.toHaveBeenCalled();
+    expect(target.signDecryptionPermit).not.toHaveBeenCalled();
+    expect(target.decryptValues).not.toHaveBeenCalled();
   });
 
   it("runs delegated decrypt as the recorded delegate for the pooled owner", async () => {

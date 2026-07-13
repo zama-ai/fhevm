@@ -29,43 +29,62 @@ export type InputProofWorkerTask = Readonly<{
   valueTypes: readonly FheValueType[];
 }>;
 
-let cachedContext: ClientContext | undefined;
-let cachedKey: string | undefined;
+type InputProofWorkerDependencies = Readonly<{
+  createContext: typeof createClientContext;
+  generateProof: typeof generateZkProof;
+}>;
 
-const contextFor = (task: InputProofWorkerTask): ClientContext => {
-  const key = JSON.stringify([task.network, task.relayerUrl, task.rpcUrl, task.contractAddress]);
-  if (!cachedContext || cachedKey !== key) {
-    cachedContext = createClientContext({
-      network: task.network,
-      relayerUrl: task.relayerUrl,
-      rpcUrl: task.rpcUrl,
-      contractAddress: task.contractAddress,
-    });
-    cachedKey = key;
-  }
-  return cachedContext;
+const defaultDependencies: InputProofWorkerDependencies = {
+  createContext: createClientContext,
+  generateProof: generateZkProof,
 };
 
-export default async (task: InputProofWorkerTask): Promise<InputProofPoolItem> => {
-  const context = contextFor(task);
-  const values = task.valueTypes.map((type) => createRandomValue(type));
-  const proof = await generateZkProof(context.fhevm, {
-    contractAddress: context.contractAddress,
-    userAddress: task.userAddress,
-    values,
-  });
+/** Creates one worker-local handler with an SDK context cache. */
+export const createInputProofWorker = (
+  dependencies: InputProofWorkerDependencies = defaultDependencies,
+): ((task: InputProofWorkerTask) => Promise<InputProofPoolItem>) => {
+  let cachedContext: ClientContext | undefined;
+  let cachedKey: string | undefined;
 
-  return {
-    index: task.index,
-    contractChainId: task.contractChainId,
-    contractAddress: context.contractAddress,
-    userAddress: task.userAddress,
-    ciphertextWithInputVerification: Buffer.from(proof.ciphertextWithZkProof).toString("hex"),
-    extraData: proof.getExtraData(),
-    expectedHandles: proof.getInputHandles().map((handle) => handle.bytes32Hex),
-    values: values.map((value) => ({
-      type: value.type,
-      value: serializeValue(value).value,
-    })),
+  const contextFor = (task: InputProofWorkerTask): ClientContext => {
+    const key = JSON.stringify([task.network, task.relayerUrl, task.rpcUrl, task.contractAddress]);
+    if (!cachedContext || cachedKey !== key) {
+      cachedContext = dependencies.createContext({
+        network: task.network,
+        relayerUrl: task.relayerUrl,
+        rpcUrl: task.rpcUrl,
+        contractAddress: task.contractAddress,
+      });
+      cachedKey = key;
+    }
+    return cachedContext;
+  };
+
+  return async (task: InputProofWorkerTask): Promise<InputProofPoolItem> => {
+    const context = contextFor(task);
+    await context.fhevm.ready;
+
+    const values = task.valueTypes.map((type) => createRandomValue(type));
+    const proof = await dependencies.generateProof(context.fhevm, {
+      contractAddress: context.contractAddress,
+      userAddress: task.userAddress,
+      values,
+    });
+
+    return {
+      index: task.index,
+      contractChainId: task.contractChainId,
+      contractAddress: context.contractAddress,
+      userAddress: task.userAddress,
+      ciphertextWithInputVerification: Buffer.from(proof.ciphertextWithZkProof).toString("hex"),
+      extraData: proof.getExtraData(),
+      expectedHandles: proof.getInputHandles().map((handle) => handle.bytes32Hex),
+      values: values.map((value) => ({
+        type: value.type,
+        value: serializeValue(value).value,
+      })),
+    };
   };
 };
+
+export default createInputProofWorker();

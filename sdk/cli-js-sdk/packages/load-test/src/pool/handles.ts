@@ -555,6 +555,10 @@ export const createHandlePool = async (
     ...(existing?.meta.delegationExpirations ?? {}),
   };
   if (delegated && delegateAddress) {
+    // Fail before mutating ACL delegation state if the clients that must create
+    // this pool's encrypted handles cannot initialize their encrypt runtime.
+    await Promise.all(contexts.map(({ context }) => context.fhevm.ready));
+    options.signal?.throwIfAborted();
     const durationDays = options.delegationDurationDays ?? 30;
     for (const lane of delegationContexts) {
       options.signal?.throwIfAborted();
