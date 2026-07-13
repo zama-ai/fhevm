@@ -43,8 +43,6 @@ pub struct HostConfigInitializedEvent {
     pub input_verifier_authority: Pubkey,
     /// Configured material commitment authority.
     pub material_authority: Pubkey,
-    /// Configured test-shim authority.
-    pub test_authority: Pubkey,
 }
 
 /// Emitted when host config flags change.
@@ -58,10 +56,6 @@ pub struct HostConfigUpdatedEvent {
     pub admin: Pubkey,
     /// Current pause state.
     pub paused: bool,
-    /// Current mock input gate.
-    pub mock_input_enabled: bool,
-    /// Current test-shim gate.
-    pub test_shims_enabled: bool,
     /// Current grant deny-list gate.
     pub grant_deny_list_enabled: bool,
     /// Current max total HCU per `fhe_eval` plan (`0` = unlimited).

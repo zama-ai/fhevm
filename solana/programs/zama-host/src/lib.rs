@@ -2,7 +2,7 @@
 //!
 //! `zama-host` owns the protocol-facing parts of the PoC: the append-only
 //! `EncryptedValue` ACL/MMR model, handle derivation, FHE eval, public-decrypt
-//! state, test/mock gates, and the small set of account witnesses that a future
+//! state and the small set of account witnesses that a future
 //! Gateway/KMS request must verify.
 //!
 //! The program intentionally keeps app semantics outside this crate. App
@@ -71,16 +71,6 @@ pub mod zama_host {
 
     pub fn set_host_pause(ctx: Context<HostAdmin>, paused: bool) -> Result<()> {
         instructions::set_host_pause(ctx, paused)
-    }
-
-    #[cfg(feature = "poc")]
-    pub fn set_test_shims_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {
-        instructions::set_test_shims_enabled(ctx, enabled)
-    }
-
-    #[cfg(feature = "poc")]
-    pub fn set_mock_input_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {
-        instructions::set_mock_input_enabled(ctx, enabled)
     }
 
     pub fn set_grant_deny_list_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {

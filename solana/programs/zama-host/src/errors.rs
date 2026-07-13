@@ -24,12 +24,6 @@ pub enum ZamaHostError {
     /// The instruction included undeclared trailing account metas.
     #[msg("instruction has unexpected remaining accounts")]
     UnexpectedRemainingAccounts,
-    /// The mock encrypted-input bind path is disabled in [`HostConfig`](crate::HostConfig).
-    #[msg("mock input binding is disabled")]
-    MockInputDisabled,
-    /// The mock input signer is not the configured input verifier authority.
-    #[msg("mock input verifier authority does not match config")]
-    MockInputVerifierMismatch,
     /// The input verifier authority account does not match host config.
     #[msg("input verifier authority does not match config")]
     InputVerifierMismatch,
@@ -84,12 +78,6 @@ pub enum ZamaHostError {
     /// No matching Ed25519 verifier pre-instruction was found for the input proof.
     #[msg("input proof Ed25519 signature is missing or malformed")]
     InputProofSignatureMissing,
-    /// Reserved legacy test-shim error; retained to preserve error codes.
-    #[msg("test event shims are disabled")]
-    TestShimsDisabled,
-    /// Reserved legacy test-authority error; retained to preserve error codes.
-    #[msg("test shim authority does not match config")]
-    TestShimAuthorityMismatch,
     /// The app account did not sign the ACL birth instruction.
     #[msg("ACL app account authority does not match app account")]
     AppAccountAuthorityMismatch,
@@ -154,9 +142,6 @@ pub enum ZamaHostError {
     /// The coprocessor-attested contract does not match the `fhe_eval` compute subject.
     #[msg("attested contract address does not match the output app account")]
     InputBindContractMismatch,
-    /// The coprocessor-attested user is not among the output ACL subjects.
-    #[msg("attested user address is not an output ACL subject")]
-    InputBindUserNotSubject,
     /// An `fhe_eval` frame's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
     #[msg("FHE op total HCU exceeds the per-transaction limit")]
     HcuTransactionLimitExceeded,

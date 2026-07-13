@@ -292,24 +292,14 @@ pub use crate::solana_slot_hashes::{
 /// transport can derive its address to fetch the on-chain config.
 pub use zama_host::constants::HOST_CONFIG_SEED;
 
-/// Reads the on-chain `HostConfig` account and returns the
-/// `(chain_id, zero_birth_entropy)` pair handle derivation needs, reusing the
-/// program's own `HostConfig` type (no bespoke layout to drift from).
-///
-/// `zero_birth_entropy` mirrors `HostConfig::zero_birth_entropy_allowed()` =
-/// `test_shims_enabled && POC_FEATURE_ENABLED && chain_id == SOLANA_POC_CHAIN_ID`.
-/// The listener cannot read the program's compile-time `POC_FEATURE_ENABLED`, but
-/// it need not: the program rejects `chain_id == SOLANA_POC_CHAIN_ID` at init
-/// unless built with `poc`, so an on-chain `chain_id == SOLANA_POC_CHAIN_ID`
-/// already implies `POC_FEATURE_ENABLED`. The check below is therefore exact.
-pub fn parse_host_config(account_data: &[u8]) -> anyhow::Result<(u64, bool)> {
+/// Reads the on-chain `HostConfig` account and returns the chain id used for
+/// handle derivation, reusing the program's own type so the layout cannot drift.
+pub fn parse_host_config(account_data: &[u8]) -> anyhow::Result<u64> {
     use anchor_lang::AccountDeserialize;
     let config =
         zama_host::state::HostConfig::try_deserialize(&mut &account_data[..])
             .map_err(|e| anyhow::anyhow!("decode HostConfig account: {e}"))?;
-    let zero_birth_entropy = config.test_shims_enabled
-        && config.chain_id == zama_host::constants::SOLANA_POC_CHAIN_ID;
-    Ok((config.chain_id, zero_birth_entropy))
+    Ok(config.chain_id)
 }
 
 /// Resolves an eval operand to its handle by reusing already-produced step

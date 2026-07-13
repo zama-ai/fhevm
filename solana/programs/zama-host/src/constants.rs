@@ -9,13 +9,6 @@ pub const PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION: u8 = 1;
 pub const MAX_ACL_SUBJECTS: usize = zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS;
 /// PoC chain id used by tests and helpers that do not receive host config.
 pub const SOLANA_POC_CHAIN_ID: u64 = 12345;
-/// True when local PoC/test-only instruction paths are compiled into the host.
-#[cfg(feature = "poc")]
-pub const POC_FEATURE_ENABLED: bool = true;
-/// True when local PoC/test-only instruction paths are compiled into the host.
-#[cfg(not(feature = "poc"))]
-pub const POC_FEATURE_ENABLED: bool = false;
-
 /// Seed for the singleton host config PDA.
 pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
 /// Seed prefix for KMS context PDAs (one per `kmsContextId`, mirroring ProtocolConfig).

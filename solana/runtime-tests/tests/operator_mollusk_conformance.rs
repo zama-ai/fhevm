@@ -27,8 +27,7 @@ use zama_host::{
 };
 
 const CONTEXT_ID: [u8; 32] = [7; 32];
-// The PoC sentinel chain with test shims enabled deliberately substitutes zero birth entropy.
-const PREVIOUS_BANK_HASH: [u8; 32] = [0; 32];
+const PREVIOUS_BANK_HASH: [u8; 32] = [0x44; 32];
 const UNIX_TIMESTAMP: i64 = 0;
 
 #[test]
@@ -454,6 +453,10 @@ fn mollusk() -> Mollusk {
     let mut mollusk = Mollusk::new(&host::id(), "zama_host");
     mollusk.sysvars.clock.slot = 100;
     mollusk.sysvars.clock.unix_timestamp = UNIX_TIMESTAMP;
+    mollusk.sysvars.slot_hashes = solana_sdk::slot_hashes::SlotHashes::new(&[(
+        99,
+        solana_sdk::hash::Hash::new_from_array(PREVIOUS_BANK_HASH),
+    )]);
     mollusk
 }
 
@@ -485,10 +488,7 @@ fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
                 decryption_contract: [0xde; 20],
                 current_kms_context_id: 0,
                 material_authority: admin,
-                test_authority: admin,
                 paused: false,
-                mock_input_enabled: false,
-                test_shims_enabled: true,
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: 0,
                 max_hcu_depth_per_tx: 0,

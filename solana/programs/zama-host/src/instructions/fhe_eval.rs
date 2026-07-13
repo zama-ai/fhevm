@@ -80,10 +80,7 @@ pub fn fhe_eval<'info>(ctx: Context<'info, FheEval<'info>>, args: FheEvalArgs) -
 
     let subject = ctx.accounts.compute_subject.key();
     let clock = Clock::get()?;
-    let previous_bank_hash = previous_bank_hash_with_test_fallback(
-        clock.slot,
-        ctx.accounts.host_config.zero_birth_entropy_allowed(),
-    )?;
+    let previous_bank_hash = previous_bank_hash(clock.slot)?;
     let handle_context = EvalHandleContext {
         chain_id: ctx.accounts.host_config.chain_id,
         previous_bank_hash: &previous_bank_hash,

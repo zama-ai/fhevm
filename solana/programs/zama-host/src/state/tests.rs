@@ -19,50 +19,6 @@ fn latest_prior_bank_hash_tolerates_skipped_slots() {
     assert_eq!(latest_prior_bank_hash_from_entries(3, entries), None);
 }
 
-fn host_config_with(
-    chain_id: u64,
-    test_shims_enabled: bool,
-    mock_input_enabled: bool,
-) -> HostConfig {
-    HostConfig {
-        admin: Pubkey::default(),
-        chain_id,
-        input_verifier_authority: Pubkey::default(),
-        gateway_chain_id: 0,
-        input_verification_contract: [0u8; 20],
-        coprocessor_signer: [0u8; 20],
-        decryption_contract: [0u8; 20],
-        current_kms_context_id: 0,
-        material_authority: Pubkey::default(),
-        test_authority: Pubkey::default(),
-        paused: false,
-        mock_input_enabled,
-        test_shims_enabled,
-        grant_deny_list_enabled: false,
-        max_hcu_per_tx: 0,
-        max_hcu_depth_per_tx: 0,
-        hcu_block_cap_per_app: u64::MAX,
-        updated_slot: 0,
-        bump: 0,
-    }
-}
-
-#[test]
-fn zero_birth_entropy_requires_poc_chain_and_test_shims() {
-    // Local PoC chain with the shim flag: relaxation allowed only in PoC-feature builds.
-    assert_eq!(
-        host_config_with(SOLANA_POC_CHAIN_ID, true, false).zero_birth_entropy_allowed(),
-        cfg!(feature = "poc")
-    );
-    // Local PoC chain without the shim flag: fails closed (drives the
-    // PreviousBankHashUnavailable negative test).
-    assert!(!host_config_with(SOLANA_POC_CHAIN_ID, false, false).zero_birth_entropy_allowed());
-    // A deployed chain can NEVER zero birth entropy, even with the shim flag
-    // toggled on by an admin — this is the security boundary.
-    assert!(!host_config_with(101, true, false).zero_birth_entropy_allowed());
-    assert!(!host_config_with(1, true, false).zero_birth_entropy_allowed());
-}
-
 /// Bit 63 of the uint64 chain id is the reserved Solana `chain_type` marker
 /// (RFC-021 / #1494). It is derived from the chain id, never a schema column.
 const SOLANA_CHAIN_TYPE_BIT: u64 = 1 << 63;

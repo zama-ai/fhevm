@@ -9,8 +9,8 @@ application programs such as `confidential-token`.
 ```text
 HostConfig
   PDA("host-config")
-  stores chain id, admin authority, input verifier authority,
-  test authority, pause state, and feature gates for mock/test/deny-list behavior
+  stores chain id, protocol authorities, pause state, HCU limits,
+  and the persistent-grant deny-list policy
 
 EncryptedValue
   PDA("encrypted-value", value_key)
@@ -130,17 +130,12 @@ in the allowed set, and deny-list/pause checks still apply. Superseding a handle
 `HistoricalAccessLeaf` per allowed subject in current order. Public decryptability is represented
 only by `PublicDecryptLeaf`; it never rolls forward to later handles.
 
-## Test-Only Controls
+## Test setup
 
-`set_test_shims_enabled` and `set_mock_input_enabled` are not protocol APIs. They are
-`#[cfg(feature = "poc")]`, so they are compiled out of default/production builds. The event-only
-`test_emit_*` instructions were removed with their ignored coprocessor tests.
-
-The zero-birth-entropy fallback is the only surviving state relaxation; it is confined to the local
-PoC chain id (`HostConfig::zero_birth_entropy_allowed`, DD-014). Registered-signer threshold policy and
-real proof/transciphering validation are still external/open design items.
-`test_authority` remains required and non-default at initialization only to preserve the current
-HostConfig layout and initialization contract; removing it is quarantined until an explicit account-ABI break.
+The host has no test-only verification or handle-birth path. Tests that create handles seed the
+`Clock` and `SlotHashes` sysvars; missing previous-bank entropy fails closed exactly as it does in a
+deployed program (DD-014). Registered-signer threshold policy and real proof/transciphering
+validation are still external/open design items.
 Trivial and random handle birth paths (now `fhe_eval` `TrivialEncrypt`/`Rand`/`RandBounded` steps —
 the standalone `trivial_encrypt_and_bind`/`fhe_rand*_and_bind` instructions were removed) include
 output entropy in handle derivation before binding the result into an `EncryptedValue`.

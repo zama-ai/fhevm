@@ -100,12 +100,10 @@ async fn main() -> Result<()> {
         .get_account(&host_config_pda)
         .await
         .with_context(|| format!("fetch HostConfig {host_config_pda}"))?;
-    let (host_config_chain_id, zero_birth_entropy) =
-        parse_host_config(&account.data)?;
+    let host_config_chain_id = parse_host_config(&account.data)?;
     info!(
         %host_config_pda,
         chain_id = host_config_chain_id,
-        zero_birth_entropy,
         "auto-detected handle-derivation params from confirmed HostConfig"
     );
 
@@ -126,7 +124,6 @@ async fn main() -> Result<()> {
             rpc_fallback_url: args.url,
             program_id: program_id.to_string(),
             chain_id: host_config_chain_id,
-            zero_birth_entropy,
         },
         cancel,
     )

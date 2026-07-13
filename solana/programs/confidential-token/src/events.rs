@@ -43,10 +43,6 @@ pub enum BalanceHandleUpdateReason {
     TransferCredit,
     /// Confidential burn debit from this account.
     BurnDebit,
-    /// Receiver callback settlement debited a best-effort refund.
-    TransferCallbackRefundDebit,
-    /// Receiver callback settlement credited a best-effort refund.
-    TransferCallbackRefundCredit,
 }
 
 /// App-local total-supply history event.

@@ -20,11 +20,13 @@ use serial_test::serial;
 use solana_sdk::{
     account::Account,
     clock::Clock,
+    hash::Hash,
     instruction::Instruction,
     message::{Message, VersionedMessage},
     program_pack::Pack,
     pubkey::Pubkey,
     signature::{Keypair, Signature, Signer},
+    slot_hashes::SlotHashes,
     transaction::VersionedTransaction,
 };
 use tfhe::prelude::FheTryEncrypt;
@@ -42,6 +44,7 @@ use zama_host as host;
 const BALANCE_FHE_TYPE: u8 = 5;
 const SECP_GATEWAY_CHAIN_ID: u64 = 31337;
 const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCD; 20];
+const PREVIOUS_BANK_HASH: [u8; 32] = [0x42; 32];
 type SeededCiphertext = ([u8; 32], i16, Vec<u8>);
 
 #[tokio::test]
@@ -138,7 +141,7 @@ fn reconstruct_transfer_events(
         fixture.compute_signer.to_bytes(),
         &ReconstructContext {
             chain_id: host::SOLANA_POC_CHAIN_ID,
-            previous_bank_hash: [0; 32],
+            previous_bank_hash: PREVIOUS_BANK_HASH,
             unix_timestamp: clock.unix_timestamp,
         },
     )
@@ -173,7 +176,6 @@ fn seed_host_config(
     program_id: Pubkey,
     admin: Pubkey,
     input_verifier_authority: Pubkey,
-    test_authority: Pubkey,
 ) -> Pubkey {
     let (host_config, bump) = Pubkey::find_program_address(&[host::HOST_CONFIG_SEED], &program_id);
     svm.set_account(
@@ -192,10 +194,7 @@ fn seed_host_config(
                 decryption_contract: [0u8; 20],
                 current_kms_context_id: 0,
                 material_authority: input_verifier_authority,
-                test_authority,
                 paused: false,
-                mock_input_enabled: true,
-                test_shims_enabled: true,
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: 0,
                 max_hcu_depth_per_tx: 0,
@@ -231,6 +230,13 @@ fn token_fixture() -> TokenFixture {
     );
 
     let mut svm = LiteSVM::new();
+    let mut clock = svm.get_sysvar::<Clock>();
+    clock.slot = 100;
+    svm.set_sysvar(&clock);
+    svm.set_sysvar(&SlotHashes::new(&[(
+        99,
+        Hash::new_from_array(PREVIOUS_BANK_HASH),
+    )]));
     svm.add_program_from_file(host_program_id, &host_program_path)
         .unwrap();
     svm.add_program_from_file(token_program_id, &token_program_path)
@@ -242,13 +248,7 @@ fn token_fixture() -> TokenFixture {
     let underlying_mint = Keypair::new();
     svm.airdrop(&alice.pubkey(), 2_000_000_000).unwrap();
     svm.airdrop(&bob.pubkey(), 1_000_000_000).unwrap();
-    let host_config = seed_host_config(
-        &mut svm,
-        host_program_id,
-        alice.pubkey(),
-        alice.pubkey(),
-        alice.pubkey(),
-    );
+    let host_config = seed_host_config(&mut svm, host_program_id, alice.pubkey(), alice.pubkey());
     create_spl_mint(&mut svm, &alice, &underlying_mint, 6);
     let compute_signer = token::compute_signer_address(mint.pubkey()).0;
     let total_supply_authority = token::total_supply_authority_address(mint.pubkey()).0;
