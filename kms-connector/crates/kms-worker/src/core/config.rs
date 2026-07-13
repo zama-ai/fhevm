@@ -14,7 +14,9 @@ use connector_utils::{
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-use serde::{Deserialize, Deserializer, Serialize};
+#[cfg(debug_assertions)]
+use serde::Serialize;
+use serde::{Deserialize, Deserializer};
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 /// Configuration of the `KmsWorker`.

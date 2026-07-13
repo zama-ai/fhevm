@@ -5,7 +5,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest, SnsCiphertextMaterial,
+    PublicDecryptionRequest_0 as PublicDecryptionRequest, SnsCiphertextMaterial,
     UserDecryptionRequest_0 as UserDecryptionRequest,
     UserDecryptionRequest_1 as UserDecryptionRequestV2,
 };
