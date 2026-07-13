@@ -173,6 +173,8 @@ mod tests {
             program_id,
             accounts,
             data,
+            top_level_index: 0,
+            stack_height: Some(1),
         }
     }
 
@@ -187,26 +189,31 @@ mod tests {
         out
     }
 
-    /// Builds the inner instruction the host emits for a `TrivialEncrypt` op via
-    /// `emit_cpi!`: a self-CPI whose data is the Anchor event sentinel + event
-    /// discriminator + borsh event, carrying the verified output `result` handle.
-    fn trivial_encrypt_event_ix(program_id: [u8; 32], result: [u8; 32]) -> RawInstruction {
+    fn born_public_event_ix(
+        program_id: [u8; 32],
+        lineage: [u8; 32],
+        result: [u8; 32],
+    ) -> RawInstruction {
         use anchor_lang::AnchorSerialize;
-        use zama_host::events::TrivialEncryptEvent;
-        let event = TrivialEncryptEvent {
-            version: 1,
-            subject: pk(0x30),
-            plaintext: pk(0x02),
-            fhe_type: 5,
-            result,
-        };
+        use zama_host::events::ProducedPublicOutput;
         let mut data = ANCHOR_EVENT_IX_TAG_LE.to_vec();
-        data.extend_from_slice(&event_discriminator("TrivialEncryptEvent"));
-        event.serialize(&mut data).unwrap();
+        data.extend_from_slice(&event_discriminator("PublicOutputsProducedEvent"));
+        data.push(zama_host::PUBLIC_OUTPUTS_PRODUCED_EVENT_VERSION);
+        AnchorSerialize::serialize(
+            &vec![ProducedPublicOutput {
+                step_index: 0,
+                encrypted_value: Pubkey::new_from_array(lineage),
+                output_handle: result,
+            }],
+            &mut data,
+        )
+        .unwrap();
         RawInstruction {
             program_id,
-            accounts: vec![pk(0xEE), program_id],
+            accounts: vec![zama_host::EVENT_AUTHORITY_AND_BUMP.0.to_bytes()],
             data,
+            top_level_index: 0,
+            stack_height: Some(2),
         }
     }
 
@@ -772,7 +779,7 @@ mod tests {
     /// `public(new_burn_handle)`. The output handle behind the public leaf is
     /// derived on-chain from slot entropy and carried in NO instruction arg, so
     /// the relayer cannot recompute it from thin JSON-RPC. It is instead resolved
-    /// from the `TrivialEncryptEvent` the burn emits via `emit_cpi!` (an inner
+    /// from the born-public lifecycle batch the burn emits as an inner
     /// instruction of the `fhe_eval`, already flattened into the tx by
     /// `chain::flatten_execution_order`). With that handle the relayer now
     /// reconstructs all three leaves and serves a verified public-decrypt proof.
@@ -783,7 +790,7 @@ mod tests {
         let owner = pk(0x30);
         let compute = pk(0x31);
         let old_handle = pk(0x20);
-        // Derived on-chain from previous_bank_hash; recovered from the op event.
+        // Derived on-chain from previous_bank_hash; recovered from the lifecycle batch.
         let burn_handle = pk(0x21);
         let chain = FakeChain::new(program_id);
 
@@ -826,14 +833,14 @@ mod tests {
         );
 
         // The burn: an fhe_eval durable supersede output, born public inline,
-        // followed by its `emit_cpi!` op event carrying the output handle.
+        // followed by its narrow lifecycle batch carrying the output handle.
         chain.push_tx(
             "sig2",
             2,
             &[lineage],
             vec![
                 born_public_burn_ix(program_id, lineage, old_handle, owner, compute),
-                trivial_encrypt_event_ix(program_id, burn_handle),
+                born_public_event_ix(program_id, lineage, burn_handle),
             ],
         );
 
@@ -927,7 +934,7 @@ mod tests {
             &[lineage],
             vec![
                 born_public_burn_ix(program_id, lineage, old_handle, owner, compute),
-                trivial_encrypt_event_ix(program_id, forged_handle),
+                born_public_event_ix(program_id, lineage, forged_handle),
             ],
         );
 
