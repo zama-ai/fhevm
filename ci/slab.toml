@@ -10,6 +10,18 @@ image_name = "Ubuntu Server 22.04 LTS R535 CUDA 12.2"
 flavor_name = "n3-L40x1"
 user = "ubuntu"
 
+[backend.hyperstack.4-l40]
+environment_name = "canada"
+image_name = "Ubuntu Server 22.04 LTS R535 CUDA 12.2"
+flavor_name = "n3-L40x4"
+user = "ubuntu"
+
+[backend.hyperstack.multi-a100-nvlink]
+environment_name = "canada"
+image_name = "Ubuntu Server 22.04 LTS R535 CUDA 12.2"
+flavor_name = "n3-A100x8-NVLink"
+user = "ubuntu"
+
 [backend.hyperstack.2-h100]
 environment_name = "canada"
 image_name = "Ubuntu Server 22.04 LTS R535 CUDA 12.2"
@@ -44,6 +56,31 @@ user = "ubuntu"
 environment_name = "us-1"
 image_name = "Ubuntu Server 22.04 LTS R535 CUDA 12.2"
 flavor_name = "n3-H100-SXM5x8"
+user = "ubuntu"
+
+[backend.terraform.scaleway-multi-h100-sxm5]
+script_path = "ci/terraform_scripts/scaleway/terraform.tf"
+instance_type = "H100-SXM-8-80G"
+user = "ubuntu"
+
+[backend.terraform.scaleway-4-h100-sxm5]
+script_path = "ci/terraform_scripts/scaleway/terraform.tf"
+instance_type = "H100-SXM-4-80G"
+user = "ubuntu"
+
+[backend.terraform.scaleway-2-h100-sxm5]
+script_path = "ci/terraform_scripts/scaleway/terraform.tf"
+instance_type = "H100-SXM-2-80G"
+user = "ubuntu"
+
+[backend.terraform.scaleway-single-h100]
+script_path = "ci/terraform_scripts/scaleway/terraform.tf"
+instance_type = "H100-1-80G"
+user = "ubuntu"
+
+[backend.terraform.scaleway-single-h100_fallback]
+script_path = "ci/terraform_scripts/scaleway/terraform.tf"
+instance_type = "H100-SXM-2-80G"
 user = "ubuntu"
 
 [backend.aws.bench]

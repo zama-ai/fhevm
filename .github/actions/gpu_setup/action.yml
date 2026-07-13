@@ -1,13 +1,16 @@
-name: Setup Cuda
-description: Setup Cuda on Hyperstack or GitHub instance
+name: Setup CUDA
+description: Set up CUDA and its host compiler on a GPU runner
 
 inputs:
   cuda-version:
-    description: Version of Cuda to use
+    description: Space-separated acceptable CUDA versions; installs the first if none are present
     required: true
-  github-instance:
-    description: Instance is hosted on GitHub
-    default: 'false'
+  gcc-version:
+    description: Version of GCC to use as the CUDA host compiler
+    required: true
+  cloud-provider:
+    description: Cloud provider hosting the GPU runner
+    required: true
 
 runs:
   using: "composite"
@@ -16,25 +19,89 @@ runs:
     - name: Install dependencies
       shell: bash
       run: |
-        sudo apt update
-        curl -fsSL https://apt.kitware.com/keys/kitware-archive-latest.asc | sudo gpg --dearmour -o /etc/apt/trusted.gpg.d/kitware.gpg
-        sudo chmod 644 /etc/apt/trusted.gpg.d/kitware.gpg
-        echo 'deb [signed-by=/etc/apt/trusted.gpg.d/kitware.gpg] https://apt.kitware.com/ubuntu/ jammy main' | sudo tee /etc/apt/sources.list.d/kitware.list >/dev/null
-        sudo apt update
-        sudo apt install -y cmake cmake-format libclang-dev
+        wget https://github.com/Kitware/CMake/releases/download/v"${CMAKE_VERSION}"/cmake-"${CMAKE_VERSION}"-linux-x86_64.sh
+        echo "${CMAKE_SCRIPT_SHA} cmake-${CMAKE_VERSION}-linux-x86_64.sh" | sha256sum --check
+        sudo bash cmake-"${CMAKE_VERSION}"-linux-x86_64.sh \
+          --skip-license --prefix=/usr/ --exclude-subdir
 
-    - name: Install CUDA
-      if: inputs.github-instance == 'true'
+        sudo systemctl mask --now unattended-upgrades
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
+        sudo apt-get purge -y unattended-upgrades
+
+        sudo apt update
+        sudo apt install -y cmake-format libclang-dev
+      env:
+        CMAKE_VERSION: 3.29.6
+        CMAKE_SCRIPT_SHA: 6e4fada5cba3472ae503a11232b6580786802f0879cead2741672bf65d97488a
+
+    - name: Install GCC
+      shell: bash
+      env:
+        GCC_VERSION: ${{ inputs.gcc-version }}
+      run: |
+        sudo apt-get install -y gcc-"${GCC_VERSION}" g++-"${GCC_VERSION}"
+        command -v gcc-"${GCC_VERSION}"
+        command -v g++-"${GCC_VERSION}"
+
+    - name: Check CUDA installation
+      id: check-cuda
       shell: bash
       env:
         CUDA_VERSION: ${{ inputs.cuda-version }}
       run: |
-        TOOLKIT_VERSION="$(echo ${CUDA_VERSION} | sed 's/\(.*\)\.\(.*\)/\1-\2/')"
-        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
-        sudo dpkg -i cuda-keyring_1.1-1_all.deb
-        sudo apt update
-        sudo apt -y install cuda-toolkit-${TOOLKIT_VERSION}
+        read -ra CUDA_VERSIONS <<< "${CUDA_VERSION}"
+        if bash ci/detect_cuda.sh "${CUDA_VERSIONS[@]}"; then
+          echo "cuda-is-installed=true" >> "${GITHUB_OUTPUT}"
+          echo "An acceptable CUDA toolkit is already installed"
+        else
+          echo "cuda-is-installed=false" >> "${GITHUB_OUTPUT}"
+          echo "No acceptable CUDA toolkit was found; installation is required"
+        fi
 
-    - name: Check device is detected
+    - name: Install CUDA
+      if: steps.check-cuda.outputs.cuda-is-installed != 'true'
       shell: bash
-      run: nvidia-smi
+      env:
+        CUDA_VERSION: ${{ inputs.cuda-version }}
+        CUDA_KEYRING_PACKAGE: cuda-keyring_1.1-1_all.deb
+        CUDA_KEYRING_SHA: d93190d50b98ad4699ff40f4f7af50f16a76dac3bb8da1eaaf366d47898ff8df
+      run: |
+        CUDA_INSTALL_VERSION="${CUDA_VERSION%% *}"
+        TOOLKIT_VERSION="$(echo "${CUDA_INSTALL_VERSION}" | sed 's/\(.*\)\.\(.*\)/\1-\2/')"
+        wget "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/${CUDA_KEYRING_PACKAGE}"
+        echo "${CUDA_KEYRING_SHA} ${CUDA_KEYRING_PACKAGE}" | sha256sum --check
+        sudo dpkg -i "${CUDA_KEYRING_PACKAGE}"
+
+        sudo systemctl mask --now unattended-upgrades
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
+        sudo apt-get purge -y unattended-upgrades
+
+        sudo apt update
+        sudo apt -y install cuda-toolkit-"${TOOLKIT_VERSION}"
+
+    - name: Export CUDA variables
+      shell: bash
+      env:
+        CUDA_VERSION: ${{ inputs.cuda-version }}
+      run: |
+        read -ra CUDA_VERSIONS <<< "${CUDA_VERSION}"
+        bash ci/export_cuda_vars.sh "${GITHUB_ENV}" "${GITHUB_PATH}" "${CUDA_VERSIONS[@]}"
+
+    - name: Export host compiler variables
+      shell: bash
+      env:
+        GCC_VERSION: ${{ inputs.gcc-version }}
+      run: |
+        {
+          echo "CC=/usr/bin/gcc-${GCC_VERSION}"
+          echo "CXX=/usr/bin/g++-${GCC_VERSION}"
+          echo "CUDAHOSTCXX=/usr/bin/g++-${GCC_VERSION}"
+        } >> "${GITHUB_ENV}"
+
+    - name: Check setup
+      shell: bash
+      run: |
+        command -v nvcc
+        nvidia-smi

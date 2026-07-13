@@ -1,4 +1,4 @@
-# Run all fhevm coprocessor benchmarks on a GPU instance on Hyperstack and return parsed results to Slab CI bot.
+# Run all fhevm coprocessor benchmarks on a cloud GPU instance and return parsed results to Slab CI bot.
 name: coprocessor-benchmark-gpu
 
 permissions: {}
@@ -11,14 +11,19 @@ on:
         required: true
         type: choice
         options:
-          - "l40 (n3-L40x1)"
-          - "single-h100 (n3-H100x1)"
-          - "2-h100 (n3-H100x2)"
-          - "4-h100 (n3-H100x4)"
-          - "multi-h100 (n3-H100x8)"
-          - "multi-h100-nvlink (n3-H100x8-NVLink)"
-          - "multi-h100-sxm5 (n3-H100x8-SXM5)"
-          - "multi-h100-sxm5_fallback (n3-H100x8-SXM5)"
+          - "hyperstack::l40 (n3-L40x1)"
+          - "hyperstack::4-l40 (n3-L40x4)"
+          - "hyperstack::multi-a100-nvlink (n3-A100x8-NVLink)"
+          - "hyperstack::single-h100 (n3-H100x1)"
+          - "hyperstack::2-h100 (n3-H100x2)"
+          - "hyperstack::4-h100 (n3-H100x4)"
+          - "hyperstack::multi-h100 (n3-H100x8)"
+          - "hyperstack::multi-h100-nvlink (n3-H100x8-NVLink)"
+          - "hyperstack::multi-h100-sxm5 (n3-H100-SXM5x8)"
+          - "scaleway::multi-h100-sxm5 (H100-SXM-8-80G)"
+          - "scaleway::4-h100-sxm5 (H100-SXM-4-80G)"
+          - "scaleway::2-h100-sxm5 (H100-SXM-2-80G)"
+          - "scaleway::single-h100 (H100-1-80G)"
       benchmarks:
         description: "Benchmark set"
         required: true
@@ -54,18 +59,19 @@ jobs:
     permissions:
       contents: 'read' # Required to checkout repository code
     outputs:
+      backend: ${{ steps.parse_profile.outputs.backend }}
       profile: ${{ steps.parse_profile.outputs.profile }}
-      hardware_name: ${{ steps.parse_hardware_name.outputs.name }}
+      hardware_name: ${{ steps.parse_profile.outputs.hardware }}
+      cloud_provider: ${{ steps.parse_profile.outputs.cloud_provider }}
     steps:
-      - name: Parse profile
-        id: parse_profile
-        run: |
-          echo "profile=$(echo "${PROFILE}" | sed 's|\(.*\)[[:space:]](.*)|\1|')" >> "${GITHUB_OUTPUT}"
+      - name: Checkout fhevm-backend
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          persist-credentials: 'false'
 
-      - name: Parse hardware name
-        id: parse_hardware_name
-        run: |
-          echo "name=$(echo "${PROFILE}" | sed 's|.*[[:space:]](\(.*\))|\1|')" >> "${GITHUB_OUTPUT}"
+      - name: Parse profile and hardware name
+        id: parse_profile
+        run: python3 ci/parse_benchmark_profile.py "${PROFILE}" "${GITHUB_OUTPUT}"
 
   setup-instance:
     name: coprocessor-benchmark-gpu/setup-instance
@@ -78,13 +84,13 @@ jobs:
     steps:
       - name: Start remote instance
         id: start-remote-instance
-        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        uses: zama-ai/slab-github-runner@d4a5bb6e2a4b8aa19a10f596d7f142006a7e2c21 # v1.6.3
         with:
           mode: start
           github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
           slab-url: ${{ secrets.SLAB_BASE_URL }}
           job-secret: ${{ secrets.JOB_SECRET }}
-          backend: hyperstack
+          backend: ${{ needs.parse-inputs.outputs.backend }}
           profile: ${{ needs.parse-inputs.outputs.profile }}
 
   benchmark:
@@ -96,21 +102,6 @@ jobs:
     permissions:
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to read GitHub packages/container registry
-    strategy:
-      fail-fast: false
-      # explicit include-based build matrix, of known valid options
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            cuda: "12.2"
-            gcc: 11
-    env:
-      CUDA_PATH: "/usr/local/cuda-${{ matrix.cuda }}"
-      CUDA_MODULE_LOADER: "EAGER"
-      CC: "/usr/bin/gcc-${{ matrix.gcc }}"
-      CXX: "/usr/bin/g++-${{ matrix.gcc }}"
-      CUDAHOSTCXX: "/usr/bin/g++-${{ matrix.gcc }}"
-
     steps:
       - name: Install git LFS
         run: |
@@ -133,17 +124,12 @@ jobs:
       - name: Checkout LFS objects
         run: git lfs checkout
 
-      - name: Setup Hyperstack dependencies
+      - name: Setup GPU dependencies
         uses: ./.github/actions/gpu_setup
         with:
-          cuda-version: ${{ matrix.cuda }}
-          github-instance: ${{ env.SECRETS_AVAILABLE == 'false' }}
-
-      - name: Export CUDA variables
-        shell: bash
-        run: |
-          echo "PATH=$PATH:${CUDA_PATH}/bin" >> "${GITHUB_PATH}"
-          echo "LD_LIBRARY_PATH=${CUDA_PATH}/lib64:${LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
+          cuda-version: "12.8 12.2"
+          gcc-version: 12
+          cloud-provider: ${{ needs.parse-inputs.outputs.cloud_provider }}
 
       - name: Get benchmark details
         run: |
@@ -285,7 +271,7 @@ jobs:
     steps:
       - name: Stop remote instance
         id: stop-instance
-        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        uses: zama-ai/slab-github-runner@d4a5bb6e2a4b8aa19a10f596d7f142006a7e2c21 # v1.6.3
         with:
           mode: stop
           github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
