@@ -21,7 +21,9 @@ Put credentials in the workspace-root `.env` (`sdk/cli-js-sdk/.env`):
 | `MNEMONIC` | handle pools | preferred: enables parallel funded HD lanes (`--lanes`, default 4) |
 | `PRIVATE_KEY` | handle pools | alternative; single lane only |
 | `DELEGATE_PRIVATE_KEY` | delegated pools without `MNEMONIC` | sign-only, needs no funds |
-| `SEPOLIA_RPC_URL` | handle pools | host-chain RPC for FHETest transactions |
+| `SEPOLIA_RPC_URL` | `testnet`, `devnet` handle pools | Ethereum Sepolia host-chain RPC for FHETest transactions |
+| `POLYGON_AMOY_RPC_URL` | `devnet-amoy` handle pools | Polygon Amoy host-chain RPC for FHETest transactions |
+| `MAINNET_RPC_URL` | `mainnet` handle pools | Ethereum Mainnet host-chain RPC for FHETest transactions |
 | `LOAD_TEST_RELAYER_URL` | everything | or pass `--relayer-url` |
 | `LOAD_TEST_RELAYER_CONFIG` | config snapshot | optional; path to the relayer YAML in effect |
 | `LOAD_TEST_DATA_DIR` | pools/runs root | default `.load-test` |
@@ -67,16 +69,22 @@ Custom suites are JSON:
   "pauseSec": 60,
   "entries": [
     { "scenario": "open-steady", "params": { "rps": 25, "durationSec": 600 }, "label": "open-steady-25" },
-    { "scenario": "closed-steady", "params": { "vus": 20, "durationSec": 600 }, "label": "closed-steady-20vu" },
-    { "scenario": "./scenarios/my-mixed.json" },
+    { "scenario": "scenarios/my-mixed.json" },
     { "scenario": "drain", "params": { "count": 2000, "rps": 200 } }
   ]
 }
 ```
 
 ```bash
-node --import tsx index.ts suite run ./suites/pre-release.json
+node --import tsx index.ts suite run suites/pre-release.json
 ```
+
+Custom scenario and suite JSON is operator-local and ignored under
+`scenarios/` and `suites/`. Paths are resolved from the load-test process
+working directory, not from the suite file's directory, so suite entries must
+use package-relative paths as above or absolute paths.
+`params` overrides apply to built-in scenario names; a JSON scenario carries
+its complete configuration in its own file.
 
 Suites run scenarios **sequentially** with a pause in between — never run two
 load tests against the same relayer at once; they corrupt each other's

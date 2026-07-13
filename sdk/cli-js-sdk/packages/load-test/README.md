@@ -71,7 +71,11 @@ Environment (read from the workspace-root `.env` or the environment):
 - `DELEGATE_PRIVATE_KEY` — sign-only delegate account for
   `delegated-user-decrypt` pools when no mnemonic is set (with a mnemonic the
   delegate is derived at a reserved HD index).
-- `SEPOLIA_RPC_URL` (per-network RPC override), `ZAMA_FHEVM_API_KEY` (optional).
+- Host-chain RPC override: `SEPOLIA_RPC_URL` for `testnet` and `devnet`,
+  `POLYGON_AMOY_RPC_URL` for `devnet-amoy`, and `MAINNET_RPC_URL` for
+  `mainnet`. Public network defaults are used when the matching variable and
+  `--rpc-url` are both absent.
+- `ZAMA_FHEVM_API_KEY` — optional SDK and raw-relayer API-key authentication.
 - `LOAD_TEST_RELAYER_URL`, `LOAD_TEST_NETWORK`, `LOAD_TEST_DATA_DIR`,
   `LOAD_TEST_RELAYER_CONFIG` — defaults for the matching CLI flags.
 
@@ -132,7 +136,7 @@ node --import tsx index.ts run open-ramp --rps 10 --duration 120
 node --import tsx index.ts run closed-steady --vus 20 --duration 600 --flow user-decrypt
 node --import tsx index.ts run closed-ramp --vus 5 --duration 120 --flow delegated-user-decrypt
 node --import tsx index.ts run drain --count 1000 --rps 200
-node --import tsx index.ts run ./my-scenario.json --baseline baselines/testnet/open-steady.json
+node --import tsx index.ts run scenarios/my-scenario.json --baseline baselines/testnet/open-steady.json
 ```
 
 Built-ins (`scenario list` / `scenario show <name>`): `baseline`,
@@ -140,6 +144,14 @@ Built-ins (`scenario list` / `scenario show <name>`): `baseline`,
 `closed-steady`, `closed-ramp`, `closed-soak`, `drain`. Custom scenarios are
 JSON documents validated against the schema in `src/scenario/schema.ts` (flow
 mix and weights, load shape, timeouts, thresholds, saturation stop).
+
+Operator-authored JSON definitions are intentionally untracked by the local
+ignore policies in `scenarios/` and `suites/`. JSON paths are resolved from the
+load-test process working directory, not relative to a referring suite file.
+The commands documented here run from this package directory; the workspace
+`pnpm load-test` alias also launches the package there. Within a suite, use a
+package-relative path such as `scenarios/my-scenario.json` or an absolute path
+for a definition stored elsewhere.
 
 ## Collectors (all optional; absence degrades the report, never the run)
 

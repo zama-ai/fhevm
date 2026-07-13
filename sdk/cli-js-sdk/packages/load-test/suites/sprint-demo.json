@@ -1,7 +1,0 @@
-{
-  "name": "sprint-demo",
-  "description": "Wrapper around sprint-demo-scenario so `suite plan` / `suite run` can size and prepare its pools.",
-  "entries": [
-    { "scenario": "./scenarios/sprint-demo-scenario.json" }
-  ]
-}
