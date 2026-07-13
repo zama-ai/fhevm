@@ -91,33 +91,31 @@ impl DbEventNotifier {
     }
 
     fn ticker(&self, kind: EventType) -> EventTicker {
-        use EventType::*;
         let polling = match kind {
-            PublicDecryptionRequest => self.db_fast_event_polling,
-            UserDecryptionRequest => self.db_fast_event_polling,
-            PrepKeygenRequest => self.db_long_event_polling,
-            KeygenRequest => self.db_long_event_polling,
-            CrsgenRequest => self.db_long_event_polling,
-            AbortKeygenRequest => self.db_long_event_polling,
-            AbortCrsgenRequest => self.db_long_event_polling,
-            NewKmsContext => self.db_long_event_polling,
-            NewKmsEpoch => self.db_long_event_polling,
+            EventType::PublicDecryptionRequest => self.db_fast_event_polling,
+            EventType::UserDecryptionRequest => self.db_fast_event_polling,
+            EventType::PrepKeygenRequest => self.db_long_event_polling,
+            EventType::KeygenRequest => self.db_long_event_polling,
+            EventType::CrsgenRequest => self.db_long_event_polling,
+            EventType::AbortKeygenRequest => self.db_long_event_polling,
+            EventType::AbortCrsgenRequest => self.db_long_event_polling,
+            EventType::NewKmsContext => self.db_long_event_polling,
+            EventType::NewKmsEpoch => self.db_long_event_polling,
         };
         EventTicker::new(polling, kind)
     }
 
     pub async fn start(mut self) {
-        use EventType::*;
         let mut tickers = [
-            self.ticker(PublicDecryptionRequest),
-            self.ticker(UserDecryptionRequest),
-            self.ticker(PrepKeygenRequest),
-            self.ticker(KeygenRequest),
-            self.ticker(CrsgenRequest),
-            self.ticker(AbortKeygenRequest),
-            self.ticker(AbortCrsgenRequest),
-            self.ticker(NewKmsContext),
-            self.ticker(NewKmsEpoch),
+            self.ticker(EventType::PublicDecryptionRequest),
+            self.ticker(EventType::UserDecryptionRequest),
+            self.ticker(EventType::PrepKeygenRequest),
+            self.ticker(EventType::KeygenRequest),
+            self.ticker(EventType::CrsgenRequest),
+            self.ticker(EventType::AbortKeygenRequest),
+            self.ticker(EventType::AbortCrsgenRequest),
+            self.ticker(EventType::NewKmsContext),
+            self.ticker(EventType::NewKmsEpoch),
         ];
 
         loop {
