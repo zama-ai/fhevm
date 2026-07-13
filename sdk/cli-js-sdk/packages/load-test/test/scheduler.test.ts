@@ -149,6 +149,39 @@ describe("runScheduler", () => {
     expect(abandoned).toBe(0);
   });
 
+  it("records dispatch telemetry before invoking synchronous executor work", async () => {
+    const order: string[] = [];
+    const executor: FlowExecutor = {
+      flow: "input-proof",
+      prepare: () => Promise.resolve(),
+      close: () => Promise.resolve(),
+      async execute(index): Promise<RequestRecord> {
+        order.push("execute");
+        return {
+          flow: "input-proof",
+          index,
+          startedAtMs: Date.now(),
+          sentRequestId: "request",
+          pollCount: 1,
+          outcome: "succeeded",
+        };
+      },
+    };
+    const recorder = await Recorder.open(join(dir, "requests.jsonl"));
+    await runScheduler({
+      scenario: scenario({ kind: "burst", count: 1, maxRps: 1 }),
+      executors: new Map([["input-proof", executor]]),
+      recorder,
+      telemetry: {
+        recordDispatch: () => order.push("telemetry"),
+        recordDropped: () => undefined,
+        recordAbandoned: () => undefined,
+      },
+    });
+    await recorder.close();
+    expect(order).toEqual(["telemetry", "execute"]);
+  });
+
   it("closed-model submissions are bounded by active VUs and request completion", async () => {
     const executor = makeExecutor({ latencyMs: 120 });
     const recorder = await Recorder.open(join(dir, "requests.jsonl"));

@@ -275,6 +275,13 @@ export const runScheduler = async (
     loadStage: RequestLoadStage,
     scheduledOffsetMs: number,
   ): void => {
+    // Capture scheduler lateness before invoking the async executor: its body
+    // runs synchronously until the first await and may perform non-trivial
+    // request setup that is workload cost, not dispatch lag.
+    options.telemetry?.recordDispatch(
+      Math.max(0, monotonicNowMs() - startMono - scheduledOffsetMs),
+      outstanding.size + 1,
+    );
     const task = executeOne(
       options,
       flow,
@@ -307,10 +314,6 @@ export const runScheduler = async (
         outstanding.delete(task);
       });
     outstanding.add(task);
-    options.telemetry?.recordDispatch(
-      Math.max(0, monotonicNowMs() - startMono - scheduledOffsetMs),
-      outstanding.size,
-    );
   };
 
   for (const offsetMs of arrivalOffsetsMs(shape)) {

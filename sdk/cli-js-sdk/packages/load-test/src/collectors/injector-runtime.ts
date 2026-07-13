@@ -6,6 +6,8 @@ import type { Collector } from "./types";
 
 export type InjectorRuntimeSample = Readonly<{
   tMs: number;
+  /** Monotonic interval represented by ELU and event-loop lag fields. */
+  observationDurationMs: number;
   eventLoopUtilization: number;
   eventLoopLagMeanMs: number;
   eventLoopLagP99Ms: number;
@@ -27,12 +29,20 @@ export type SchedulerTelemetry = Readonly<{
 }>;
 
 export type InjectorHealth = Readonly<{
-  verdict: "healthy" | "degraded" | "unhealthy" | "unavailable";
+  verdict: "healthy" | "degraded" | "unhealthy" | "indeterminate" | "unavailable";
   reasons: readonly string[];
 }>;
 
+/** Ten one-second samples provide a minimum sustained runtime observation window. */
+export const MIN_RUNTIME_HEALTH_SAMPLES = 10;
+/** A p99 needs at least 100 dispatches so its tail represents more than one observation. */
+export const MIN_DISPATCH_HEALTH_SAMPLES = 100;
+
 export type InjectorRuntimeSummary = Readonly<{
+  /** All raw samples, including a potentially short final resource snapshot. */
   sampleCount: number;
+  /** Samples with a long enough interval to support ELU/lag health assessment. */
+  healthSampleCount?: number;
   scheduler: SchedulerTelemetry;
   dispatchLagP95Ms?: number;
   dispatchLagP99Ms?: number;
@@ -54,30 +64,42 @@ const percentile = (values: readonly number[], p: number): number | undefined =>
 
 export const assessInjectorHealth = (input: {
   sampleCount: number;
+  dispatchCount: number;
   dispatchLagP99Ms?: number;
   maxEventLoopLagP99Ms?: number;
   peakEventLoopUtilization?: number;
-  backpressureEvents?: number;
   dropped: number;
   abandoned: number;
 }): InjectorHealth => {
-  if (input.sampleCount === 0 && input.dispatchLagP99Ms === undefined) {
-    return { verdict: "unavailable", reasons: ["No injector runtime or scheduler samples were collected."] };
-  }
   const critical: string[] = [];
   const warnings: string[] = [];
-  if ((input.backpressureEvents ?? 0) > 0) {
-    warnings.push(`${(input.backpressureEvents ?? 0).toString()} dispatch(es) exceeded the 25 ms backpressure threshold.`);
-  }
   if (input.dropped > 0) critical.push(`${input.dropped.toString()} scheduled dispatch(es) were dropped.`);
   if (input.abandoned > 0) critical.push(`${input.abandoned.toString()} request(s) remained inflight after drain.`);
-  if ((input.dispatchLagP99Ms ?? 0) > 100) critical.push(`Dispatch lag p99 exceeded 100 ms (${input.dispatchLagP99Ms?.toFixed(1)} ms).`);
-  else if ((input.dispatchLagP99Ms ?? 0) > 25) warnings.push(`Dispatch lag p99 exceeded 25 ms (${input.dispatchLagP99Ms?.toFixed(1)} ms).`);
-  if ((input.maxEventLoopLagP99Ms ?? 0) > 100) critical.push(`Event-loop lag p99 exceeded 100 ms (${input.maxEventLoopLagP99Ms?.toFixed(1)} ms).`);
-  else if ((input.maxEventLoopLagP99Ms ?? 0) > 25) warnings.push(`Event-loop lag p99 exceeded 25 ms (${input.maxEventLoopLagP99Ms?.toFixed(1)} ms).`);
-  if ((input.peakEventLoopUtilization ?? 0) > 0.95) warnings.push(`Event-loop utilization peaked above 95% (${((input.peakEventLoopUtilization ?? 0) * 100).toFixed(1)}%).`);
+  if (input.sampleCount === 0 && input.dispatchCount === 0 && critical.length === 0) {
+    return { verdict: "unavailable", reasons: ["No injector runtime or scheduler samples were collected."] };
+  }
+
+  const runtimeSufficient = input.sampleCount >= MIN_RUNTIME_HEALTH_SAMPLES;
+  const dispatchSufficient = input.dispatchCount >= MIN_DISPATCH_HEALTH_SAMPLES;
+  if (dispatchSufficient) {
+    if ((input.dispatchLagP99Ms ?? 0) > 100) critical.push(`Dispatch lag p99 exceeded 100 ms (${input.dispatchLagP99Ms?.toFixed(1)} ms).`);
+    else if ((input.dispatchLagP99Ms ?? 0) > 25) warnings.push(`Dispatch lag p99 exceeded 25 ms (${input.dispatchLagP99Ms?.toFixed(1)} ms).`);
+  }
+  if (runtimeSufficient) {
+    if ((input.maxEventLoopLagP99Ms ?? 0) > 100) critical.push(`Event-loop lag p99 exceeded 100 ms (${input.maxEventLoopLagP99Ms?.toFixed(1)} ms).`);
+    else if ((input.maxEventLoopLagP99Ms ?? 0) > 25) warnings.push(`Event-loop lag p99 exceeded 25 ms (${input.maxEventLoopLagP99Ms?.toFixed(1)} ms).`);
+    if ((input.peakEventLoopUtilization ?? 0) > 0.95) warnings.push(`Event-loop utilization peaked above 95% (${((input.peakEventLoopUtilization ?? 0) * 100).toFixed(1)}%).`);
+  }
   if (critical.length > 0) return { verdict: "unhealthy", reasons: [...critical, ...warnings] };
   if (warnings.length > 0) return { verdict: "degraded", reasons: warnings };
+  const insufficient: string[] = [];
+  if (!dispatchSufficient) {
+    insufficient.push(`Dispatch health needs at least ${MIN_DISPATCH_HEALTH_SAMPLES.toString()} samples; collected ${input.dispatchCount.toString()}.`);
+  }
+  if (!runtimeSufficient) {
+    insufficient.push(`Runtime health needs at least ${MIN_RUNTIME_HEALTH_SAMPLES.toString()} samples; collected ${input.sampleCount.toString()}.`);
+  }
+  if (insufficient.length > 0) return { verdict: "indeterminate", reasons: insufficient };
   return { verdict: "healthy", reasons: ["Injector scheduling and runtime signals stayed within health thresholds."] };
 };
 
@@ -89,6 +111,8 @@ export class InjectorRuntimeCollector implements Collector {
   private previousElu = performance.eventLoopUtilization();
   private startCpu = process.cpuUsage();
   private readonly allSamples: InjectorRuntimeSample[] = [];
+  private readonly healthSamples: InjectorRuntimeSample[] = [];
+  private previousSampleAtMs = performance.now();
   private readonly dispatchLagMs: number[] = [];
   private peakInflight = 0;
   private backpressureEvents = 0;
@@ -128,11 +152,13 @@ export class InjectorRuntimeCollector implements Collector {
     this.writer = await JsonlWriter.open<InjectorRuntimeSample>(this.outputPath);
     this.started = true;
     this.previousElu = performance.eventLoopUtilization();
+    this.previousSampleAtMs = performance.now();
     this.startCpu = process.cpuUsage();
     try {
       this.histogram.enable();
       this.gcObserver.observe({ entryTypes: ["gc"] });
-      await this.sample();
+      // The first utilization delta needs a real observation interval. An
+      // immediate sample is dominated by collector startup and often reads 1.
       this.timer = setInterval(() => { void this.sample().catch(() => undefined); }, this.intervalMs);
       this.timer.unref();
     } catch (error) {
@@ -146,12 +172,16 @@ export class InjectorRuntimeCollector implements Collector {
   }
 
   private async sample(): Promise<void> {
+    const sampledAtMs = performance.now();
+    const observationDurationMs = Math.max(0, sampledAtMs - this.previousSampleAtMs);
+    this.previousSampleAtMs = sampledAtMs;
     const elu = performance.eventLoopUtilization(this.previousElu);
     this.previousElu = performance.eventLoopUtilization();
     const cpu = process.cpuUsage(this.startCpu);
     const memory = process.memoryUsage();
     const sample: InjectorRuntimeSample = {
       tMs: epochNowMs(),
+      observationDurationMs,
       eventLoopUtilization: elu.utilization,
       eventLoopLagMeanMs: Number(this.histogram.mean) / 1e6 || 0,
       eventLoopLagP99Ms: Number(this.histogram.percentile(99)) / 1e6 || 0,
@@ -163,6 +193,9 @@ export class InjectorRuntimeCollector implements Collector {
       gcDurationMs: this.gcDurationMs,
     };
     this.allSamples.push(sample);
+    // Preserve every final CPU/memory snapshot in JSONL, but do not let a
+    // teardown sample taken just after a periodic tick dominate ELU/lag peaks.
+    if (observationDurationMs >= this.intervalMs / 2) this.healthSamples.push(sample);
     await this.writer?.write(sample);
     this.histogram.reset();
   }
@@ -194,10 +227,10 @@ export class InjectorRuntimeCollector implements Collector {
   summary(): InjectorRuntimeSummary {
     const dispatchLagP95Ms = percentile(this.dispatchLagMs, 0.95);
     const dispatchLagP99Ms = percentile(this.dispatchLagMs, 0.99);
-    const maxEventLoopLagP99Ms = this.allSamples.length > 0
-      ? Math.max(...this.allSamples.map((sample) => sample.eventLoopLagP99Ms)) : undefined;
-    const peakEventLoopUtilization = this.allSamples.length > 0
-      ? Math.max(...this.allSamples.map((sample) => sample.eventLoopUtilization)) : undefined;
+    const maxEventLoopLagP99Ms = this.healthSamples.length > 0
+      ? Math.max(...this.healthSamples.map((sample) => sample.eventLoopLagP99Ms)) : undefined;
+    const peakEventLoopUtilization = this.healthSamples.length > 0
+      ? Math.max(...this.healthSamples.map((sample) => sample.eventLoopUtilization)) : undefined;
     const peakRssBytes = this.allSamples.length > 0
       ? Math.max(...this.allSamples.map((sample) => sample.rssBytes)) : undefined;
     const last = this.allSamples.at(-1);
@@ -209,16 +242,18 @@ export class InjectorRuntimeCollector implements Collector {
       abandoned: this.abandoned,
     };
     const health = assessInjectorHealth({
-      sampleCount: this.allSamples.length,
+      sampleCount: this.healthSamples.length,
+      dispatchCount: this.dispatchLagMs.length,
       dispatchLagP99Ms,
       maxEventLoopLagP99Ms,
       peakEventLoopUtilization,
-      backpressureEvents: this.backpressureEvents,
       dropped: this.dropped,
       abandoned: this.abandoned,
     });
     return {
-      sampleCount: this.allSamples.length, scheduler, dispatchLagP95Ms, dispatchLagP99Ms,
+      sampleCount: this.allSamples.length,
+      healthSampleCount: this.healthSamples.length,
+      scheduler, dispatchLagP95Ms, dispatchLagP99Ms,
       maxEventLoopLagP99Ms, peakEventLoopUtilization, peakRssBytes,
       cpuUserMicros: last?.cpuUserMicros, cpuSystemMicros: last?.cpuSystemMicros,
       gcCount: this.gcCount, gcDurationMs: this.gcDurationMs, health,

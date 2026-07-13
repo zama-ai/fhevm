@@ -230,6 +230,7 @@ export const reportSchema = z.object({
   }).strict().optional(),
   injector: z.object({
     sampleCount: integer,
+    healthSampleCount: integer.optional(),
     scheduler: z.object({
       dispatchLagMs: z.array(nonNegative), peakInflight: integer,
       backpressureEvents: integer, dropped: integer, abandoned: integer,
@@ -244,7 +245,7 @@ export const reportSchema = z.object({
     gcCount: integer,
     gcDurationMs: nonNegative,
     health: z.object({
-      verdict: z.enum(["healthy", "degraded", "unhealthy", "unavailable"]),
+      verdict: z.enum(["healthy", "degraded", "unhealthy", "indeterminate", "unavailable"]),
       reasons: z.array(z.string()),
     }).strict(),
   }).strict().optional(),
