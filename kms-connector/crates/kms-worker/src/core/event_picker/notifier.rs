@@ -172,7 +172,6 @@ impl EventTicker {
 
     pub async fn tick(&mut self) -> EventType {
         self.ticker.tick().await;
-        debug!("{} polling triggered", self.kind);
         self.kind
     }
 
