@@ -3967,7 +3967,7 @@
           {
             "name": "test_authority",
             "docs": [
-              "Configured signer for `test_emit_*` shims."
+              "Reserved legacy test authority; retained for account-layout stability."
             ],
             "type": "pubkey"
           },
@@ -3988,7 +3988,7 @@
           {
             "name": "test_shims_enabled",
             "docs": [
-              "Enables test event shim instructions."
+              "Enables the local zero-birth-entropy fallback."
             ],
             "type": "bool"
           },

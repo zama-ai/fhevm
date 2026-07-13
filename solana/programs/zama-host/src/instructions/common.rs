@@ -8,13 +8,14 @@ use anchor_lang::solana_program::{
 
 use crate::{
     errors::ZamaHostError,
-    events::HostConfigUpdatedEvent,
     state::{
         assert_handle_for_chain, deny_subject_address, encrypted_value_address,
         host_config_address, AclSubjectEntry, DenySubjectRecord, EncryptedValue, HostConfig,
-        EVENT_VERSION, MAX_ACL_SUBJECTS,
+        MAX_ACL_SUBJECTS,
     },
 };
+#[cfg(feature = "emit-events")]
+use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
 
 pub(super) fn assert_no_remaining_accounts(remaining_accounts: &[AccountInfo]) -> Result<()> {
     require!(
@@ -54,31 +55,8 @@ pub(super) fn assert_not_paused(config: &Account<HostConfig>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "poc")]
-pub(super) fn assert_test_shim_authority(
-    config: &Account<HostConfig>,
-    authority: Pubkey,
-) -> Result<()> {
-    assert_not_paused(config)?;
-    // Confine the `test_emit_*` event shims to the local PoC chain, matching the
-    // confinement already applied to the zero birth-entropy fallback
-    // (state.rs `zero_birth_entropy_allowed`). This prevents an admin on a
-    // deployed chain from emitting forged protocol events that a downstream
-    // host-listener/indexer could ingest as genuine.
-    require!(
-        config.test_shims_enabled && config.is_local_poc_chain(),
-        ZamaHostError::TestShimsDisabled
-    );
-    require_keys_eq!(
-        config.test_authority,
-        authority,
-        ZamaHostError::TestShimAuthorityMismatch
-    );
-    Ok(())
-}
-
+#[cfg(feature = "emit-events")]
 pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
-    #[cfg(feature = "emit-events")]
     emit!(HostConfigUpdatedEvent {
         version: EVENT_VERSION,
         config: crate::state::host_config_address().0,
@@ -93,6 +71,9 @@ pub(super) fn emit_config_updated(config: &HostConfig, admin: Pubkey) {
         updated_slot: config.updated_slot,
     });
 }
+
+#[cfg(not(feature = "emit-events"))]
+pub(super) fn emit_config_updated(_: &HostConfig, _: Pubkey) {}
 
 /// Enforces the per-app block-cap ordering guard: a metering-band cap (`0 < value < u64::MAX`)
 /// must be at least `max_hcu_per_tx`, so a single legal max-per-tx frame always fits on a fresh

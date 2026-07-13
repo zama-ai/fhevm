@@ -6,7 +6,9 @@
 use anchor_lang::prelude::*;
 
 use super::common::{assert_admin, assert_no_remaining_accounts};
-use crate::{errors::ZamaHostError, events::KmsContextDestroyedEvent, state::*};
+#[cfg(feature = "emit-events")]
+use crate::events::KmsContextDestroyedEvent;
+use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for destroying a KMS context.
 #[derive(Accounts)]

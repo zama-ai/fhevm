@@ -8,18 +8,10 @@ use serde_json::Value;
 use std::{collections::HashMap, env, fs, path::Path, process::Command};
 
 fn generate_zama_host_events() {
-    generate_anchor_events(
-        "zama_host.json",
-        "zama_host_events.rs",
-        "ZamaHostEvent",
-    );
+    generate_anchor_event_types("zama_host.json", "zama_host_events.rs");
 }
 
-fn generate_anchor_events(
-    idl_file: &str,
-    output_file: &str,
-    event_enum_name: &str,
-) {
+fn generate_anchor_event_types(idl_file: &str, output_file: &str) {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let idl_path = manifest_dir.join("idl").join(idl_file);
     println!("cargo:rerun-if-changed={}", idl_path.display());
@@ -47,10 +39,7 @@ fn generate_anchor_events(
         r#"// Generated from `host-listener/idl/{idl_file}` by `host-listener/build.rs`.
 // Do not edit by hand.
 
-use sha2::{{Digest, Sha256}};
-
 pub const EVENT_VERSION: u8 = 1;
-pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes();
 
 "#,
     );
@@ -87,172 +76,6 @@ pub const ANCHOR_EVENT_IX_TAG_LE: [u8; 8] = 0x1d9acb512ea545e4_u64.to_le_bytes()
         }
         output.push_str("}\n\n");
     }
-
-    output.push_str("#[derive(Clone, Debug, PartialEq, Eq)]\n");
-    output.push_str("pub enum ");
-    output.push_str(event_enum_name);
-    output.push_str(" {\n");
-    for event in events {
-        let event_name = event["name"].as_str().unwrap();
-        output.push_str("    ");
-        output.push_str(event_name.trim_end_matches("Event"));
-        output.push('(');
-        output.push_str(event_name);
-        output.push_str("),\n");
-    }
-    output.push_str("}\n\n");
-
-    output.push_str("pub fn decode_anchor_event(data: &[u8]) -> Option<");
-    output.push_str(event_enum_name);
-    output.push_str(
-        r#"> {
-    if data.len() < 8 {
-        return None;
-    }
-    let (discriminator, payload) = data.split_at(8);
-
-"#,
-    );
-    for event in events {
-        let event_name = event["name"].as_str().unwrap();
-        let discriminator = event["discriminator"]
-            .as_array()
-            .expect("IDL event must contain discriminator");
-        output.push_str("    if discriminator == ");
-        output.push_str(&byte_array(discriminator));
-        output.push_str(" {\n        return decode_");
-        output.push_str(&snake_case(event_name));
-        output.push_str("(payload).map(");
-        output.push_str(event_enum_name);
-        output.push_str("::");
-        output.push_str(event_name.trim_end_matches("Event"));
-        output.push_str(");\n    }\n");
-    }
-    output.push_str("\n    None\n}\n\n");
-
-    output.push_str("pub fn decode_anchor_cpi_event(data: &[u8]) -> Option<");
-    output.push_str(event_enum_name);
-    output.push_str(
-        r#"> {
-    decode_anchor_event(data.strip_prefix(&ANCHOR_EVENT_IX_TAG_LE)?)
-}
-
-"#,
-    );
-
-    output.push_str(
-        r#"pub fn anchor_event_discriminator(name: &str) -> [u8; 8] {
-    let digest = Sha256::digest(format!("event:{name}"));
-    digest[..8].try_into().expect("slice has 8 bytes")
-}
-
-"#,
-    );
-
-    for event in events {
-        let event_name = event["name"].as_str().unwrap();
-        let fields = fields_for_event(&types, event_name);
-        output.push_str("fn decode_");
-        output.push_str(&snake_case(event_name));
-        output.push_str("(payload: &[u8]) -> Option<");
-        output.push_str(event_name);
-        output.push_str(
-            "> {\n    let mut cursor = Cursor::new(payload);\n    let event = ",
-        );
-        output.push_str(event_name);
-        output.push_str(" {\n");
-        for field in fields {
-            let field_name = field["name"].as_str().unwrap();
-            output.push_str("        ");
-            output.push_str(field_name);
-            output.push_str(": ");
-            output.push_str(&read_expr(&field["type"]));
-            output.push_str("?,\n");
-        }
-        output.push_str(
-            "    };\n    cursor.is_finished().then_some(event)\n}\n\n",
-        );
-    }
-
-    for (enum_name, variants) in &event_enum_types {
-        output.push_str("fn read_");
-        output.push_str(&snake_case(enum_name));
-        output.push_str("(cursor: &mut Cursor<'_>) -> Option<");
-        output.push_str(enum_name);
-        output.push_str("> {\n");
-        output.push_str("    match cursor.read_u8()? {\n");
-        for (index, variant) in variants.iter().enumerate() {
-            output.push_str("        ");
-            output.push_str(&index.to_string());
-            output.push_str(" => Some(");
-            output.push_str(enum_name);
-            output.push_str("::");
-            output.push_str(variant);
-            output.push_str("),\n");
-        }
-        output.push_str("        _ => None,\n    }\n}\n\n");
-    }
-
-    output.push_str(
-        r#"struct Cursor<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
-    }
-
-    fn is_finished(&self) -> bool {
-        self.offset == self.bytes.len()
-    }
-
-    fn read_u8(&mut self) -> Option<u8> {
-        let byte = *self.bytes.get(self.offset)?;
-        self.offset += 1;
-        Some(byte)
-    }
-
-    fn read_bool(&mut self) -> Option<bool> {
-        match self.read_u8()? {
-            0 => Some(false),
-            1 => Some(true),
-            _ => None,
-        }
-    }
-
-    // Used only by `read_vec_array`; unused in event modules without a `Vec<[u8; N]>` field.
-    #[allow(dead_code)]
-    fn read_u32(&mut self) -> Option<u32> {
-        Some(u32::from_le_bytes(self.read_array::<4>()?))
-    }
-
-    fn read_u64(&mut self) -> Option<u64> {
-        Some(u64::from_le_bytes(self.read_array::<8>()?))
-    }
-
-    fn read_array<const N: usize>(&mut self) -> Option<[u8; N]> {
-        let end = self.offset.checked_add(N)?;
-        let bytes = self.bytes.get(self.offset..end)?;
-        self.offset = end;
-        bytes.try_into().ok()
-    }
-
-    // Borsh `Vec<[u8; N]>`: u32 little-endian length, then `len` fixed-size arrays.
-    // Not every generated event module uses a `Vec<[u8; N]>` field.
-    #[allow(dead_code)]
-    fn read_vec_array<const N: usize>(&mut self) -> Option<Vec<[u8; N]>> {
-        let len = self.read_u32()? as usize;
-        let mut out = Vec::with_capacity(len);
-        for _ in 0..len {
-            out.push(self.read_array::<N>()?);
-        }
-        Some(out)
-    }
-}
-"#,
-    );
 
     let out_path =
         Path::new(&env::var("OUT_DIR").expect("OUT_DIR must be set"))

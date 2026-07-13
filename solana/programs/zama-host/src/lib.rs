@@ -136,28 +136,6 @@ pub mod zama_host {
         instructions::fhe_eval(ctx, args)
     }
 
-    #[cfg(feature = "poc")]
-    pub fn test_emit_trivial_encrypt(
-        ctx: Context<TestEmitProtocolEvent>,
-        subject: Pubkey,
-        plaintext: [u8; 32],
-        fhe_type: u8,
-        result: [u8; 32],
-    ) -> Result<()> {
-        instructions::test_emit_trivial_encrypt(ctx, subject, plaintext, fhe_type, result)
-    }
-
-    #[cfg(feature = "poc")]
-    pub fn test_emit_fhe_rand(
-        ctx: Context<TestEmitProtocolEvent>,
-        subject: Pubkey,
-        seed: [u8; 16],
-        fhe_type: u8,
-        result: [u8; 32],
-    ) -> Result<()> {
-        instructions::test_emit_fhe_rand(ctx, subject, seed, fhe_type, result)
-    }
-
     // ---- RFC-024 EncryptedValue ACL model ----
 
     pub fn create_encrypted_value(

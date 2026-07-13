@@ -32,13 +32,13 @@ pub struct HostConfig {
     pub current_kms_context_id: u64,
     /// Configured authority for material-commitment paths.
     pub material_authority: Pubkey,
-    /// Configured signer for `test_emit_*` shims.
+    /// Reserved legacy test authority; retained for account-layout stability.
     pub test_authority: Pubkey,
     /// Pauses production-shaped host instructions when true.
     pub paused: bool,
     /// Enables the mock encrypted-input bind instruction.
     pub mock_input_enabled: bool,
-    /// Enables test event shim instructions.
+    /// Enables the local zero-birth-entropy fallback.
     pub test_shims_enabled: bool,
     /// Enables deny-list checks for persistent grant authorities.
     pub grant_deny_list_enabled: bool,

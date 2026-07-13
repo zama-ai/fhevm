@@ -130,19 +130,17 @@ in the allowed set, and deny-list/pause checks still apply. Superseding a handle
 `HistoricalAccessLeaf` per allowed subject in current order. Public decryptability is represented
 only by `PublicDecryptLeaf`; it never rolls forward to later handles.
 
-## Test-Only Entrypoints
+## Test-Only Controls
 
-`test_emit_*` (and `set_test_shims_enabled` / `set_mock_input_enabled`) are not protocol APIs. They are
-`#[cfg(feature = "poc")]` — compiled out of default/production builds — and additionally require a
-`HostConfig` feature gate and the configured authority signer:
-
-```text
-test_emit_*  ->  poc feature + test_shims_enabled + test_authority
-```
+`set_test_shims_enabled` and `set_mock_input_enabled` are not protocol APIs. They are
+`#[cfg(feature = "poc")]`, so they are compiled out of default/production builds. The event-only
+`test_emit_*` instructions were removed with their ignored coprocessor tests.
 
 The zero-birth-entropy fallback is the only surviving state relaxation; it is confined to the local
 PoC chain id (`HostConfig::zero_birth_entropy_allowed`, DD-014). Registered-signer threshold policy and
 real proof/transciphering validation are still external/open design items.
+`test_authority` remains required and non-default at initialization only to preserve the current
+HostConfig layout and initialization contract; removing it is quarantined until an explicit account-ABI break.
 Trivial and random handle birth paths (now `fhe_eval` `TrivialEncrypt`/`Rand`/`RandBounded` steps —
 the standalone `trivial_encrypt_and_bind`/`fhe_rand*_and_bind` instructions were removed) include
 output entropy in handle derivation before binding the result into an `EncryptedValue`.

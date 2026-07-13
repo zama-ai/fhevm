@@ -157,11 +157,12 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
    not yet a registered n-of-m set — the threshold machinery (`eip712::verify_threshold`) exists but
    input verification uses the single-signer path. Remaining work is the registered signer set
    (FUTURE_DESIGN §1) and the real proof/transciphering service behind the attestation.
-2. **Test/mock bypass gates** (`set_test_shims_enabled`, `test_emit_*`) are `#[cfg(feature = "poc")]`
+2. **Test/mock bypass controls** (`set_test_shims_enabled`, `set_mock_input_enabled`) are `#[cfg(feature = "poc")]`
    — compiled out of default/production builds. The surviving state relaxation, the zero birth-entropy
    fallback, is additionally confined to `SOLANA_POC_CHAIN_ID` via `HostConfig::zero_birth_entropy_allowed`,
    so it cannot weaken birth entropy on a deployed chain regardless of flags (DD-014). The former
-   `mock_input_verified_and_bind` input short-circuit was removed entirely.
+   `mock_input_verified_and_bind` input short-circuit and the event-only `test_emit_*` instructions
+   were removed entirely.
 3. **No per-block HCU / complexity metering.** The host caps total and critical-path HCU per
    `fhe_eval` plan (`HostConfig::max_hcu_per_tx` / `max_hcu_depth_per_tx`, `0` = off) plus the Solana
    compute budget, but there is no EVM-style per-block `HCULimit` plane. Relevant to DoS/cost-bounding.

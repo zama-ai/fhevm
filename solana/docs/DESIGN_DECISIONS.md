@@ -470,14 +470,13 @@ Status: adopted
 
 Context:
 
-Local testing needs a zero birth-entropy fallback (used when the Mollusk slot-hash sysvar is empty)
-and the `test_emit_*` event shims. Earlier these were gated only by admin-toggled `HostConfig` flags,
-so enabling test events could silently re-open the zero-entropy hole, and nothing bound them to a
-non-production chain.
+Local testing needs a zero birth-entropy fallback when the Mollusk slot-hash sysvar is empty. Earlier
+test-only controls were gated only by admin-toggled `HostConfig` flags, so enabling them could silently
+re-open the zero-entropy hole, and nothing bound them to a non-production chain.
 
 Decision:
 
-Two defenses stack. (1) The shim instructions (`test_emit_*`, `set_test_shims_enabled`,
+Two defenses stack. (1) The local-only controls (`set_test_shims_enabled`,
 `set_mock_input_enabled`) are `#[cfg(feature = "poc")]` — compiled out of default/production builds.
 (2) The surviving state relaxation, the zero-entropy fallback, is gated at the consumption site by
 `HostConfig::zero_birth_entropy_allowed()` (`test_shims_enabled && is_local_poc_chain()`, where
@@ -485,10 +484,10 @@ Two defenses stack. (1) The shim instructions (`test_emit_*`, `set_test_shims_en
 any non-PoC chain id, always takes the production branch — handle birth fails closed with
 `PreviousBankHashUnavailable`.
 
-The former `mock_input_verified_and_bind` input short-circuit (and the never-consumed `mock_input_allowed`
-gate) were **removed** — input mocking no longer exists; the real path is the in-frame secp256k1
-attestation verify (DD-007). The vestigial `mock_input_enabled` flag on `HostConfig` remains only for
-account-layout stability and should be dropped at the next ABI break.
+The former `mock_input_verified_and_bind` input short-circuit, the never-consumed `mock_input_allowed`
+gate, and the event-only `test_emit_*` instructions were **removed**. The real input path is the in-frame
+secp256k1 attestation verify (DD-007). The vestigial `mock_input_enabled` flag on `HostConfig` remains
+only for account-layout stability and should be dropped at the next ABI break.
 
 Rationale:
 
@@ -1038,8 +1037,8 @@ Status: adopted (reconciliation) — stated so the debate doesn't assume more th
 - **Single local validator** in the harness — real reorgs / finality lag are not exercised end-to-end.
 - **Input proof / transciphering** behind the coprocessor attestation is a PoC shortcut; real ZKPoK +
   transciphering is production work (DD-007).
-- `mock_input_verified_and_bind`, `test_emit_*`, and the zero-birth-entropy fallback remain test-only
-  and chain-id confined (DD-014); they should be compiled out for mainnet (Open Product Decisions).
+- The zero-birth-entropy fallback remains test-only and chain-id confined (DD-014); its controls are
+  compiled out for mainnet (Open Product Decisions).
 
 ## DD-029: `drift_revert` ≠ On-Chain Reorg (disambiguation)
 

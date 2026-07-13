@@ -7,7 +7,9 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use crate::{errors::ZamaHostError, events::HcuAppTrustUpdatedEvent, state::*};
+#[cfg(feature = "emit-events")]
+use crate::events::HcuAppTrustUpdatedEvent;
+use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for creating or updating an HCU trust-registry record.
 #[derive(Accounts)]

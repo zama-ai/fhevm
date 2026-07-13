@@ -71,9 +71,9 @@ cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener 
 - **Stale or wrong-feature SBF artifacts.** After changing an Anchor program, **rebuild** before
   running runtime tests — a stale `.so` will make tests pass or fail against old code. Prefer
   `bash scripts/check-zama-host-idl.sh`: it checks the default production IDL/ABI surface, then
-  rebuilds the ignored `target/deploy` artifacts with the PoC-only host/token features that Mollusk
-  tests exercise. Plain `anchor build` is fine for production artifacts, but it does not include the
-  local-only runtime-test shims.
+  rebuilds the `target/deploy` artifacts with the PoC-only host/token features that Mollusk tests
+  exercise. Plain `anchor build` is fine for production artifacts, but it does not include the
+  local-only runtime-test controls.
 - **SPL Token CPIs in token tests.** `token_mollusk` executes real SPL Token CPIs through the
   matching `mollusk-svm-programs-token` program fixture.
 - **`anchor build` vs program ids.** `anchor build` checks that each program's declared id matches
@@ -86,9 +86,9 @@ cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p host-listener 
   running several cargo invocations at once causes build-lock waits, not speedups.
 - **Connector/coprocessor need `SQLX_OFFLINE=true`.** They have SQLx-checked queries; without the
   env var and a live DB they won't compile.
-- **The host-listener event match is exhaustive.** If you add a new `zama-host` event, the listener
-  needs an explicit arm for it — even an *ignored* one — or it won't compile. Regenerate its
-  vendored IDL when host events change.
+- **The host-listener event types are generated, not decoded.** Ingestion reconstructs semantic
+  compute facts from instruction data. If a generated event value type changes, regenerate the
+  vendored IDL and validate reconstruction explicitly; there is no emitted-event decoder fallback.
 - **The connector ABI is hand-mirrored and version-pinned.** `kms-worker` re-declares the byte
   layout of host accounts (`EncryptedValue`, …), the PDA seeds, the hash
   domains, and `EVENT_VERSION`/`MAX_ACL_SUBJECTS` — with **no compile-time link** to `zama-host`.

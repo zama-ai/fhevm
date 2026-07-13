@@ -262,8 +262,6 @@ fn production_poc_paths_are_compile_feature_gated_and_runtime_rejected() {
         "mock_input_verified_and_bind",
         "test_emit_input_verified",
         "test_emit_acl_allowed",
-        "test_emit_trivial_encrypt",
-        "test_emit_fhe_rand",
     ] {
         assert!(
             cfg_gated_symbol(HOST_LIB, symbol) || cfg_gated_symbol(HOST_LIB, &camelish(symbol)),

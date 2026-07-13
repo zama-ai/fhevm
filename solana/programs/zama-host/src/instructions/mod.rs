@@ -25,10 +25,6 @@ pub mod set_max_hcu_per_tx;
 pub mod set_mock_input_enabled;
 #[cfg(feature = "poc")]
 pub mod set_test_shims_enabled;
-#[cfg(feature = "poc")]
-pub mod test_emit_fhe_rand;
-#[cfg(feature = "poc")]
-pub mod test_emit_trivial_encrypt;
 
 pub use define_kms_context::*;
 pub use delegate_for_user_decryption::*;
@@ -49,7 +45,3 @@ pub use set_max_hcu_per_tx::*;
 pub use set_mock_input_enabled::*;
 #[cfg(feature = "poc")]
 pub use set_test_shims_enabled::*;
-#[cfg(feature = "poc")]
-pub use test_emit_fhe_rand::*;
-#[cfg(feature = "poc")]
-pub use test_emit_trivial_encrypt::*;

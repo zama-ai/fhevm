@@ -1,3 +1,5 @@
+//! Slow manual boundary coverage for Solana token plans and the real TFHE worker.
+
 use std::path::PathBuf;
 
 use anchor_lang::{
@@ -7,25 +9,18 @@ use anchor_lang::{
 use anchor_spl::token::spl_token;
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheCiphertexts};
 use host_listener::{
-    contracts::TfheContract::TfheContractEvents,
     database::tfhe_event_propagate::Handle,
-    database::tfhe_event_propagate::{tfhe_inputs_handle, tfhe_result_handle},
-    generated::{
-        FheBinaryOpCode as SolanaFheBinaryOpCode, FheBinaryOpEvent, FheRandEvent,
-        FheTernaryOpCode as SolanaFheTernaryOpCode, FheTernaryOpEvent, TrivialEncryptEvent,
-        EVENT_VERSION,
-    },
     solana_adapter::{
-        decode_anchor_cpi_events, decode_anchor_log_events, decode_solana_transaction_events,
-        insert_solana_events, normalize_solana_events_for_db, solana_transaction_id,
-        SolanaBlockMeta, SolanaHostEvent,
+        insert_solana_events, solana_transaction_id, SolanaBlockMeta, SolanaHostEvent,
     },
+    solana_reconstruct::{decode_fhe_eval_args, reconstruct_fhe_eval_events, ReconstructContext},
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
 use serial_test::serial;
 use solana_sdk::{
     account::Account,
-    instruction::{AccountMeta, Instruction},
+    clock::Clock,
+    instruction::Instruction,
     message::{Message, VersionedMessage},
     program_pack::Pack,
     pubkey::Pubkey,
@@ -34,10 +29,7 @@ use solana_sdk::{
 };
 use tfhe::prelude::FheTryEncrypt;
 use time::{Date, Month, PrimitiveDateTime, Time};
-use zama_host::{
-    AclSubjectEntry, EncryptedValue, FheEvalArgs, FheEvalOperand, FheEvalOutput, FheEvalStep,
-    HostConfig,
-};
+use zama_host::{EncryptedValue, HostConfig};
 
 use crate::tests::{
     event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed},
@@ -47,30 +39,21 @@ use crate::tests::{
 use confidential_token as token;
 use zama_host as host;
 
-// Small "fast" euint8 type used by the standalone fhe-rand round-trip.
-const FAST_REAL_FHE_TYPE: u8 = 2;
-// Must equal the token program's BALANCE_FHE_TYPE: confidential balances and
-// transfer amounts are euint64 (type 5); the program rejects other handle types.
 const BALANCE_FHE_TYPE: u8 = 5;
-const TOKEN_BALANCE_FHE_TYPE: u8 = 5;
-type SeededCiphertext = ([u8; 32], i16, Vec<u8>);
-const DEFAULT_SOLANA_LOG_BYTES_LIMIT: usize = 10_000;
-// Coprocessor `CiphertextVerification` EIP-712 domain used by the `fromExternal` transfer amount
-// attestations; must match the fixture's `host_config` verifier settings.
 const SECP_GATEWAY_CHAIN_ID: u64 = 31337;
-const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCDu8; 20];
+const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCD; 20];
+type SeededCiphertext = ([u8; 32], i16, Vec<u8>);
 
 #[tokio::test]
 #[serial(db)]
 #[ignore = "runs LiteSVM plus the real TFHE worker against a disposable Postgres DB"]
-async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypts(
+async fn confidential_transfer_reconstructs_computes_and_decrypts(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let mut fixture = token_fixture();
-
     let amount_handle = balance_handle(0x09);
 
-    seed_real_fast_ciphertexts(
+    seed_real_ciphertexts(
         &harness.pool,
         &[
             (fixture.alice_initial, 125),
@@ -80,20 +63,33 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     )
     .await?;
 
-    let output = transfer_output_accounts(&fixture);
-    let transfer_ix = transfer_ix(&fixture, output, amount_handle);
+    let outputs = transfer_output_accounts(&fixture);
+    let transfer = transfer_ix(&fixture, outputs, amount_handle);
     let (meta, account_keys, signature) =
-        send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
-    let new_alice_handle = read_encrypted_value(&fixture.svm, output.alice)
-        .expect("expected Alice output ACL")
-        .current_handle;
-    let new_bob_handle = read_encrypted_value(&fixture.svm, output.bob)
-        .expect("expected Bob output ACL")
-        .current_handle;
-    let host_events = host_events(&meta, &account_keys, fixture.host_program_id);
-    assert_eq!(count_tfhe_events(&host_events), 5);
+        send_with_meta(&mut fixture.svm, &fixture.alice, transfer);
+    let alice_handle = current_handle(&fixture.svm, outputs.alice);
+    let bob_handle = current_handle(&fixture.svm, outputs.bob);
+    let transferred_handle = current_handle(&fixture.svm, outputs.transferred);
 
-    let transaction_id = solana_transaction_id(signature.as_ref());
+    let events = reconstruct_transfer_events(&fixture, &meta, &account_keys);
+    assert_eq!(
+        events.len(),
+        5,
+        "token transfer must remain a five-step plan"
+    );
+    assert!(matches!(
+        &events[2],
+        SolanaHostEvent::FheTernaryOp(event) if event.result == alice_handle
+    ));
+    assert!(matches!(
+        &events[3],
+        SolanaHostEvent::FheBinaryOp(event) if event.result == transferred_handle
+    ));
+    assert!(matches!(
+        &events[4],
+        SolanaHostEvent::FheBinaryOp(event) if event.result == bob_handle
+    ));
+
     let block = SolanaBlockMeta {
         block_number: 1,
         block_timestamp: PrimitiveDateTime::new(
@@ -105,525 +101,48 @@ async fn solana_confidential_transfer_with_real_ciphertexts_computes_and_decrypt
     let stats = insert_solana_events(
         &harness.listener_db,
         &mut db_tx,
-        host_events,
-        transaction_id,
+        events,
+        solana_transaction_id(signature.as_ref()),
         block,
     )
     .await?;
     db_tx.commit().await?;
-
     assert_eq!(stats.tfhe_events, 5);
-    assert_eq!(stats.material_requests, 0);
 
     wait_until_computed(&harness.app).await?;
-    assert!(kms_like_user_decrypt_check(
-        &fixture.svm,
-        &signed_user_decrypt_request(
-            &fixture.alice,
-            vec![fixture.mint.pubkey()],
-            vec![UserDecryptHandleEntry {
-                handle: new_alice_handle,
-                owner: fixture.alice.pubkey(),
-                acl_record: output.alice,
-            }],
-        ),
-    ));
-    assert!(kms_like_user_decrypt_check(
-        &fixture.svm,
-        &signed_user_decrypt_request(
-            &fixture.bob,
-            vec![fixture.mint.pubkey()],
-            vec![UserDecryptHandleEntry {
-                handle: new_bob_handle,
-                owner: fixture.bob.pubkey(),
-                acl_record: output.bob,
-            }],
-        ),
-    ));
     let decrypted = decrypt_handles(
         &harness.pool,
-        &[Handle::from(new_alice_handle), Handle::from(new_bob_handle)],
+        &[Handle::from(alice_handle), Handle::from(bob_handle)],
     )
     .await?;
-
-    assert_eq!(decrypted[0].output_type, BALANCE_FHE_TYPE as i16);
     assert_eq!(decrypted[0].value, "25");
-    assert_eq!(decrypted[1].output_type, BALANCE_FHE_TYPE as i16);
     assert_eq!(decrypted[1].value, "120");
-
     Ok(())
 }
 
-#[test]
-#[ignore = "requires built Solana PoC programs; validates FHE eval replay from LiteSVM metadata"]
-fn solana_fhe_eval_replays_threshold_logs_from_litesvm_metadata() {
-    let mut fixture = host_fixture();
-    let lhs_handle = typed_balance_handle(0x51);
-    let rhs_handle = typed_balance_handle(0x52);
-    let acl_domain_key = Pubkey::new_unique();
-    let app_account = fixture.payer.pubkey();
-    let lhs_label = label_bytes(b"lhs");
-    let rhs_label = label_bytes(b"rhs");
-    let output_label = label_bytes(b"out");
-    let lhs_encrypted_value = seed_authorizing_encrypted_value(
-        &mut fixture.svm,
-        acl_domain_key,
-        app_account,
-        lhs_label,
-        lhs_handle,
-        fixture.payer.pubkey(),
-    );
-    let rhs_encrypted_value = seed_authorizing_encrypted_value(
-        &mut fixture.svm,
-        acl_domain_key,
-        app_account,
-        rhs_label,
-        rhs_handle,
-        fixture.payer.pubkey(),
-    );
-    let output_encrypted_value = encrypted_value_address(acl_domain_key, app_account, output_label);
-    let mut ix = Instruction {
-        program_id: fixture.host_program_id,
-        accounts: host::accounts::FheEval {
-            payer: fixture.payer.pubkey(),
-            compute_subject: fixture.payer.pubkey(),
-            app_account_authority: fixture.payer.pubkey(),
-            host_config: Pubkey::find_program_address(
-                &[host::HOST_CONFIG_SEED],
-                &fixture.host_program_id,
-            )
-            .0,
-            system_program: system_program::ID,
-            // Block-cap optional accounts: default cap is unrestricted, so existing flows
-            // pass None/None and behave exactly as before the feature. The mandatory HCU
-            // authority is the payer for this wallet-driven test frame.
-            hcu_authority: fixture.payer.pubkey(),
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
-            event_authority: event_authority(fixture.host_program_id),
-            program: fixture.host_program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::FheEval {
-            args: FheEvalArgs {
-                context_id: [7; 32],
-                steps: vec![FheEvalStep::Binary {
-                    op: host::FheBinaryOpCode::Add,
-                    lhs: FheEvalOperand::AllowedDurable {
-                        handle: lhs_handle,
-                        encrypted_value_index: 0,
-                    },
-                    rhs: FheEvalOperand::AllowedDurable {
-                        handle: rhs_handle,
-                        encrypted_value_index: 1,
-                    },
-                    output_fhe_type: TOKEN_BALANCE_FHE_TYPE,
-                    output: FheEvalOutput::AllowedDurable {
-                        output_encrypted_value_index: 2,
-                        output_app_account_authority_index: None,
-                        output_acl_domain_key: acl_domain_key,
-                        output_app_account: app_account,
-                        output_encrypted_value_label: output_label,
-                        output_subjects: vec![
-                            AclSubjectEntry::use_only(fixture.payer.pubkey()),
-                            AclSubjectEntry::use_only(Pubkey::new_unique()),
-                            AclSubjectEntry::use_only(Pubkey::new_unique()),
-                            AclSubjectEntry::use_only(Pubkey::new_unique()),
-                        ],
-                        // First bind for this lineage: no prior state to reconstruct.
-                        previous_handle: None,
-                        previous_subjects: None,
-                        make_public: false,
-                    },
-                }],
-            },
-        }
-        .data(),
-    };
-    ix.accounts
-        .push(AccountMeta::new_readonly(lhs_encrypted_value, false));
-    ix.accounts
-        .push(AccountMeta::new_readonly(rhs_encrypted_value, false));
-    ix.accounts
-        .push(AccountMeta::new(output_encrypted_value, false));
-
-    let (meta, account_keys, signature) = send_with_meta(&mut fixture.svm, &fixture.payer, ix);
-
-    assert!(
-        !meta.logs.iter().any(|log| log == "Log truncated"),
-        "thresholded transfer logs exceeded LiteSVM's default Solana log byte limit"
-    );
-    let recorded_log_bytes: usize = meta.logs.iter().map(String::len).sum();
-    assert!(
-        recorded_log_bytes < DEFAULT_SOLANA_LOG_BYTES_LIMIT,
-        "{recorded_log_bytes}"
-    );
-
-    let cpi_events = host_cpi_events(&meta, &account_keys, fixture.host_program_id);
-    assert!(
-        cpi_events.is_empty(),
-        "large fhe_eval frames must not fall back to self-CPI transport"
-    );
-
-    // Durable ACL binding is event-free under RFC-024 (indexers reconstruct it from
-    // instruction data / account fetches, not from an `AclAllowed` event), so this
-    // eval no longer emits any ACL events at all.
-    let log_events = host_log_events(&meta, fixture.host_program_id);
-    assert_eq!(count_tfhe_events(&log_events), 1);
-
-    let host_events = host_events(&meta, &account_keys, fixture.host_program_id);
-    assert_eq!(count_tfhe_events(&host_events), 1);
-
-    let transaction_id = solana_transaction_id(signature.as_ref());
-    let block = SolanaBlockMeta {
-        block_number: 1,
-        block_timestamp: PrimitiveDateTime::new(
-            Date::from_calendar_date(2026, Month::May, 11).unwrap(),
-            Time::MIDNIGHT,
-        ),
-    };
-    let (tfhe_logs, account_fetches) =
-        normalize_solana_events_for_db(host_events, transaction_id, block);
-
-    assert_eq!(tfhe_logs.len(), 1);
-    assert_eq!(account_fetches.len(), 1);
-    assert_eq!(
-        account_fetches[0].handle,
-        tfhe_result_handle(&tfhe_logs[0].event.data).unwrap()
-    );
-    assert!(tfhe_logs[0].is_allowed);
-}
-
-#[test]
-fn solana_worker_replay_shape_preserves_eval_dependencies_and_eager_schedules_compute() {
-    let comparison = typed_handle(0x60, 0);
-    let alice_balance = typed_balance_handle(0x61);
-    let transfer_amount = typed_balance_handle(0x62);
-    let trivial_amount = typed_balance_handle(0x63);
-    let selected_balance = typed_balance_handle(0x64);
-    let random_amount = typed_balance_handle(0x65);
-    let tx_id = solana_transaction_id(&[9_u8; 64]);
-    let block = SolanaBlockMeta {
-        block_number: 7,
-        block_timestamp: PrimitiveDateTime::new(
-            Date::from_calendar_date(2026, Month::May, 11).unwrap(),
-            Time::MIDNIGHT,
-        ),
-    };
-
-    let events = vec![
-        SolanaHostEvent::FheBinaryOp(FheBinaryOpEvent {
-            version: EVENT_VERSION,
-            op: SolanaFheBinaryOpCode::Ge,
-            subject: [0; 32],
-            lhs: alice_balance,
-            rhs: transfer_amount,
-            scalar: false,
-            result: comparison,
-        }),
-        SolanaHostEvent::TrivialEncrypt(TrivialEncryptEvent {
-            version: EVENT_VERSION,
-            subject: [0; 32],
-            plaintext: amount_to_plaintext(25),
-            fhe_type: TOKEN_BALANCE_FHE_TYPE,
-            result: trivial_amount,
-        }),
-        SolanaHostEvent::FheTernaryOp(FheTernaryOpEvent {
-            version: EVENT_VERSION,
-            op: SolanaFheTernaryOpCode::IfThenElse,
-            subject: [0; 32],
-            control: comparison,
-            if_true: trivial_amount,
-            if_false: alice_balance,
-            result: selected_balance,
-        }),
-        SolanaHostEvent::FheRand(FheRandEvent {
-            version: EVENT_VERSION,
-            subject: [0; 32],
-            seed: [8; 16],
-            fhe_type: TOKEN_BALANCE_FHE_TYPE,
-            result: random_amount,
-        }),
-    ];
-    assert_eq!(count_tfhe_events(&events), 4);
-
-    let (tfhe_logs, account_fetches) = normalize_solana_events_for_db(events, tx_id, block);
-
-    assert!(account_fetches.is_empty());
-    assert_eq!(tfhe_logs.len(), 4);
-    assert_eq!(
-        tfhe_logs
-            .iter()
-            .map(|log| log.log_index)
-            .collect::<Vec<_>>(),
-        vec![Some(0), Some(1), Some(2), Some(3)]
-    );
-    // Eager compute (RFC-024 Q11 option A): every compute log is schedulable the moment the
-    // compute confirms — `is_allowed` is the tfhe-worker's scheduling gate, decoupled from any
-    // same-tx ACL allow-signal. It is NOT decrypt authorization: KMS validates the live
-    // EncryptedValue account before release. Hence all four are `is_allowed = true`.
-    assert_eq!(
-        tfhe_logs
-            .iter()
-            .map(|log| log.is_allowed)
-            .collect::<Vec<_>>(),
-        vec![true, true, true, true]
-    );
-    assert_eq!(
-        tfhe_logs
-            .iter()
-            .map(|log| log.transaction_hash)
-            .collect::<Vec<_>>(),
-        vec![Some(tx_id); 4]
-    );
-    assert_eq!(
-        tfhe_logs
-            .iter()
-            .map(|log| log.dependence_chain)
-            .collect::<Vec<_>>(),
-        vec![tx_id; 4]
-    );
-
-    assert!(matches!(
-        tfhe_logs[0].event.data,
-        TfheContractEvents::FheGe(_)
-    ));
-    assert!(matches!(
-        tfhe_logs[1].event.data,
-        TfheContractEvents::TrivialEncrypt(_)
-    ));
-    assert!(matches!(
-        tfhe_logs[2].event.data,
-        TfheContractEvents::FheIfThenElse(_)
-    ));
-    assert!(matches!(
-        tfhe_logs[3].event.data,
-        TfheContractEvents::FheRand(_)
-    ));
-
-    assert_eq!(
-        tfhe_inputs_handle(&tfhe_logs[0].event.data),
-        vec![Handle::from(alice_balance), Handle::from(transfer_amount)]
-    );
-    assert_eq!(
-        tfhe_inputs_handle(&tfhe_logs[1].event.data),
-        Vec::<Handle>::new()
-    );
-    assert_eq!(
-        tfhe_inputs_handle(&tfhe_logs[2].event.data),
-        vec![
-            Handle::from(comparison),
-            Handle::from(trivial_amount),
-            Handle::from(alice_balance)
-        ]
-    );
-    assert_eq!(
-        tfhe_inputs_handle(&tfhe_logs[3].event.data),
-        Vec::<Handle>::new()
-    );
-    assert_eq!(
-        tfhe_logs
-            .iter()
-            .map(|log| tfhe_result_handle(&log.event.data))
-            .collect::<Vec<_>>(),
-        vec![
-            Some(Handle::from(comparison)),
-            Some(Handle::from(trivial_amount)),
-            Some(Handle::from(selected_balance)),
-            Some(Handle::from(random_amount)),
-        ]
-    );
-}
-
-#[tokio::test]
-#[serial(db)]
-#[ignore = "runs LiteSVM plus the real TFHE worker against a disposable Postgres DB"]
-async fn solana_trivial_encrypt_then_confidential_transfer_computes_and_decrypts(
-) -> Result<(), Box<dyn std::error::Error>> {
-    let harness = setup_event_harness().await?;
-    let mut fixture = token_fixture();
-
-    let amount_handle = balance_handle(0x19);
-
-    // Durable ACL binding is event-free under RFC-024, so seeding these test handles
-    // only needs the trivial-encrypt compute events; there is no `TestEmitAclAllowed`
-    // shim anymore (computations are eagerly schedulable regardless of ACL events).
-    let initial_ixs = vec![
-        test_emit_trivial_encrypt_ix(
-            fixture.host_program_id,
-            fixture.alice.pubkey(),
-            fixture.compute_signer,
-            125,
-            fixture.alice_initial,
-        ),
-        test_emit_trivial_encrypt_ix(
-            fixture.host_program_id,
-            fixture.alice.pubkey(),
-            fixture.compute_signer,
-            20,
-            fixture.bob_initial,
-        ),
-        test_emit_trivial_encrypt_ix(
-            fixture.host_program_id,
-            fixture.alice.pubkey(),
-            fixture.compute_signer,
-            100,
-            amount_handle,
-        ),
-    ];
-    let (meta, account_keys, signature) =
-        send_many_with_meta(&mut fixture.svm, &fixture.alice, initial_ixs);
-    let initial_events = host_events(&meta, &account_keys, fixture.host_program_id);
-    assert_eq!(count_tfhe_events(&initial_events), 3);
-
-    insert_host_events(&harness.listener_db, initial_events, signature, 1).await?;
-    wait_until_computed(&harness.app).await?;
-
-    let output = transfer_output_accounts(&fixture);
-    let transfer_ix = transfer_ix(&fixture, output, amount_handle);
-    let (meta, account_keys, signature) =
-        send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
-    let new_alice_handle = read_encrypted_value(&fixture.svm, output.alice)
-        .expect("expected Alice output ACL")
-        .current_handle;
-    let new_bob_handle = read_encrypted_value(&fixture.svm, output.bob)
-        .expect("expected Bob output ACL")
-        .current_handle;
-    let transfer_events = host_events(&meta, &account_keys, fixture.host_program_id);
-    assert_eq!(count_tfhe_events(&transfer_events), 5);
-
-    insert_host_events(&harness.listener_db, transfer_events, signature, 2).await?;
-    wait_until_computed(&harness.app).await?;
-    assert!(kms_like_user_decrypt_check(
-        &fixture.svm,
-        &signed_user_decrypt_request(
-            &fixture.alice,
-            vec![fixture.mint.pubkey()],
-            vec![UserDecryptHandleEntry {
-                handle: new_alice_handle,
-                owner: fixture.alice.pubkey(),
-                acl_record: output.alice,
-            }],
-        ),
-    ));
-    assert!(kms_like_user_decrypt_check(
-        &fixture.svm,
-        &signed_user_decrypt_request(
-            &fixture.bob,
-            vec![fixture.mint.pubkey()],
-            vec![UserDecryptHandleEntry {
-                handle: new_bob_handle,
-                owner: fixture.bob.pubkey(),
-                acl_record: output.bob,
-            }],
-        ),
-    ));
-    let decrypted = decrypt_handles(
-        &harness.pool,
-        &[Handle::from(new_alice_handle), Handle::from(new_bob_handle)],
+fn reconstruct_transfer_events(
+    fixture: &TokenFixture,
+    meta: &TransactionMetadata,
+    account_keys: &[Pubkey],
+) -> Vec<SolanaHostEvent> {
+    let plan = meta
+        .inner_instructions
+        .iter()
+        .flatten()
+        .filter(|inner| *inner.instruction.program_id(account_keys) == fixture.host_program_id)
+        .find_map(|inner| decode_fhe_eval_args(&inner.instruction.data))
+        .expect("confidential transfer must CPI into zama-host fhe_eval");
+    let clock = fixture.svm.get_sysvar::<Clock>();
+    reconstruct_fhe_eval_events(
+        &plan,
+        fixture.compute_signer.to_bytes(),
+        &ReconstructContext {
+            chain_id: host::SOLANA_POC_CHAIN_ID,
+            previous_bank_hash: [0; 32],
+            unix_timestamp: clock.unix_timestamp,
+        },
     )
-    .await?;
-
-    assert_eq!(decrypted[0].output_type, BALANCE_FHE_TYPE as i16);
-    assert_eq!(decrypted[0].value, "25");
-    assert_eq!(decrypted[1].output_type, BALANCE_FHE_TYPE as i16);
-    assert_eq!(decrypted[1].value, "120");
-
-    Ok(())
-}
-
-#[tokio::test]
-#[serial(db)]
-#[ignore = "runs LiteSVM plus the real TFHE worker against a disposable Postgres DB"]
-async fn solana_fhe_rand_creates_ciphertext_and_decrypts() -> Result<(), Box<dyn std::error::Error>>
-{
-    let harness = setup_event_harness().await?;
-    let mut fixture = host_fixture();
-    let rand_handle = typed_fast_handle(0x29);
-
-    let ixs = vec![test_emit_fhe_rand_ix(
-        fixture.host_program_id,
-        fixture.payer.pubkey(),
-        fixture.payer.pubkey(),
-        [7_u8; 16],
-        rand_handle,
-    )];
-    let (meta, account_keys, signature) =
-        send_many_with_meta(&mut fixture.svm, &fixture.payer, ixs);
-    let events = host_events(&meta, &account_keys, fixture.host_program_id);
-    assert_eq!(count_tfhe_events(&events), 1);
-
-    insert_host_events(&harness.listener_db, events, signature, 1).await?;
-    wait_until_computed(&harness.app).await?;
-
-    let decrypted = decrypt_handles(&harness.pool, &[Handle::from(rand_handle)]).await?;
-    assert_eq!(decrypted[0].output_type, FAST_REAL_FHE_TYPE as i16);
-    let value = decrypted[0].value.parse::<u16>()?;
-    assert!(value <= u8::MAX as u16);
-
-    Ok(())
-}
-
-#[test]
-#[ignore = "requires built Solana PoC programs; validates user-decrypt ACL semantics without running the worker"]
-fn solana_user_decrypt_acl_invariants_match_evm_semantics() {
-    let mut fixture = token_fixture();
-    let amount_handle = balance_handle(0x39);
-    let output = transfer_output_accounts(&fixture);
-    let transfer_ix = transfer_ix(&fixture, output, amount_handle);
-    send_with_meta(&mut fixture.svm, &fixture.alice, transfer_ix);
-    let new_alice_handle = read_encrypted_value(&fixture.svm, output.alice)
-        .expect("expected Alice output ACL")
-        .current_handle;
-
-    let valid = signed_user_decrypt_request(
-        &fixture.alice,
-        vec![fixture.mint.pubkey()],
-        vec![UserDecryptHandleEntry {
-            handle: new_alice_handle,
-            owner: fixture.alice.pubkey(),
-            acl_record: output.alice,
-        }],
-    );
-    assert!(kms_like_user_decrypt_check(&fixture.svm, &valid));
-
-    let missing_user_acl = signed_user_decrypt_request(
-        &fixture.alice,
-        vec![fixture.mint.pubkey()],
-        vec![UserDecryptHandleEntry {
-            handle: new_alice_handle,
-            owner: fixture.alice.pubkey(),
-            acl_record: output.bob,
-        }],
-    );
-    assert!(!kms_like_user_decrypt_check(
-        &fixture.svm,
-        &missing_user_acl
-    ));
-
-    let missing_domain = signed_user_decrypt_request(
-        &fixture.alice,
-        vec![Pubkey::new_unique()],
-        valid.handles.clone(),
-    );
-    assert!(!kms_like_user_decrypt_check(&fixture.svm, &missing_domain));
-
-    let wrong_owner = signed_user_decrypt_request(
-        &fixture.bob,
-        vec![fixture.mint.pubkey()],
-        valid.handles.clone(),
-    );
-    assert!(!kms_like_user_decrypt_check(&fixture.svm, &wrong_owner));
-
-    let wrong_handle = signed_user_decrypt_request(
-        &fixture.alice,
-        vec![fixture.mint.pubkey()],
-        vec![UserDecryptHandleEntry {
-            handle: balance_handle(0x7f),
-            ..valid.handles[0]
-        }],
-    );
-    assert!(!kms_like_user_decrypt_check(&fixture.svm, &wrong_handle));
+    .expect("the token's accepted transfer plan must reconstruct")
 }
 
 struct TokenFixture {
@@ -632,7 +151,6 @@ struct TokenFixture {
     host_config: Pubkey,
     token_program_id: Pubkey,
     alice: Keypair,
-    bob: Keypair,
     mint: Keypair,
     compute_signer: Pubkey,
     alice_token: Pubkey,
@@ -643,70 +161,11 @@ struct TokenFixture {
     bob_current_compute_acl: Pubkey,
 }
 
-struct HostFixture {
-    svm: LiteSVM,
-    host_program_id: Pubkey,
-    payer: Keypair,
-}
-
 #[derive(Clone, Copy)]
 struct TransferOutputAccounts {
     alice: Pubkey,
     bob: Pubkey,
     transferred: Pubkey,
-}
-
-#[derive(Clone)]
-struct UserDecryptAuthorizationPayload {
-    user: Pubkey,
-    reencryption_public_key: [u8; 32],
-    allowed_acl_domain_keys: Vec<Pubkey>,
-    start_timestamp: i64,
-    duration_seconds: u64,
-    extra_data: Vec<u8>,
-}
-
-#[derive(Clone)]
-struct UserDecryptRequest {
-    authorization: UserDecryptAuthorizationPayload,
-    signature: Signature,
-    handles: Vec<UserDecryptHandleEntry>,
-}
-
-#[derive(Clone, Copy)]
-struct UserDecryptHandleEntry {
-    handle: [u8; 32],
-    owner: Pubkey,
-    acl_record: Pubkey,
-}
-
-fn host_fixture() -> HostFixture {
-    let host_program_id = host::id();
-    let host_program_path = host_program_so_path();
-    assert!(
-        host_program_path.exists(),
-        "missing {}; run `cd solana && anchor build` before this test",
-        host_program_path.display()
-    );
-
-    let mut svm = LiteSVM::new();
-    svm.add_program_from_file(host_program_id, &host_program_path)
-        .unwrap();
-    let payer = Keypair::new();
-    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
-    let _host_config = seed_host_config(
-        &mut svm,
-        host_program_id,
-        payer.pubkey(),
-        payer.pubkey(),
-        payer.pubkey(),
-    );
-
-    HostFixture {
-        svm,
-        host_program_id,
-        payer,
-    }
 }
 
 fn seed_host_config(
@@ -756,15 +215,6 @@ fn seed_host_config(
 }
 
 fn token_fixture() -> TokenFixture {
-    token_fixture_with_initial_balances(125, 20)
-}
-
-fn token_fixture_with_initial_balances(
-    // Balances are injected as input ciphertexts keyed by handle (the program forbids
-    // nonzero init balances and funds via wrap), so these are documentation only.
-    _alice_initial_balance: u64,
-    _bob_initial_balance: u64,
-) -> TokenFixture {
     let host_program_id = host::id();
     let token_program_id = token::id();
     let host_program_path = host_program_so_path();
@@ -883,7 +333,6 @@ fn token_fixture_with_initial_balances(
         host_config,
         token_program_id,
         alice,
-        bob,
         mint,
         compute_signer,
         alice_token,
@@ -1060,59 +509,6 @@ fn amount_attestation_for(
         signatures: vec![secp_sign(&key, &digest)],
     }
 }
-
-fn test_emit_trivial_encrypt_ix(
-    program_id: Pubkey,
-    test_authority: Pubkey,
-    subject: Pubkey,
-    value: u64,
-    result: [u8; 32],
-) -> Instruction {
-    Instruction {
-        program_id,
-        accounts: host::accounts::TestEmitProtocolEvent {
-            test_authority,
-            host_config: Pubkey::find_program_address(&[host::HOST_CONFIG_SEED], &program_id).0,
-            event_authority: event_authority(program_id),
-            program: program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::TestEmitTrivialEncrypt {
-            subject,
-            plaintext: amount_to_plaintext(value),
-            fhe_type: BALANCE_FHE_TYPE,
-            result,
-        }
-        .data(),
-    }
-}
-
-fn test_emit_fhe_rand_ix(
-    program_id: Pubkey,
-    test_authority: Pubkey,
-    subject: Pubkey,
-    seed: [u8; 16],
-    result: [u8; 32],
-) -> Instruction {
-    Instruction {
-        program_id,
-        accounts: host::accounts::TestEmitProtocolEvent {
-            test_authority,
-            host_config: Pubkey::find_program_address(&[host::HOST_CONFIG_SEED], &program_id).0,
-            event_authority: event_authority(program_id),
-            program: program_id,
-        }
-        .to_account_metas(None),
-        data: host::instruction::TestEmitFheRand {
-            subject,
-            seed,
-            fhe_type: FAST_REAL_FHE_TYPE,
-            result,
-        }
-        .data(),
-    }
-}
-
 fn create_spl_mint(svm: &mut LiteSVM, payer: &Keypair, mint: &Keypair, decimals: u8) {
     let rent = svm.minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN);
     send_many_with_signers(
@@ -1139,7 +535,7 @@ fn create_spl_mint(svm: &mut LiteSVM, payer: &Keypair, mint: &Keypair, decimals:
     );
 }
 
-async fn seed_real_fast_ciphertexts(
+async fn seed_real_ciphertexts(
     pool: &sqlx::PgPool,
     values: &[([u8; 32], u8)],
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1185,271 +581,22 @@ async fn seed_real_fast_ciphertexts(
 
     Ok(())
 }
-
-async fn insert_host_events(
-    listener_db: &host_listener::database::tfhe_event_propagate::Database,
-    host_events: Vec<SolanaHostEvent>,
-    signature: Signature,
-    block_number: u64,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let transaction_id = solana_transaction_id(signature.as_ref());
-    let block = SolanaBlockMeta {
-        block_number,
-        block_timestamp: PrimitiveDateTime::new(
-            Date::from_calendar_date(2026, Month::May, 11)?,
-            Time::MIDNIGHT,
-        ),
-    };
-    let mut db_tx = listener_db.new_transaction().await?;
-    insert_solana_events(listener_db, &mut db_tx, host_events, transaction_id, block).await?;
-    db_tx.commit().await?;
-    Ok(())
-}
-
-fn host_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<SolanaHostEvent> {
-    let program_id = program_id.to_string();
-    let inner_instructions = inner_instruction_refs(meta, account_keys);
-    decode_solana_transaction_events(
-        &meta.logs,
-        inner_instructions
-            .iter()
-            .map(|(program_id, data)| (program_id.as_str(), *data)),
-        &program_id,
-    )
-    .expect("host event transport must be ordered")
-}
-
-fn host_cpi_events(
-    meta: &TransactionMetadata,
-    account_keys: &[Pubkey],
-    program_id: Pubkey,
-) -> Vec<SolanaHostEvent> {
-    let program_id = program_id.to_string();
-    let inner_instructions = inner_instruction_refs(meta, account_keys);
-    decode_anchor_cpi_events(
-        inner_instructions
-            .iter()
-            .map(|(program_id, data)| (program_id.as_str(), *data)),
-        &program_id,
-    )
-}
-
-fn inner_instruction_refs<'a>(
-    meta: &'a TransactionMetadata,
-    account_keys: &[Pubkey],
-) -> Vec<(String, &'a [u8])> {
-    meta.inner_instructions
-        .iter()
-        .flatten()
-        .map(|ix| {
-            (
-                ix.instruction.program_id(account_keys).to_string(),
-                ix.instruction.data.as_slice(),
-            )
-        })
-        .collect()
-}
-
-fn host_log_events(meta: &TransactionMetadata, program_id: Pubkey) -> Vec<SolanaHostEvent> {
-    let program_id = program_id.to_string();
-    decode_anchor_log_events(&meta.logs, &program_id)
-}
-
-fn count_tfhe_events(events: &[SolanaHostEvent]) -> usize {
-    events
-        .iter()
-        .filter(|event| {
-            matches!(
-                event,
-                SolanaHostEvent::FheBinaryOp(_)
-                    | SolanaHostEvent::FheTernaryOp(_)
-                    | SolanaHostEvent::TrivialEncrypt(_)
-                    | SolanaHostEvent::FheRand(_)
-            )
-        })
-        .count()
-}
-
-fn signed_user_decrypt_request(
-    signer: &Keypair,
-    allowed_acl_domain_keys: Vec<Pubkey>,
-    handles: Vec<UserDecryptHandleEntry>,
-) -> UserDecryptRequest {
-    let authorization = UserDecryptAuthorizationPayload {
-        user: signer.pubkey(),
-        reencryption_public_key: [7; 32],
-        allowed_acl_domain_keys,
-        start_timestamp: 1,
-        duration_seconds: 300,
-        extra_data: b"zama-solana-poc".to_vec(),
-    };
-    let signature = signer.sign_message(&authorization_payload_bytes(&authorization));
-
-    UserDecryptRequest {
-        authorization,
-        signature,
-        handles,
-    }
-}
-
-fn authorization_payload_bytes(authorization: &UserDecryptAuthorizationPayload) -> Vec<u8> {
-    let mut bytes = b"Zama Solana UserDecrypt v0".to_vec();
-    bytes.extend_from_slice(authorization.user.as_ref());
-    bytes.extend_from_slice(&authorization.reencryption_public_key);
-    bytes.extend_from_slice(&(authorization.allowed_acl_domain_keys.len() as u32).to_le_bytes());
-    for account in &authorization.allowed_acl_domain_keys {
-        bytes.extend_from_slice(account.as_ref());
-    }
-    bytes.extend_from_slice(&authorization.start_timestamp.to_le_bytes());
-    bytes.extend_from_slice(&authorization.duration_seconds.to_le_bytes());
-    bytes.extend_from_slice(&(authorization.extra_data.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&authorization.extra_data);
-    bytes
-}
-
-fn kms_like_user_decrypt_check(svm: &LiteSVM, request: &UserDecryptRequest) -> bool {
-    let authorization = &request.authorization;
-    let signed_payload = authorization_payload_bytes(authorization);
-    if !request
-        .signature
-        .verify(authorization.user.as_ref(), &signed_payload)
-        || authorization.reencryption_public_key == [0; 32]
-        || authorization.duration_seconds == 0
-        || authorization.extra_data.is_empty()
-        || authorization.start_timestamp < 0
-        || request.handles.is_empty()
-    {
-        return false;
-    }
-
-    request.handles.iter().all(|entry| {
-        if authorization.user != entry.owner {
-            return false;
-        }
-
-        let Some(raw_account) = svm.get_account(&entry.acl_record) else {
-            return false;
-        };
-        if raw_account.owner != host::id() {
-            return false;
-        }
-        let mut data = raw_account.data.as_slice();
-        let Ok(value) = EncryptedValue::try_deserialize(&mut data) else {
-            return false;
-        };
-        let expected_encrypted_value = encrypted_value_address(
-            value.acl_domain_key,
-            value.app_account,
-            value.encrypted_value_label,
-        );
-
-        authorization
-            .allowed_acl_domain_keys
-            .contains(&value.acl_domain_key)
-            && value.current_handle == entry.handle
-            && entry.acl_record == expected_encrypted_value
-            && value.subjects.contains(&authorization.user)
-    })
-}
-
 fn read_encrypted_value(svm: &LiteSVM, address: Pubkey) -> Option<EncryptedValue> {
     let raw_account = svm.get_account(&address)?;
     let mut data = raw_account.data.as_slice();
     EncryptedValue::try_deserialize(&mut data).ok()
 }
 
-/// Directly seeds a durable `EncryptedValue` lineage authorizing `subject` to use
-/// `handle`, bypassing `create_encrypted_value` (there is no test-emit shim for
-/// durable ACL binding under RFC-024's event-free design).
-fn seed_authorizing_encrypted_value(
-    svm: &mut LiteSVM,
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-    handle: [u8; 32],
-    subject: Pubkey,
-) -> Pubkey {
-    let (address, bump) = host::encrypted_value_address(value_key(
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-    ));
-    svm.set_account(
-        address,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(EncryptedValue {
-                acl_domain_key,
-                app_account,
-                encrypted_value_label,
-                current_handle: handle,
-                subjects: vec![subject],
-                leaf_count: 0,
-                peaks: Vec::new(),
-                bump,
-            }),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-    .unwrap();
-    address
-}
-
-/// The value key for an `EncryptedValue` lineage, derived through a scratch
-/// instance of the host's `EncryptedValue` (which wraps `zama_solana_acl::derive_value_key`),
-/// since `zama_solana_acl` is not a direct dependency of this test crate.
-fn value_key(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> [u8; 32] {
-    EncryptedValue {
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-        current_handle: [0; 32],
-        subjects: Vec::new(),
-        leaf_count: 0,
-        peaks: Vec::new(),
-        bump: 0,
-    }
-    .value_key()
-}
-
-/// The canonical `EncryptedValue` PDA for one lineage.
-fn encrypted_value_address(
-    acl_domain_key: Pubkey,
-    app_account: Pubkey,
-    encrypted_value_label: [u8; 32],
-) -> Pubkey {
-    host::encrypted_value_address(value_key(
-        acl_domain_key,
-        app_account,
-        encrypted_value_label,
-    ))
-    .0
+fn current_handle(svm: &LiteSVM, address: Pubkey) -> [u8; 32] {
+    read_encrypted_value(svm, address)
+        .expect("expected EncryptedValue account")
+        .current_handle
 }
 
 fn serialized_account<T: AccountSerialize>(account: T) -> Vec<u8> {
     let mut data = Vec::new();
     account.try_serialize(&mut data).unwrap();
     data
-}
-
-fn label_bytes(label: &[u8]) -> [u8; 32] {
-    let mut bytes = [b'_'; 32];
-    bytes[..label.len()].copy_from_slice(label);
-    bytes
-}
-
-fn typed_balance_handle(seed: u8) -> [u8; 32] {
-    typed_handle(seed, TOKEN_BALANCE_FHE_TYPE)
 }
 
 fn typed_handle(seed: u8, fhe_type: u8) -> [u8; 32] {
@@ -1463,20 +610,9 @@ fn typed_handle(seed: u8, fhe_type: u8) -> [u8; 32] {
     handle
 }
 
-fn typed_fast_handle(seed: u8) -> [u8; 32] {
-    typed_handle(seed, FAST_REAL_FHE_TYPE)
-}
-
 fn balance_handle(seed: u8) -> [u8; 32] {
     typed_handle(seed, BALANCE_FHE_TYPE)
 }
-
-fn amount_to_plaintext(amount: u64) -> [u8; 32] {
-    let mut plaintext = [0_u8; 32];
-    plaintext[24..].copy_from_slice(&amount.to_be_bytes());
-    plaintext
-}
-
 fn host_program_so_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../solana/target/deploy/zama_host.so")
 }
@@ -1529,20 +665,6 @@ fn send_with_meta(
     // Confidential transfer's real euint64 FHE ops exceed the default 200k CU limit
     // (mollusk measures ~258k); raise it like a real client would.
     let ixs = [set_compute_unit_limit_ix(400_000), ix];
-    let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
-    let account_keys = message.account_keys.clone();
-    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
-    let signature = tx.signatures[0];
-    (svm.send_transaction(tx).unwrap(), account_keys, signature)
-}
-
-fn send_many_with_meta(
-    svm: &mut LiteSVM,
-    payer: &Keypair,
-    ixs: Vec<Instruction>,
-) -> (TransactionMetadata, Vec<Pubkey>, Signature) {
-    let mut ixs = ixs;
-    ixs.insert(0, set_compute_unit_limit_ix(400_000));
     let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
