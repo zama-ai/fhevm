@@ -404,6 +404,8 @@ mod tests {
             program_id,
             accounts,
             data,
+            top_level_index: 0,
+            stack_height: Some(1),
         }
     }
 
@@ -599,6 +601,34 @@ mod tests {
         let cursor = store.get_cursor().await.unwrap().unwrap();
         assert_eq!(cursor.last_signature, Some("sig3".to_string()));
         assert_eq!(cursor.last_slot, 3);
+    }
+
+    #[tokio::test]
+    async fn decode_failure_does_not_advance_cursor_or_store_state() {
+        let program_id = pk(0x99);
+        let chain = FakeChain::new(program_id);
+        chain.push_tx(
+            "malformed",
+            1,
+            &[],
+            vec![RawInstruction {
+                program_id,
+                accounts: vec![],
+                data: vec![1, 2, 3],
+                top_level_index: 0,
+                stack_height: Some(1),
+            }],
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileLeafStore::open(dir.path().join("leaves.json"))
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            poll_once(&chain, &store, program_id, 100, 100).await,
+            Err(IngestError::Decode(_))
+        ));
+        assert_eq!(store.get_cursor().await.unwrap(), None);
     }
 
     #[tokio::test]

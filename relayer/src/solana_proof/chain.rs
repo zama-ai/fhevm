@@ -190,6 +190,8 @@ struct CompiledIx {
     program_id_index: usize,
     accounts: Vec<usize>,
     data: String,
+    #[serde(rename = "stackHeight", default)]
+    stack_height: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -235,9 +237,56 @@ struct GetTransactionResult {
     meta: Option<Meta>,
 }
 
+fn decode_transaction_result(
+    signature: &str,
+    parsed: GetTransactionResult,
+) -> Result<ChainTransaction, ChainError> {
+    if parsed.meta.as_ref().and_then(|m| m.err.as_ref()).is_some() {
+        // This guard deliberately precedes account-key and instruction decoding:
+        // failed transactions committed no state and must contribute no leaves.
+        return Ok(ChainTransaction {
+            signature: signature.to_string(),
+            slot: parsed.slot,
+            instructions: Vec::new(),
+        });
+    }
+    let mut account_keys: Vec<[u8; 32]> = parsed
+        .transaction
+        .message
+        .account_keys
+        .iter()
+        .map(|s| base58_to_32(s))
+        .collect::<Result<_, _>>()?;
+    if let Some(loaded) = parsed
+        .meta
+        .as_ref()
+        .and_then(|m| m.loaded_addresses.as_ref())
+    {
+        for addr in loaded.writable.iter().chain(loaded.readonly.iter()) {
+            account_keys.push(base58_to_32(addr)?);
+        }
+    }
+    let instructions = flatten_execution_order(
+        &parsed.transaction.message.instructions,
+        parsed
+            .meta
+            .as_ref()
+            .map(|m| m.inner_instructions.as_slice())
+            .unwrap_or(&[]),
+        &account_keys,
+    )?;
+    Ok(ChainTransaction {
+        signature: signature.to_string(),
+        slot: parsed.slot,
+        instructions,
+    })
+}
+
 fn compiled_to_raw(
     ix: &CompiledIx,
     account_keys: &[[u8; 32]],
+    top_level_index: usize,
+    is_inner: bool,
 ) -> Result<RawInstruction, ChainError> {
     let program_id = *account_keys
         .get(ix.program_id_index)
@@ -257,6 +306,11 @@ fn compiled_to_raw(
         program_id,
         accounts,
         data,
+        top_level_index,
+        // RPC omits stackHeight on message instructions; their height is known.
+        // Inner instructions retain the RPC field so missing nesting metadata
+        // can be rejected by the lifecycle decoder.
+        stack_height: if is_inner { ix.stack_height } else { Some(1) },
     })
 }
 
@@ -320,46 +374,7 @@ impl ChainFetcher for RpcChainFetcher {
         }
         let parsed: GetTransactionResult =
             serde_json::from_value(result).map_err(|e| ChainError::Rpc(e.to_string()))?;
-        if parsed.meta.as_ref().and_then(|m| m.err.clone()).is_some() {
-            // A failed transaction never persisted its instructions' effects on-chain.
-            return Ok(Some(ChainTransaction {
-                signature: signature.to_string(),
-                slot: parsed.slot,
-                instructions: Vec::new(),
-            }));
-        }
-        let mut account_keys: Vec<[u8; 32]> = parsed
-            .transaction
-            .message
-            .account_keys
-            .iter()
-            .map(|s| base58_to_32(s))
-            .collect::<Result<_, _>>()?;
-        if let Some(loaded) = parsed
-            .meta
-            .as_ref()
-            .and_then(|m| m.loaded_addresses.as_ref())
-        {
-            for addr in loaded.writable.iter().chain(loaded.readonly.iter()) {
-                account_keys.push(base58_to_32(addr)?);
-            }
-        }
-
-        let instructions = flatten_execution_order(
-            &parsed.transaction.message.instructions,
-            parsed
-                .meta
-                .as_ref()
-                .map(|m| m.inner_instructions.as_slice())
-                .unwrap_or(&[]),
-            &account_keys,
-        )?;
-
-        Ok(Some(ChainTransaction {
-            signature: signature.to_string(),
-            slot: parsed.slot,
-            instructions,
-        }))
+        Ok(Some(decode_transaction_result(signature, parsed)?))
     }
 
     async fn get_lineage_state(
@@ -396,14 +411,44 @@ fn flatten_execution_order(
     let mut by_index: std::collections::HashMap<usize, &Vec<CompiledIx>> =
         std::collections::HashMap::new();
     for group in inner_groups {
-        by_index.insert(group.index, &group.instructions);
+        if group.index >= top_level.len() {
+            return Err(ChainError::Rpc(format!(
+                "inner-instruction group index {} is out of range",
+                group.index
+            )));
+        }
+        if by_index.insert(group.index, &group.instructions).is_some() {
+            return Err(ChainError::Rpc(format!(
+                "duplicate inner-instruction group index {}",
+                group.index
+            )));
+        }
+        let mut previous_height = 1u32;
+        for (position, instruction) in group.instructions.iter().enumerate() {
+            let height = instruction.stack_height.ok_or_else(|| {
+                ChainError::Rpc(format!(
+                    "inner instruction {position} in group {} has no stackHeight",
+                    group.index
+                ))
+            })?;
+            if height < 2
+                || (position == 0 && height != 2)
+                || height > previous_height.saturating_add(1)
+            {
+                return Err(ChainError::Rpc(format!(
+                    "impossible stackHeight {height} at inner instruction {position} in group {}",
+                    group.index
+                )));
+            }
+            previous_height = height;
+        }
     }
     let mut out = Vec::new();
     for (i, ix) in top_level.iter().enumerate() {
-        out.push(compiled_to_raw(ix, account_keys)?);
+        out.push(compiled_to_raw(ix, account_keys, i, false)?);
         if let Some(inner) = by_index.get(&i) {
             for inner_ix in inner.iter() {
-                out.push(compiled_to_raw(inner_ix, account_keys)?);
+                out.push(compiled_to_raw(inner_ix, account_keys, i, true)?);
             }
         }
     }
@@ -455,11 +500,13 @@ mod tests {
                 program_id_index: 0,
                 accounts: vec![],
                 data: "".to_string(),
+                stack_height: None,
             },
             CompiledIx {
                 program_id_index: 1,
                 accounts: vec![],
                 data: "".to_string(),
+                stack_height: None,
             },
         ];
         let inner_groups = vec![InnerIxGroup {
@@ -468,13 +515,107 @@ mod tests {
                 program_id_index: 2,
                 accounts: vec![],
                 data: "".to_string(),
+                stack_height: Some(2),
             }],
         }];
         let out = flatten_execution_order(&top_level, &inner_groups, &account_keys).unwrap();
         assert_eq!(out.len(), 3);
         assert_eq!(out[0].program_id, [1u8; 32]);
+        assert_eq!(out[0].stack_height, Some(1));
         assert_eq!(out[1].program_id, [3u8; 32]); // inner CPI spawned by top-level 0
+        assert_eq!(out[1].stack_height, Some(2));
+        assert_eq!(out[1].top_level_index, 0);
         assert_eq!(out[2].program_id, [2u8; 32]);
+    }
+
+    #[test]
+    fn flatten_rejects_duplicate_and_orphan_inner_groups() {
+        let account_keys = vec![[1u8; 32]];
+        let top_level = vec![CompiledIx {
+            program_id_index: 0,
+            accounts: vec![],
+            data: "".to_string(),
+            stack_height: None,
+        }];
+        let duplicate = vec![
+            InnerIxGroup {
+                index: 0,
+                instructions: vec![],
+            },
+            InnerIxGroup {
+                index: 0,
+                instructions: vec![],
+            },
+        ];
+        assert!(matches!(
+            flatten_execution_order(&top_level, &duplicate, &account_keys),
+            Err(ChainError::Rpc(message)) if message.contains("duplicate")
+        ));
+
+        let orphan = vec![InnerIxGroup {
+            index: 1,
+            instructions: vec![],
+        }];
+        assert!(matches!(
+            flatten_execution_order(&top_level, &orphan, &account_keys),
+            Err(ChainError::Rpc(message)) if message.contains("out of range")
+        ));
+    }
+
+    #[test]
+    fn flatten_rejects_impossible_inner_stack_traces() {
+        let account_keys = vec![[1u8; 32]];
+        let top_level = vec![CompiledIx {
+            program_id_index: 0,
+            accounts: vec![],
+            data: "".to_string(),
+            stack_height: None,
+        }];
+        for heights in [vec![3], vec![2, 4], vec![2, 1], vec![2, 2, 4]] {
+            let group = vec![InnerIxGroup {
+                index: 0,
+                instructions: heights
+                    .into_iter()
+                    .map(|height| CompiledIx {
+                        program_id_index: 0,
+                        accounts: vec![],
+                        data: "".to_string(),
+                        stack_height: Some(height),
+                    })
+                    .collect(),
+            }];
+            assert!(matches!(
+                flatten_execution_order(&top_level, &group, &account_keys),
+                Err(ChainError::Rpc(message)) if message.contains("impossible")
+            ));
+        }
+        let missing = vec![InnerIxGroup {
+            index: 0,
+            instructions: vec![CompiledIx {
+                program_id_index: 0,
+                accounts: vec![],
+                data: "".to_string(),
+                stack_height: None,
+            }],
+        }];
+        assert!(matches!(
+            flatten_execution_order(&top_level, &missing, &account_keys),
+            Err(ChainError::Rpc(message)) if message.contains("no stackHeight")
+        ));
+
+        let valid = vec![InnerIxGroup {
+            index: 0,
+            instructions: [2, 3, 3, 2]
+                .into_iter()
+                .map(|height| CompiledIx {
+                    program_id_index: 0,
+                    accounts: vec![],
+                    data: "".to_string(),
+                    stack_height: Some(height),
+                })
+                .collect(),
+        }];
+        assert!(flatten_execution_order(&top_level, &valid, &account_keys).is_ok());
     }
 
     #[test]
@@ -508,5 +649,31 @@ mod tests {
         let account = account_info_params(&address);
         assert_eq!(account[1]["commitment"], "confirmed");
         assert_eq!(account[1]["encoding"], "base64");
+    }
+
+    #[test]
+    fn failed_transaction_is_rejected_before_instruction_decoding() {
+        let parsed: GetTransactionResult = serde_json::from_value(json!({
+            "slot": 42,
+            "transaction": { "message": {
+                // Deliberately malformed: decoding this key would fail.
+                "accountKeys": ["not-base58!"],
+                "instructions": [{
+                    "programIdIndex": 99,
+                    "accounts": [],
+                    "data": ""
+                }]
+            }},
+            "meta": {
+                "err": { "InstructionError": [0, "Custom"] },
+                "innerInstructions": []
+            }
+        }))
+        .unwrap();
+
+        let transaction = decode_transaction_result("failed", parsed).unwrap();
+
+        assert!(transaction.instructions.is_empty());
+        assert_eq!(transaction.slot, 42);
     }
 }
