@@ -1,13 +1,15 @@
 use crate::{
     core::{
         KmsResponsePublisher,
-        config::{Config, HostChainKind},
+        config::{Config, HostChainConfig, HostChainKind},
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-            EventProcessor, KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
+            EventProcessor, HostChainAclBackend, KMSGenerationProcessor, KmsClient,
+            ProtocolConfigProcessor, solana_user_decrypt::SolanaHost,
         },
         kms_response_publisher::DbKmsResponsePublisher,
+        solana_v2_fetcher::SolanaV2Fetcher,
     },
     monitoring::{
         health::{KmsHealthClient, State},
@@ -22,7 +24,7 @@ use connector_utils::{
     types::{KmsResponse, ProtocolEvent},
 };
 use fhevm_host_bindings::acl::ACL;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -124,47 +126,13 @@ impl
         config: Config,
         cancel_token: CancellationToken,
     ) -> anyhow::Result<(Self, State<DefaultProvider>)> {
+        let host_chain_backends = register_host_chain_backends(&config.host_chains).await?;
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
 
         let gateway_provider =
             connect_to_rpc_node(config.gateway_url.clone(), config.gateway_chain_id).await?;
         let ethereum_provider =
             connect_to_rpc_node(config.ethereum_url.clone(), config.ethereum_chain_id).await?;
-
-        let mut acl_contracts = HashMap::new();
-        for host_chain in &config.host_chains {
-            if host_chain.chain_kind == HostChainKind::Solana {
-                if host_chain.solana_host_program_id.is_some() {
-                    info!(
-                        "Configured Solana host chain {} with solana_host_program_id. Gateway \
-                        decryption ACL checks for Solana still fail closed; native-v0 Solana \
-                        request processing is handled outside the Gateway event processor.",
-                        host_chain.chain_id
-                    );
-                } else {
-                    info!(
-                        "Configured Solana host chain {} without solana_host_program_id. The KMS \
-                        connector will reject decryption ACL checks for this chain fail-closed.",
-                        host_chain.chain_id
-                    );
-                }
-                continue;
-            }
-            let provider = connect_to_rpc_node(host_chain.url.clone(), host_chain.chain_id).await?;
-            let acl_address = host_chain.acl_address.ok_or_else(|| {
-                anyhow!(
-                    "EVM host chain {} requires acl_address (the ACL contract to gate decryptions)",
-                    host_chain.chain_id
-                )
-            })?;
-            let acl_contract = ACL::new(acl_address, provider);
-            let host_chain_id = host_chain.chain_id;
-            if acl_contracts.insert(host_chain_id, acl_contract).is_some() {
-                return Err(anyhow!(
-                    "Duplicate host chain in config for chain ID {host_chain_id}"
-                ));
-            };
-        }
 
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
@@ -184,7 +152,7 @@ impl
             &config,
             context_manager.clone(),
             gateway_provider.clone(),
-            acl_contracts,
+            host_chain_backends,
             ciphertext_manager,
         );
         let kms_generation_processor = KMSGenerationProcessor::new(&config, context_manager);
@@ -209,5 +177,173 @@ impl
         );
         let kms_worker = KmsWorker::new(event_picker, event_processor, response_publisher);
         Ok((kms_worker, state))
+    }
+}
+
+async fn register_host_chain_backends(
+    host_chains: &[HostChainConfig],
+) -> anyhow::Result<HashMap<u64, HostChainAclBackend<DefaultProvider>>> {
+    validate_host_chain_configs(host_chains)?;
+
+    let mut backends = HashMap::with_capacity(host_chains.len());
+    let solana_client = reqwest::Client::new();
+
+    for host_chain in host_chains {
+        let backend = match host_chain.chain_kind {
+            HostChainKind::Evm => {
+                let acl_address = host_chain.acl_address.ok_or_else(|| {
+                    anyhow!(
+                        "EVM host chain {} requires acl_address (the ACL contract to gate decryptions)",
+                        host_chain.chain_id
+                    )
+                })?;
+                let provider =
+                    connect_to_rpc_node(host_chain.url.clone(), host_chain.chain_id).await?;
+                HostChainAclBackend::Evm(ACL::new(acl_address, provider))
+            }
+            HostChainKind::Solana => {
+                let program_id = host_chain.solana_host_program_id.ok_or_else(|| {
+                    anyhow!(
+                        "Solana host chain {} requires solana_host_program_id",
+                        host_chain.chain_id
+                    )
+                })?;
+                HostChainAclBackend::Solana(SolanaHost {
+                    program_id,
+                    fetcher: SolanaV2Fetcher::new(host_chain.url.clone(), solana_client.clone()),
+                })
+            }
+        };
+
+        backends.insert(host_chain.chain_id, backend);
+    }
+
+    Ok(backends)
+}
+
+fn validate_host_chain_configs(host_chains: &[HostChainConfig]) -> anyhow::Result<()> {
+    let mut chain_ids = HashSet::with_capacity(host_chains.len());
+    for host_chain in host_chains {
+        if !chain_ids.insert(host_chain.chain_id) {
+            return Err(anyhow!(
+                "Duplicate host chain in config for chain ID {}",
+                host_chain.chain_id
+            ));
+        }
+
+        match host_chain.chain_kind {
+            HostChainKind::Evm => {
+                if host_chain.acl_address.is_none() {
+                    return Err(anyhow!(
+                        "EVM host chain {} requires acl_address (the ACL contract to gate decryptions)",
+                        host_chain.chain_id
+                    ));
+                }
+                if host_chain.solana_host_program_id.is_some() {
+                    return Err(anyhow!(
+                        "EVM host chain {} must not set solana_host_program_id",
+                        host_chain.chain_id
+                    ));
+                }
+            }
+            HostChainKind::Solana => {
+                if host_chain.solana_host_program_id.is_none() {
+                    return Err(anyhow!(
+                        "Solana host chain {} requires solana_host_program_id",
+                        host_chain.chain_id
+                    ));
+                }
+                if host_chain.acl_address.is_some() {
+                    return Err(anyhow!(
+                        "Solana host chain {} must not set acl_address",
+                        host_chain.chain_id
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::Address;
+
+    fn host_chain(chain_id: u64, chain_kind: HostChainKind) -> HostChainConfig {
+        let mut host_chain = Config::default().host_chains.remove(0);
+        host_chain.chain_id = chain_id;
+        host_chain.chain_kind = chain_kind;
+        match chain_kind {
+            HostChainKind::Evm => {
+                host_chain.solana_host_program_id = None;
+            }
+            HostChainKind::Solana => {
+                host_chain.acl_address = None;
+                host_chain.solana_host_program_id = Some([7; 32]);
+            }
+        }
+        host_chain
+    }
+
+    fn validation_error(host_chains: &[HostChainConfig]) -> String {
+        validate_host_chain_configs(host_chains)
+            .expect_err("host-chain validation should fail")
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn registers_evm_and_solana_backends_once() {
+        let backends = register_host_chain_backends(&[
+            host_chain(1, HostChainKind::Evm),
+            host_chain(2, HostChainKind::Solana),
+        ])
+        .await
+        .expect("valid host chains should register");
+
+        assert!(matches!(
+            backends.get(&1),
+            Some(HostChainAclBackend::Evm(_))
+        ));
+        match backends.get(&2) {
+            Some(HostChainAclBackend::Solana(host)) => assert_eq!(host.program_id, [7; 32]),
+            _ => panic!("chain 2 should use the Solana backend"),
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_chain_ids_across_all_backend_pairs() {
+        for (first, second) in [
+            (HostChainKind::Evm, HostChainKind::Evm),
+            (HostChainKind::Evm, HostChainKind::Solana),
+            (HostChainKind::Solana, HostChainKind::Evm),
+            (HostChainKind::Solana, HostChainKind::Solana),
+        ] {
+            let error = validation_error(&[host_chain(7, first), host_chain(7, second)]);
+            assert!(error.contains("Duplicate host chain in config for chain ID 7"));
+        }
+    }
+
+    #[test]
+    fn rejects_missing_or_contradictory_backend_fields() {
+        let mut evm_missing_acl = host_chain(1, HostChainKind::Evm);
+        evm_missing_acl.acl_address = None;
+        let mut evm_with_program_id = host_chain(2, HostChainKind::Evm);
+        evm_with_program_id.solana_host_program_id = Some([7; 32]);
+        let mut solana_missing_program_id = host_chain(3, HostChainKind::Solana);
+        solana_missing_program_id.solana_host_program_id = None;
+        let mut solana_with_acl = host_chain(4, HostChainKind::Solana);
+        solana_with_acl.acl_address = Some(Address::ZERO);
+
+        let cases = [
+            (evm_missing_acl, "requires acl_address"),
+            (evm_with_program_id, "must not set solana_host_program_id"),
+            (solana_missing_program_id, "requires solana_host_program_id"),
+            (solana_with_acl, "must not set acl_address"),
+        ];
+        for (host_chain, expected) in cases {
+            let error = validation_error(&[host_chain]);
+            assert!(error.contains(expected), "unexpected error: {error}");
+        }
     }
 }
