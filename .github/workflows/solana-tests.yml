@@ -149,11 +149,12 @@ jobs:
           {
             echo '### Solana native unit coverage'
             echo
-            echo 'Mollusk executes prebuilt SBF programs, so it validates runtime behavior but cannot attribute LLVM coverage to program instruction bodies. The runtime-test harness is excluded here to avoid inflating this native signal.'
+            echo 'Mollusk executes prebuilt SBF programs, so it validates runtime behavior but cannot attribute LLVM coverage to program instruction bodies. The runtime-test harness is excluded here to avoid inflating this native signal. Inline #[cfg(test)] modules remain instrumented, so percentages are gap-finding signals rather than product-code coverage.'
             echo
             echo '| Component | Covered lines | Coverage |'
             echo '| --- | ---: | ---: |'
             jq -r '
+              # Keep this list aligned with non-excluded solana/Cargo.toml workspace members.
               def components: [
                 {label: "zama-solana-acl", path: "/crates/zama-solana-acl/"},
                 {label: "solana-ed25519-instruction", path: "/crates/solana-ed25519-instruction/"},
