@@ -22,6 +22,7 @@ use solana_keypair::{read_keypair_file, Keypair};
 
 const EVENT_AUTHORITY_SEED: &[u8] = b"__event_authority";
 const HISTORICAL_LABEL_MARKER: u8 = 3;
+const RELAYER_LAGGING_PREFIX: &str = "relayer proof lagging:";
 const MMR_MODE_HISTORICAL: u8 = 0x01;
 const MMR_MODE_PUBLIC: u8 = 0x02;
 
@@ -654,13 +655,10 @@ fn fetch_relayer_mmr_proof(
     leaf_index: u64,
 ) -> Result<zama_solana_acl::MmrProof, Box<dyn std::error::Error>> {
     const MAX_ATTEMPTS: u32 = 15;
-    for attempt in 1..=MAX_ATTEMPTS {
+    for attempt in 1..MAX_ATTEMPTS {
         match fetch_relayer_mmr_proof_once(encrypted_value, leaf_index) {
             Ok(proof) => return Ok(proof),
-            Err(e)
-                if e.to_string().starts_with("relayer proof lagging:")
-                    && attempt < MAX_ATTEMPTS =>
-            {
+            Err(e) if is_relayer_lagging(&e.to_string()) => {
                 eprintln!(
                     "relayer proof lagging (attempt {attempt}/{MAX_ATTEMPTS}); retrying in 2s"
                 );
@@ -669,7 +667,11 @@ fn fetch_relayer_mmr_proof(
             Err(e) => return Err(e),
         }
     }
-    Err("relayer proof still lagging after retries".into())
+    fetch_relayer_mmr_proof_once(encrypted_value, leaf_index)
+}
+
+fn is_relayer_lagging(message: &str) -> bool {
+    message.starts_with(RELAYER_LAGGING_PREFIX)
 }
 
 fn fetch_relayer_mmr_proof_once(
@@ -726,7 +728,7 @@ fn relayer_http_error(code: u16, raw_body: &[u8]) -> String {
     if let Ok(error_body) = serde_json::from_slice::<RelayerMmrProofResponse>(raw_body) {
         if code == 503 && error_body.status == "lagging" {
             return format!(
-                "relayer proof lagging: HTTP {code}, leaf_count={}",
+                "{RELAYER_LAGGING_PREFIX} HTTP {code}, leaf_count={}",
                 error_body.leaf_count
             );
         }
@@ -2785,21 +2787,25 @@ fn initialize_mint(
 
 #[cfg(test)]
 mod tests {
-    use super::relayer_http_error;
+    use super::{is_relayer_lagging, relayer_http_error};
 
     #[test]
     fn retries_only_structured_lagging_response() {
         let lagging = br#"{"mmr_proof":null,"leaf_count":7,"proof_slot":42,"verified":false,"status":"lagging"}"#;
+        let lagging_error = relayer_http_error(503, lagging);
         assert_eq!(
-            relayer_http_error(503, lagging),
+            lagging_error,
             "relayer proof lagging: HTTP 503, leaf_count=7"
         );
+        assert!(is_relayer_lagging(&lagging_error));
 
         let wrong_status = br#"{"mmr_proof":null,"leaf_count":7,"proof_slot":42,"verified":false,"status":"corrupt_cache"}"#;
+        let fatal_error = relayer_http_error(503, wrong_status);
         assert_eq!(
-            relayer_http_error(503, wrong_status),
+            fatal_error,
             "relayer proof HTTP 503: status=corrupt_cache, leaf_count=7"
         );
+        assert!(!is_relayer_lagging(&fatal_error));
     }
 
     #[test]
