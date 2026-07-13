@@ -33,6 +33,17 @@ vi.mock("../src/cli/shared", () => ({
   parsePositiveInt: (value: string) => Number(value),
   parsePositiveNumber: (value: string) => Number(value),
   parsePositiveIntOrAuto: (value: string) => value === "auto" ? "auto" : Number(value),
+  parseBoundedInt: (label: string, max: number) => (value: string) => {
+    const parsed = Number(value);
+    if (parsed > max) throw new Error(`${label} must be at most ${max.toString()}, got "${value}".`);
+    return parsed;
+  },
+  parseBoundedIntOrAuto: (label: string, max: number) => (value: string) => {
+    if (value === "auto") return "auto";
+    const parsed = Number(value);
+    if (parsed > max) throw new Error(`${label} must be at most ${max.toString()}, got "${value}".`);
+    return parsed;
+  },
   parseValueTypes: (value: string) => value.split(","),
   readReport: mocks.readReport,
 }));
@@ -228,6 +239,21 @@ describe("CLI interruption exit behavior", () => {
       "node", "load-test", "pool", "add",
       "--flow", "public-decrypt", "--count", "1", "--delegation-days", "2",
     ])).rejects.toThrow(/only valid for delegated-user-decrypt/);
+  });
+
+  it("rejects resource flags above their ceilings", async () => {
+    await expect(createProgram().parseAsync([
+      "node", "load-test", "pool", "add",
+      "--flow", "input-proof", "--count", "1", "--threads", "129",
+    ])).rejects.toThrow(/--threads must be at most 128/);
+
+    await expect(createProgram().parseAsync([
+      "node", "load-test", "scenario", "run", "scenario", "--connections", "1025",
+    ])).rejects.toThrow(/--connections must be at most 1024/);
+
+    await expect(createProgram().parseAsync([
+      "node", "load-test", "scenario", "run", "scenario", "--prepare", "--lanes", "65",
+    ])).rejects.toThrow(/--lanes must be at most 64/);
   });
 
   it("reports delegated ACL owners as healthy, expired, or missing", async () => {

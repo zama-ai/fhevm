@@ -1,7 +1,17 @@
 import { Option, type Command } from "@commander-js/extra-typings";
 import { readdir } from "node:fs/promises";
 
-import { envFromCommand, parsePositiveInt, parsePositiveIntOrAuto, parseValueTypes } from "../shared";
+import {
+  envFromCommand,
+  parseBoundedInt,
+  parseBoundedIntOrAuto,
+  parsePositiveInt,
+  parseValueTypes,
+} from "../shared";
+
+const MAX_THREADS = 128;
+const MAX_LANES = 64;
+const MAX_ENCRYPT_CONCURRENCY = 256;
 
 const FLOWS = ["input-proof", "public-decrypt", "user-decrypt", "delegated-user-decrypt"] as const;
 
@@ -52,9 +62,13 @@ export const registerPoolCommands = (program: Command): void => {
     .addOption(new Option("--flow <flow>", "flow the pool serves").choices([...FLOWS]).makeOptionMandatory())
     .requiredOption("--count <n>", "pool items to add", parsePositiveInt)
     .option("--types <list>", "comma-separated FHE value types", parseValueTypes)
-    .option("--threads <n>", "input-proof worker threads", parsePositiveInt)
-    .option("--lanes <n>", "handle-pool wallet lanes (HD accounts)", parsePositiveInt)
-    .option("--encrypt-concurrency <n|auto>", "handle preparation concurrency per wallet lane", parsePositiveIntOrAuto)
+    .option("--threads <n>", "input-proof worker threads", parseBoundedInt("--threads", MAX_THREADS))
+    .option("--lanes <n>", "handle-pool wallet lanes (HD accounts)", parseBoundedInt("--lanes", MAX_LANES))
+    .option(
+      "--encrypt-concurrency <n|auto>",
+      "handle preparation concurrency per wallet lane",
+      parseBoundedIntOrAuto("--encrypt-concurrency", MAX_ENCRYPT_CONCURRENCY),
+    )
     .option("--delegation-days <n>", "delegated-user-decrypt ACL duration", parsePositiveInt)
     .action(async (options, command) => {
       validatePoolAddOptions(options);

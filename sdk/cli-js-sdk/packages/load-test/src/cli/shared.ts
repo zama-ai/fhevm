@@ -47,6 +47,25 @@ export const parsePositiveInt = (value: string): number => {
 export const parsePositiveIntOrAuto = (value: string): number | "auto" =>
   value === "auto" ? "auto" : parsePositiveInt(value);
 
+/** Positive-integer parser bounded by a reasonable ceiling for a resource flag. */
+export const parseBoundedInt = (
+  label: string,
+  max: number,
+) => (value: string): number => {
+  const parsed = parsePositiveInt(value);
+  if (parsed > max) {
+    throw new Error(`${label} must be at most ${max.toString()}, got "${value}".`);
+  }
+  return parsed;
+};
+
+/** `parseBoundedInt`, also accepting the literal `"auto"`. */
+export const parseBoundedIntOrAuto = (
+  label: string,
+  max: number,
+) => (value: string): number | "auto" =>
+  value === "auto" ? "auto" : parseBoundedInt(label, max)(value);
+
 export const parsePositiveNumber = (value: string): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {

@@ -1,6 +1,9 @@
 import type { Command } from "@commander-js/extra-typings";
 
-import { envFromCommand, parsePositiveInt } from "../shared";
+import { envFromCommand, parseBoundedInt } from "../shared";
+
+const MAX_CONNECTIONS = 1024;
+const MAX_LANES = 64;
 
 export const registerSuiteCommands = (program: Command): void => {
   const suite = program.command("suite").description("Plan and run suites; preparation is explicit");
@@ -45,8 +48,8 @@ export const registerSuiteCommands = (program: Command): void => {
   suite.command("prepare <ref>").description("Prepare pools with local CPU/funded on-chain writes and persist evidence")
     .option("--out <dir>", "output root")
     .option("--skip-readiness", "skip GET /health/readiness before mutation")
-    .option("--lanes <n>", "wallet lanes for handle creation", parsePositiveInt)
-    .option("--connections <n>", "max sockets for the readiness gate", parsePositiveInt)
+    .option("--lanes <n>", "wallet lanes for handle creation", parseBoundedInt("--lanes", MAX_LANES))
+    .option("--connections <n>", "max sockets for the readiness gate", parseBoundedInt("--connections", MAX_CONNECTIONS))
     .action(async (ref, options, command) => {
       const env = await envFromCommand(command);
       const [{ loadSuite }, { prepareSuite }, { logger }] = await Promise.all([
@@ -77,8 +80,8 @@ export const registerSuiteCommands = (program: Command): void => {
     .option("--baselines-dir <dir>", "baseline reports root", "baselines")
     .option("--prepare", "authorize local CPU and funded on-chain pool writes before execution")
     .option("--skip-readiness", "skip GET /health/readiness")
-    .option("--lanes <n>", "wallet lanes for handle creation", parsePositiveInt)
-    .option("--connections <n>", "max sockets toward the relayer", parsePositiveInt)
+    .option("--lanes <n>", "wallet lanes for handle creation", parseBoundedInt("--lanes", MAX_LANES))
+    .option("--connections <n>", "max sockets toward the relayer", parseBoundedInt("--connections", MAX_CONNECTIONS))
     .action(async (ref, options, command) => {
       if (options.lanes !== undefined && !options.prepare) {
         throw new Error("--lanes is only valid with --prepare for suite run.");

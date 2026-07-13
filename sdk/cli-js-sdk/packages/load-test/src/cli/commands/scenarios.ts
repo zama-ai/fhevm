@@ -8,11 +8,15 @@ import type { Scenario } from "../../scenario/schema";
 import { isoNow } from "../../shared/time";
 import {
   envFromCommand,
+  parseBoundedInt,
   parseNonNegativeInt,
   parsePositiveInt,
   parsePositiveNumber,
   readReport,
 } from "../shared";
+
+const MAX_CONNECTIONS = 1024;
+const MAX_LANES = 64;
 
 type ScenarioCommandOptions = Readonly<{
   rps?: number;
@@ -236,14 +240,14 @@ export const registerScenarioRunCommand = (
     parent.command("run <scenario>").description(description),
   )
     .option("--out <dir>", "output directory override")
-    .option("--connections <n>", "max sockets toward the relayer", parsePositiveInt)
+    .option("--connections <n>", "max sockets toward the relayer", parseBoundedInt("--connections", MAX_CONNECTIONS))
     .option("--baseline <path>", "baseline report.json")
     .option("--skip-readiness", "skip GET /health/readiness")
     .option(
       "--prepare",
       "explicitly create missing pools first (may use local CPU and send funded on-chain transactions)",
     )
-    .option("--lanes <n>", "funded wallet lanes for on-chain handle creation", parsePositiveInt);
+    .option("--lanes <n>", "funded wallet lanes for on-chain handle creation", parseBoundedInt("--lanes", MAX_LANES));
   command.action((scenarioRef, options, actionCommand) =>
     runScenarioAction(scenarioRef, options as ScenarioRunOptions, actionCommand),
   );
@@ -297,8 +301,8 @@ export const registerScenarioCommands = (program: CommandUnknownOpts): void => {
       .description("Create missing pools and ACL grants; may send funded on-chain transactions"),
   )
     .option("--out <dir>", "preparation artifact directory override")
-    .option("--lanes <n>", "funded wallet lanes for on-chain handle creation", parsePositiveInt)
-    .option("--connections <n>", "max sockets used for relayer readiness", parsePositiveInt)
+    .option("--lanes <n>", "funded wallet lanes for on-chain handle creation", parseBoundedInt("--lanes", MAX_LANES))
+    .option("--connections <n>", "max sockets used for relayer readiness", parseBoundedInt("--connections", MAX_CONNECTIONS))
     .option("--skip-readiness", "skip GET /health/readiness before preparation");
   prepare.action(async (ref, options, command) => {
     const env = await envFromCommand(command);
