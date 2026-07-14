@@ -7,6 +7,9 @@ on:
       - synchronize
       - reopened
       - labeled
+    branches:
+      - main
+      - release/*
   workflow_dispatch:
     inputs:
       runbook:
@@ -25,12 +28,15 @@ on:
 permissions: {}
 
 concurrency:
-  group: test-suite-stateful-rollout-${{ github.ref }}
-  # Label-only events must not cancel a rollout that is already using the same PR ref.
-  cancel-in-progress: ${{ github.event_name != 'pull_request' || github.event.action != 'labeled' }}
+  group:
+    ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number)
+    || github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  # New PR commits replace stale runs. Label events queue behind an active run,
+  # while manual dispatches have independent groups and never cancel each other.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' }}
 
 jobs:
-  fhevm-rollout:
+  fhevm-rollout: # zizmor: ignore[secrets-outside-env] Same-repo PR plus rollout label is the approval gate.
     name: fhevm-rollout
     if:
       ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository &&
@@ -40,10 +46,6 @@ jobs:
       contents: "read" # Required to checkout repository code.
       packages: "read" # Required by fhevm-cli when resolving GitHub package metadata.
     runs-on: large_ubuntu_32
-    # Repository prerequisite: configure this environment with required reviewers
-    # and environment-scoped registry secrets. Declaring it here does not enforce
-    # either protection by itself.
-    environment: stateful-rollout
     timeout-minutes: 300
     env:
       GH_TOKEN: ${{ github.token }}
@@ -63,6 +65,11 @@ jobs:
 
       - name: Install foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
 
       - name: Resolve rollout runbook
         env:
@@ -112,11 +119,14 @@ jobs:
           echo "ROLLOUT_RUNBOOK=$runbook" >> "$GITHUB_ENV"
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+          command: |
+            echo "Logging into ghcr.io..."
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
       - name: Login to Chainguard Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
@@ -217,7 +227,8 @@ jobs:
           snapshot_logs "Host KMS Keygen Trigger" host-sc-trigger-keygen
           snapshot_logs "Host KMS CRS Trigger" host-sc-trigger-crsgen
           snapshot_logs "KMS Core" kms-core
-          for container in $(docker ps -a --format '{{.Names}}' | grep -E '^kms-core' | grep -vxF 'kms-core' | sort); do
+          snapshot_logs "KMS Core Init" kms-core-init
+          for container in $(docker ps -a --format '{{.Names}}' | grep -E '^kms-core-[0-9]+$' | sort); do
             snapshot_logs "KMS Core: ${container}" "${container}"
           done
           for container in $(docker ps -a --format '{{.Names}}' | grep -E '^kms-connector' | grep -E 'kms-worker|gw-listener|tx-sender' | grep -vE 'kms-connector-(kms-worker|gw-listener|tx-sender)$' | sort); do
