@@ -216,7 +216,7 @@ describe('confidentialTransfer attestation binding', () => {
     });
     expect(sendAndConfirm).toHaveBeenCalledWith(expect.any(Object), {
       commitment: 'confirmed',
-      skipPreflight: false,
+      skipPreflight: true,
     });
     const wire = simulate.mock.calls[0]![0] as string;
     const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
@@ -242,6 +242,29 @@ describe('confidentialTransfer attestation binding', () => {
     });
     await expect(confidentialTransfer(context, params)).rejects.toThrow('self-transfers cannot include deny records');
   });
+
+  it.each(['0x44', `0x${'44'.repeat(66)}`])(
+    'rejects a malformed attestation signature before RPC',
+    async (signature) => {
+      const getLatestBlockhash = vi.fn();
+      const simulateTransaction = vi.fn();
+      const defaults = await parameters({
+        rpc: { getLatestBlockhash, simulateTransaction } as unknown as SolanaConfidentialTransferParameters['rpc'],
+      });
+      const params = {
+        ...defaults,
+        inputProofResult: {
+          ...defaults.inputProofResult,
+          signatures: [signature as never],
+        },
+      };
+
+      await expect(confidentialTransfer(context, params)).rejects.toThrow('input proof signature[0] must be 65 bytes');
+      expect(getLatestBlockhash).not.toHaveBeenCalled();
+      expect(simulateTransaction).not.toHaveBeenCalled();
+      expect(sendAndConfirm).not.toHaveBeenCalled();
+    },
+  );
 
   it('does not send a transaction whose simulation fails', async () => {
     const owner = await generateKeyPairSigner();

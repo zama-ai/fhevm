@@ -111,6 +111,11 @@ export async function confidentialTransfer(
   if (base58.encode(hexToBytes(inputProof.contractAddress)) !== computeSigner) {
     throw new Error('input proof contract does not match the mint compute signer');
   }
+  const signatures = inputProofResult.signatures.map((signature, index) => {
+    const bytes = hexToBytes(signature);
+    if (bytes.length !== 65) throw new Error(`input proof signature[${index}] must be 65 bytes`);
+    return bytes;
+  });
   if (
     parameters.fromAccount === parameters.toAccount &&
     parameters.denyRecords !== undefined &&
@@ -147,7 +152,7 @@ export async function confidentialTransfer(
       contractAddress: hexToBytes(inputProof.contractAddress),
       contractChainId: inputProof.chainId,
       extraData: hexToBytes(inputProofResult.extraData),
-      signatures: inputProofResult.signatures.map((signature) => hexToBytes(signature)),
+      signatures,
     },
   });
   const instruction =
@@ -189,7 +194,7 @@ export async function confidentialTransfer(
     transaction,
     {
       commitment: 'confirmed',
-      skipPreflight: false,
+      skipPreflight: true,
     },
   );
   return getSignatureFromTransaction(transaction);
