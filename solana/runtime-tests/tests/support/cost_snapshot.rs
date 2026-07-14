@@ -16,10 +16,11 @@
 //! ```
 //!
 //! That script checks the CI-pinned Solana/Anchor versions, cleans, rebuilds
-//! SBF artifacts, and rewrites the JSON. Prefer it over setting
+//! SBF artifacts, clears existing snapshot JSON (so orphaned profiles cannot
+//! linger), and rewrites the baselines. Prefer it over setting
 //! `ZAMA_UPDATE_COST_SNAPSHOT=1` by hand (the env gate remains for escape-hatch
-//! use but skips the toolchain/clean guardrails). Costs are exact for the
-//! pinned toolchain.
+//! use but skips the toolchain/clean/orphan-clear guardrails). Costs are exact
+//! for the pinned toolchain.
 //!
 //! Profiles use fixed fixture keys because on-chain PDA bump searches are part
 //! of the measured compute: absolute values therefore include an
@@ -28,8 +29,8 @@
 //! commits, not the absolute number.
 //!
 //! Update mode inserts or overwrites the current profile only; it never deletes
-//! keys. Remove orphaned profiles from the JSON by hand when a test is renamed
-//! or deleted.
+//! keys. Full regenerations go through `scripts/update-cost-snapshots.sh`, which
+//! clears the JSON files first so renamed/deleted profiles do not linger.
 
 use mollusk_svm::result::InstructionResult;
 use serde::{Deserialize, Serialize};
@@ -60,7 +61,17 @@ pub fn assert_cost_snapshot(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-    if std::env::var(UPDATE_ENV).is_ok_and(|value| value == "1") {
+    let update = match std::env::var_os(UPDATE_ENV) {
+        None => false,
+        Some(value) if value == "1" => true,
+        Some(value) if value == "0" || value.is_empty() => false,
+        Some(value) => panic!(
+            "{UPDATE_ENV} must be unset, \"0\", or \"1\" (got {value:?}); use \
+             `bash scripts/update-cost-snapshots.sh` to regenerate"
+        ),
+    };
+
+    if update {
         let mut entries = match load_entries(&path) {
             LoadEntries::Missing => BTreeMap::new(),
             LoadEntries::Ok(entries) => entries,
@@ -134,7 +145,7 @@ pub fn assert_cost_snapshot(
 /// `unique_accounts` is a static property of the instruction shape (unique
 /// account-meta pubkeys plus the program id), not a count of accounts loaded
 /// at runtime.
-#[derive(Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 struct Cost {
     compute_units: u64,
     unique_accounts: usize,
