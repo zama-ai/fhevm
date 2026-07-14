@@ -19,7 +19,7 @@
     "test": "npm run test:templates && npm run test:tarball",
     "test:templates": "npm run clean:tarball-consumer && npm run build:templates && node --test --test-concurrency=1 test/*.test.ts",
     "test:tarball": "npm run clean:tarball-consumer && npm run build:templates && npm run build && npm run prepare:tarball-consumer && npm run lint:tarball-consumer && vitest run --config test/ts/vitest.config.ts",
-    "lint": "eslint --config ./eslint.config.js --ignore-pattern test/ts/tarball-consumer.test.ts --ignore-pattern test/ts/acl-owner-upgrade.test.ts --ignore-pattern test/ts/deploy-v14.test.ts --ignore-pattern test/ts/viemEthereumLib.ts --ignore-pattern test/ts/ethUtils.ts && tsc -b ./tsconfig.json --noEmit",
+    "lint": "eslint --config ./eslint.config.js --ignore-pattern test/ts/tarball-consumer.test.ts --ignore-pattern test/ts/acl-owner-upgrade.test.ts --ignore-pattern test/ts/deploy-v14.test.ts --ignore-pattern test/ts/deploy-at.test.ts --ignore-pattern test/ts/viemEthereumLib.ts --ignore-pattern test/ts/ethUtils.ts && tsc -b ./tsconfig.json --noEmit",
     "lint:tarball-consumer": "eslint --config ./eslint.config.js test/ts/*.ts && tsc --project test/ts/tsconfig.json --noEmit",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""

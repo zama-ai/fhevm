@@ -1,11 +1,4 @@
-import { toBeHex, zeroPadValue } from "ethers";
-
-/**
- * erc7201 storage locations (OpenZeppelin upgradeable). These are layout facts about the contracts we
- * poke, not configuration — they live here because this is the only place that writes them.
- */
-const INITIALIZABLE_STORAGE_SLOT = "0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00";
-const OWNABLE_STORAGE_SLOT = "0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300";
+import { toBeHex } from "ethers";
 
 export interface Eip1193Provider {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
@@ -141,26 +134,5 @@ export class FhevmNode {
 
   async impersonate(address: string): Promise<void> {
     await this.provider.request({ method: this.methods.impersonateAccount, params: [address] });
-  }
-
-  /**
-   * Fakes the post-`EmptyUUPSProxy.initialize()` state. The mock places implementations directly with
-   * setCode instead of standing up real ERC1967 proxies, so `initializeFromEmptyProxy` — a
-   * `reinitializer(2)` — would revert on its `_initialized < 2` guard without this.
-   *
-   * Layout (OZ Initializable, one slot, packed from the LSB):
-   *   bytes 24..31 = uint64 _initialized
-   *   byte  23     = bool   _initializing
-   */
-  async setInitializableStorage(address: string, initialized: bigint, initializing: boolean): Promise<void> {
-    const initializedBytes = toBeHex(initialized, 8);
-    const initializingByte = initializing ? "0x01" : "0x00";
-    const packed = initializingByte + initializedBytes.slice(2);
-    await this.setStorageAt(address, INITIALIZABLE_STORAGE_SLOT, zeroPadValue(packed, 32));
-  }
-
-  /** Writes OwnableUpgradeable's `_owner` directly (the mock never runs ACL's initializer). */
-  async setOwnableStorage(address: string, owner: string): Promise<void> {
-    await this.setStorageAt(address, OWNABLE_STORAGE_SLOT, zeroPadValue(owner, 32));
   }
 }

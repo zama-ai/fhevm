@@ -34,6 +34,18 @@ export function createViemEthereumAdapters(args: {
         await testClient.setCode({ address: parameters.address as Address, bytecode: parameters.bytecode as Hex });
       },
 
+      async setStorageAt(parameters: {
+        readonly address: string;
+        readonly slot: string;
+        readonly value: string;
+      }): Promise<void> {
+        await testClient.setStorageAt({
+          address: parameters.address as Address,
+          index: parameters.slot as Hex,
+          value: parameters.value as Hex,
+        });
+      },
+
       async getCodeAt(parameters: { readonly address: string }): Promise<string> {
         return (await publicClient.getCode({ address: parameters.address as Address })) ?? '0x';
       },

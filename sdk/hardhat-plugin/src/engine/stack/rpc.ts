@@ -1,7 +1,7 @@
 import { Interface, type Result } from "ethers";
 
 import { ADDRESSES, type HostContractName } from "./addresses";
-import { getCleartextArtifact } from "./artifacts";
+import { getAbi } from "./abis";
 import { FhevmNode } from "../node";
 
 /**
@@ -16,7 +16,7 @@ const ifaceCache = new Map<HostContractName, Interface>();
 export function ifaceFor(name: HostContractName): Interface {
   let iface = ifaceCache.get(name);
   if (!iface) {
-    iface = new Interface(getCleartextArtifact(name).abi);
+    iface = new Interface(getAbi(name));
     ifaceCache.set(name, iface);
   }
   return iface;

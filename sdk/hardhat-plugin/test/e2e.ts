@@ -7,7 +7,6 @@ import { ContractFactory, type InterfaceAbi, JsonRpcProvider, Wallet } from "eth
 
 import { FhevmApi } from "../src/api";
 import { ADDRESSES } from "../src/engine/stack/addresses";
-import { CONTRACT_NAMES } from "../src/engine/stack/artifacts";
 import { publicDecrypt } from "../src/engine/fhe/decrypt";
 import { readCleartext } from "../src/engine/stack/rpc";
 import { FhevmType } from "../src/types";
@@ -80,7 +79,7 @@ async function main(): Promise<void> {
     // Every contract is placed and carries code.
     for (const [name, address] of Object.entries(ADDRESSES)) {
       const code = await provider.getCode(address);
-      check(`${CONTRACT_NAMES[name as keyof typeof ADDRESSES]} placed at ${address}`, code.length > 2, true);
+      check(`${name} placed at ${address}`, code.length > 2, true);
     }
 
     // 2. Deploy the user-contract stand-in.

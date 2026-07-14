@@ -45,6 +45,15 @@ export interface AbstractEthereumProvider {
   // Privileged dev-node RPC operation, not signer-based.
   setCodeAt(parameters: { readonly address: string; readonly bytecode: string }): Promise<void>;
 
+  /**
+   * Privileged dev-node RPC operation, not signer-based.
+   *
+   * Needed only by `deployAt`. Writing code with `setCodeAt` does not run a constructor, so the state a
+   * real proxy deployment would have left behind (its `Initializable` version, ACL's owner) has to be
+   * written directly. See `deployAt`.
+   */
+  setStorageAt(parameters: { readonly address: string; readonly slot: string; readonly value: string }): Promise<void>;
+
   // Pure ABI encoding. No signer/caller/msg.sender.
   getCodeAt(parameters: { readonly address: string }): Promise<string>;
 }
@@ -165,4 +174,14 @@ export type DeployedV14 = {
   readonly cleartextAddresses: CleartextAddresses;
   readonly pauserSetAddress: string;
   readonly aclOwnerAddress: string;
+};
+
+/**
+ * A caller-chosen address map for `deployAt`, as opposed to the nonce-derived one `precomputeAddresses`
+ * produces for `deploy`. Same shape as `deploy`'s `precomputed` argument.
+ */
+export type FixedAddressesV14 = {
+  readonly fhevmAddresses: FhevmAddressesV14;
+  readonly cleartextAddresses: CleartextAddresses;
+  readonly pauserSetAddress: string;
 };

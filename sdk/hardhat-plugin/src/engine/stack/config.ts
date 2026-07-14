@@ -70,3 +70,52 @@ export function defaultSigners(): EngineSigners {
     coprocessor: new Wallet(COPROCESSOR_SIGNER_PRIVATE_KEY),
   };
 }
+
+/**
+ * The values `deployAt` initializes the stack with. Everything here is a CHOICE (unlike the addresses); the
+ * only constraint is that the FHE layer signs against the same gateway identity we initialize with.
+ */
+export function bootstrapConfig(signers: EngineSigners) {
+  return {
+    kmsVerifier: {
+      verifyingContractSource: GATEWAY_DECRYPTION_ADDRESS,
+      chainIDSource: GATEWAY_CHAIN_ID,
+    },
+    inputVerifier: {
+      verifyingContractSource: GATEWAY_INPUT_VERIFICATION_ADDRESS,
+      chainIDSource: GATEWAY_CHAIN_ID,
+      initialSigners: [signers.coprocessor.address],
+      initialThreshold: INPUT_VERIFIER_THRESHOLD,
+    },
+    hcuLimit: {
+      hcuCapPerBlock: HCU_CAP_PER_BLOCK,
+      maxHCUDepthPerTx: HCU_MAX_DEPTH_PER_TX,
+      maxHCUPerTx: HCU_MAX_PER_TX,
+    },
+    protocolConfig: {
+      // The MPC metadata, software version and PCR values are recorded but never consulted by the cleartext
+      // stack, so they are present-but-empty rather than meaningful.
+      initialKmsNodeParams: [
+        {
+          txSenderAddress: KMS_TX_SENDER,
+          signerAddress: signers.kms.address,
+          ipAddress: "127.0.0.1",
+          storageUrl: "https://kms.local",
+          partyId: 1,
+          mpcIdentity: "kms-1",
+          caCert: "0x" as const,
+          storagePrefix: "",
+        },
+      ],
+      initialThresholds: {
+        publicDecryption: KMS_THRESHOLD,
+        userDecryption: KMS_THRESHOLD,
+        kmsGen: KMS_THRESHOLD,
+        mpc: KMS_THRESHOLD,
+      },
+      softwareVersion: "0.0.0-mock",
+      pcrValues: [],
+    },
+  };
+}
+

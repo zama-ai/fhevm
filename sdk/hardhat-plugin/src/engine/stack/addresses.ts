@@ -6,13 +6,13 @@
  * config is compiled INTO the user's contracts. So the mock must put ACL / FHEVMExecutor / KMSVerifier at
  * exactly these addresses, or `FHE.*` calls in user code reach empty accounts.
  *
- * That constraint is the whole reason the engine places code with `setCode` rather than using
- * host-contracts-cleartext's own `deploy()` — see the note in `deploy.ts`.
+ * That constraint is why the plugin calls the package's `deployAt` (which places the stack at addresses the
+ * caller chooses) rather than `deploy` (which is CREATE-based, so its addresses fall out of the deployer's
+ * nonce and can never land here).
  *
  * The rest are free. Nothing outside the host stack references them: the host contracts find each other
- * through the constants in `host-contracts-cleartext/config/addresses.sol`, which appear in the compiled
- * bytecode as placeholders that we rewrite to the values below (see `artifacts.ts`). Any consistent set
- * works.
+ * through the constants in `host-contracts-cleartext/config/addresses.sol`, and `deployAt` rewrites every
+ * one of those to the map below. Any consistent set works.
  */
 export const ADDRESSES = {
   // Pinned by ZamaConfig._getLocalConfig() — do not change.
@@ -56,3 +56,24 @@ export const ADDRESS_REFERENCES: Readonly<Record<string, string>> = {
   CLEARTEXT_ARITHMETIC_ADDRESS: ADDRESSES.CleartextArithmetic,
   CLEARTEXT_DB_ADDRESS: ADDRESSES.CleartextDB,
 };
+
+/**
+ * The same map, in the shape `@fhevm/host-contracts-cleartext`'s `deployAt` takes. The package places the
+ * stack; the plugin only decides WHERE — and for the first three, `ZamaConfig` already decided.
+ */
+export const FIXED_ADDRESSES = {
+  fhevmAddresses: {
+    aclAddress: ADDRESSES.ACL,
+    fhevmExecutorAddress: ADDRESSES.FHEVMExecutor,
+    kmsVerifierAddress: ADDRESSES.KMSVerifier,
+    inputVerifierAddress: ADDRESSES.InputVerifier,
+    hcuLimitAddress: ADDRESSES.HCULimit,
+    protocolConfigAddress: ADDRESSES.ProtocolConfig,
+    kmsGenerationAddress: ADDRESSES.KMSGeneration,
+  },
+  cleartextAddresses: {
+    cleartextArithmeticAddress: ADDRESSES.CleartextArithmetic,
+    cleartextDbAddress: ADDRESSES.CleartextDB,
+  },
+  pauserSetAddress: ADDRESSES.PauserSet,
+} as const;

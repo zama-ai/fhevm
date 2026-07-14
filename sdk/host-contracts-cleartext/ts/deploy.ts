@@ -23,6 +23,7 @@ import type {
   DeployedV14,
   FhevmAddressesV12,
   FhevmAddressesV14,
+  FixedAddressesV14,
   HCULimitInitConfig,
   InputVerifierInitConfig,
   KMSVerifierInitConfig,
@@ -557,4 +558,71 @@ async function buildBootstrapPlanV14(parameters: {
   ];
 
   return { implementations: await deployImplementations({ ...parameters, addressReplacements, targets }) };
+}
+
+/** One `initializeFromEmptyProxy` call: which contract, and with what arguments. */
+export type BootstrapInitCall = {
+  readonly contractName: string;
+  readonly address: string;
+  readonly abi: readonly unknown[];
+  readonly args: readonly unknown[];
+};
+
+/**
+ * The initializer calls a fresh stack needs, in dependency order. Shared by `deploy` (which folds them
+ * into one atomic `ACLOwner.upgrade`) and `deployAt` (which sends them individually), so the init
+ * arguments have a single definition.
+ *
+ * ProtocolConfig goes first: it holds the KMS signer set and thresholds that KMSVerifier and KMSGeneration
+ * read back through it. CleartextDB goes last, seeded with CleartextArithmetic as its only writer.
+ */
+export function bootstrapInitCalls(parameters: {
+  readonly addresses: FixedAddressesV14;
+  readonly config: BootstrapConfigV14;
+}): readonly BootstrapInitCall[] {
+  const fhevm = parameters.addresses.fhevmAddresses;
+  const cleartext = parameters.addresses.cleartextAddresses;
+  const { config } = parameters;
+
+  return [
+    {
+      contractName: 'ProtocolConfig',
+      address: fhevm.protocolConfigAddress,
+      abi: protocolConfigAbi,
+      args: protocolConfigInitArgs(config.protocolConfig),
+    },
+    { contractName: 'ACL', address: fhevm.aclAddress, abi: aclAbi, args: [] },
+    { contractName: 'FHEVMExecutor', address: fhevm.fhevmExecutorAddress, abi: fhevmExecutorAbi, args: [] },
+    { contractName: 'KMSGeneration', address: fhevm.kmsGenerationAddress, abi: kmsGenerationAbi, args: [] },
+    {
+      contractName: 'KMSVerifier',
+      address: fhevm.kmsVerifierAddress,
+      abi: kmsVerifierAbi,
+      args: kmsVerifierInitArgs(config.kmsVerifier),
+    },
+    {
+      contractName: 'InputVerifier',
+      address: fhevm.inputVerifierAddress,
+      abi: inputVerifierAbi,
+      args: inputVerifierInitArgs(config.inputVerifier),
+    },
+    {
+      contractName: 'HCULimit',
+      address: fhevm.hcuLimitAddress,
+      abi: hcuLimitAbi,
+      args: hcuLimitInitArgs(config.hcuLimit),
+    },
+    {
+      contractName: 'CleartextArithmetic',
+      address: cleartext.cleartextArithmeticAddress,
+      abi: cleartextArithmeticAbi,
+      args: [],
+    },
+    {
+      contractName: 'CleartextDB',
+      address: cleartext.cleartextDbAddress,
+      abi: cleartextDbAbi,
+      args: [cleartext.cleartextArithmeticAddress],
+    },
+  ];
 }
