@@ -12,6 +12,7 @@ export default [
       'src/_esm/**',
       'src/_types/**',
       'src/wasm/**',
+      'src/solana/internal/generated/confidentialToken/**',
       'node_modules/**',
       'coverage/**',
       '**/*.test.ts',

@@ -11,11 +11,14 @@ import type {
 import type { FhevmRuntime, WithEncrypt } from '../../../core/types/coreFhevmRuntime.js';
 import type { SolanaEncryptInputParameters, SolanaEncryptInputResult } from '../../actions/encryptInput.js';
 import type { SolanaSubmitInputProofParameters, SolanaSubmitInputProofResult } from '../../actions/submitInputProof.js';
+import type { SolanaConfidentialTransferParameters } from '../../actions/confidentialTransfer.js';
+import type { Signature } from '@solana/kit';
 import { asFhevmWith, setResolvedTfheVersion } from '../../../core/runtime/CoreFhevm-p.js';
 import { encryptModule } from '../../../core/modules/encrypt/module/index.js';
 import { DEFAULT_TFHE_VERSION } from '../../../wasm/tfhe/loadTfheLib.js';
 import { encryptInput } from '../../actions/encryptInput.js';
 import { submitInputProof } from '../../actions/submitInputProof.js';
+import { confidentialTransfer } from '../../actions/confidentialTransfer.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -24,6 +27,7 @@ export type SolanaEncryptActions = {
   readonly buildInputProof: (parameters: SolanaEncryptInputParameters) => Promise<SolanaEncryptInputResult>;
   /** Submits a built Solana input proof and verifies the returned handles. */
   readonly submitInputProof: (parameters: SolanaSubmitInputProofParameters) => Promise<SolanaSubmitInputProofResult>;
+  readonly confidentialTransfer: (parameters: SolanaConfidentialTransferParameters) => Promise<Signature>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -92,6 +96,8 @@ export function solanaEncryptActions(
           return encryptInput(encryptFhevm, parameters);
         },
         submitInputProof: async (parameters) => submitInputProof({ runtime, solanaChain }, parameters),
+        confidentialTransfer: async (parameters) =>
+          confidentialTransfer({ solanaChain, aclProgramAddress }, parameters),
       },
       runtime,
       init: _initEncrypt as (fhevm: FhevmBase) => Promise<void>,

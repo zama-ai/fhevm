@@ -106,9 +106,11 @@
     }
   },
   "dependencies": {
-    "@scure/base": "1.2.6",
-    "@noble/hashes": "2.0.1",
     "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.0.1",
+    "@scure/base": "1.2.6",
+    "@solana/kit": "6.10.0",
+    "@solana/program-client-core": "6.10.0",
     "wasm-feature-detect": "^1.8.0"
   },
   "repository": {
