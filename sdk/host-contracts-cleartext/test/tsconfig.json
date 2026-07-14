@@ -9,6 +9,7 @@
   },
   "include": ["./**/*.ts", "../internal/**/*.ts"],
   "exclude": [
+    "../internal/deploy-local/**",
     "./ts/tarball-consumer.test.ts",
     "./ts/acl-owner-upgrade.test.ts",
     "./ts/deploy-v14.test.ts",

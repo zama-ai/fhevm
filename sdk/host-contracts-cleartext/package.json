@@ -12,6 +12,7 @@
     "build:tarball": "npm run build:templates && npm run build && npm run pack:tarball",
     "pack:tarball": "node internal/createPackageTarball.ts",
     "build:forge": "forge clean && forge build",
+    "deploy:local": "node internal/deploy-local/deployLocalStack.ts",
     "build:templates": "forge clean && forge build && node internal/generateTemplates.ts",
     "generate:templates": "node internal/generateTemplates.ts",
     "clean:tarball-consumer": "rm -rf test/ts/.consumer test/ts/.tarballs test/ts/.vitest-cache test/ts/node_modules",
@@ -19,8 +20,8 @@
     "test": "npm run test:templates && npm run test:tarball",
     "test:templates": "npm run clean:tarball-consumer && npm run build:templates && node --test --test-concurrency=1 test/*.test.ts",
     "test:tarball": "npm run clean:tarball-consumer && npm run build:templates && npm run build && npm run prepare:tarball-consumer && npm run lint:tarball-consumer && vitest run --config test/ts/vitest.config.ts",
-    "lint": "eslint --config ./eslint.config.js --ignore-pattern test/ts/tarball-consumer.test.ts --ignore-pattern test/ts/acl-owner-upgrade.test.ts --ignore-pattern test/ts/deploy-v14.test.ts --ignore-pattern test/ts/deploy-at.test.ts --ignore-pattern test/ts/viemEthereumLib.ts --ignore-pattern test/ts/ethUtils.ts && tsc -b ./tsconfig.json --noEmit",
-    "lint:tarball-consumer": "eslint --config ./eslint.config.js test/ts/*.ts && tsc --project test/ts/tsconfig.json --noEmit",
+    "lint": "eslint --config ./eslint.config.js --ignore-pattern \"internal/deploy-local/**\" --ignore-pattern test/ts/tarball-consumer.test.ts --ignore-pattern test/ts/acl-owner-upgrade.test.ts --ignore-pattern test/ts/deploy-v14.test.ts --ignore-pattern test/ts/deploy-at.test.ts --ignore-pattern test/ts/viemEthereumLib.ts --ignore-pattern test/ts/ethUtils.ts && tsc -b ./tsconfig.json --noEmit",
+    "lint:tarball-consumer": "eslint --config ./eslint.config.js test/ts/*.ts internal/deploy-local/*.ts && tsc --project test/ts/tsconfig.json --noEmit && tsc --project internal/deploy-local/tsconfig.json --noEmit",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier:write": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
   },
