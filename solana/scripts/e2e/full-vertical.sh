@@ -356,55 +356,16 @@ run_unary() {
   EVAL_ACL="$acl"
 }
 
-echo "==> [binary ops] fhe_eval — 19 binary ops (euint8/euint64)"
-# Arithmetic
-echo "    Sub(100, enc(30)=70)"
+# Operator semantics are exhaustive in operator_conformance; Mollusk proves representative SBF
+# admission and real_tfhe_conformance proves representative cryptographic execution. Keep only the
+# materially distinct network/listener/worker/decrypt wiring shapes in this expensive vertical.
+echo "==> [representative binary ops] fhe_eval — encrypted/encrypted and encrypted/scalar wiring"
+echo "    Sub(100, enc(30))=70"
 run_binary Sub 100 30 0 5; assert_decrypt "Sub" "$EVAL_HANDLE" "$EVAL_ACL" 70
 echo "    Mul(6, scalar(7))=42"
 run_binary Mul 6 7 1 5; assert_decrypt "Mul" "$EVAL_HANDLE" "$EVAL_ACL" 42
-echo "    Div(42, scalar(6))=7"
-run_binary Div 42 6 1 5; assert_decrypt "Div" "$EVAL_HANDLE" "$EVAL_ACL" 7
-echo "    Rem(42, scalar(10))=2"
-run_binary Rem 42 10 1 5; assert_decrypt "Rem" "$EVAL_HANDLE" "$EVAL_ACL" 2
-echo "    Min(10, enc(20))=10"
-run_binary Min 10 20 0 5; assert_decrypt "Min" "$EVAL_HANDLE" "$EVAL_ACL" 10
-echo "    Max(10, enc(20))=20"
-run_binary Max 10 20 0 5; assert_decrypt "Max" "$EVAL_HANDLE" "$EVAL_ACL" 20
-# Bitwise (euint8=type 2): and(240,15)=0  or(240,15)=255  xor(240,255)=15
-echo "    And(240, enc(15) euint8)=0"
-run_binary And 240 15 0 2; assert_decrypt "And" "$EVAL_HANDLE" "$EVAL_ACL" 0
-echo "    Or(240, enc(15) euint8)=255"
-run_binary Or 240 15 0 2; assert_decrypt "Or" "$EVAL_HANDLE" "$EVAL_ACL" 255
-echo "    Xor(240, enc(255) euint8)=15"
-run_binary Xor 240 255 0 2; assert_decrypt "Xor" "$EVAL_HANDLE" "$EVAL_ACL" 15
-# Shifts/rotations (euint8=type 2, scalar RHS)
-echo "    Shl(1, scalar(3) euint8)=8"
-run_binary Shl 1 3 1 2; assert_decrypt "Shl" "$EVAL_HANDLE" "$EVAL_ACL" 8
-echo "    Shr(8, scalar(3) euint8)=1"
-run_binary Shr 8 3 1 2; assert_decrypt "Shr" "$EVAL_HANDLE" "$EVAL_ACL" 1
-echo "    Rotl(1, scalar(1) euint8)=2"
-run_binary Rotl 1 1 1 2; assert_decrypt "Rotl" "$EVAL_HANDLE" "$EVAL_ACL" 2
-echo "    Rotr(2, scalar(1) euint8)=1"
-run_binary Rotr 2 1 1 2; assert_decrypt "Rotr" "$EVAL_HANDLE" "$EVAL_ACL" 1
-# Comparisons (euint64, output is ebool 0/1)
-echo "    Eq(42, enc(42))=1"
-run_binary Eq 42 42 0 5; assert_decrypt "Eq" "$EVAL_HANDLE" "$EVAL_ACL" 1
-echo "    Ne(42, enc(43))=1"
-run_binary Ne 42 43 0 5; assert_decrypt "Ne" "$EVAL_HANDLE" "$EVAL_ACL" 1
-echo "    Ge(42, enc(41))=1"
-run_binary Ge 42 41 0 5; assert_decrypt "Ge" "$EVAL_HANDLE" "$EVAL_ACL" 1
-echo "    Gt(42, enc(41))=1"
-run_binary Gt 42 41 0 5; assert_decrypt "Gt" "$EVAL_HANDLE" "$EVAL_ACL" 1
-echo "    Le(41, enc(42))=1"
-run_binary Le 41 42 0 5; assert_decrypt "Le" "$EVAL_HANDLE" "$EVAL_ACL" 1
-echo "    Lt(41, enc(42))=1"
-run_binary Lt 41 42 0 5; assert_decrypt "Lt" "$EVAL_HANDLE" "$EVAL_ACL" 1
 
-echo "==> [unary ops] fhe_eval — Neg, Not, Cast"
-echo "    Neg(100 euint8)=156"
-run_unary Neg 100 2 2; assert_decrypt "Neg" "$EVAL_HANDLE" "$EVAL_ACL" 156
-echo "    Not(240 euint8)=15"
-run_unary Not 240 2 2; assert_decrypt "Not" "$EVAL_HANDLE" "$EVAL_ACL" 15
+echo "==> [representative unary] fhe_eval — Cast exercises distinct input/output type wiring"
 echo "    Cast(42 euint8->euint16)=42"
 run_unary Cast 42 2 3; assert_decrypt "Cast" "$EVAL_HANDLE" "$EVAL_ACL" 42
 
@@ -451,16 +412,6 @@ IH_ACL="$(echo "$iout" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{
 [ -n "$IH" ] || fail "no isIn result handle"
 [ -n "$IH_ACL" ] || fail "no isIn output ACL record: $iout"
 assert_decrypt "isIn" "$IH" "$IH_ACL" 1
-
-echo "==> [composite/isIn] fhe_eval isIn(${ISIN_MISS_VALUE:-43} in [10,42,100])->false"
-ioutf="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
-  FHE_EVAL_IS_IN=1 ISIN_VALUE="${ISIN_MISS_VALUE:-43}" ISIN_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
-echo "$ioutf" | grep -qE 'allow_for_decryption' || fail "fhe_eval isIn(miss): $ioutf"
-IHF="$(echo "$ioutf" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
-IHF_ACL="$(echo "$ioutf" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{print $4}')"
-[ -n "$IHF" ] || fail "no isIn(miss) result handle"
-[ -n "$IHF_ACL" ] || fail "no isIn(miss) output ACL record: $ioutf"
-assert_decrypt "isIn(miss)" "$IHF" "$IHF_ACL" 0
 
 echo "==> [composite/mulDiv] fhe_eval mulDiv(${MULDIV_A:-6} * ${MULDIV_B:-7} / ${MULDIV_D:-3})"
 MULDIV_A="${MULDIV_A:-6}"; MULDIV_B="${MULDIV_B:-7}"; MULDIV_D="${MULDIV_D:-3}"
@@ -589,4 +540,4 @@ disout="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" 
 echo "$disout" | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp: $(echo "$disout" | tail -3)"
 echo "    disclose_amount_secp OK -- witness-bound secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
 
-echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> composite sum($SUM_A+$SUM_B=$EXPECTED_SUM) + isIn($ISIN_VALUE in [10,42,100]=true, ${ISIN_MISS_VALUE:-43}=false) + mulDiv($MULDIV_A*$MULDIV_B/$MULDIV_D=$EXPECTED_MULDIV) -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"
+echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> representative eval wiring [binary enc/enc + enc/scalar, unary cast, ternary, bounded randomness, sum, isIn, mulDiv] -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"
