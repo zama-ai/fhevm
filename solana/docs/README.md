@@ -22,7 +22,7 @@ TESTING.md
 
 Program-level docs live next to the code: [`../programs/zama-host/README.md`](../programs/zama-host/README.md)
 (state/PDA layout, roles, external-input flow) and
-[`../scripts/poc/test-keypairs/README.md`](../scripts/poc/test-keypairs/README.md) (committed PoC
+[`../scripts/e2e/test-keypairs/README.md`](../scripts/e2e/test-keypairs/README.md) (committed PoC
 keypairs and rotation).
 
 When a change alters the intended architecture, update `DESIGN_DECISIONS.md` (or the relevant doc

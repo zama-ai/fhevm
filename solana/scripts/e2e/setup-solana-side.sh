@@ -57,11 +57,11 @@ echo "    decryption=$DECRYPTION_ADDRESS coprocessor_signer=$COPROCESSOR_SIGNER 
 
 echo "==> [2/5] fresh validator (Yellowstone geyser) + reconstruction-first program deploy"
 # Seed the committed well-known PoC program keypairs so the build reuses them and the deployed
-# program IDs match each `declare_id!` (see scripts/poc/test-keypairs/README.md). `-n` keeps any
+# program IDs match each `declare_id!` (see scripts/e2e/test-keypairs/README.md). `-n` keeps any
 # pre-existing local keypair; on a fresh checkout it seeds the committed test keys.
 mkdir -p "$SOLANA/target/deploy"
 for p in zama_host confidential_token; do
-  cp -n "$SOLANA/scripts/poc/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json" 2>/dev/null || true
+  cp -n "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json" 2>/dev/null || true
 done
 # Ensure the deployer wallet exists. Created only if absent so a developer's existing wallet is
 # untouched; fresh CI runners have none (otherwise deploy fails with "No default signer found").
@@ -123,7 +123,7 @@ echo "==> [3/5] bootstrap zama-host (real gateway/ProtocolConfig values, mock/te
 # from the program crates, so a stale prebuilt binary sends mismatched discriminators (same
 # reason the host-listener is rebuilt below). This BOOTSTRAP leg replaces the former
 # bootstrap.mjs (@solana/web3.js) with the typed anchor-client path.
-LC="$SOLANA/scripts/poc/live-client"
+LC="$SOLANA/scripts/e2e/live-client"
 ( cd "$LC" && cargo build >/tmp/solana-live-client-build.log 2>&1 ) \
   || { echo "[setup] live-client build failed; see /tmp/solana-live-client-build.log" >&2; tail -20 /tmp/solana-live-client-build.log >&2; exit 1; }
 BOOTSTRAP=1 \

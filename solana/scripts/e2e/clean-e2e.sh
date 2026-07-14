@@ -72,8 +72,8 @@ PY
 #    Reads gateway addresses + KMS/coprocessor signer set live, so it tracks the new signer.
 #    The sole supported path deploys a reconstruction-first zama-host on the geyser-plugin validator and
 #    ingests ordinary computation facts through Yellowstone reconstruction.
-"$ROOT/solana/scripts/poc/setup-solana-side.sh"
+"$ROOT/solana/scripts/e2e/setup-solana-side.sh"
 
 echo "[clean-e2e] stack ready. Drive the full vertical (input -> compute -> public/user-decrypt ->"
 echo "  input-flow -> consume), user-decrypt is now PURE-SDK (no kms checkout):"
-echo "    TE_VALUE=55 bash solana/scripts/poc/full-vertical.sh"
+echo "    TE_VALUE=55 bash solana/scripts/e2e/full-vertical.sh"

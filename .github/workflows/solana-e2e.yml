@@ -119,7 +119,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Bring up fresh stack + Solana side (clean-e2e.sh)
-        run: bash solana/scripts/poc/clean-e2e.sh
+        run: bash solana/scripts/e2e/clean-e2e.sh
 
       - name: Ensure @fhevm/sdk runtime deps resolve for full-vertical
         # clean-e2e's bring-up disturbs the SDK's resolved @noble/* (verified: the import resolves
@@ -134,7 +134,7 @@ jobs:
           node --input-type=module -e "await import('@fhevm/sdk/solana'); console.log('@fhevm/sdk/solana imports OK')"
 
       - name: Drive the Solana decrypt vertical (full-vertical.sh)
-        run: bash solana/scripts/poc/full-vertical.sh
+        run: bash solana/scripts/e2e/full-vertical.sh
 
       - name: Collect stack logs on failure
         if: ${{ failure() }}

@@ -3,10 +3,10 @@
 #   compute (real on-chain zama-host FHE op -> host-listener -> coprocessor -> tfhe/sns-worker ->
 #   CiphertextCommits) -> public-decrypt -> user-decrypt, asserting correct cleartexts.
 #
-# Prereq: `solana/scripts/poc/clean-e2e.sh` (clean fhevm-cli up + Solana side-stack). Reproducible
+# Prereq: `solana/scripts/e2e/clean-e2e.sh` (clean fhevm-cli up + Solana side-stack). Reproducible
 # from clean state. MAINNET-safe: validator pinned 127.0.0.1:8899.
 #
-#   TE_VALUE=55 bash solana/scripts/poc/full-vertical.sh
+#   TE_VALUE=55 bash solana/scripts/e2e/full-vertical.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 VALUE="${TE_VALUE:-55}"
@@ -33,7 +33,7 @@ pub_field() {
   local key="$2"
   printf '%s\n' "$body" | awk -v key="$key" '$1=="PUB" && $2==key {print $3; exit}'
 }
-LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"
+LC="$ROOT/solana/scripts/e2e/live-client/target/debug/poc-live-client"
 PUBLIC_DECRYPT_JSON=""
 # Mode-byte-free borsh(MmrInclusionProof) for the last handle proved — the PROOF the on-chain
 # consume steps (redeem_burned_amount_secp / disclose_*_secp) borsh-decode. Set by run_public_decrypt_with_proof.
@@ -49,7 +49,7 @@ run_public_decrypt_with_proof() {
   # The e2e sources MMR proofs from the running relayer proof service. The client retries a transient
   # `503 lagging` internally (re-invoking here would be unsafe for stateful steps).
   local proof
-  proof="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  proof="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
     PUBLIC_DECRYPT_PROOF=1 PUB_HANDLE="$handle" PUB_ACL="$acl" \
     RELAYER_URL=http://127.0.0.1:3000 \
     ./target/debug/poc-live-client 2>&1)" \
@@ -162,7 +162,7 @@ echo "    input handle=$ih (coprocessor EIP-712 attestation $isig)"
 # standalone verify_coprocessor_input instruction.
 
 echo "==> [compute] eval-based fhe_eval trivial_encrypt $VALUE on zama-host (#2755 eval executor + ACL allow)"
-out="$(cd "$ROOT/solana/scripts/poc/live-client" && TRIVIAL_ENCRYPT_EVAL=1 TE_VALUE="$VALUE" TE_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
+out="$(cd "$ROOT/solana/scripts/e2e/live-client" && TRIVIAL_ENCRYPT_EVAL=1 TE_VALUE="$VALUE" TE_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
 echo "$out" | grep -E 'result handle|allow_for_decryption' || fail "trivial-encrypt(eval): $out"
 H="$(echo "$out" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
 [ -n "$H" ] || fail "no handle"
@@ -203,7 +203,7 @@ UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
 echo "    user-decrypt cleartext=$VALUE OK (PURE-SDK: ed25519 v3 + in-SDK de-signcryption, no kms checkout)"
 
 echo "==> [historical-user-decrypt] superseded handle via live MMR proof + /v3/user-decrypt"
-hist_compute="$(cd "$ROOT/solana/scripts/poc/live-client" && HISTORICAL_STEP=compute TE_VALUE="$VALUE" ./target/debug/poc-live-client 2>&1)"
+hist_compute="$(cd "$ROOT/solana/scripts/e2e/live-client" && HISTORICAL_STEP=compute TE_VALUE="$VALUE" ./target/debug/poc-live-client 2>&1)"
 echo "$hist_compute" | grep -E 'HIST H_old|result handle' || fail "historical compute: $hist_compute"
 HIST_H_OLD="$(hist_field "$hist_compute" H_old)"
 HIST_ACL_VALUE_KEY_COMPUTE="$(hist_field "$hist_compute" aclValueKey)"
@@ -221,7 +221,7 @@ done
 
 # Sole-sourced from the relayer proof service (leaf_index 0). The supersede tx runs exactly once
 # here; the client retries a transient `503 lagging` internally, so this is not re-invoked on lag.
-hist_proof="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+hist_proof="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   HISTORICAL_STEP=supersede TE_VALUE="$VALUE" \
   RELAYER_URL=http://127.0.0.1:3000 \
   ./target/debug/poc-live-client 2>&1)" || fail "historical supersede/proof command failed: $hist_proof"
@@ -262,7 +262,7 @@ echo "OK historical-user-decrypt cleartext=$VALUE old=$HIST_H_OLD new=$HIST_H_NE
 # is a function of the encrypted input, not a fresh value.
 EXPECT=$((IV + ADD))
 echo "==> [input-flow] fhe_eval VerifiedInput($IV) + $ADD -> durable @ acl_domain_key -> public-decrypt (expect $EXPECT)"
-eout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+eout="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   FHE_EVAL_VERIFIED_INPUT=1 BIND_HANDLE="$ih" BIND_COPRO_SIG="$isig" BIND_USER="$USER" \
   BIND_CONTRACT="$USER" BIND_CHAIN_ID="$SID" BIND_EXTRA="$iextra" TE_ADD="$ADD" TE_ALLOW=1 \
   ./target/debug/poc-live-client 2>&1)"
@@ -320,7 +320,7 @@ run_binary() {
   local op="$1" a="$2" b="$3" scalar="$4" ftype="$5"
   local out h acl extra_env=""
   [ "$scalar" = "1" ] && extra_env="BINARY_B_SCALAR=1"
-  out="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  out="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
     env FHE_EVAL_BINARY=1 BINARY_OP="$op" BINARY_A="$a" BINARY_B="$b" \
         BINARY_FHE_TYPE="$ftype" BINARY_ALLOW=1 ${extra_env} \
     ./target/debug/poc-live-client 2>&1)"
@@ -337,7 +337,7 @@ run_binary() {
 run_unary() {
   local op="$1" a="$2" in_type="$3" out_type="$4"
   local out h acl
-  out="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+  out="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
     FHE_EVAL_UNARY=1 UNARY_OP="$op" UNARY_A="$a" UNARY_IN_FHE_TYPE="$in_type" \
     UNARY_OUT_FHE_TYPE="$out_type" UNARY_ALLOW=1 \
     ./target/debug/poc-live-client 2>&1)"
@@ -403,7 +403,7 @@ echo "    Cast(42 euint8->euint16)=42"
 run_unary Cast 42 2 3; assert_decrypt "Cast" "$EVAL_HANDLE" "$EVAL_ACL" 42
 
 echo "==> [ternary] fhe_eval IfThenElse(ctrl=1, true=42, false=99)->42"
-tout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+tout="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   FHE_EVAL_TERNARY=1 TERNARY_CTRL=1 TERNARY_TRUE=42 TERNARY_FALSE=99 TERNARY_FHE_TYPE=5 TERNARY_ALLOW=1 \
   ./target/debug/poc-live-client 2>&1)"
 echo "$tout" | grep -qE 'allow_for_decryption' || fail "fhe_eval ternary: $tout"
@@ -414,7 +414,7 @@ TH_ACL="$(echo "$tout" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{
 assert_decrypt "IfThenElse" "$TH" "$TH_ACL" 42
 
 echo "==> [rand_bounded] fhe_eval RandBounded(upper=128)"
-rbout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+rbout="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   FHE_EVAL_RAND_BOUNDED=1 RAND_UPPER=128 RAND_FHE_TYPE=5 RAND_ALLOW=1 \
   ./target/debug/poc-live-client 2>&1)"
 echo "$rbout" | grep -qE 'allow_for_decryption' || fail "fhe_eval rand_bounded: $rbout"
@@ -426,7 +426,7 @@ assert_decrypt "RandBounded" "$RBH" "$RBH_ACL" "lt:128"
 
 echo "==> [composite/sum] fhe_eval sum(${SUM_A:-10} + ${SUM_B:-20})"
 SUM_A="${SUM_A:-10}"; SUM_B="${SUM_B:-20}"; EXPECTED_SUM=$((SUM_A + SUM_B))
-sout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+sout="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   FHE_EVAL_SUM=1 SUM_A="$SUM_A" SUM_B="$SUM_B" SUM_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
 echo "$sout" | grep -qE 'allow_for_decryption' || fail "fhe_eval sum: $sout"
 SH="$(echo "$sout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
@@ -437,7 +437,7 @@ assert_decrypt "sum" "$SH" "$SH_ACL" "$EXPECTED_SUM"
 
 echo "==> [composite/isIn] fhe_eval isIn(${ISIN_VALUE:-42} in [10,42,100])->true"
 ISIN_VALUE="${ISIN_VALUE:-42}"
-iout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+iout="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   FHE_EVAL_IS_IN=1 ISIN_VALUE="$ISIN_VALUE" ISIN_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
 echo "$iout" | grep -qE 'allow_for_decryption' || fail "fhe_eval isIn: $iout"
 IH="$(echo "$iout" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
@@ -447,7 +447,7 @@ IH_ACL="$(echo "$iout" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk '{
 assert_decrypt "isIn" "$IH" "$IH_ACL" 1
 
 echo "==> [composite/isIn] fhe_eval isIn(${ISIN_MISS_VALUE:-43} in [10,42,100])->false"
-ioutf="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+ioutf="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   FHE_EVAL_IS_IN=1 ISIN_VALUE="${ISIN_MISS_VALUE:-43}" ISIN_ALLOW=1 ./target/debug/poc-live-client 2>&1)"
 echo "$ioutf" | grep -qE 'allow_for_decryption' || fail "fhe_eval isIn(miss): $ioutf"
 IHF="$(echo "$ioutf" | grep -oE 'result handle 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
@@ -459,7 +459,7 @@ assert_decrypt "isIn(miss)" "$IHF" "$IHF_ACL" 0
 echo "==> [composite/mulDiv] fhe_eval mulDiv(${MULDIV_A:-6} * ${MULDIV_B:-7} / ${MULDIV_D:-3})"
 MULDIV_A="${MULDIV_A:-6}"; MULDIV_B="${MULDIV_B:-7}"; MULDIV_D="${MULDIV_D:-3}"
 EXPECTED_MULDIV=$((MULDIV_A * MULDIV_B / MULDIV_D))
-mdout="$(cd "$ROOT/solana/scripts/poc/live-client" && \
+mdout="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   FHE_EVAL_MUL_DIV=1 MULDIV_A="$MULDIV_A" MULDIV_B="$MULDIV_B" MULDIV_D="$MULDIV_D" MULDIV_ALLOW=1 \
   ./target/debug/poc-live-client 2>&1)"
 echo "$mdout" | grep -qE 'allow_for_decryption' || fail "fhe_eval mulDiv: $mdout"
@@ -470,7 +470,7 @@ MDH_ACL="$(echo "$mdout" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk 
 assert_decrypt "mulDiv" "$MDH" "$MDH_ACL" "$EXPECTED_MULDIV"
 
 echo "==> [consume] confidential mint + USDC; wrap -> burn -> release -> public-decrypt -> redeem(secp) + disclose(secp)"
-LCDIR="$ROOT/solana/scripts/poc/live-client"
+LCDIR="$ROOT/solana/scripts/e2e/live-client"
 lc() { ( cd "$LCDIR" && env "$@" ./target/debug/poc-live-client 2>&1 ); }
 ctdig() { docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor -tAc "$1" 2>/dev/null | tr -d '[:space:]'; }
 
