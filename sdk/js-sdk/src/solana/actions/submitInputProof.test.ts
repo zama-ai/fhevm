@@ -120,6 +120,35 @@ describe('submitInputProof', () => {
     });
   });
 
+  it('rejects an input proof without handles before contacting the relayer', async () => {
+    const inputProof = new Proxy(proof(), {
+      get(target, property, receiver) {
+        return property === 'getInputHandles' ? () => [] : Reflect.get(target, property, receiver);
+      },
+    });
+    globalThis.fetch = vi.fn();
+
+    await expect(submitInputProof(context(), { inputProof })).rejects.toThrow(
+      'Input proof must contain at least one external handle',
+    );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects an input proof for a different Solana chain before contacting the relayer', async () => {
+    const inputProof = proof();
+    const fhevm = context();
+    const mismatchedContext = {
+      ...fhevm,
+      solanaChain: { ...fhevm.solanaChain, id: CHAIN_ID + 1n },
+    };
+    globalThis.fetch = vi.fn();
+
+    await expect(submitInputProof(mismatchedContext, { inputProof })).rejects.toThrow(
+      `Input proof chain id ${CHAIN_ID} does not match Solana client chain id ${CHAIN_ID + 1n}`,
+    );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it('uses the existing queued GET path until the request succeeds', async () => {
     const inputProof = proof();
     globalThis.fetch = vi
