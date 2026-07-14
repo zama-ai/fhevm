@@ -65,18 +65,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // TRIVIAL_ENCRYPT drives a real zama-host FHE op (trivial encryption): the program
-    // computes the result handle on-chain and the live host-listener reconstructs the
-    // operation from the successful instruction for the tfhe-worker to materialize.
-    if std::env::var("TRIVIAL_ENCRYPT").is_ok() {
-        trivial_encrypt_and_bind(&host, &payer, host_config)?;
-        return Ok(());
-    }
-
     // TRIVIAL_ENCRYPT_EVAL drives the SAME trivial-encryption through the eval-plan executor
     // (fhe_eval): a single TrivialEncrypt step with a durable output ACL record. The host computes
     // the result handle on-chain and the host-listener reconstructs the successful frame,
-    // exercising the #2755 eval path instead of the standalone trivial_encrypt_and_bind.
+    // exercising the #2755 eval path.
     if std::env::var("TRIVIAL_ENCRYPT_EVAL").is_ok() {
         trivial_encrypt_eval(&host, &payer, host_config)?;
         return Ok(());
@@ -111,12 +103,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // a subsequent confidential_burn draws from on the redeem path. MINT + WRAP_AMOUNT via env.
     if std::env::var("CONSUME_WRAP").is_ok() {
         consume_wrap(&token, &payer, host_config)?;
-        return Ok(());
-    }
-    // CONSUME_AMOUNT: stand up a confidential token account and mint a token-scoped random
-    // encrypted amount (a real transfer-amount handle), the operand the disclose path needs.
-    if std::env::var("CONSUME_AMOUNT").is_ok() {
-        consume_amount(&token, &payer, host_config)?;
         return Ok(());
     }
     // CONSUME_SEAL: seal a token amount's ciphertext material on-chain and request public
@@ -503,19 +489,6 @@ fn bootstrap(
     Ok(())
 }
 
-/// Drives a real zama-host trivial-encrypt FHE op: the program computes the result handle
-/// on-chain (entropy-bound, no client pre-computation). The live host-listener reconstructs the
-/// successful instruction into the coprocessor DB, where the tfhe-worker materializes the trivial
-/// ciphertext. TE_VALUE selects the euint64 plaintext (default 42).
-fn trivial_encrypt_and_bind(
-    host: &Program<Rc<Keypair>>,
-    payer: &Rc<Keypair>,
-    host_config: Pubkey,
-) -> Result<(), Box<dyn std::error::Error>> {
-    trivial_encrypt_eval_with_label(host, payer, host_config, 1, "trivial_encrypt_and_bind")?;
-    Ok(())
-}
-
 #[allow(clippy::too_many_arguments)]
 fn trivial_encrypt_eval_with_label(
     host: &Program<Rc<Keypair>>,
@@ -596,8 +569,8 @@ fn trivial_encrypt_eval_with_label(
 }
 
 /// Eval-based compute leg: drives a single-step fhe_eval plan (one TrivialEncrypt step with a
-/// durable output ACL record) instead of the standalone trivial_encrypt_and_bind. The host runs
-/// the eval executor, computes the result handle on-chain, creates the durable output ACL record
+/// durable output ACL record). The host runs the eval executor, computes the result handle on-chain,
+/// creates the durable output ACL record
 /// (passed as the sole remaining_account). The live host-listener reconstructs the successful
 /// frame for the tfhe-worker to materialize. TE_VALUE selects the euint64 plaintext; TE_ALLOW
 /// marks it publicly decryptable afterward.
@@ -1160,94 +1133,6 @@ fn consume_disclose(
     println!(
         "  KMS PublicDecryptVerification cert verified on-chain (secp256k1); cleartext {cleartext}"
     );
-    Ok(())
-}
-
-/// Stands up a confidential token account and mints a token-scoped random transfer amount — a
-/// real amount-ACL handle (BALANCE_FHE_TYPE, acl_domain_key = mint, token-amount label), which
-/// is what the disclose path requires (the total-supply handle uses a different ACL domain).
-/// MINT via env; owner is the payer.
-fn consume_amount(
-    token: &Program<Rc<Keypair>>,
-    payer: &Rc<Keypair>,
-    host_config: Pubkey,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
-    let owner = payer.pubkey();
-    let (compute_signer, _) = confidential_token::compute_signer_address(mint);
-    let (token_account, _) = confidential_token::token_account_address(mint, owner);
-    let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
-    let (token_evt, _) =
-        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
-
-    // 1. initialize_token_account (initial balance 0) creates the account + stable balance lineage.
-    let (balance_value, _) =
-        confidential_token::balance_encrypted_value_address(mint, token_account);
-    if token.rpc().get_account(&token_account).is_err() {
-        let sig = token
-            .request()
-            .accounts(confidential_token::accounts::InitializeTokenAccount {
-                owner,
-                mint,
-                compute_signer,
-                token_account,
-                balance_encrypted_value: balance_value,
-                zama_event_authority: zama_evt,
-                zama_program: zama_host::ID,
-                host_config,
-                system_program: system_program::ID,
-                hcu_authority: confidential_token::hcu_authority_address(mint).0,
-                hcu_block_meter: None,
-                hcu_trusted_app_record: None,
-                event_authority: token_evt,
-                program: confidential_token::ID,
-            })
-            .args(confidential_token::instruction::InitializeTokenAccount { initial_balance: 0 })
-            .send()?;
-        println!("OK initialize_token_account: {sig}");
-    } else {
-        println!("token account {token_account} already initialized — skipping");
-    }
-
-    // 2. create_random_amount (Transfer kind) — a RandU64 token amount; uses SlotHashes entropy
-    // for the result handle, so skip preflight (populated only in real execution).
-    let label = confidential_token::transfer_amount_label();
-    let (amount_value, _) = confidential_token::encrypted_value_address(mint, owner, label);
-    let sig2 = token
-        .request()
-        .accounts(confidential_token::accounts::CreateRandomAmount {
-            owner,
-            mint,
-            token_account,
-            compute_signer,
-            amount_value,
-            zama_event_authority: zama_evt,
-            zama_program: zama_host::ID,
-            host_config,
-            system_program: system_program::ID,
-            hcu_authority: confidential_token::hcu_authority_address(mint).0,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
-            event_authority: token_evt,
-            program: confidential_token::ID,
-        })
-        .args(confidential_token::instruction::CreateRandomAmount {
-            amount_kind: confidential_token::ConfidentialAmountKind::Transfer,
-        })
-        .send_with_spinner_and_config(anchor_client::RpcSendTransactionConfig {
-            skip_preflight: true,
-            ..Default::default()
-        })?;
-    println!("OK create_random_amount: {sig2}");
-
-    let value = fetch_encrypted_value(token, amount_value)?;
-    let hh: String = value
-        .current_handle
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    println!("  amount ACL    {amount_value}");
-    println!("  amount handle 0x{hh}  (token-scoped transfer amount; tfhe-worker materializes it)");
     Ok(())
 }
 
