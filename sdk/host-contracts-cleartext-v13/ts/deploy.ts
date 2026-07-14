@@ -126,7 +126,7 @@ export async function deploy(parameters: {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Phase 1 for a fresh v13 stack: deploys all 7 real implementations (patched with v13 host addresses)
+ * Phase 1 for a fresh v13 stack: deploys all 9 real implementations (patched with v13 host addresses)
  * and encodes their `upgradeToAndCall` calldata. Sends no owner-gated transaction.
  */
 async function buildBootstrapPlanV13(parameters: {
