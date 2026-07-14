@@ -25,6 +25,29 @@ describe("stack", () => {
     expect(state.requiresGitHub).toBe(false);
   });
 
+  test("requires a local test-suite build for explicit SDK selections", () => {
+    const base = presetBundle("latest-main", "abcdef0", "sdk.json");
+    const bundle = {
+      ...base,
+      env: {
+        ...base.env,
+        E2E_SDK_FAMILY: "relayer-sdk",
+        E2E_SDK_SOURCE: "npm",
+        E2E_SDK_VERSION: "0.4.4",
+      },
+    };
+    expect(() => previewStateFromBundle({ overrides: [], lockFile: "/tmp/sdk.json" }, bundle, defaultScenario)).toThrow(
+      "require a local test-suite build",
+    );
+    expect(() =>
+      previewStateFromBundle(
+        { overrides: [{ group: "test-suite" }], lockFile: "/tmp/sdk.json" },
+        bundle,
+        defaultScenario,
+      ),
+    ).not.toThrow();
+  });
+
   test("rejects multi-chain scenarios on network targets during preview", () => {
     const bundle = {
       ...presetBundle("latest-main", "abcdef0", "testnet.json"),

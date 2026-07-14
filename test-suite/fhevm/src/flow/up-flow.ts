@@ -209,6 +209,20 @@ export const assertDockerMemory = async (scenario: State["scenario"]) => {
   );
 };
 const NETWORK_TARGETS: ReadonlySet<string> = new Set(["devnet", "testnet", "mainnet"]);
+const EXPLICIT_E2E_SDK_KEYS = ["E2E_SDK_FAMILY", "E2E_SDK_SOURCE", "E2E_SDK_VERSION"] as const;
+
+/** Prevents version locks from claiming an SDK that a published test image cannot change at runtime. */
+export const assertExplicitSdkSelectionUsesLocalTestSuite = (
+  state: Pick<State, "versions" | "overrides">,
+) => {
+  const selectedKeys = EXPLICIT_E2E_SDK_KEYS.filter((key) => Boolean(state.versions.env[key]));
+  if (!selectedKeys.length || state.overrides.some((item) => item.group === "test-suite")) {
+    return;
+  }
+  throw new PreflightError(
+    `${selectedKeys.join(", ")} require a local test-suite build; add --override test-suite until SDK-specific published image identities are available`,
+  );
+};
 
 const postgresExecOptions = () => ({
   user: process.env.POSTGRES_USER ?? DEFAULT_POSTGRES_USER,
@@ -335,6 +349,7 @@ const partialSchemaOverrides = (overrides: LocalOverride[]) =>
 
 /** Verifies required local tooling and port availability before boot. */
 export const preflight = async (state: State, strictPorts = true, needsGitHub = true) => {
+  assertExplicitSdkSelectionUsesLocalTestSuite(state);
   const requiredCommands = ["bun", "docker", "cast", ...(needsGitHub ? ["gh"] : [])];
   const whichResults = await Promise.all(
     requiredCommands.map(async (command) => {
@@ -1039,6 +1054,7 @@ export const previewStateFromBundle = (
 ): State => {
   assertSupportedTargetScenario(bundle.target, scenario);
   assertSupportedBundleScenario({ versions: bundle, overrides: options.overrides, scenario });
+  assertExplicitSdkSelectionUsesLocalTestSuite({ versions: bundle, overrides: options.overrides });
   return {
     target: bundle.target,
     lockPath: "",
@@ -1061,6 +1077,7 @@ const bootstrapState = async (options: UpOptions) => {
   console.log(`[resolve] bundle ready (${Math.round((Date.now() - resolveStarted) / 1000)}s)`);
   assertSupportedTargetScenario(resolved.bundle.target, scenario);
   assertSupportedBundleScenario({ versions: resolved.bundle, overrides: options.overrides, scenario });
+  assertExplicitSdkSelectionUsesLocalTestSuite({ versions: resolved.bundle, overrides: options.overrides });
   await assertSchemaCompatibility(resolved.bundle, options.overrides, scenario, options.allowSchemaMismatch);
   await ensureLockSnapshot(resolved.lockPath, resolved.bundle);
   return {

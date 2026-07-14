@@ -1,9 +1,15 @@
 ARG NODE_VERSION=22.22.2-alpine3.22
 ARG RELAYER_SDK_VERSION=""
+ARG E2E_SDK_FAMILY=""
+ARG E2E_SDK_SOURCE=""
+ARG E2E_SDK_VERSION=""
 
 # --- Builder Stage ---
 FROM node:${NODE_VERSION} AS builder
 ARG RELAYER_SDK_VERSION=""
+ARG E2E_SDK_FAMILY
+ARG E2E_SDK_SOURCE
+ARG E2E_SDK_VERSION
 
 WORKDIR /app
 
@@ -32,38 +38,50 @@ COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
 
-# Install dependencies. Normal builds stay locked; rollout hotswap builds first
-# update the e2e workspace manifest in the image, then let npm resolve one
-# coherent dependency graph for that requested SDK version.
-RUN if [ -n "$RELAYER_SDK_VERSION" ]; then \
-      npm pkg set -w test-suite/e2e "dependencies.@zama-fhe/relayer-sdk=${RELAYER_SDK_VERSION}" && \
+# Install the repository graph from its lockfile. Published SDK cases pin the
+# selected top-level package while retaining the other workspace dependencies.
+RUN npm ci && npm prune && \
+    sdk_family="$E2E_SDK_FAMILY" && sdk_source="$E2E_SDK_SOURCE" && sdk_version="$E2E_SDK_VERSION" && \
+    if [ -z "$sdk_family$sdk_source$sdk_version" ] && [ -n "$RELAYER_SDK_VERSION" ]; then \
+      sdk_family="relayer-sdk"; sdk_source="npm"; sdk_version="$RELAYER_SDK_VERSION"; \
+    elif [ -z "$sdk_family$sdk_source$sdk_version" ]; then \
+      sdk_family="fhevm-sdk"; sdk_source="workspace"; sdk_version="workspace"; \
+    fi && \
+    if [ "$sdk_source" = "npm" ]; then \
+      if [ "$sdk_family" = "fhevm-sdk" ]; then package="@fhevm/sdk"; \
+      elif [ "$sdk_family" = "relayer-sdk" ]; then package="@zama-fhe/relayer-sdk"; \
+      else echo "Unsupported E2E_SDK_FAMILY: $sdk_family" >&2; exit 1; fi; \
+      npm pkg set -w test-suite/e2e "dependencies.${package}=${sdk_version}" && \
       npm install && \
       npm prune; \
-    else \
-      npm ci && \
-      npm prune; \
+    elif [ "$sdk_family" != "fhevm-sdk" ] || [ "$sdk_version" != "workspace" ]; then \
+      echo "workspace selection requires fhevm-sdk@workspace" >&2; exit 1; \
     fi
 
 # Compile js-sdk
 WORKDIR /app/sdk/js-sdk
 
-RUN npm install
 RUN npm run build
 
 # Compile test-suite
 WORKDIR /app/test-suite/e2e
 
+RUN npm run tsc:sdk-selection
 RUN npx hardhat compile
 
 # --- Runtime Stage ---
 FROM node:${NODE_VERSION} AS prod
 ARG RELAYER_SDK_VERSION=""
+ARG E2E_SDK_FAMILY
+ARG E2E_SDK_SOURCE
+ARG E2E_SDK_VERSION
 
-# Propagate the build ARG into the container's runtime env. instance.ts gates
-# on this:
-#   process.env.RELAYER_SDK_VERSION === ""   → use @fhevm/sdk (default)
-#   process.env.RELAYER_SDK_VERSION === "x"  → use @zama-fhe/relayer-sdk@x
+# RELAYER_SDK_VERSION remains available only for images built through the
+# legacy interface. New callers select family, source, and version explicitly.
 ENV RELAYER_SDK_VERSION=${RELAYER_SDK_VERSION}
+ENV E2E_SDK_FAMILY=${E2E_SDK_FAMILY}
+ENV E2E_SDK_SOURCE=${E2E_SDK_SOURCE}
+ENV E2E_SDK_VERSION=${E2E_SDK_VERSION}
 
 COPY --from=builder /lib/ /lib/
 COPY --from=builder /bin/ /bin/

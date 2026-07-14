@@ -170,7 +170,12 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   },
   "test-suite": {
     "test-suite-e2e-debug": buildSpec("../../..", "test-suite/e2e/Dockerfile", {
-      args: { RELAYER_SDK_VERSION: "${RELAYER_SDK_VERSION}" },
+      args: {
+        E2E_SDK_FAMILY: "${E2E_SDK_FAMILY:-}",
+        E2E_SDK_SOURCE: "${E2E_SDK_SOURCE:-}",
+        E2E_SDK_VERSION: "${E2E_SDK_VERSION:-}",
+        RELAYER_SDK_VERSION: "${RELAYER_SDK_VERSION:-}",
+      },
     }),
   },
 };

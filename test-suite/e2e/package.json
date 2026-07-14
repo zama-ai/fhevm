@@ -28,6 +28,8 @@
     "codegen": "../../library-solidity/codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
     "codegen:overloads": "../../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
+    "test:sdk-selection": "node --test -r ts-node/register test/sdk/selection.test.ts",
+    "tsc:sdk-selection": "tsc --noEmit -p tsconfig.sdk-selection.json",
     "tsc": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

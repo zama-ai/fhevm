@@ -49,7 +49,9 @@ test("kms then coprocessor then relayer reach the v0.13.0 target (KMS core v0.13
 test("pins the target test harness across every phase", () => {
   for (const phase of Object.values(phaseVersions)) {
     expect(phase.TEST_SUITE_VERSION).toBe("v0.13.0");
-    expect(phase.RELAYER_SDK_VERSION).toBe("0.4.2");
+    expect(phase.E2E_SDK_FAMILY).toBe("relayer-sdk");
+    expect(phase.E2E_SDK_SOURCE).toBe("npm");
+    expect(phase.E2E_SDK_VERSION).toBe("0.4.2");
   }
 });
 

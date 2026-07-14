@@ -1,10 +1,8 @@
-import { createInstance as createFhevmInstance } from '@zama-fhe/relayer-sdk/node';
 import { ethers } from 'ethers';
 import { ethers as hardhatEthers } from 'hardhat';
 import { vars } from 'hardhat/config';
 
-import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
-import { RelayerSdk } from '../sdk/relayer-sdk/sdk';
+import { createSdkInstance } from '../sdk/factory';
 
 const defaultMnemonic =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
@@ -14,9 +12,6 @@ const decryptionAddress = process.env.DECRYPTION_ADDRESS!;
 const inputVerificationAddress = process.env.INPUT_VERIFICATION_ADDRESS!;
 const relayerUrl = process.env.RELAYER_URL!;
 const gatewayChainId = Number(process.env.CHAIN_ID_GATEWAY!);
-
-// True by default
-const useFhevmSdk = true;
 
 export interface ChainConfig {
   rpcUrl: string;
@@ -135,10 +130,7 @@ export async function createInstance(chain: ChainConfig) {
     gatewayChainId,
     chainId: chain.chainId,
   };
-  if (useFhevmSdk) {
-    return FhevmSdk.create(cfg);
-  }
-  return RelayerSdk.create(cfg);
+  return createSdkInstance(cfg);
 }
 
 export async function deployContract(

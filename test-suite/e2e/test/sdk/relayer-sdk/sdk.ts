@@ -4,6 +4,13 @@ import type { Signer } from "ethers";
 
 import type { Auth, ClearValueType, ClearValues, EncryptedInputResult, SdkInstance, TypedValue } from "../types";
 
+type ExtraDataRelayerInstance = FhevmInstance & {
+  getExtraData(): Promise<unknown>;
+};
+
+const supportsExtraData = (instance: FhevmInstance): instance is ExtraDataRelayerInstance =>
+  "getExtraData" in instance && typeof instance.getExtraData === "function";
+
 export class RelayerSdk implements SdkInstance {
   #instance: FhevmInstance;
 
@@ -159,15 +166,23 @@ export class RelayerSdk implements SdkInstance {
     const durationDays = 10;
     const contractAddresses = [contractAddress];
 
-    const extraData = await this.#instance.getExtraData?.();
-    // The `delegate` creates a EIP712 with the `delegator` address
-    const eip712 = this.#instance.createDelegatedUserDecryptEIP712(
+    const hasExtraData = supportsExtraData(this.#instance);
+    const extraData = hasExtraData
+      ? await (this.#instance as ExtraDataRelayerInstance).getExtraData()
+      : undefined;
+    // The `delegate` creates a EIP712 with the `delegator` address. relayer-sdk
+    // 0.4.x has no extraData argument; later versions append it positionally.
+    const createEip712 = this.#instance.createDelegatedUserDecryptEIP712 as (...args: unknown[]) => ReturnType<
+      FhevmInstance["createDelegatedUserDecryptEIP712"]
+    >;
+    const eip712 = createEip712.call(
+      this.#instance,
       delegateTransportKeypair.publicKey,
       contractAddresses,
       delegatorAddress,
       startTimeStamp,
       durationDays,
-      extraData,
+      ...(hasExtraData ? [extraData] : []),
     );
 
     // Update the signing to match the new primaryType
@@ -179,7 +194,11 @@ export class RelayerSdk implements SdkInstance {
       eip712.message,
     );
 
-    const result = await this.#instance.delegatedUserDecrypt(
+    const delegatedUserDecrypt = this.#instance.delegatedUserDecrypt as (...args: unknown[]) => ReturnType<
+      FhevmInstance["delegatedUserDecrypt"]
+    >;
+    const result = await delegatedUserDecrypt.call(
+      this.#instance,
       handleContractPairs,
       delegateTransportKeypair.privateKey,
       delegateTransportKeypair.publicKey,
@@ -189,7 +208,7 @@ export class RelayerSdk implements SdkInstance {
       signer.address,
       startTimeStamp,
       durationDays,
-      extraData,
+      ...(hasExtraData ? [extraData] : []),
     );
 
     return result[handle as `0x${string}`];
@@ -225,8 +244,19 @@ export class RelayerSdk implements SdkInstance {
     const { publicKey, privateKey } = transportKeypair ?? this.#instance.generateKeypair();
     const contractAddresses = [contractAddress];
 
-    const extraData = await this.#instance.getExtraData?.();
-    const eip712 = this.#instance.createEIP712(publicKey, contractAddresses, startTimestamp, durationDays, extraData);
+    const hasExtraData = supportsExtraData(this.#instance);
+    const extraData = hasExtraData
+      ? await (this.#instance as ExtraDataRelayerInstance).getExtraData()
+      : undefined;
+    const createEip712 = this.#instance.createEIP712 as (...args: unknown[]) => ReturnType<FhevmInstance["createEIP712"]>;
+    const eip712 = createEip712.call(
+      this.#instance,
+      publicKey,
+      contractAddresses,
+      startTimestamp,
+      durationDays,
+      ...(hasExtraData ? [extraData] : []),
+    );
 
     const signature = await signer.signTypedData(
       eip712.domain,
@@ -236,7 +266,9 @@ export class RelayerSdk implements SdkInstance {
       eip712.message,
     );
 
-    return await this.#instance.userDecrypt(
+    const userDecrypt = this.#instance.userDecrypt as (...args: unknown[]) => ReturnType<FhevmInstance["userDecrypt"]>;
+    return await userDecrypt.call(
+      this.#instance,
       handleContractPairs,
       privateKey,
       publicKey,
@@ -245,7 +277,7 @@ export class RelayerSdk implements SdkInstance {
       signer.address,
       startTimestamp,
       durationDays,
-      extraData,
+      ...(hasExtraData ? [extraData] : []),
     );
   }
 

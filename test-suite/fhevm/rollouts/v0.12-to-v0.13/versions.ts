@@ -25,7 +25,9 @@ export const from = {
   COPROCESSOR_SNS_WORKER_VERSION: fromTag,
   LISTENER_CORE_VERSION: fromTag,
   TEST_SUITE_VERSION: targetTag,
-  RELAYER_SDK_VERSION: relayerSdkVersion,
+  E2E_SDK_FAMILY: "relayer-sdk",
+  E2E_SDK_SOURCE: "npm",
+  E2E_SDK_VERSION: relayerSdkVersion,
 } satisfies Env;
 
 export const to = {

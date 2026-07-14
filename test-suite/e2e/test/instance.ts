@@ -1,32 +1,14 @@
-import { MainnetConfig, SepoliaConfig } from '@zama-fhe/relayer-sdk/node';
 import { network } from 'hardhat';
 import { vars } from 'hardhat/config';
 
-import { FhevmSdk } from './sdk/fhevm-sdk/sdk';
-import { RelayerSdk } from './sdk/relayer-sdk/sdk';
+import { createSdkInstance, sdkNetworkDefaults } from './sdk/factory';
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
 
-console.log(`=========================================================`);
-console.log(`process.env.RELAYER_SDK_VERSION=${process.env.RELAYER_SDK_VERSION}`);
-
-let useFhevmSdk = false;
-if (!(typeof process.env.RELAYER_SDK_VERSION === 'string' && process.env.RELAYER_SDK_VERSION.length > 0)) {
-  useFhevmSdk = true;
-}
-
-console.log(`useFhevmSdk=${useFhevmSdk}`);
-console.log(`=========================================================`);
-
-// By default use @fhevm/sdk
-// const useFhevmSdk =
-//   !(typeof process.env.RELAYER_SDK_VERSION === "string" && process.env.RELAYER_SDK_VERSION.length > 0) && false;
-//const useFhevmSdk = true;
-
 const defaults = (() => {
   const chainId = network.config.chainId;
-  if (network.name === 'sepolia' || chainId === 11155111) return SepoliaConfig;
-  if (network.name === 'mainnet' || chainId === 1) return MainnetConfig;
+  if (network.name === 'sepolia' || chainId === 11155111) return sdkNetworkDefaults('sepolia');
+  if (network.name === 'mainnet' || chainId === 1) return sdkNetworkDefaults('mainnet');
   return undefined;
 })();
 
@@ -103,10 +85,7 @@ export const createInstance = async () => {
     chainId: hostChainID,
     ...(auth ? { auth } : {}),
   };
-  if (useFhevmSdk) {
-    return FhevmSdk.create(cfg);
-  }
-  return RelayerSdk.create(cfg);
+  return createSdkInstance(cfg);
 };
 
 // Export coprocessor config addresses for smoke tests

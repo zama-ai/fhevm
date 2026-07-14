@@ -19,6 +19,27 @@ type FhevmClientProvider = CreateFhevmClientParameters['provider'];
 type Auth = any;
 
 const CLEARTEXT = false;
+const DECRYPTION_PERMIT_DURATION_DAYS = 10;
+
+// fhevm-sdk 1.1.0-alpha.4 accepts durationDays. The workspace SDK accepts
+// durationSeconds so it can model newer protocols. Passing both keeps the
+// adapter compatible while each SDK reads the field its API defines.
+const decryptionPermitValidity = (startTimestamp: number) => ({
+  startTimestamp,
+  durationDays: DECRYPTION_PERMIT_DURATION_DAYS,
+  durationSeconds: DECRYPTION_PERMIT_DURATION_DAYS * 24 * 3600,
+});
+
+const sdkLogger = {
+  debug: (message: string) => console.log(`[debug] ${message}`),
+  warn: (message: string) => console.log(`[warn] ${message}`),
+  error: (message: string, cause: unknown) => {
+    console.log(`[error] ${message}`);
+    if (cause !== undefined) {
+      console.log(`[error] ${cause}`);
+    }
+  },
+} as Parameters<typeof setFhevmRuntimeConfig>[0]['logger'];
 
 export class FhevmSdk implements SdkInstance {
   #fullClient: FhevmClient;
@@ -99,16 +120,7 @@ export class FhevmSdk implements SdkInstance {
     if (!hasFhevmRuntimeConfig()) {
       setFhevmRuntimeConfig({
         singleThread: false,
-        logger: {
-          debug: (message: string) => console.log(`[debug] ${message}`),
-          warn: (message: string) => console.log(`[warn] ${message}`),
-          error: (message: string, cause: unknown) => {
-            console.log(`[error] ${message}`);
-            if (cause !== undefined) {
-              console.log(`[error] ${cause}`);
-            }
-          },
-        },
+        logger: sdkLogger,
       });
     }
     const args = {
@@ -165,8 +177,7 @@ export class FhevmSdk implements SdkInstance {
 
     const signedPermit = await this.#fullClient.signDecryptionPermit({
       contractAddresses: [contractAddress],
-      durationSeconds: 10 * 24 * 3600, // 10 days
-      startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
+      ...decryptionPermitValidity(parameters.startTimestamp ?? Math.floor(Date.now() / 1000)),
       transportKeyPair,
       signer,
       signerAddress: signer.address,
@@ -204,8 +215,7 @@ export class FhevmSdk implements SdkInstance {
 
     const signedPermit = await this.#fullClient.signDecryptionPermit({
       contractAddresses: [contractAddress],
-      durationSeconds: 10 * 24 * 3600, // 10 days
-      startTimestamp: parameters.startTimestamp ?? Math.floor(Date.now() / 1000),
+      ...decryptionPermitValidity(parameters.startTimestamp ?? Math.floor(Date.now() / 1000)),
       transportKeyPair,
       signer,
       signerAddress: signer.address,

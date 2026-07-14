@@ -46,7 +46,9 @@ export const from = {
   // supportsHostListenerConsumer), so the value is inert at the v0.12 baseline.
   LISTENER_CORE_VERSION: target,
   TEST_SUITE_VERSION: target,
-  RELAYER_SDK_VERSION: relayerSdkVersion,
+  E2E_SDK_FAMILY: "relayer-sdk",
+  E2E_SDK_SOURCE: "npm",
+  E2E_SDK_VERSION: relayerSdkVersion,
 } satisfies Env;
 
 // Target ("to"). Contracts v0.13.0 are CONFIRMED by gitops#1063. KMS core ->
