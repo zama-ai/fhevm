@@ -23,7 +23,7 @@ cd "$ROOT"
 
 print_help() {
   # Emit the leading `#` comment block; stop before the first non-comment line.
-  awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
+  awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"
 }
 
 CLEAN=1
