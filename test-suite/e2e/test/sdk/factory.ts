@@ -62,6 +62,20 @@ const packageIdentity =
         version: installedPackageVersion('@zama-fhe/relayer-sdk', '@zama-fhe/relayer-sdk/node'),
       };
 
+const packageEntrypoint = fs.realpathSync(
+  require.resolve(selection.family === 'fhevm-sdk' ? '@fhevm/sdk' : '@zama-fhe/relayer-sdk/node'),
+);
+const vendoredFhevmSdk = fs.realpathSync(path.resolve(__dirname, '../../../../sdk/js-sdk'));
+if (
+  selection.family === 'fhevm-sdk' &&
+  selection.source === 'npm' &&
+  packageEntrypoint.startsWith(`${vendoredFhevmSdk}${path.sep}`)
+) {
+  throw new Error(
+    `Requested ${packageIdentity.name}@${selection.requestedVersion} from npm, but it resolves to the vendored SDK workspace`,
+  );
+}
+
 if (selection.source === 'npm' && packageIdentity.version !== selection.requestedVersion) {
   throw new Error(
     `Requested ${packageIdentity.name}@${selection.requestedVersion}, but the test image contains ${packageIdentity.name}@${packageIdentity.version}`,

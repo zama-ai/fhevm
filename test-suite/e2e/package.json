@@ -30,6 +30,7 @@
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "test:sdk-selection": "node --test -r ts-node/register test/sdk/selection.test.ts",
     "tsc:sdk-selection": "tsc --noEmit -p tsconfig.sdk-selection.json",
+    "validate:sdk-selection": "node -r ts-node/register -e \"require('./test/sdk/selection').selectSdk(process.env)\"",
     "tsc": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

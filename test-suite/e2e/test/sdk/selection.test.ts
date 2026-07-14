@@ -28,6 +28,15 @@ describe('selectSdk', () => {
 
   it('requires a complete explicit selection', () => {
     assert.throws(() => selectSdk({ E2E_SDK_FAMILY: 'fhevm-sdk' }), /E2E_SDK_SOURCE/);
+    assert.throws(
+      () =>
+        selectSdk({
+          E2E_SDK_FAMILY: 'fhevm-sdk',
+          E2E_SDK_SOURCE: 'registry',
+          E2E_SDK_VERSION: '1.1.0-alpha.4',
+        }),
+      /E2E_SDK_SOURCE/,
+    );
   });
 
   it('rejects npm ranges so an image identifies one package', () => {

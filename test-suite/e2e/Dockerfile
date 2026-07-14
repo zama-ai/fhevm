@@ -41,6 +41,7 @@ COPY sdk/js-sdk ./sdk/js-sdk
 # Install the repository graph from its lockfile. Published SDK cases pin the
 # selected top-level package while retaining the other workspace dependencies.
 RUN npm ci && npm prune && \
+    npm run -w test-suite/e2e validate:sdk-selection && \
     sdk_family="$E2E_SDK_FAMILY" && sdk_source="$E2E_SDK_SOURCE" && sdk_version="$E2E_SDK_VERSION" && \
     if [ -z "$sdk_family$sdk_source$sdk_version" ] && [ -n "$RELAYER_SDK_VERSION" ]; then \
       sdk_family="relayer-sdk"; sdk_source="npm"; sdk_version="$RELAYER_SDK_VERSION"; \
@@ -66,7 +67,7 @@ RUN npm run build
 # Compile test-suite
 WORKDIR /app/test-suite/e2e
 
-RUN npm run tsc:sdk-selection
+RUN npm run test:sdk-selection && npm run tsc:sdk-selection
 RUN npx hardhat compile
 
 # --- Runtime Stage ---
