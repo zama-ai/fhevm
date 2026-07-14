@@ -11,8 +11,14 @@
 # Consumers (SDK, e2e, all CI) use the COMMITTED blob and never run this. Only a maintainer
 # bumping the bindings runs it. Requires the Rust toolchain + wasm-pack.
 #
-# kms path is an INPUT (no hardcoded dev path):  arg $1  >  $KMS_DIR  >  scripts/.regen-tkms.env  >  sibling default
-# Usage:  sdk/js-sdk/scripts/regen-tkms-wasm.sh [/path/to/kms]
+# kms path is an INPUT (no hardcoded dev path): optional path arg > $KMS_DIR >
+# scripts/.regen-tkms.env > sibling default. The kms source is also required:
+# positional source selector > $KMS_COMMIT > scripts/.regen-tkms.env.
+# Pass an exact commit for reproducibility, or --feature-head to resolve the freshly fetched
+# origin/feature/solana head to an exact commit before building.
+# Usage:
+#   sdk/js-sdk/scripts/regen-tkms-wasm.sh [/path/to/kms] <40-character-kms-commit|--feature-head>
+#   sdk/js-sdk/scripts/regen-tkms-wasm.sh <40-character-kms-commit|--feature-head>
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,15 +28,38 @@ TKMS_DIR="$SDK_DIR/src/wasm/tkms"
 
 # Optional .env (git-ignored) so colleagues pin their own kms checkout path / branch.
 ENV_FILE="$SCRIPT_DIR/.regen-tkms.env"
+# Preserve explicit environment inputs; the local file supplies defaults only.
+KMS_DIR_INPUT="${KMS_DIR:-}"
+KMS_BRANCH_INPUT="${KMS_BRANCH:-}"
+KMS_COMMIT_INPUT="${KMS_COMMIT:-}"
 # shellcheck source=/dev/null
 [ -f "$ENV_FILE" ] && source "$ENV_FILE"
 
-# Resolve the kms checkout: explicit arg, then $KMS_DIR, then a sibling default. No hardcoded paths.
-KMS_DIR="${1:-${KMS_DIR:-$(cd "$ROOT/../../zama/kms" 2>/dev/null && pwd)}}"
-KMS_BRANCH="${KMS_BRANCH:-feature/solana}"
+# Resolve the kms checkout: explicit path, then $KMS_DIR, then a sibling default. If the first
+# argument is a source selector, the optional path was omitted.
+FIRST_ARG="${1:-}"
+SECOND_ARG="${2:-}"
+SIBLING_KMS_DIR="$(cd "$ROOT/../../zama/kms" 2>/dev/null && pwd || true)"
+KMS_DIR_DEFAULT="${KMS_DIR_INPUT:-${KMS_DIR:-$SIBLING_KMS_DIR}}"
+KMS_BRANCH="${KMS_BRANCH_INPUT:-${KMS_BRANCH:-feature/solana}}"
+if [[ "$FIRST_ARG" = "--feature-head" || "$FIRST_ARG" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  if [ -n "$SECOND_ARG" ]; then
+    echo "ERROR: pass the kms source either after the optional checkout path or as the only argument." >&2
+    exit 1
+  fi
+  KMS_DIR="$KMS_DIR_DEFAULT"
+  KMS_COMMIT="$FIRST_ARG"
+else
+  KMS_DIR="${FIRST_ARG:-$KMS_DIR_DEFAULT}"
+  KMS_COMMIT="${SECOND_ARG:-${KMS_COMMIT_INPUT:-${KMS_COMMIT:-}}}"
+fi
 
 if [ -z "$KMS_DIR" ] || [ ! -d "$KMS_DIR" ]; then
   echo "ERROR: kms checkout not found. Pass it as the first arg, set \$KMS_DIR, or place it at ../../zama/kms relative to the repo root." >&2
+  exit 1
+fi
+if [[ "$KMS_COMMIT" != "--feature-head" && ! "$KMS_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  echo "ERROR: pass an exact 40-character kms commit or --feature-head as the source argument, or set \$KMS_COMMIT." >&2
   exit 1
 fi
 
@@ -40,19 +69,52 @@ command -v wasm-pack >/dev/null 2>&1 || {
 }
 [ -d "$KMS_DIR/core/service" ] || { echo "ERROR: '$KMS_DIR' is not a kms checkout (no core/service)." >&2; exit 1; }
 
-# 1. Pin the kms source: track the branch (ergonomics), record the exact (base,head) for provenance.
-echo "[regen] kms checkout: $KMS_DIR  branch: $KMS_BRANCH"
-git -C "$KMS_DIR" fetch --quiet origin "$KMS_BRANCH" 2>/dev/null || true
-git -C "$KMS_DIR" checkout --quiet "$KMS_BRANCH"
-HEAD_SHA="$(git -C "$KMS_DIR" rev-parse HEAD)"
-# The branch is "pinned on" an upstream kms base; record it if the branch name encodes it, else best-effort.
-BASE_SHA="$(git -C "$KMS_DIR" merge-base HEAD origin/main 2>/dev/null || echo unknown)"
-VERSION="${TKMS_WASM_VERSION:-solana-${HEAD_SHA:0:8}}"
+# 1. Pin the kms source to an exact commit known to be on the freshly fetched provenance branch.
+echo "[regen] kms checkout: $KMS_DIR  branch: $KMS_BRANCH  commit: $KMS_COMMIT"
+git -C "$KMS_DIR" fetch --quiet origin \
+  "+refs/heads/$KMS_BRANCH:refs/remotes/origin/$KMS_BRANCH" \
+  "+refs/heads/main:refs/remotes/origin/main"
+BRANCH_SHA="$(git -C "$KMS_DIR" rev-parse "refs/remotes/origin/$KMS_BRANCH")"
+MAIN_SHA="$(git -C "$KMS_DIR" rev-parse "refs/remotes/origin/main")"
+if [ "$KMS_COMMIT" = "--feature-head" ]; then
+  HEAD_SHA="$BRANCH_SHA"
+else
+  if ! git -C "$KMS_DIR" cat-file -e "${KMS_COMMIT}^{commit}" 2>/dev/null; then
+    echo "ERROR: kms commit $KMS_COMMIT is unavailable after fetching origin/$KMS_BRANCH." >&2
+    exit 1
+  fi
+  HEAD_SHA="$(git -C "$KMS_DIR" rev-parse "${KMS_COMMIT}^{commit}")"
+fi
+if ! git -C "$KMS_DIR" merge-base --is-ancestor "$HEAD_SHA" "$BRANCH_SHA"; then
+  echo "ERROR: kms commit $HEAD_SHA is not on fetched origin/$KMS_BRANCH ($BRANCH_SHA)." >&2
+  exit 1
+fi
+# Record the common base against the main branch snapshot fetched with the provenance branch.
+BASE_SHA="$(git -C "$KMS_DIR" merge-base "$HEAD_SHA" "$MAIN_SHA")"
+KMS_VERSION="$(git -C "$KMS_DIR" show "${HEAD_SHA}:Cargo.toml" | awk '
+  $0 == "[workspace.package]" { in_workspace_package = 1; next }
+  in_workspace_package && /^\[/ { exit }
+  in_workspace_package && $1 == "version" { gsub(/"/, "", $3); print $3; exit }
+')"
+if [[ ! "$KMS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+  echo "ERROR: could not derive a valid workspace version from kms commit $HEAD_SHA." >&2
+  exit 1
+fi
+VERSION="${KMS_VERSION}-solana.${HEAD_SHA:0:8}"
 echo "[regen] head=$HEAD_SHA base=$BASE_SHA -> version v$VERSION"
 
-# 2. Build the wasm bindings exactly as kms CI does (npm-release.yml / wasm-testing.yml).
-( cd "$KMS_DIR/core/service" && wasm-pack build --target web . --no-default-features )
-PKG="$KMS_DIR/core/service/pkg"
+# 2. Build in an isolated worktree so the verified source cannot drift and the caller's
+#    checkout is left untouched.
+BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/kms-tkms-regen.XXXXXX")"
+BUILD_DIR="$BUILD_ROOT/kms"
+cleanup() {
+  git -C "$KMS_DIR" worktree remove --force "$BUILD_DIR" >/dev/null 2>&1 || true
+  rmdir "$BUILD_ROOT" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+git -C "$KMS_DIR" worktree add --detach --quiet "$BUILD_DIR" "$HEAD_SHA"
+( cd "$BUILD_DIR/core/service" && wasm-pack build --target web . --no-default-features )
+PKG="$BUILD_DIR/core/service/pkg"
 [ -f "$PKG/kms_lib_bg.wasm" ] || { echo "ERROR: wasm-pack did not produce $PKG/kms_lib_bg.wasm" >&2; exit 1; }
 
 # 3. Vendor the blob under versioned names (the SDK imports version-embedded filenames).
@@ -84,7 +146,7 @@ tkms_wasm_version=v$VERSION
 EOF
 
 # 6. This is the SOLANA-ONLY blob. It is NOT swapped into the EVM decrypt module: kms
-#    `feature/solana` is a newer kms (v0.14.x) whose TKMS JS API differs from the EVM-vendored
+#    `feature/solana` is a newer kms snapshot whose TKMS JS API differs from the EVM-vendored
 #    blob (e.g. `getWasmInfo` removed, `process_user_decryption_resp_from_js` gained a `threshold`
 #    arg), so reusing it for EVM would break the EVM path. Only the Solana de-signcryption path
 #    imports this blob by its versioned filename. The two blobs coexist until fhevm upgrades the
