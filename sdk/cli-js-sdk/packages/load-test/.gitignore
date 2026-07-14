@@ -3,5 +3,4 @@
 # separately under baselines/ as the regression reference.
 runs/
 
-# Default pool + run data directory (--data-dir).
-.load-test/
+pools/
