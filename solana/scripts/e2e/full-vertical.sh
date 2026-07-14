@@ -49,7 +49,6 @@ run_public_decrypt_with_proof() {
   local label="$1"
   local handle="$2"
   local acl="$3"
-  local expected="${4:-}"
   local expected_leaf_count="${5:-}"
   local expected_leaf_index="${6:-}"
   # The e2e sources MMR proofs from the running relayer proof service. The client retries a transient
@@ -90,23 +89,13 @@ run_public_decrypt_with_proof() {
   PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES="$pub_mmr_inclusion_proof_bytes"
 
   local result
-  if [ -n "$expected" ]; then
-    result="$(cd "$ROOT/test-suite/fhevm" && \
-      PD_RELAYER_URL=http://127.0.0.1:3000 PD_HANDLE="$handle" PD_CONTEXT_ID="$PUBLIC_CONTEXT_ID" \
-      PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
-      PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
-      PD_MMR_LEAF_INDEX="$pub_leaf_index" PD_MMR_SIBLINGS="$pub_siblings" \
-      PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" PD_EXPECTED="$expected" node solana-publicdecrypt.ts 2>&1)" \
-      || fail "$label public-decrypt failed: $result"
-  else
-    result="$(cd "$ROOT/test-suite/fhevm" && \
-      PD_RELAYER_URL=http://127.0.0.1:3000 PD_HANDLE="$handle" PD_CONTEXT_ID="$PUBLIC_CONTEXT_ID" \
-      PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
-      PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
-      PD_MMR_LEAF_INDEX="$pub_leaf_index" PD_MMR_SIBLINGS="$pub_siblings" \
-      PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" node solana-publicdecrypt.ts 2>&1)" \
-      || fail "$label public-decrypt failed: $result"
-  fi
+  result="$(cd "$ROOT/test-suite/fhevm" && \
+    PD_CONTRACTS_CHAIN_ID="$SID" PD_RELAYER_URL=http://127.0.0.1:3000 PD_HANDLE="$handle" PD_CONTEXT_ID="$PUBLIC_CONTEXT_ID" \
+    PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
+    PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
+    PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" \
+    ./fhevm-cli test solana-public-decrypt 2>&1 | tail -1)" \
+    || fail "$label public-decrypt failed: $result"
   PUBLIC_DECRYPT_JSON="$result"
 }
 
