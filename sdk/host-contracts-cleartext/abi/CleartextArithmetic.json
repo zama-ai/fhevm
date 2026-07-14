@@ -310,6 +310,13 @@
   },
   {
     "type": "function",
+    "name": "reinitializeV3",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "upgradeToAndCall",
     "inputs": [
       {

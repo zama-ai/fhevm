@@ -177,6 +177,19 @@ export type DeployedV14 = {
 };
 
 /**
+ * Values `ProtocolConfig.reinitializeV2` backfills during a v13→v14 update. v14 anchors each KMS
+ * context to a hash of its full node set (with the new `partyId`/`mpcIdentity`/`caCert`/
+ * `storagePrefix` fields), software version and PCR values — none of which the v13 contract stored,
+ * so the operator supplies them: the existing nodes re-expressed in the v14 shape, plus the version
+ * and PCR values the live KMS actually runs.
+ */
+export type UpdateV13ToV14MigrationConfig = {
+  readonly kmsNodeParams: readonly KmsNodeParams[];
+  readonly softwareVersion: string;
+  readonly pcrValues: readonly PcrValues[];
+};
+
+/**
  * A caller-chosen address map for `deployAt`, as opposed to the nonce-derived one `precomputeAddresses`
  * produces for `deploy`. Same shape as `deploy`'s `precomputed` argument.
  */

@@ -19,6 +19,7 @@
     "prepare:tarball-consumer": "node internal/prepareTarballConsumer.ts",
     "test": "npm run test:templates && npm run test:tarball",
     "test:templates": "npm run clean:tarball-consumer && npm run build:templates && node --test --test-concurrency=1 test/*.test.ts",
+    "test:upgrade-e2e": "npm run clean:tarball-consumer && npm run build:templates && npm run build && npm run prepare:tarball-consumer && node internal/prepareV13Consumer.ts && tsc --project test/ts/tsconfig.e2e.json --noEmit && vitest run --config test/ts/vitest.e2e.config.ts",
     "test:tarball": "npm run clean:tarball-consumer && npm run build:templates && npm run build && npm run prepare:tarball-consumer && npm run lint:tarball-consumer && vitest run --config test/ts/vitest.config.ts",
     "lint": "eslint --config ./eslint.config.js --ignore-pattern \"internal/deploy-local/**\" --ignore-pattern test/ts/tarball-consumer.test.ts --ignore-pattern test/ts/acl-owner-upgrade.test.ts --ignore-pattern test/ts/deploy-v14.test.ts --ignore-pattern test/ts/deploy-at.test.ts --ignore-pattern test/ts/viemEthereumLib.ts --ignore-pattern test/ts/ethUtils.ts && tsc -b ./tsconfig.json --noEmit",
     "lint:tarball-consumer": "eslint --config ./eslint.config.js test/ts/*.ts internal/deploy-local/*.ts && tsc --project test/ts/tsconfig.json --noEmit && tsc --project internal/deploy-local/tsconfig.json --noEmit",

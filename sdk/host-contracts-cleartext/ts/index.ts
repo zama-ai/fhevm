@@ -1,11 +1,11 @@
 export { deploy } from './deploy.js';
+export { updateV13ToV14 } from './upgrade.js';
 // Places the stack at CALLER-CHOSEN addresses on a dev node. Test harnesses need this: a contract under
 // test compiles ZamaConfig's addresses into itself, so the stack must meet it there — and `deploy`, being
 // CREATE-based, can only land on nonce-derived addresses.
 export { deployAt } from './deployAt.js';
 export { precomputeAddresses } from './addresses.js';
-// Installs a standing `ACLOwner` over an EOA-owned ACL. Exposed because a future vN→v14 upgrade flow
-// requires the live stack's ACL to already be owned by an `ACLOwner`.
+// Installs a standing `ACLOwner` over an EOA-owned ACL — the prerequisite for `updateV13ToV14`.
 export { setupACLOwner } from './aclOwner.js';
 
 export type {
@@ -25,6 +25,8 @@ export type {
   // `deploy` config + result.
   BootstrapConfigV14,
   DeployedV14,
+  // `updateV13ToV14` migration values.
+  UpdateV13ToV14MigrationConfig,
   // Per-contract bootstrap init configs.
   ProtocolConfigInitConfig,
   InputVerifierInitConfig,

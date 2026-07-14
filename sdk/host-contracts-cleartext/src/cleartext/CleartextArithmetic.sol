@@ -28,8 +28,9 @@ contract CleartextArithmetic is ICleartextArithmetic, UUPSUpgradeableEmptyProxy,
     /**
      * @dev Constant used for making sure the version number used in the `reinitializer` modifier is
      * identical between `initializeFromEmptyProxy` and any future `reinitializeVX` method.
+     * Version continuity: v12 initialized to 2, v13 to 3 (`reinitializeV2`), v14 to 4 (`reinitializeV3`).
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// @dev Mirrors `FHEVMExecutor`'s private `fheMulDiv` bitmask: bit 0 (the divisor) is always set,
     ///      bit 1 marks `factor2` as scalar. So `0x01` = encrypted x encrypted, `0x03` = encrypted x scalar.
@@ -43,6 +44,11 @@ contract CleartextArithmetic is ICleartextArithmetic, UUPSUpgradeableEmptyProxy,
     /// @notice Initializes the contract from an empty proxy. No state to set (stateless/pure math).
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
+
+    /// @notice Re-initializer for the v13→v14 upgrade (v14 adds the `fheMulDiv` compute hook, whose
+    ///         selector the v13 implementation lacks). Stateless (pure math), so it only bumps the
+    ///         version so the freshly deployed v14 implementation is marked initialized.
+    function reinitializeV3() public virtual onlyACLOwner reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}

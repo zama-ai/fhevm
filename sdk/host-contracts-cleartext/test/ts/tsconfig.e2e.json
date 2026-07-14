@@ -6,6 +6,5 @@
     "rootDir": ".",
     "types": ["node", "vitest"]
   },
-  "include": ["./*.ts"],
-  "exclude": ["upgrade-e2e.test.ts"]
+  "include": ["upgrade-e2e.test.ts", "anvil.ts", "ethUtils.ts", "viemEthereumLib.ts"]
 }
