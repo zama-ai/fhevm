@@ -39,7 +39,7 @@ const required = (environment: Environment, name: string): string => {
 const bytes = (value: string, name: string): Uint8Array => {
   const hex = value.startsWith("0x") ? value.slice(2) : value;
   if (hex.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(hex)) {
-    throw new PreflightError(`${name} must be an even-length hex value`);
+    throw new PreflightError(`${name} must be an even-length hex string`);
   }
   return Uint8Array.from(Buffer.from(hex, "hex"));
 };
@@ -121,12 +121,12 @@ export const runSolanaCurrentUserDecrypt = async (
     request,
   });
   if (clearValues.length !== 1) {
-    throw new PreflightError(`user-decrypt returned ${clearValues.length} clear values; expected exactly 1`);
+    throw new Error(`user-decrypt returned ${clearValues.length} clear values; expected exactly 1`);
   }
 
   const value = BigInt(clearValues[0].value);
   if (value !== expected) {
-    throw new PreflightError(`user-decrypt cleartext ${value} != expected ${expected}`);
+    throw new Error(`user-decrypt cleartext ${value} != expected ${expected}`);
   }
   console.log(`[solana-current-user-decrypt] cleartext=${value}`);
   return value;
