@@ -112,6 +112,59 @@ topology:
     ).toThrow('duplicate hostChains chainId "12345"');
   });
 
+  test.each([
+    ["solana", "solana", "12345"],
+    ["evm", "evm", "9223372036854788153"],
+    ["default EVM", undefined, "9223372036854788153"],
+  ] as const)("rejects %s host chain with mismatched chain id", (_label, type, chainId) => {
+    expect(() =>
+      parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+hostChains:
+  - key: host
+${type === undefined ? "" : `    type: ${type}\n`}    chainId: "${chainId}"
+    rpcPort: 8545
+topology:
+  count: 1
+  threshold: 1
+`),
+    ).toThrow("does not match host chain type");
+  });
+
+  test("rejects host chain ids outside u64", () => {
+    expect(() =>
+      parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+hostChains:
+  - key: host
+    type: solana
+    chainId: "18446744073709551616"
+    rpcPort: 8545
+topology:
+  count: 1
+  threshold: 1
+`),
+    ).toThrow("must fit in u64");
+  });
+
+  test("preserves an exact high-bit Solana chain id", () => {
+    const scenario = parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+hostChains:
+  - key: host
+    type: solana
+    chainId: "9223372036854788153"
+    rpcPort: 8545
+topology:
+  count: 1
+  threshold: 1
+`);
+    expect(scenario.hostChains?.[0]?.chainId).toBe("9223372036854788153");
+  });
+
   test("synthesizes a local coprocessor scenario from override shorthand", () => {
     const scenario = synthesizeOverrideScenario([
       { group: "coprocessor", services: ["coprocessor-host-listener"] },

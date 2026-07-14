@@ -224,4 +224,13 @@ pub enum ZamaHostError {
     /// `fheDiv`/`fheRem` divisor is zero once truncated to the operand type (EVM `DivisionByZero`).
     #[msg("fheDiv/fheRem divisor must be non-zero")]
     DivisionByZero,
+
+    /// The host `chain_id` does not carry the RFC-021 Solana chain-type high bit,
+    /// or the EVM `gateway_chain_id` carries it. The ZamaHost is always a Solana
+    /// host chain, so its chain id must set bit 63 while the gateway id (an EVM
+    /// chain) must leave it clear.
+    #[msg(
+        "host chain id must set the Solana chain-type high bit and the gateway chain id must not"
+    )]
+    InvalidChainTypeBit,
 }

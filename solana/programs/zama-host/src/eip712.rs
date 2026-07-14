@@ -402,7 +402,7 @@ mod tests {
             &[[3u8; 32]],
             &[4u8; 32],
             &[5u8; 32],
-            12345,
+            crate::SOLANA_POC_CHAIN_ID,
             &[0x00],
         );
         let digest = typed_data_digest(&ds, &sh);
@@ -458,7 +458,13 @@ mod tests {
         let ds = domain_separator(b"InputVerification", b"1", 31337, &[0xCDu8; 20]);
         let digest = typed_data_digest(
             &ds,
-            &ciphertext_verification_struct_hash(&handles, &user, &contract, 12345, &[0x00]),
+            &ciphertext_verification_struct_hash(
+                &handles,
+                &user,
+                &contract,
+                crate::SOLANA_POC_CHAIN_ID,
+                &[0x00],
+            ),
         );
         let sig = sign(&key, &digest);
         assert!(verify_coprocessor_input(
@@ -466,7 +472,7 @@ mod tests {
             &handles,
             &user,
             &contract,
-            12345,
+            crate::SOLANA_POC_CHAIN_ID,
             &[0x00],
             &[sig]
         ));

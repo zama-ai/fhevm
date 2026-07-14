@@ -96,9 +96,17 @@ impl HostAclChecker {
         let mut solana_chains = std::collections::HashSet::new();
 
         for hc in host_chains {
-            // RFC-021 Solana host: base58 `acl_address` (zama-host program). No EVM ACL
-            // contract exists, so record the chain and skip building an eth_call client.
-            if crate::http::utils::solana_address::is_solana_address(&hc.acl_address) {
+            // The chain id is the sole chain-kind discriminator. Settings validation
+            // enforces the matching address encoding; keep this constructor fail-closed
+            // for direct callers too.
+            if crate::core::event::is_solana_host_chain_id(hc.chain_id) {
+                if !crate::http::utils::solana_address::is_solana_address(&hc.acl_address) {
+                    anyhow::bail!(
+                        "Invalid Solana ACL address for chain {}: {}",
+                        hc.chain_id,
+                        hc.acl_address
+                    );
+                }
                 solana_chains.insert(hc.chain_id);
                 continue;
             }
@@ -679,5 +687,31 @@ mod tests {
             .check_public_decrypt(&job_id, &[handle])
             .await
             .is_ok());
+    }
+
+    #[test]
+    fn chain_id_discriminator_rejects_mismatched_acl_address_formats() {
+        use crate::config::settings::{HostChainConfig, RetrySettings};
+
+        let retry = RetrySettings {
+            max_attempts: 1,
+            retry_interval_ms: 1,
+        };
+        let evm_address = "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836";
+        let solana_address = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+
+        for (chain_id, acl_address) in
+            [((1u64 << 63) | 12345, evm_address), (12345, solana_address)]
+        {
+            let result = HostAclChecker::new(
+                &[HostChainConfig {
+                    chain_id,
+                    url: "http://127.0.0.1:8899".to_string(),
+                    acl_address: acl_address.to_string(),
+                }],
+                retry.clone(),
+            );
+            assert!(result.is_err(), "chain/address mismatch must be rejected");
+        }
     }
 }

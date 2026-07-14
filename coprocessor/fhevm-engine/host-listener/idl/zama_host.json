@@ -1991,6 +1991,11 @@
       "code": 6068,
       "name": "DivisionByZero",
       "msg": "fheDiv/fheRem divisor must be non-zero"
+    },
+    {
+      "code": 6069,
+      "name": "InvalidChainTypeBit",
+      "msg": "host chain id must set the Solana chain-type high bit and the gateway chain id must not"
     }
   ],
   "types": [

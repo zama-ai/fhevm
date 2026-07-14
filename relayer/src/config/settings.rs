@@ -794,15 +794,17 @@ impl Settings {
                     i, hc.url
                 )));
             }
-            // RFC-021 host chains: an acl_address is canonical either as an EVM
-            // 0x-hex address or, on a Solana host, as a base58 Ed25519 pubkey.
-            let is_evm_address = Address::from_str(&hc.acl_address).is_ok();
-            let is_solana_address =
-                crate::http::utils::solana_address::is_solana_address(&hc.acl_address);
-            if !is_evm_address && !is_solana_address {
+            // The chain-id discriminator and ACL address encoding must agree so
+            // downstream components cannot classify the same host differently.
+            let valid_acl_address = if crate::core::event::is_solana_host_chain_id(hc.chain_id) {
+                crate::http::utils::solana_address::is_solana_address(&hc.acl_address)
+            } else {
+                Address::from_str(&hc.acl_address).is_ok()
+            };
+            if !valid_acl_address {
                 return Err(AppConfigError::InvalidAddress(format!(
-                    "host_chains[{}].acl_address is invalid: {}",
-                    i, hc.acl_address
+                    "host_chains[{}].acl_address does not match chain_id {}: {}",
+                    i, hc.chain_id, hc.acl_address
                 )));
             }
         }
@@ -1434,9 +1436,8 @@ mod tests {
         );
     }
 
-    /// RFC-021: a host chain may carry a Solana base58 acl_address (a 32-byte
-    /// Ed25519 pubkey) instead of an EVM 0x-hex address, and `validate_host_chains`
-    /// must accept it. Also confirms a malformed base58 acl_address is rejected.
+    /// RFC-021: a high-bit host chain carries a Solana base58 acl_address, while
+    /// a clear-bit host chain carries an EVM address.
     #[test]
     fn test_host_chains_accepts_solana_address_base58_acl() {
         let config_path = ConfigBuilder::from_example()
@@ -1451,21 +1452,30 @@ mod tests {
 
         let mut settings: Settings = config.try_deserialize().expect("Failed to deserialize");
         // SPL Token program id — a canonical 32-byte Solana base58 pubkey.
+        settings.host_chains[0].chain_id = (1u64 << 63) | 8009;
         settings.host_chains[0].acl_address =
             "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string();
         settings
             .validate_host_chains()
             .expect("Solana base58 acl_address must be accepted");
 
-        // A string that is neither valid EVM hex nor valid Solana base58 is rejected.
-        settings.host_chains[0].acl_address = "not-a-valid-address".to_string();
+        settings.host_chains[0].acl_address =
+            "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836".to_string();
         let err = settings
             .validate_host_chains()
-            .expect_err("invalid acl_address must be rejected");
+            .expect_err("Solana chain id with EVM acl_address must be rejected");
         assert!(
-            err.to_string().contains("acl_address is invalid"),
-            "Error should mention invalid acl_address, got: {err}"
+            err.to_string().contains("does not match chain_id"),
+            "Error should mention the chain/address mismatch, got: {err}"
         );
+
+        settings.host_chains[0].chain_id = 8009;
+        settings.host_chains[0].acl_address =
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string();
+        let err = settings
+            .validate_host_chains()
+            .expect_err("EVM chain id with Solana acl_address must be rejected");
+        assert!(err.to_string().contains("does not match chain_id"));
     }
 
     #[test]
@@ -1511,10 +1521,15 @@ mod tests {
                                                            // Settings::new path; this regresses the untagged-enum crash the Visitor fix removed.
         let base = std::fs::read_to_string("tests/relayer-test-config.yaml")
             .expect("read tests/relayer-test-config.yaml");
-        let solana_cfg = base.replace(
-            "  - chain_id: 8009",
-            &format!("  - chain_id: \"{SOLANA_CHAIN_ID}\""),
-        );
+        let solana_cfg = base
+            .replace(
+                "  - chain_id: 8009",
+                &format!("  - chain_id: \"{SOLANA_CHAIN_ID}\""),
+            )
+            .replace(
+                "    acl_address: \"0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836\"",
+                "    acl_address: \"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\"",
+            );
         assert!(
             solana_cfg.contains(&format!("\"{SOLANA_CHAIN_ID}\"")),
             "test fixture must contain the quoted Solana chain id"

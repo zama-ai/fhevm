@@ -42,6 +42,8 @@ export const DEFAULT_KMS_TOPOLOGY: ResolvedKmsTopology = {
 };
 
 const MAX_KMS_PARTIES = 7;
+const SOLANA_CHAIN_TYPE_BIT = 1n << 63n;
+const U64_MAX = (1n << 64n) - 1n;
 
 /**
  * Parses + validates the optional `kms` block from a scenario.
@@ -204,9 +206,31 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
         throw new Error(`${sourceLabel}: duplicate hostChains key "${key}"`);
       }
       seen.add(key);
-      const chainId = normalizeScalar(chain.chainId, `${sourceLabel}: hostChains[${index}].chainId`);
-      if (!/^\d+$/.test(chainId)) {
-        throw new Error(`${sourceLabel}: hostChains[${index}].chainId "${chainId}" must be a numeric string`);
+      const chainIdLabel = `${sourceLabel}: hostChains[${index}].chainId`;
+      if (typeof chain.chainId === "number" && !Number.isSafeInteger(chain.chainId)) {
+        throw new Error(`${chainIdLabel} must be quoted when it exceeds the safe integer range`);
+      }
+      const rawChainId = normalizeScalar(chain.chainId, chainIdLabel);
+      if (!/^\d+$/.test(rawChainId)) {
+        throw new Error(`${chainIdLabel} "${rawChainId}" must be a numeric string`);
+      }
+      const parsedChainId = BigInt(rawChainId);
+      if (parsedChainId > U64_MAX) {
+        throw new Error(`${chainIdLabel} "${rawChainId}" must fit in u64`);
+      }
+      const chainId = parsedChainId.toString();
+      const type =
+        chain.type === undefined
+          ? undefined
+          : normalizeScalar(chain.type, `${sourceLabel}: hostChains[${index}].type`);
+      if (type !== undefined && !HOST_CHAIN_TYPES.includes(type as HostChainType)) {
+        throw new Error(
+          `${sourceLabel}: hostChains[${index}].type "${type}" must be one of: ${HOST_CHAIN_TYPES.join(", ")}`,
+        );
+      }
+      const hasSolanaChainTypeBit = (parsedChainId & SOLANA_CHAIN_TYPE_BIT) !== 0n;
+      if (type === "solana" ? !hasSolanaChainTypeBit : hasSolanaChainTypeBit) {
+        throw new Error(`${chainIdLabel} "${rawChainId}" does not match host chain type "${type ?? "evm"}"`);
       }
       if (seenChainIds.has(chainId)) {
         throw new Error(`${sourceLabel}: duplicate hostChains chainId "${chainId}"`);
@@ -220,15 +244,6 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
         throw new Error(`${sourceLabel}: duplicate hostChains rpcPort "${rpcPort}"`);
       }
       seenPorts.add(rpcPort);
-      const type =
-        chain.type === undefined
-          ? undefined
-          : normalizeScalar(chain.type, `${sourceLabel}: hostChains[${index}].type`);
-      if (type !== undefined && !HOST_CHAIN_TYPES.includes(type as HostChainType)) {
-        throw new Error(
-          `${sourceLabel}: hostChains[${index}].type "${type}" must be one of: ${HOST_CHAIN_TYPES.join(", ")}`,
-        );
-      }
       const nodeProvisioning =
         chain.nodeProvisioning === undefined
           ? undefined

@@ -470,7 +470,8 @@ mod tests {
         public_decrypt_leaf_commitment,
     };
 
-    const CHAIN_ID: u64 = 7777;
+    // A Solana host chain id carries the RFC-021 chain-type high bit (bit 63).
+    const CHAIN_ID: u64 = crate::core::config::SOLANA_CHAIN_TYPE_BIT | 7777;
     const HOST: SolanaPubkeyBytes = [42u8; 32];
     const DOMAIN: SolanaPubkeyBytes = [1u8; 32];
     const APP: SolanaPubkeyBytes = [2u8; 32];
