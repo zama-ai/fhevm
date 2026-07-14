@@ -284,13 +284,11 @@ fn host_config_account_with_flags(
         data: serialized_account(host::HostConfig {
             admin,
             chain_id: host::SOLANA_POC_CHAIN_ID,
-            input_verifier_authority: admin,
             gateway_chain_id: GATEWAY_CHAIN_ID,
             input_verification_contract: INPUT_VERIFICATION_CONTRACT,
             coprocessor_signer,
             decryption_contract: DECRYPTION_CONTRACT,
             current_kms_context_id,
-            material_authority: admin,
             paused: false,
             grant_deny_list_enabled,
             max_hcu_per_tx: 0,

@@ -28,7 +28,7 @@ pub struct InitializeHostConfig<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Initializes the singleton host config and records authority gates.
+/// Initializes the singleton host config.
 pub fn initialize_host_config(
     ctx: Context<InitializeHostConfig>,
     args: InitializeHostConfigArgs,
@@ -41,13 +41,11 @@ pub fn initialize_host_config(
     let config = &mut ctx.accounts.host_config;
     config.admin = ctx.accounts.admin.key();
     config.chain_id = args.chain_id;
-    config.input_verifier_authority = args.input_verifier_authority;
     config.gateway_chain_id = args.gateway_chain_id;
     config.input_verification_contract = args.input_verification_contract;
     config.coprocessor_signer = args.coprocessor_signer;
     config.decryption_contract = args.decryption_contract;
     config.current_kms_context_id = 0;
-    config.material_authority = args.material_authority;
     config.paused = false;
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
     // Ship HCU enforcement disabled (0 = unlimited); an admin enables it post-calibration.
@@ -64,19 +62,12 @@ pub fn initialize_host_config(
         config: config_key,
         admin: config.admin,
         chain_id: config.chain_id,
-        input_verifier_authority: config.input_verifier_authority,
-        material_authority: config.material_authority,
     });
     Ok(())
 }
 
 fn assert_valid_host_config_args(args: &InitializeHostConfigArgs) -> Result<()> {
-    require!(
-        args.chain_id != 0
-            && args.input_verifier_authority != Pubkey::default()
-            && args.material_authority != Pubkey::default(),
-        ZamaHostError::InvalidHostConfig
-    );
+    require!(args.chain_id != 0, ZamaHostError::InvalidHostConfig);
     Ok(())
 }
 
@@ -87,12 +78,10 @@ mod tests {
     fn valid_args() -> InitializeHostConfigArgs {
         InitializeHostConfigArgs {
             chain_id: 42,
-            input_verifier_authority: Pubkey::new_unique(),
             gateway_chain_id: 0,
             input_verification_contract: [0u8; 20],
             coprocessor_signer: [0u8; 20],
             decryption_contract: [0u8; 20],
-            material_authority: Pubkey::new_unique(),
             grant_deny_list_enabled: false,
         }
     }

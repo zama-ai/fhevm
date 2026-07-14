@@ -481,13 +481,11 @@ fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
             data: serialized_account(host::HostConfig {
                 admin,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
-                input_verifier_authority: admin,
                 gateway_chain_id: 31337,
                 input_verification_contract: [0xcd; 20],
                 coprocessor_signer: [0; 20],
                 decryption_contract: [0xde; 20],
                 current_kms_context_id: 0,
-                material_authority: admin,
                 paused: false,
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: 0,
