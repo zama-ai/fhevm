@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 
 import { loadRolloutRunbook } from "./commands/rollout-run";
 import { loadCoprocessorScenario } from "./scenario/resolve";
-import { needsLocalOneNodeMpcNormalization } from "../rollouts/v0.13.0-testnet/run";
+import { needsLocalOneNodeMpcNormalization, resolveRolloutTestProfile } from "../rollouts/v0.13.0-testnet/run";
 import { phaseVersions, scenario } from "../rollouts/v0.13.0-testnet/versions";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
@@ -59,6 +59,14 @@ test("reuses the one-node ProtocolConfig mpc-threshold normalization", () => {
     MIGRATION_KMS_THRESHOLDS: JSON.stringify({ mpc: "0" }),
   };
   expect(needsLocalOneNodeMpcNormalization(env)).toBe(true);
+});
+
+test("rejects unsupported test profiles before running the testnet rollout", () => {
+  expect(resolveRolloutTestProfile(undefined)).toBe("rollout-standard");
+  expect(resolveRolloutTestProfile("rollout-standard")).toBe("rollout-standard");
+  expect(() => resolveRolloutTestProfile("rollout-heavy")).toThrow(
+    "Unsupported ROLLOUT_TEST_PROFILE=rollout-heavy; v0.13.0-testnet supports rollout-standard only",
+  );
 });
 
 test("loads the checked-in v0.13.0-testnet runbook", async () => {

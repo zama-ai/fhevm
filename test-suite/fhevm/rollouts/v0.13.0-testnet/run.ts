@@ -53,6 +53,14 @@ const writePhaseVersionLock = (ctx: RolloutRunContext, name: string, versions: R
 
 const contractVersionKeys = ["GATEWAY_VERSION", "HOST_VERSION"];
 
+export const resolveRolloutTestProfile = (value?: string): "rollout-standard" => {
+  const selected = value ?? "rollout-standard";
+  if (selected !== "rollout-standard") {
+    throw new Error(`Unsupported ROLLOUT_TEST_PROFILE=${selected}; v0.13.0-testnet supports rollout-standard only`);
+  }
+  return selected;
+};
+
 const prepareContractMigrationSources = async (ctx: RolloutRunContext, targetLockFile: string) => {
   console.log("[contracts] preserve v0.12 sources as previous-contracts, activate v0.13 sources");
   await ctx.snapshotContracts("host");
@@ -161,6 +169,7 @@ const gw = (ctx: RolloutRunContext) => (command: string) => ctx.runGatewayContra
 const host = (ctx: RolloutRunContext) => (command: string) => ctx.runHostContractTask(command);
 
 export default async function run(ctx: RolloutRunContext) {
+  const testProfile = resolveRolloutTestProfile(process.env.ROLLOUT_TEST_PROFILE);
   const baselineLock = await writePhaseVersionLock(ctx, "00-baseline", phaseVersions.baseline);
   const contractsLock = await writePhaseVersionLock(ctx, "01-contracts", phaseVersions.contracts);
   const kmsLock = await writePhaseVersionLock(ctx, "02-kms", phaseVersions.kms);
@@ -169,7 +178,7 @@ export default async function run(ctx: RolloutRunContext) {
 
   logPhase("00 baseline: boot exact testnet v0.12 state (KMS core already v0.13.10)");
   await ctx.up({ lockFile: baselineLock, scenario, overrides: [{ group: "test-suite" }] });
-  await ctx.test("rollout-standard", { parallel: false });
+  await ctx.test(testProfile, { parallel: false });
 
   // ---- Contract migration, following gitops#1063 + the 0.13.0 runbook ----
   logPhase("01 contracts: testnet v0.12 -> v0.13.0 migration (prepare, then apply the proposal effect)");
@@ -261,20 +270,20 @@ export default async function run(ctx: RolloutRunContext) {
   await upgradeContract(host(ctx), "task:upgradeFHEVMExecutor", "FHEVMExecutor");
   await upgradeContract(host(ctx), "task:upgradeACL", "ACL");
   await ctx.refreshDiscovery();
-  await ctx.test("rollout-standard", { parallel: false });
+  await ctx.test(testProfile, { parallel: false });
 
   // ---- Runtime components (gitops has no PR for these yet -- inferred v0.13.0) ----
   logPhase("02 kms: core v0.13.10 -> v0.13.20 and connector v0.12.0 -> v0.13.0");
   await ctx.upgradeRuntimeGroup("kms", { lockFile: kmsLock });
-  await ctx.test("rollout-standard", { parallel: false });
+  await ctx.test(testProfile, { parallel: false });
 
   logPhase("03 coprocessor: v0.12.x -> v0.13.0 (host-listener-consumer activates)");
   await ctx.upgradeRuntimeGroup("coprocessor", { lockFile: coprocessorLock });
-  await ctx.test("rollout-standard", { parallel: false });
+  await ctx.test(testProfile, { parallel: false });
 
   logPhase("04 relayer: v0.11.1 -> v0.13.0");
   await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
-  await ctx.test("rollout-standard", { parallel: false });
+  await ctx.test(testProfile, { parallel: false });
 
   // ---- Polygon: addHostChain proposal effect (Phase 9 of the runbook) ----
   // LIMITATION: the rollout boots the 2nd host chain via the multi-chain scenario,
@@ -292,5 +301,5 @@ export default async function run(ctx: RolloutRunContext) {
     "fi",
   ].join(" ");
   await ctx.runGatewayContractTask(addHostChain);
-  await ctx.test("rollout-standard", { parallel: false });
+  await ctx.test(testProfile, { parallel: false });
 }

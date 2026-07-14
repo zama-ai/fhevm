@@ -77,6 +77,14 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
+          write_runbook_env() {
+            local runbook="$1"
+            if [[ "$runbook" == *$'\n'* || "$runbook" == *$'\r'* ]]; then
+              echo "Runbook path must be a single line" >&2
+              exit 1
+            fi
+            printf 'ROLLOUT_RUNBOOK=%s\n' "$runbook" >> "$GITHUB_ENV"
+          }
           if [ -n "$INPUT_RUNBOOK" ]; then
             runbook="$INPUT_RUNBOOK"
             if [ ! -f "$runbook" ]; then
@@ -86,7 +94,7 @@ jobs:
               echo "Runbook not found: ${INPUT_RUNBOOK}" >&2
               exit 1
             fi
-            echo "ROLLOUT_RUNBOOK=$runbook" >> "$GITHUB_ENV"
+            write_runbook_env "$runbook"
             exit 0
           fi
 
@@ -116,7 +124,7 @@ jobs:
             echo "Inferred rollout runbook does not exist: ${runbook}" >&2
             exit 1
           fi
-          echo "ROLLOUT_RUNBOOK=$runbook" >> "$GITHUB_ENV"
+          write_runbook_env "$runbook"
 
       - name: Login to GitHub Container Registry
         uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
@@ -219,6 +227,8 @@ jobs:
             echo "::endgroup::"
           }
           snapshot_logs "Relayer Logs" fhevm-relayer
+          snapshot_logs "Relayer DB Migration" relayer-db-migration
+          snapshot_logs "KMS Connector DB Migration" kms-connector-db-migration
           snapshot_logs "KMS Connector Gateway Listener" kms-connector-gw-listener
           snapshot_logs "KMS Connector KMS Worker" kms-connector-kms-worker
           snapshot_logs "KMS Connector Transaction Sender" kms-connector-tx-sender
@@ -238,12 +248,19 @@ jobs:
           for container in $(docker ps -a --format '{{.Names}}' | grep -E '^coprocessor[0-9]*-gw-listener$' | sort); do
             prefix="${container%-gw-listener}"
             snapshot_logs "${prefix} - Host Listener" "${prefix}-host-listener"
+            snapshot_logs "${prefix} - Host Listener Poller" "${prefix}-host-listener-poller"
             snapshot_logs "${prefix} - Host Listener Consumer" "${prefix}-host-listener-consumer"
             snapshot_logs "${prefix} - Gateway Listener" "${prefix}-gw-listener"
+            snapshot_logs "${prefix} - DB Migration" "${prefix}-db-migration"
+            snapshot_logs "${prefix} - Consensus Detector" "${prefix}-consensus-detector"
+            snapshot_logs "${prefix} - Upgrade Controller" "${prefix}-upgrade-controller"
             snapshot_logs "${prefix} - SNS Worker" "${prefix}-sns-worker" "Selected 0 rows to process"
             snapshot_logs "${prefix} - Transaction Sender" "${prefix}-transaction-sender" "Selected 0 rows to process"
             snapshot_logs "${prefix} - ZKProof Worker" "${prefix}-zkproof-worker"
             snapshot_logs "${prefix} - TFHE Worker" "${prefix}-tfhe-worker"
+          done
+          for container in $(docker ps -a --format '{{.Names}}' | grep -E '^coprocessor[0-9]*-host-listener(-poller)?-.+$' | grep -vE '^coprocessor[0-9]*-host-listener-consumer$' | sort); do
+            snapshot_logs "Extra Host Chain Listener: ${container}" "${container}"
           done
 
       - name: Cleanup
