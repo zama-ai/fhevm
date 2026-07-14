@@ -21,6 +21,8 @@
 //! rewrite (`AclPermission` overflow, `AclRecord` material sealing) with no
 //! surviving equivalent to port.
 
+// Deliberate `#[path]` include (not via `support/mod.rs`): keeps this binary
+// free of `support::cleartext_fhe_eval`, which only `token_mollusk` needs.
 #[path = "support/cost_snapshot.rs"]
 mod cost_snapshot;
 

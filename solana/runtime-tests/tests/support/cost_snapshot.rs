@@ -28,12 +28,16 @@
 //! arbitrary-but-stable bump-search cost (roughly ±10% across key choices) and
 //! Mollusk is not a mainnet cost oracle. The signal is the delta between
 //! commits, not the absolute number.
+//!
+//! Update mode inserts or overwrites the current profile only; it never deletes
+//! keys. Remove orphaned profiles from the JSON by hand when a test is renamed
+//! or deleted.
 
 use mollusk_svm::result::InstructionResult;
 use serde::{Deserialize, Serialize};
 use solana_sdk::instruction::Instruction;
 use std::collections::{BTreeMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const UPDATE_ENV: &str = "ZAMA_UPDATE_COST_SNAPSHOT";
@@ -59,18 +63,33 @@ pub fn assert_cost_snapshot(
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
     if std::env::var(UPDATE_ENV).is_ok_and(|value| value == "1") {
-        let mut entries = read_entries(&path).unwrap_or_default();
+        let mut entries = match load_entries(&path) {
+            LoadEntries::Missing => BTreeMap::new(),
+            LoadEntries::Ok(entries) => entries,
+            LoadEntries::Invalid(err) => {
+                eprintln!(
+                    "warning: invalid cost snapshot {} ({err}); regenerating from scratch",
+                    path.display()
+                );
+                BTreeMap::new()
+            }
+        };
         entries.insert(profile.to_string(), measured);
         write_entries(&path, &entries);
         return;
     }
 
-    let entries = read_entries(&path).unwrap_or_else(|| {
-        panic!(
+    let entries = match load_entries(&path) {
+        LoadEntries::Missing => panic!(
             "cost snapshot file {} is missing; generate it with {UPDATE_ENV}=1 and commit it",
             path.display()
-        )
-    });
+        ),
+        LoadEntries::Ok(entries) => entries,
+        LoadEntries::Invalid(err) => panic!(
+            "invalid cost snapshot {}: {err}; fix the file or regenerate with {UPDATE_ENV}=1",
+            path.display()
+        ),
+    };
     let expected = entries.get(profile).unwrap_or_else(|| {
         panic!(
             "profile {profile:?} is missing from {}; record it with {UPDATE_ENV}=1 and commit \
@@ -112,6 +131,11 @@ pub fn assert_cost_snapshot(
     );
 }
 
+/// Measured cost of one instruction profile.
+///
+/// `unique_accounts` is a static property of the instruction shape (unique
+/// account-meta pubkeys plus the program id), not a count of accounts loaded
+/// at runtime.
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
 struct Cost {
     compute_units: u64,
@@ -139,15 +163,27 @@ fn snapshot_path(snapshot: &str) -> PathBuf {
         .join(format!("{snapshot}.json"))
 }
 
-fn read_entries(path: &PathBuf) -> Option<BTreeMap<String, Cost>> {
-    let text = std::fs::read_to_string(path).ok()?;
-    Some(
-        serde_json::from_str(&text)
-            .unwrap_or_else(|err| panic!("invalid cost snapshot {}: {err}", path.display())),
-    )
+enum LoadEntries {
+    Missing,
+    Ok(BTreeMap<String, Cost>),
+    Invalid(String),
 }
 
-fn write_entries(path: &PathBuf, entries: &BTreeMap<String, Cost>) {
+fn load_entries(path: &Path) -> LoadEntries {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return LoadEntries::Missing,
+        Err(err) => {
+            return LoadEntries::Invalid(format!("failed to read {}: {err}", path.display()))
+        }
+    };
+    match serde_json::from_str(&text) {
+        Ok(entries) => LoadEntries::Ok(entries),
+        Err(err) => LoadEntries::Invalid(err.to_string()),
+    }
+}
+
+fn write_entries(path: &Path, entries: &BTreeMap<String, Cost>) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let mut text = serde_json::to_string_pretty(entries).unwrap();
     text.push('\n');

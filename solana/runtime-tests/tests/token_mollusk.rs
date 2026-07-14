@@ -35,6 +35,9 @@
 
 mod support;
 
+// Deliberate `#[path]` include (not `support::cost_snapshot`): each Mollusk
+// binary compiles its own copy so `host_mollusk` does not pull in
+// `support::cleartext_fhe_eval` via `support/mod.rs`.
 #[path = "support/cost_snapshot.rs"]
 mod cost_snapshot;
 
@@ -3352,6 +3355,10 @@ fn cost_snapshot_confidential_transfer_direct() {
     // `EncryptedValue` at its canonical per-(mint, source) PDA; later
     // transfers supersede every touched lineage in place and create no
     // accounts. Snapshot the second transfer separately.
+    //
+    // Both profiles share this fixture/context on purpose, so a mismatch on
+    // `direct` fails before `steady_state` is asserted — fix the first drift,
+    // then re-run to see whether the second also moved.
     let second_handle = handle_for_chain(22, BALANCE_FHE_TYPE);
     let second_attestation =
         amount_attestation_for(second_handle, fixture.owner, fixture.compute_signer);
