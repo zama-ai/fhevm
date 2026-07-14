@@ -21,6 +21,11 @@ import {
   SOLANA_PUBLIC_DECRYPT_PROFILE,
   runSolanaPublicDecrypt,
 } from "../solana/public-decrypt";
+import {
+  SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION,
+  SOLANA_TWO_HOLDER_TRANSFER_PROFILE,
+  runSolanaTwoHolderTransfer,
+} from "../solana/two-holder-transfer";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
@@ -77,6 +82,7 @@ const TEST_PROFILE_NAMES = [
   "rollout-standard",
   SOLANA_CURRENT_USER_DECRYPT_PROFILE,
   SOLANA_PUBLIC_DECRYPT_PROFILE,
+  SOLANA_TWO_HOLDER_TRANSFER_PROFILE,
   "standard",
 ].sort();
 // The below-quorum probe is expected to hang waiting for KMS responses, so it is killed after
@@ -131,6 +137,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
     "Drive RFC-005 NewKmsContext + NewKmsEpoch on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each (threshold-mode KMS).",
   [SOLANA_CURRENT_USER_DECRYPT_PROFILE]: SOLANA_CURRENT_USER_DECRYPT_DESCRIPTION,
   [SOLANA_PUBLIC_DECRYPT_PROFILE]: SOLANA_PUBLIC_DECRYPT_DESCRIPTION,
+  [SOLANA_TWO_HOLDER_TRANSFER_PROFILE]: SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION,
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -889,6 +896,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   const state = await loadState();
   if (!state?.discovery?.actualFheKeyId) {
     throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
+  }
+  if (testName === SOLANA_TWO_HOLDER_TRANSFER_PROFILE) {
+    console.log(`[test] ${SOLANA_TWO_HOLDER_TRANSFER_PROFILE}`);
+    const started = Date.now();
+    await runLogged(SOLANA_TWO_HOLDER_TRANSFER_PROFILE, started, runSolanaTwoHolderTransfer);
+    return;
   }
 
   const ciphertextDriftRequirement = () => {
