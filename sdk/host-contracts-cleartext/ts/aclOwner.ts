@@ -1,7 +1,7 @@
 import { abi as aclOwnerAbi, template as aclOwnerTemplate } from './artifacts/ACLOwner.js';
 import { abi as aclAbi } from './artifacts/ACL.js';
-import type { AbstractEthereumSigner, AbstractEthereumUtils, DeployReturnType } from './public.js';
-import type { HexString, DeployedImplementation } from './private.js';
+import type { AbstractEthereumSigner, AbstractEthereumUtils, DeployReturnType } from './types/public.js';
+import type { HexString, DeployedImplementation } from './types/private.js';
 
 /**
  * Deploys the standing `ACLOwner` admin. One-time; afterwards ACL ownership is handed to it via

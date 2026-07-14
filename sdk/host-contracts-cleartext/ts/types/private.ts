@@ -1,4 +1,4 @@
-import type { ContractTemplate } from './artifacts/types.js';
+import type { ContractTemplate } from '../artifacts/types.js';
 
 // Private types
 export type HexString = `0x${string}`;

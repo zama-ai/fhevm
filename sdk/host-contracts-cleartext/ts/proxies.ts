@@ -3,8 +3,8 @@
 import { abi as erc1967ProxyAbi, template as erc1967ProxyTemplate } from './artifacts/ERC1967Proxy.js';
 import { abi as emptyUUPSProxyAbi, template as emptyUUPSProxyTemplate } from './artifacts/EmptyUUPSProxy.js';
 import { abi as emptyUUPSProxyACLAbi, template as emptyUUPSProxyACLTemplate } from './artifacts/EmptyUUPSProxyACL.js';
-import type { ContractArtifact } from './private.js';
-import type { AbstractEthereumSigner, AbstractEthereumUtils, DeployReturnType } from './public.js';
+import type { ContractArtifact } from './types/private.js';
+import type { AbstractEthereumSigner, AbstractEthereumUtils, DeployReturnType } from './types/public.js';
 import { patchTemplateBytecode } from './utils.js';
 
 ////////////////////////////////////////////////////////////////////////////////
