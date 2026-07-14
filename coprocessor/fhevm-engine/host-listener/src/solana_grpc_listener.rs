@@ -246,6 +246,52 @@ fn fhe_eval_durable_encrypted_value(
         .copied()
 }
 
+fn validated_account_keys<'a>(
+    keys: impl IntoIterator<Item = &'a Vec<u8>>,
+) -> Result<Vec<[u8; 32]>> {
+    keys.into_iter()
+        .enumerate()
+        .map(|(index, key)| {
+            <[u8; 32]>::try_from(key.as_slice()).map_err(|_| {
+                anyhow!(
+                    "account key {index} has invalid length {}, expected 32 bytes",
+                    key.len()
+                )
+            })
+        })
+        .collect()
+}
+
+fn resolve_instruction(
+    account_keys: &[[u8; 32]],
+    top_level_index: u32,
+    is_inner: bool,
+    program_id_index: u32,
+    data: &[u8],
+    account_indices: &[u8],
+) -> Result<crate::solana_reconstruct::DecodedInstruction> {
+    let program =
+        account_keys.get(program_id_index as usize).ok_or_else(|| {
+            anyhow!("program_id_index {program_id_index} out of range")
+        })?;
+    let accounts = account_indices
+        .iter()
+        .map(|&index| {
+            account_keys.get(index as usize).copied().ok_or_else(|| {
+                anyhow!("instruction account index {index} out of range")
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(crate::solana_reconstruct::DecodedInstruction {
+        program: bs58::encode(program).into_string(),
+        data: data.to_vec(),
+        accounts,
+        top_level_index,
+        is_inner,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn subscribe_loop(
     db: &Database,
@@ -498,80 +544,41 @@ async fn ingest_transaction(
     })?;
 
     // Resolved account-key list: static keys ++ ALT writable ++ ALT readonly,
-    // the order `program_id_index` indexes into.
-    let mut account_keys: Vec<String> = message
-        .account_keys
-        .iter()
-        .map(|k| bs58::encode(k).into_string())
-        .collect();
-    account_keys.extend(
-        meta.loaded_writable_addresses
+    // the order `program_id_index` and instruction account indexes address. Reject
+    // malformed provider data before reconstruction so positional accounts can
+    // never be shifted or replaced with sentinel values.
+    let account_keys = validated_account_keys(
+        message
+            .account_keys
             .iter()
-            .map(|k| bs58::encode(k).into_string()),
-    );
-    account_keys.extend(
-        meta.loaded_readonly_addresses
-            .iter()
-            .map(|k| bs58::encode(k).into_string()),
-    );
-
-    // Inner instructions == CPI frames carrying emit_cpi! event bytes.
-    let mut inner: Vec<(String, Vec<u8>)> = Vec::new();
-    for group in &meta.inner_instructions {
-        for ix in &group.instructions {
-            let program = account_keys
-                .get(ix.program_id_index as usize)
-                .ok_or_else(|| {
-                    IngestFailure::permanent(anyhow!(
-                        "program_id_index {} out of range",
-                        ix.program_id_index
-                    ))
-                })?;
-            inner.push((program.clone(), ix.data.clone()));
-        }
-    }
-
-    // Reconstruction needs each instruction's RESOLVED accounts by address, so
-    // build the account-key list in raw 32-byte form (same order as the base58
-    // list: static keys ++ ALT writable ++ ALT readonly).
-    let account_keys_bytes: Vec<[u8; 32]> = message
-        .account_keys
-        .iter()
-        .chain(meta.loaded_writable_addresses.iter())
-        .chain(meta.loaded_readonly_addresses.iter())
-        .map(|k| <[u8; 32]>::try_from(k.as_slice()).unwrap_or([0u8; 32]))
-        .collect();
+            .chain(meta.loaded_writable_addresses.iter())
+            .chain(meta.loaded_readonly_addresses.iter()),
+    )
+    .map_err(IngestFailure::permanent)?;
 
     // Top-level + inner instruction invocations with resolved accounts (a
     // zama-host instruction is called directly as top-level, or via CPI as inner
     // for token flows); scanned by the reconstruction shadow-compare and ingest.
-    let all_instructions: Vec<crate::solana_reconstruct::DecodedInstruction> = {
-        let resolve = |idxs: &[u8]| -> Vec<[u8; 32]> {
-            idxs.iter()
-                .filter_map(|&i| account_keys_bytes.get(i as usize).copied())
-                .collect()
-        };
-        let decode = |top_level_index: u32,
-                      is_inner: bool,
-                      program_id_index: u32,
-                      data: &[u8],
-                      accounts: &[u8]| {
-            crate::solana_reconstruct::DecodedInstruction {
-                program: account_keys
-                    .get(program_id_index as usize)
-                    .cloned()
-                    .unwrap_or_default(),
-                data: data.to_vec(),
-                accounts: resolve(accounts),
-                top_level_index,
-                is_inner,
-            }
-        };
-        let mut inner_by_index: HashMap<u32, Vec<_>> = HashMap::new();
-        for group in &meta.inner_instructions {
-            inner_by_index.insert(
-                group.index,
-                group
+    let all_instructions: Vec<crate::solana_reconstruct::DecodedInstruction> =
+        {
+            let decode = |top_level_index: u32,
+                          is_inner: bool,
+                          program_id_index: u32,
+                          data: &[u8],
+                          accounts: &[u8]| {
+                resolve_instruction(
+                    &account_keys,
+                    top_level_index,
+                    is_inner,
+                    program_id_index,
+                    data,
+                    accounts,
+                )
+                .map_err(IngestFailure::permanent)
+            };
+            let mut inner_by_index: HashMap<u32, Vec<_>> = HashMap::new();
+            for group in &meta.inner_instructions {
+                let inner = group
                     .instructions
                     .iter()
                     .map(|ix| {
@@ -583,26 +590,26 @@ async fn ingest_transaction(
                             &ix.accounts,
                         )
                     })
-                    .collect(),
-            );
-        }
-        let mut ordered = Vec::new();
-        for (index, ix) in message.instructions.iter().enumerate() {
-            let index = index as u32;
-            ordered.push(decode(
-                index,
-                false,
-                ix.program_id_index,
-                &ix.data,
-                &ix.accounts,
-            ));
-            if let Some(inner) = inner_by_index.remove(&index) {
-                ordered.extend(inner);
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                inner_by_index.insert(group.index, inner);
             }
-        }
-        ordered.extend(inner_by_index.into_values().flatten());
-        ordered
-    };
+            let mut ordered = Vec::new();
+            for (index, ix) in message.instructions.iter().enumerate() {
+                let index = index as u32;
+                ordered.push(decode(
+                    index,
+                    false,
+                    ix.program_id_index,
+                    &ix.data,
+                    &ix.accounts,
+                )?);
+                if let Some(inner) = inner_by_index.remove(&index) {
+                    ordered.extend(inner);
+                }
+            }
+            ordered.extend(inner_by_index.into_values().flatten());
+            std::result::Result::<_, IngestFailure>::Ok(ordered)
+        }?;
 
     let events = match reconstruct_events_for_insert(
         config,
@@ -853,6 +860,73 @@ fn compute_result_handle(
         E::FheIsIn(e) => Some(e.result),
         E::FheMulDiv(e) => Some(e.result),
         E::MaterialRequest(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod account_resolution_tests {
+    use super::{resolve_instruction, validated_account_keys};
+
+    fn key(tag: u8) -> Vec<u8> {
+        vec![tag; 32]
+    }
+
+    #[test]
+    fn rejects_malformed_account_key_length() {
+        let err = validated_account_keys([&key(1), &vec![2; 31]])
+            .expect_err("short account keys must fail closed");
+
+        assert!(err.to_string().contains(
+            "account key 1 has invalid length 31, expected 32 bytes"
+        ));
+    }
+
+    #[test]
+    fn rejects_out_of_range_program_index() {
+        let err = resolve_instruction(&[[1; 32]], 0, false, 1, &[7], &[0])
+            .expect_err("invalid program indexes must fail closed");
+
+        assert_eq!(err.to_string(), "program_id_index 1 out of range");
+    }
+
+    #[test]
+    fn rejects_out_of_range_account_index_without_compacting_positions() {
+        let err = resolve_instruction(
+            &[[1; 32], [2; 32], [3; 32]],
+            0,
+            false,
+            0,
+            &[7],
+            &[1, 9, 2],
+        )
+        .expect_err(
+            "invalid account indexes must reject the complete instruction",
+        );
+
+        assert_eq!(err.to_string(), "instruction account index 9 out of range");
+    }
+
+    #[test]
+    fn resolves_valid_top_level_and_inner_instructions_without_reordering_accounts(
+    ) {
+        let keys = validated_account_keys([&key(1), &key(2), &key(3)]).unwrap();
+        let top_level =
+            resolve_instruction(&keys, 4, false, 0, &[10, 11], &[2, 1])
+                .unwrap();
+        let inner =
+            resolve_instruction(&keys, 4, true, 1, &[12], &[0, 2]).unwrap();
+
+        assert_eq!(top_level.program, bs58::encode([1; 32]).into_string());
+        assert_eq!(top_level.data, vec![10, 11]);
+        assert_eq!(top_level.accounts, vec![[3; 32], [2; 32]]);
+        assert_eq!(top_level.top_level_index, 4);
+        assert!(!top_level.is_inner);
+
+        assert_eq!(inner.program, bs58::encode([2; 32]).into_string());
+        assert_eq!(inner.data, vec![12]);
+        assert_eq!(inner.accounts, vec![[1; 32], [3; 32]]);
+        assert_eq!(inner.top_level_index, 4);
+        assert!(inner.is_inner);
     }
 }
 
