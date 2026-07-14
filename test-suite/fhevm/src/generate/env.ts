@@ -511,6 +511,11 @@ export const renderEnvMaps = async (
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].CANONICAL_PROTOCOL_CONFIG_CHAIN_ID = defaultChain.chainId;
+  // TODO: drop once RFC-023 lands — the post-cutover backfill rewrites
+  // digests away from the immutable on-chain consensus, so drift auto-revert loops forever.
+  if (plan.blueGreen) {
+    envs["coprocessor"].DRIFT_AUTO_REVERT_ENABLED = "false";
+  }
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
