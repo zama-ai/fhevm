@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# adversarial-l4.sh — negative live checks (relayer bypass + context rotation).
+#
+# Usage (from repo root):
+#   bash solana/scripts/e2e/adversarial-l4.sh
+#
+# When: on a running stack from clean-e2e (after or instead of full-vertical).
+# Writes: no checked-in goldens. Manual-only (not wired into solana-e2e.yml).
+#
 # Adversarial L4 — proves the Solana V2 hardening on the LIVE stack (not in unit tests):
 #
 #  (a) RELAYER-BYPASS / publicKey-substitution: a Solana user-decrypt whose ed25519 signature does
@@ -9,7 +17,7 @@
 #      whose extra_data names a DIFFERENT context than the on-chain kms_context is REJECTED on-chain
 #      (InvalidKmsContext), so no cleartext is emitted.
 #
-# Prereq: a running stack (solana/scripts/poc/clean-e2e.sh) — same as full-vertical.sh. Local-only,
+# Prereq: a running stack (solana/scripts/e2e/clean-e2e.sh) — same as full-vertical.sh. Local-only,
 # MAINNET-safe (validator pinned 127.0.0.1:8899). Run AFTER (or independently of) full-vertical.sh.
 # Manual-only: not wired into solana-e2e.yml CI.
 set -euo pipefail
@@ -27,8 +35,8 @@ USER_B58="$(solana address -k "$HOME/.config/solana/id.json")"
 # The KMS knows only this context; `extract_kms_context_id` derives the low-u64 (1) the Solana host
 # kms_context is keyed on.
 EXTRA=0x010700000000000000000000000000000000000000000000000000000000000001
-LC="$ROOT/solana/scripts/poc/live-client/target/debug/poc-live-client"
-LCDIR="$ROOT/solana/scripts/poc/live-client"
+LC="$ROOT/solana/scripts/e2e/live-client/target/debug/poc-live-client"
+LCDIR="$ROOT/solana/scripts/e2e/live-client"
 pass() { echo "L4 PASS: $*"; }
 fail() { echo "L4 FAIL: $*" >&2; exit 1; }
 lc() { ( cd "$LCDIR" && env "$@" ./target/debug/poc-live-client 2>&1 ); }

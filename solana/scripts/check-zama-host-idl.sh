@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# check-zama-host-idl.sh — rebuild SBF artifacts and verify host IDL/ABI goldens.
+#
+# Usage (from solana/):
+#   bash scripts/check-zama-host-idl.sh
+#
+# When: before Mollusk runtime tests; what CI runs for IDL/ABI sync checks.
+# Writes: target/deploy only (does not update goldens; see sync-zama-host-idl.sh).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -26,7 +26,8 @@ crates/zama-fhe                 App-facing SDK: typed `EvalBuilder`, `Encrypted<
 crates/solana-ed25519-instruction  Ed25519 instruction-sysvar helpers.
 runtime-tests                   Fast evaluator/plan contracts plus real-SBF Mollusk host/token
                                 suites; see docs/TESTING.md for the evidence each layer provides.
-scripts/poc                     Live end-to-end scripts against a local validator + fhevm-cli stack.
+scripts/                        Workspace tooling — see scripts/README.md for entrypoints.
+scripts/e2e                     Live end-to-end scripts against a local validator + fhevm-cli stack.
 geyser                          Yellowstone plugin build helpers for the account/event stream.
 ```
 
@@ -50,15 +51,17 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 If the ZamaHost Anchor IDL changes intentionally, refresh the vendored listener snapshot with
-`bash scripts/sync-zama-host-idl.sh`. See [`docs/TESTING.md`](docs/TESTING.md) for exact focused
-commands, what each test layer proves, Mollusk specifics, and build traps.
+`bash scripts/sync-zama-host-idl.sh`. After an intentional Mollusk CU change, regenerate baselines
+with `bash scripts/update-cost-snapshots.sh`. Script catalog: [`scripts/README.md`](scripts/README.md).
+See [`docs/TESTING.md`](docs/TESTING.md) for exact focused commands, what each test layer proves,
+Mollusk specifics, and build traps.
 
 Live end-to-end run against a local validator (mainnet-safe, validator pinned to `127.0.0.1:8899`):
 
 ```bash
-bash scripts/poc/clean-e2e.sh              # bring up fhevm-cli + Solana side-stack
-bash scripts/poc/full-vertical.sh          # compute -> public-decrypt -> user-decrypt
-bash scripts/poc/adversarial-l4.sh         # negative: relayer-bypass + context-rotation rejection
+bash scripts/e2e/clean-e2e.sh              # bring up fhevm-cli + Solana side-stack
+bash scripts/e2e/full-vertical.sh          # compute -> public-decrypt -> user-decrypt
+bash scripts/e2e/adversarial-l4.sh         # negative: relayer-bypass + context-rotation rejection
 ```
 
 ## Integrating an app

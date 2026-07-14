@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# clean-e2e.sh — bring up a clean local Solana + fhevm-cli vertical stack.
+#
+# Usage (from repo root):
+#   bash solana/scripts/e2e/clean-e2e.sh
+#
+# When: before full-vertical / adversarial live runs; CI solana-e2e setup.
+# Writes: local validator + Docker/fhevm-cli stack only (no checked-in goldens).
+#
 # Fully reproducible Solana e2e from a CLEAN fhevm-cli state (acceptance #2).
 #
 # One command brings up the WHOLE stack from scratch with the Solana code baked in
@@ -72,8 +80,8 @@ PY
 #    Reads gateway addresses + KMS/coprocessor signer set live, so it tracks the new signer.
 #    The sole supported path deploys a reconstruction-first zama-host on the geyser-plugin validator and
 #    ingests ordinary computation facts through Yellowstone reconstruction.
-"$ROOT/solana/scripts/poc/setup-solana-side.sh"
+"$ROOT/solana/scripts/e2e/setup-solana-side.sh"
 
 echo "[clean-e2e] stack ready. Drive the full vertical (input -> compute -> public/user-decrypt ->"
 echo "  input-flow -> consume), user-decrypt is now PURE-SDK (no kms checkout):"
-echo "    TE_VALUE=55 bash solana/scripts/poc/full-vertical.sh"
+echo "    TE_VALUE=55 bash solana/scripts/e2e/full-vertical.sh"

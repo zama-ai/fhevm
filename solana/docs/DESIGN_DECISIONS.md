@@ -105,7 +105,7 @@ The PoC can keep Anchor CPI events for tests and local listener compatibility, b
 transport should use a Yellowstone/Geyser transaction and account stream with explicit commitment,
 reconnect, replay, and account-witness verification policy.
 
-The current PoC listener is built from source by `solana/scripts/poc/setup-solana-side.sh`; the shared
+The current PoC listener is built from source by `solana/scripts/e2e/setup-solana-side.sh`; the shared
 host-listener container remains EVM-only and intentionally does not package the feature-gated Solana
 binary. A production Solana image and deployment topology remain packaging work, not an implicit
 fallback to the deleted RPC listener.

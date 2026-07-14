@@ -18,7 +18,7 @@ import {
 } from "../layout";
 
 /** The committed, deterministic zama-host program keypair — the Solana host's ACL identity. */
-const SOLANA_ZAMA_HOST_KEYPAIR = path.join(REPO_ROOT, "solana/scripts/poc/test-keypairs/zama_host-keypair.json");
+const SOLANA_ZAMA_HOST_KEYPAIR = path.join(REPO_ROOT, "solana/scripts/e2e/test-keypairs/zama_host-keypair.json");
 import type { Discovery, State } from "../types";
 import { predictedCrsId, predictedKeyId, readEnvFile } from "../utils/fs";
 import { run } from "../utils/process";
