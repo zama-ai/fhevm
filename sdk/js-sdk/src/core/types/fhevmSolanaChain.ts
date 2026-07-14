@@ -23,6 +23,6 @@ export type FhevmSolanaChain = {
 };
 
 export type FhevmSolanaAcl = {
-  /** The authorized ACL domain keys (each a bytes32 0x-hex), the signed `allowedContracts` scope. */
+  /** The signed ACL-domain scope. Empty accepts any ACL domain; subject and handle authorization still apply. */
   readonly domainKeys: readonly Bytes32Hex[];
 };
