@@ -16,10 +16,8 @@ export type FhevmSolanaEncryptClient<chain extends FhevmSolanaChain = FhevmSolan
 > & { readonly solanaChain: chain } & SolanaEncryptActions;
 
 /**
- * Creates a Solana encrypt-only client. `.buildInputProof(...)` packs the values and produces a
- * {@link import('../../core/types/zkProof-p.js').SolanaZkProof} — the RFC-021 bytes32-identity
- * counterpart of the EVM `generateZkProof`. Full parity with the EVM encrypt client, minus the
- * provider (the Solana host has none).
+ * Creates a Solana encrypt-only client. `.buildInputProof(...)` produces the RFC-021 proof and
+ * `.submitInputProof(...)` submits it to the relayer while checking the returned handles.
  *
  * @param parameters.chain - The Solana host chain definition.
  * @param parameters.aclProgramAddress - The zama-host program id as bytes32 (the Solana ACL identity).

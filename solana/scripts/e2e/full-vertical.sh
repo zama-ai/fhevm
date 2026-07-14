@@ -120,7 +120,6 @@ CONTRACT=0x0c26992cb06b8c2de7305099da15554866e2373d80cb0b597156b689d293249b
 # user-decrypt signs with CI's generated key -> "ACL record domain outside the signed auth scope").
 USER="0x$(python3 -c "import json,os;print(bytes(json.load(open(os.path.expanduser('~/.config/solana/id.json')))[32:64]).hex())")"
 ACL=0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee  # zama-host program (bytes32) = Solana ACL identity
-USER_B58="$(solana address -k "$HOME/.config/solana/id.json")"          # deployer pubkey (base58, relayer-facing)
 RPC=http://127.0.0.1:8899
 GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
 # Live coprocessor signer set (ProtocolConfig-mirrored) for the consume material commitment.
@@ -138,30 +137,22 @@ for _ in $(seq 1 30); do
 done
 # Capture the client output first (piping the launcher into head/grep under pipefail can SIGPIPE).
 # The public @fhevm/sdk/solana encrypt client (test-suite/fhevm/solana-input.ts) builds the ZK proof
-# and POSTs it; it prints the relayer's JSON response (carrying the jobId) on stdout.
+# and submits it; it prints the final typed relayer result on stdout.
 # Run under node (not bun): the TFHE WASM prover resolves its worker/wasm via node's locate-file
 # path, which bun's browser-like environment detection bypasses. Node 24 runs the .ts directly.
 # stderr -> file (not /dev/null): keeps the success path quiet but makes a crash diagnosable.
 ierr="$(mktemp)"
 iout="$(cd "$ROOT/test-suite/fhevm" && \
   IN_RELAYER_URL=http://127.0.0.1:3000 IN_CONTRACTS_CHAIN_ID="$SID" IN_ACL_PROGRAM="$ACL" \
-  IN_CONTRACT="$USER" IN_USER="$USER" IN_CONTRACT_B58="$USER_B58" IN_USER_B58="$USER_B58" \
+  IN_CONTRACT="$USER" IN_USER="$USER" \
   IN_VALUE="$IV" IN_TYPE=uint64 \
   node solana-input.ts 2>"$ierr" || true)"
-ipost="$(printf '%s\n' "$iout" | grep -oE '"jobId":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
-[ -n "$ipost" ] || fail "input-proof POST failed.
+ih="$(echo "$iout" | python3 -c "import sys,json;print(json.load(sys.stdin)['handles'][0])" 2>/dev/null || true)"
+[ -n "$ih" ] || fail "input-proof submission failed.
   client stdout: $(printf '%s' "$iout" | tail -3)
   client stderr: $(tail -30 "$ierr")"
-for i in $(seq 1 40); do
-  ir="$(curl -s -m10 "localhost:3000/v2/input-proof/$ipost")"
-  ist="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
-  [ "$ist" = succeeded ] && break
-  [ "$ist" = failed ] && fail "input-proof failed: $ir"
-  [ "$i" = 40 ] && fail "input-proof timed out"; sleep 4
-done
-ih="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['handles'][0])")"
-isig="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
-iextra="$(echo "$ir" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','0x00'))")"
+isig="$(echo "$iout" | python3 -c "import sys,json;print(json.load(sys.stdin)['signatures'][0])")"
+iextra="$(echo "$iout" | python3 -c "import sys,json;print(json.load(sys.stdin).get('extraData','0x00'))")"
 echo "    input handle=$ih (coprocessor EIP-712 attestation $isig)"
 # The coprocessor attestation is verified in-frame when consumed as an FheEvalOperand::VerifiedInput
 # (the fromExternal path) — exercised by the FHE_EVAL_VERIFIED_INPUT step below. There is no
@@ -452,30 +443,21 @@ echo "$wout" | grep -q 'OK wrap_usdc' || fail "wrap_usdc: $(echo "$wout" | tail 
 # (user = owner, contract = mint compute-signer PDA). Unlike the top input-proof (contract = USER),
 # a transfer/burn amount must attest to the compute-signer PDA (the token + host require
 # contract == compute_signer), so fetch a dedicated compute-signer-bound proof here.
-CS_B58="$(echo "$minit" | grep -oE 'compute_signer +[A-Za-z0-9]+' | awk '{print $2}')"
 CS_HEX="$(echo "$minit" | grep -oE 'compute_signer +[A-Za-z0-9]+ 0x[0-9a-f]+' | grep -oE '0x[0-9a-f]+')"
-[ -n "$CS_B58" ] && [ -n "$CS_HEX" ] || fail "could not read compute_signer from mint init: $minit"
+[ -n "$CS_HEX" ] || fail "could not read compute_signer from mint init: $minit"
 berr="$(mktemp)"
 bproof="$(cd "$ROOT/test-suite/fhevm" && \
   IN_RELAYER_URL=http://127.0.0.1:3000 IN_CONTRACTS_CHAIN_ID="$SID" IN_ACL_PROGRAM="$ACL" \
-  IN_CONTRACT="$CS_HEX" IN_USER="$USER" IN_CONTRACT_B58="$CS_B58" IN_USER_B58="$USER_B58" \
+  IN_CONTRACT="$CS_HEX" IN_USER="$USER" \
   IN_VALUE=7 IN_TYPE=uint64 \
   node solana-input.ts 2>"$berr" || true)"
-bpost="$(printf '%s\n' "$bproof" | grep -oE '"jobId":"[^"]+"' | head -1 | cut -d'"' -f4 || true)"
-[ -n "$bpost" ] || fail "burn input-proof POST failed.
+bh="$(echo "$bproof" | python3 -c "import sys,json;print(json.load(sys.stdin)['handles'][0])" 2>/dev/null || true)"
+[ -n "$bh" ] || fail "burn input-proof submission failed.
   client stdout: $(printf '%s' "$bproof" | tail -3)
   client stderr: $(tail -30 "$berr")"
-for i in $(seq 1 40); do
-  br="$(curl -s -m10 "localhost:3000/v2/input-proof/$bpost")"
-  bst="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null)"
-  [ "$bst" = succeeded ] && break
-  [ "$bst" = failed ] && fail "burn input-proof failed: $br"
-  [ "$i" = 40 ] && fail "burn input-proof timed out"; sleep 4
-done
-bh="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['handles'][0])")"
-bsig="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
-bextra="$(echo "$br" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','0x00'))")"
-echo "    burn amount handle=$bh (attested for compute_signer $CS_B58)"
+bsig="$(echo "$bproof" | python3 -c "import sys,json;print(json.load(sys.stdin)['signatures'][0])")"
+bextra="$(echo "$bproof" | python3 -c "import sys,json;print(json.load(sys.stdin).get('extraData','0x00'))")"
+echo "    burn amount handle=$bh (attested for compute_signer $CS_HEX)"
 bout="$(lc CONSUME_BURN=1 BIND_HANDLE="$bh" BIND_COPRO_SIG="$bsig" BIND_USER="$USER" \
   BIND_CONTRACT="$CS_HEX" BIND_CHAIN_ID="$SID" BIND_EXTRA="$bextra")" || true
 BURNED_ACL="$(echo "$bout" | grep -oE 'burned amount ACL [A-Za-z0-9]+' | awk '{print $4}')"
