@@ -338,7 +338,7 @@ fn token_balance_state(
     let token_account_info = token.rpc().get_account(&token_account_key)?;
     if token_account_info.owner != confidential_token::ID
         || token_account_info.data.len() != 8 + confidential_token::ConfidentialTokenAccount::SPACE
-        || token_account_info.data[..8]
+        || &token_account_info.data[..8]
             != confidential_token::ConfidentialTokenAccount::DISCRIMINATOR
     {
         return Err("invalid confidential token account owner, size, or discriminator".into());
@@ -381,7 +381,7 @@ fn token_balance_state(
         .ok_or("confidential token account missing during coherent re-read")?;
     if token_account_info.owner != confidential_token::ID
         || token_account_info.data.len() != 8 + confidential_token::ConfidentialTokenAccount::SPACE
-        || token_account_info.data[..8]
+        || &token_account_info.data[..8]
             != confidential_token::ConfidentialTokenAccount::DISCRIMINATOR
     {
         return Err("invalid confidential token account during coherent re-read".into());
