@@ -40,6 +40,11 @@ export default [
       'out/**',
       'test/ts/.consumer/**',
       'test/ts/.tarballs/**',
+      // The e2e test imports a second package (@fhevm/host-contracts-cleartext-v12) that only exists
+      // after `test:upgrade-e2e` installs it. It's excluded from every tsconfig so the fixture-less
+      // `tsc` runs don't fail, so the eslint project service can't type it — skip it here. Its own
+      // typecheck runs against test/ts/tsconfig.e2e.json inside `test:upgrade-e2e`.
+      'test/ts/upgrade-e2e.test.ts',
       '**/*.js',
       '**/*.cjs',
       '**/*.mjs',

@@ -6,5 +6,6 @@
     "rootDir": ".",
     "types": ["node", "vitest"]
   },
-  "include": ["./*.ts"]
+  "include": ["./*.ts"],
+  "exclude": ["upgrade-e2e.test.ts"]
 }

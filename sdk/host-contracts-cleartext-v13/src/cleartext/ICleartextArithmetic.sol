@@ -46,6 +46,21 @@ interface ICleartextArithmetic {
     /// @notice Computes a unary op (`fheNeg` / `fheNot`) over `ct`'s cleartext and records it.
     function recordUnaryOp(FHEVMExecutor.Operators op, bytes32 result, bytes32 ct, FheType fheType) external;
 
-    /// @notice Computes `fheIfThenElse(lhs, middle, rhs)` over their cleartexts and records it.
-    function recordIfThenElse(bytes32 result, bytes32 lhs, bytes32 middle, bytes32 rhs) external;
+    /// @notice Computes a ternary op over the operands' cleartexts and records it into `result`.
+    ///         The only ternary op is `fheIfThenElse(lhs, middle, rhs)`.
+    function recordTernaryOp(FHEVMExecutor.Operators op, bytes32 result, bytes32 lhs, bytes32 middle, bytes32 rhs)
+        external;
+
+    /// @notice Computes an nary op over the operands' cleartexts and records it into `result`.
+    ///         For `fheSum`, `value` is unused and `values` are the summands. For `fheIsIn`, `value` is
+    ///         the needle and `values` are the set. v13 operators; cleartext computation not yet
+    ///         implemented (reverts) — their presence is what forces a v12→v13 `CleartextArithmetic`
+    ///         upgrade, since the v12 arithmetic has no such selector.
+    function recordNaryOp(
+        FHEVMExecutor.Operators op,
+        bytes32 result,
+        bytes32 value,
+        bytes32[] calldata values,
+        FheType fheType
+    ) external;
 }

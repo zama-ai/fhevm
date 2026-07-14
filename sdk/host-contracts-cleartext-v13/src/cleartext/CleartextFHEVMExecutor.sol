@@ -71,9 +71,29 @@ contract CleartextFHEVMExecutor is FHEVMExecutor {
         returns (bytes32 result)
     {
         result = super._ternaryOp(op, lhs, middle, rhs);
-        if (op == Operators.fheIfThenElse) {
-            _cleartext().recordIfThenElse(result, lhs, middle, rhs);
-        }
+        _cleartext().recordTernaryOp(op, result, lhs, middle, rhs);
+    }
+
+    /// @dev `fheSum` nary op (values only; no needle). Cleartext computation is not implemented yet,
+    ///      so `recordNaryOp` reverts.
+    function _naryOp(Operators op, bytes32[] calldata values, FheType resultType)
+        internal
+        override
+        returns (bytes32 result)
+    {
+        result = super._naryOp(op, values, resultType);
+        _cleartext().recordNaryOp(op, result, bytes32(0), values, resultType);
+    }
+
+    /// @dev `fheIsIn` nary op (`value` needle + `values` set). Cleartext computation is not implemented
+    ///      yet, so `recordNaryOp` reverts.
+    function _naryOp(Operators op, bytes32 value, bytes32[] calldata values, FheType resultType)
+        internal
+        override
+        returns (bytes32 result)
+    {
+        result = super._naryOp(op, value, values, resultType);
+        _cleartext().recordNaryOp(op, result, value, values, _typeOf(value));
     }
 
     function _cleartext() private pure returns (ICleartextArithmetic) {

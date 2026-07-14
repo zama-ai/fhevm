@@ -1,0 +1,434 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "UPGRADE_INTERFACE_VERSION",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "initializeFromEmptyProxy",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "plaintexts",
+    "inputs": [
+      {
+        "name": "handle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proxiableUUID",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "recordBinaryOp",
+    "inputs": [
+      {
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum FHEVMExecutor.Operators"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "scalarByte",
+        "type": "bytes1",
+        "internalType": "bytes1"
+      },
+      {
+        "name": "fheType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "recordCast",
+    "inputs": [
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "ct",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "toType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "recordRand",
+    "inputs": [
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "randType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      },
+      {
+        "name": "seed",
+        "type": "bytes16",
+        "internalType": "bytes16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "recordRandBounded",
+    "inputs": [
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "upperBound",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "seed",
+        "type": "bytes16",
+        "internalType": "bytes16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "recordTernaryOp",
+    "inputs": [
+      {
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum FHEVMExecutor.Operators"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "lhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "middle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "rhs",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "recordTrivialEncrypt",
+    "inputs": [
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "pt",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "toType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "recordUnaryOp",
+    "inputs": [
+      {
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum FHEVMExecutor.Operators"
+      },
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "ct",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "fheType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "recordVerifyInput",
+    "inputs": [
+      {
+        "name": "result",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "inputHandle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "inputProof",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "inputType",
+        "type": "uint8",
+        "internalType": "enum FheType"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "upgradeToAndCall",
+    "inputs": [
+      {
+        "name": "newImplementation",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Upgraded",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AddressEmptyCode",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC1967InvalidImplementation",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC1967NonPayable",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FailedCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotHostOwner",
+    "inputs": [
+      {
+        "name": "sender",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotInitializingFromEmptyProxy",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnauthorizedCallContext",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnsupportedProxiableUUID",
+    "inputs": [
+      {
+        "name": "slot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedBinaryOp",
+    "inputs": [
+      {
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum FHEVMExecutor.Operators"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedTernaryOp",
+    "inputs": [
+      {
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum FHEVMExecutor.Operators"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedType",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedUnaryOp",
+    "inputs": [
+      {
+        "name": "op",
+        "type": "uint8",
+        "internalType": "enum FHEVMExecutor.Operators"
+      }
+    ]
+  }
+]
