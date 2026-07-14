@@ -398,7 +398,7 @@ fn token_balance_state(
     }
     if encrypted_value_info.owner != zama_host::ID
         || encrypted_value_info.data.len() < 8
-        || encrypted_value_info.data[..8] != zama_host::EncryptedValue::DISCRIMINATOR
+        || &encrypted_value_info.data[..8] != zama_host::EncryptedValue::DISCRIMINATOR
     {
         return Err("invalid balance encrypted value owner or discriminator".into());
     }
@@ -435,7 +435,7 @@ fn token_balance_state(
     }
     if config_info.owner != zama_host::ID
         || config_info.data.len() != 8 + zama_host::HostConfig::SPACE
-        || config_info.data[..8] != zama_host::HostConfig::DISCRIMINATOR
+        || &config_info.data[..8] != zama_host::HostConfig::DISCRIMINATOR
     {
         return Err("invalid HostConfig owner, size, or discriminator".into());
     }
