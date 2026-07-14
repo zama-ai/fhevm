@@ -3,5 +3,6 @@
   "compilerOptions": {
     "paths": {},
     "types": ["node"]
-  }
+  },
+  "include": ["test/sdk/selection.ts", "test/sdk/selection.test.ts"]
 }
