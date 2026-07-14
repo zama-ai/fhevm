@@ -11,11 +11,6 @@ parties:
 
 Audience: whoever coordinates the governance operation with the external KMS parties.
 
-Document map: §1 version prerequisites → §2 collecting the party metadata →
-§3–4 the two operations → §5 quick reference. Background material
-lives at the end: **Annex A** (concepts and invariants) and **Annex B** (commands
-and helper scripts, referenced throughout as B.1–B.3).
-
 ---
 
 ## 1. Version prerequisites
@@ -40,9 +35,10 @@ per KMS node (struct in `host-contracts/contracts/shared/Structs.sol`). Each ent
 full protocol identity — how the chain authenticates it, how the other parties'
 cores reach it, and where it publishes its public key material:
 
-- **two distinct wallets**: the _tx-sender_ (pays gas, authenticates on-chain
-  confirmations) and the _signer_ (the core's key that signs key-material
-  attestations) — a common mistake is swapping them;
+- **two distinct wallets**: the _tx-sender_ is the **KMS connector's** wallet (it
+  pays gas and authenticates on-chain confirmations); the _signer_ is the
+  **KMS core's** signing key (it signs key-material attestations). A common
+  mistake is swapping them;
 - **network endpoints**: the core's MPC endpoint (peer-to-peer between parties) and
   the public vault (S3 bucket) where the core publishes its verification address and
   TLS CA cert;
@@ -53,24 +49,24 @@ Most fields only the party itself can provide — collect them with the question
 (§2.1), verify each answer against the party's public storage (Annex B.2), then
 assemble and validate the env file (Annex B.3).
 
-| Field             | Type            | Provided by                      | Source of truth                                                                            | Validation                                                                                                |
-| ----------------- | --------------- | -------------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `txSenderAddress` | address         | **KMS party**                    | Their connector's tx-sender wallet address                                                 | Party signs a message with it, or sends a test tx; must be funded on the host chain **and** gateway chain |
-| `signerAddress`   | address         | **KMS party** (verifiable by us) | Their core's signing key; published at `<storageUrl>/<storagePrefix>/VerfAddress/<handle>` | Fetch from their public storage and compare (Annex B.2)                                                   |
-| `ipAddress`       | string          | **KMS party**                    | Their core's MPC endpoint, e.g. `http://kms.party.example:50001`                           | Reachable from every _other_ party's core (peer-to-peer, not from us)                                     |
-| `storageUrl`      | string          | **KMS party**                    | Their public vault (S3/MinIO) base URL                                                     | `curl` returns objects (Annex B.2)                                                                        |
-| `partyId`         | int32           | **Coordinator (us)**             | Assigned: contiguous `1..n`; a swap keeps the dropped node's id                            | Annex B.3 validator checks contiguity + duplicates                                                        |
-| `mpcIdentity`     | string          | **KMS party**                    | The `mpc_identity` value in their core config / the cluster peers roster                   | Must byte-match their config — ask them to paste it, do not derive it                                     |
-| `caCert`          | bytes (hex PEM) | **KMS party** (verifiable)       | Their TLS CA cert; published at `<storagePrefix>/CACert/<handle>`                          | Fetch + `openssl x509` parse (Annex B.2)                                                                  |
-| `storagePrefix`   | string          | **KMS party**                    | Their core's public-vault prefix (e.g. `PUB-p3`)                                           | The `VerfAddress`/`CACert` fetches above implicitly validate it                                           |
+| Field             | Format                                                                                                                                                                            | Provided by                      | Used for (end to end)                                                                                                                                                                                                        | Validation                                                                                                |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `txSenderAddress` | 20-byte EVM address (`0x` + 40 hex)                                                                                                                                               | **KMS party**                    | The **connector's** wallet. Host chain: authenticates the switch confirmations (creation quorum counts by tx-sender). Gateway chain: broadcasts decryption responses — `Decryption` requires the response sender to be this registered node | Party signs a message with it, or sends a test tx; must be funded on the host chain **and** gateway chain |
+| `signerAddress`   | 20-byte EVM address of the **core's** signing key                                                                                                                                 | **KMS party** (verifiable by us) | Signs key/CRS attestations (epoch activation is unanimous per signer) and EIP-712 decryption responses (verified per pinned context on the gateway). The core publishes it at `<storageUrl>/<storagePrefix>/VerfAddress/<handle>` | Fetch from their public storage and compare (Annex B.2)                                                   |
+| `ipAddress`       | URL `scheme://host:port` — host may be a **DNS name** or IP; the **port is mandatory and must be non-default** (`:443`/`:80` are normalized away by the core's URL parser and rejected as "missing port"). E.g. `http://kms.party.example:50001` | **KMS party**                    | The core's MPC endpoint. Consumed **only by the other parties' cores**: each peer parses host+port and dials it for MPC traffic (reshares, decryption sessions).    | Reachable from every _other_ party's core (peer-to-peer, not from us)                                     |
+| `storageUrl`      | Base URL of the party's public vault (S3/MinIO bucket)                                                                                                                            | **KMS party**                    | Where the core publishes its public material. Emitted in `ActivateEpoch` and served per key/CRS result by `KMSGeneration` → the relayer's `/v2/keyurl`, so clients know where to download public keys and CRS                | `curl` returns objects (Annex B.2)                                                                        |
+| `partyId`         | `int32`, contiguous `1..n`, **positional**                                                                                                                                        | **Coordinator (us)**             | The party's MPC role index (the core builds its role map from it and rejects out-of-range or duplicate ids). A swap keeps the dropped node's id                                                                              | Annex B.3 validator checks contiguity + duplicates                                                        |
+| `mpcIdentity`     | Free-form string; must **byte-match** the `mpc_identity` in the party's core config                                                                                               | **KMS party**                    | The party's logical identity in the MPC layer: self-recognition (which roster slot is "me" — a mismatch aborts the reshare), TLS trust-root lookup (peer cert verification is keyed by it), and message routing              | Must byte-match their config — ask them to paste it, do not derive it                                     |
+| `caCert`          | `bytes` = the party's TLS CA as a regular PEM file, verbatim (`-----BEGIN CERTIFICATE-----` … `-----END CERTIFICATE-----`, usually newline-terminated); carried as `0x` + hex of those exact bytes in the env | **KMS party** (verifiable)       | The party's **long-lived** CA: peers verify mutual-TLS MPC connections against it (looked up by `mpcIdentity`). Published at `<storagePrefix>/CACert/<handle>`; **not** regenerated by reshares or context switches          | Fetch + `openssl x509` parse (Annex B.2); the hex must be byte-exact — it feeds the context anchor        |
+| `storagePrefix`   | String key prefix inside the vault (e.g. `PUB-p3`)                                                                                                                                | **KMS party**                    | Namespaces the party's objects in its vault: `<storageUrl>/<storagePrefix>/VerfAddress/<handle>`, `…/CACert/<handle>`, and the public key material clients download                                                          | The `VerfAddress`/`CACert` fetches above implicitly validate it                                           |
 
 Committee-level values (set once, not per node):
 
 | Value            | Env var (host)                                                                                   | Notes                                                                                                                               |
 | ---------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Thresholds       | `PUBLIC_DECRYPTION_THRESHOLD`, `USER_DECRYPTION_THRESHOLD`, `KMS_GEN_THRESHOLD`, `MPC_THRESHOLD` | Committee size must satisfy `n = 3 * MPC_THRESHOLD + 1`                                                                             |
+| Thresholds       | `PUBLIC_DECRYPTION_THRESHOLD`, `USER_DECRYPTION_THRESHOLD`, `KMS_GEN_THRESHOLD`, `MPC_THRESHOLD` | Committee size must satisfy `n = 3 * MPC_THRESHOLD + 1` **exactly** — every KMS core re-checks this equality when it ingests the new context and rejects the switch otherwise (the contract itself only checks `1 ≤ t ≤ n`) |
 | Software version | `KMS_SOFTWARE_VERSION`                                                                           | The KMS core release version all parties run                                                                                        |
-| PCR values       | `KMS_PCR_VALUES`                                                                                 | JSON `[{"pcr0":"0x…","pcr1":"0x…","pcr2":"0x…"}]`; enclave measurements from the KMS release (zeros only on non-enclave dev stacks) |
+| PCR values       | `KMS_PCR_VALUES`                                                                                 | JSON array `[{"pcr0":"0x…","pcr1":"0x…","pcr2":"0x…"}, …]`; enclave measurements from the KMS release (zeros only on non-enclave dev stacks). The array may hold several entries — for a rolling KMS core upgrade include **both the old and the new release's measurements**, so nodes on different versions keep attesting each other while the upgrade is in flight |
 
 ### 2.1 Questionnaire to send external KMS parties
 
@@ -89,9 +85,13 @@ For the upcoming KMS committee update on <ENV>, please provide:
 8. KMS core version you are running / will run at the switch window:
 
 Notes:
-- (1) and (2) are different keys. (1) pays gas and authenticates confirmations;
-  (2) signs key-material attestations. Do not swap them.
+- (1) and (2) are different keys: (1) is your kms-connector's wallet, pays gas and
+  authenticates confirmations; (2) is your kms-core's signing key, signs
+  key-material attestations. Do not swap them.
 - (6) must be copied verbatim from your config, not retyped.
+- (7) is your long-lived TLS CA — reshares and context switches do not regenerate
+  it. If you plan to rotate it, tell the coordinator: registering the new cert
+  requires a committee-metadata context switch.
 - Your tx-sender (1) must be funded on both the host chain and the gateway chain.
 ```
 
@@ -105,12 +105,13 @@ beyond a heads-up** — every current member reshares with itself as both sender
 receiver.
 
 1. **Heads-up to all parties**: connectors and cores must be up, tx-senders funded.
-2. **Broadcast** (governance):
+2. **Broadcast**:
    ```bash
    cd host-contracts
    # DAO path — produces calldata for the governance proposal, never broadcasts:
    npx hardhat task:buildDefineNewEpochForCurrentKmsContextCalldata --network <network>
-   # Devnet/no-DAO path — broadcasts with DEPLOYER_PRIVATE_KEY:
+
+   # No-DAO path — broadcasts with DEPLOYER_PRIVATE_KEY:
    npx hardhat task:defineNewEpochForCurrentKmsContext --network <network>
    ```
 3. **Everything after the broadcast is automatic**: the contract emits `NewKmsEpoch`
@@ -165,7 +166,7 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
    cd host-contracts
    # DAO path:
    npx hardhat task:buildDefineNewKmsContextAndEpochCalldata --network <network>
-   # Devnet/no-DAO path:
+   # No-DAO path:
    npx hardhat task:defineNewKmsContextAndEpoch --network <network>
    ```
    The calldata task prints the future id up front —
@@ -180,7 +181,7 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
    export KMS_CONTEXT_ID=<the newContextId printed in step 2>   # must match the host
    # DAO path (cross-chain proposal triple):
    npx hardhat task:buildUpdateKmsContextProposal --verify-context-id true --network <network>
-   # Devnet/no-DAO path:
+   # No-DAO path:
    npx hardhat task:updateKmsContext --network <network>
    ```
 
@@ -279,8 +280,9 @@ Quorum cheat-sheet:
     previous-committee tx-senders** (n = previous committee size, t = previous MPC
     threshold; floored at 1). More than `t` so faulty nodes can never approve a
     switch alone; at most `n − t` because anything higher would let a dead node
-    block the switch forever (`n − t ≥ t + 1` holds under the `n = 3t + 1`
-    topology).
+    block the switch forever. Under the `n = 3t + 1` topology this quorum works
+    out to `n − t = (3t + 1) − t = 2t + 1` — a supermajority of the previous
+    committee.
   - The MPC reshare needs the same `n − t` old-committee senders, so both phases
     tolerate up to **t** dead-or-silent previous nodes.
   - Epoch activation: **unanimous** — every new-committee signer must attest the _same_
@@ -430,7 +432,8 @@ MPC_THRESHOLD=1
 KMS_GEN_THRESHOLD=3
 KMS_GENERATION_THRESHOLD=3              # gateway name for KMS_GEN_THRESHOLD (same value!)
 KMS_SOFTWARE_VERSION=…
-KMS_PCR_VALUES=[{"pcr0":"0x…","pcr1":"0x…","pcr2":"0x…"}]
+# single quotes required: the file is also `source`d, which would strip inner double quotes
+KMS_PCR_VALUES='[{"pcr0":"0x…","pcr1":"0x…","pcr2":"0x…"}]'
 ```
 
 > **Two env-naming traps** (the host and gateway repos differ):
