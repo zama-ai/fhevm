@@ -159,6 +159,63 @@ void test('patching templates with their original addresses is an identity opera
   }
 });
 
+/**
+ * Contracts whose bytecode solc lays out DIFFERENTLY depending on the address values, so that patching a
+ * template in place is not byte-identical to recompiling with those addresses.
+ *
+ * Why this happens: when an address constant is referenced only once, solc's constant optimiser does not
+ * inline it as a PUSH20 — it pools the 32-byte word into the code's trailing data section and reaches it
+ * with `PUSH2 <offset>; CODECOPY`. The ORDER of that pool depends on the constant's VALUE, so changing an
+ * address can permute the pool and rewrite the PUSH2 offsets that reference it. `HCULimit` is the only
+ * contract that trips this: it references `FHEVM_EXECUTOR_ADDRESS` exactly once. (Verified: holding the
+ * executor address fixed while changing every other address preserves the pool order.)
+ *
+ * The patched bytecode is still CORRECT — its PUSH2 offsets point at the pool slots we patched, so it
+ * reads the right address; the fresh build simply chose the opposite order. That is proven end to end by
+ * `test/ts/deploy-v14.test.ts`, which deploys the whole stack from patched bytecode and then runs an FHE
+ * op, charging HCU through HCULimit's `onlyFHEVMExecutor` gate. A wrong executor address there would
+ * revert every operation.
+ *
+ * So byte-identity is a stronger claim than solc guarantees. The test below asserts it wherever it holds
+ * (13 of 14 contracts) and falls back to the property that IS guaranteed — the patch replaces every
+ * occurrence of every address, and the result carries exactly the addresses a real compile carries. The
+ * set is pinned: if another contract starts reordering, or HCULimit stops, this test fails.
+ */
+const SOLC_REORDERS_CONSTANT_POOL: readonly string[] = ['HCULimit'];
+
+function countOccurrences(haystack: string, needle: string): number {
+  let count = 0;
+  for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + 1)) {
+    count++;
+  }
+  return count;
+}
+
+/**
+ * The address-level equivalence that survives a constant-pool permutation: same code size, every
+ * placeholder gone, and each address present exactly as often as in a real compile. A template that
+ * missed an occurrence fails the count check.
+ */
+function assertAddressesEquivalent(contractName: string, patched: string, fresh: string, field: string): void {
+  assert.equal(patched.length, fresh.length, `${contractName}.${field} length differs from the Forge build`);
+
+  for (const name of ADDRESS_NAMES) {
+    const placeholder = normalizeHex(getAddressReference(readTemplate(contractName), name).placeholder, name);
+    const replacement = normalizeHex(ALTERNATE_ADDRESSES[name], name);
+
+    assert.equal(
+      countOccurrences(patched, placeholder),
+      0,
+      `${contractName}.${field} still contains the ${name} placeholder after patching`,
+    );
+    assert.equal(
+      countOccurrences(patched, replacement),
+      countOccurrences(fresh, replacement),
+      `${contractName}.${field} contains ${name} a different number of times than the Forge build`,
+    );
+  }
+}
+
 void test('patched templates match a Forge build compiled with different config addresses', () => {
   const originalConfig = readFileSync(CONFIG_PATH, 'utf8');
 
@@ -167,21 +224,43 @@ void test('patched templates match a Forge build compiled with different config 
     forge(['clean']);
     forge(['build']);
 
+    const reordered: string[] = [];
+
     for (const target of TARGET_CONTRACTS) {
       const template = readTemplate(target.contractName);
       const artifact = readArtifact(target);
 
-      assert.equal(
-        patchBytecode(template, 'bytecode', ALTERNATE_ADDRESSES),
-        lowerHex(artifact.bytecode.object),
-        `${target.contractName} bytecode should match alternate-address Forge output`,
+      const patchedInit = patchBytecode(template, 'bytecode', ALTERNATE_ADDRESSES);
+      const patchedRuntime = patchBytecode(template, 'deployedBytecode', ALTERNATE_ADDRESSES);
+      const freshInit = lowerHex(artifact.bytecode.object);
+      const freshRuntime = lowerHex(artifact.deployedBytecode.object);
+
+      if (patchedInit === freshInit && patchedRuntime === freshRuntime) {
+        continue;
+      }
+
+      // Not byte-identical: only acceptable for a known constant-pool reordering, and only if the
+      // addresses themselves still line up exactly.
+      reordered.push(target.contractName);
+      assertAddressesEquivalent(
+        target.contractName,
+        normalizeHex(patchedInit, 'p'),
+        normalizeHex(freshInit, 'f'),
+        'bytecode',
       );
-      assert.equal(
-        patchBytecode(template, 'deployedBytecode', ALTERNATE_ADDRESSES),
-        lowerHex(artifact.deployedBytecode.object),
-        `${target.contractName} deployedBytecode should match alternate-address Forge output`,
+      assertAddressesEquivalent(
+        target.contractName,
+        normalizeHex(patchedRuntime, 'p'),
+        normalizeHex(freshRuntime, 'f'),
+        'deployedBytecode',
       );
     }
+
+    assert.deepEqual(
+      reordered.sort(),
+      [...SOLC_REORDERS_CONSTANT_POOL].sort(),
+      'the set of contracts whose constant pool solc reorders has changed — see the comment above',
+    );
   } finally {
     restoreConfigAndGeneratedArtifacts(originalConfig);
   }
