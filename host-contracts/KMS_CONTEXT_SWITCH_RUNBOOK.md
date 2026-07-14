@@ -105,7 +105,9 @@ beyond a heads-up** — every current member reshares with itself as both sender
 receiver.
 
 1. **Heads-up to all parties**: connectors and cores must be up, tx-senders funded.
-2. **Broadcast**:
+2. **Broadcast** — via a DAO proposal where governance owns the contract
+   (production), or directly with `DEPLOYER_PRIVATE_KEY` where it does not
+   (devnet/test stacks):
 
    ```bash
    cd host-contracts
@@ -163,12 +165,14 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
    per-party verification (Annex B.2), env file assembly + validation (Annex B.3).
    For continuing members, reuse their existing on-chain values verbatim
    (`getKmsNodesForContext(<currentContextId>)`).
-2. **Broadcast on the host** (governance):
+2. **Broadcast on the host** — via a DAO proposal where governance owns the
+   contract (production), or directly with `DEPLOYER_PRIVATE_KEY` where it does
+   not (devnet/test stacks):
    ```bash
    cd host-contracts
-   # DAO path:
+   # DAO path — produces calldata for the governance proposal, never broadcasts:
    npx hardhat task:buildDefineNewKmsContextAndEpochCalldata --network <network>
-   # No-DAO path:
+   # No-DAO path — broadcasts with DEPLOYER_PRIVATE_KEY:
    npx hardhat task:defineNewKmsContextAndEpoch --network <network>
    ```
    The calldata task prints the future id up front —
@@ -181,9 +185,9 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
    ```bash
    cd gateway-contracts
    export KMS_CONTEXT_ID=<the newContextId printed in step 2>   # must match the host
-   # DAO path (cross-chain proposal triple):
+   # DAO path — builds the cross-chain proposal triple, never broadcasts:
    npx hardhat task:buildUpdateKmsContextProposal --verify-context-id true --network <network>
-   # No-DAO path:
+   # No-DAO path — broadcasts with DEPLOYER_PRIVATE_KEY:
    npx hardhat task:updateKmsContext --network <network>
    ```
 
