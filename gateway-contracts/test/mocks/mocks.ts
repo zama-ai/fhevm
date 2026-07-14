@@ -121,7 +121,7 @@ describe("Mock contracts", function () {
     it("Should emit PublicDecryptionRequest event on public decryption request", async function () {
       publicDecryptionCounterId++;
       await expect(decryptionMock.publicDecryptionRequest([DefaultBytes32], DefaultBytes))
-        .to.emit(decryptionMock, "PublicDecryptionRequest")
+        .to.emit(decryptionMock, "PublicDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],bytes)")
         .withArgs(publicDecryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultBytes);
     });
 

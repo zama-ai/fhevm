@@ -29,6 +29,7 @@ pub mod r#hcu_limit;
 pub mod r#handles_receiver;
 pub mod r#handles_sender;
 pub mod r#i_beacon;
+pub mod r#i_confidential_bridge;
 pub mod r#i_dst_app;
 pub mod r#ierc1363;
 pub mod r#ierc165;

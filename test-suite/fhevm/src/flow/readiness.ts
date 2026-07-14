@@ -1,4 +1,10 @@
-import { bootstrapUsesHostKmsGeneration, kmsConnectorUsesHostKmsGeneration, supportsHostListenerConsumer } from "../compat/compat";
+import {
+  bootstrapUsesHostKmsGeneration,
+  kmsConnectorUsesHostKmsGeneration,
+  supportsConsensusDetector,
+  supportsHostListenerConsumer,
+  supportsUpgradeController,
+} from "../compat/compat";
 import { BootstrapTimeout, ContainerCrashed, MinioError, PreflightError, ProbeTimeout, RpcError } from "../errors";
 import {
   COPROCESSOR_DB_CONTAINER,
@@ -177,7 +183,9 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
   const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (suffix) =>
       !suffix.includes("migration") &&
-      (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)),
+      (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
+      (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
+      (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
   );
   const names: string[] = [];
   for (let index = 0; index < topology.count; index += 1) {

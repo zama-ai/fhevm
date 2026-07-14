@@ -87,8 +87,14 @@ contract ProtocolConfigMock {
 
     event KmsContextDestroyed(uint256 indexed kmsContextId);
 
+    event KmsEpochDestroyed(uint256 indexed epochId);
+
     function destroyKmsContext(uint256 kmsContextId) external {
         emit KmsContextDestroyed(kmsContextId);
+    }
+
+    function destroyKmsEpoch(uint256 epochId) external {
+        emit KmsEpochDestroyed(epochId);
     }
 
     function confirmKmsContextCreation(uint256 kmsContextId) external {

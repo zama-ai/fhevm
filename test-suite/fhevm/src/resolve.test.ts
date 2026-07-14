@@ -16,6 +16,7 @@ import {
   SHA_RUNTIME_COMPAT_MIN_SHA,
   applyVersionEnvOverrides,
   presetBundle,
+  selectSupportedMainSha,
   shaRuntimeCompatFloor,
   simpleAclFloor,
 } from "./resolve/target";
@@ -31,6 +32,37 @@ describe("resolve", () => {
     const commits = ["head", SHA_RUNTIME_COMPAT_MIN_SHA, SIMPLE_ACL_MIN_SHA, "tail"];
     expect(simpleAclFloor(commits)).toBe(2);
     expect(shaRuntimeCompatFloor(commits)).toBe(1);
+  });
+
+  test("selects the newest sha every gating package publishes", () => {
+    const candidates = ["aaaaaa1", "bbbbbb2", "cccccc3"];
+    const packageTagsMap = {
+      HOST_VERSION: new Set(["bbbbbb2", "cccccc3"]),
+      GATEWAY_VERSION: new Set(["aaaaaa1", "bbbbbb2", "cccccc3"]),
+    };
+    expect(selectSupportedMainSha(candidates, packageTagsMap)).toBe("bbbbbb2");
+  });
+
+  test("does not gate on unpublished or branch-only images", () => {
+    const candidates = ["aaaaaa1", "bbbbbb2"];
+    const packageTagsMap = {
+      HOST_VERSION: new Set(["aaaaaa1", "bbbbbb2"]),
+      // Empty set: image not published yet.
+      COPROCESSOR_CONSENSUS_DETECTOR_VERSION: new Set<string>(),
+      // Non-empty but only feature-branch tags absent from the candidate window:
+      // must not reject every main commit.
+      COPROCESSOR_UPGRADE_CONTROLLER_VERSION: new Set(["1a3646e", "9d01d7b"]),
+    };
+    expect(selectSupportedMainSha(candidates, packageTagsMap)).toBe("aaaaaa1");
+  });
+
+  test("returns undefined when a gating package publishes no candidate sha", () => {
+    const candidates = ["aaaaaa1", "bbbbbb2"];
+    const packageTagsMap = {
+      HOST_VERSION: new Set(["aaaaaa1"]),
+      GATEWAY_VERSION: new Set(["bbbbbb2"]),
+    };
+    expect(selectSupportedMainSha(candidates, packageTagsMap)).toBeUndefined();
   });
 
   test("applies env overrides to a bundle", () => {
@@ -49,6 +81,36 @@ describe("resolve", () => {
     expect(bundle.env.RELAYER_VERSION).toBe("abcdef0");
     expect(bundle.env.RELAYER_MIGRATE_VERSION).toBe("abcdef0");
     expect(bundle.env.CORE_VERSION).not.toBe("abcdef0");
+  });
+
+  test("pins optional images by default but omits unpublished ones for latest-main", () => {
+    // No published-key set: optional images stay pinned like every package (default contract).
+    const pinned = presetBundle("sha", "abcdef0", "sha-abcdef0.json");
+    expect(pinned.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("abcdef0");
+    expect(pinned.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION).toBe("abcdef0");
+
+    // Empty published-key set (what `--target sha` passes): optional images are omitted.
+    const shaBundle = presetBundle("sha", "abcdef0", "sha-abcdef0.json", [], new Set());
+    expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in shaBundle.env).toBe(false);
+    expect("COPROCESSOR_UPGRADE_CONTROLLER_VERSION" in shaBundle.env).toBe(false);
+    expect(shaBundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
+
+    // latest-main with only consensus-detector published at the resolved sha: pin it, drop the
+    // upgrade-controller so its service gates out instead of pulling a nonexistent manifest.
+    const bundle = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json", [], new Set([
+      "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+    ]));
+    expect(bundle.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("abcdef0");
+    expect("COPROCESSOR_UPGRADE_CONTROLLER_VERSION" in bundle.env).toBe(false);
+    // Non-optional repo images are still always pinned.
+    expect(bundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
+  });
+
+  test("honors an explicit env pin for an omitted optional image", () => {
+    const bundle = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json", [], new Set());
+    expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in bundle.env).toBe(false);
+    const next = applyVersionEnvOverrides(bundle, { COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.14.0" });
+    expect(next.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("v0.14.0");
   });
 
   test("only caches immutable sha targets", () => {
@@ -84,6 +146,43 @@ describe("resolve", () => {
           process.env,
         ),
       ).rejects.toThrow("invalid lockName");
+    });
+  });
+
+  test("accepts a lock file that omits unpublished optional images", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const lockFile = path.join(stateDir, "latest-main.json");
+      // Optional images pinned only when published: presetBundle with an empty set omits them.
+      const env = presetBundle("latest-main", "abcdef0", "latest-main.json", [], new Set()).env;
+      expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in env).toBe(false);
+      await writeFile(
+        lockFile,
+        JSON.stringify({ target: "latest-main", lockName: "latest-main.json", sources: ["test"], env }),
+      );
+      const { bundle } = await resolveBundle(
+        { target: "latest-main", requestedTarget: undefined, sha: undefined, lockFile, reset: false },
+        {},
+      );
+      expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in bundle.env).toBe(false);
+      expect(bundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
+    });
+  });
+
+  test("still rejects a lock file missing a required (non-optional) image", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const lockFile = path.join(stateDir, "latest-main.json");
+      const env = { ...presetBundle("latest-main", "abcdef0", "latest-main.json").env };
+      delete env.COPROCESSOR_HOST_LISTENER_VERSION;
+      await writeFile(
+        lockFile,
+        JSON.stringify({ target: "latest-main", lockName: "latest-main.json", sources: ["test"], env }),
+      );
+      await expect(
+        resolveBundle(
+          { target: "latest-main", requestedTarget: undefined, sha: undefined, lockFile, reset: false },
+          {},
+        ),
+      ).rejects.toThrow("missing required version keys");
     });
   });
 
