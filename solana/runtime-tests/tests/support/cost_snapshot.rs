@@ -9,19 +9,17 @@
 //! deserve a reviewed snapshot update in the same diff. Behavior tests never
 //! depend on these numbers.
 //!
-//! Accept a new baseline with:
+//! Accept a new baseline from `solana/` with:
 //!
 //! ```text
-//! solana --version # must match CI: 2.1.0
-//! anchor --version # must match CI: 1.0.2
-//! cargo clean
-//! bash scripts/check-zama-host-idl.sh
-//! ZAMA_UPDATE_COST_SNAPSHOT=1 cargo test -p zama-solana-runtime-tests cost_snapshot_
+//! bash scripts/update-cost-snapshots.sh
 //! ```
 //!
-//! and commit the updated JSON. Build the programs first so the snapshot is
-//! measured against the current source rather than stale `target/deploy`
-//! artifacts. Costs are exact for the pinned toolchain.
+//! That script checks the CI-pinned Solana/Anchor versions, cleans, rebuilds
+//! SBF artifacts, and rewrites the JSON. Prefer it over setting
+//! `ZAMA_UPDATE_COST_SNAPSHOT=1` by hand (the env gate remains for escape-hatch
+//! use but skips the toolchain/clean guardrails). Costs are exact for the
+//! pinned toolchain.
 //!
 //! Profiles use fixed fixture keys because on-chain PDA bump searches are part
 //! of the measured compute: absolute values therefore include an
@@ -125,7 +123,7 @@ pub fn assert_cost_snapshot(
     assert!(
         failures.is_empty(),
         "cost snapshot mismatch for {profile:?} in {}:\n  {}\naccept intentional changes with \
-         {UPDATE_ENV}=1 and commit the updated snapshot",
+         `bash scripts/update-cost-snapshots.sh` (or {UPDATE_ENV}=1) and commit the updated snapshot",
         path.display(),
         failures.join("\n  ")
     );

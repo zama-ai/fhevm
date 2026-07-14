@@ -3914,7 +3914,8 @@ fn mollusk_fhe_eval_meter_accumulation_overflow_fails_closed() {
 
 // ---------------------------------------------------------------------------
 // Cost snapshots (tests/support/cost_snapshot.rs). Dedicated tests so cost
-// drift never fails a behavior test; update with ZAMA_UPDATE_COST_SNAPSHOT=1.
+// drift never fails a behavior test; regenerate with
+// `bash scripts/update-cost-snapshots.sh`.
 // ---------------------------------------------------------------------------
 
 #[test]
