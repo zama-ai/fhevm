@@ -5,16 +5,12 @@ export type SdkSelection = {
   family: SdkFamily;
   source: SdkSource;
   requestedVersion: string;
-  legacy: boolean;
 };
 
 type SelectionEnv = Readonly<Record<string, string | undefined>>;
 
 const explicitKeys = ['E2E_SDK_FAMILY', 'E2E_SDK_SOURCE', 'E2E_SDK_VERSION'] as const;
 const exactVersion = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-
-export const LEGACY_SDK_SELECTION_WARNING =
-  'Legacy SDK selection is in use. Set E2E_SDK_FAMILY, E2E_SDK_SOURCE, and E2E_SDK_VERSION explicitly.';
 
 export function selectSdk(env: SelectionEnv): SdkSelection {
   const hasExplicitSelection = explicitKeys.some((key) => Boolean(env[key]));
@@ -42,21 +38,20 @@ export function selectSdk(env: SelectionEnv): SdkSelection {
       throw new Error('E2E_SDK_VERSION must be an exact published version when E2E_SDK_SOURCE=npm');
     }
 
-    return { family, source, requestedVersion: version, legacy: false };
+    return { family, source, requestedVersion: version };
   }
 
-  const legacyRelayerVersion = env.RELAYER_SDK_VERSION;
-  if (legacyRelayerVersion) {
-    if (!exactVersion.test(legacyRelayerVersion)) {
+  const relayerSdkVersion = env.RELAYER_SDK_VERSION;
+  if (relayerSdkVersion) {
+    if (!exactVersion.test(relayerSdkVersion)) {
       throw new Error('RELAYER_SDK_VERSION must be an exact published version');
     }
     return {
       family: 'relayer-sdk',
       source: 'npm',
-      requestedVersion: legacyRelayerVersion,
-      legacy: true,
+      requestedVersion: relayerSdkVersion,
     };
   }
 
-  return { family: 'fhevm-sdk', source: 'workspace', requestedVersion: 'workspace', legacy: true };
+  return { family: 'fhevm-sdk', source: 'workspace', requestedVersion: 'workspace' };
 }

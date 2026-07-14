@@ -41,13 +41,10 @@ COPY sdk/js-sdk ./sdk/js-sdk
 # Install the repository graph from its lockfile. Published SDK cases pin the
 # selected top-level package while retaining the other workspace dependencies.
 RUN npm ci && npm prune && \
-    npm run -w test-suite/e2e validate:sdk-selection && \
-    sdk_family="$E2E_SDK_FAMILY" && sdk_source="$E2E_SDK_SOURCE" && sdk_version="$E2E_SDK_VERSION" && \
-    if [ -z "$sdk_family$sdk_source$sdk_version" ] && [ -n "$RELAYER_SDK_VERSION" ]; then \
-      sdk_family="relayer-sdk"; sdk_source="npm"; sdk_version="$RELAYER_SDK_VERSION"; \
-    elif [ -z "$sdk_family$sdk_source$sdk_version" ]; then \
-      sdk_family="fhevm-sdk"; sdk_source="workspace"; sdk_version="workspace"; \
-    fi && \
+    selection="$(npm run --silent -w test-suite/e2e resolve:sdk-selection)" && \
+    sdk_family="$(printf '%s' "$selection" | jq -r .family)" && \
+    sdk_source="$(printf '%s' "$selection" | jq -r .source)" && \
+    sdk_version="$(printf '%s' "$selection" | jq -r .requestedVersion)" && \
     if [ "$sdk_source" = "npm" ]; then \
       if [ "$sdk_family" = "fhevm-sdk" ]; then package="@fhevm/sdk"; \
       elif [ "$sdk_family" = "relayer-sdk" ]; then package="@zama-fhe/relayer-sdk"; \
@@ -67,8 +64,8 @@ RUN npm run build
 # Compile test-suite
 WORKDIR /app/test-suite/e2e
 
-RUN npm run test:sdk-selection && npm run tsc:sdk-selection
 RUN npx hardhat compile
+RUN npm run test:sdk-selection && npm run tsc:sdk-selection
 
 # --- Runtime Stage ---
 FROM node:${NODE_VERSION} AS prod
@@ -77,8 +74,8 @@ ARG E2E_SDK_FAMILY
 ARG E2E_SDK_SOURCE
 ARG E2E_SDK_VERSION
 
-# RELAYER_SDK_VERSION remains available only for images built through the
-# legacy interface. New callers select family, source, and version explicitly.
+# RELAYER_SDK_VERSION remains available for existing image builders. New
+# callers select family, source, and version explicitly.
 ENV RELAYER_SDK_VERSION=${RELAYER_SDK_VERSION}
 ENV E2E_SDK_FAMILY=${E2E_SDK_FAMILY}
 ENV E2E_SDK_SOURCE=${E2E_SDK_SOURCE}

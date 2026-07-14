@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { LEGACY_SDK_SELECTION_WARNING, selectSdk } from './selection';
+import { selectSdk } from './selection';
 import type { Auth, SdkInstance } from './types';
 
 export type SdkConfig = {
@@ -62,18 +62,18 @@ const packageIdentity =
         version: installedPackageVersion('@zama-fhe/relayer-sdk', '@zama-fhe/relayer-sdk/node'),
       };
 
-const packageEntrypoint = fs.realpathSync(
-  require.resolve(selection.family === 'fhevm-sdk' ? '@fhevm/sdk' : '@zama-fhe/relayer-sdk/node'),
-);
-const vendoredFhevmSdk = fs.realpathSync(path.resolve(__dirname, '../../../../sdk/js-sdk'));
-if (
-  selection.family === 'fhevm-sdk' &&
-  selection.source === 'npm' &&
-  packageEntrypoint.startsWith(`${vendoredFhevmSdk}${path.sep}`)
-) {
-  throw new Error(
-    `Requested ${packageIdentity.name}@${selection.requestedVersion} from npm, but it resolves to the vendored SDK workspace`,
-  );
+if (selection.family === 'fhevm-sdk') {
+  const packageEntrypoint = fs.realpathSync(require.resolve('@fhevm/sdk'));
+  const vendoredFhevmSdk = fs.realpathSync(path.resolve(__dirname, '../../../../sdk/js-sdk'));
+  const resolvesToWorkspace = packageEntrypoint.startsWith(`${vendoredFhevmSdk}${path.sep}`);
+  if (selection.source === 'npm' && resolvesToWorkspace) {
+    throw new Error(
+      `Requested ${packageIdentity.name}@${selection.requestedVersion} from npm, but it resolves to the vendored SDK workspace`,
+    );
+  }
+  if (selection.source === 'workspace' && !resolvesToWorkspace) {
+    throw new Error(`Requested the vendored SDK workspace, but ${packageIdentity.name} resolves to ${packageEntrypoint}`);
+  }
 }
 
 if (selection.source === 'npm' && packageIdentity.version !== selection.requestedVersion) {
@@ -82,16 +82,12 @@ if (selection.source === 'npm' && packageIdentity.version !== selection.requeste
   );
 }
 
-if (selection.legacy) {
-  console.warn(LEGACY_SDK_SELECTION_WARNING);
-}
 console.log(
   `E2E SDK identity: ${JSON.stringify({
     family: selection.family,
     source: selection.source,
     requestedVersion: selection.requestedVersion,
     package: packageIdentity,
-    legacySelection: selection.legacy,
   })}`,
 );
 

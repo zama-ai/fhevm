@@ -28,9 +28,9 @@
     "codegen": "../../library-solidity/codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
     "codegen:overloads": "../../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
-    "test:sdk-selection": "node --test -r ts-node/register test/sdk/selection.test.ts",
+    "test:sdk-selection": "TS_NODE_PROJECT=tsconfig.sdk-selection.json node --test -r ts-node/register test/sdk/selection.test.ts",
     "tsc:sdk-selection": "tsc --noEmit -p tsconfig.sdk-selection.json",
-    "validate:sdk-selection": "node -r ts-node/register -e \"require('./test/sdk/selection').selectSdk(process.env)\"",
+    "resolve:sdk-selection": "node -r ts-node/register -e \"process.stdout.write(JSON.stringify(require('./test/sdk/selection').selectSdk(process.env)))\"",
     "tsc": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
