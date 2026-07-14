@@ -70,6 +70,58 @@ fn handle_rpc_failure<E: std::fmt::Display>(
     }
 }
 
+/// Seed for `host_listener_poller_state` when no anchor row exists yet; an
+/// existing row always wins in the caller, so restarts never rewind or skip.
+/// A non-negative value is an absolute height (0 = genesis, explicitly), a
+/// negative value means that many blocks behind the current head. Unset is an
+/// error: the first start for a chain must state where to begin.
+#[derive(Debug, PartialEq, Eq)]
+enum StartAnchor {
+    Block(i64),
+    BehindHead(u64),
+}
+
+fn resolve_start_anchor(seed_start_block: Option<i64>) -> Result<StartAnchor> {
+    match seed_start_block {
+        Some(block) if block >= 0 => Ok(StartAnchor::Block(block)),
+        Some(delta) => Ok(StartAnchor::BehindHead(delta.unsigned_abs())),
+        None => Err(anyhow!(
+            "no poller state for this chain and no --seed-start-block; \
+             set it explicitly (0 for genesis)"
+        )),
+    }
+}
+
+#[cfg(test)]
+mod start_anchor_tests {
+    use super::{resolve_start_anchor, StartAnchor};
+
+    #[test]
+    fn non_negative_flag_is_absolute() {
+        assert_eq!(
+            resolve_start_anchor(Some(7)).unwrap(),
+            StartAnchor::Block(7)
+        );
+        assert_eq!(
+            resolve_start_anchor(Some(0)).unwrap(),
+            StartAnchor::Block(0)
+        );
+    }
+
+    #[test]
+    fn negative_flag_is_behind_head() {
+        assert_eq!(
+            resolve_start_anchor(Some(-10_000)).unwrap(),
+            StartAnchor::BehindHead(10_000)
+        );
+    }
+
+    #[test]
+    fn no_flag_is_an_error() {
+        assert!(resolve_start_anchor(None).is_err());
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PollerConfig {
     pub url: String,
@@ -88,6 +140,9 @@ pub struct PollerConfig {
     /// Higher values = less throttling.
     pub rpc_compute_units_per_second: u64,
     pub health_port: u16,
+    /// Initial sync anchor when no poller state exists yet
+    /// (initialization-only; >= 0 absolute, negative from head).
+    pub seed_start_block: Option<i64>,
     // Dependence chain settings
     pub dependence_cache_size: u16,
     pub dependence_by_connexity: bool,
@@ -195,7 +250,17 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         Some(block) => u64::try_from(block)
             .context("last_caught_up_block cannot be negative")?,
         None => {
-            let initial = db.read_last_valid_block().await.unwrap_or(0);
+            let initial = match resolve_start_anchor(config.seed_start_block)? {
+                StartAnchor::Block(block) => block,
+                StartAnchor::BehindHead(delta) => {
+                    let head = client.latest_block_number().await.context(
+                        "Failed to fetch head to resolve negative seed-start-block",
+                    )?;
+                    i64::try_from(head.saturating_sub(delta)).context(
+                        "start block computed from head is out of range",
+                    )?
+                }
+            };
             db.poller_set_last_caught_up_block(chain_id, initial)
                 .await?;
             db.tick.update();
