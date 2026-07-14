@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# adversarial-l4.sh — negative live checks (relayer bypass + context rotation).
+#
+# Usage (from repo root):
+#   bash solana/scripts/e2e/adversarial-l4.sh
+#
+# When: on a running stack from clean-e2e (after or instead of full-vertical).
+# Writes: no checked-in goldens. Manual-only (not wired into solana-e2e.yml).
+#
 # Adversarial L4 — proves the Solana V2 hardening on the LIVE stack (not in unit tests):
 #
 #  (a) RELAYER-BYPASS / publicKey-substitution: a Solana user-decrypt whose ed25519 signature does

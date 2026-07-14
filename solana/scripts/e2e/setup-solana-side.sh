@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
+# setup-solana-side.sh — deploy Solana programs + side services against a live fhevm-cli.
+#
+# Not a primary entrypoint: called by clean-e2e.sh after `fhevm-cli up`.
+#
+# Usage (advanced / from repo root, after fhevm-cli up):
+#   bash solana/scripts/e2e/setup-solana-side.sh
+#
+# When: only when debugging the Solana side-stack in isolation.
+# Writes: local validator deploy + host-listener process (no checked-in goldens).
+#
 # Reproducible Solana side-stack setup against a LIVE fhevm-cli backend.
 #
 # Normally invoked by clean-e2e.sh, which runs `fhevm-cli up --scenario solana ...` first. That

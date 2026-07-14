@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# sync-zama-host-idl.sh — rebuild programs and write IDL/ABI golden snapshots.
+#
+# Usage (from solana/):
+#   bash scripts/sync-zama-host-idl.sh
+#
+# When: after an intentional host/token IDL or ABI change that should update
+# the vendored listener snapshot and ABI manifest.
+# Writes: checked-in IDL/ABI goldens (via check_solana_abi.py --write).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# clean-e2e.sh — bring up a clean local Solana + fhevm-cli vertical stack.
+#
+# Usage (from repo root):
+#   bash solana/scripts/e2e/clean-e2e.sh
+#
+# When: before full-vertical / adversarial live runs; CI solana-e2e setup.
+# Writes: local validator + Docker/fhevm-cli stack only (no checked-in goldens).
+#
 # Fully reproducible Solana e2e from a CLEAN fhevm-cli state (acceptance #2).
 #
 # One command brings up the WHOLE stack from scratch with the Solana code baked in

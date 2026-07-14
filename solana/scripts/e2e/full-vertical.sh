@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
+# full-vertical.sh — drive compute → public/user decrypt on a running local stack.
+#
+# Usage (from repo root):
+#   TE_VALUE=55 bash solana/scripts/e2e/full-vertical.sh
+#
+# When: after `bash solana/scripts/e2e/clean-e2e.sh`; CI solana-e2e vertical.
+# Writes: no checked-in goldens (live assertions only).
+#
 # Single scripted live run of the Solana decrypt vertical against the running fhevm-cli stack:
 #   compute (real on-chain zama-host FHE op -> host-listener -> coprocessor -> tfhe/sns-worker ->
 #   CiphertextCommits) -> public-decrypt -> user-decrypt, asserting correct cleartexts.
 #
 # Prereq: `solana/scripts/e2e/clean-e2e.sh` (clean fhevm-cli up + Solana side-stack). Reproducible
 # from clean state. MAINNET-safe: validator pinned 127.0.0.1:8899.
-#
-#   TE_VALUE=55 bash solana/scripts/e2e/full-vertical.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 VALUE="${TE_VALUE:-55}"
