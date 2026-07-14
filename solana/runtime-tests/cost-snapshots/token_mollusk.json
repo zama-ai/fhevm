@@ -1,17 +1,17 @@
 {
   "confidential_transfer/direct": {
-    "compute_units": 332805,
-    "instruction_data_bytes": 223,
-    "unique_accounts": 15
+    "compute_units": 332592,
+    "unique_accounts": 15,
+    "instruction_data_bytes": 223
   },
   "confidential_transfer/steady_state": {
-    "compute_units": 350274,
-    "instruction_data_bytes": 223,
-    "unique_accounts": 15
+    "compute_units": 350061,
+    "unique_accounts": 15,
+    "instruction_data_bytes": 223
   },
   "initialize_token_account": {
-    "compute_units": 65393,
-    "instruction_data_bytes": 16,
-    "unique_accounts": 12
+    "compute_units": 65180,
+    "unique_accounts": 12,
+    "instruction_data_bytes": 16
   }
 }
