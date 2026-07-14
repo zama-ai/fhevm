@@ -48,12 +48,14 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    the narrow produced-public lifecycle batch required by the relayer
    reconstruction. It drives the **decrypt vertical** against a local validator + full coprocessor/KMS
    stack — compute → public-decrypt (relayer MMR proof) → user-decrypt (current) → historical-user-decrypt
-   (superseded handle + live MMR proof) — exercising all three authorization paths.
-   **Coverage boundary:** the token *consume* flows (burn→redeem, disclose) are NOT yet in the CI e2e —
-   they are covered by `token_mollusk` (real `.so`, incl. after-supersession / consume-once / foreign-proof)
-   and driven on a live stack by `adversarial-l4.sh`, which is currently local-only. Their shared
-   proof/reconstruction/KMS integration IS e2e-covered via the public-decrypt leg (same `authorize_public`
-   mechanism); wiring the consume flows themselves into CI e2e is a tracked follow-up.
+   (superseded handle + live MMR proof) — exercising all three authorization paths. Operator execution
+   is intentionally representative rather than exhaustive: the live vertical retains one example for
+   encrypted/encrypted and encrypted/scalar binary wiring, unary type conversion, ternary selection,
+   bounded randomness, and each distinct composite encoding (`Sum`, `IsIn`, `MulDiv`). Exhaustive
+   operator contract belongs to pure conformance; Mollusk and direct real-TFHE add representative SBF
+   and cryptographic evidence. The live vertical also retains token composition through wrap → burn →
+   public release → redeem and disclose with witness-bound KMS certificates. `token_mollusk` owns the
+   broader negative matrix (including after-supersession, consume-once, and foreign-proof rejection).
 
 ## Reconstruction parity strategy
 

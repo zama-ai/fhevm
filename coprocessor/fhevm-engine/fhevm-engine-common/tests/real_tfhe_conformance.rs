@@ -120,6 +120,24 @@ fn bool_xor_uses_real_tfhe() {
 }
 
 #[test]
+fn bool_and_or_use_real_tfhe() {
+    let (_execution, keys) = install_server_key();
+    let and = run(
+        SupportedFheOperations::FheBitAnd,
+        &[encrypted_bool(true, keys), encrypted_bool(false, keys)],
+        BOOL_TYPE,
+    );
+    assert!(!decrypt_bool(and, keys));
+
+    let or = run(
+        SupportedFheOperations::FheBitOr,
+        &[encrypted_bool(true, keys), encrypted_bool(false, keys)],
+        BOOL_TYPE,
+    );
+    assert!(decrypt_bool(or, keys));
+}
+
+#[test]
 fn bool_not_uses_real_tfhe() {
     let (_execution, keys) = install_server_key();
     let result = run(
@@ -164,6 +182,43 @@ fn uint8_comparison_returns_bool() {
 }
 
 #[test]
+fn uint8_comparison_siblings_use_real_tfhe() {
+    let (_execution, keys) = install_server_key();
+    for (operation, left, right, expected) in [
+        (SupportedFheOperations::FheEq, 7, 7, true),
+        (SupportedFheOperations::FheNe, 7, 9, true),
+        (SupportedFheOperations::FheGe, 9, 7, true),
+        (SupportedFheOperations::FheGt, 9, 7, true),
+        (SupportedFheOperations::FheLe, 7, 9, true),
+    ] {
+        let result = run(
+            operation,
+            &[encrypted_u8(left, keys), encrypted_u8(right, keys)],
+            BOOL_TYPE,
+        );
+        assert_eq!(decrypt_bool(result, keys), expected, "{operation:?}");
+    }
+}
+
+#[test]
+fn uint8_min_max_use_real_tfhe() {
+    let (_execution, keys) = install_server_key();
+    let min = run(
+        SupportedFheOperations::FheMin,
+        &[encrypted_u8(7, keys), encrypted_u8(9, keys)],
+        U8_TYPE,
+    );
+    assert_eq!(decrypt_u8(min, keys), 7);
+
+    let max = run(
+        SupportedFheOperations::FheMax,
+        &[encrypted_u8(7, keys), encrypted_u8(9, keys)],
+        U8_TYPE,
+    );
+    assert_eq!(decrypt_u8(max, keys), 9);
+}
+
+#[test]
 fn uint8_scalar_shift_discards_high_bit() {
     let (_execution, keys) = install_server_key();
     let result = run(
@@ -183,6 +238,24 @@ fn uint8_scalar_rotate_preserves_high_bit() {
         U8_TYPE,
     );
     assert_eq!(decrypt_u8(result, keys), 0b0000_0011);
+}
+
+#[test]
+fn uint8_scalar_right_shift_and_rotate_use_real_tfhe() {
+    let (_execution, keys) = install_server_key();
+    let shifted = run(
+        SupportedFheOperations::FheShr,
+        &[encrypted_u8(0b1000_0000, keys), scalar(vec![1])],
+        U8_TYPE,
+    );
+    assert_eq!(decrypt_u8(shifted, keys), 0b0100_0000);
+
+    let rotated = run(
+        SupportedFheOperations::FheRotr,
+        &[encrypted_u8(0b0000_0011, keys), scalar(vec![1])],
+        U8_TYPE,
+    );
+    assert_eq!(decrypt_u8(rotated, keys), 0b1000_0001);
 }
 
 #[test]
