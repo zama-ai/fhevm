@@ -1,148 +1,148 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  dangerousPartialUpgradeCounts,
-  defineThresholdUpgradePlan,
-  quorumCompositionRange,
-  thresholdUpgradeCheckpoint,
-  type ThresholdUpgradePlan,
+  buildKmsUpgradeStep,
+  defineKmsUpgradePlan,
+  possibleUpgradedNodesInQuorum,
+  type KmsUpgradePlan,
+  upgradeStepsToTest,
 } from "./threshold-rollout";
 
-const fourPartyPlan: ThresholdUpgradePlan = {
+const fourNodePlan: KmsUpgradePlan = {
   quorum: 3,
-  parties: [
-    { partyId: 1, identity: "kms-core", version: "0.13.3" },
-    { partyId: 2, identity: "kms-core-2", version: "0.13.3" },
-    { partyId: 3, identity: "kms-core-3", version: "0.13.3" },
-    { partyId: 4, identity: "kms-core-4", version: "0.13.3" },
+  nodes: [
+    { nodeId: 1, identity: "kms-core", version: "0.13.3" },
+    { nodeId: 2, identity: "kms-core-2", version: "0.13.3" },
+    { nodeId: 3, identity: "kms-core-3", version: "0.13.3" },
+    { nodeId: 4, identity: "kms-core-4", version: "0.13.3" },
   ],
   targetVersion: "0.13.10",
   upgradeOrder: [1, 2, 3, 4],
 };
 
-describe("defineThresholdUpgradePlan", () => {
+describe("defineKmsUpgradePlan", () => {
   test("copies a valid plan", () => {
-    const plan = defineThresholdUpgradePlan(fourPartyPlan);
-    expect(plan).toEqual(fourPartyPlan);
-    expect(plan).not.toBe(fourPartyPlan);
-    expect(plan.parties).not.toBe(fourPartyPlan.parties);
-    expect(plan.upgradeOrder).not.toBe(fourPartyPlan.upgradeOrder);
+    const plan = defineKmsUpgradePlan(fourNodePlan);
+    expect(plan).toEqual(fourNodePlan);
+    expect(plan).not.toBe(fourNodePlan);
+    expect(plan.nodes).not.toBe(fourNodePlan.nodes);
+    expect(plan.upgradeOrder).not.toBe(fourNodePlan.upgradeOrder);
   });
 
   test("rejects invalid quorum and incomplete upgrade order", () => {
-    expect(() => defineThresholdUpgradePlan({ ...fourPartyPlan, quorum: 5 })).toThrow(/quorum/);
-    expect(() => defineThresholdUpgradePlan({ ...fourPartyPlan, upgradeOrder: [1, 2, 3] })).toThrow(
-      /every party exactly once/,
+    expect(() => defineKmsUpgradePlan({ ...fourNodePlan, quorum: 5 })).toThrow(/quorum/);
+    expect(() => defineKmsUpgradePlan({ ...fourNodePlan, upgradeOrder: [1, 2, 3] })).toThrow(
+      /every KMS node exactly once/,
     );
   });
 
-  test("rejects duplicate and unknown party identities", () => {
+  test("rejects duplicate IDs, unknown IDs, and duplicate identities", () => {
     expect(() =>
-      defineThresholdUpgradePlan({
-        ...fourPartyPlan,
-        parties: fourPartyPlan.parties.map((party, index) =>
-          index === 1 ? { ...party, partyId: 1 } : party,
+      defineKmsUpgradePlan({
+        ...fourNodePlan,
+        nodes: fourNodePlan.nodes.map((node, index) =>
+          index === 1 ? { ...node, nodeId: 1 } : node,
         ),
       }),
-    ).toThrow(/duplicate partyId/);
-    expect(() => defineThresholdUpgradePlan({ ...fourPartyPlan, upgradeOrder: [1, 2, 3, 9] })).toThrow(
-      /unknown partyId 9/,
+    ).toThrow(/duplicate nodeId/);
+    expect(() => defineKmsUpgradePlan({ ...fourNodePlan, upgradeOrder: [1, 2, 3, 9] })).toThrow(
+      /unknown nodeId 9/,
     );
     expect(() =>
-      defineThresholdUpgradePlan({
-        ...fourPartyPlan,
-        parties: fourPartyPlan.parties.map((party, index) =>
-          index === 1 ? { ...party, identity: "kms-core" } : party,
+      defineKmsUpgradePlan({
+        ...fourNodePlan,
+        nodes: fourNodePlan.nodes.map((node, index) =>
+          index === 1 ? { ...node, identity: "kms-core" } : node,
         ),
       }),
-    ).toThrow(/duplicate party identity/);
+    ).toThrow(/duplicate KMS node identity/);
   });
 
   test("rejects empty versions and identities", () => {
-    expect(() => defineThresholdUpgradePlan({ ...fourPartyPlan, targetVersion: " " })).toThrow(/targetVersion/);
+    expect(() => defineKmsUpgradePlan({ ...fourNodePlan, targetVersion: " " })).toThrow(/targetVersion/);
     expect(() =>
-      defineThresholdUpgradePlan({
-        ...fourPartyPlan,
-        parties: fourPartyPlan.parties.map((party, index) =>
-          index === 0 ? { ...party, version: "" } : party,
+      defineKmsUpgradePlan({
+        ...fourNodePlan,
+        nodes: fourNodePlan.nodes.map((node, index) =>
+          index === 0 ? { ...node, version: "" } : node,
         ),
       }),
     ).toThrow(/version/);
   });
 });
 
-describe("quorumCompositionRange", () => {
-  test("derives both dangerous half-upgraded compositions for N=4, Q=3", () => {
-    expect(quorumCompositionRange(4, 3, 2)).toEqual({
-      minimumUpgradedResponders: 1,
-      maximumUpgradedResponders: 2,
+describe("possibleUpgradedNodesInQuorum", () => {
+  test("returns both possible mixes after two of four upgrade steps complete", () => {
+    expect(possibleUpgradedNodesInQuorum(4, 3, 2)).toEqual({
+      minUpgradedNodeCountInQuorum: 1,
+      maxUpgradedNodeCountInQuorum: 2,
     });
   });
 
-  test("handles homogeneous endpoints", () => {
-    expect(quorumCompositionRange(4, 3, 0)).toEqual({
-      minimumUpgradedResponders: 0,
-      maximumUpgradedResponders: 0,
+  test("handles the steps before the first upgrade and after the last upgrade", () => {
+    expect(possibleUpgradedNodesInQuorum(4, 3, 0)).toEqual({
+      minUpgradedNodeCountInQuorum: 0,
+      maxUpgradedNodeCountInQuorum: 0,
     });
-    expect(quorumCompositionRange(4, 3, 4)).toEqual({
-      minimumUpgradedResponders: 3,
-      maximumUpgradedResponders: 3,
+    expect(possibleUpgradedNodesInQuorum(4, 3, 4)).toEqual({
+      minUpgradedNodeCountInQuorum: 3,
+      maxUpgradedNodeCountInQuorum: 3,
     });
   });
 });
 
-describe("dangerousPartialUpgradeCounts", () => {
-  test("covers every partial state for N=4, Q=3", () => {
-    expect(dangerousPartialUpgradeCounts(4, 3)).toEqual([1, 2, 3]);
+describe("upgradeStepsToTest", () => {
+  test("tests every partial step for four nodes with a quorum of three", () => {
+    expect(upgradeStepsToTest(4, 3)).toEqual([1, 2, 3]);
   });
 
-  test("covers the complete odd majority-quorum middle interval", () => {
-    expect(dangerousPartialUpgradeCounts(7, 5)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(dangerousPartialUpgradeCounts(5, 4)).toEqual([1, 2, 3, 4]);
+  test("tests every partial step when the quorum is a large majority", () => {
+    expect(upgradeStepsToTest(7, 5)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(upgradeStepsToTest(5, 4)).toEqual([1, 2, 3, 4]);
   });
 });
 
-describe("thresholdUpgradeCheckpoint", () => {
-  test("returns one deterministic quorum for each feasible composition", () => {
-    const checkpoint = thresholdUpgradeCheckpoint(fourPartyPlan, 2);
+describe("buildKmsUpgradeStep", () => {
+  test("returns one deterministic quorum for each feasible mix", () => {
+    const step = buildKmsUpgradeStep(fourNodePlan, 2);
 
-    expect(checkpoint).toMatchObject({
-      upgradedParties: 2,
-      minimumUpgradedResponders: 1,
-      maximumUpgradedResponders: 2,
+    expect(step).toMatchObject({
+      completedUpgradeSteps: 2,
+      minUpgradedNodeCountInQuorum: 1,
+      maxUpgradedNodeCountInQuorum: 2,
     });
-    expect(checkpoint.representativeQuorums).toEqual([
+    expect(step.quorumsToTest).toEqual([
       {
-        pendingResponders: 2,
-        upgradedResponders: 1,
-        parties: [
-          { partyId: 1, identity: "kms-core", version: "0.13.10", upgradeState: "upgraded" },
-          { partyId: 3, identity: "kms-core-3", version: "0.13.3", upgradeState: "pending" },
-          { partyId: 4, identity: "kms-core-4", version: "0.13.3", upgradeState: "pending" },
+        notYetUpgradedNodeCount: 2,
+        upgradedNodeCount: 1,
+        nodes: [
+          { nodeId: 1, identity: "kms-core", version: "0.13.10", upgradeState: "upgraded" },
+          { nodeId: 3, identity: "kms-core-3", version: "0.13.3", upgradeState: "not-upgraded" },
+          { nodeId: 4, identity: "kms-core-4", version: "0.13.3", upgradeState: "not-upgraded" },
         ],
       },
       {
-        pendingResponders: 1,
-        upgradedResponders: 2,
-        parties: [
-          { partyId: 1, identity: "kms-core", version: "0.13.10", upgradeState: "upgraded" },
-          { partyId: 2, identity: "kms-core-2", version: "0.13.10", upgradeState: "upgraded" },
-          { partyId: 3, identity: "kms-core-3", version: "0.13.3", upgradeState: "pending" },
+        notYetUpgradedNodeCount: 1,
+        upgradedNodeCount: 2,
+        nodes: [
+          { nodeId: 1, identity: "kms-core", version: "0.13.10", upgradeState: "upgraded" },
+          { nodeId: 2, identity: "kms-core-2", version: "0.13.10", upgradeState: "upgraded" },
+          { nodeId: 3, identity: "kms-core-3", version: "0.13.3", upgradeState: "not-upgraded" },
         ],
       },
     ]);
   });
 
   test("uses the declared upgrade order for membership and receipt-ready identity", () => {
-    const checkpoint = thresholdUpgradeCheckpoint({ ...fourPartyPlan, upgradeOrder: [4, 2, 3, 1] }, 1);
+    const step = buildKmsUpgradeStep({ ...fourNodePlan, upgradeOrder: [4, 2, 3, 1] }, 1);
 
-    expect(checkpoint.parties).toEqual([
-      { partyId: 1, identity: "kms-core", version: "0.13.3", upgradeState: "pending" },
-      { partyId: 2, identity: "kms-core-2", version: "0.13.3", upgradeState: "pending" },
-      { partyId: 3, identity: "kms-core-3", version: "0.13.3", upgradeState: "pending" },
-      { partyId: 4, identity: "kms-core-4", version: "0.13.10", upgradeState: "upgraded" },
+    expect(step.nodes).toEqual([
+      { nodeId: 1, identity: "kms-core", version: "0.13.3", upgradeState: "not-upgraded" },
+      { nodeId: 2, identity: "kms-core-2", version: "0.13.3", upgradeState: "not-upgraded" },
+      { nodeId: 3, identity: "kms-core-3", version: "0.13.3", upgradeState: "not-upgraded" },
+      { nodeId: 4, identity: "kms-core-4", version: "0.13.10", upgradeState: "upgraded" },
     ]);
-    expect(checkpoint.representativeQuorums[0].parties.map((party) => party.identity)).toEqual([
+    expect(step.quorumsToTest[0].nodes.map((node) => node.identity)).toEqual([
       "kms-core-2",
       "kms-core-3",
       "kms-core",
@@ -150,21 +150,21 @@ describe("thresholdUpgradeCheckpoint", () => {
   });
 
   test("reports operation state independently from an already-matching version", () => {
-    const checkpoint = thresholdUpgradeCheckpoint(
+    const step = buildKmsUpgradeStep(
       {
-        ...fourPartyPlan,
-        parties: fourPartyPlan.parties.map((party, index) =>
-          index === 2 ? { ...party, version: fourPartyPlan.targetVersion } : party,
+        ...fourNodePlan,
+        nodes: fourNodePlan.nodes.map((node, index) =>
+          index === 2 ? { ...node, version: fourNodePlan.targetVersion } : node,
         ),
       },
       1,
     );
 
-    expect(checkpoint.parties[2]).toEqual({
-      partyId: 3,
+    expect(step.nodes[2]).toEqual({
+      nodeId: 3,
       identity: "kms-core-3",
       version: "0.13.10",
-      upgradeState: "pending",
+      upgradeState: "not-upgraded",
     });
   });
 });
