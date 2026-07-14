@@ -185,8 +185,8 @@ dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['re
 [ "$dv" = "$VALUE" ] && echo "    public-decrypt cleartext=$dv OK" || fail "public-decrypt $dv != $VALUE"
 
 echo "==> [user-decrypt] PURE-SDK: @fhevm/sdk/solana keygen + /v3/user-decrypt (ed25519) + IN-SDK de-signcrypt (no kms checkout)"
-# Whole round-trip in JS: solana-userdecrypt-full.ts does ML-KEM keygen, the v3 ed25519 request, and
-# de-signcryption to cleartext via the SDK's deSigncryptSolanaUserDecrypt (vendored Solana TKMS WASM,
+# Whole round-trip in fhevm-cli: the public SDK does ML-KEM keygen, the v3 ed25519 request, and
+# de-signcryption to cleartext via deSigncryptSolanaUserDecrypt (vendored Solana TKMS WASM,
 # kms_lib.v0.14.0-solana). The deployer's default keypair is the user whose ACL grants USE; its
 # pubkey is the sole allowed acl_domain_key (matches the compute leg's TE_ALLOW). No kms-core build.
 UD_SK="0x$(python3 -c "import json,os;print(bytes(json.load(open(os.path.expanduser('~/.config/solana/id.json')))[:32]).hex())")"
@@ -195,7 +195,7 @@ UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
     UD_RELAYER_URL=http://127.0.0.1:3000 UD_CONTRACTS_CHAIN_ID="$SID" UD_HANDLE="$H" \
     UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" \
     UD_ACL_VALUE_KEY="$VK" UD_EXPECTED="$VALUE" \
-    bun run solana-userdecrypt-full.ts ) \
+    ./fhevm-cli test solana-current-user-decrypt ) \
   || fail "pure-SDK user-decrypt failed"
 echo "    user-decrypt cleartext=$VALUE OK (PURE-SDK: ed25519 v3 + in-SDK de-signcryption, no kms checkout)"
 
@@ -243,12 +243,12 @@ done
 ( cd "$ROOT/test-suite/fhevm" && \
     UD_RELAYER_URL=http://127.0.0.1:3000 UD_CONTRACTS_CHAIN_ID="$SID" UD_HANDLE="$HIST_H_OLD" \
     UD_SECRET_KEY="$UD_SK" UD_CONTEXT_ID="$UD_CID" UD_ALLOWED_DOMAIN_KEYS="$USER" \
-    UD_ACL_VALUE_KEY="$HIST_ACL_VALUE_KEY" UD_EXPECTED="$VALUE" UD_HISTORICAL=1 \
+    UD_ACL_VALUE_KEY="$HIST_ACL_VALUE_KEY" UD_EXPECTED="$VALUE" \
     UD_MMR_ENCRYPTED_VALUE_ACCOUNT="$HIST_ENCRYPTED_VALUE_ACCOUNT" UD_MMR_PEAKS="$HIST_PEAKS" \
     UD_MMR_LEAF_COUNT="$HIST_LEAF_COUNT" UD_MMR_PROOF_SLOT="$HIST_PROOF_SLOT" \
     UD_MMR_LEAF_INDEX="$HIST_LEAF_INDEX" UD_MMR_SIBLINGS="$HIST_SIBLINGS" \
     UD_MMR_PROOF_BYTES="$HIST_MMR_PROOF_BYTES" UD_MMR_SUBJECT="$HIST_SUBJECT" \
-    bun run solana-userdecrypt-full.ts ) \
+    bun run solana-userdecrypt-historical.ts ) \
   || fail "historical pure-SDK user-decrypt failed"
 echo "OK historical-user-decrypt cleartext=$VALUE old=$HIST_H_OLD new=$HIST_H_NEW"
 

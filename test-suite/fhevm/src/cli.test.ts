@@ -148,6 +148,7 @@ describe("cli", () => {
     expect(result.stdout).toContain("standard");
     expect(result.stdout).toContain("rollout-standard");
     expect(result.stdout).toContain("multi-chain-isolation");
+    expect(result.stdout).toContain("solana-current-user-decrypt");
     expect(result.stdout).toContain("ciphertext-drift - 2+ coprocessors");
     expect(result.stdout).toContain("ciphertext-drift-auto-recovery - standard");
   });

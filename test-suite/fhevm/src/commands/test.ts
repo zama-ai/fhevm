@@ -11,6 +11,11 @@ import { pause, shellEscape, unpause } from "../flow/up-flow";
 import { hostReachableRpcUrl } from "../utils/fs";
 import { run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
+import {
+  SOLANA_CURRENT_USER_DECRYPT_DESCRIPTION,
+  SOLANA_CURRENT_USER_DECRYPT_PROFILE,
+  runSolanaCurrentUserDecrypt,
+} from "../solana/current-user-decrypt";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
@@ -65,6 +70,7 @@ const TEST_PROFILE_NAMES = [
   "kms-generation",
   "light",
   "rollout-standard",
+  SOLANA_CURRENT_USER_DECRYPT_PROFILE,
   "standard",
 ].sort();
 // The below-quorum probe is expected to hang waiting for KMS responses, so it is killed after
@@ -117,6 +123,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
   "kms-context-switch":
     "Drive RFC-005 NewKmsContext + NewKmsEpoch on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each (threshold-mode KMS).",
+  [SOLANA_CURRENT_USER_DECRYPT_PROFILE]: SOLANA_CURRENT_USER_DECRYPT_DESCRIPTION,
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -861,6 +868,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     throw new PreflightError(`Unknown test profile ${testName}. Valid: ${TEST_PROFILE_NAMES.join(", ")}`);
   }
   validateNamedProfileGrep(testName, options.grep);
+  if (testName === SOLANA_CURRENT_USER_DECRYPT_PROFILE) {
+    console.log(`[test] ${SOLANA_CURRENT_USER_DECRYPT_PROFILE}`);
+    const started = Date.now();
+    await runLogged(SOLANA_CURRENT_USER_DECRYPT_PROFILE, started, runSolanaCurrentUserDecrypt);
+    return;
+  }
   const state = await loadState();
   if (!state?.discovery?.actualFheKeyId) {
     throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
