@@ -49,9 +49,8 @@ run_public_decrypt_with_proof() {
   local label="$1"
   local handle="$2"
   local acl="$3"
-  local expected="${4:-}"
-  local expected_leaf_count="${5:-}"
-  local expected_leaf_index="${6:-}"
+  local expected_leaf_count="${4:-}"
+  local expected_leaf_index="${5:-}"
   # The e2e sources MMR proofs from the running relayer proof service. The client retries a transient
   # `503 lagging` internally (re-invoking here would be unsafe for stateful steps).
   local proof
@@ -89,24 +88,16 @@ run_public_decrypt_with_proof() {
   fi
   PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES="$pub_mmr_inclusion_proof_bytes"
 
-  local result
-  if [ -n "$expected" ]; then
-    result="$(cd "$ROOT/test-suite/fhevm" && \
-      PD_RELAYER_URL=http://127.0.0.1:3000 PD_HANDLE="$handle" PD_CONTEXT_ID="$PUBLIC_CONTEXT_ID" \
-      PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
-      PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
-      PD_MMR_LEAF_INDEX="$pub_leaf_index" PD_MMR_SIBLINGS="$pub_siblings" \
-      PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" PD_EXPECTED="$expected" node solana-publicdecrypt.ts 2>&1)" \
-      || fail "$label public-decrypt failed: $result"
-  else
-    result="$(cd "$ROOT/test-suite/fhevm" && \
-      PD_RELAYER_URL=http://127.0.0.1:3000 PD_HANDLE="$handle" PD_CONTEXT_ID="$PUBLIC_CONTEXT_ID" \
-      PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
-      PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
-      PD_MMR_LEAF_INDEX="$pub_leaf_index" PD_MMR_SIBLINGS="$pub_siblings" \
-      PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" node solana-publicdecrypt.ts 2>&1)" \
-      || fail "$label public-decrypt failed: $result"
+  local output result
+  if ! output="$(cd "$ROOT/test-suite/fhevm" && \
+    PD_CONTRACTS_CHAIN_ID="$SID" PD_RELAYER_URL=http://127.0.0.1:3000 PD_HANDLE="$handle" PD_CONTEXT_ID="$PUBLIC_CONTEXT_ID" \
+    PD_MMR_ENCRYPTED_VALUE_ACCOUNT="$pub_encrypted_value_account" PD_ACL_VALUE_KEY="$pub_acl_value_key" \
+    PD_MMR_PEAKS="$pub_peaks" PD_MMR_LEAF_COUNT="$pub_leaf_count" PD_MMR_PROOF_SLOT="$pub_proof_slot" \
+    PD_MMR_PROOF_BYTES="$pub_mmr_proof_bytes" \
+    ./fhevm-cli test solana-public-decrypt 2>&1)"; then
+    fail "$label public-decrypt failed: $output"
   fi
+  result="$(printf '%s\n' "$output" | tail -1)"
   PUBLIC_DECRYPT_JSON="$result"
 }
 
@@ -179,7 +170,7 @@ for i in $(seq 1 30); do
 done
 
 echo "==> [public-decrypt] relayer /v2/public-decrypt"
-run_public_decrypt_with_proof "compute" "$H" "$H_ACL" "$VALUE"
+run_public_decrypt_with_proof "compute" "$H" "$H_ACL"
 r="$PUBLIC_DECRYPT_JSON"
 dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 [ "$dv" = "$VALUE" ] && echo "    public-decrypt cleartext=$dv OK" || fail "public-decrypt $dv != $VALUE"
@@ -280,7 +271,7 @@ for i in $(seq 1 30); do
 done
 
 echo "==> [input-flow] public-decrypt result"
-run_public_decrypt_with_proof "input-flow" "$RH" "$RACL" "$EXPECT"
+run_public_decrypt_with_proof "input-flow" "$RH" "$RACL"
 er="$PUBLIC_DECRYPT_JSON"
 edv="$(echo "$er" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 [ "$edv" = "$EXPECT" ] && echo "    input-flow public-decrypt cleartext=$edv == $IV+$ADD OK" \
@@ -290,8 +281,6 @@ edv="$(echo "$er" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['
 # Usage: assert_decrypt LABEL HANDLE ACL EXPECTED_VALUE  (use "lt:N" to assert result < N)
 assert_decrypt() {
   local label="$1" handle="$2" acl="$3" expected="$4"
-  local public_decrypt_expected="$expected"
-  [[ "$expected" == lt:* ]] && public_decrypt_expected=""
   local hh="${handle#0x}"
   local i row r dv
   for i in $(seq 1 30); do
@@ -301,7 +290,7 @@ assert_decrypt() {
     [ "$i" = 30 ] && fail "$label SNS commit timed out"
     sleep 6
   done
-  run_public_decrypt_with_proof "$label" "$handle" "$acl" "$public_decrypt_expected"
+  run_public_decrypt_with_proof "$label" "$handle" "$acl"
   r="$PUBLIC_DECRYPT_JSON"
   dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
   if [[ "$expected" == lt:* ]]; then
@@ -490,7 +479,7 @@ echo "    disclosure request witness created (KMS context pinned); handle releas
 # Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert. This lineage
 # must contain the produced-public lifecycle leaf followed by the explicit make_handle_public leaf; a
 # proof for a one-leaf lineage would not exercise lifecycle-batch ingestion.
-run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL" "" 2 1
+run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL" 2 1
 cr="$PUBLIC_DECRYPT_JSON"
 # The burned handle's public-decrypt MMR proof (DD-036): both the redeem and disclose consume
 # steps authorize by verifying it against the lineage's on-chain peaks. request_burn_redemption

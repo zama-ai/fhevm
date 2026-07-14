@@ -16,6 +16,11 @@ import {
   SOLANA_CURRENT_USER_DECRYPT_PROFILE,
   runSolanaCurrentUserDecrypt,
 } from "../solana/current-user-decrypt";
+import {
+  SOLANA_PUBLIC_DECRYPT_DESCRIPTION,
+  SOLANA_PUBLIC_DECRYPT_PROFILE,
+  runSolanaPublicDecrypt,
+} from "../solana/public-decrypt";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
@@ -71,6 +76,7 @@ const TEST_PROFILE_NAMES = [
   "light",
   "rollout-standard",
   SOLANA_CURRENT_USER_DECRYPT_PROFILE,
+  SOLANA_PUBLIC_DECRYPT_PROFILE,
   "standard",
 ].sort();
 // The below-quorum probe is expected to hang waiting for KMS responses, so it is killed after
@@ -124,6 +130,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "kms-context-switch":
     "Drive RFC-005 NewKmsContext + NewKmsEpoch on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each (threshold-mode KMS).",
   [SOLANA_CURRENT_USER_DECRYPT_PROFILE]: SOLANA_CURRENT_USER_DECRYPT_DESCRIPTION,
+  [SOLANA_PUBLIC_DECRYPT_PROFILE]: SOLANA_PUBLIC_DECRYPT_DESCRIPTION,
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -872,6 +879,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     console.log(`[test] ${SOLANA_CURRENT_USER_DECRYPT_PROFILE}`);
     const started = Date.now();
     await runLogged(SOLANA_CURRENT_USER_DECRYPT_PROFILE, started, runSolanaCurrentUserDecrypt);
+    return;
+  }
+  if (testName === SOLANA_PUBLIC_DECRYPT_PROFILE) {
+    console.log(`[test] ${SOLANA_PUBLIC_DECRYPT_PROFILE}`);
+    await runSolanaPublicDecrypt();
     return;
   }
   const state = await loadState();

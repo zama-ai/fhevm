@@ -10,10 +10,11 @@ import { generateTransportKeyPair as generateTransportKeyPair_ } from '../../../
 import { decryptModule } from '../../../core/modules/decrypt/module/index.js';
 import { hyperWasmResolveTkmsModuleVersion } from '../../../core/runtime/HyperWasmSolver-p.js';
 import { userDecrypt } from '../../actions/userDecrypt.js';
+import { solanaPublicDecryptActions, type SolanaPublicDecryptActions } from './publicDecrypt.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type SolanaDecryptActions = {
+export type SolanaDecryptActions = SolanaPublicDecryptActions & {
   /** Runs the full Solana ed25519 user-decrypt round-trip and returns the decrypted clear values. */
   readonly userDecrypt: (parameters: SolanaUserDecryptParameters) => Promise<SolanaUserDecryptResult>;
   /** Generates a fresh E2E transport (ML-KEM) key pair for decryption. */
@@ -71,6 +72,7 @@ export function solanaDecryptActions(
     };
     return {
       actions: {
+        ...solanaPublicDecryptActions(fhevm).actions,
         // Auto-init: await fhevm.ready so _initDecrypt has run before userDecrypt needs TKMS.
         // Cast: createFhevmBaseClient always returns a CoreFhevmImpl which satisfies Fhevm (has `ready`).
         userDecrypt: async (parameters) => {

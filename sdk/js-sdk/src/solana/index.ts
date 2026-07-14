@@ -3,6 +3,8 @@ export { setFhevmRuntimeConfig, hasFhevmRuntimeConfig } from './internal/config.
 export { createFhevmBaseClient } from './clients/createFhevmBaseClient.js';
 export { createFhevmDecryptClient } from './clients/createFhevmDecryptClient.js';
 export type { FhevmSolanaDecryptClient } from './clients/createFhevmDecryptClient.js';
+export { createFhevmPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
+export type { FhevmSolanaPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export { createFhevmEncryptClient } from './clients/createFhevmEncryptClient.js';
 export type { FhevmSolanaEncryptClient } from './clients/createFhevmEncryptClient.js';
 
@@ -17,7 +19,12 @@ export {
 export type { MmrProof } from './proof.js';
 
 export type { SolanaUserDecryptParameters, SolanaUserDecryptResult } from './actions/userDecrypt.js';
+export type {
+  SolanaPublicDecryptCertificateClaim,
+  SolanaPublicDecryptCertificateParameters,
+} from './actions/publicDecryptCertificate.js';
 export type { SolanaDecryptActions } from './clients/decorators/decrypt.js';
+export type { SolanaPublicDecryptActions } from './clients/decorators/publicDecrypt.js';
 
 export type {
   SolanaEncryptInputParameters,
