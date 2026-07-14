@@ -139,14 +139,26 @@ describe('publicDecryptCertificate', () => {
     );
   });
 
+  it('uses the requested extraData when the relayer omits the optional response field', async () => {
+    const result = successResult();
+    vi.spyOn(RelayerAsyncRequest.prototype, 'run').mockResolvedValue({
+      decryptedValue: result.decryptedValue,
+      signatures: result.signatures,
+    } as never);
+
+    await expect(publicDecryptCertificate(context, parameters())).resolves.toMatchObject({
+      extraData: requestExtraData(),
+    });
+  });
+
   it.each([
     [{ ...successResult(), decryptedValue: '' }, 'cleartext must be nonempty'],
     [{ ...successResult(), decryptedValue: '0' }, 'cleartext must be nonempty'],
     [{ ...successResult(), decryptedValue: 'zz' }, 'cleartext must be nonempty'],
     [{ ...successResult(), signatures: [] }, 'at least one signature'],
     [{ ...successResult(), signatures: ['ab'] }, 'valid 65-byte hex'],
+    [{ ...successResult(), signatures: ['a'] }, 'got 1 hex characters'],
     [{ ...successResult(), signatures: ['zz'.repeat(65)] }, 'valid 65-byte hex'],
-    [{ ...successResult(), extraData: undefined }, 'missing extraData'],
     [{ ...successResult(), extraData: '0x00' }, 'extraData does not match'],
   ])('rejects malformed certificate material %#', async (result, message) => {
     vi.spyOn(RelayerAsyncRequest.prototype, 'run').mockResolvedValue(result as never);

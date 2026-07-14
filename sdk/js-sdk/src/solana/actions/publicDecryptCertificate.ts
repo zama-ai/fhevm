@@ -102,10 +102,7 @@ export async function publicDecryptCertificate(
     readonly extraData?: string | undefined;
   };
 
-  if (result.extraData === undefined) {
-    throw new Error('public-decrypt response is missing extraData');
-  }
-  if (!bytesEqual(hexToBytes(result.extraData), requestExtraData)) {
+  if (result.extraData !== undefined && !bytesEqual(hexToBytes(result.extraData), requestExtraData)) {
     throw new Error('public-decrypt response extraData does not match the request');
   }
   if (
@@ -120,7 +117,7 @@ export async function publicDecryptCertificate(
   }
   for (const signature of result.signatures) {
     if (signature.length !== 130 || !/^[0-9a-f]+$/i.test(signature)) {
-      throw new Error(`public-decrypt signature must be valid 65-byte hex, got ${signature.length / 2} bytes`);
+      throw new Error(`public-decrypt signature must be valid 65-byte hex, got ${signature.length} hex characters`);
     }
   }
 
@@ -128,7 +125,7 @@ export async function publicDecryptCertificate(
     handle: handle.bytes32Hex,
     abiEncodedCleartext: result.decryptedValue,
     signatures: result.signatures,
-    extraData: result.extraData,
+    extraData: result.extraData ?? requestExtraDataHex,
     inclusionProof: decoded.proof,
   };
 }
