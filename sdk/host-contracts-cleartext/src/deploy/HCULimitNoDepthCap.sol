@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.24;
 
-import {HCULimit} from "@fhevm/host-contracts-cleartext/contracts/HCULimit.sol";
+import {HCULimit} from "../contracts/HCULimit.sol";
 
 /**
  * An `HCULimit` that keeps every per-transaction and per-block HCU charge, but drops ONLY the sequential
@@ -13,7 +13,9 @@ import {HCULimit} from "@fhevm/host-contracts-cleartext/contracts/HCULimit.sol";
  * PROPAGATION rule (`opHCU + max(input depths)`) and its transaction accounting, and simply stores the deeper
  * handle instead of reverting.
  *
- * Installed via `FhevmTest.disableHCUDepthLimit()`, which upgrades the HCULimit proxy in place.
+ * It lives here rather than in a consumer because it reaches into `HCULimit`'s internal accounting API —
+ * knowledge that changes with the protocol version, like everything else in this package. Installed via
+ * `FhevmStack.disableHCUDepthLimit()`, which upgrades the HCULimit proxy in place.
  */
 contract HCULimitNoDepthCap is HCULimit {
     function _adjustAndCheckFheTransactionLimitOneOp(uint256 opHCU, address caller, bytes32 op1, bytes32 result)

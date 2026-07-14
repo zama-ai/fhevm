@@ -5,9 +5,11 @@ export interface Eip1193Provider {
 }
 
 /**
- * `hardhat node` is deliberately unsupported: it is the only mode where the engine would have to live
- * in a different process from the test, which is what the old plugin's fake-relayer JSON-RPC transport
- * existed to bridge. In-process `hardhat` and `anvil` both embed the engine.
+ * The two dev-node cheat-code RPC namespaces. "hardhat" covers both the in-process Hardhat network and
+ * an external `hardhat node`; "anvil" covers anvil. The engine always lives in the test process and
+ * drives whichever node it is given through these methods — via the in-process provider or plain HTTP.
+ * (The old plugin's fake-relayer transport existed to run the engine in a separate process; nothing
+ * needs that anymore.)
  */
 export type NodeKind = "hardhat" | "anvil";
 
@@ -56,7 +58,7 @@ export async function detectNodeKind(provider: Eip1193Provider): Promise<NodeKin
   }
   throw new Error(
     "Unsupported network: neither `anvil_nodeInfo` nor `hardhat_metadata` is available. " +
-      "The FHEVM cleartext mock requires an in-process Hardhat network or an anvil node.",
+      "The FHEVM cleartext mock requires the in-process Hardhat network, a `hardhat node`, or anvil.",
   );
 }
 

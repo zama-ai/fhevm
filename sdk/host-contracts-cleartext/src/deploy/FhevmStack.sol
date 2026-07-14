@@ -1,33 +1,38 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 
 // Imported for its side effect: `deployCodeTo` resolves an artifact by name out of the CONSUMING project's
 // `out/`, and solc only emits an artifact for a file something actually imports. Without this import the
-// proxy compiles inside forge-fhevm (where all of `src/` is built) but not in a downstream project, which
+// proxy compiles inside this package (where all of `src/` is built) but not in a downstream project, which
 // then fails at runtime with "vm.getCode: no matching artifact found".
 // forge-lint: disable-next-line(unused-import)
 import {DeployableERC1967Proxy} from "./DeployableERC1967Proxy.sol";
+// Same side-effect story: `_deployPauserSet` resolves PauserSet by artifact name, and nothing here
+// references the type, so only this import makes the consumer's build emit the artifact.
+// forge-lint: disable-next-line(unused-import)
+import {PauserSet} from "../contracts/immutable/PauserSet.sol";
 
-import {ACL} from "@fhevm/host-contracts-cleartext/contracts/ACL.sol";
-import {FHEVMExecutor} from "@fhevm/host-contracts-cleartext/contracts/FHEVMExecutor.sol";
-import {HCULimit} from "@fhevm/host-contracts-cleartext/contracts/HCULimit.sol";
-import {InputVerifier} from "@fhevm/host-contracts-cleartext/contracts/InputVerifier.sol";
-import {KMSVerifier} from "@fhevm/host-contracts-cleartext/contracts/KMSVerifier.sol";
-import {KMSGeneration} from "@fhevm/host-contracts-cleartext/contracts/KMSGeneration.sol";
-import {ProtocolConfig} from "@fhevm/host-contracts-cleartext/contracts/ProtocolConfig.sol";
-import {PauserSet} from "@fhevm/host-contracts-cleartext/contracts/immutable/PauserSet.sol";
-import {EmptyUUPSProxy} from "@fhevm/host-contracts-cleartext/contracts/emptyProxy/EmptyUUPSProxy.sol";
-import {EmptyUUPSProxyACL} from "@fhevm/host-contracts-cleartext/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {IProtocolConfig} from "@fhevm/host-contracts-cleartext/contracts/interfaces/IProtocolConfig.sol";
-import {KmsNodeParams, PcrValues} from "@fhevm/host-contracts-cleartext/contracts/shared/Structs.sol";
+import {HCULimitNoDepthCap} from "./HCULimitNoDepthCap.sol";
 
-import {CleartextArithmetic} from "@fhevm/host-contracts-cleartext/cleartext/CleartextArithmetic.sol";
-import {CleartextDB} from "@fhevm/host-contracts-cleartext/cleartext/CleartextDB.sol";
-import {CleartextFHEVMExecutor} from "@fhevm/host-contracts-cleartext/cleartext/CleartextFHEVMExecutor.sol";
-import {CleartextInputVerifier} from "@fhevm/host-contracts-cleartext/cleartext/CleartextInputVerifier.sol";
-import {CleartextKMSVerifier} from "@fhevm/host-contracts-cleartext/cleartext/CleartextKMSVerifier.sol";
+import {ACL} from "../contracts/ACL.sol";
+import {FHEVMExecutor} from "../contracts/FHEVMExecutor.sol";
+import {HCULimit} from "../contracts/HCULimit.sol";
+import {InputVerifier} from "../contracts/InputVerifier.sol";
+import {KMSVerifier} from "../contracts/KMSVerifier.sol";
+import {KMSGeneration} from "../contracts/KMSGeneration.sol";
+import {ProtocolConfig} from "../contracts/ProtocolConfig.sol";
+import {EmptyUUPSProxy} from "../contracts/emptyProxy/EmptyUUPSProxy.sol";
+import {EmptyUUPSProxyACL} from "../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
+import {IProtocolConfig} from "../contracts/interfaces/IProtocolConfig.sol";
+import {KmsNodeParams, PcrValues} from "../contracts/shared/Structs.sol";
+
+import {CleartextArithmetic} from "../cleartext/CleartextArithmetic.sol";
+import {CleartextDB} from "../cleartext/CleartextDB.sol";
+import {CleartextFHEVMExecutor} from "../cleartext/CleartextFHEVMExecutor.sol";
+import {CleartextInputVerifier} from "../cleartext/CleartextInputVerifier.sol";
+import {CleartextKMSVerifier} from "../cleartext/CleartextKMSVerifier.sol";
 
 import {
     aclAdd,
@@ -40,15 +45,21 @@ import {
     pauserSetAdd,
     cleartextArithmeticAdd,
     cleartextDbAdd
-} from "@fhevm/host-contracts-cleartext/addresses/FHEVMHostAddresses.sol";
+} from "../addresses/FHEVMHostAddresses.sol";
 
 /**
- * Stands the cleartext host stack up at the addresses baked into its own bytecode.
+ * Stands the cleartext host stack up at the addresses baked into its own bytecode — the Solidity counterpart
+ * of this package's `ts/deployAt.ts`, for Foundry consumers.
+ *
+ * Deployment belongs to THIS package, for every target: a real chain (`ts/deploy.ts`, CREATE-based), a dev
+ * node driven from TypeScript (`ts/deployAt.ts`), or a forge test (this contract). A consumer (such as
+ * `forge-fhevm`) supplies only what the package cannot know: WHERE the stack must live (its `addresses.sol`
+ * behind the `fhevm-config` remapping) and WHAT to initialize it with (the signer addresses).
  *
  * Everything here is a REAL deployment — genuine ERC-1967 proxies, genuine initializers. The only cheat is
  * `deployCodeTo`, which runs a proxy's constructor at a chosen address instead of a nonce-derived one. We
- * need that because the addresses are fixed (see src/config/addresses.sol): a contract under test compiles
- * `ZamaConfig`'s local addresses into itself, so the stack has to meet it there.
+ * need that because the addresses are fixed: a contract under test compiles `ZamaConfig`'s local addresses
+ * into itself, so the stack has to meet it there.
  *
  * ORDER IS LOAD-BEARING, for two reasons:
  *
@@ -122,6 +133,23 @@ abstract contract FhevmStack is Test {
             address(new CleartextKMSVerifier()),
             abi.encodeCall(KMSVerifier.initializeFromEmptyProxy, (kmsVerifierAdd, uint64(block.chainid)))
         );
+    }
+
+    /**
+     * Drops ONLY the sequential HCU depth cap, keeping every per-transaction and per-block charge.
+     *
+     * The depth cap bounds real FHE work; in a test it mostly punishes long end-to-end flows whose
+     * orchestration is heavier than the calls being validated, surfacing as an opaque revert deep in a chain
+     * of handles. Reach for this when a test fails only because it is long, never to paper over a contract
+     * that genuinely exceeds the per-transaction limit — that limit stays enforced.
+     */
+    function disableHCUDepthLimit() internal {
+        // Deploy BEFORE arming the prank: `new` is itself a call and would consume it, leaving
+        // upgradeToAndCall to run as this test contract and revert on `onlyACLOwner`.
+        address relaxed = address(new HCULimitNoDepthCap());
+
+        vm.prank(PROXY_OWNER);
+        HCULimit(hcuLimitAdd).upgradeToAndCall(relaxed, "");
     }
 
     /// @dev ACL is the one contract behind `EmptyUUPSProxyACL` (plain `Ownable2Step`) rather than

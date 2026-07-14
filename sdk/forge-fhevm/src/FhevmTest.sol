@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.27;
 
-import {FhevmStack} from "./internal/FhevmStack.sol";
-import {HCULimitNoDepthCap} from "./internal/HCULimitNoDepthCap.sol";
 import {InputProofLib} from "./internal/InputProofLib.sol";
 import {KmsProofLib} from "./internal/KmsProofLib.sol";
 
-import {HCULimit} from "@fhevm/host-contracts-cleartext/contracts/HCULimit.sol";
-import {hcuLimitAdd} from "@fhevm/host-contracts-cleartext/addresses/FHEVMHostAddresses.sol";
+import {FhevmStack} from "@fhevm/host-contracts-cleartext/deploy/FhevmStack.sol";
 
 import {IERC7984ERC20Wrapper} from "@openzeppelin/confidential-contracts/interfaces/IERC7984ERC20Wrapper.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -329,23 +326,6 @@ abstract contract FhevmTest is FhevmStack {
         underlying.approve(address(wrapper), type(uint256).max);
         wrapper.wrap(user, amount);
         vm.stopPrank();
-    }
-
-    /**
-     * Drops ONLY the sequential HCU depth cap, keeping every per-transaction and per-block charge.
-     *
-     * The depth cap bounds real FHE work; in a test it mostly punishes long end-to-end flows whose
-     * orchestration is heavier than the calls being validated, surfacing as an opaque revert deep in a chain
-     * of handles. Reach for this when a test fails only because it is long, never to paper over a contract
-     * that genuinely exceeds the per-transaction limit — that limit stays enforced.
-     */
-    function disableHCUDepthLimit() internal {
-        // Deploy BEFORE arming the prank: `new` is itself a call and would consume it, leaving
-        // upgradeToAndCall to run as this test contract and revert on `onlyACLOwner`.
-        address relaxed = address(new HCULimitNoDepthCap());
-
-        vm.prank(PROXY_OWNER);
-        HCULimit(hcuLimitAdd).upgradeToAndCall(relaxed, "");
     }
 
     /*//////////////////////////////////////////////////////////////

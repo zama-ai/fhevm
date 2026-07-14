@@ -11,8 +11,9 @@
  * nonce and can never land here).
  *
  * The rest are free. Nothing outside the host stack references them: the host contracts find each other
- * through the constants in `host-contracts-cleartext/config/addresses.sol`, and `deployAt` rewrites every
- * one of those to the map below. Any consistent set works.
+ * through the constants in `host-contracts-cleartext/config/addresses.sol`, and `deployAt` rewrites each of
+ * those to the map below. Any consistent set works. (The one exception is ConfidentialBridge — never
+ * deployed, only referenced by ACL — whose compile-time constant the package keeps as-is.)
  */
 export const ADDRESSES = {
   // Pinned by ZamaConfig._getLocalConfig() — do not change.
@@ -30,32 +31,6 @@ export const ADDRESSES = {
 } as const;
 
 export type HostContractName = keyof typeof ADDRESSES;
-
-/**
- * ConfidentialBridge is never deployed in the cleartext stack, but `ACL` bakes its address in (it gates
- * `allowTransient`), so the constant has to resolve to something. It is a reference, not a contract we
- * place — hence it lives here rather than in {@link ADDRESSES}.
- */
-export const CONFIDENTIAL_BRIDGE = "0x812b06e1CDCE800494b79fFE4f925A504a9A9810";
-
-/**
- * Maps each `addressReferences` key in the templates to the address we place that contract at. Every
- * reference in every template is rewritten: the templates ship placeholder values (`0x1011...2829`, etc.)
- * that are meaningless until patched.
- */
-export const ADDRESS_REFERENCES: Readonly<Record<string, string>> = {
-  CONFIDENTIAL_BRIDGE_ADDRESS: CONFIDENTIAL_BRIDGE,
-  ACL_ADDRESS: ADDRESSES.ACL,
-  FHEVM_EXECUTOR_ADDRESS: ADDRESSES.FHEVMExecutor,
-  KMS_VERIFIER_ADDRESS: ADDRESSES.KMSVerifier,
-  INPUT_VERIFIER_ADDRESS: ADDRESSES.InputVerifier,
-  HCU_LIMIT_ADDRESS: ADDRESSES.HCULimit,
-  PROTOCOL_CONFIG_ADDRESS: ADDRESSES.ProtocolConfig,
-  KMS_GENERATION_ADDRESS: ADDRESSES.KMSGeneration,
-  PAUSER_SET_ADDRESS: ADDRESSES.PauserSet,
-  CLEARTEXT_ARITHMETIC_ADDRESS: ADDRESSES.CleartextArithmetic,
-  CLEARTEXT_DB_ADDRESS: ADDRESSES.CleartextDB,
-};
 
 /**
  * The same map, in the shape `@fhevm/host-contracts-cleartext`'s `deployAt` takes. The package places the

@@ -8,6 +8,10 @@ via_ir = false
 src = 'src'
 out = "out"
 bytecode_hash = "none"
+# The tarball-consumer test installs the packed package under test/ts/node_modules; without this skip,
+# forge compiles that vendored copy too and `deployCodeTo("PauserSet.sol:PauserSet")` becomes ambiguous
+# ("multiple matching artifacts found") whenever `forge test` runs after `npm test`.
+skip = ["test/ts/**"]
 
 [lint]
 exclude_lints = [
