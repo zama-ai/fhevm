@@ -19,10 +19,6 @@ fn latest_prior_bank_hash_tolerates_skipped_slots() {
     assert_eq!(latest_prior_bank_hash_from_entries(3, entries), None);
 }
 
-/// Bit 63 of the uint64 chain id is the reserved Solana `chain_type` marker
-/// (RFC-021 / #1494). It is derived from the chain id, never a schema column.
-const SOLANA_CHAIN_TYPE_BIT: u64 = 1 << 63;
-
 fn keccak(parts: &[&[u8]]) -> [u8; 32] {
     keccak_hashv(parts).to_bytes()
 }
@@ -47,8 +43,9 @@ fn assert_canonical_metadata(handle: [u8; 32], fhe_type: u8, chain_id: u64) {
 #[test]
 fn eval_handle_derivation_preserves_solana_chain_type_high_bit() {
     // A Solana host chain id sets the reserved high bit; the derived handle
-    // must round-trip it verbatim through bytes 22..30.
-    let chain_id = SOLANA_CHAIN_TYPE_BIT | SOLANA_POC_CHAIN_ID;
+    // must round-trip it verbatim through bytes 22..30. `SOLANA_POC_CHAIN_ID`
+    // already carries the chain-type high bit (RFC-021 / #1494).
+    let chain_id = SOLANA_POC_CHAIN_ID;
     let handle = computed_eval_handle(
         FheBinaryOpCode::Sub,
         [1; 32],

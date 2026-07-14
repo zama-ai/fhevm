@@ -474,7 +474,7 @@ fn amount_attestation_for(
 ) -> host::CoprocessorInputAttestation {
     let key = coprocessor_signing_key();
     let ct_handles = vec![amount_handle];
-    let contract_chain_id = 12345u64;
+    let contract_chain_id = host::SOLANA_POC_CHAIN_ID;
     let extra_data = vec![0x00u8];
     let digest = host::eip712::typed_data_digest(
         &host::eip712::domain_separator(

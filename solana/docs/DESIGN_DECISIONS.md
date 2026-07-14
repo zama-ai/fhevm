@@ -1373,8 +1373,11 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - Handle birth entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
   handles are accepted on every chain.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
-- Replacing the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID = 12345`) with the repository-wide
-  high-bit Solana chain-id convention.
+- The PoC sentinel `chain_id` is RESOLVED (zama-ai/fhevm-internal#1635): `SOLANA_POC_CHAIN_ID` now
+  carries the RFC-021 chain-type high bit (`SOLANA_CHAIN_TYPE_BIT | 12345`), and `initialize_host_config`
+  rejects a host `chain_id` without bit 63 set (and a `gateway_chain_id` with it set). The
+  low-63-bit allocation for canonical MAINNET/DEVNET Solana host chain ids remains a deployment-config
+  decision, tracked separately.
 - Rent/archival policy for the `EncryptedValue` MMR itself (DD-032): the account no longer needs
   per-supersession PDA closes (one stable PDA is reused for a lineage's whole life), but growth of
   `peaks`/`subjects` over a long-lived lineage's history still needs a compaction story if rent becomes

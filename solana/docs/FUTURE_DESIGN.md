@@ -64,8 +64,6 @@ the listener into the EVM block-status substrate (`host_chain_blocks_valid` +
 
 Carried from `DESIGN_DECISIONS.md` "Open Product Decisions":
 
-- Replace the PoC sentinel `chain_id` (`SOLANA_POC_CHAIN_ID`) with the repository-wide high-bit
-  Solana chain-id convention.
 - Durable archival / compaction policy for ACL, material, delegation, and replay evidence (no
   `close_acl_record` today).
 - Confidential-balance profile: keep the immediate available-balance profile or move to staged

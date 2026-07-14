@@ -999,7 +999,7 @@ mod tests {
 
     fn ctx() -> ReconstructContext {
         ReconstructContext {
-            chain_id: 12345,
+            chain_id: zama_host::SOLANA_POC_CHAIN_ID,
             previous_bank_hash: [3u8; 32],
             unix_timestamp: 1_700_000_000,
         }

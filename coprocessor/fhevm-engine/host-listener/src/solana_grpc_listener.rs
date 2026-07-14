@@ -994,7 +994,7 @@ mod fhe_eval_acl_tests {
             x_token: None,
             rpc_fallback_url: "http://127.0.0.1:1".to_owned(),
             program_id: ZAMA_HOST.to_owned(),
-            chain_id: 12345,
+            chain_id: zama_host::SOLANA_POC_CHAIN_ID,
         }
     }
 
@@ -1067,8 +1067,8 @@ mod fhe_eval_acl_tests {
     /// The durable `Add` output handle the fhe_eval fixtures produce, derived
     /// exactly as the program does: the base handle, no per-output binding
     /// (durable == instruction-local, matching EVM). Matches `config()`
-    /// (chain_id 12345, `PREVIOUS_BANK_HASH`), slot 42's clock ts, op_index 0,
-    /// scalar rhs.
+    /// (the Solana PoC host chain id, `PREVIOUS_BANK_HASH`), slot 42's clock ts,
+    /// op_index 0, scalar rhs.
     fn derived_add_output_handle() -> [u8; 32] {
         zama_host::state::computed_eval_handle(
             PgmBinaryOpCode::Add,
@@ -1076,7 +1076,7 @@ mod fhe_eval_acl_tests {
             [1; 32],
             true,
             5,
-            12345,
+            zama_host::SOLANA_POC_CHAIN_ID,
             PREVIOUS_BANK_HASH,
             1_700_000_000,
             [1; 32],

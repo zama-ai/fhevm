@@ -24,4 +24,10 @@ describe('createFhevmBaseClient', () => {
     expect(client.solanaChain.id).toBe(9223372036854788153n);
     await expect(client.ready).resolves.toBeUndefined();
   });
+
+  it.each([0n, 12345n, 1n << 64n])('rejects invalid Solana chain id %s', (id) => {
+    expect(() => createFhevmBaseClient({ chain: { ...chain, id } })).toThrow(
+      'Solana chain id must be a u64 bigint with bit 63 set',
+    );
+  });
 });

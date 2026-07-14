@@ -67,7 +67,14 @@ pub fn initialize_host_config(
 }
 
 fn assert_valid_host_config_args(args: &InitializeHostConfigArgs) -> Result<()> {
-    require!(args.chain_id != 0, ZamaHostError::InvalidHostConfig);
+    // RFC-021 invariant: the ZamaHost is always a Solana host chain, so its
+    // `chain_id` must set the chain-type high bit, while the EVM `gateway_chain_id`
+    // must leave it clear. Setting the bit also guarantees `chain_id != 0`.
+    require!(
+        args.chain_id & SOLANA_CHAIN_TYPE_BIT != 0
+            && args.gateway_chain_id & SOLANA_CHAIN_TYPE_BIT == 0,
+        ZamaHostError::InvalidChainTypeBit
+    );
     Ok(())
 }
 
@@ -77,7 +84,9 @@ mod tests {
 
     fn valid_args() -> InitializeHostConfigArgs {
         InitializeHostConfigArgs {
-            chain_id: 42,
+            // The ZamaHost is a Solana host chain, so its chain id sets the
+            // RFC-021 chain-type high bit.
+            chain_id: SOLANA_CHAIN_TYPE_BIT | 42,
             gateway_chain_id: 0,
             input_verification_contract: [0u8; 20],
             coprocessor_signer: [0u8; 20],
@@ -96,5 +105,32 @@ mod tests {
         let mut args = valid_args();
         args.chain_id = SOLANA_POC_CHAIN_ID;
         assert!(assert_valid_host_config_args(&args).is_ok());
+    }
+
+    #[test]
+    fn rejects_solana_chain_id_without_chain_type_bit() {
+        // A Solana host id that leaves the high bit clear (e.g. a bare EVM-style
+        // value) violates the RFC-021 invariant and must be rejected.
+        let mut args = valid_args();
+        args.chain_id = 12345;
+        let err = assert_valid_host_config_args(&args).unwrap_err();
+        assert_eq!(err, error!(ZamaHostError::InvalidChainTypeBit));
+    }
+
+    #[test]
+    fn rejects_zero_chain_id() {
+        let mut args = valid_args();
+        args.chain_id = 0;
+        let err = assert_valid_host_config_args(&args).unwrap_err();
+        assert_eq!(err, error!(ZamaHostError::InvalidChainTypeBit));
+    }
+
+    #[test]
+    fn rejects_gateway_chain_id_with_chain_type_bit() {
+        // The gateway is an EVM chain; its chain id must leave the high bit clear.
+        let mut args = valid_args();
+        args.gateway_chain_id = SOLANA_CHAIN_TYPE_BIT | 1;
+        let err = assert_valid_host_config_args(&args).unwrap_err();
+        assert_eq!(err, error!(ZamaHostError::InvalidChainTypeBit));
     }
 }

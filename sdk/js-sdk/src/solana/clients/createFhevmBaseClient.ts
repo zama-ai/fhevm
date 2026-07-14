@@ -5,6 +5,7 @@ import type { Fhevm } from '../../core/types/coreFhevmClient.js';
 import { PRIVATE_SOLANA_TOKEN } from '../internal/solana-p.js';
 import { createCoreFhevm } from '../../core/runtime/CoreFhevm-p.js';
 import { getSolanaRuntime } from '../internal/runtime.js';
+import { assertValidSolanaChainId } from '../../core/chains/utilsSolana.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -20,6 +21,7 @@ export function createFhevmBaseClient<chain extends FhevmSolanaChain>(parameters
   readonly chain: chain;
   readonly options?: FhevmOptions | undefined;
 }): Fhevm<undefined, FhevmRuntime, undefined> & { readonly solanaChain: chain } {
+  assertValidSolanaChainId(parameters.chain.id);
   // The core client is chain-agnostic at runtime (it just freezes and exposes `chain`); the
   // Solana chain shape differs from `FhevmChain`, so it is carried as `solanaChain` instead and
   // the core `chain` is left undefined (no EVM semantics apply).

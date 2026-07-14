@@ -138,6 +138,12 @@ impl Default for CtAttestationConfig {
     }
 }
 
+/// RFC-021 reserves the high bit (bit 63) of the u64 chain id as the host
+/// `chain_type` marker: when set, the host chain is Solana rather than an EVM
+/// chain. EVM chain ids keep this bit clear. Mirrors `SOLANA_CHAIN_TYPE_BIT` in
+/// the coprocessor (`fhevm-engine-common`) and the relayer.
+pub const SOLANA_CHAIN_TYPE_BIT: u64 = 1 << 63;
+
 /// Supported host-chain ACL backends.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -508,7 +514,7 @@ mod tests {
                     [
                         {
                             "url": "http://localhost:9545",
-                            "chainId": 31888,
+                            "chainId": 9223372036854807696,
                             "chainKind": "solana",
                             "aclAddress": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
                             "solanaHostProgramId": "11111111111111111111111111111111"
@@ -526,7 +532,8 @@ mod tests {
             config.host_chains,
             vec![HostChainConfig {
                 url: Url::from_str("http://localhost:9545").unwrap(),
-                chain_id: 31888,
+                // RFC-021 Solana host id: chain-type high bit | 31888.
+                chain_id: SOLANA_CHAIN_TYPE_BIT | 31888,
                 chain_kind: HostChainKind::Solana,
                 acl_address: Some(
                     Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap(),
