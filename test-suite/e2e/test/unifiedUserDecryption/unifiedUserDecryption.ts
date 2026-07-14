@@ -9,6 +9,7 @@ import {
   relayerUrl,
   verifyingContractAddressDecryption,
 } from '../instance';
+import { bitFlipPayload, corruptSignature, expectCorruptedShareDecryptToFail } from '../sdk/corruption/interceptShares';
 import { Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
 import { waitForBlock } from '../utils';
@@ -115,6 +116,36 @@ describe('Unified user decryption', function () {
     bobContractAddress = await bobContract.getAddress();
 
     publicKey = (await instances.alice.generateKeypair()).publicKey;
+  });
+
+  describe('corrupted shares', function () {
+    // Unified path: the SDK reconstructs the shares client-side (the unified v3
+    // relayer helper only checks job status and does not reconstruct), so the
+    // corruption is observed by driving the SDK's reconstruction directly. We
+    // assert only that decryption fails and print the error (see interceptShares).
+    it('case 1: bit-flipped payload makes user decryption fail', async function () {
+      this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+      const handle = await aliceContract.xUint64();
+      await expectCorruptedShareDecryptToFail('unified/payload', bitFlipPayload, () =>
+        instances.alice.userDecryptSingleHandle({
+          handle,
+          contractAddress: aliceContractAddress,
+          signer: signers.alice,
+        }),
+      );
+    });
+
+    it('case 2: corrupted signature makes user decryption fail', async function () {
+      this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+      const handle = await aliceContract.xUint64();
+      await expectCorruptedShareDecryptToFail('unified/signature', corruptSignature, () =>
+        instances.alice.userDecryptSingleHandle({
+          handle,
+          contractAddress: aliceContractAddress,
+          signer: signers.alice,
+        }),
+      );
+    });
   });
 
   it('test unified user decrypt permissive mode (empty allowedContracts) succeeds', async function () {
