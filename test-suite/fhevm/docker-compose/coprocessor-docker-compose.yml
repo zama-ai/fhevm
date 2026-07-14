@@ -56,6 +56,7 @@ services:
     command:
       - host_listener_poller
       - --database-url=${DATABASE_URL}
+      - --seed-start-block=0
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --kms-generation-address=${KMS_GENERATION_ADDRESS}
