@@ -1,6 +1,6 @@
 // Solana input launcher — builds a REAL ZK input proof through the PUBLIC `@fhevm/sdk/solana`
-// encrypt client (RFC-021 bytes32 identities + 128-byte aux) and POSTs it to the live relayer's
-// `/v2/input-proof` seam. Prints the relayer response (carrying the `jobId`) as JSON on stdout.
+// encrypt client (RFC-021 bytes32 identities + 128-byte aux), submits it to the live relayer, and
+// prints the verified typed result as JSON on stdout.
 //
 // Inputs via env (hex unless noted):
 //   IN_RELAYER_URL          relayer base URL (e.g. http://127.0.0.1:3000)
@@ -8,19 +8,16 @@
 //   IN_ACL_PROGRAM          zama-host program id as bytes32 (0x-hex) — the Solana ACL identity
 //   IN_CONTRACT             bound contract identity as bytes32 (0x-hex)
 //   IN_USER                 bound user identity as bytes32 (0x-hex)
-//   IN_CONTRACT_B58         the relayer-facing contract address (base58) for the POST body
-//   IN_USER_B58             the relayer-facing user address (base58) for the POST body
 //   IN_VALUE                decimal — the value to encrypt (default 42)
 //   IN_TYPE                 FHE type name (default uint64)
 //
-// Output: the relayer's JSON response on stdout (the harness reads `jobId` from it).
+// Output: `{ handles, signatures, extraData }` JSON on stdout.
 //
 // Run under node (e.g. `node solana-input.ts` on Node >= 22.6 / native on Node 24), NOT bun: the
 // TFHE WASM prover resolves its worker/wasm via node's locate-file path, which bun's browser-like
 // environment detection bypasses (throws "Missing locate file function").
-
-import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import { defineFhevmSolanaChain } from '@fhevm/sdk/chains';
+import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 
 // The relayer's keyurl points at the docker-internal host `minio:9000`; rewrite it to the
@@ -67,24 +64,15 @@ const proof = await client.buildInputProof({
   userAddress: reqEnv('IN_USER'),
   values: [{ type, value }],
 });
-
-const ctHex = Buffer.from(proof.ciphertextWithZkProof).toString('hex');
-const body = {
-  contractChainId: SID.toString(),
-  contractAddress: reqEnv('IN_CONTRACT_B58'),
-  userAddress: reqEnv('IN_USER_B58'),
-  ciphertextWithInputVerification: ctHex,
-  extraData: '0x00',
-};
-
-const res = await fetch(RELAYER + '/v2/input-proof', {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify(body),
-});
-const text = await res.text();
-process.stdout.write(text + '\n');
+const result = await client.submitInputProof({ inputProof: proof });
+process.stdout.write(
+  JSON.stringify({
+    handles: result.handles.map((handle) => handle.bytes32Hex),
+    signatures: result.signatures,
+    extraData: result.extraData,
+  }) + '\n',
+);
 
 // The TFHE WASM prover spins up worker threads that keep the event loop alive, so the process
 // never exits on its own; exit explicitly now that the proof is submitted.
-process.exit(res.ok ? 0 : 1);
+process.exit(0);

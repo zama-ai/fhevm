@@ -10,16 +10,20 @@ import type {
 } from '../../../core/types/coreFhevmClient.js';
 import type { FhevmRuntime, WithEncrypt } from '../../../core/types/coreFhevmRuntime.js';
 import type { SolanaEncryptInputParameters, SolanaEncryptInputResult } from '../../actions/encryptInput.js';
+import type { SolanaSubmitInputProofParameters, SolanaSubmitInputProofResult } from '../../actions/submitInputProof.js';
 import { asFhevmWith, setResolvedTfheVersion } from '../../../core/runtime/CoreFhevm-p.js';
 import { encryptModule } from '../../../core/modules/encrypt/module/index.js';
 import { DEFAULT_TFHE_VERSION } from '../../../wasm/tfhe/loadTfheLib.js';
 import { encryptInput } from '../../actions/encryptInput.js';
+import { submitInputProof } from '../../actions/submitInputProof.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export type SolanaEncryptActions = {
   /** Builds a Solana input ZK proof (RFC-021 bytes32 identities + 128-byte aux). */
   readonly buildInputProof: (parameters: SolanaEncryptInputParameters) => Promise<SolanaEncryptInputResult>;
+  /** Submits a built Solana input proof and verifies the returned handles. */
+  readonly submitInputProof: (parameters: SolanaSubmitInputProofParameters) => Promise<SolanaSubmitInputProofResult>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -87,6 +91,7 @@ export function solanaEncryptActions(
           await (fhevm as Fhevm<undefined, FhevmRuntime, undefined>).ready;
           return encryptInput(encryptFhevm, parameters);
         },
+        submitInputProof: async (parameters) => submitInputProof({ runtime, solanaChain }, parameters),
       },
       runtime,
       init: _initEncrypt as (fhevm: FhevmBase) => Promise<void>,
