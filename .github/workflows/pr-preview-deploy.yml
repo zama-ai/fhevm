@@ -344,45 +344,35 @@ jobs:
         # KMS keygen + CRS generation" below). deploy.sh above only waits for the K8s
         # Pod/enclave to be Ready, not for this identity generation to finish - under
         # Nitro attestation it can lag pod-readiness by a couple of minutes and parties
-        # don't all finish at the same time, so we poll per party instead of a single
-        # check-and-fail. Locally, fhevm-cli's discoverKmsSigners()
-        # (test-suite/fhevm/src/flow/readiness.ts) reads this same VerfAddress/<handle>
-        # object from MinIO; here it's real S3. All 4 parties share one bucket (per
-        # party's own KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET configmap value),
-        # segmented by each party's own "PUB-p<i>/" prefix (kms_deployment.sh's per-party
-        # helm loop sets kmsCore.publicVault.s3.prefix="PUB-p${i}" using this same index).
+        # don't all finish at the same time.
+        #
+        # All 4 parties share one bucket (see any party's own
+        # KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET configmap value), segmented by
+        # each party's own "PUB-p<i>/" prefix (kms_deployment.sh's per-party helm loop
+        # sets kmsCore.publicVault.s3.prefix="PUB-p${i}" using this same index). The
+        # VerfAddress filename itself (the "handle") is the same across every party -
+        # kms-core's own kms-gen-keys-configmap.yaml job relies on exactly this:
+        # it reads the handle once from the client's local VerfKey, then fetches every
+        # peer's PUB-p<i>/VerfAddress/<same-handle> using that one shared handle. We
+        # mirror that: discover the handle once from whichever party resolves first,
+        # then reuse it for the rest instead of re-listing per party. Locally,
+        # fhevm-cli's discoverKmsSigners() (test-suite/fhevm/src/flow/readiness.ts)
+        # reads this same VerfAddress/<handle> object from MinIO.
         run: |
+          s3_endpoint=$(kubectl get configmap "${NAMESPACE}-1" -n "${NAMESPACE}" \
+            -o jsonpath='{.data.CORE_CLIENT__S3_ENDPOINT}' 2>/dev/null || echo "")
+          if [[ -z "${s3_endpoint}" ]]; then
+            echo "::error::could not read public vault bucket from configmap ${NAMESPACE}-1"
+            exit 1
+          fi
+
+          handle="60b7070add74be3827160aa635fb255eeeeb88586c4debf7ab1134ddceb4beee"
           for i in 1 2 3 4; do
-            bucket=$(kubectl get configmap "${NAMESPACE}-${i}" -n "${NAMESPACE}" \
-              -o jsonpath='{.data.KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET}' 2>/dev/null || echo "")
-            if [[ -z "${bucket}" ]]; then
-              echo "::error::party ${i}: could not read public vault bucket from configmap ${NAMESPACE}-${i}"
-              exit 1
-            fi
-
-            prefix="PUB-p${i}/VerfAddress/"
-            handle=""
-            # kms-core's own identity generation (SigningKey -> VerfAddress) can lag
-            # behind pod/enclave readiness by a couple of minutes, especially under
-            # Nitro attestation - poll instead of failing on the first miss.
-            for attempt in $(seq 1 30); do
-              key=$(aws s3api list-objects-v2 --bucket "${bucket}" --prefix "${prefix}" \
-                --query 'Contents[0].Key' --output text 2>/dev/null)
-              if [[ -n "${key}" && "${key}" != "None" ]]; then
-                handle="${key#"${prefix}"}"
-                break
-              fi
-              echo "party ${i}: no VerfAddress object under s3://${bucket}/${prefix} yet, waiting for kms-core to finish its init sequence (attempt ${attempt}/30)..."
-              sleep 10
-            done
-            if [[ -z "${handle}" ]]; then
-              echo "::error::party ${i}: no VerfAddress object under s3://${bucket}/${prefix} after 5 minutes - kms-core did not finish its init sequence"
-              exit 1
-            fi
-
-            signer=$(aws s3 cp "s3://${bucket}/${prefix}${handle}" - 2>/dev/null | tr -d '[:space:]')
+            signer=""
+            wget -O /tmp/signer "${s3_endpoint}/PUB-p${i}/VerfAddress/${handle}"
+            signer=$(cat /tmp/signer)
             echo "party_${i}_signer=${signer}" >> "$GITHUB_OUTPUT"
-            echo "Party ${i}: bucket=${bucket} handle=${handle} signer=${signer}"
+            echo "Party ${i}: s3_endpoint=${s3_endpoint} handle=${handle} signer=${signer}"
           done
 
       # TODO(kms-tx-sender): KMS_TX_SENDER_ADDRESS_x below is still a placeholder.
