@@ -8199,6 +8199,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "sha3",
  "sqlx",
  "strum 0.26.3",
  "test-harness",
