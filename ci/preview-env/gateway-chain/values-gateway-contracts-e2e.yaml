@@ -39,6 +39,17 @@ scDeploy:
   image:
     name: hub.zama.org/ghcr/zama-ai/fhevm/gateway-contracts
     tag: latest
+  # Chart default (512Mi limit) OOMKills on this suite's size - Hardhat compiling
+  # + deploying the full set of gateway contracts (GatewayConfig, KMSGeneration,
+  # InputVerification, Decryption, oracle contracts, ...) under ts-node needs
+  # real headroom (same fix as values-host-contracts-e2e.yaml).
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
   configmap:
     name: gw-sc-addresses
   env:

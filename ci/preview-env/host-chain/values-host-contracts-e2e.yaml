@@ -28,6 +28,16 @@ scDeploy:
   image:
     name: hub.zama.org/ghcr/zama-ai/fhevm/host-contracts
     tag: latest
+  # Chart default (512Mi limit) OOMKills on this suite's size - Hardhat compiling
+  # + deploying the full set of host contracts (ACL, TFHEExecutor, KMSVerifier,
+  # InputVerifier, HCULimit, ProtocolConfig, ...) under ts-node needs real headroom.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
   configmap:
     name: host-sc-addresses
   env:
