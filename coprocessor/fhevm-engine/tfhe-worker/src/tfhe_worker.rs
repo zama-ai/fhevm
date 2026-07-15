@@ -1509,7 +1509,10 @@ async fn query_work_rows_for_dcids<'a>(
             FROM computations_branch c
             WHERE c.dependence_chain_id = ANY($1)
               AND c.is_error = FALSE
-            ORDER BY c.schedule_order ASC
+            -- Cross-block ciphertext dependencies require producer blocks to
+            -- drain before consumers, even when listener ingestion timestamps
+            -- interleave across blocks.
+            ORDER BY c.block_number ASC NULLS FIRST, c.schedule_order ASC
             FOR UPDATE OF c SKIP LOCKED
         ),
         locked_dcid_count AS (
@@ -1548,7 +1551,7 @@ async fn query_work_rows_for_dcids<'a>(
                 )
               )
               AND (SELECT count FROM locked_dcid_count) = (SELECT count FROM expected_dcid_rows)
-            ORDER BY c.schedule_order ASC
+            ORDER BY c.block_number ASC NULLS FIRST, c.schedule_order ASC
             LIMIT 1
         ),
         -- Cross-lane closure (RFC 011): once the seed lane has selected a block
@@ -1561,9 +1564,9 @@ async fn query_work_rows_for_dcids<'a>(
         -- same-block intermediate from compressed state. The count guard below
         -- aborts the batch (yield, retry) if another worker holds part of the
         -- expanded component, so a partially locked component is never executed.
-        -- Closure is evaluated over the statement snapshot; that is sufficient
-        -- because block contexts are ingested atomically (one transaction per
-        -- block), so a real-hash context never grows after it becomes visible.
+        -- Closure is evaluated over the statement snapshot. The block-first
+        -- selection above ensures an older producer context is not bypassed by
+        -- a newer consumer merely because listener timestamps interleaved.
         -- Branchless contexts ('' producer hash) are namespaces, not blocks:
         -- they grow without bound and have no same-block edges to close over,
         -- so they stay scoped to the seed lane (whose rows the seed CTE above
@@ -2218,7 +2221,9 @@ async fn upload_transaction_graph_results<'a>(
     deps_mngr: &mut dependence_chain::LockMngr,
 ) -> Result<bool, CoprocessorError> {
     // Get computation results
-    let graph_results = tx_graph.get_results();
+    let graph_results = tx_graph
+        .get_results()
+        .map_err(|err| CoprocessorError::Other(err.into()))?;
     info!(
         target: "tfhe_worker",
         result_count = graph_results.len(),
@@ -4110,6 +4115,58 @@ mod tests {
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].producer_block_hash, second_hash);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn query_work_rows_prefers_earlier_block_over_schedule_timestamp() {
+        let test_instance = setup_test_db(ImportMode::None)
+            .await
+            .expect("valid db instance");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(test_instance.db_url())
+            .await
+            .expect("connect test db");
+
+        let earlier_dcid = vec![0xD5; 32];
+        let later_dcid = vec![0xD6; 32];
+        let earlier_hash = vec![0xA5; 32];
+        let later_hash = vec![0xB5; 32];
+        // Simulate listener timestamp interleaving: the consumer block has an
+        // earlier schedule_order even though its block height is newer.
+        insert_work_row(
+            &pool,
+            &earlier_dcid,
+            &[0x01; 32],
+            &[0x51; 32],
+            &earlier_hash,
+            Some(10),
+            10,
+            false,
+        )
+        .await;
+        insert_work_row(
+            &pool,
+            &later_dcid,
+            &[0x02; 32],
+            &[0x52; 32],
+            &later_hash,
+            Some(11),
+            0,
+            false,
+        )
+        .await;
+
+        let mut trx = pool.begin().await.expect("begin transaction");
+        let rows = query_work_rows_for_dcids(&mut trx, &[earlier_dcid, later_dcid], 0)
+            .await
+            .expect("query earlier block context");
+        trx.rollback().await.expect("rollback");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].block_number, Some(10));
+        assert_eq!(rows[0].producer_block_hash, earlier_hash);
     }
 
     #[tokio::test]

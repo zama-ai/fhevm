@@ -647,56 +647,72 @@ impl DFComponentGraph {
         }
         Ok(())
     }
-    pub fn get_results(&mut self) -> Vec<DFGTxResult> {
+    pub fn get_results(&mut self) -> Result<Vec<DFGTxResult>> {
         let mut results = std::mem::take(&mut self.results);
         if self.aliased_tids.is_empty() {
-            return results;
+            return Ok(results);
         }
-        // Completion broadcast for multi-producer handles. The canonical
-        // producer is the lexicographically smallest transaction_id selected
-        // in build(). Missing aliased rows are completed from the canonical
-        // bytes only. If the canonical result is absent, do not synthesize it
-        // from an aliased producer: that would make persisted bytes depend on
-        // partition layout in the exact failure mode this path is defending.
-        let mut additions = Vec::new();
-        for handle in self.aliased_tids.keys() {
+        // Completion broadcast for multi-producer handles. Transaction IDs do
+        // not participate in either output-handle derivation or block-scoped
+        // input re-randomization, so every successful producer of one handle
+        // must yield byte-identical ciphertexts. Use the lexicographically
+        // smallest *available* successful producer as the source, verify every
+        // other successful result against it, then publish those bytes for all
+        // producer rows. Requiring the lexicographically smallest producer to
+        // have executed turns a scheduler/partition omission into a permanent
+        // liveness failure even though an equivalent result is available.
+        //
+        // Divergent successful results violate the deterministic-ciphertext
+        // consensus invariant. Fail the whole batch instead of selecting one
+        // partition-dependent image or hiding the violation behind canonical
+        // transaction ordering.
+        let aliased_handles = self.aliased_tids.keys().cloned().collect::<Vec<_>>();
+        for handle in &aliased_handles {
             let Some(producers) = self.produced.get(handle) else {
                 continue;
             };
-            let Some((_, canonical_tid)) = producers.first() else {
-                continue;
-            };
-            let canonical_cct = results
+            let mut successful = results
                 .iter()
-                .find(|r| &r.handle == handle && &r.transaction_id == canonical_tid)
-                .and_then(|r| r.compressed_ct.as_ref().ok())
-                .cloned();
-            let Some(canonical_cct) = canonical_cct else {
-                warn!(
-                    target: "scheduler",
-                    output_handle = %hex::encode(handle),
-                    canonical_transaction_id = %hex::encode(canonical_tid),
-                    "Multi-producer handle missing canonical result; dropping aliased Ok results \
-                     instead of persisting partition-dependent bytes"
-                );
-                results.retain(|r| &r.handle != handle || r.compressed_ct.is_err());
+                .filter_map(|result| {
+                    if &result.handle != handle {
+                        return None;
+                    }
+                    result
+                        .compressed_ct
+                        .as_ref()
+                        .ok()
+                        .map(|ciphertext| (&result.transaction_id, ciphertext))
+                })
+                .collect::<Vec<_>>();
+            if successful.is_empty() {
                 continue;
-            };
-            for (_, tid) in producers.iter() {
-                let already_present = results
-                    .iter()
-                    .any(|r| &r.handle == handle && &r.transaction_id == tid);
-                if !already_present {
-                    additions.push(DFGTxResult {
-                        transaction_id: tid.clone(),
-                        handle: handle.clone(),
-                        compressed_ct: Ok(canonical_cct.clone()),
-                    });
+            }
+            successful.sort_by(|a, b| a.0.cmp(b.0));
+            let (source_tid, source_cct) = successful[0];
+            for (other_tid, other_cct) in successful.iter().skip(1) {
+                if source_cct.ct_type != other_cct.ct_type
+                    || source_cct.ct_bytes != other_cct.ct_bytes
+                {
+                    anyhow::bail!(
+                        "multi-producer ciphertext divergence for handle {}: source tid {} type {}, divergent tid {} type {}",
+                        hex::encode(handle),
+                        hex::encode(source_tid),
+                        source_cct.ct_type,
+                        hex::encode(other_tid),
+                        other_cct.ct_type,
+                    );
                 }
             }
+
+            let broadcast_cct = source_cct.clone();
+            results.retain(|result| &result.handle != handle);
+            results.extend(producers.iter().map(|(_, tid)| DFGTxResult {
+                transaction_id: tid.clone(),
+                handle: handle.clone(),
+                compressed_ct: Ok(broadcast_cct.clone()),
+            }));
         }
-        results.extend(additions);
-        results
+        Ok(results)
     }
     pub fn get_intermediate_handles(&mut self) -> Vec<(Handle, Handle)> {
         let mut res = vec![];
@@ -1065,10 +1081,9 @@ mod tests {
         );
     }
 
-    /// `get_results()` synthesizes a `DFGTxResult` for every aliased tid
-    /// that did not already receive one. The broadcast uses the canonical's
-    /// compressed ciphertext bytes verbatim; aliased bytes may never define
-    /// the canonical persistent image.
+    /// `get_results()` synthesizes a `DFGTxResult` for every producer tid.
+    /// When the lexicographically smallest producer succeeded, its ciphertext
+    /// is the deterministic broadcast source.
     #[test]
     fn get_results_broadcasts_to_missing_aliased_tids() {
         let out = handle(0xAA);
@@ -1095,7 +1110,7 @@ mod tests {
             compressed_ct: Ok(ct(&canonical_bytes)),
         });
 
-        let out_results = g.get_results();
+        let out_results = g.get_results().expect("coalesce results");
         assert_eq!(out_results.len(), 3, "canonical + both aliased must appear");
         for tid in [&tid_canonical, &tid_aliased_1, &tid_aliased_2] {
             let entry = out_results
@@ -1112,10 +1127,11 @@ mod tests {
     }
 
     /// If a partition-layout regression leaves only an aliased producer
-    /// result, do not synthesize the missing canonical row from aliased bytes.
-    /// Persisting those bytes would make consensus depend on partition layout.
+    /// result, promote its deterministic ciphertext to every producer row.
+    /// Transaction IDs do not participate in ciphertext derivation, so making
+    /// progress must not depend on which equivalent producer was scheduled.
     #[test]
-    fn get_results_drops_aliased_ok_when_canonical_missing() {
+    fn get_results_promotes_aliased_ok_when_canonical_missing() {
         let out = handle(0xAA);
         let tid_canonical = handle(0x01);
         let tid_aliased = handle(0x02);
@@ -1134,18 +1150,24 @@ mod tests {
             compressed_ct: Ok(ct(&aliased_bytes)),
         });
 
-        let out_results = g.get_results();
-        assert!(
-            out_results.is_empty(),
-            "aliased Ok result must not be persisted when the canonical result is absent"
-        );
+        let out_results = g.get_results().expect("promote aliased result");
+        assert_eq!(out_results.len(), 2, "both producer rows must complete");
+        for tid in [&tid_canonical, &tid_aliased] {
+            let result = out_results
+                .iter()
+                .find(|result| &result.transaction_id == tid)
+                .unwrap_or_else(|| panic!("missing result for tid {tid:?}"));
+            let ciphertext = result.compressed_ct.as_ref().expect("Ok result");
+            assert_eq!(ciphertext.ct_type, 4);
+            assert_eq!(ciphertext.ct_bytes, aliased_bytes);
+        }
     }
 
-    /// When an aliased tid already has its own `DFGTxResult` (the common
-    /// different-partition case), the broadcast must be a no-op — we do
-    /// not synthesize a second entry for the same `(handle, tid)` pair.
+    /// Independently computed successful producer results must agree exactly.
+    /// Divergence is a consensus violation, not a value that canonical
+    /// transaction ordering can safely hide.
     #[test]
-    fn get_results_does_not_duplicate_existing_aliased_entries() {
+    fn get_results_rejects_divergent_aliased_ciphertext() {
         let out = handle(0xAA);
         let tid_canonical = handle(0x01);
         let tid_aliased = handle(0x02);
@@ -1168,22 +1190,12 @@ mod tests {
             compressed_ct: Ok(ct(b"aliased-independently-computed")),
         });
 
-        let out_results = g.get_results();
-        assert_eq!(out_results.len(), 2);
-        let aliased_entries: Vec<_> = out_results
-            .iter()
-            .filter(|r| r.transaction_id == tid_aliased)
-            .collect();
-        assert_eq!(
-            aliased_entries.len(),
-            1,
-            "aliased tid must appear exactly once"
-        );
-        assert_eq!(
-            aliased_entries[0].compressed_ct.as_ref().unwrap().ct_bytes,
-            b"aliased-independently-computed",
-            "existing aliased result is preserved, not overwritten"
-        );
+        let error = g
+            .get_results()
+            .expect_err("divergent ciphertext bytes must fail the batch");
+        assert!(error
+            .to_string()
+            .contains("multi-producer ciphertext divergence"));
     }
 
     /// If every producer failed (no Ok result for the handle), the
@@ -1209,7 +1221,7 @@ mod tests {
             compressed_ct: Err(SchedulerError::MissingInputs.into()),
         });
 
-        let out_results = g.get_results();
+        let out_results = g.get_results().expect("retain producer error");
         assert_eq!(out_results.len(), 1, "no Ok ciphertext to broadcast");
         assert_eq!(out_results[0].transaction_id, tid_canonical);
     }
@@ -1266,7 +1278,7 @@ mod tests {
             "aliased producer must be marked uncomputable"
         );
 
-        let out_results = g.get_results();
+        let out_results = g.get_results().expect("retain producer error");
         assert!(
             !out_results.is_empty(),
             "the aliased failure should emit at least one error result"
@@ -1308,7 +1320,7 @@ mod tests {
             SchedulerError::DataflowGraphError.to_string()
         );
         assert!(
-            g.get_results().is_empty(),
+            g.get_results().expect("collect results").is_empty(),
             "unknown producer output must not be saved under another producer"
         );
     }
@@ -1328,7 +1340,7 @@ mod tests {
                 &tid,
                 Ok(TaskResult {
                     compressed_ct: None,
-                    working_ct: Some(SupportedFheCiphertexts::Scalar(vec![1])),
+                    working_ct: Some(Arc::new(SupportedFheCiphertexts::Scalar(vec![1]))),
                     is_allowed: true,
                     transaction_id: tid.clone(),
                 }),
@@ -1340,6 +1352,6 @@ mod tests {
             error.to_string(),
             SchedulerError::DataflowGraphError.to_string()
         );
-        assert!(g.get_results().is_empty());
+        assert!(g.get_results().expect("collect results").is_empty());
     }
 }
