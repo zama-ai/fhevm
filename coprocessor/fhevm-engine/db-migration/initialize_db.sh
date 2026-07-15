@@ -26,6 +26,7 @@ else
 fi
 
 REMOVE_TENANTS_PREVIOUS_VERSION=20260120102002
+BRANCH_WAVE2_INDEX_PREVIOUS_VERSION=20260610145100
 
 run_sql() {
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "$1"
@@ -163,6 +164,74 @@ run_block_scope_materialization_wave1_prerequisites() {
      ON host_chain_blocks_valid (chain_id, parent_hash);"
 }
 
+run_branch_context_wave2_prerequisites() {
+  echo "Running online migrations before branch-context wave2 indexes..."
+  sqlx migrate run --source "$MIGRATION_DIR" --target-version $BRANCH_WAVE2_INDEX_PREVIOUS_VERSION || { echo "Failed to run migrations."; exit 1; }
+
+  # 20260610150000 and 20260610150400 add these metadata-only columns before
+  # building their partial indexes. Add them here so all eight indexes on hot
+  # mirrored branch tables can be built concurrently before transactional
+  # migrations resume.
+  run_sql "ALTER TABLE ciphertexts_branch
+           ADD COLUMN IF NOT EXISTS block_number BIGINT NULL;"
+  run_sql "ALTER TABLE ciphertexts128_branch
+           ADD COLUMN IF NOT EXISTS block_number BIGINT NULL;"
+  run_sql "ALTER TABLE ciphertext_digest_branch
+           ADD COLUMN IF NOT EXISTS s3_publication_verified_at TIMESTAMPTZ NULL;"
+  run_sql "ALTER TABLE ciphertext_digest_branch
+           ADD COLUMN IF NOT EXISTS s3_publication_verified_digest BYTEA NULL;"
+  run_sql "ALTER TABLE ciphertext_digest_branch
+           ADD COLUMN IF NOT EXISTS s3_publication_verified_producer_block_hash BYTEA NULL;"
+
+  precreate_index "idx_ciphertexts_branch_block_number" \
+    "CREATE INDEX CONCURRENTLY idx_ciphertexts_branch_block_number \
+     ON ciphertexts_branch (block_number) \
+     WHERE producer_block_hash <> ''::BYTEA;"
+
+  precreate_index "idx_ciphertexts128_branch_block_number" \
+    "CREATE INDEX CONCURRENTLY idx_ciphertexts128_branch_block_number \
+     ON ciphertexts128_branch (block_number) \
+     WHERE producer_block_hash <> ''::BYTEA;"
+
+  precreate_index "idx_computations_branch_component_rows_v2" \
+    "CREATE INDEX CONCURRENTLY idx_computations_branch_component_rows_v2 ON computations_branch (
+      dependence_chain_id,
+      schedule_order,
+      host_chain_id,
+      block_number,
+      producer_block_hash
+    ) WHERE is_error = false;"
+
+  precreate_index "idx_ciphertext_digest_branch_transaction_id" \
+    "CREATE INDEX CONCURRENTLY idx_ciphertext_digest_branch_transaction_id \
+     ON ciphertext_digest_branch (transaction_id);"
+
+  precreate_index "idx_allowed_handles_branch_transaction_id" \
+    "CREATE INDEX CONCURRENTLY idx_allowed_handles_branch_transaction_id \
+     ON allowed_handles_branch (transaction_id);"
+
+  precreate_index "idx_pbs_computations_branch_transaction_id" \
+    "CREATE INDEX CONCURRENTLY idx_pbs_computations_branch_transaction_id \
+     ON pbs_computations_branch (transaction_id);"
+
+  # 20260610150400: the s3_unverified predicate matches every pre-existing row
+  # (the verification columns were just added as NULL) and even the initially
+  # empty s3_verified partial index needs a full heap scan to evaluate its
+  # predicate, so both must be built concurrently on a live database.
+  precreate_index "idx_ciphertext_digest_branch_s3_unverified" \
+    "CREATE INDEX CONCURRENTLY idx_ciphertext_digest_branch_s3_unverified \
+     ON ciphertext_digest_branch (host_chain_id, block_number, created_at) \
+     WHERE ciphertext IS NULL \
+        OR s3_publication_verified_at IS NULL \
+        OR s3_publication_verified_digest IS DISTINCT FROM ciphertext \
+        OR s3_publication_verified_producer_block_hash IS DISTINCT FROM producer_block_hash;"
+
+  precreate_index "idx_ciphertext_digest_branch_s3_verified" \
+    "CREATE INDEX CONCURRENTLY idx_ciphertext_digest_branch_s3_verified \
+     ON ciphertext_digest_branch (host_chain_id, s3_publication_verified_at) \
+     WHERE s3_publication_verified_at IS NOT NULL;"
+}
+
 echo "-------------- Start database initilaization --------------"
 
 echo "Creating database..."
@@ -200,6 +269,8 @@ elif [ "${RUN_BLOCK_SCOPE_WAVE1_PREREQUISITES:-}" = "true" ]; then
   # live DB before `helm upgrade` applies the rest of the wave1 migrations.
   # Does not run the remaining migrations and does not seed.
   run_block_scope_materialization_wave1_prerequisites
+elif [ "${RUN_BRANCH_CONTEXT_WAVE2_PREREQUISITES:-}" = "true" ]; then
+  run_branch_context_wave2_prerequisites
 else
   repair_bridge_tables_migration_checksum
   sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }
