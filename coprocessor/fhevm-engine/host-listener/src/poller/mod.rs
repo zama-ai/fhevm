@@ -133,6 +133,8 @@ pub struct PollerConfig {
     pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,
     pub finality_lag: u64,
+    pub settlement_finality_lag: u64,
+    pub reorg_maximum_duration_in_blocks: u64,
     pub batch_size: u64,
     pub poll_interval: Duration,
     pub retry_interval: Duration,
@@ -148,7 +150,6 @@ pub struct PollerConfig {
     pub seed_start_block: Option<i64>,
     // Dependence chain settings
     pub dependence_cache_size: u16,
-    pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
     pub gcs_mode: bool,
@@ -248,6 +249,9 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     )
     .await?;
 
+    let _branch_cleanup_worker =
+        db.spawn_orphaned_branch_cleanup_worker(cancel_token.clone());
+
     if config.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
         if promoted > 0 {
@@ -277,6 +281,9 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
 
     let initial_anchor = db.poller_get_last_caught_up_block(chain_id).await?;
     db.tick.update();
+    let effective_settlement_finality_lag = config
+        .settlement_finality_lag
+        .max(config.reorg_maximum_duration_in_blocks);
     let mut last_caught_up_block = match initial_anchor {
         Some(block) => u64::try_from(block)
             .context("last_caught_up_block cannot be negative")?,
@@ -304,6 +311,9 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         chain_id = %chain_id,
         last_caught_up_block = last_caught_up_block,
         finality_lag = config.finality_lag,
+        settlement_finality_lag = config.settlement_finality_lag,
+        reorg_maximum_duration_in_blocks = config.reorg_maximum_duration_in_blocks,
+        effective_settlement_finality_lag = effective_settlement_finality_lag,
         batch_size = config.batch_size,
         poll_interval_ms = config.poll_interval.as_millis(),
         retry_interval_ms = config.retry_interval.as_millis(),
@@ -345,6 +355,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             &mut db,
             latest,
             config.finality_lag,
+            effective_settlement_finality_lag,
             |block_number| async move {
                 client_ref
                     .header_for_block(block_number)
@@ -418,7 +429,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             };
 
             let ingest_options = IngestOptions {
-                dependence_by_connexity: config.dependence_by_connexity,
                 dependence_cross_block: config.dependence_cross_block,
                 dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
                 is_protocol_config_listener,

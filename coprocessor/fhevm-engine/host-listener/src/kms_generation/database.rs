@@ -209,7 +209,7 @@ pub(crate) async fn activate_ready_key_activations(
             ON e.chain_id = b.chain_id
             AND e.block_hash = b.block_hash
         WHERE
-            e.status = 'ready'
+            e.status IN ('ready', 'pending')
             AND b.block_status = 'finalized'
             AND e.key_content_public IS NOT NULL
             AND e.key_content_sks_key IS NOT NULL
@@ -324,7 +324,7 @@ pub(crate) async fn activate_ready_crs_activations(
             ON e.chain_id = b.chain_id
             AND e.block_hash = b.block_hash
         WHERE
-            e.status = 'ready'
+            e.status IN ('ready', 'pending')
             AND b.block_status = 'finalized'
             AND e.crs_content IS NOT NULL
         FOR UPDATE OF e SKIP LOCKED
@@ -721,6 +721,101 @@ mod tests {
         assert_eq!(row.status, "ready");
         assert_eq!(row.key_content_sks_key, existing_sks);
         assert_eq!(row.key_content_public, public_key);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn activate_ready_key_activations_accepts_pending_complete_material(
+    ) -> anyhow::Result<()> {
+        let db = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let pool = sqlx::PgPool::connect(db.db_url()).await?;
+
+        let chain_id = ChainId::try_from(12345_u64)?;
+        let block_hash = vec![6_u8; 32];
+        let key_id = vec![7_u8; 32];
+        let public_key = b"public-key".to_vec();
+        let server_key = b"server-key".to_vec();
+        let storage_urls: Vec<String> = Vec::new();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO host_chain_blocks_valid (
+                chain_id,
+                block_hash,
+                parent_hash,
+                block_number,
+                block_status
+            )
+            VALUES ($1, $2, $3, 1, 'finalized')
+            "#,
+            chain_id.as_i64(),
+            &block_hash,
+            vec![5_u8; 32],
+        )
+        .execute(&pool)
+        .await?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO kms_key_activation_events (
+                chain_id,
+                block_hash,
+                block_number,
+                transaction_hash,
+                key_id,
+                key_content_sks_key,
+                key_content_public,
+                key_digest_server,
+                key_digest_public,
+                storage_urls
+            )
+            VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, $9)
+            "#,
+            chain_id.as_i64(),
+            &block_hash,
+            vec![8_u8; 32],
+            &key_id,
+            &server_key,
+            &public_key,
+            vec![9_u8; 32],
+            vec![10_u8; 32],
+            &storage_urls as _,
+        )
+        .execute(&pool)
+        .await?;
+
+        let mut tx = pool.begin().await?;
+        let activated = activate_ready_key_activations(&mut tx).await?;
+        tx.commit().await?;
+
+        assert_eq!(activated, 1);
+
+        let row = sqlx::query!(
+            r#"
+            SELECT
+                e.status AS "status!",
+                k.pks_key AS "pks_key!",
+                k.sks_key AS "sks_key!"
+            FROM kms_key_activation_events e
+            INNER JOIN keys k
+                ON k.chain_id = e.chain_id
+                AND k.block_hash = e.block_hash
+                AND k.key_id_gw = e.key_id
+            WHERE e.chain_id = $1 AND e.block_hash = $2 AND e.key_id = $3
+            "#,
+            chain_id.as_i64(),
+            &block_hash,
+            &key_id,
+        )
+        .fetch_one(&pool)
+        .await?;
+
+        assert_eq!(row.status, "activated");
+        assert_eq!(row.pks_key, public_key);
+        assert_eq!(row.sks_key, server_key);
 
         Ok(())
     }

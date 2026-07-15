@@ -15,6 +15,10 @@ fn build_contracts() {
     );
     println!("cargo:rerun-if-changed=../../../host-contracts/contracts/FHEVMExecutor.sol");
     println!("cargo:rerun-if-changed=../../../host-contracts/contracts/KMSGeneration.sol");
+    println!("cargo:rerun-if-changed=../../../host-contracts/contracts/ProtocolConfig.sol");
+    println!(
+        "cargo:rerun-if-changed=../../../host-contracts/contracts/interfaces/IProtocolConfig.sol"
+    );
     println!(
         "cargo:rerun-if-changed=../../../host-contracts/contracts/bridge/BridgeEvents.sol"
     );
