@@ -36,6 +36,20 @@ const CLEANUP_INTERVAL_SECS: u32 = 300;
 const CLEANUP_BATCH_SIZE: i64 = 1000;
 const CLEANUP_AGE_THRESHOLD_SECONDS: u32 = 48 * 60 * 60; // 48 hours
 
+fn format_dcid_sample(dcids: &[Vec<u8>]) -> String {
+    const MAX_SAMPLE: usize = 3;
+
+    let mut sample = dcids
+        .iter()
+        .take(MAX_SAMPLE)
+        .map(hex::encode)
+        .collect::<Vec<_>>();
+    if dcids.len() > MAX_SAMPLE {
+        sample.push(format!("...(+{})", dcids.len() - MAX_SAMPLE));
+    }
+    sample.join(",")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LockingReason {
     UpdatedUnowned, // Normal lock acquisition
@@ -61,7 +75,7 @@ impl From<&str> for LockingReason {
 pub struct LockMngr {
     pool: sqlx::Pool<Postgres>,
     worker_id: Uuid,
-    lock: Option<(DatabaseChainLock, SystemTime)>,
+    locks: Vec<(DatabaseChainLock, SystemTime)>,
 
     // Configurations
     lock_ttl_sec: i64,
@@ -113,7 +127,7 @@ impl LockMngr {
         Self {
             worker_id,
             pool,
-            lock: None,
+            locks: Vec::new(),
             lock_ttl_sec: 30,
             lock_timeslice_sec: None,
             disable_locking: false,
@@ -147,9 +161,23 @@ impl LockMngr {
     pub async fn acquire_next_lock(
         &mut self,
     ) -> Result<(Option<Vec<u8>>, LockingReason), sqlx::Error> {
+        let locks = self.acquire_next_locks(1).await?;
+        Ok(locks
+            .into_iter()
+            .next()
+            .unwrap_or((None, LockingReason::Missing)))
+    }
+
+    /// Acquire the next available dependence-chain entries for processing
+    /// sorted by last_updated_at (FIFO).
+    /// Returns the dependence_chain_ids if locks were acquired.
+    pub async fn acquire_next_locks(
+        &mut self,
+        limit: i32,
+    ) -> Result<Vec<(Option<Vec<u8>>, LockingReason)>, sqlx::Error> {
         if self.disable_locking {
             debug!("Locking is disabled");
-            return Ok((None, LockingReason::Missing));
+            return Ok(vec![(None, LockingReason::Missing)]);
         }
 
         let started_at = SystemTime::now();
@@ -179,7 +207,7 @@ impl LockMngr {
                         )
                 ORDER BY schedule_priority ASC, last_updated_at ASC -- highest priority first
                 FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
-                LIMIT 1
+                LIMIT $3
             )
             UPDATE dependence_chain AS dc
             SET
@@ -194,29 +222,43 @@ impl LockMngr {
         )
         .bind(self.worker_id)
         .bind(self.lock_ttl_sec)
-        .fetch_optional(&self.pool)
+        .bind(limit)
+        .fetch_all(&self.pool)
         .await?;
 
-        let row = if let Some(row) = row {
-            row
-        } else {
-            return Ok((None, LockingReason::Missing));
-        };
-
-        self.lock.replace((row.clone(), SystemTime::now()));
-        ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
+        if row.is_empty() {
+            return Ok(vec![(None, LockingReason::Missing)]);
+        }
 
         let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
         if elapsed > 0.0 {
             ACQUIRE_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM.observe(elapsed);
         }
 
-        info!(?row, query_elapsed = %elapsed, "Acquired lock");
+        ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc_by(row.len() as u64);
+        let acquired_at = SystemTime::now();
+        let acquired_count = row.len();
+        let acquired_sample = format_dcid_sample(
+            &row.iter()
+                .map(|lock| lock.dependence_chain_id.clone())
+                .collect::<Vec<_>>(),
+        );
+        let mut result = Vec::with_capacity(row.len());
+        for lock in row {
+            result.push((
+                Some(lock.dependence_chain_id.clone()),
+                LockingReason::from(lock.match_reason.as_str()),
+            ));
+            self.locks.push((lock, acquired_at));
+        }
+        info!(
+            acquired_count,
+            dcid_sample = %acquired_sample,
+            query_elapsed = %elapsed,
+            "Acquired locks"
+        );
 
-        Ok((
-            Some(row.dependence_chain_id),
-            LockingReason::from(row.match_reason.as_str()),
-        ))
+        Ok(result)
     }
 
     /// Acquire the earliest dependence-chain entry for processing
@@ -269,7 +311,7 @@ impl LockMngr {
             return Ok((None, LockingReason::Missing));
         };
 
-        self.lock.replace((row.clone(), SystemTime::now()));
+        self.locks.push((row.clone(), SystemTime::now()));
         ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
 
         let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -308,7 +350,7 @@ impl LockMngr {
         .execute(&self.pool)
         .await?;
 
-        self.take_lock();
+        self.take_locks();
         info!(worker_id = %self.worker_id,
             count = rows.rows_affected(), "Released all locks");
 
@@ -328,13 +370,11 @@ impl LockMngr {
             return Ok(0);
         }
 
-        let dep_chain_id = match &self.lock {
-            Some((lock, _)) => lock.dependence_chain_id.clone(),
-            None => {
-                debug!("No lock to release");
-                return Ok(0);
-            }
-        };
+        let dep_chain_ids = self.get_current_lock_ids();
+        if dep_chain_ids.is_empty() {
+            debug!("No lock to release");
+            return Ok(0);
+        }
 
         // Since UPDATE always acquire a row-level lock internally,
         // this acts as atomic_exchange
@@ -353,10 +393,10 @@ impl LockMngr {
                     ELSE status
                 END
             WHERE worker_id = $1
-            AND dependence_chain_id = $2
+            AND dependence_chain_id = ANY($2)
             "#,
             self.worker_id,
-            dep_chain_id,
+            &dep_chain_ids,
             mark_as_processed,
             update_at,
         )
@@ -376,10 +416,10 @@ impl LockMngr {
                     ELSE status
                 END
             WHERE worker_id = $1
-            AND dependence_chain_id = $2
+            AND dependence_chain_id = ANY($2)
             "#,
             self.worker_id,
-            dep_chain_id,
+            &dep_chain_ids,
             mark_as_processed,
         )
         .execute(&self.pool)
@@ -399,7 +439,7 @@ impl LockMngr {
                     WHERE dependence_chain_id = ANY (
                         SELECT unnest(dependents)
                         FROM dependence_chain
-                        WHERE dependence_chain_id = $1
+                        WHERE dependence_chain_id = ANY($1)
                     )
                         RETURNING dependence_chain_id, dependency_count
                 ),
@@ -413,15 +453,22 @@ impl LockMngr {
                     pg_notify('work_available', '')
                 FROM   ready_dcid_available;
             "#,
-                dep_chain_id,
+                &dep_chain_ids,
             )
             .execute(&self.pool)
             .await?
             .rows_affected();
         }
 
-        self.take_lock();
-        info!(dcid = %hex::encode(&dep_chain_id), rows = rows.rows_affected(), mark_as_processed, dependents_updated,  "Released lock");
+        self.take_locks();
+        info!(
+            dcid_count = dep_chain_ids.len(),
+            dcid_sample = %format_dcid_sample(&dep_chain_ids),
+            rows = rows.rows_affected(),
+            mark_as_processed,
+            dependents_updated,
+            "Released locks"
+        );
 
         Ok(rows.rows_affected())
     }
@@ -437,13 +484,11 @@ impl LockMngr {
             return Ok(0);
         }
 
-        let dep_chain_id: Vec<u8> = match &self.lock {
-            Some((lock, _)) => lock.dependence_chain_id.clone(),
-            None => {
-                warn!("No lock to set error on");
-                return Ok(0);
-            }
-        };
+        let dep_chain_ids = self.get_current_lock_ids();
+        if dep_chain_ids.is_empty() {
+            warn!("No lock to set error on");
+            return Ok(0);
+        }
 
         let rows = sqlx::query!(
             r#"
@@ -452,17 +497,22 @@ impl LockMngr {
                 error_message = CASE
                         WHEN status = 'processing' THEN $3
                         ELSE error_message
-                        END
-            WHERE worker_id = $1 AND dependence_chain_id = $2
+                END
+            WHERE worker_id = $1 AND dependence_chain_id = ANY($2)
             "#,
             self.worker_id,
-            dep_chain_id,
+            &dep_chain_ids,
             err
         )
         .execute(&self.pool)
         .await?;
 
-        info!(dcid = %hex::encode(&dep_chain_id), error = ?err, "Set error on lock");
+        info!(
+            dcid_count = dep_chain_ids.len(),
+            dcid_sample = %format_dcid_sample(&dep_chain_ids),
+            error = ?err,
+            "Set error on locks"
+        );
         Ok(rows.rows_affected())
     }
 
@@ -480,24 +530,33 @@ impl LockMngr {
         }
 
         let started_at = SystemTime::now();
-        let (dependence_chain_id, created_at) = match &self.lock {
-            Some((lock, created_at)) => (lock.dependence_chain_id.clone(), *created_at),
-            None => {
-                debug!("No lock to extend");
-                return Ok(None);
-            }
-        };
+        if self.locks.is_empty() {
+            debug!("No lock to extend");
+            return Ok(None);
+        }
 
         // Check timeslice
         if let Some(timeslice) = self.lock_timeslice_sec {
+            let oldest_created_at = self
+                .locks
+                .iter()
+                .map(|(_, created_at)| *created_at)
+                .min()
+                .unwrap_or_else(SystemTime::now);
             if enable_timeslice_check
-                && created_at
+                && oldest_created_at
                     .elapsed()
                     .map(|d: std::time::Duration| d.as_secs())
                     .unwrap_or(0)
                     >= timeslice as u64
             {
-                warn!(dcid = %hex::encode(&dependence_chain_id), timeslice = timeslice, "Max lock timeslice exceeded, releasing lock");
+                let dep_chain_ids = self.get_current_lock_ids();
+                warn!(
+                    dcid_count = dep_chain_ids.len(),
+                    dcid_sample = %format_dcid_sample(&dep_chain_ids),
+                    timeslice = timeslice,
+                    "Max lock timeslice exceeded, releasing locks"
+                );
 
                 // Release the lock instead of extending it as the timeslice's been consumed
                 // Do not mark as processed so it can be re-acquired
@@ -508,43 +567,52 @@ impl LockMngr {
 
         // max_lock_ttl_sec
 
+        let dep_chain_ids = self.get_current_lock_ids();
         let row = sqlx::query_as!(
             LockExpiresAt,
             r#"
             UPDATE dependence_chain AS dc
                 SET
                 lock_expires_at = NOW() + make_interval(secs => $3)
-            WHERE dependence_chain_id = $1 AND worker_id = $2
+            WHERE dependence_chain_id = ANY($1) AND worker_id = $2
             RETURNING dc.lock_expires_at::timestamptz AS "lock_expires_at: chrono::DateTime<Utc>";
         "#,
-            dependence_chain_id,
+            &dep_chain_ids,
             self.worker_id,
             self.lock_ttl_sec as f64
         )
-        .fetch_optional(&self.pool)
+        .fetch_all(&self.pool)
         .await?;
 
-        let lock_expires_at = match row {
-            Some(r) => r,
-            None => {
-                self.take_lock();
-                error!(dcid = %hex::encode(&dependence_chain_id), "No lock extended");
-                return Ok(None);
-            }
-        };
+        if row.is_empty() {
+            self.take_locks();
+            error!(
+                dcid_count = dep_chain_ids.len(),
+                dcid_sample = %format_dcid_sample(&dep_chain_ids),
+                "No lock extended"
+            );
+            return Ok(None);
+        }
 
         // Update the in-memory lock
-        if let Some((lock, _)) = self.lock.as_mut() {
+        for ((lock, _), lock_expires_at) in self.locks.iter_mut().zip(row.iter()) {
             lock.lock_expires_at = lock_expires_at.lock_expires_at;
-            info!(dcid = %hex::encode(&dependence_chain_id), expires_at = ?lock.lock_expires_at, "Extended lock");
         }
+        info!(
+            dcid_count = dep_chain_ids.len(),
+            dcid_sample = %format_dcid_sample(&dep_chain_ids),
+            "Extended locks"
+        );
 
         let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
         if elapsed > 0.0 {
             EXTEND_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM.observe(elapsed);
         }
 
-        Ok(Some((dependence_chain_id, LockingReason::ExtendedLock)))
+        Ok(dep_chain_ids
+            .first()
+            .cloned()
+            .map(|id| (id, LockingReason::ExtendedLock)))
     }
 
     pub async fn do_cleanup(&mut self) -> Result<u64, sqlx::Error> {
@@ -579,7 +647,18 @@ impl LockMngr {
     }
 
     pub fn get_current_lock(&self) -> Option<DatabaseChainLock> {
-        self.lock.as_ref().map(|(lock, _)| lock.clone())
+        self.locks.first().map(|(lock, _)| lock.clone())
+    }
+
+    pub fn get_current_locks(&self) -> Vec<DatabaseChainLock> {
+        self.locks.iter().map(|(lock, _)| lock.clone()).collect()
+    }
+
+    pub fn get_current_lock_ids(&self) -> Vec<Vec<u8>> {
+        self.locks
+            .iter()
+            .map(|(lock, _)| lock.dependence_chain_id.clone())
+            .collect()
     }
 
     pub fn worker_id(&self) -> Uuid {
@@ -591,8 +670,8 @@ impl LockMngr {
     }
 
     /// Clear the current lock without releasing it in the database
-    fn take_lock(&mut self) {
-        self.lock.take();
+    fn take_locks(&mut self) {
+        self.locks.clear();
     }
 }
 

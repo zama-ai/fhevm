@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::atomic::AtomicUsize,
 };
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use crate::dfg::types::*;
 use anyhow::Result;
@@ -74,71 +74,37 @@ pub struct ComponentNode {
     pub component_id: usize,
 }
 
-/// Check if a node is needed by traversing its outgoing edges iteratively.
-/// Uses an explicit stack to avoid stack overflow on deep computation graphs.
-fn is_needed(graph: &Dag<(bool, usize), OpEdge>, index: usize) -> bool {
-    let mut stack = vec![index];
-    let mut visited = graph.visit_map();
-
-    while let Some(current_index) = stack.pop() {
-        let node_index = NodeIndex::new(current_index);
-
-        // Skip if already visited to avoid cycles and redundant work
-        if visited.is_visited(&node_index) {
+pub fn finalize(graph: &mut Dag<(bool, usize), OpEdge>) -> Vec<usize> {
+    // Mark the complete ancestor closure of every allowed result in one
+    // reverse traversal. The former implementation ran a descendant DFS from
+    // every node, which was quadratic for long dependence chains.
+    let mut needed = graph.visit_map();
+    let mut stack = graph
+        .node_references()
+        .filter_map(|(index, node)| node.0.then_some(index))
+        .collect::<Vec<_>>();
+    while let Some(index) = stack.pop() {
+        if needed.is_visited(&index) {
             continue;
         }
-        visited.visit(node_index);
-
-        let node = match graph.node_weight(node_index) {
-            Some(n) => n,
-            None => {
-                error!(target: "scheduler", "Missing node for index in DFG finalization");
-                continue;
-            }
-        };
-
-        // If this node is marked as needed, the original node is needed
-        if node.0 {
-            return true;
-        }
-
-        // Push all outgoing neighbors onto the stack for exploration
-        for edge in graph.edges_directed(node_index, Direction::Outgoing) {
-            let target = edge.target();
-            if !visited.is_visited(&target) {
-                stack.push(target.index());
+        needed.visit(index);
+        for edge in graph.edges_directed(index, Incoming) {
+            let source = edge.source();
+            if !needed.is_visited(&source) {
+                stack.push(source);
             }
         }
     }
 
-    false
-}
-
-pub fn finalize(graph: &mut Dag<(bool, usize), OpEdge>) -> Vec<usize> {
-    // Traverse in reverse order and mark nodes as needed as the
-    // graph order is roughly computable, so allowed nodes should
-    // generally be later in the graph.
-    for index in (0..graph.node_count()).rev() {
-        if is_needed(graph, index) {
-            let node = match graph.node_weight_mut(NodeIndex::new(index)) {
-                Some(n) => n,
-                None => {
-                    // Shouldn't happen - if this fails we don't prune and execute all the graph
-                    error!(target: "scheduler", "Missing node for index in DFG finalization");
-                    return vec![];
-                }
-            };
-            node.0 = true;
-        }
-    }
     // Prune graph of all unneeded nodes and edges
     let mut unneeded_nodes = Vec::new();
     for index in 0..graph.node_count() {
         let node_index = NodeIndex::new(index);
-        let Some(node) = graph.node_weight(node_index) else {
-            continue;
-        };
-        if !node.0 {
+        if needed.is_visited(&node_index) {
+            if let Some(node) = graph.node_weight_mut(node_index) {
+                node.0 = true;
+            }
+        } else {
             unneeded_nodes.push(index);
         }
     }
@@ -146,12 +112,7 @@ pub fn finalize(graph: &mut Dag<(bool, usize), OpEdge>) -> Vec<usize> {
     // Remove unneeded nodes and their edges
     for index in unneeded_nodes.iter().rev() {
         let node_index = NodeIndex::new(*index);
-        let Some(node) = graph.node_weight(node_index) else {
-            continue;
-        };
-        if !node.0 {
-            graph.remove_node(node_index);
-        }
+        graph.remove_node(node_index);
     }
     unneeded_nodes
 }
@@ -179,7 +140,9 @@ pub fn build_component_nodes(
                         dependence_pairs.push((*producer, index, pos));
                     }
                 }
-                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
+                DFGTaskInput::Value(_)
+                | DFGTaskInput::SharedValue(_)
+                | DFGTaskInput::Compressed(_) => {}
             }
         }
         let node_idx = graph.add_node((op.is_allowed, index)).index();
@@ -251,7 +214,9 @@ impl ComponentNode {
                             self.inputs.entry(dh.clone()).or_insert(None);
                         }
                     }
-                    DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
+                    DFGTaskInput::Value(_)
+                    | DFGTaskInput::SharedValue(_)
+                    | DFGTaskInput::Compressed(_) => {}
                 }
             }
             self.results.push(op.output_handle.clone());
@@ -310,21 +275,78 @@ pub struct DFComponentGraph {
     pub needed_map: HashMap<Handle, Vec<NodeIndex>>,
     pub produced: HashMap<Handle, Vec<(NodeIndex, Handle)>>,
     pub results: Vec<DFGTxResult>,
+    /// The graph was deliberately left unexecuted because a cross-block
+    /// boundary input is still pending. Workers use this distinct outcome to
+    /// requeue the lane fairly instead of treating it as ordinary no-progress.
+    pub deferred: bool,
     deferred_dependences: Vec<(NodeIndex, NodeIndex, Handle)>,
+    /// Handles that are produced by more than one ComponentNode in this
+    /// graph. Key is the output handle; value is the list of non-canonical
+    /// producer `transaction_id`s — i.e. every `transaction_id` other than
+    /// the one the scheduler picks as canonical for that handle. Two
+    /// transactions in the same block can deterministically derive the
+    /// same output handle (handle = keccak256 of op, operands, ACL,
+    /// chain_id, block context; all constant within a block), and the
+    /// legacy `computations` PK `(tenant_id, output_handle,
+    /// transaction_id)` lets both rows coexist. `get_results()` uses this
+    /// map to synthesize a `DFGTxResult` for any producer `transaction_id`
+    /// missing from the partition output, so every producer row reaches
+    /// `is_completed = true` in the downstream DB UPDATE independent of
+    /// how partitioning distributes the producers.
+    aliased_tids: HashMap<Handle, Vec<Handle>>,
 }
 impl DFComponentGraph {
+    pub fn deferred() -> Self {
+        Self {
+            deferred: true,
+            ..Self::default()
+        }
+    }
+
     pub fn build(&mut self, nodes: &mut Vec<ComponentNode>) -> Result<()> {
         while let Some(tx) = nodes.pop() {
             self.graph.add_node(tx);
         }
-        // Gather handles produced within the graph
+        // Gather handles produced within the graph. When the same
+        // handle is produced by multiple ComponentNodes (two transactions
+        // in the same block deriving the same output handle — see
+        // `aliased_tids` on DFComponentGraph), we sort producers by
+        // `transaction_id` lexicographically so the canonical choice is
+        // deterministic and reproducible across coprocessors regardless
+        // of Vec insertion order: the lowest `transaction_id` is
+        // canonical; the rest go into `aliased_tids` for
+        // completion-broadcast at `get_results()` time.
         for (producer, tx) in self.graph.node_references() {
             for r in tx.results.iter() {
                 self.produced
                     .entry(r.clone())
-                    .and_modify(|p| p.push((producer, tx.transaction_id.clone())))
-                    .or_insert(vec![(producer, tx.transaction_id.clone())]);
+                    .or_default()
+                    .push((producer, tx.transaction_id.clone()));
             }
+        }
+        for (handle, producers) in self.produced.iter_mut() {
+            if producers.len() <= 1 {
+                continue;
+            }
+            producers.sort_by(|a, b| a.1.cmp(&b.1));
+            let aliased: Vec<Handle> = producers
+                .iter()
+                .skip(1)
+                .map(|(_, tid)| tid.clone())
+                .collect();
+            let canonical_tid = producers[0].1.clone();
+            info!(
+                target: "scheduler",
+                output_handle = %hex::encode(handle),
+                canonical_transaction_id = %hex::encode(&canonical_tid),
+                aliased_transaction_ids = ?aliased
+                    .iter()
+                    .map(hex::encode)
+                    .collect::<Vec<_>>(),
+                "Multi-producer handle detected; completion will broadcast \
+                 to all producer tids"
+            );
+            self.aliased_tids.insert(handle.clone(), aliased);
         }
         // Identify all dependence pairs (producer, consumer)
         let mut dependence_pairs = vec![];
@@ -342,9 +364,18 @@ impl DFComponentGraph {
                             dependence_pairs.push((*prod_idx, consumer));
                         }
                     } else if producer.len() > 1 {
-                        error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()),
-							  count =  ?producer.len() },
-				   "Handle collision for computation output");
+                        // Multi-producer handle with a cross-transaction
+                        // consumer: route the consumer from the canonical
+                        // producer (producer[0]). Same-block selected
+                        // producers are never materialized through DB fetch,
+                        // so the canonical in-memory value defines the
+                        // consumer input and the persisted canonical bytes.
+                        self.deferred_dependences
+                            .push((producer[0].0, consumer, i.clone()));
+                        self.needed_map
+                            .entry(i.clone())
+                            .and_modify(|uses| uses.push(consumer))
+                            .or_insert(vec![consumer]);
                     } else if producer.is_empty() {
                         error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()) },
 				   "Missing producer for handle");
@@ -477,6 +508,7 @@ impl DFComponentGraph {
     pub fn add_output(
         &mut self,
         handle: &[u8],
+        transaction_id: &Handle,
         result: Result<TaskResult>,
         edges: &Dag<(), ComponentEdge>,
     ) -> Result<()> {
@@ -484,31 +516,39 @@ impl DFComponentGraph {
             if producer.is_empty() {
                 error!(target: "scheduler", { output_handle = ?hex::encode(handle) },
 		       "Missing producer for handle");
+                return Err(SchedulerError::DataflowGraphError.into());
             } else {
-                let mut prod_idx = producer[0].0;
-                if let Ok(ref result) = result {
-                    if let Some((pid, _)) = producer
-                        .iter()
-                        .find(|(_, tid)| *tid == result.transaction_id)
-                    {
-                        prod_idx = *pid;
-                    }
-                }
+                let Some((prod_idx, _)) = producer.iter().find(|(_, tid)| tid == transaction_id)
+                else {
+                    error!(target: "scheduler", { output_handle = ?hex::encode(handle), transaction_id = ?hex::encode(transaction_id) },
+                        "Producer transaction id not found for output");
+                    return Err(SchedulerError::DataflowGraphError.into());
+                };
+                let prod_idx = *prod_idx;
                 let mut save_result = true;
                 if let Ok(ref result) = result {
                     save_result = result.is_allowed;
+                    let dependent_tx_indices: Vec<_> = edges
+                        .edges_directed(prod_idx, Direction::Outgoing)
+                        .map(|edge| edge.target())
+                        .collect();
                     // Traverse immediate dependents and add this result as an input
-                    for edge in edges.edges_directed(prod_idx, Direction::Outgoing) {
-                        let dependent_tx_index = edge.target();
+                    for dependent_tx_index in dependent_tx_indices {
+                        let working = result.working_ct.as_ref().ok_or_else(|| {
+                            error!(
+                                target: "scheduler",
+                                output_handle = ?hex::encode(handle),
+                                transaction_id = ?hex::encode(transaction_id),
+                                "same-block propagation invariant violation: successful output missing working ciphertext"
+                            );
+                            SchedulerError::DataflowGraphError
+                        })?;
                         let dependent_tx = self
                             .graph
                             .node_weight_mut(dependent_tx_index)
                             .ok_or(SchedulerError::DataflowGraphError)?;
                         dependent_tx.inputs.entry(handle.to_vec()).and_modify(|v| {
-                            *v = Some(DFGTxInput::Compressed((
-                                result.compressed_ct.clone(),
-                                result.is_allowed,
-                            )))
+                            *v = Some(DFGTxInput::Value((working.clone(), result.is_allowed)))
                         });
                     }
                 } else {
@@ -524,10 +564,22 @@ impl DFComponentGraph {
                         .graph
                         .node_weight_mut(prod_idx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
+                    let compressed_ct = match result {
+                        Ok(rok) => Ok(rok.compressed_ct.ok_or_else(|| {
+                            error!(
+                                target: "scheduler",
+                                output_handle = ?hex::encode(handle),
+                                transaction_id = ?hex::encode(transaction_id),
+                                "persisted output is missing its compressed ciphertext"
+                            );
+                            SchedulerError::DataflowGraphError
+                        })?),
+                        Err(error) => Err(error),
+                    };
                     self.results.push(DFGTxResult {
                         transaction_id: producer_tx.transaction_id.clone(),
                         handle: handle.to_vec(),
-                        compressed_ct: result.map(|rok| rok.compressed_ct),
+                        compressed_ct,
                     });
                 }
             }
@@ -571,8 +623,72 @@ impl DFComponentGraph {
         }
         Ok(())
     }
-    pub fn get_results(&mut self) -> Vec<DFGTxResult> {
-        std::mem::take(&mut self.results)
+    pub fn get_results(&mut self) -> Result<Vec<DFGTxResult>> {
+        let mut results = std::mem::take(&mut self.results);
+        if self.aliased_tids.is_empty() {
+            return Ok(results);
+        }
+        // Completion broadcast for multi-producer handles. Transaction IDs do
+        // not participate in either output-handle derivation or block-scoped
+        // input re-randomization, so every successful producer of one handle
+        // must yield byte-identical ciphertexts. Use the lexicographically
+        // smallest *available* successful producer as the source, verify every
+        // other successful result against it, then publish those bytes for all
+        // producer rows. Requiring the lexicographically smallest producer to
+        // have executed turns a scheduler/partition omission into a permanent
+        // liveness failure even though an equivalent result is available.
+        //
+        // Divergent successful results violate the deterministic-ciphertext
+        // consensus invariant. Fail the whole batch instead of selecting one
+        // partition-dependent image or hiding the violation behind canonical
+        // transaction ordering.
+        let aliased_handles = self.aliased_tids.keys().cloned().collect::<Vec<_>>();
+        for handle in &aliased_handles {
+            let Some(producers) = self.produced.get(handle) else {
+                continue;
+            };
+            let mut successful = results
+                .iter()
+                .filter_map(|result| {
+                    if &result.handle != handle {
+                        return None;
+                    }
+                    result
+                        .compressed_ct
+                        .as_ref()
+                        .ok()
+                        .map(|ciphertext| (&result.transaction_id, ciphertext))
+                })
+                .collect::<Vec<_>>();
+            if successful.is_empty() {
+                continue;
+            }
+            successful.sort_by(|a, b| a.0.cmp(b.0));
+            let (source_tid, source_cct) = successful[0];
+            for (other_tid, other_cct) in successful.iter().skip(1) {
+                if source_cct.ct_type != other_cct.ct_type
+                    || source_cct.ct_bytes != other_cct.ct_bytes
+                {
+                    anyhow::bail!(
+                        "multi-producer ciphertext divergence for handle {}: source tid {} type {}, divergent tid {} type {}",
+                        hex::encode(handle),
+                        hex::encode(source_tid),
+                        source_cct.ct_type,
+                        hex::encode(other_tid),
+                        other_cct.ct_type,
+                    );
+                }
+            }
+
+            let broadcast_cct = source_cct.clone();
+            results.retain(|result| &result.handle != handle);
+            results.extend(producers.iter().map(|(_, tid)| DFGTxResult {
+                transaction_id: tid.clone(),
+                handle: handle.clone(),
+                compressed_ct: Ok(broadcast_cct.clone()),
+            }));
+        }
+        Ok(results)
     }
     pub fn get_intermediate_handles(&mut self) -> Vec<(Handle, Handle)> {
         let mut res = vec![];
@@ -630,17 +746,34 @@ impl std::fmt::Debug for OpNode {
     }
 }
 impl OpNode {
-    fn check_ready_inputs(&mut self, ct_map: &mut HashMap<Handle, Option<DFGTxInput>>) -> bool {
+    fn check_ready_inputs(
+        &mut self,
+        ct_map: &mut HashMap<Handle, Option<DFGTxInput>>,
+        remaining_uses: &mut HashMap<Handle, usize>,
+    ) -> bool {
         for i in self.inputs.iter_mut() {
             match i {
-                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => continue,
+                DFGTaskInput::Value(_)
+                | DFGTaskInput::SharedValue(_)
+                | DFGTaskInput::Compressed(_) => continue,
                 DFGTaskInput::Dependence(d) => {
-                    let resolved = match ct_map.get(d) {
-                        Some(Some(DFGTxInput::Value((val, _)))) => DFGTaskInput::Value(val.clone()),
-                        Some(Some(DFGTxInput::Compressed((cct, _)))) => {
-                            DFGTaskInput::Compressed(cct.clone())
-                        }
-                        _ => return false,
+                    if !matches!(ct_map.get(d), Some(Some(_))) {
+                        return false;
+                    }
+                    let Some(uses) = remaining_uses.get(d).copied() else {
+                        return false;
+                    };
+                    let resolved_input = if uses == 1 {
+                        remaining_uses.remove(d);
+                        ct_map.get_mut(d).and_then(Option::take)
+                    } else {
+                        remaining_uses.insert(d.clone(), uses - 1);
+                        ct_map.get(d).cloned().flatten()
+                    };
+                    let resolved = match resolved_input {
+                        Some(DFGTxInput::Value((val, _))) => DFGTaskInput::Value(val),
+                        Some(DFGTxInput::Compressed((cct, _))) => DFGTaskInput::Compressed(cct),
+                        None => return false,
                     };
                     *i = resolved;
                 }
@@ -808,4 +941,426 @@ pub fn partition_components<TNode, TEdge>(
     // components within the DFG, there are no dependences (edges) to
     // add to the execution graph.
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::field_reassign_with_default, clippy::redundant_clone)]
+mod tests {
+    use super::*;
+    use fhevm_engine_common::types::SupportedFheCiphertexts;
+    use std::sync::Arc;
+
+    fn handle(byte: u8) -> Handle {
+        vec![byte; 32]
+    }
+
+    fn make_cnode(tid: Handle, result: Handle) -> ComponentNode {
+        let mut node = ComponentNode::default();
+        node.transaction_id = tid;
+        node.results = vec![result];
+        node
+    }
+
+    fn make_cnode_with_allowed_op(tid: Handle, result: Handle) -> ComponentNode {
+        let mut node = make_cnode(tid, result.clone());
+        node.graph.add_node(
+            result,
+            (SupportedFheOperations::FheTrivialEncrypt as i16).into(),
+            vec![],
+            true,
+        );
+        node
+    }
+
+    fn trivial_encrypt_op(output: Handle, transaction_id: &Handle) -> ComponentNode {
+        let ops = vec![DFGOp {
+            output_handle: output,
+            fhe_op: SupportedFheOperations::FheTrivialEncrypt,
+            inputs: vec![
+                DFGTaskInput::Value(Arc::new(SupportedFheCiphertexts::Scalar(vec![0; 32]))),
+                DFGTaskInput::Value(Arc::new(SupportedFheCiphertexts::Scalar(vec![5]))),
+            ],
+            is_allowed: true,
+        }];
+        build_component_nodes(ops, transaction_id)
+            .expect("component build")
+            .0
+            .pop()
+            .expect("one component")
+    }
+
+    #[test]
+    fn finalize_keeps_only_allowed_results_and_their_ancestors() {
+        let mut graph = Dag::<(bool, usize), OpEdge>::default();
+        let kept_root = graph.add_node((false, 0));
+        let kept_mid = graph.add_node((false, 1));
+        let kept_result = graph.add_node((true, 2));
+        let pruned_root = graph.add_node((false, 3));
+        let pruned_leaf = graph.add_node((false, 4));
+        graph.add_edge(kept_root, kept_mid, 0).unwrap();
+        graph.add_edge(kept_mid, kept_result, 0).unwrap();
+        graph.add_edge(pruned_root, pruned_leaf, 0).unwrap();
+
+        assert_eq!(finalize(&mut graph), vec![3, 4]);
+        assert_eq!(graph.node_count(), 3);
+        assert!(graph.node_references().all(|(_, node)| node.0));
+    }
+
+    #[test]
+    fn finalize_handles_deep_chains_in_one_iterative_pass() {
+        const NODE_COUNT: usize = 10_000;
+        let mut graph = Dag::<(bool, usize), OpEdge>::default();
+        let mut previous = graph.add_node((false, 0));
+        for index in 1..NODE_COUNT {
+            let current = graph.add_node((index == NODE_COUNT - 1, index));
+            graph.add_edge(previous, current, 0).unwrap();
+            previous = current;
+        }
+
+        assert!(finalize(&mut graph).is_empty());
+        assert_eq!(graph.node_count(), NODE_COUNT);
+    }
+
+    fn ct(bytes: &[u8]) -> CompressedCiphertext {
+        CompressedCiphertext {
+            ct_type: 4,
+            ct_bytes: bytes.to_vec(),
+        }
+    }
+
+    /// Two ComponentNodes produce the same output handle. `build()` must
+    /// pick the lexicographically smallest `transaction_id` as canonical
+    /// and record the other in `aliased_tids` regardless of Vec
+    /// insertion order.
+    #[test]
+    fn build_sorts_producers_and_records_aliased_tids() {
+        let out = handle(0xAA);
+        let tid_lo = handle(0x01);
+        let tid_hi = handle(0x02);
+
+        for (label, order) in [
+            ("lo-then-hi", vec![tid_lo.clone(), tid_hi.clone()]),
+            ("hi-then-lo", vec![tid_hi.clone(), tid_lo.clone()]),
+        ] {
+            let mut nodes: Vec<ComponentNode> = order
+                .iter()
+                .map(|tid| make_cnode(tid.clone(), out.clone()))
+                .collect();
+            let mut g = DFComponentGraph::default();
+            g.build(&mut nodes).expect("build");
+
+            let producers = g.produced.get(&out).expect("produced entry");
+            assert_eq!(producers.len(), 2, "{label}");
+            assert_eq!(
+                &producers[0].1, &tid_lo,
+                "{label}: canonical must be the lexicographically smallest tid"
+            );
+            assert_eq!(&producers[1].1, &tid_hi, "{label}");
+
+            let aliased = g.aliased_tids.get(&out).expect("aliased_tids entry");
+            assert_eq!(aliased, &vec![tid_hi.clone()], "{label}");
+        }
+    }
+
+    /// Single-producer handles do not appear in `aliased_tids`.
+    #[test]
+    fn build_single_producer_leaves_aliased_tids_empty() {
+        let mut nodes = vec![make_cnode(handle(0x01), handle(0xAA))];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+        assert!(g.aliased_tids.is_empty());
+    }
+
+    #[test]
+    fn build_does_not_require_scalar_trivial_encrypt_literals() {
+        let mut nodes = vec![
+            trivial_encrypt_op(handle(0xAA), &handle(0x01)),
+            trivial_encrypt_op(handle(0xAA), &handle(0x02)),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        assert!(
+            !g.needed_map.contains_key(&vec![0; 32]),
+            "zero literal must not be fetched as ciphertext"
+        );
+        assert!(
+            !g.needed_map.contains_key(&vec![5]),
+            "type literal must not be fetched as ciphertext"
+        );
+    }
+
+    /// `get_results()` synthesizes a `DFGTxResult` for every producer tid.
+    /// When the lexicographically smallest producer succeeded, its ciphertext
+    /// is the deterministic broadcast source.
+    #[test]
+    fn get_results_broadcasts_to_missing_aliased_tids() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased_1 = handle(0x02);
+        let tid_aliased_2 = handle(0x03);
+
+        let mut nodes = vec![
+            make_cnode(tid_canonical.clone(), out.clone()),
+            make_cnode(tid_aliased_1.clone(), out.clone()),
+            make_cnode(tid_aliased_2.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        // Simulate a same-partition scenario: only the canonical tid
+        // received a `DFGTxResult` via `add_output`; the aliased tids
+        // were overwritten in `res` and never routed through
+        // `add_output` at all.
+        let canonical_bytes = b"canonical-bytes".to_vec();
+        g.results.push(DFGTxResult {
+            transaction_id: tid_canonical.clone(),
+            handle: out.clone(),
+            compressed_ct: Ok(ct(&canonical_bytes)),
+        });
+
+        let out_results = g.get_results().expect("coalesce results");
+        assert_eq!(out_results.len(), 3, "canonical + both aliased must appear");
+        for tid in [&tid_canonical, &tid_aliased_1, &tid_aliased_2] {
+            let entry = out_results
+                .iter()
+                .find(|r| &r.transaction_id == tid)
+                .unwrap_or_else(|| panic!("missing result for tid {tid:?}"));
+            let cct = entry.compressed_ct.as_ref().expect("Ok result");
+            assert_eq!(
+                cct.ct_bytes, canonical_bytes,
+                "bytes must be cloned from canonical"
+            );
+            assert_eq!(cct.ct_type, 4);
+        }
+    }
+
+    /// If a partition-layout regression leaves only an aliased producer
+    /// result, promote its deterministic ciphertext to every producer row.
+    /// Transaction IDs do not participate in ciphertext derivation, so making
+    /// progress must not depend on which equivalent producer was scheduled.
+    #[test]
+    fn get_results_promotes_aliased_ok_when_canonical_missing() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased = handle(0x02);
+
+        let mut nodes = vec![
+            make_cnode(tid_canonical.clone(), out.clone()),
+            make_cnode(tid_aliased.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        let aliased_bytes = b"aliased-bytes".to_vec();
+        g.results.push(DFGTxResult {
+            transaction_id: tid_aliased.clone(),
+            handle: out.clone(),
+            compressed_ct: Ok(ct(&aliased_bytes)),
+        });
+
+        let out_results = g.get_results().expect("promote aliased result");
+        assert_eq!(out_results.len(), 2, "both producer rows must complete");
+        for tid in [&tid_canonical, &tid_aliased] {
+            let result = out_results
+                .iter()
+                .find(|result| &result.transaction_id == tid)
+                .unwrap_or_else(|| panic!("missing result for tid {tid:?}"));
+            let ciphertext = result.compressed_ct.as_ref().expect("Ok result");
+            assert_eq!(ciphertext.ct_type, 4);
+            assert_eq!(ciphertext.ct_bytes, aliased_bytes);
+        }
+    }
+
+    /// Independently computed successful producer results must agree exactly.
+    /// Divergence is a consensus violation, not a value that canonical
+    /// transaction ordering can safely hide.
+    #[test]
+    fn get_results_rejects_divergent_aliased_ciphertext() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased = handle(0x02);
+
+        let mut nodes = vec![
+            make_cnode(tid_canonical.clone(), out.clone()),
+            make_cnode(tid_aliased.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        g.results.push(DFGTxResult {
+            transaction_id: tid_canonical.clone(),
+            handle: out.clone(),
+            compressed_ct: Ok(ct(b"canonical")),
+        });
+        g.results.push(DFGTxResult {
+            transaction_id: tid_aliased.clone(),
+            handle: out.clone(),
+            compressed_ct: Ok(ct(b"aliased-independently-computed")),
+        });
+
+        let error = g
+            .get_results()
+            .expect_err("divergent ciphertext bytes must fail the batch");
+        assert!(error
+            .to_string()
+            .contains("multi-producer ciphertext divergence"));
+    }
+
+    /// If every producer failed (no Ok result for the handle), the
+    /// broadcast must not invent a synthetic Ok entry — the aliased
+    /// tids are left alone so their own error rows remain the source
+    /// of truth.
+    #[test]
+    fn get_results_skips_broadcast_when_canonical_errored() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased = handle(0x02);
+
+        let mut nodes = vec![
+            make_cnode(tid_canonical.clone(), out.clone()),
+            make_cnode(tid_aliased.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        g.results.push(DFGTxResult {
+            transaction_id: tid_canonical.clone(),
+            handle: out.clone(),
+            compressed_ct: Err(SchedulerError::MissingInputs.into()),
+        });
+
+        let out_results = g.get_results().expect("retain producer error");
+        assert_eq!(out_results.len(), 1, "no Ok ciphertext to broadcast");
+        assert_eq!(out_results[0].transaction_id, tid_canonical);
+    }
+
+    /// Duplicate-handle errors must be attributed to the producer tid that
+    /// emitted the error. Falling back to the canonical producer poisons the
+    /// wrong dependency path and can leave the failed aliased row pending.
+    #[test]
+    fn add_output_error_uses_result_transaction_id_for_duplicate_handles() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased = handle(0x02);
+
+        let mut nodes = vec![
+            make_cnode_with_allowed_op(tid_canonical.clone(), out.clone()),
+            make_cnode_with_allowed_op(tid_aliased.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        let edges = g.graph.map(|_, _| (), |_, edge| *edge);
+        g.add_output(
+            &out,
+            &tid_aliased,
+            Err(SchedulerError::MissingInputs.into()),
+            &edges,
+        )
+        .expect("add output");
+
+        let producers = g.produced.get(&out).expect("produced entry");
+        let canonical_idx = producers
+            .iter()
+            .find(|(_, tid)| tid == &tid_canonical)
+            .expect("canonical producer")
+            .0;
+        let aliased_idx = producers
+            .iter()
+            .find(|(_, tid)| tid == &tid_aliased)
+            .expect("aliased producer")
+            .0;
+
+        assert!(
+            !g.graph
+                .node_weight(canonical_idx)
+                .expect("canonical node")
+                .is_uncomputable,
+            "canonical producer must not be marked uncomputable"
+        );
+        assert!(
+            g.graph
+                .node_weight(aliased_idx)
+                .expect("aliased node")
+                .is_uncomputable,
+            "aliased producer must be marked uncomputable"
+        );
+
+        let out_results = g.get_results().expect("retain producer error");
+        assert!(
+            !out_results.is_empty(),
+            "the aliased failure should emit at least one error result"
+        );
+        assert!(
+            out_results
+                .iter()
+                .all(|result| result.transaction_id == tid_aliased),
+            "all emitted error results must belong to the failed aliased producer"
+        );
+    }
+
+    #[test]
+    fn add_output_errors_when_transaction_id_is_not_a_producer() {
+        let out = handle(0xAA);
+        let tid_canonical = handle(0x01);
+        let tid_aliased = handle(0x02);
+        let tid_unknown = handle(0x03);
+
+        let mut nodes = vec![
+            make_cnode_with_allowed_op(tid_canonical.clone(), out.clone()),
+            make_cnode_with_allowed_op(tid_aliased.clone(), out.clone()),
+        ];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        let edges = g.graph.map(|_, _| (), |_, edge| *edge);
+        let error = g
+            .add_output(
+                &out,
+                &tid_unknown,
+                Err(SchedulerError::MissingInputs.into()),
+                &edges,
+            )
+            .expect_err("unknown producer transaction id should fail closed");
+
+        assert_eq!(
+            error.to_string(),
+            SchedulerError::DataflowGraphError.to_string()
+        );
+        assert!(
+            g.get_results().expect("collect results").is_empty(),
+            "unknown producer output must not be saved under another producer"
+        );
+    }
+
+    #[test]
+    fn add_output_rejects_uncompressed_persisted_ciphertext() {
+        let out = handle(0xAA);
+        let tid = handle(0x01);
+        let mut nodes = vec![make_cnode_with_allowed_op(tid.clone(), out.clone())];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        let edges = g.graph.map(|_, _| (), |_, edge| *edge);
+        let error = g
+            .add_output(
+                &out,
+                &tid,
+                Ok(TaskResult {
+                    compressed_ct: None,
+                    working_ct: Some(Arc::new(SupportedFheCiphertexts::Scalar(vec![1]))),
+                    is_allowed: true,
+                    transaction_id: tid.clone(),
+                }),
+                &edges,
+            )
+            .expect_err("block-exit ciphertexts must be compressed");
+
+        assert_eq!(
+            error.to_string(),
+            SchedulerError::DataflowGraphError.to_string()
+        );
+        assert!(g.get_results().expect("collect results").is_empty());
+    }
 }
