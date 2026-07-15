@@ -16,8 +16,8 @@ use std::str::FromStr;
 
 use anchor_client::{Client, Cluster, CommitmentConfig, Program, Signer};
 use anchor_lang::solana_program::{pubkey::Pubkey, system_program};
-use anchor_lang::{AccountDeserialize, AnchorDeserialize};
-use serde::Deserialize;
+use anchor_lang::{AccountDeserialize, AnchorDeserialize, Discriminator};
+use serde::{Deserialize, Serialize};
 use solana_keypair::{read_keypair_file, Keypair};
 
 const EVENT_AUTHORITY_SEED: &[u8] = b"__event_authority";
@@ -45,6 +45,19 @@ struct DurableEvalResult {
     handle: [u8; 32],
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenBalanceState {
+    version: u8,
+    mint: String,
+    owner: String,
+    token_account: String,
+    encrypted_value_account: String,
+    acl_value_key: String,
+    current_handle: String,
+    chain_id: String,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let home = std::env::var("HOME")?;
     let payer =
@@ -62,6 +75,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the former bootstrap.mjs (@solana/web3.js); mock-input + test-shims OFF.
     if std::env::var("BOOTSTRAP").is_ok() {
         bootstrap(&host, &payer, host_config)?;
+        return Ok(());
+    }
+
+    // TOKEN_BALANCE_STATE is a read-only test probe for the canonical current balance lineage.
+    // Inputs: MINT + TOKEN_OWNER. The final stdout line is stable JSON for fhevm-cli consumers.
+    if std::env::var("TOKEN_BALANCE_STATE").is_ok() {
+        token_balance_state(&host, &token, host_config)?;
+        return Ok(());
+    }
+
+    // INITIALIZE_TOKEN_ACCOUNT creates only the canonical zero-balance account for the payer.
+    // It is a test setup seam for multi-holder flows; unlike CONSUME_WRAP it needs no SPL ATA.
+    if std::env::var("INITIALIZE_TOKEN_ACCOUNT").is_ok() {
+        let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
+        initialize_token_account_if_missing(&token, &payer, host_config, mint)?;
         return Ok(());
     }
 
@@ -296,6 +324,141 @@ fn fetch_encrypted_value(
     let account = program.rpc().get_account(&encrypted_value)?;
     let mut data: &[u8] = &account.data;
     Ok(zama_host::EncryptedValue::try_deserialize(&mut data)?)
+}
+
+fn token_balance_state(
+    host: &Program<Rc<Keypair>>,
+    token: &Program<Rc<Keypair>>,
+    host_config: Pubkey,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
+    let owner = Pubkey::from_str(&std::env::var("TOKEN_OWNER")?)?;
+    let (token_account_key, token_account_bump) =
+        confidential_token::token_account_address(mint, owner);
+    let token_account_info = token.rpc().get_account(&token_account_key)?;
+    if token_account_info.owner != confidential_token::ID
+        || token_account_info.data.len() != 8 + confidential_token::ConfidentialTokenAccount::SPACE
+        || &token_account_info.data[..8]
+            != confidential_token::ConfidentialTokenAccount::DISCRIMINATOR
+    {
+        return Err("invalid confidential token account owner, size, or discriminator".into());
+    }
+    let mut token_data: &[u8] = &token_account_info.data;
+    let token_account =
+        confidential_token::ConfidentialTokenAccount::try_deserialize(&mut token_data)?;
+    if token_account.owner != owner
+        || token_account.mint != mint
+        || token_account.bump != token_account_bump
+    {
+        return Err("confidential token account body does not match its canonical PDA".into());
+    }
+
+    let label = confidential_token::balance_label();
+    let value_key =
+        zama_solana_acl::derive_value_key(mint.to_bytes(), token_account_key.to_bytes(), label);
+    let (encrypted_value_key, encrypted_value_bump) = zama_host::encrypted_value_address(value_key);
+    if token_account.balance_encrypted_value != encrypted_value_key {
+        return Err(
+            "token balance pointer does not match the canonical encrypted value PDA".into(),
+        );
+    }
+    // Re-read the pointer, lineage, and HostConfig in one RPC response. Rejecting a changed pointer
+    // prevents the probe from combining a token account from one bank state with a newer lineage.
+    let mut accounts =
+        host.rpc()
+            .get_multiple_accounts(&[token_account_key, encrypted_value_key, host_config])?;
+    let config_info = accounts
+        .pop()
+        .flatten()
+        .ok_or("HostConfig account missing")?;
+    let encrypted_value_info = accounts
+        .pop()
+        .flatten()
+        .ok_or("balance encrypted value account missing")?;
+    let token_account_info = accounts
+        .pop()
+        .flatten()
+        .ok_or("confidential token account missing during coherent re-read")?;
+    if token_account_info.owner != confidential_token::ID
+        || token_account_info.data.len() != 8 + confidential_token::ConfidentialTokenAccount::SPACE
+        || &token_account_info.data[..8]
+            != confidential_token::ConfidentialTokenAccount::DISCRIMINATOR
+    {
+        return Err("invalid confidential token account during coherent re-read".into());
+    }
+    let mut token_data: &[u8] = &token_account_info.data;
+    let token_account =
+        confidential_token::ConfidentialTokenAccount::try_deserialize(&mut token_data)?;
+    if token_account.owner != owner
+        || token_account.mint != mint
+        || token_account.bump != token_account_bump
+        || token_account.balance_encrypted_value != encrypted_value_key
+    {
+        return Err("confidential token account changed during balance-state read".into());
+    }
+    if encrypted_value_info.owner != zama_host::ID
+        || encrypted_value_info.data.len() < 8
+        || &encrypted_value_info.data[..8] != zama_host::EncryptedValue::DISCRIMINATOR
+    {
+        return Err("invalid balance encrypted value owner or discriminator".into());
+    }
+    let mut encrypted_value_data: &[u8] = &encrypted_value_info.data;
+    let encrypted_value = zama_host::EncryptedValue::try_deserialize(&mut encrypted_value_data)?;
+    if encrypted_value_info.data.len()
+        != 8 + zama_host::EncryptedValue::space(
+            encrypted_value.subjects.len(),
+            encrypted_value.peaks.len(),
+        )
+    {
+        return Err("balance encrypted value account has trailing or truncated data".into());
+    }
+    if encrypted_value.acl_domain_key != mint
+        || encrypted_value.app_account != token_account_key
+        || encrypted_value.encrypted_value_label != label
+        || encrypted_value.bump != encrypted_value_bump
+        || encrypted_value.value_key() != value_key
+    {
+        return Err("balance encrypted value body does not match its canonical lineage".into());
+    }
+    let compute_signer = confidential_token::compute_signer_address(mint).0;
+    if encrypted_value.subjects != [owner, compute_signer] {
+        return Err(
+            "balance encrypted value subjects are not exactly owner + mint compute signer".into(),
+        );
+    }
+    let handle = encrypted_value.current_handle;
+    if handle == [0; 32]
+        || handle[31] != zama_host::HANDLE_VERSION
+        || zama_host::handle_fhe_type(handle) != 5
+    {
+        return Err("balance handle is not a nonzero version-0 euint64 handle".into());
+    }
+    if config_info.owner != zama_host::ID
+        || config_info.data.len() != 8 + zama_host::HostConfig::SPACE
+        || &config_info.data[..8] != zama_host::HostConfig::DISCRIMINATOR
+    {
+        return Err("invalid HostConfig owner, size, or discriminator".into());
+    }
+    let mut config_data: &[u8] = &config_info.data;
+    let config = zama_host::HostConfig::try_deserialize(&mut config_data)?;
+    if zama_host::handle_chain_id(handle) != config.chain_id || config.chain_id & (1 << 63) == 0 {
+        return Err("balance handle chain id does not match the Solana HostConfig".into());
+    }
+
+    println!(
+        "{}",
+        serde_json::to_string(&TokenBalanceState {
+            version: 1,
+            mint: mint.to_string(),
+            owner: owner.to_string(),
+            token_account: token_account_key.to_string(),
+            encrypted_value_account: encrypted_value_key.to_string(),
+            acl_value_key: format!("0x{}", hex(&value_key)),
+            current_handle: format!("0x{}", hex(&handle)),
+            chain_id: config.chain_id.to_string(),
+        })?
+    );
+    Ok(())
 }
 
 fn bytes32_env(name: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
@@ -1158,46 +1321,20 @@ fn consume_wrap(
     let (vault_authority, _) = confidential_token::vault_authority_address(mint);
     let vault_usdc = confidential_token::vault_token_account_address(mint, underlying);
     let (compute_signer, _) = confidential_token::compute_signer_address(mint);
-    let (token_account, _) = confidential_token::token_account_address(mint, owner);
+    let (token_account, balance_value) =
+        initialize_token_account_if_missing(token, payer, host_config, mint)?;
     let (ts_authority, _) = confidential_token::total_supply_authority_address(mint);
     let (user_usdc, _) = Pubkey::find_program_address(
         &[owner.as_ref(), spl_token_id.as_ref(), underlying.as_ref()],
         &ata_prog,
     );
 
-    let (balance_value, _) =
-        confidential_token::balance_encrypted_value_address(mint, token_account);
     let mint_state: confidential_token::ConfidentialMint = token.account(mint)?;
     let total_supply_value = mint_state.total_supply_encrypted_value;
     // The wrap amount is trivial-encrypted as a transient inside wrap_usdc's eval frame.
     let (zama_evt, _) = Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
-
-    // The confidential token account must exist before wrap draws from it; create it if missing.
-    if token.rpc().get_account(&token_account).is_err() {
-        let init_sig = token
-            .request()
-            .accounts(confidential_token::accounts::InitializeTokenAccount {
-                owner,
-                mint,
-                compute_signer,
-                token_account,
-                balance_encrypted_value: balance_value,
-                zama_event_authority: zama_evt,
-                zama_program: zama_host::ID,
-                host_config,
-                system_program: system_program::ID,
-                hcu_authority: confidential_token::hcu_authority_address(mint).0,
-                hcu_block_meter: None,
-                hcu_trusted_app_record: None,
-                event_authority: token_evt,
-                program: confidential_token::ID,
-            })
-            .args(confidential_token::instruction::InitializeTokenAccount { initial_balance: 0 })
-            .send()?;
-        println!("OK initialize_token_account: {init_sig}");
-    }
 
     // The vault's USDC ATA must exist before wrap; create it (idempotent) if missing.
     if token.rpc().get_account(&vault_usdc).is_err() {
@@ -1270,6 +1407,48 @@ fn consume_wrap(
     println!("OK wrap_usdc({amount}): {sig}");
     println!("  new balance ACL {balance_value}");
     Ok(())
+}
+
+fn initialize_token_account_if_missing(
+    token: &Program<Rc<Keypair>>,
+    payer: &Rc<Keypair>,
+    host_config: Pubkey,
+    mint: Pubkey,
+) -> Result<(Pubkey, Pubkey), Box<dyn std::error::Error>> {
+    let owner = payer.pubkey();
+    let (token_account, _) = confidential_token::token_account_address(mint, owner);
+    let (balance_value, _) =
+        confidential_token::balance_encrypted_value_address(mint, token_account);
+    if token.rpc().get_account(&token_account).is_ok() {
+        return Ok((token_account, balance_value));
+    }
+    let compute_signer = confidential_token::compute_signer_address(mint).0;
+    let (zama_event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &zama_host::ID);
+    let (event_authority, _) =
+        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
+    let signature = token
+        .request()
+        .accounts(confidential_token::accounts::InitializeTokenAccount {
+            owner,
+            mint,
+            compute_signer,
+            token_account,
+            balance_encrypted_value: balance_value,
+            zama_event_authority,
+            zama_program: zama_host::ID,
+            host_config,
+            system_program: system_program::ID,
+            hcu_authority: confidential_token::hcu_authority_address(mint).0,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority,
+            program: confidential_token::ID,
+        })
+        .args(confidential_token::instruction::InitializeTokenAccount { initial_balance: 0 })
+        .send()?;
+    println!("OK initialize_token_account: {signature}");
+    Ok((token_account, balance_value))
 }
 
 /// Burns an encrypted amount from the confidential balance (confidential_burn): the heaviest

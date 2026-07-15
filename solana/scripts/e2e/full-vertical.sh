@@ -406,6 +406,10 @@ MDH_ACL="$(echo "$mdout" | grep -oE 'output encrypted value [A-Za-z0-9]+' | awk 
 [ -n "$MDH_ACL" ] || fail "no mulDiv output ACL record: $mdout"
 assert_decrypt "mulDiv" "$MDH" "$MDH_ACL" "$EXPECTED_MULDIV"
 
+echo "==> [sdk-transfer] two holders: Alice 1000 -> confidentialTransfer(400) -> Alice 600, Bob 400"
+( cd "$ROOT/test-suite/fhevm" && ./fhevm-cli test solana-two-holder-transfer ) \
+  || fail "SDK two-holder confidential transfer failed"
+
 echo "==> [consume] confidential mint + USDC; wrap -> burn -> release -> public-decrypt -> redeem(secp) + disclose(secp)"
 LCDIR="$ROOT/solana/scripts/e2e/live-client"
 lc() { ( cd "$LCDIR" && env "$@" ./target/debug/poc-live-client 2>&1 ); }
