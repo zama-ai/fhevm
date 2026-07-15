@@ -14,7 +14,7 @@ import {
 import type { LocalOverride, OverrideGroup, ResolvedCoprocessorScenarioInstance, State, StepName } from "../types";
 import { extraHostChains, hostChainsForState } from "./topology";
 
-const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "kms-core", "kms", "listener-core", "relayer", "test-suite"] as const;
+export const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "kms-core", "kms", "listener-core", "relayer", "test-suite"] as const;
 export type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
 const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   "coprocessor": [
