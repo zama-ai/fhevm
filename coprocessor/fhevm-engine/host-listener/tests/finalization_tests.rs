@@ -80,7 +80,7 @@ async fn finalization_refuses_mismatched_parent_and_stops_batch() {
 
     // The poisoned RPC serves the fork chain for both heights.
     let fork = [(2u64, c2.clone()), (3u64, c3.clone())];
-    update_finalized_blocks_aux(&mut db, 3, 0, |n| {
+    update_finalized_blocks_aux(&mut db, 3, 0, 0, |n| {
         let hash = fork
             .iter()
             .find(|(num, _)| *num == n)
@@ -125,7 +125,7 @@ async fn finalization_stops_batch_at_fetch_failure() {
 
     // Height 2 answers honestly, height 3 errors, height 4 serves the fork.
     let served = [(2u64, b2.clone()), (4u64, c4.clone())];
-    update_finalized_blocks_aux(&mut db, 4, 0, |n| {
+    update_finalized_blocks_aux(&mut db, 4, 0, 0, |n| {
         let hash = served
             .iter()
             .find(|(num, _)| *num == n)
@@ -230,7 +230,7 @@ async fn finalization_accepts_linked_chain_and_orphans_sibling() {
     seed_block(&db, 3, &b3, &b2, "pending").await;
 
     let chain = [(2u64, b2.clone()), (3u64, b3.clone())];
-    update_finalized_blocks_aux(&mut db, 3, 0, |n| {
+    update_finalized_blocks_aux(&mut db, 3, 0, 0, |n| {
         let hash = chain
             .iter()
             .find(|(num, _)| *num == n)
