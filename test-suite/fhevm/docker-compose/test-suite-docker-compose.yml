@@ -3,7 +3,10 @@ services:
   test-suite-e2e-debug:
     container_name: fhevm-test-suite-e2e-debug
     image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
+    user: root
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/test-suite.env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     command:
-      - tail -f /dev/null
+      - apk add --no-cache docker-cli >/tmp/apk.log 2>&1 || { cat /tmp/apk.log; exit 1; }; tail -f /dev/null

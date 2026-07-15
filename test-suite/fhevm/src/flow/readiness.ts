@@ -5,10 +5,13 @@ import {
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
+import { driftDatabaseName } from "../drift";
 import { BootstrapTimeout, ContainerCrashed, MinioError, PreflightError, ProbeTimeout, RpcError } from "../errors";
 import {
   COPROCESSOR_DB_CONTAINER,
   CRSGEN_ID_SELECTOR,
+  DEFAULT_POSTGRES_PASSWORD,
+  DEFAULT_POSTGRES_USER,
   DEFAULT_GATEWAY_RPC_PORT,
   GROUP_SERVICE_SUFFIXES,
   KEYGEN_ID_SELECTOR,
@@ -30,6 +33,24 @@ const KMS_CONNECTOR_DECRYPTION_READY =
   /Started Decryption polling from block|Last block polled updated for \d+\/\d+ event types in \[PublicDecryptionRequest, UserDecryptionRequest\]/;
 const KMS_CONNECTOR_KMS_GENERATION_READY =
   /Started KMSGeneration polling from block|Started Ethereum polling from block|Last block polled updated for chain ethereum|Last block polled updated for \d+\/\d+ event types in \[[^\]]*PrepKeygenRequest[^\]]*\]/;
+
+type KeyActivationStatus = "pending" | "ready" | "activated" | "cancelled" | "error";
+
+type KeyActivationDiagnostic = {
+  status: KeyActivationStatus;
+  retry_count: number;
+  last_error: string | null;
+  has_public: boolean;
+  has_sks: boolean;
+  has_xof: boolean;
+  storage_urls: string[];
+};
+
+type KeyActivationProbe = {
+  database: string;
+  keys: number;
+  activations: KeyActivationDiagnostic[];
+};
 
 /** Number of KMS connector instances: one per party in threshold mode, else one. */
 // `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.
@@ -366,6 +387,147 @@ export const ensureMaterial = async (url: string) => {
   }
 };
 
+/** Waits until at least one material artifact in a compatibility set is available. */
+const ensureAnyMaterial = async (label: string, urls: string[]) => {
+  let lastFailure = "";
+  for (let attempt = 0; attempt <= 30; attempt += 1) {
+    for (const url of urls) {
+      try {
+        const response = await fetch(hostReachableMaterialUrl(url), { method: "HEAD" });
+        if (response.ok) {
+          return;
+        }
+        lastFailure = `${url} returned ${response.status}`;
+      } catch (error) {
+        lastFailure = `${url}: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    }
+    if (attempt === 30) {
+      throw new MinioError(`Material not ready: ${label} (${lastFailure})`);
+    }
+    await Bun.sleep(1_000);
+  }
+};
+
+const postgresExec = async (dbName: string, sql: string) => {
+  const user = process.env.POSTGRES_USER ?? DEFAULT_POSTGRES_USER;
+  const password = process.env.POSTGRES_PASSWORD ?? DEFAULT_POSTGRES_PASSWORD;
+  return run(
+    [
+      "docker",
+      "exec",
+      "-e",
+      `PGPASSWORD=${password}`,
+      COPROCESSOR_DB_CONTAINER,
+      "psql",
+      "-U",
+      user,
+      "-d",
+      dbName,
+      "-tA",
+      "-c",
+      sql,
+    ],
+    { allowFailure: true },
+  );
+};
+
+const keyActivationSql = (keyIdHex: string) => `
+WITH activation AS (
+  SELECT COALESCE(
+    json_agg(
+      json_build_object(
+        'status', status,
+        'retry_count', retry_count,
+        'last_error', last_error,
+        'has_public', key_content_public IS NOT NULL,
+        'has_sks', key_content_sks_key IS NOT NULL,
+        'has_xof', key_content_compressed_xof_keyset IS NOT NULL,
+        'storage_urls', storage_urls
+      )
+      ORDER BY created_at
+    ),
+    '[]'::json
+  ) AS rows
+  FROM kms_key_activation_events
+  WHERE key_id = decode('${keyIdHex}', 'hex')
+),
+key_count AS (
+  SELECT COUNT(*)::int AS count
+  FROM keys
+  WHERE key_id_gw = decode('${keyIdHex}', 'hex')
+)
+SELECT json_build_object(
+  'keys', key_count.count,
+  'activations', activation.rows
+)
+FROM key_count, activation;
+`;
+
+const describeKeyActivationProbe = (probe: KeyActivationProbe) => {
+  const activations = probe.activations.length
+    ? probe.activations
+        .map(
+          (activation) =>
+            `${activation.status}{retries=${activation.retry_count},public=${activation.has_public},sks=${activation.has_sks},xof=${activation.has_xof},error=${activation.last_error ?? "none"}}`,
+        )
+        .join("; ")
+    : "none";
+  return `${probe.database}: keys=${probe.keys}, activations=${activations}`;
+};
+
+const probeKeyActivations = async (state: Pick<State, "scenario">, keyIdHex: string) => {
+  if (!/^[0-9a-f]{64}$/.test(keyIdHex)) {
+    throw new PreflightError(`Invalid KMS key id for activation probe: ${keyIdHex}`);
+  }
+  const probes: KeyActivationProbe[] = [];
+  for (let index = 0; index < topologyForState(state).count; index += 1) {
+    const database = driftDatabaseName(index);
+    const result = await postgresExec(database, keyActivationSql(keyIdHex));
+    if (result.code !== 0) {
+      throw new PreflightError(
+        `${database}: key activation probe failed: ${(result.stderr || result.stdout).trim() || "psql exited non-zero"}`,
+      );
+    }
+    try {
+      const parsed = JSON.parse(result.stdout.trim()) as { keys?: number; activations?: KeyActivationDiagnostic[] };
+      probes.push({
+        database,
+        keys: parsed.keys ?? 0,
+        activations: parsed.activations ?? [],
+      });
+    } catch (error) {
+      throw new PreflightError(
+        `${database}: activation probe returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  const fatal = probes.flatMap((probe) => {
+    if (probe.keys > 0 || probe.activations.some((activation) => activation.status === "activated")) {
+      return [];
+    }
+    return probe.activations
+      .filter((activation) => activation.status === "error" || activation.status === "cancelled")
+      .map((activation) => `${probe.database}: ${activation.status}: ${activation.last_error ?? "no error detail"}`);
+  });
+  if (fatal.length) {
+    return { ready: false, fatal: true, details: fatal.join("\n") };
+  }
+
+  const notReady = probes.filter(
+    (probe) =>
+      probe.keys <= 0 ||
+      probe.activations.length === 0 ||
+      !probe.activations.some((activation) => activation.status === "activated"),
+  );
+  return {
+    ready: notReady.length === 0,
+    fatal: false,
+    details: probes.map(describeKeyActivationProbe).join(" | "),
+  };
+};
+
 /** Calls a contract view through cast and interprets the result as a boolean. */
 export const castBool = async (rpcUrl: string, to: string, signature: string, ...args: string[]) => {
   try {
@@ -451,12 +613,24 @@ export const probeBootstrap = async (state: State) => {
     const actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
     await Promise.all([
       ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/PublicKey/${actualFheKeyId}`),
+      ensureAnyMaterial("server key", [
+        `${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/CompressedXofKeySet/${actualFheKeyId}`,
+        `${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/ServerKey/${actualFheKeyId}`,
+      ]),
       ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/CRS/${actualCrsKeyId}`),
     ]);
     if (discovery.fheKeyId !== actualFheKeyId || discovery.crsKeyId !== actualCrsKeyId) {
       throw new PreflightError(
         `Predicted bootstrap ids drifted: expected ${discovery.fheKeyId}/${discovery.crsKeyId}, got ${actualFheKeyId}/${actualCrsKeyId}`,
       );
+    }
+    const keyActivation = await probeKeyActivations(state, actualFheKeyId);
+    if (keyActivation.fatal) {
+      throw new PreflightError(`KMS key activation failed:\n${keyActivation.details}`);
+    }
+    if (!keyActivation.ready) {
+      console.log(`[wait] bootstrap key activation: ${keyActivation.details}`);
+      return null;
     }
     return { actualFheKeyId, actualCrsKeyId };
   } catch (error) {
@@ -506,4 +680,18 @@ export const waitForKmsConnector = async (state: State) => {
 };
 
 /** Waits for the e2e test-suite container to reach running state. */
-export const waitForTestSuite = async () => waitForContainer(TEST_SUITE_CONTAINER, "running");
+export const waitForTestSuite = async () => {
+  await waitForContainer(TEST_SUITE_CONTAINER, "running");
+  for (let attempt = 0; attempt <= 90; attempt += 1) {
+    const result = await run(["docker", "exec", TEST_SUITE_CONTAINER, "sh", "-lc", "docker ps >/dev/null"], {
+      allowFailure: true,
+    });
+    if (result.code === 0) {
+      return;
+    }
+    if (attempt === 90) {
+      throw new ProbeTimeout(`${TEST_SUITE_CONTAINER} docker access`, 180);
+    }
+    await Bun.sleep(2_000);
+  }
+};

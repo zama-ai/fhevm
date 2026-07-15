@@ -1,0 +1,7 @@
+version: 1
+kind: coprocessor-consensus
+name: Three Of Three
+description: Three coprocessor instances requiring unanimous consensus (3/3 threshold)
+topology:
+  count: 3
+  threshold: 3
