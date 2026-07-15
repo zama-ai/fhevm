@@ -339,14 +339,18 @@ jobs:
       - name: Discover KMS party signer addresses (S3 public vault)
         id: kms-identity
         # Each party generates its own operator identity (a "SigningKey", verification
-        # address published as VerfAddress) as soon as kms-core boots - deploy.sh above
-        # already waited for the parties to be ready, so this is available immediately,
-        # with no keygen ceremony/ContextSwitch involved (that's a separate, later thing -
-        # see "Trigger KMS keygen + CRS generation" below). Locally, fhevm-cli's
-        # discoverKmsSigners() (test-suite/fhevm/src/flow/readiness.ts) reads this same
-        # VerfAddress/<handle> object from MinIO; here it's real S3, one bucket per party
-        # (kmsCore.publicVault.s3.prefix defaults to "" per-party, so no PUB/PUB-style
-        # prefix is needed - see kms/charts/kms-core/values.yaml).
+        # address published as VerfAddress) as soon as kms-core boots, with no keygen
+        # ceremony/ContextSwitch involved (that's a separate, later thing - see "Trigger
+        # KMS keygen + CRS generation" below). deploy.sh above only waits for the K8s
+        # Pod/enclave to be Ready, not for this identity generation to finish - under
+        # Nitro attestation it can lag pod-readiness by a couple of minutes and parties
+        # don't all finish at the same time, so we poll per party instead of a single
+        # check-and-fail. Locally, fhevm-cli's discoverKmsSigners()
+        # (test-suite/fhevm/src/flow/readiness.ts) reads this same VerfAddress/<handle>
+        # object from MinIO; here it's real S3. All 4 parties share one bucket (per
+        # party's own KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET configmap value),
+        # segmented by each party's own "PUB-p<i>/" prefix (kms_deployment.sh's per-party
+        # helm loop sets kmsCore.publicVault.s3.prefix="PUB-p${i}" using this same index).
         run: |
           for i in 1 2 3 4; do
             bucket=$(kubectl get configmap "${NAMESPACE}-${i}" -n "${NAMESPACE}" \
@@ -355,13 +359,28 @@ jobs:
               echo "::error::party ${i}: could not read public vault bucket from configmap ${NAMESPACE}-${i}"
               exit 1
             fi
-            handle=$(aws s3api list-objects-v2 --bucket "${bucket}" --prefix "PUB-p${i}/VerfAddress/" \
-              --query 'Contents[0].Key' --output text 2>/dev/null | sed 's#^PUB-p${i}/VerfAddress/##')
-            if [[ -z "${handle}" || "${handle}" == "None" ]]; then
-              echo "::error::party ${i}: no VerfAddress object under s3://${bucket}/PUB-p${i}/VerfAddress/ - kms-core may not have finished its init sequence"
+
+            prefix="PUB-p${i}/VerfAddress/"
+            handle=""
+            # kms-core's own identity generation (SigningKey -> VerfAddress) can lag
+            # behind pod/enclave readiness by a couple of minutes, especially under
+            # Nitro attestation - poll instead of failing on the first miss.
+            for attempt in $(seq 1 30); do
+              key=$(aws s3api list-objects-v2 --bucket "${bucket}" --prefix "${prefix}" \
+                --query 'Contents[0].Key' --output text 2>/dev/null)
+              if [[ -n "${key}" && "${key}" != "None" ]]; then
+                handle="${key#"${prefix}"}"
+                break
+              fi
+              echo "party ${i}: no VerfAddress object under s3://${bucket}/${prefix} yet, waiting for kms-core to finish its init sequence (attempt ${attempt}/30)..."
+              sleep 10
+            done
+            if [[ -z "${handle}" ]]; then
+              echo "::error::party ${i}: no VerfAddress object under s3://${bucket}/${prefix} after 5 minutes - kms-core did not finish its init sequence"
               exit 1
             fi
-            signer=$(aws s3 cp "s3://${bucket}/PUB-p${i}/VerfAddress/${handle}" - 2>/dev/null | tr -d '[:space:]')
+
+            signer=$(aws s3 cp "s3://${bucket}/${prefix}${handle}" - 2>/dev/null | tr -d '[:space:]')
             echo "party_${i}_signer=${signer}" >> "$GITHUB_OUTPUT"
             echo "Party ${i}: bucket=${bucket} handle=${handle} signer=${signer}"
           done
