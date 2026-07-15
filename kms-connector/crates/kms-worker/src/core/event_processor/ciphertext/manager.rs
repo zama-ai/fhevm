@@ -4,12 +4,21 @@ use super::{
 };
 use crate::core::{
     config::{Config, CtAttestationConfig},
-    event_processor::{RequestCheckKind, ciphertext::COPROCESSOR_CONTEXT_ID},
+    event_processor::{
+        ProcessingError, RequestCheckError, RequestCheckKind,
+        ciphertext::{COPROCESSOR_CONTEXT_ID, VerifiedCiphertexts},
+    },
 };
-use alloy::{hex, primitives::B256, providers::Provider, transports::http::Client};
-use anyhow::{Context, anyhow};
-use ciphertext_attestation::consensus::{self, Consensus, ConsensusMaterial};
-use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
+use alloy::{
+    primitives::{Address, B256, U256},
+    providers::Provider,
+    transports::http::Client,
+};
+use anyhow::anyhow;
+use ciphertext_attestation::{
+    CiphertextAttestation,
+    consensus::{self, Consensus, ConsensusMaterial},
+};
 use futures::future::try_join_all;
 use kms_grpc::kms::v1::TypedCiphertext;
 use tokio::task::JoinSet;
@@ -17,7 +26,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 /// Manages the ciphertext materials of incoming decryption requests: off-chain attestation
-/// verification and S3 retrieval.
+/// consensus verification and S3 retrieval.
 ///
 /// Cheap to clone: every field is a handle to a shared resource or a small value.
 #[derive(Clone)]
@@ -45,10 +54,6 @@ where
         config: &Config,
         cancel_token: CancellationToken,
     ) -> anyhow::Result<Self> {
-        if !config.ct_attestation.enabled {
-            info!("Ciphertext-attestation verification disabled by config");
-        }
-
         let registry = CoprocessorRegistry::connect(provider, config, cancel_token).await?;
 
         Ok(Self {
@@ -59,90 +64,116 @@ where
         })
     }
 
-    /// Retrieves the ciphertexts of `sns_materials` from the Coprocessors' S3 buckets, after
-    /// running the off-chain attestation check.
+    /// Resolves and retrieves the verified ciphertexts of a decryption request from `handles`.
     ///
-    /// Shadow mode (RFC 023): an attestation failure is only logged for now — the on-chain
-    /// snapshot stays authoritative and retrieval proceeds regardless of the verdict.
-    pub async fn retrieve_verified_ciphertexts(
+    /// Each handle is resolved independently against the off-chain attestation consensus and its
+    /// ciphertext fetched from a winning-group bucket. The request fails as soon as any single
+    /// handle fails.
+    pub async fn verify_and_retrieve(
         &self,
-        sns_materials: &[SnsCiphertextMaterial],
-    ) -> anyhow::Result<Vec<TypedCiphertext>> {
-        if let Err(e) = self.verify_attestations(sns_materials).await {
-            RequestCheckKind::CoproConsensus.inc_metric();
-            warn!("{e:#}");
-        }
-
-        s3::retrieve_sns_ciphertext_materials(
-            &self.client,
-            &self.registry.snapshot(),
-            sns_materials,
-            self.s3_ciphertext_retrieval_retries,
-        )
-        .await
-    }
-
-    /// Verifies the off-chain attestations of `materials` against the on-chain snapshot.
-    ///
-    /// Fans HEAD requests out to every registered Coprocessor bucket and computes an off-chain
-    /// consensus verdict for each handle. Stops at the first failing material: a single failed
-    /// verification invalidates the whole decryption request.
-    async fn verify_attestations(&self, materials: &[SnsCiphertextMaterial]) -> anyhow::Result<()> {
-        if !self.config.enabled {
-            return Ok(());
-        }
+        handles: &[B256],
+    ) -> Result<VerifiedCiphertexts, ProcessingError> {
         let registry = self.registry.snapshot();
+        info!(
+            "Resolving {} handle(s) via off-chain attestation consensus...",
+            handles.len()
+        );
+
+        let resolved_handles = try_join_all(
+            handles
+                .iter()
+                .map(|&handle| self.verify_and_retrieve_handle(&registry, handle)),
+        )
+        .await?;
+        let mut ciphertexts = Vec::with_capacity(resolved_handles.len());
+
+        // The KMS request carries a single `key_id`; every handle must resolve to the same one.
+        let Some(key_id) = resolved_handles.first().map(|r| r.key_id) else {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "no handles resolved"
+            )));
+        };
+        for resolved_handle in resolved_handles.into_iter() {
+            if resolved_handle.key_id != key_id {
+                return Err(ProcessingError::Irrecoverable(anyhow!(
+                    "handles of the request resolve to different key ids: {:#066x} and {:#066x}",
+                    key_id,
+                    resolved_handle.key_id
+                )));
+            }
+
+            ciphertexts.push(resolved_handle.ciphertext);
+        }
 
         info!(
-            "Starting attestation verification for {} materials...",
-            materials.len()
+            "All {} handle(s) resolved and verified! key_id: {:#066x}, FHE types: {:?}",
+            ciphertexts.len(),
+            key_id,
+            ciphertexts.iter().map(|ct| ct.fhe_type).collect::<Vec<_>>(),
         );
-        let verification_futures = materials.iter().map(|material| async {
-            self.verify_material_attestations(&registry, material)
-                .await
-                .with_context(|| {
-                    format!(
-                        "Attestation verification failed for handle {}",
-                        hex::encode(material.ctHandle)
-                    )
-                })
-        });
-        try_join_all(verification_futures).await?;
-        info!("All materials passed the attestations verification!");
-
-        Ok(())
+        Ok(VerifiedCiphertexts {
+            ciphertexts,
+            key_id,
+        })
     }
 
-    /// Verifies the off-chain attestations of a single material.
-    async fn verify_material_attestations(
+    /// Resolves a single handle's material via consensus and fetches its verified ciphertext.
+    async fn verify_and_retrieve_handle(
         &self,
         registry: &CoprocessorRegistrySnapshot,
-        material: &SnsCiphertextMaterial,
-    ) -> anyhow::Result<()> {
-        let handle = material.ctHandle;
-        let consensus = self
+        handle: B256,
+    ) -> Result<ResolvedHandle, ProcessingError> {
+        let ResolvedConsensus {
+            consensus,
+            winning_buckets,
+        } = self
             .fetch_attestations_and_check_consensus(handle, registry)
-            .await?;
-        compare_onchain(material, &consensus.material)?;
+            .await
+            .map_err(|e| {
+                RequestCheckError::recoverable(
+                    RequestCheckKind::CoproConsensus,
+                    anyhow!("consensus unreachable for handle {handle}: {e}"),
+                )
+                .record()
+            })?;
 
         debug!(
             %handle,
-            valid_signers = consensus.valid_signers,
+            valid_signers = consensus.signers.len(),
             threshold = registry.threshold.get(),
-            "Successful attestation verification"
+            winning_buckets = winning_buckets.len(),
+            "Consensus reached for handle"
         );
-        Ok(())
+
+        let ciphertext = s3::retrieve_verified_ciphertext(
+            &self.client,
+            handle,
+            &consensus.material,
+            &winning_buckets,
+            self.s3_ciphertext_retrieval_retries,
+        )
+        .await?;
+
+        Ok(ResolvedHandle {
+            key_id: consensus.material.key_id,
+            ciphertext,
+        })
     }
 
-    /// Fetches the attestation for a `handle` from the registered Coprocessor buckets concurrently.
+    /// Fetches the attestation for a `handle` from the registered Coprocessor buckets concurrently
+    /// and evaluates the consensus.
     ///
     /// Tries to evaluate the consensus as soon as enough attestations are received, without waiting
     /// for slow or unreachable buckets.
+    ///
+    /// On success returns the winning [`Consensus`] together with the URLs of the winning-group
+    /// buckets (those that served a valid attestation for the winning material) to fetch the
+    /// ciphertext from.
     async fn fetch_attestations_and_check_consensus(
         &self,
         handle: B256,
         registry: &CoprocessorRegistrySnapshot,
-    ) -> anyhow::Result<Consensus> {
+    ) -> anyhow::Result<ResolvedConsensus> {
         let mut fetch_attestation_tasks = JoinSet::new();
         for (tx_sender, bucket) in registry.tx_sender_to_bucket.iter() {
             let (client, head_timeout) = (self.client.clone(), self.config.head_timeout);
@@ -154,8 +185,8 @@ where
             });
         }
 
-        let mut attestations = vec![];
-        let mut verdict = Err(anyhow!("Not enough attestations fetched yet (0)..."));
+        let mut attestations: Vec<(Address, CiphertextAttestation)> = vec![];
+        let mut last_error = anyhow!("no attestation fetched yet");
         while let Some(joined) = fetch_attestation_tasks.join_next().await {
             match joined {
                 Err(e) => {
@@ -170,53 +201,68 @@ where
             };
 
             if attestations.len() < registry.threshold.get() {
-                verdict = Err(anyhow!(
-                    "Not enough attestations fetched yet ({})...",
+                last_error = anyhow!(
+                    "not enough attestations successfully fetched ({})",
                     attestations.len()
-                ));
+                );
                 continue;
             }
 
-            verdict = consensus::evaluate(
+            match consensus::evaluate(
                 handle,
                 COPROCESSOR_CONTEXT_ID,
                 &attestations,
                 &registry.signers,
                 registry.threshold,
-            )
-            .map_err(anyhow::Error::from);
-            if verdict.is_ok() {
-                // Early-exit: dropping remaining tasks aborts the other in-flight HEAD requests.
-                return verdict;
+            ) {
+                Ok(consensus) => {
+                    let winning_buckets =
+                        winning_group_buckets(&attestations, &consensus, registry);
+                    // Early-exit: dropping remaining tasks aborts the other in-flight HEAD requests.
+                    return Ok(ResolvedConsensus {
+                        consensus,
+                        winning_buckets,
+                    });
+                }
+                Err(e) => last_error = e.into(),
             }
         }
-        verdict
+        Err(last_error)
     }
 }
 
-/// Compares the consensus material against the on-chain `SnsCiphertextMaterial`.
-///
-/// Only `keyId` and `snsCiphertextDigest` exist on-chain; `ciphertext_digest` and `format` are
-/// off-chain-only (bound by the signature).
-fn compare_onchain(
-    onchain: &SnsCiphertextMaterial,
-    material: &ConsensusMaterial,
-) -> anyhow::Result<()> {
-    if onchain.keyId != material.key_id {
-        return Err(anyhow!(
-            "on-chain tuple mismatch on `key_id`: onchain {}, attested {}",
-            onchain.keyId,
-            material.key_id
-        ));
+/// A reached consensus together with the buckets to fetch the ciphertext from.
+struct ResolvedConsensus {
+    consensus: Consensus,
+    winning_buckets: Vec<String>,
+}
+
+/// A handle resolved through consensus: the agreed key plus its verified ciphertext.
+struct ResolvedHandle {
+    key_id: U256,
+    ciphertext: TypedCiphertext,
+}
+
+/// Collects the URLs of the buckets whose attestation vouches for the winning material.
+fn winning_group_buckets(
+    attestations: &[(Address, CiphertextAttestation)],
+    consensus: &Consensus,
+    registry: &CoprocessorRegistrySnapshot,
+) -> Vec<String> {
+    let mut buckets = Vec::new();
+    for (tx_sender, attestation) in attestations {
+        if ConsensusMaterial::from(attestation) != consensus.material
+            || !consensus.signers.contains(&attestation.signer)
+        {
+            continue;
+        }
+        if let Some(bucket) = registry.tx_sender_to_bucket.get(tx_sender)
+            && !buckets.contains(bucket)
+        {
+            buckets.push(bucket.clone());
+        }
     }
-    if onchain.snsCiphertextDigest != material.sns_ciphertext_digest {
-        return Err(anyhow!(
-            "on-chain tuple mismatch on `sns_ciphertext_digest`: onchain {}, attested {}",
-            onchain.snsCiphertextDigest,
-            material.sns_ciphertext_digest
-        ));
-    }
-    Ok(())
+    buckets
 }
 
 #[cfg(test)]
@@ -224,94 +270,14 @@ impl<P> CiphertextManager<P>
 where
     P: Provider + Clone + 'static,
 {
-    pub fn disabled(provider: P, client: Client) -> Self {
+    /// Test constructor: an empty registry and default config. The resolution path is never
+    /// exercised by the tests that use it (they fail earlier, at the ACL or signature stage).
+    pub fn for_test(provider: P, client: Client) -> Self {
         Self {
             registry: CoprocessorRegistry::empty(provider),
             client,
-            config: CtAttestationConfig {
-                enabled: false,
-                ..CtAttestationConfig::default()
-            },
+            config: CtAttestationConfig::default(),
             s3_ciphertext_retrieval_retries: Config::default().s3_ciphertext_retrieval_retries,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloy::primitives::{B256, U256};
-    use ciphertext_attestation::CiphertextFormat;
-
-    fn onchain_material(key_id: U256, sns_digest: B256) -> SnsCiphertextMaterial {
-        SnsCiphertextMaterial {
-            keyId: key_id,
-            snsCiphertextDigest: sns_digest,
-            ..Default::default()
-        }
-    }
-
-    fn consensus_material(key_id: U256, sns_digest: B256) -> ConsensusMaterial {
-        ConsensusMaterial {
-            key_id,
-            // Off-chain-only fields: not part of the on-chain comparison.
-            ciphertext_digest: B256::repeat_byte(0xFF),
-            sns_ciphertext_digest: sns_digest,
-            format: CiphertextFormat::CompressedOnCpu,
-        }
-    }
-
-    #[test]
-    fn accepts_matching_tuple() {
-        let key_id = U256::from(69);
-        let sns_digest = B256::repeat_byte(0xAB);
-
-        let onchain = onchain_material(key_id, sns_digest);
-        let material = consensus_material(key_id, sns_digest);
-
-        assert!(compare_onchain(&onchain, &material).is_ok());
-    }
-
-    #[test]
-    fn ignores_offchain_only_fields() {
-        // `ciphertext_digest` and `format` live only off-chain (bound by the signature), so they
-        // must not influence the comparison: the matching `key_id`/`sns_digest` tuple is enough.
-        let key_id = U256::from(7);
-        let sns_digest = B256::repeat_byte(0xCD);
-
-        let onchain = onchain_material(key_id, sns_digest);
-        let mut material = consensus_material(key_id, sns_digest);
-        material.ciphertext_digest = B256::ZERO;
-        material.format = CiphertextFormat::UncompressedOnGpu;
-
-        assert!(compare_onchain(&onchain, &material).is_ok());
-    }
-
-    #[test]
-    fn rejects_key_id_mismatch() {
-        let sns_digest = B256::repeat_byte(0xAB);
-
-        let onchain = onchain_material(U256::from(1), sns_digest);
-        let material = consensus_material(U256::from(2), sns_digest);
-
-        let err = compare_onchain(&onchain, &material).unwrap_err();
-        assert!(
-            err.to_string().contains("key_id"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn rejects_sns_ciphertext_digest_mismatch() {
-        let key_id = U256::from(7);
-
-        let onchain = onchain_material(key_id, B256::repeat_byte(0x01));
-        let material = consensus_material(key_id, B256::repeat_byte(0x02));
-
-        let err = compare_onchain(&onchain, &material).unwrap_err();
-        assert!(
-            err.to_string().contains("sns_ciphertext_digest"),
-            "unexpected error: {err}"
-        );
     }
 }

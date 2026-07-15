@@ -1,12 +1,14 @@
-use alloy::{hex, transports::http::reqwest};
+use alloy::{hex, primitives::B256, transports::http::reqwest};
 use anyhow::anyhow;
-use connector_utils::tests::{
-    rand::rand_u256,
-    setup::{S3_CT_DIGEST, S3_CT_HANDLE, S3_CT_RFC023_BUCKET, S3Instance, TestInstance},
+use ciphertext_attestation::{CiphertextFormat, consensus::ConsensusMaterial};
+use connector_utils::tests::setup::{
+    S3_CT_BUCKET, S3_CT_DIGEST, S3_CT_HANDLE, S3_CT_KEY_ID, S3Instance, TestInstance,
 };
-use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
-use kms_grpc::kms::v1::CiphertextFormat;
-use kms_worker::core::{Config, event_processor::ciphertext::s3::retrieve_s3_ciphertext};
+use kms_grpc::kms::v1::CiphertextFormat as GrpcCiphertextFormat;
+use kms_worker::core::{
+    Config,
+    event_processor::{ProcessingError, ciphertext::s3::retrieve_verified_ciphertext},
+};
 
 fn s3_http_client() -> anyhow::Result<reqwest::Client> {
     let config = Config::default();
@@ -16,63 +18,77 @@ fn s3_http_client() -> anyhow::Result<reqwest::Client> {
         .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))
 }
 
-fn stored_sns_ct() -> anyhow::Result<SnsCiphertextMaterial> {
-    Ok(SnsCiphertextMaterial {
-        ctHandle: <[u8; 32]>::try_from(hex::decode(S3_CT_HANDLE)?)
-            .unwrap()
-            .into(),
-        snsCiphertextDigest: <[u8; 32]>::try_from(hex::decode(S3_CT_DIGEST)?)
-            .unwrap()
-            .into(),
-        ..Default::default()
+fn stored_handle() -> anyhow::Result<B256> {
+    Ok(B256::from_slice(&hex::decode(S3_CT_HANDLE)?))
+}
+
+/// The attested material of the test ciphertext, as it would be resolved from the winning
+/// consensus group (see `connector_utils::tests::setup::s3`).
+fn stored_material() -> anyhow::Result<ConsensusMaterial> {
+    Ok(ConsensusMaterial {
+        key_id: S3_CT_KEY_ID,
+        ciphertext_digest: B256::ZERO, // regular ciphertext digest, unused by SNS retrieval
+        sns_ciphertext_digest: B256::from_slice(&hex::decode(S3_CT_DIGEST)?),
+        format: CiphertextFormat::CompressedOnCpu,
     })
 }
 
 #[tokio::test]
-async fn test_get_ciphertext_from_s3_rfc023_url_format() -> anyhow::Result<()> {
+async fn test_get_ciphertext_from_winning_bucket() -> anyhow::Result<()> {
     let test_instance = TestInstance::builder()
         .with_s3(S3Instance::setup().await?)
         .build();
     let s3_client = s3_http_client()?;
 
-    // This bucket only stores the ciphertext under the RFC-023 layout (`{handle}/{context_id}`),
-    // so a successful retrieval cannot have gone through the old-URL fallback.
-    let bucket_url = format!("{}/{S3_CT_RFC023_BUCKET}", test_instance.s3_url());
-    let sns_ct = stored_sns_ct()?;
-    let ct = retrieve_s3_ciphertext(&s3_client, &bucket_url, &sns_ct, S3_CT_DIGEST)
-        .await
-        .unwrap();
+    let bucket_url = format!("{}/{S3_CT_BUCKET}", test_instance.s3_url());
+    let ct = retrieve_verified_ciphertext(
+        &s3_client,
+        stored_handle()?,
+        &stored_material()?,
+        &[bucket_url],
+        Config::default().s3_ciphertext_retrieval_retries,
+    )
+    .await
+    .unwrap();
 
-    // The format is extracted from the RFC-023 attestation metadata (`compressed_on_cpu`)
-    assert_eq!(ct.ciphertext_format, CiphertextFormat::BigCompressed as i32);
+    // The format is read from the attested material (`compressed_on_cpu`).
+    assert_eq!(
+        ct.ciphertext_format,
+        GrpcCiphertextFormat::BigCompressed as i32
+    );
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_get_ciphertext_from_s3_old_url_format() -> anyhow::Result<()> {
+async fn test_get_ciphertext_rejects_digest_mismatch() -> anyhow::Result<()> {
     let test_instance = TestInstance::builder()
         .with_s3(S3Instance::setup().await?)
         .build();
     let s3_client = s3_http_client()?;
 
-    let bucket_url = format!("{}/ct128", test_instance.s3_url());
-    let sns_ct = stored_sns_ct()?;
-    let ct = retrieve_s3_ciphertext(&s3_client, &bucket_url, &sns_ct, S3_CT_DIGEST)
-        .await
-        .unwrap();
+    let bucket_url = format!("{}/{S3_CT_BUCKET}", test_instance.s3_url());
+    // The object is served, but its bytes do not match the attested digest: the copy is rejected.
+    let mut material = stored_material()?;
+    material.sns_ciphertext_digest = B256::repeat_byte(0xAB);
 
-    // The format is extracted from the old `Ct-Format` metadata (`compressed_on_cpu`)
-    assert_eq!(ct.ciphertext_format, CiphertextFormat::BigCompressed as i32);
+    let err = retrieve_verified_ciphertext(
+        &s3_client,
+        stored_handle()?,
+        &material,
+        &[bucket_url],
+        Config::default().s3_ciphertext_retrieval_retries,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(err, ProcessingError::Recoverable(_)));
 
     Ok(())
 }
 
-const S3_CT_UNSTORED: &str = "0222222222a10486971fbf81dcf64c1b2fc9965744d0c8f7da0e4b338f1a31a9";
-
 #[tokio::test]
-async fn test_get_unstored_s3_ciphertext() -> anyhow::Result<()> {
-    // Initialize tracing for this test
+async fn test_get_unstored_ciphertext_is_unavailable() -> anyhow::Result<()> {
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_test_writer()
@@ -84,17 +100,22 @@ async fn test_get_unstored_s3_ciphertext() -> anyhow::Result<()> {
         .build();
     let s3_client = s3_http_client()?;
 
-    let bucket_url = format!("{}/ct128", test_instance.s3_url());
-    let sns_ct = SnsCiphertextMaterial {
-        ctHandle: rand_u256().into(),
-        snsCiphertextDigest: <[u8; 32]>::try_from(hex::decode(S3_CT_UNSTORED)?)
-            .unwrap()
-            .into(),
-        ..Default::default()
-    };
-    if let Ok(ct) = retrieve_s3_ciphertext(&s3_client, &bucket_url, &sns_ct, S3_CT_UNSTORED).await {
-        panic!("Unexpected ciphertext retrieved {ct:?}");
-    }
+    let bucket_url = format!("{}/{S3_CT_BUCKET}", test_instance.s3_url());
+    // A handle with no stored object: every winning-group bucket returns a not-found.
+    let unstored_handle = B256::repeat_byte(0x02);
+
+    let err = retrieve_verified_ciphertext(
+        &s3_client,
+        unstored_handle,
+        &stored_material()?,
+        &[bucket_url],
+        Config::default().s3_ciphertext_retrieval_retries,
+    )
+    .await
+    .unwrap_err();
+
+    // Unavailability is retryable: it surfaces as a recoverable error.
+    assert!(matches!(err, ProcessingError::Recoverable(_)));
 
     Ok(())
 }

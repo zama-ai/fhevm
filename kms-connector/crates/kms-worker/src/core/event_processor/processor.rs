@@ -5,7 +5,7 @@ use crate::core::event_processor::{
     kms::KMSGenerationProcessor,
     protocol_config::ProtocolConfigProcessor,
 };
-use alloy::providers::Provider;
+use alloy::{primitives::B256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::{
     KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
@@ -137,14 +137,14 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         match &event.kind {
             ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
-                    .check_ciphertexts_allowed_for_public_decryption(&req.snsCtMaterials)
+                    .check_ciphertexts_allowed_for_public_decryption(&req.ctHandles)
                     .await
                     .map_err(RequestCheckError::record)?;
 
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
-                        &req.snsCtMaterials,
+                        &req.ctHandles,
                         &req.extraData,
                         None,
                     )
@@ -163,7 +163,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 self.decryption_processor
                     .check_ciphertexts_allowed_for_user_decryption(
                         calldata,
-                        &req.snsCtMaterials,
+                        &req.ctHandles,
                         req.userAddress,
                     )
                     .await
@@ -171,7 +171,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
-                        &req.snsCtMaterials,
+                        &req.ctHandles,
                         &req.extraData,
                         Some(UserDecryptionExtraData::new(
                             req.userAddress,
@@ -188,10 +188,11 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .await
                     .map_err(RequestCheckError::record)?;
                 let payload = &req.payload;
+                let handles: Vec<B256> = req.handles.iter().map(|h| h.handle).collect();
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
-                        &req.snsCtMaterials,
+                        &handles,
                         &payload.extraData,
                         Some(UserDecryptionExtraData::new(
                             payload.userAddress,

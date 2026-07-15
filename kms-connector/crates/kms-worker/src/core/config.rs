@@ -109,10 +109,6 @@ pub struct Config {
 #[cfg_attr(test, derive(Serialize))]
 #[serde(default)]
 pub struct CtAttestationConfig {
-    /// Whether the verifier runs at all. Defaults to `true`.
-    #[serde(default = "default_ct_attestation_verifier_enabled")]
-    pub enabled: bool,
-
     /// Per-bucket S3 attestation HEAD request timeout, in seconds. Defaults to 5.
     #[serde(
         with = "humantime_serde",
@@ -131,7 +127,6 @@ pub struct CtAttestationConfig {
 impl Default for CtAttestationConfig {
     fn default() -> Self {
         Self {
-            enabled: default_ct_attestation_verifier_enabled(),
             head_timeout: default_ct_attestation_head_timeout(),
             registry_refresh: default_copro_registry_refresh_interval(),
         }
@@ -219,10 +214,6 @@ fn default_s3_connect_timeout() -> Duration {
 
 fn default_erc1271_gas_limit() -> u64 {
     100_000
-}
-
-fn default_ct_attestation_verifier_enabled() -> bool {
-    true
 }
 
 fn default_ct_attestation_head_timeout() -> Duration {
