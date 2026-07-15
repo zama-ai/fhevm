@@ -9,12 +9,12 @@ pub struct CompressedCiphertext {
 }
 
 pub struct ComputationOutput {
-    pub compressed: CompressedCiphertext,
+    pub compressed: Option<CompressedCiphertext>,
     pub working: SupportedFheCiphertexts,
 }
 
 pub struct TaskResult {
-    pub compressed_ct: CompressedCiphertext,
+    pub compressed_ct: Option<CompressedCiphertext>,
     pub working_ct: Option<Arc<SupportedFheCiphertexts>>,
     pub is_allowed: bool,
     pub transaction_id: Handle,

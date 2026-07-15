@@ -30,6 +30,15 @@ pub struct Args {
     #[arg(long)]
     pub generate_fhe_keys: bool,
 
+    /// Legacy batch-size control retained for deployment CLI compatibility.
+    /// Block-scoped execution always closes over the full selected block context.
+    #[arg(long, default_value_t = 100)]
+    pub work_items_batch_size: i32,
+
+    /// Maximum number of dependence chains acquired by a worker at once
+    #[arg(long, value_parser = clap::value_parser!(i32).range(1..), default_value_t = 20)]
+    pub dependence_chains_per_batch: i32,
+
     /// Key cache size
     #[arg(long, default_value_t = 32, alias = "tenant-key-cache-size")]
     pub key_cache_size: usize,

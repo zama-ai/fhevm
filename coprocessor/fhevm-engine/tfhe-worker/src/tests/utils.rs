@@ -146,6 +146,8 @@ async fn start_coprocessor(
         bridge_polling_interval_ms: 1000,
         bridge_associate_batch_size: 128,
         generate_fhe_keys: false,
+        work_items_batch_size: 100,
+        dependence_chains_per_batch: 20,
         key_cache_size: 4,
         coprocessor_fhe_threads: 4,
         tokio_threads: 2,

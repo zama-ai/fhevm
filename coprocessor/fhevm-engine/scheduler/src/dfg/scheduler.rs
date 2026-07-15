@@ -7,7 +7,7 @@ use crate::{
 use anyhow::Result;
 use daggy::{
     petgraph::{
-        visit::{EdgeRef, IntoEdgesDirected, IntoNodeIdentifiers},
+        visit::{EdgeRef, IntoEdgeReferences, IntoEdgesDirected, IntoNodeIdentifiers},
         Direction::{self},
     },
     Dag, NodeIndex,
@@ -51,6 +51,7 @@ pub fn re_randomise_boundary_input(
     Ok(())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PartitionStrategy {
     MaxParallelism,
     MaxLocality,
@@ -165,7 +166,7 @@ impl<'a> Scheduler<'a> {
                     i
                 } else {
                     error!(target: "scheduler", {index = ?i },
-			   "Wrong device index");
+				   "Wrong device index");
                     // Instead of giving up, we'll use device 0 (which
                     // should always be safe to use) and keep making
                     // progress even if suboptimally
@@ -206,7 +207,39 @@ impl<'a> Scheduler<'a> {
                 partition_preserving_parallelism(&self.graph.graph, &mut execution_graph)?
             }
         };
+
         let task_dependences = execution_graph.map(|_, _| (), |_, edge| *edge);
+
+        // Only retain transaction edges that cross execution partitions. Edges
+        // internal to a partition are resolved directly by execute_partition;
+        // forwarding them again after the partition completes clones the same
+        // ciphertext into a graph that has already been consumed.
+        let mut node_partitions = HashMap::with_capacity(self.graph.graph.node_count());
+        for partition_index in 0..execution_graph.node_count() {
+            let partition = execution_graph
+                .node_weight(NodeIndex::new(partition_index))
+                .ok_or(SchedulerError::DataflowGraphError)?;
+            for node_index in &partition.df_nodes {
+                node_partitions.insert(*node_index, partition_index);
+            }
+        }
+        let mut forwarding_edges: Dag<(), ComponentEdge> = Dag::default();
+        for _ in 0..self.graph.graph.node_count() {
+            forwarding_edges.add_node(());
+        }
+        for edge in self.edges.edge_references() {
+            let source_partition = node_partitions
+                .get(&edge.source())
+                .ok_or(SchedulerError::DataflowGraphError)?;
+            let target_partition = node_partitions
+                .get(&edge.target())
+                .ok_or(SchedulerError::DataflowGraphError)?;
+            if source_partition != target_partition {
+                forwarding_edges
+                    .add_edge(edge.source(), edge.target(), *edge.weight())
+                    .map_err(|_| SchedulerError::CyclicDependence)?;
+            }
+        }
         // Prime the scheduler with all nodes without dependences
         let mut set: JoinSet<PartitionResult> = JoinSet::new();
         for idx in 0..execution_graph.node_count() {
@@ -255,7 +288,7 @@ impl<'a> Scheduler<'a> {
                     &handle,
                     &output.transaction_id,
                     output.result,
-                    &self.edges,
+                    &forwarding_edges,
                 )?;
             }
             for edge in task_dependences.edges_directed(task_index, Direction::Outgoing) {
@@ -319,6 +352,12 @@ fn execute_partition(
     tfhe::set_server_key(sks);
     let mut outputs = Vec::with_capacity(transactions.len());
     let mut available_outputs: HashMap<Handle, DFGTxInput> = HashMap::new();
+    let mut remaining_local_uses: HashMap<Handle, usize> = HashMap::new();
+    for (_, inputs, _, _) in &transactions {
+        for (handle, _) in inputs.iter().filter(|(_, input)| input.is_none()) {
+            *remaining_local_uses.entry(handle.clone()).or_default() += 1;
+        }
+    }
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
     'tx: for (ref mut dfg, ref mut tx_inputs, tid, _cid) in transactions {
@@ -330,7 +369,19 @@ fn execute_partition(
         // this transaction and possibly more downstream.
         for (h, i) in tx_inputs.iter_mut() {
             if i.is_none() {
-                let Some(ct) = available_outputs.get(h).cloned() else {
+                let Some(uses) = remaining_local_uses.get(h).copied() else {
+                    warn!(target: "scheduler", {transaction_id = ?hex::encode(&tid) },
+		       "Missing local input use count - skipping");
+                    continue 'tx;
+                };
+                let ct = if uses == 1 {
+                    remaining_local_uses.remove(h);
+                    available_outputs.remove(h)
+                } else {
+                    remaining_local_uses.insert(h.clone(), uses - 1);
+                    available_outputs.get(h).cloned()
+                };
+                let Some(ct) = ct else {
                     warn!(target: "scheduler", {transaction_id = ?hex::encode(&tid) },
 		       "Missing input to compute transaction - skipping");
                     for nidx in dfg.graph.node_identifiers() {
@@ -383,12 +434,31 @@ fn execute_partition(
             continue 'tx;
         };
         let edges = dfg.graph.map(|_, _| (), |_, edge| *edge);
+        let mut remaining_input_uses: HashMap<Handle, usize> = HashMap::new();
+        for op_index in dfg.graph.node_identifiers() {
+            let Some(op) = dfg.graph.node_weight(op_index) else {
+                continue;
+            };
+            for input in &op.inputs {
+                if let DFGTaskInput::Dependence(handle) = input {
+                    *remaining_input_uses.entry(handle.clone()).or_default() += 1;
+                }
+            }
+        }
         for nidx in ts.iter() {
             let Some(node) = dfg.graph.node_weight_mut(*nidx) else {
                 error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                 continue;
             };
-            let result = try_execute_node(node, nidx.index(), tx_inputs, gpu_idx, &tid, &cpk);
+            let result = try_execute_node(
+                node,
+                nidx.index(),
+                tx_inputs,
+                &mut remaining_input_uses,
+                gpu_idx,
+                &tid,
+                &cpk,
+            );
             match result {
                 Ok(result) => {
                     let nidx = NodeIndex::new(result.0);
@@ -421,8 +491,14 @@ fn execute_partition(
                                 is_allowed: node.is_allowed,
                                 transaction_id: tid.clone(),
                             };
-                            let input = DFGTxInput::Value((working, task_result.is_allowed));
-                            available_outputs.insert(handle.clone(), input);
+                            let working = task_result.working_ct.as_ref().expect(
+                                "same-block propagation invariant violation: successful output missing working ciphertext",
+                            );
+                            if remaining_local_uses.contains_key(&handle) {
+                                let input =
+                                    DFGTxInput::Value((working.clone(), task_result.is_allowed));
+                                available_outputs.insert(handle.clone(), input);
+                            }
                             Ok(task_result)
                         }
                         Err(e) => Err(e),
@@ -463,12 +539,13 @@ fn try_execute_node(
     node: &mut OpNode,
     node_index: usize,
     tx_inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
+    remaining_input_uses: &mut HashMap<Handle, usize>,
     gpu_idx: usize,
     transaction_id: &Handle,
     cpk: &tfhe::CompactPublicKey,
 ) -> Result<(usize, OpResult)> {
     let _ = cpk;
-    if !node.check_ready_inputs(tx_inputs) {
+    if !node.check_ready_inputs(tx_inputs, remaining_input_uses) {
         return Err(SchedulerError::SchedulerError.into());
     }
     let mut cts = Vec::with_capacity(node.inputs.len());
@@ -522,6 +599,7 @@ fn try_execute_node(
             gpu_idx,
             transaction_id,
             output_type,
+            node.is_allowed,
         )
     });
     match result {
@@ -549,34 +627,42 @@ fn run_computation(
     gpu_idx: usize,
     transaction_id: &Handle,
     output_type: i16,
+    compress_output: bool,
 ) -> (usize, OpResult) {
     let txn_id_short = telemetry::short_hex_id(transaction_id);
     let op = FheOperation::try_from(operation);
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
-            // Compression span (no FHE here)
-            let _guard = tracing::info_span!(
-                "compress_ciphertext",
-                txn_id = %txn_id_short,
-                ct_type = inputs[0].type_name(),
-                operation = "FheGetCiphertext",
-                compressed_size = tracing::field::Empty,
-            )
-            .entered();
-
             let working = inputs
                 .into_iter()
                 .next()
                 .expect("FheGetCiphertext requires one input");
+            if !compress_output {
+                return (
+                    graph_node_index,
+                    Ok(ComputationOutput {
+                        compressed: None,
+                        working,
+                    }),
+                );
+            }
+            // Compression span (no FHE here)
+            let _guard = tracing::info_span!(
+                "compress_ciphertext",
+                txn_id = %txn_id_short,
+                ct_type = working.type_name(),
+                operation = "FheGetCiphertext",
+                compressed_size = tracing::field::Empty,
+            )
+            .entered();
             let ct_type = working.type_num();
-            let compressed = working.compress();
-            match compressed {
+            match working.compress() {
                 Ok(ct_bytes) => {
                     tracing::Span::current().record("compressed_size", ct_bytes.len() as i64);
                     (
                         graph_node_index,
                         Ok(ComputationOutput {
-                            compressed: CompressedCiphertext { ct_type, ct_bytes },
+                            compressed: Some(CompressedCiphertext { ct_type, ct_bytes }),
                             working,
                         }),
                     )
@@ -607,6 +693,15 @@ fn run_computation(
 
             match result {
                 Ok(working) => {
+                    if !compress_output {
+                        return (
+                            graph_node_index,
+                            Ok(ComputationOutput {
+                                compressed: None,
+                                working,
+                            }),
+                        );
+                    }
                     // Compression span
                     let _guard = tracing::info_span!(
                         "compress_ciphertext",
@@ -625,7 +720,7 @@ fn run_computation(
                             (
                                 graph_node_index,
                                 Ok(ComputationOutput {
-                                    compressed: CompressedCiphertext { ct_type, ct_bytes },
+                                    compressed: Some(CompressedCiphertext { ct_type, ct_bytes }),
                                     working,
                                 }),
                             )

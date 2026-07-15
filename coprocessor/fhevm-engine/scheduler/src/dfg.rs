@@ -3,7 +3,7 @@ pub mod types;
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::atomic::AtomicUsize,
+    sync::{atomic::AtomicUsize, Arc},
 };
 use tracing::{error, info, warn};
 
@@ -552,18 +552,21 @@ impl DFComponentGraph {
                 let mut save_result = true;
                 if let Ok(ref result) = result {
                     save_result = result.is_allowed;
-                    let working = result.working_ct.as_ref().ok_or_else(|| {
-                        error!(
-                            target: "scheduler",
-                            output_handle = ?hex::encode(handle),
-                            transaction_id = ?hex::encode(transaction_id),
-                            "same-block propagation invariant violation: successful output missing working ciphertext"
-                        );
-                        SchedulerError::DataflowGraphError
-                    })?;
+                    let dependent_tx_indices: Vec<_> = edges
+                        .edges_directed(prod_idx, Direction::Outgoing)
+                        .map(|edge| edge.target())
+                        .collect();
                     // Traverse immediate dependents and add this result as an input
-                    for edge in edges.edges_directed(prod_idx, Direction::Outgoing) {
-                        let dependent_tx_index = edge.target();
+                    for dependent_tx_index in dependent_tx_indices {
+                        let working = result.working_ct.as_ref().ok_or_else(|| {
+                            error!(
+                                target: "scheduler",
+                                output_handle = ?hex::encode(handle),
+                                transaction_id = ?hex::encode(transaction_id),
+                                "same-block propagation invariant violation: successful output missing working ciphertext"
+                            );
+                            SchedulerError::DataflowGraphError
+                        })?;
                         let dependent_tx = self
                             .graph
                             .node_weight_mut(dependent_tx_index)
@@ -585,10 +588,22 @@ impl DFComponentGraph {
                         .graph
                         .node_weight_mut(prod_idx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
+                    let compressed_ct = match result {
+                        Ok(rok) => Ok(rok.compressed_ct.ok_or_else(|| {
+                            error!(
+                                target: "scheduler",
+                                output_handle = ?hex::encode(handle),
+                                transaction_id = ?hex::encode(transaction_id),
+                                "persisted output is missing its compressed ciphertext"
+                            );
+                            SchedulerError::DataflowGraphError
+                        })?),
+                        Err(error) => Err(error),
+                    };
                     self.results.push(DFGTxResult {
                         transaction_id: producer_tx.transaction_id.clone(),
                         handle: handle.to_vec(),
-                        compressed_ct: result.map(|rok| rok.compressed_ct),
+                        compressed_ct,
                     });
                 }
             }
@@ -739,19 +754,34 @@ impl std::fmt::Debug for OpNode {
     }
 }
 impl OpNode {
-    fn check_ready_inputs(&mut self, ct_map: &mut HashMap<Handle, Option<DFGTxInput>>) -> bool {
+    fn check_ready_inputs(
+        &mut self,
+        ct_map: &mut HashMap<Handle, Option<DFGTxInput>>,
+        remaining_uses: &mut HashMap<Handle, usize>,
+    ) -> bool {
         for i in self.inputs.iter_mut() {
             match i {
                 DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => continue,
                 DFGTaskInput::Dependence(d) => {
-                    let resolved = match ct_map.get(d) {
-                        Some(Some(DFGTxInput::Value((val, _)))) => {
-                            DFGTaskInput::Value(val.as_ref().clone())
-                        }
-                        Some(Some(DFGTxInput::Compressed((cct, _)))) => {
-                            DFGTaskInput::Compressed(cct.clone())
-                        }
-                        _ => return false,
+                    if !matches!(ct_map.get(d), Some(Some(_))) {
+                        return false;
+                    }
+                    let Some(uses) = remaining_uses.get(d).copied() else {
+                        return false;
+                    };
+                    let resolved_input = if uses == 1 {
+                        remaining_uses.remove(d);
+                        ct_map.get_mut(d).and_then(Option::take)
+                    } else {
+                        remaining_uses.insert(d.clone(), uses - 1);
+                        ct_map.get(d).cloned().flatten()
+                    };
+                    let resolved = match resolved_input {
+                        Some(DFGTxInput::Value((val, _))) => DFGTaskInput::Value(
+                            Arc::try_unwrap(val).unwrap_or_else(|val| val.as_ref().clone()),
+                        ),
+                        Some(DFGTxInput::Compressed((cct, _))) => DFGTaskInput::Compressed(cct),
+                        None => return false,
                     };
                     *i = resolved;
                 }
@@ -1281,5 +1311,35 @@ mod tests {
             g.get_results().is_empty(),
             "unknown producer output must not be saved under another producer"
         );
+    }
+
+    #[test]
+    fn add_output_rejects_uncompressed_persisted_ciphertext() {
+        let out = handle(0xAA);
+        let tid = handle(0x01);
+        let mut nodes = vec![make_cnode_with_allowed_op(tid.clone(), out.clone())];
+        let mut g = DFComponentGraph::default();
+        g.build(&mut nodes).expect("build");
+
+        let edges = g.graph.map(|_, _| (), |_, edge| *edge);
+        let error = g
+            .add_output(
+                &out,
+                &tid,
+                Ok(TaskResult {
+                    compressed_ct: None,
+                    working_ct: Some(SupportedFheCiphertexts::Scalar(vec![1])),
+                    is_allowed: true,
+                    transaction_id: tid.clone(),
+                }),
+                &edges,
+            )
+            .expect_err("block-exit ciphertexts must be compressed");
+
+        assert_eq!(
+            error.to_string(),
+            SchedulerError::DataflowGraphError.to_string()
+        );
+        assert!(g.get_results().is_empty());
     }
 }

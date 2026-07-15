@@ -26,14 +26,36 @@ use sqlx::{postgres::PgListener, query};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn, Instrument};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
+fn format_dcid_sample(dcids: &[Vec<u8>]) -> String {
+    const MAX_SAMPLE: usize = 3;
+
+    let mut sample = dcids
+        .iter()
+        .take(MAX_SAMPLE)
+        .map(hex::encode)
+        .collect::<Vec<_>>();
+    if dcids.len() > MAX_SAMPLE {
+        sample.push(format!("...(+{})", dcids.len() - MAX_SAMPLE));
+    }
+    sample.join(",")
+}
+
 lazy_static! {
     pub static ref TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+}
+
+#[cfg(feature = "bench")]
+lazy_static! {
+    /// Wall-clock makespan of the FHE phase only: block-entry decompression and
+    /// re-randomization, scheduler execution, and block-exit compression. This
+    /// deliberately excludes database/graph preparation and result persistence.
+    pub static ref TFHE_EXECUTION_TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 }
 
 lazy_static! {
@@ -180,7 +202,7 @@ impl ProducerBlockHashed for CiphertextCandidate {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 struct WorkRow {
     output_handle: Handle,
     dependencies: Vec<Handle>,
@@ -558,6 +580,8 @@ async fn tfhe_worker_cycle(
             if locked_dcid_has_pending_work {
                 info!(
                     target: "tfhe_worker",
+                    dcid_count = dcid_mngr.get_current_lock_ids().len(),
+                    dcid_sample = %format_dcid_sample(&dcid_mngr.get_current_lock_ids()),
                     "dcid still has pending work after empty acquisition; releasing without marking processed"
                 );
                 dcid_mngr.release_current_lock(false, None).await?;
@@ -578,20 +602,23 @@ async fn tfhe_worker_cycle(
                 dependence_chain_id = tracing::field::Empty
             );
 
-            let (dependence_chain_id, _) = dcid_mngr
-                .acquire_next_lock()
+            let dependence_chain_ids = dcid_mngr
+                .acquire_next_locks(args.dependence_chains_per_batch)
                 .instrument(dcid_span.clone())
                 .await?;
-            immediately_poll_more_work = dependence_chain_id.is_some();
+            let acquired_ids = dependence_chain_ids
+                .into_iter()
+                .filter_map(|(id, _)| id)
+                .collect::<Vec<_>>();
+            immediately_poll_more_work = !acquired_ids.is_empty();
 
             dcid_span.record(
                 "dependence_chain_id",
-                tracing::field::display(
-                    dependence_chain_id
-                        .as_ref()
-                        .map(hex::encode)
-                        .unwrap_or_else(|| "none".to_string()),
-                ),
+                tracing::field::display(if acquired_ids.is_empty() {
+                    "none".to_string()
+                } else {
+                    format_dcid_sample(&acquired_ids)
+                }),
             );
             continue;
         }
@@ -1391,8 +1418,8 @@ async fn resolve_ciphertext_handles<'a>(
     Ok(dependency_metadata)
 }
 
-async fn dependence_chain_has_pending_branch_work<'a>(
-    dependence_chain_id: &[u8],
+async fn dependence_chains_have_pending_branch_work<'a>(
+    dependence_chain_ids: &[Vec<u8>],
     branch_cutover_block: i64,
     trx: &mut sqlx::Transaction<'a, Postgres>,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
@@ -1427,11 +1454,11 @@ async fn dependence_chain_has_pending_branch_work<'a>(
                         AND b.block_status = 'orphaned'
                   )
               )
-              AND dependence_chain_id = $1
+              AND dependence_chain_id = ANY($1)
         )
         ",
     )
-    .bind(dependence_chain_id)
+    .bind(dependence_chain_ids)
     .bind(branch_cutover_block)
     .fetch_one(trx.as_mut())
     .await
@@ -1447,12 +1474,12 @@ async fn dependence_chain_has_pending_branch_work<'a>(
     Ok(has_pending)
 }
 
-async fn query_work_rows_for_dcid<'a>(
+async fn query_work_rows_for_dcids<'a>(
     trx: &mut sqlx::Transaction<'a, Postgres>,
-    dependence_chain_id: Option<Vec<u8>>,
+    dependence_chain_ids: &[Vec<u8>],
     branch_cutover_block: i64,
 ) -> Result<Vec<WorkRow>, sqlx::Error> {
-    let rows = sqlx::query!(
+    let rows = sqlx::query_as::<_, WorkRow>(
         r#"
         -- DCIDs are ingestion-time same-block connected components. A repeated
         -- transaction can appear on sibling forks with the same DCID, so select the
@@ -1462,7 +1489,7 @@ async fn query_work_rows_for_dcid<'a>(
         WITH expected_dcid_rows AS (
             SELECT COUNT(*) AS count
             FROM computations_branch c
-            WHERE c.dependence_chain_id = $1
+            WHERE c.dependence_chain_id = ANY($1)
               AND c.is_error = FALSE
         ),
         locked_dcid_rows AS MATERIALIZED (
@@ -1480,7 +1507,7 @@ async fn query_work_rows_for_dcid<'a>(
               c.schedule_order,
               c.is_completed
             FROM computations_branch c
-            WHERE c.dependence_chain_id = $1
+            WHERE c.dependence_chain_id = ANY($1)
               AND c.is_error = FALSE
             ORDER BY c.schedule_order ASC
             FOR UPDATE OF c SKIP LOCKED
@@ -1549,7 +1576,7 @@ async fn query_work_rows_for_dcid<'a>(
              AND c.block_number IS NOT DISTINCT FROM sc.block_number
              AND c.producer_block_hash = sc.producer_block_hash
             WHERE c.is_error = FALSE
-              AND (sc.producer_block_hash <> ''::BYTEA OR c.dependence_chain_id = $1)
+              AND (sc.producer_block_hash <> ''::BYTEA OR c.dependence_chain_id = ANY($1))
         ),
         locked_rows AS MATERIALIZED (
             SELECT
@@ -1570,7 +1597,7 @@ async fn query_work_rows_for_dcid<'a>(
              AND c.block_number IS NOT DISTINCT FROM sc.block_number
              AND c.producer_block_hash = sc.producer_block_hash
             WHERE c.is_error = FALSE
-              AND (sc.producer_block_hash <> ''::BYTEA OR c.dependence_chain_id = $1)
+              AND (sc.producer_block_hash <> ''::BYTEA OR c.dependence_chain_id = ANY($1))
             ORDER BY c.schedule_order ASC
             FOR UPDATE OF c SKIP LOCKED
         ),
@@ -1578,41 +1605,27 @@ async fn query_work_rows_for_dcid<'a>(
             SELECT COUNT(*) AS count FROM locked_rows
         )
         SELECT
-          output_handle AS "output_handle!",
-          dependencies AS "dependencies!",
-          fhe_operation AS "fhe_operation!",
-          is_scalar AS "is_scalar!",
-          is_allowed AS "is_allowed!",
-          transaction_id AS "transaction_id!",
-          producer_block_hash AS "producer_block_hash!",
-          host_chain_id AS "host_chain_id!",
+          output_handle,
+          dependencies,
+          fhe_operation,
+          is_scalar,
+          is_allowed,
+          transaction_id,
+          producer_block_hash,
+          host_chain_id,
           block_number,
-          schedule_order AS "schedule_order!"
+          schedule_order
         FROM locked_rows
         WHERE (SELECT count FROM locked_count) = (SELECT count FROM expected_rows)
         ORDER BY schedule_order ASC
         "#,
-        dependence_chain_id,
-        branch_cutover_block,
     )
+    .bind(dependence_chain_ids)
+    .bind(branch_cutover_block)
     .fetch_all(trx.as_mut())
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(|row| WorkRow {
-            output_handle: row.output_handle,
-            dependencies: row.dependencies,
-            fhe_operation: row.fhe_operation,
-            is_scalar: row.is_scalar,
-            is_allowed: row.is_allowed,
-            transaction_id: row.transaction_id,
-            producer_block_hash: row.producer_block_hash,
-            host_chain_id: row.host_chain_id,
-            block_number: row.block_number,
-            schedule_order: row.schedule_order,
-        })
-        .collect())
+    Ok(rows)
 }
 
 #[tracing::instrument(skip_all)]
@@ -1628,18 +1641,30 @@ async fn query_for_work<'a>(
         dependence_chain_id = tracing::field::Empty
     );
     // Lock dependence chain
-    let (dependence_chain_id, locking_reason) = async {
+    let (dependence_chain_ids, locking_reasons) = async {
         let result = match deps_chain_mngr.extend_or_release_current_lock(true).await? {
             // If there is a current lock, we extend it and use its dependence_chain_id
-            Some((id, reason)) => (Some(id), reason),
+            Some((_, reason)) => {
+                let ids = deps_chain_mngr.get_current_lock_ids();
+                let reasons = vec![reason; ids.len()];
+                (ids, reasons)
+            }
             None => {
                 if *no_progress_cycles
                     < args.dcid_ignore_dependency_count_threshold * args.dcid_max_no_progress_cycles
                 {
-                    deps_chain_mngr.acquire_next_lock().await?
+                    deps_chain_mngr
+                        .acquire_next_locks(args.dependence_chains_per_batch)
+                        .await?
+                        .into_iter()
+                        .filter_map(|(id, reason)| id.map(|id| (id, reason)))
+                        .unzip()
                 } else {
                     *no_progress_cycles = 0;
-                    deps_chain_mngr.acquire_early_lock().await?
+                    vec![deps_chain_mngr.acquire_early_lock().await?]
+                        .into_iter()
+                        .filter_map(|(id, reason)| id.map(|id| (id, reason)))
+                        .unzip()
                 }
             }
         };
@@ -1647,7 +1672,7 @@ async fn query_for_work<'a>(
     }
     .instrument(s_dcid.clone())
     .await?;
-    if deps_chain_mngr.enabled() && dependence_chain_id.is_none() {
+    if deps_chain_mngr.enabled() && dependence_chain_ids.is_empty() {
         // No dependence chain to lock, so no work to do
         health_check.update_db_access();
         health_check.update_activity();
@@ -1667,18 +1692,17 @@ async fn query_for_work<'a>(
     }
     s_dcid.record(
         "dependence_chain_id",
-        tracing::field::display(
-            dependence_chain_id
-                .as_ref()
-                .map(hex::encode)
-                .unwrap_or_else(|| "none".to_string()),
-        ),
+        tracing::field::display(if dependence_chain_ids.is_empty() {
+            "none".to_string()
+        } else {
+            format_dcid_sample(&dependence_chain_ids)
+        }),
     );
     let s_work = tracing::info_span!("query_work_items", count = tracing::field::Empty);
     let started_at = SystemTime::now();
-    let the_work = query_work_rows_for_dcid(
+    let the_work = query_work_rows_for_dcids(
         trx,
-        dependence_chain_id.clone(),
+        &dependence_chain_ids,
         args.branch_cutover_block,
     )
     .instrument(s_work.clone())
@@ -1692,22 +1716,22 @@ async fn query_for_work<'a>(
     s_work.record("count", the_work.len());
     health_check.update_db_access();
     if the_work.is_empty() {
-        let locked_dcid_has_pending_work = match &dependence_chain_id {
-            Some(dependence_chain_id) => {
-                dependence_chain_has_pending_branch_work(
-                    dependence_chain_id,
-                    args.branch_cutover_block,
-                    trx,
-                )
-                .await?
-            }
-            None => false,
+        let locked_dcid_has_pending_work = if dependence_chain_ids.is_empty() {
+            false
+        } else {
+            dependence_chains_have_pending_branch_work(
+                &dependence_chain_ids,
+                args.branch_cutover_block,
+                trx,
+            )
+            .await?
         };
-        if let Some(dependence_chain_id) = &dependence_chain_id {
+        if !dependence_chain_ids.is_empty() {
             info!(
                 target: "tfhe_worker",
-                dcid = %hex::encode(dependence_chain_id),
-                locking = ?locking_reason,
+                dcid_count = dependence_chain_ids.len(),
+                dcid_sample = %format_dcid_sample(&dependence_chain_ids),
+                locking_count = locking_reasons.len(),
                 locked_dcid_has_pending_work,
                 "No work items found to process"
             );
@@ -1727,8 +1751,14 @@ async fn query_for_work<'a>(
         ));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
-    info!(target: "tfhe_worker", { count = the_work.len(), dcid = ?dependence_chain_id.as_ref().map(hex::encode),
-				    locking = ?locking_reason }, "Processing work items");
+    info!(
+        target: "tfhe_worker",
+        count = the_work.len(),
+        dcid_count = dependence_chain_ids.len(),
+        dcid_sample = %format_dcid_sample(&dependence_chain_ids),
+        locking_count = locking_reasons.len(),
+        "Processing work items"
+    );
     let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
     let (transactions, batch_context, execution_transaction_contexts, earliest_schedule_order) = async {
         let mut earliest_schedule_order = the_work.first().unwrap().schedule_order;
@@ -1843,6 +1873,11 @@ async fn query_for_work<'a>(
     }
     .instrument(s_prep)
     .await?;
+    info!(
+        target: "tfhe_worker",
+        transaction_components = transactions.len(),
+        "prepared dataflow graph components"
+    );
     Ok((
         transactions,
         batch_context,
@@ -1867,6 +1902,12 @@ async fn build_transaction_graph_and_execute<'a>(
     if txs.is_empty() {
         return Ok(tx_graph);
     }
+    info!(
+        target: "tfhe_worker",
+        transaction_components = txs.len(),
+        "building transaction graph"
+    );
+    let graph_started_at = Instant::now();
     if let Err(e) = tx_graph.build(txs) {
         // If we had an error while building the graph, we don't
         // execute anything and return to allow any set results
@@ -1874,6 +1915,12 @@ async fn build_transaction_graph_and_execute<'a>(
         warn!(target: "tfhe_worker", { error = %e }, "error while building transaction graph");
         return Ok(tx_graph);
     }
+    info!(
+        target: "tfhe_worker",
+        elapsed_ms = graph_started_at.elapsed().as_millis() as u64,
+        needed_inputs = tx_graph.needed_map.len(),
+        "built transaction graph"
+    );
     // Same-block producers selected in this graph must feed consumers through
     // in-memory edges. Fetching their compressed DB image would force a
     // Compress -> Decompress path for a same-block intermediate, which RFC 020
@@ -1889,11 +1936,22 @@ async fn build_transaction_graph_and_execute<'a>(
     let resolved_handles =
         resolve_ciphertext_handles(&cts_to_query, batch_context, branch_cutover_block, trx).await?;
     let ciphertext_map = query_ciphertexts(&resolved_handles, batch_context, trx).await?;
+    info!(
+        target: "tfhe_worker",
+        requested_inputs = cts_to_query.len(),
+        fetched_inputs = ciphertext_map.len(),
+        "fetched ciphertext inputs"
+    );
     let fetched_handles: HashSet<_> = ciphertext_map.keys().cloned().collect();
     if cts_to_query.len() != fetched_handles.len() {
-        if let Some(dcid_lock) = dcid_mngr.get_current_lock() {
-            warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - fetched_handles.len()), dcid = %hex::encode(dcid_lock.dependence_chain_id) },
-	      "some inputs are missing to execute the dependence chain");
+        let dcids = dcid_mngr
+            .get_current_locks()
+            .into_iter()
+            .map(|lock| hex::encode(lock.dependence_chain_id))
+            .collect::<Vec<_>>();
+        if !dcids.is_empty() {
+            warn!(target: "tfhe_worker", { missing_inputs = ?(cts_to_query.len() - fetched_handles.len()), dcid_count = dcids.len(), dcid_sample = %dcids.iter().take(3).cloned().collect::<Vec<_>>().join(",") },
+		      "some inputs are missing to execute the dependence chain");
         }
         // A missing input whose producers are ALL terminal will never arrive:
         // mark its consumers terminal now (with the producer's error root) so
@@ -1928,6 +1986,8 @@ async fn build_transaction_graph_and_execute<'a>(
             return Err(cerr);
         }
     };
+    #[cfg(feature = "bench")]
+    let tfhe_execution_started_at = Instant::now();
     {
         let block_hash = batch_context.producer_block_hash.clone();
         let cpk = keys.pks.clone();
@@ -1980,6 +2040,8 @@ async fn build_transaction_graph_and_execute<'a>(
     let s_compute = tracing::info_span!("compute_fhe_ops");
     async {
         // Schedule computations in parallel as dependences allow
+        info!(target: "tfhe_worker", "latest key fetched; scheduling computations");
+        let schedule_started_at = Instant::now();
         let mut sched = Scheduler::new(
             &mut tx_graph,
             #[cfg(not(feature = "gpu"))]
@@ -1993,10 +2055,20 @@ async fn build_transaction_graph_and_execute<'a>(
             .schedule()
             .await
             .map_err(|e| CoprocessorError::Other(e.into()))?;
+        info!(
+            target: "tfhe_worker",
+            elapsed_ms = schedule_started_at.elapsed().as_millis() as u64,
+            "scheduler completed computations"
+        );
         Ok::<(), CoprocessorError>(())
     }
     .instrument(s_compute)
     .await?;
+    #[cfg(feature = "bench")]
+    TFHE_EXECUTION_TIMING.fetch_add(
+        tfhe_execution_started_at.elapsed().as_micros() as u64,
+        Ordering::SeqCst,
+    );
     Ok(tx_graph)
 }
 
@@ -2147,6 +2219,11 @@ async fn upload_transaction_graph_results<'a>(
 ) -> Result<bool, CoprocessorError> {
     // Get computation results
     let graph_results = tx_graph.get_results();
+    info!(
+        target: "tfhe_worker",
+        result_count = graph_results.len(),
+        "uploading transaction graph results"
+    );
     let mut handles_to_update = vec![];
     let mut res = false;
 
@@ -2818,7 +2895,7 @@ mod tests {
         dedupe_ciphertext_inserts, dedupe_ciphertext_inserts_inner,
         ensure_ciphertext_write_above_settled, observe_same_block_db_dependency_violation,
         persist_terminal_computation_error, propagate_unresolvable_dependency_errors,
-        query_dependency_metadata, query_work_rows_for_dcid, resolve_current_branch_candidates,
+        query_dependency_metadata, query_work_rows_for_dcids, resolve_current_branch_candidates,
         resolve_dependency_metadata, select_ciphertext_candidate, settled_ciphertext_divergence,
         BatchExecutionContext, BlockAncestorRow, CiphertextCandidate, CiphertextDedupeEntry,
         CiphertextInsert, DependencyMetadata, ProducerCandidate,
@@ -3218,6 +3295,8 @@ mod tests {
             bridge_polling_interval_ms: 1000,
             bridge_associate_batch_size: 128,
             generate_fhe_keys: false,
+            work_items_batch_size: 100,
+            dependence_chains_per_batch: 20,
             key_cache_size: 4,
             coprocessor_fhe_threads: 4,
             tokio_threads: 2,
@@ -3988,7 +4067,7 @@ mod tests {
         .await;
 
         let mut first_trx = pool.begin().await.expect("begin first transaction");
-        let rows = query_work_rows_for_dcid(&mut first_trx, Some(dcid.clone()), 0)
+        let rows = query_work_rows_for_dcids(&mut first_trx, std::slice::from_ref(&dcid), 0)
             .await
             .expect("query work rows");
 
@@ -3998,9 +4077,10 @@ mod tests {
         assert!(rows.iter().any(|row| row.output_handle == [0x12; 32]));
 
         let mut second_trx = pool.begin().await.expect("begin second transaction");
-        let locked_rows = query_work_rows_for_dcid(&mut second_trx, Some(dcid.clone()), 0)
-            .await
-            .expect("query while first context is locked");
+        let locked_rows =
+            query_work_rows_for_dcids(&mut second_trx, std::slice::from_ref(&dcid), 0)
+                .await
+                .expect("query while first context is locked");
         second_trx.rollback().await.expect("rollback second");
         assert!(
             locked_rows.is_empty(),
@@ -4023,7 +4103,7 @@ mod tests {
         .expect("complete first branch context");
 
         let mut trx = pool.begin().await.expect("begin transaction");
-        let rows = query_work_rows_for_dcid(&mut trx, Some(dcid), 0)
+        let rows = query_work_rows_for_dcids(&mut trx, std::slice::from_ref(&dcid), 0)
             .await
             .expect("query second work context");
         trx.rollback().await.expect("rollback");
@@ -4071,7 +4151,7 @@ mod tests {
         .await;
 
         let mut trx = pool.begin().await.expect("begin branch transaction");
-        let rows = query_work_rows_for_dcid(&mut trx, Some(branch_dcid), 10)
+        let rows = query_work_rows_for_dcids(&mut trx, std::slice::from_ref(&branch_dcid), 10)
             .await
             .expect("query post-cutover work");
         trx.rollback().await.expect("rollback branch transaction");
@@ -4106,7 +4186,7 @@ mod tests {
         .await;
 
         let mut trx = pool.begin().await.expect("begin branchless transaction");
-        let rows = query_work_rows_for_dcid(&mut trx, Some(branchless_dcid), 10)
+        let rows = query_work_rows_for_dcids(&mut trx, std::slice::from_ref(&branchless_dcid), 10)
             .await
             .expect("query branchless work");
         trx.rollback()
@@ -4167,7 +4247,7 @@ mod tests {
         .await;
 
         let mut trx = pool.begin().await.expect("begin transaction");
-        let rows = query_work_rows_for_dcid(&mut trx, Some(dcid), 0)
+        let rows = query_work_rows_for_dcids(&mut trx, std::slice::from_ref(&dcid), 0)
             .await
             .expect("query unsettled work");
         trx.rollback().await.expect("rollback transaction");
@@ -4229,7 +4309,7 @@ mod tests {
         .await;
 
         let mut trx = pool.begin().await.expect("begin transaction");
-        let rows = query_work_rows_for_dcid(&mut trx, Some(dcid), 0)
+        let rows = query_work_rows_for_dcids(&mut trx, std::slice::from_ref(&dcid), 0)
             .await
             .expect("query live work");
         trx.rollback().await.expect("rollback transaction");
