@@ -237,6 +237,16 @@ jobs:
       - name: Configure kubeconfig for the Tailscale cluster
         run: tailscale configure kubeconfig "${TAILSCALE_HOSTNAME}"
 
+      # ======================================================================
+      # DOCKER BUILD STATUS HANDLING
+      # ======================================================================
+      - name: Login to zws GitHub Container Registry
+        uses: ./.github/actions/docker-login
+        with:
+          registry: ${{ secrets.HARBOR_URL }}
+          username: ${{ secrets.HARBOR_READ_LOGIN }}
+          password: ${{ secrets.HARBOR_READ_TOKEN }}
+
       ######################################################################
       # NAMESPACE: destroy-then-recreate on every run (mirrors kms's
       # pr-preview-deploy.yml "Check if namespace exists, delete and create").
