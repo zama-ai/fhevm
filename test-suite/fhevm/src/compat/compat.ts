@@ -47,6 +47,12 @@ export const COMPAT_MATRIX = {
       unparsed: "modern" as const,
     },
     {
+      key: "COPROCESSOR_GW_LISTENER_VERSION",
+      below: [0, 14, 0] as CompatSemver,
+      profile: "legacy-gw-listener-no-drift-tuning",
+      unparsed: "modern" as const,
+    },
+    {
       key: "COPROCESSOR_HOST_LISTENER_VERSION",
       below: [0, 14, 0] as CompatSemver,
       profile: "legacy-host-listener-no-protocol-config-address",
@@ -119,6 +125,19 @@ const SHIM_PROFILES = {
       "gw-listener": [["--kms-generation-address", { env: "KMS_GENERATION_ADDRESS" }]],
     },
     coprocessorDropFlags: {},
+    connectorEnv: {},
+    composeEnv: {},
+  },
+  "legacy-gw-listener-no-drift-tuning": {
+    coprocessorArgs: {},
+    coprocessorDropFlags: {
+      "gw-listener": [
+        "--drift-no-consensus-timeout",
+        "--drift-post-consensus-grace",
+        "--drift-auto-revert-max-recent-attempts",
+        "--drift-auto-revert-recent-attempts-window",
+      ],
+    },
     connectorEnv: {},
     composeEnv: {},
   },

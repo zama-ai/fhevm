@@ -144,6 +144,16 @@ describe("render-compose", () => {
     expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
   });
 
+  test("test-suite container can run Docker-manipulating consensus tests", async () => {
+    const doc = await loadMergedComposeDoc("test-suite");
+    const service = doc.services["test-suite-e2e-debug"];
+    expect(service?.user).toBe("root");
+    expect(service?.volumes).toContain("/var/run/docker.sock:/var/run/docker.sock");
+    const command = String((service?.command as string[] | undefined)?.[0] ?? "");
+    expect(command).toContain("docker-cli");
+    expect(command).toContain("cat /tmp/apk.log");
+  });
+
   test("renders listener-core local override for the publisher only", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });

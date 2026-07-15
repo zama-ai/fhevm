@@ -37,7 +37,7 @@ const DRIFT_WARNING = '"message":"Drift detected: observed multiple digest varia
 // revert. Auto-recovery is driven solely by the consensus-vs-local mismatch below, which is emitted
 // right where on_drift_detected (the revert trigger) runs. Gating the recovery test on this avoids
 // racing ahead of consensus formation and landing on an empty drift_revert_signal.
-const DRIFT_CONSENSUS_WARNING = '"message":"Drift detected: local digest does not match consensus"';
+const DRIFT_CONSENSUS_WARNING = '"source":"consensus"';
 const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;
 const DB_REVERT_CONTAINERS = [
   "host-listener",
