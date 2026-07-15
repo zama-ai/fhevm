@@ -141,6 +141,9 @@ fn next_gpu_index(num_gpus: usize) -> Result<usize, std::io::Error> {
     Ok(LAST_GPU_INDEX.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % num_gpus)
 }
 
+#[cfg(feature = "gpu")]
+const GPU_MATERIALIZATION_STREAMS_PER_DEVICE: usize = 6;
+
 #[derive(Clone, Debug)]
 struct BatchExecutionContext {
     host_chain_id: i64,
@@ -2003,28 +2006,103 @@ async fn build_transaction_graph_and_execute<'a>(
             #[cfg(not(feature = "gpu"))]
             let sks_for_materialize = keys.sks.clone();
             #[cfg(feature = "gpu")]
-            let sks_for_materialize = keys.gpu_sks[materialization_gpu_idx].clone();
+            let gpu_sks_for_materialize = keys.gpu_sks.clone();
+            #[cfg(not(feature = "gpu"))]
             let gpu_idx_for_materialize = materialization_gpu_idx;
             move || -> Result<MaterializedInputs, WorkerDynError> {
+                #[cfg(not(feature = "gpu"))]
                 tfhe::set_server_key(sks_for_materialize);
-                let mut results = Vec::with_capacity(ciphertext_map.len());
-                for (handle, input) in ciphertext_map {
-                    let mut working = SupportedFheCiphertexts::decompress(
-                        input.ciphertext_type,
-                        &input.ciphertext,
-                        gpu_idx_for_materialize,
-                    )?;
-                    if input.rerandomize_as_boundary {
-                        re_randomise_boundary_input(&mut working, &block_hash, &cpk)?;
+
+                #[cfg(feature = "gpu")]
+                {
+                    let lane_count = ciphertext_map.len().min(
+                        gpu_sks_for_materialize.len() * GPU_MATERIALIZATION_STREAMS_PER_DEVICE,
+                    );
+                    if lane_count == 0 {
+                        return Ok(Vec::new());
                     }
-                    results.push((handle, DFGTxInput::Value((Arc::new(working), true))));
+                    let mut lanes: Vec<Vec<_>> = (0..lane_count).map(|_| Vec::new()).collect();
+                    for (index, ciphertext) in ciphertext_map.into_iter().enumerate() {
+                        lanes[index % lane_count].push(ciphertext);
+                    }
+
+                    return std::thread::scope(|scope| {
+                        let mut workers = Vec::with_capacity(lane_count);
+                        for (lane_index, lane) in lanes.into_iter().enumerate() {
+                            let gpu_idx = lane_index % gpu_sks_for_materialize.len();
+                            let sks = gpu_sks_for_materialize[gpu_idx].clone();
+                            let block_hash = &block_hash;
+                            let cpk = &cpk;
+                            workers.push(scope.spawn(
+                                move || -> Result<MaterializedInputs, WorkerDynError> {
+                                    // Cloning a CudaServerKey creates a distinct CUDA stream,
+                                    // allowing independent boundary ciphertexts to materialize
+                                    // concurrently without changing their block-scoped seeds.
+                                    tfhe::set_server_key(sks);
+                                    let mut results = Vec::with_capacity(lane.len());
+                                    for (handle, input) in lane {
+                                        let mut working = SupportedFheCiphertexts::decompress(
+                                            input.ciphertext_type,
+                                            &input.ciphertext,
+                                            gpu_idx,
+                                        )?;
+                                        if input.rerandomize_as_boundary {
+                                            re_randomise_boundary_input(
+                                                &mut working,
+                                                block_hash,
+                                                cpk,
+                                            )?;
+                                        }
+                                        results.push((
+                                            handle,
+                                            DFGTxInput::Value((Arc::new(working), true)),
+                                        ));
+                                    }
+                                    Ok(results)
+                                },
+                            ));
+                        }
+
+                        let mut results = Vec::new();
+                        for worker in workers {
+                            let lane_results = worker.join().map_err(|_| -> WorkerDynError {
+                                Box::new(std::io::Error::other(
+                                    "boundary materialization worker panicked",
+                                ))
+                            })??;
+                            results.extend(lane_results);
+                        }
+                        Ok(results)
+                    });
                 }
-                Ok(results)
+
+                #[cfg(not(feature = "gpu"))]
+                {
+                    let mut results = Vec::with_capacity(ciphertext_map.len());
+                    for (handle, input) in ciphertext_map {
+                        let mut working = SupportedFheCiphertexts::decompress(
+                            input.ciphertext_type,
+                            &input.ciphertext,
+                            gpu_idx_for_materialize,
+                        )?;
+                        if input.rerandomize_as_boundary {
+                            re_randomise_boundary_input(&mut working, &block_hash, &cpk)?;
+                        }
+                        results.push((handle, DFGTxInput::Value((Arc::new(working), true))));
+                    }
+                    Ok(results)
+                }
             }
         })
         .await
         .map_err(|err| CoprocessorError::Other(err.into()))?
         .map_err(CoprocessorError::from)?;
+        // `DFComponentGraph::add_input` clones the materialized ciphertexts.
+        // TFHE's CUDA ciphertext clone path consults the current thread's
+        // thread-local server key, so initialize the receiving async worker
+        // thread as well as the blocking materialization thread above.
+        #[cfg(feature = "gpu")]
+        tfhe::set_server_key(keys.gpu_sks[materialization_gpu_idx].clone());
         for (handle, input) in materialized.into_iter() {
             tx_graph
                 .add_input(&handle, &input)
@@ -2058,6 +2136,14 @@ async fn build_transaction_graph_and_execute<'a>(
             .schedule()
             .await
             .map_err(|e| CoprocessorError::Other(e.into()))?;
+        // Scheduler task completion normally implies GPU completion because
+        // persisted outputs are compressed back to host bytes. Keep an
+        // explicit device synchronization in benchmark builds so the timed
+        // TFHE phase cannot finish with any kernel still queued on a stream.
+        #[cfg(all(feature = "bench", feature = "gpu"))]
+        for gpu_idx in 0..keys.gpu_sks.len() {
+            tfhe::core_crypto::gpu::synchronize_device(gpu_idx as u32);
+        }
         info!(
             target: "tfhe_worker",
             elapsed_ms = schedule_started_at.elapsed().as_millis() as u64,
