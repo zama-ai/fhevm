@@ -1,8 +1,9 @@
 //! Rolling cost snapshot over Mollusk fixtures.
 //!
 //! Records the Solana runtime cost of representative instruction profiles —
-//! compute units, unique account count, and instruction-data size — and
-//! compares them against the committed snapshot under `cost-snapshots/`.
+//! compute units, unique account count, instruction-data size, and the count
+//! and total data size of the CPIs the instruction issues — and compares them
+//! against the committed snapshot under `cost-snapshots/`.
 //! Drift in either direction fails the dedicated `cost_snapshot_*` tests:
 //! costlier is a regression, cheaper invalidates design assumptions derived
 //! from the old number (transaction packing, per-leg budgets), and both
@@ -120,6 +121,24 @@ pub fn assert_cost_snapshot(
             expected.instruction_data_bytes, measured.instruction_data_bytes
         ));
     }
+    if measured.cpi_instructions != expected.cpi_instructions {
+        failures.push(format!(
+            "CPI instruction count changed: {} -> {}",
+            expected.cpi_instructions, measured.cpi_instructions
+        ));
+    }
+    if measured.total_cpi_instruction_data_bytes != expected.total_cpi_instruction_data_bytes {
+        failures.push(format!(
+            "total CPI instruction data bytes changed: {} -> {}",
+            expected.total_cpi_instruction_data_bytes, measured.total_cpi_instruction_data_bytes
+        ));
+    }
+    if measured.max_cpi_instruction_data_bytes != expected.max_cpi_instruction_data_bytes {
+        failures.push(format!(
+            "maximum CPI instruction data bytes changed: {} -> {}",
+            expected.max_cpi_instruction_data_bytes, measured.max_cpi_instruction_data_bytes
+        ));
+    }
     if measured.compute_units != expected.compute_units {
         let direction = if measured.compute_units > expected.compute_units {
             "regression"
@@ -145,11 +164,18 @@ pub fn assert_cost_snapshot(
 /// `unique_accounts` is a static property of the instruction shape (unique
 /// account-meta pubkeys plus the program id), not a count of accounts loaded
 /// at runtime.
+///
+/// The CPI metrics cover every inner instruction at any stack depth, including
+/// application-to-host and host-issued nested calls. The total captures the
+/// aggregate payload while the maximum tracks the per-instruction runtime limit.
 #[derive(Clone, Copy, Deserialize, Serialize)]
 struct Cost {
     compute_units: u64,
     unique_accounts: usize,
     instruction_data_bytes: usize,
+    cpi_instructions: usize,
+    total_cpi_instruction_data_bytes: usize,
+    max_cpi_instruction_data_bytes: usize,
 }
 
 fn measure(instruction: &Instruction, result: &InstructionResult) -> Cost {
@@ -163,6 +189,18 @@ fn measure(instruction: &Instruction, result: &InstructionResult) -> Cost {
         compute_units: result.compute_units_consumed,
         unique_accounts: accounts.len(),
         instruction_data_bytes: instruction.data.len(),
+        cpi_instructions: result.inner_instructions.len(),
+        total_cpi_instruction_data_bytes: result
+            .inner_instructions
+            .iter()
+            .map(|inner| inner.instruction.data.len())
+            .sum(),
+        max_cpi_instruction_data_bytes: result
+            .inner_instructions
+            .iter()
+            .map(|inner| inner.instruction.data.len())
+            .max()
+            .unwrap_or(0),
     }
 }
 

@@ -3284,6 +3284,93 @@ impl EvalFixture {
         ix
     }
 
+    /// A frame at `MAX_FHE_EVAL_OPS`: `Ge` control, alternating `Sub`/`Add` transient
+    /// steps, and the durable `IfThenElse` output. Same accounts and output shape as
+    /// `block_cap_instruction`, so the compute-unit delta against the three-op profile
+    /// isolates the additional host-side FHE eval steps.
+    fn max_ops_instruction(&self) -> Instruction {
+        let mut steps = vec![FheEvalStep::Binary {
+            op: FheBinaryOpCode::Ge,
+            lhs: self.balance_operand(),
+            rhs: self.amount_operand(),
+            output_fhe_type: 0,
+            output: FheEvalOutput::AllowedLocal,
+        }];
+        let last_transient_index = u16::try_from(host::MAX_FHE_EVAL_OPS - 2)
+            .expect("MAX_FHE_EVAL_OPS must fit producer indices");
+        for index in 1..=last_transient_index {
+            let op = if index % 2 == 1 {
+                FheBinaryOpCode::Sub
+            } else {
+                FheBinaryOpCode::Add
+            };
+            // The first arithmetic step starts from the euint64 balance; later
+            // ones chain the previous arithmetic output (step 0 is the ebool
+            // control and cannot feed an arithmetic operand).
+            let lhs = if index == 1 {
+                self.balance_operand()
+            } else {
+                FheEvalOperand::AllowedLocal {
+                    producer_index: index - 1,
+                }
+            };
+            steps.push(FheEvalStep::Binary {
+                op,
+                lhs,
+                rhs: self.amount_operand(),
+                output_fhe_type: 5,
+                output: FheEvalOutput::AllowedLocal,
+            });
+        }
+        steps.push(FheEvalStep::Ternary {
+            op: FheTernaryOpCode::IfThenElse,
+            control: FheEvalOperand::AllowedLocal { producer_index: 0 },
+            if_true: FheEvalOperand::AllowedLocal {
+                producer_index: last_transient_index,
+            },
+            if_false: self.balance_operand(),
+            output_fhe_type: 5,
+            output: FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index: 2,
+                output_app_account_authority_index: None,
+                output_acl_domain_key: self.authority,
+                output_app_account: self.app_account,
+                output_encrypted_value_label: self.output_label,
+                output_subjects: vec![host::AclSubjectEntry {
+                    pubkey: self.authority,
+                }],
+                previous_handle: None,
+                previous_subjects: None,
+                make_public: false,
+            },
+        });
+        let mut ix = anchor_ix(
+            self.program_id,
+            host::accounts::FheEval {
+                payer: self.authority,
+                compute_subject: self.authority,
+                app_account_authority: self.app_account,
+                host_config: self.host_config,
+                system_program: system_program::ID,
+                hcu_authority: self.hcu_authority,
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
+                event_authority: event_authority(self.program_id),
+                program: self.program_id,
+            },
+            host::instruction::FheEval {
+                args: FheEvalArgs {
+                    context_id: label("max-ops-frame"),
+                    steps,
+                },
+            },
+        );
+        ix.accounts.push(writable(self.balance_value));
+        ix.accounts.push(writable(self.amount_value));
+        ix.accounts.push(writable(self.output_value));
+        ix
+    }
+
     /// A transient-only frame (single step, `AllowedLocal` output) — produces no durable
     /// output; the block-cap identity comes solely from the `hcu_authority` signer.
     fn transient_only_instruction(
@@ -3935,4 +4022,24 @@ fn cost_snapshot_fhe_eval_three_op_frame() {
         .process_and_validate_instruction(&ix, &[Check::success()]);
 
     cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_eval/three_op_frame", &ix, &result);
+}
+
+#[test]
+fn cost_snapshot_fhe_eval_max_op_frame() {
+    // A frame at MAX_FHE_EVAL_OPS with the same fixture keys, accounts, and
+    // durable-output shape as the three-op profile. The compute-unit delta
+    // isolates the extra direct host-side FHE eval steps; it does not include
+    // work performed by an application before invoking the host program.
+    let fixture = EvalFixture::with_block_cap_keys(
+        u64::MAX,
+        Pubkey::new_from_array([0x21; 32]),
+        Pubkey::new_from_array([0x22; 32]),
+    );
+    let ix = fixture.max_ops_instruction();
+
+    let result = fixture
+        .context
+        .process_and_validate_instruction(&ix, &[Check::success()]);
+
+    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_eval/max_op_frame", &ix, &result);
 }
