@@ -1,0 +1,24 @@
+# anvil-node values overlay for the fhevm-e2e "simplest scenario" host chain.
+# Deployed as: helm upgrade --install anvil-host charts/anvil-node -n fhevm-e2e -f this-file
+nameOverride: anvil-host
+image:
+  name: ghcr.io/foundry-rs/foundry
+  tag: v1.3.5
+network:
+  blockTime: "1"
+  host: "0.0.0.0"
+  chainId: "12345"
+  accounts: "120"
+  # Well-known Foundry/Hardhat test mnemonic. Deterministic accounts only —
+  # this cluster is ephemeral and never holds real funds.
+  mnemonic: "test test test test test test test test test test test junk"
+port: 8545
+storage:
+  size: 1Gi
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

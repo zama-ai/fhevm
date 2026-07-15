@@ -1,0 +1,55 @@
+# crossplane/coprocessor-infra overlay for the fhevm e2e preview namespace.
+# Provisions real AWS resources (RDS Postgres + S3), same chart
+# zama-zws/gitops's fhevm-dev environment uses (see
+# environments/fhevm-dev/coprocessor-infra.yaml).
+#
+# Deployed as:
+#   helm upgrade --install coprocessor-infra \
+#     oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra \
+#     -n <namespace> -f this-file
+#
+# Release name is fixed to "coprocessor-infra" by the deploy workflow, which
+# makes the resulting resource names deterministic (chart default naming,
+# see templates/_helpers.tpl's "coprocessor-db.fullname" / "coprocessor-
+# bucket.fullname"):
+#   - DB connection Secret: coprocessor-infra-coprocessor-db
+#     (TODO: confirm exact secret keys against the live cluster - assumed
+#     endpoint/port/username/password, the usual crossplane-aws convention)
+#   - S3 bucket ConfigMap:  coprocessor (S3_ENDPOINT / S3_URI_KEY keys)
+#
+# A single shared logical database ("fhevm_e2e") is used across
+# coprocessor, kms-connector and relayer-migrate in this ephemeral
+# namespace - each app owns its own tables/schema, so there's no need for
+# three separate RDS instances just for a throwaway preview environment.
+region: eu-west-1
+environment: fhevm-ci
+
+coprocessorBucket:
+  enabled: true
+  deletionPolicy: Delete
+  irsa:
+    enabled: true
+    serviceAccountName: coprocessor
+  labels:
+    name: coprocessor-bucket
+  configMapTargetRef:
+    enabled: true
+    name: coprocessor
+
+coprocessorDatabase:
+  enabled: true
+  deletionPolicy: Delete
+  allocatedStorage: 20
+  maxAllocatedStorage: 50
+  backupRetentionPeriod: 0
+  instanceClass: "db.t3.micro"
+  engine: postgres
+  engineVersion: "17.2"
+  parameterGroupFamily: postgres17
+  dbName: fhevm_e2e
+  deletionProtection: false
+  username: zama
+  multiAz: false
+  publiclyAccessible: false
+  storageEncrypted: false
+  finalSnapshotEnabled: false

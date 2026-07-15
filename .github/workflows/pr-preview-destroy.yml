@@ -1,0 +1,71 @@
+name: pr-preview-destroy
+
+##############################################################################
+# Tears down the per-PR e2e preview namespace created by
+# pr-preview-deploy.yml. Mirrors zama-ai/kms's ci/.github/workflows/
+# pr-preview-destroy.yml: same Tailscale cluster, same "helm uninstall
+# everything, then delete the namespace" approach so Crossplane claims
+# (coprocessor-infra, tkms-infra) are released and their underlying AWS
+# resources (RDS, S3, IAM) get deprovisioned instead of leaking.
+##############################################################################
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  destroy:
+    name: destroy
+    # Only bother if this PR could plausibly have a preview namespace: it
+    # was merged/closed after having carried the pr-preview-e2e label at
+    # some point. We can't easily check label history here, so we just
+    # attempt the teardown unconditionally and no-op if the namespace
+    # doesn't exist.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NAMESPACE: fhevm-ci-${{ github.actor }}-${{ github.event.pull_request.number }}
+      TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
+    steps:
+      - name: Setup tailscale
+        uses: tailscale/github-action@84a3f23bb4d843bcf4da6cf824ec1be473daf4de # v3.2.3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:fhevm-ci
+
+      - name: Setup helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede
+
+      - name: Configure kubeconfig for the Tailscale cluster
+        run: tailscale configure kubeconfig "${TAILSCALE_HOSTNAME}"
+
+      - name: Destroy preview namespace
+        run: |
+          if ! kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
+            echo "Namespace ${NAMESPACE} does not exist, nothing to destroy."
+            exit 0
+          fi
+
+          echo "Uninstalling all helm releases in ${NAMESPACE}..."
+          helm list -n "${NAMESPACE}" --short | xargs -r -L1 helm uninstall -n "${NAMESPACE}"
+
+          echo "Deleting namespace ${NAMESPACE}..."
+          kubectl delete namespace "${NAMESPACE}" --grace-period=1 --timeout=5s --wait=false
+          kubectl wait --for=delete "namespace/${NAMESPACE}" --timeout=300s || {
+            echo "::warning::Namespace ${NAMESPACE} did not finish terminating within 5m (likely stuck on Crossplane finalizers releasing AWS resources) - check manually."
+          }
+
+      - name: Comment on PR
+        if: always()
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            :broom: e2e preview environment (namespace `${{ env.NAMESPACE }}`) has been torn down.

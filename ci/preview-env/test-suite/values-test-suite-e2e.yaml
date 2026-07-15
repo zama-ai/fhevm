@@ -1,0 +1,59 @@
+# common chart overlay for the e2e test-suite runner, for the fhevm e2e
+# preview namespace. Mirrors zama-zws/gitops's fhevm-dev/fhevm-test-suite.yaml
+# pattern (generic `common` chart + published image), not a fhevm-specific chart.
+#
+# Env var names follow test-suite/fhevm/env/staging/.env.test-suite (the
+# staging profile's reference env file) rather than being guessed - contract
+# addresses substituted for real configMapKeyRef wiring against
+# gw-sc-addresses / host-sc-addresses instead of static values.
+#
+# This is a one-shot test run (not a long-running service), so it's deployed
+# as a Job rather than a Deployment. image.tag is overridden at deploy time
+# via --set-string in pr-preview-deploy.yml with the real per-PR
+# short-SHA tag.
+#
+# Deployed as:
+#   helm upgrade --install test-suite oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
+#     -n <namespace> -f this-file
+fullnameOverride: test-suite
+
+image:
+  repository: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e
+  tag: latest
+
+job:
+  enabled: true
+  backoffLimit: 0
+  restartPolicy: Never
+  # Give the full e2e suite (keygen/decryption round trips, etc.) enough
+  # headroom against a real dedicated 4-party threshold+enclave KMS.
+  activeDeadlineSeconds: 3600
+
+env:
+  # Same well-known Foundry/Hardhat test mnemonic used to fund every anvil
+  # account across the other contracts/coprocessor deploy steps.
+  - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+  - {name: CHAIN_ID_GATEWAY, value: "54321"}
+  - {name: CHAIN_ID_HOST, value: "12345"}
+  - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
+  - {name: GATEWAY_RPC_URL, value: "http://anvil-gateway-anvil-node:8546"}
+  - name: DECRYPTION_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: decryption.address}}
+  - name: INPUT_VERIFICATION_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
+  - name: CIPHERTEXT_COMMITS_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: ciphertext_commits.address}}
+  - name: KMS_VERIFIER_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_verifier.address}}
+  - name: ACL_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
+  - name: INPUT_VERIFIER_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: input_verifier.address}}
+  - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
+  - name: HCU_LIMIT_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: hcu_limit.address}}
+  # Hardhat account #9 - "deployer" role needed for HCU-limit owner-restricted
+  # tests, matching the staging reference env file's own comment.
+  - {name: DEPLOYER_PRIVATE_KEY, value: "0x2d24c36c57e6bfbf90c43173481cc00edcbd1a3922de5e5fdb9aba5fc4e0fafd"}
+  - {name: RELAYER_URL, value: "http://relayer:3000/v2"}

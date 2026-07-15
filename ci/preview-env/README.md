@@ -1,0 +1,68 @@
+# fhevm ephemeral PR-preview e2e config
+
+Config for the per-PR e2e preview environment, additive to the default docker-compose path
+driven by `test-suite/fhevm` (`fhevm-cli`). Mirrors the layout and conventions of
+[`zama-ai/kms/ci/kube-testing`](https://github.com/zama-ai/kms/tree/main/ci/kube-testing) +
+[`zama-ai/kms/ci/scripts`](https://github.com/zama-ai/kms/tree/main/ci/scripts).
+
+Every PR that carries the `pr-preview-e2e` label gets a per-PR namespace
+(`fhevm-ci-<actor>-<pr>`) on the real `zws-dev` Tailscale cluster — real published OCI charts,
+Crossplane-provisioned RDS/S3 (`coprocessor-infra/`), and a dedicated real 4-party
+threshold+enclave KMS reused directly from `zama-ai/kms`'s own `ci/scripts/deploy.sh` (no
+vendored `kms-core` chart usage here at all). See
+[`../../.github/workflows/pr-preview-deploy.yml`](../../.github/workflows/pr-preview-deploy.yml).
+Torn down automatically when the PR closes
+([`pr-preview-destroy.yml`](../../.github/workflows/pr-preview-destroy.yml)).
+
+There is no local Kind/laptop-based variant of this path anymore — a full stack (dedicated
+4-party enclave KMS + coprocessor + kms-connector + relayer + test-suite) doesn't fit in a
+reasonable local resource budget, so `pr-preview-deploy.yml`'s remote `zws-dev` cluster is the
+only supported way to run this. The default docker-compose path (`test-suite/fhevm`) remains
+the right choice for local iteration.
+
+## Layout
+
+```
+ci/preview-env/
+├── coprocessor-infra/
+│   └── values-coprocessor-infra-e2e.yaml # crossplane/coprocessor-infra overlay: real RDS + S3
+├── host-chain/
+│   ├── values-anvil-host-e2e.yaml       # anvil-node overlay, host chain
+│   └── values-host-contracts-e2e.yaml   # contracts overlay, host-contracts
+├── gateway-chain/
+│   ├── values-anvil-gateway-e2e.yaml         # anvil-node overlay, gateway chain
+│   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
+│   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
+│   └── values-gateway-trigger-keygen-e2e.yaml  # contracts overlay, real FHE key/CRS gen ceremony
+├── coprocessor/
+│   └── values-coprocessor-e2e.yaml      # coprocessor overlay
+├── kms-connector/
+│   └── values-kms-connector-e2e.yaml    # kms-connector overlay
+├── relayer/
+│   ├── values-relayer-e2e.yaml          # `common` chart overlay, relayer server
+│   └── values-relayer-migrate-e2e.yaml  # `common` chart overlay, relayer DB migration Job
+└── test-suite/
+    └── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
+```
+
+Every file here is a **values overlay for a chart**. `anvil-node`/`contracts`/`coprocessor`/
+`kms-connector` target the real, published production charts directly via
+`oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/*` refs (see `pr-preview-deploy.yml`).
+`relayer`/`test-suite` target the generic `oci://hub.zama.org/ghcr/zama-zws/helm-charts/common`
+chart (the same one `zama-zws/gitops`'s `fhevm-dev` environment uses for these two components),
+not a fhevm-specific chart. `kms-core` (KMS itself) is never deployed from this repo at all —
+the CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `pr-preview-deploy.yml`).
+
+Note this path's own images (contracts/kms-connector/relayer/test-suite) are addressed via
+`hub.zama.org/ghcr/zama-ai/fhevm/...` (the Harbor pull-through-cache mirror of `ghcr.io`), not
+`hub.zama.org/zama-protocol/...`. A freshly-built PR image only exists at its GHCR tag/mirror;
+`zama-protocol` is populated later by the real promotion pipeline, so pointing there would
+404 on PR previews. `coprocessor`'s chart default already uses the mirror path for the same
+reason.
+
+## Why values overlays, not new charts
+
+The production Helm charts in `../../charts/` already support everything the simplest e2e
+scenario needs via values alone (see gap analysis in the feasibility plan). Keeping
+e2e-specific config as overlays here — rather than forking or templating the charts — means
+this path never drifts from what devnet/testnet/mainnet actually deploy.

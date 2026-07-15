@@ -1,0 +1,119 @@
+# charts/contracts overlay for deploying host-contracts against anvil-host,
+# for the fhevm e2e preview namespace (single canonical host chain, 4-party
+# dedicated threshold+enclave KMS, single coprocessor).
+#
+# Deployed as:
+#   helm upgrade --install host-contracts oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts \
+#     -n <namespace> -f this-file
+#   (requires gateway-contracts to already be deployed — DECRYPTION_ADDRESS/
+#   INPUT_VERIFICATION_ADDRESS below are wired directly from its gw-sc-addresses
+#   ConfigMap via valueFrom.configMapKeyRef, so there's nothing to substitute
+#   at deploy time.)
+#
+# HARDHAT_NETWORK/MNEMONIC set explicitly to avoid the in-memory-network
+# fallback (host-contracts' "staging" profile is chainId 12345 - matches
+# anvil-host's chain id).
+#
+# This chart's own values.yaml documents the canonical reference command for
+# a single-host scenario as `task:deployAllHostContracts --with-kms-generation
+# true` (the canonical host chain owns the real KMSGeneration implementation;
+# gateway's own KMSGeneration proxy stays an empty, unused stand-in in that
+# case) - followed here.
+#
+# KMS_* placeholders below mirror values-gateway-contracts-e2e.yaml's -
+# same TODO(kms-keygen) caveat applies (real dedicated-KMS signer addresses
+# not yet wired in).
+scDeploy:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/host-contracts
+    tag: latest
+  configmap:
+    name: host-sc-addresses
+  env:
+    - {name: HARDHAT_NETWORK, value: "staging"}
+    - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+    - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
+    # Hardhat account #0 — same deterministic ephemeral-testing deployer as gateway-contracts
+    # (separate chain, so no address collision risk).
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
+    # Gateway's chain id + the two gateway contract addresses KMSVerifier/InputVerifier verify
+    # signatures against. Read directly from gateway-contracts' output ConfigMap instead of
+    # being hardcoded — these addresses are non-deterministic (depend on deploy order/nonces)
+    # so a static value here would go stale on every gateway-contracts redeploy.
+    - {name: CHAIN_ID_GATEWAY, value: "54321"}
+    - name: DECRYPTION_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gw-sc-addresses
+          key: decryption.address
+    - name: INPUT_VERIFICATION_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gw-sc-addresses
+          key: input_verification.address
+    - {name: NUM_COPROCESSORS, value: "1"}
+    - {name: COPROCESSOR_THRESHOLD, value: "1"}
+    # Same mocked coprocessor identity as gateway-contracts.
+    - {name: COPROCESSOR_SIGNER_ADDRESS_0, value: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"}
+    - {name: NUM_KMS_NODES, value: "4"}
+    # PLACEHOLDER (see TODO(kms-keygen) in values-gateway-contracts-e2e.yaml):
+    # Hardhat test accounts, NOT the real dedicated KMS's key material.
+    - {name: KMS_TX_SENDER_ADDRESS_0, value: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"}
+    - {name: KMS_SIGNER_ADDRESS_0, value: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"}
+    # NOTE: host-contracts names this KMS_NODE_IP_x (no "_ADDRESS"), unlike gateway-contracts'
+    # KMS_NODE_IP_ADDRESS_x — a real, easy-to-miss naming inconsistency between the two repos.
+    - {name: KMS_NODE_IP_0, value: "kms-core-1-core-1"}
+    - {name: KMS_NODE_STORAGE_URL_0, value: "https://placeholder-party-1.s3.eu-west-1.amazonaws.com"}
+    - {name: KMS_NODE_PARTY_ID_0, value: "1"}
+    - {name: KMS_NODE_MPC_IDENTITY_0, value: "kms-core-1"}
+    - {name: KMS_NODE_CA_CERT_0, value: "0x706c616365686f6c6465722d63612d636572742d6532652d7370696b65"}
+    - {name: KMS_NODE_STORAGE_PREFIX_0, value: "PUB-p1"}
+    - {name: KMS_TX_SENDER_ADDRESS_1, value: "0x90F79bf6EB2c4f870365E785982E1f101E93b906"}
+    - {name: KMS_SIGNER_ADDRESS_1, value: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"}
+    - {name: KMS_NODE_IP_1, value: "kms-core-2-core-2"}
+    - {name: KMS_NODE_STORAGE_URL_1, value: "https://placeholder-party-2.s3.eu-west-1.amazonaws.com"}
+    - {name: KMS_NODE_PARTY_ID_1, value: "2"}
+    - {name: KMS_NODE_MPC_IDENTITY_1, value: "kms-core-2"}
+    - {name: KMS_NODE_CA_CERT_1, value: "0x706c616365686f6c6465722d63612d636572742d6532652d7370696b65"}
+    - {name: KMS_NODE_STORAGE_PREFIX_1, value: "PUB-p2"}
+    - {name: KMS_TX_SENDER_ADDRESS_2, value: "0x976EA74026E726554dB657fA54763abd0C3a0aa"}
+    - {name: KMS_SIGNER_ADDRESS_2, value: "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"}
+    - {name: KMS_NODE_IP_2, value: "kms-core-3-core-3"}
+    - {name: KMS_NODE_STORAGE_URL_2, value: "https://placeholder-party-3.s3.eu-west-1.amazonaws.com"}
+    - {name: KMS_NODE_PARTY_ID_2, value: "3"}
+    - {name: KMS_NODE_MPC_IDENTITY_2, value: "kms-core-3"}
+    - {name: KMS_NODE_CA_CERT_2, value: "0x706c616365686f6c6465722d63612d636572742d6532652d7370696b65"}
+    - {name: KMS_NODE_STORAGE_PREFIX_2, value: "PUB-p3"}
+    - {name: KMS_TX_SENDER_ADDRESS_3, value: "0x14dC79964da2C08b23698B3D3cc7Ca32193d9955"}
+    - {name: KMS_SIGNER_ADDRESS_3, value: "0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f"}
+    - {name: KMS_NODE_IP_3, value: "kms-core-4-core-4"}
+    - {name: KMS_NODE_STORAGE_URL_3, value: "https://placeholder-party-4.s3.eu-west-1.amazonaws.com"}
+    - {name: KMS_NODE_PARTY_ID_3, value: "4"}
+    - {name: KMS_NODE_MPC_IDENTITY_3, value: "kms-core-4"}
+    - {name: KMS_NODE_CA_CERT_3, value: "0x706c616365686f6c6465722d63612d636572742d6532652d7370696b65"}
+    - {name: KMS_NODE_STORAGE_PREFIX_3, value: "PUB-p4"}
+    - {name: PUBLIC_DECRYPTION_THRESHOLD, value: "3"}
+    - {name: USER_DECRYPTION_THRESHOLD, value: "3"}
+    # NOTE: host-contracts names this KMS_GEN_THRESHOLD, unlike gateway-contracts'
+    # KMS_GENERATION_THRESHOLD — another cross-repo naming inconsistency.
+    - {name: KMS_GEN_THRESHOLD, value: "2"}
+    # MPC_THRESHOLD=0 reverts with ProtocolConfig's InvalidNullThreshold("mpc") — must be >= 1.
+    # 1 matches the dedicated KMS's real threshold value (kms's own 4-party default).
+    - {name: MPC_THRESHOLD, value: "1"}
+    - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}
+    - {name: KMS_PCR_VALUES, value: '[{"pcr0":"0x00","pcr1":"0x00","pcr2":"0x00"}]'}
+  deployCommands:
+    - npx hardhat task:deployAllHostContracts --with-kms-generation true
+    # task:addHostPausers intentionally omitted — deferred to a follow-up step, same reasoning
+    # as gateway-contracts' deferred task:addHostChainsToGatewayConfig.
+  verifyContracts: false
+persistence:
+  enabled: true
+  volumeClaim:
+    name: host-sc-deploy-workdir
+    create: true
+    storageCapacity: 1Gi
+    storageClassName: ""
+scUpgrade:
+  enabled: false

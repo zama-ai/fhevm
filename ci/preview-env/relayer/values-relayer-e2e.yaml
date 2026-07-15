@@ -1,0 +1,47 @@
+# common chart overlay for the relayer server, for the fhevm e2e preview
+# namespace. Mirrors zama-zws/gitops's fhevm-dev/relayer.yaml pattern
+# (generic `common` chart + published image), not a fhevm-specific chart.
+#
+# Contract addresses are wired from the real addresses gateway-contracts
+# emitted, via valueFrom.configMapKeyRef against the gw-sc-addresses
+# ConfigMap (env supports raw Kubernetes env entries directly - no
+# chart-specific value/valueFrom wrapper needed here, unlike coprocessor's
+# chart). image.tag is overridden at deploy time via --set-string in
+# pr-preview-deploy.yml with the real per-PR short-SHA tag.
+#
+# Deployed as:
+#   helm upgrade --install relayer oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
+#     -n <namespace> -f this-file
+fullnameOverride: relayer
+
+image:
+  repository: hub.zama.org/ghcr/zama-ai/fhevm/relayer
+  tag: latest
+
+deployment:
+  enabled: true
+
+service:
+  enabled: true
+  ports:
+    - {name: http, port: 3000}
+
+env:
+  - {name: APP_NETWORKS__ROLLUP__WS_URL, value: "ws://anvil-gateway-anvil-node:8546"}
+  - {name: APP_NETWORKS__ROLLUP__HTTP_URL, value: "http://anvil-gateway-anvil-node:8546"}
+  - {name: APP_NETWORKS__ROLLUP__CHAIN_ID, value: "54321"}
+  - name: APP_KEYURL__KMS_GENERATION_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+  - name: APP_CONTRACTS__DECRYPTION_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: decryption.address}}
+  - name: APP_CONTRACTS__INPUT_VERIFICATION_ADDRESS
+    valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
+  - {name: APP_TRANSACTION__PRIVATE_KEY_GATEWAY_ENV, value: "GATEWAY_PRIVATE_KEY"}
+  # Same Hardhat account #3 as gateway-contracts' TX_SENDER_PRIVATE_KEY (the
+  # "Gateway/relayer account" role, already funded + max-approved on
+  # ProtocolPayment by gateway-contracts' setTxSenderMockedPayment step).
+  - {name: GATEWAY_PRIVATE_KEY, value: "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"}
+  # TODO: confirm real endpoint/credentials for the shared coprocessor-infra
+  # database (see values-relayer-migrate-e2e.yaml's matching TODO) - not yet
+  # discovered + injected via --set-string here.
+  - {name: DATABASE_URL, value: "postgresql://zama:CHANGEME@coprocessor-infra-coprocessor-db:5432/fhevm_e2e"}

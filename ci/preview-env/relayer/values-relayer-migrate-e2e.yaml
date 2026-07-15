@@ -1,0 +1,30 @@
+# common chart overlay for the relayer's one-shot DB migration Job, for the
+# fhevm e2e preview namespace. Mirrors zama-zws/gitops's fhevm-dev/relayer.yaml
+# pattern (generic `common` chart + published image), not a fhevm-specific chart.
+#
+# image.tag is overridden at deploy time via --set-string in
+# pr-preview-deploy.yml with the real per-PR short-SHA tag.
+#
+# Deployed as:
+#   helm upgrade --install relayer-migrate oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
+#     -n <namespace> -f this-file
+fullnameOverride: relayer-migrate
+
+image:
+  repository: hub.zama.org/ghcr/zama-ai/fhevm/relayer-migrate
+  tag: latest
+
+job:
+  enabled: true
+  backoffLimit: 2
+  restartPolicy: Never
+
+env:
+  # Shares coprocessor-infra's RDS instance, logical database "fhevm_e2e",
+  # under its own "relayer" schema/tables - same reasoning as kms-connector
+  # reusing the same database (see values-coprocessor-e2e.yaml's header note).
+  # TODO: confirm relayer-migrate's actual DATABASE_URL format/credentials
+  # requirement against relayer/relayer-migrate/.env.example - real
+  # endpoint/credentials still need discovery + --set-string injection like
+  # coprocessor's, not yet wired here.
+  - {name: DATABASE_URL, value: "postgresql://zama:CHANGEME@coprocessor-infra-coprocessor-db:5432/fhevm_e2e"}

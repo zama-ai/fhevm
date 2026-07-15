@@ -1,0 +1,101 @@
+# coprocessor chart values overlay for the fhevm e2e preview namespace.
+#
+# Contract addresses are wired from the real addresses emitted by the
+# `contracts` chart's deploy Jobs (host-contracts / gateway-contracts), via
+# valueFrom.configMapKeyRef against the host-sc-addresses / gw-sc-addresses
+# ConfigMaps - the same pattern production GitOps uses. Service DNS names
+# below are unqualified (no ".<namespace>.svc.cluster.local" suffix) so this
+# file works unchanged under any per-PR namespace.
+#
+# databaseEndpoint / all image tags are overridden at deploy time via
+# --set-string in pr-preview-deploy.yml (real RDS endpoint from
+# coprocessor-infra's connection secret; real per-PR short-SHA image tags) -
+# the values here are just fallback defaults so this file stays valid
+# standalone.
+#
+# Deployed as:
+#   helm upgrade --install coprocessor oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor \
+#     -n <namespace> -f this-file
+commonConfig:
+  databaseUser:
+    valueFrom: {secretKeyRef: {name: coprocessor-infra-coprocessor-db, key: username}}
+  databasePassword:
+    valueFrom: {secretKeyRef: {name: coprocessor-infra-coprocessor-db, key: password}}
+  # Real value injected via --set-string at deploy time (crossplane RDS endpoint
+  # isn't known until coprocessor-infra reconciles). Placeholder keeps this
+  # file helm-template-valid on its own.
+  databaseEndpoint: {value: "coprocessor-infra-coprocessor-db:5432"}
+  databaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e"
+  databaseAuthMode: password
+  hostChainWsUrl: "ws://anvil-host-anvil-node:8545"
+  hostChainHttpUrl: "http://anvil-host-anvil-node:8545"
+  aclContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
+  fhevmExecutorContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
+  kmsGenerationContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+  protocolConfigContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+  gatewayUrl: {value: "http://anvil-gateway-anvil-node:8546"}
+  gatewayContractAddresses:
+    inputVerification:
+      valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
+    ciphertextCommits:
+      valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: ciphertext_commits.address}}
+    gatewayConfig:
+      valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: gateway_config.address}}
+    multichainAcl:
+      valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: multichain_acl.address}}
+
+# Image tags below are placeholders - pr-preview-deploy.yml overrides
+# every one of them via --set-string with the real per-PR short-SHA tag
+# (or `latest` when this component didn't change in the PR).
+dbMigration:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/db-migration, tag: latest}
+
+hostListenerShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+hostListenerPollerShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+hostListenerCatchupOnlyShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+hostListenerConsumerShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+
+gwListener:
+  enabled: true
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/gw-listener, tag: latest}
+tfheWorker:
+  enabled: true
+  replicas: 1
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/tfhe-worker, tag: latest}
+zkProofWorker:
+  enabled: true
+  replicas: 1
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/zkproof-worker, tag: latest}
+snsWorker:
+  enabled: true
+  replicas: 1
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/sns-worker, tag: latest}
+txSender:
+  enabled: true
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/tx-sender, tag: latest}
+  # Hardhat/anvil account #6 - anvil auto-funds all well-known test-mnemonic
+  # accounts, so any unused index works; picked one not already used as a
+  # placeholder identity elsewhere.
+  wallet: {secret: {value: "0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e"}}
+
+chains:
+  - name: host
+    chainId: "12345"
+    wsUrl: "ws://anvil-host-anvil-node:8545"
+    httpUrl: "http://anvil-host-anvil-node:8545"
+    aclContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
+    fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
+    kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+    protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+    hostListener: {enabled: true, useLegacyName: true}
+    hostListenerPoller: {enabled: true, useLegacyName: true}
+    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
+    hostListenerConsumer: {enabled: false, useLegacyName: true}

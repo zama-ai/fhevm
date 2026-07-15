@@ -1,0 +1,52 @@
+# charts/contracts overlay that triggers the real FHE key generation + CRS generation
+# ceremony against the Gateway's KMSGeneration contract, once the dedicated KMS +
+# coprocessor + kms-connector are all up and listening for the resulting on-chain events.
+#
+# This is the ON-CHAIN trigger mechanism (as opposed to kms's own off-chain
+# `kmsGenKeys` Helm hook / core-client-gen-keys.sh, which talks to kms-core directly
+# and is meant for testing KMS in isolation, with no gateway/coprocessor involved).
+# Mirrors fhevm-cli's "bootstrap" step (test-suite/fhevm/src/flow/up-flow.ts) and the
+# reference pattern in ../../../charts/contracts/values-kmsgen.yaml.
+#
+# Our pinned bundle (GATEWAY_VERSION v0.11.0, HOST_VERSION v0.13.0, CONNECTOR_GW_LISTENER_VERSION
+# v0.11.0 - see .github/workflows/pr-preview-deploy.yml's env block / fhevm-cli's
+# profiles/latest-supported.json) resolves to the *legacy gateway-side* KMSGeneration path
+# (fhevm-cli's bootstrapUsesHostKmsGeneration() is false here), so this targets
+# gateway-contracts' own image/KMSGeneration instance, not host-contracts'.
+#
+# Deployed as:
+#   helm install gateway-trigger-keygen charts/contracts -n <namespace> -f this-file
+#
+# Reuses gateway-contracts' own PVC (create: false): --use-internal-proxy-address true reads
+# GATEWAY_CONFIG_ADDRESS / KMS_GENERATION_CONTRACT_ADDRESS straight from the addresses/.env.gateway
+# file gateway-contracts' own deploy already wrote there - no address needs injecting by hand.
+scDeploy:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/gateway-contracts
+    tag: latest
+  # Reuses gateway-contracts' own ConfigMap - keygen/crsgen triggers don't write any new
+  # addresses of note (same rationale as values-gateway-add-host-chains-e2e.yaml).
+  configmap:
+    name: gw-sc-addresses
+  env:
+    - {name: HARDHAT_NETWORK, value: "staging"}
+    - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+    - {name: RPC_URL, value: "http://anvil-gateway-anvil-node:8546"}
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
+  deployCommands:
+    # --params-type 1 ("test" FHE parameters, not production-grade) - a real 4-party
+    # enclave DKG against full production parameters is far too slow for a per-PR e2e
+    # smoke check. Matches ../../../charts/contracts/values-kmsgen.yaml's own recommendation.
+    - npx hardhat task:triggerKeygen --params-type 1 --use-internal-proxy-address true
+    - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-proxy-address true
+  verifyContracts: false
+persistence:
+  enabled: true
+  mountPath: /app/addresses
+  volumeClaim:
+    # Reuse gateway-contracts' own PVC - do NOT create a new one.
+    name: gateway-sc-deploy-workdir
+    create: false
+scUpgrade:
+  enabled: false
