@@ -1,17 +1,18 @@
 use crate::{
     monitoring::otlp::PropagationContext,
-    types::db::{OperationStatus, ParamsTypeDb, SnsCiphertextMaterialDbItem},
+    types::db::{OperationStatus, ParamsTypeDb},
 };
 use alloy::{
     primitives::{Address, FixedBytes, U256},
     sol_types::SolValue,
 };
 use anyhow::anyhow;
+// Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        DecryptionEvents, HandleEntry, PublicDecryptionRequest_0 as PublicDecryptionRequest,
-        SnsCiphertextMaterial, UserDecryptionRequest_0 as UserDecryptionRequest,
-        UserDecryptionRequest_1 as UserDecryptionRequestV2,
+        DecryptionEvents, HandleEntry, PublicDecryptionRequest_1 as PublicDecryptionRequest,
+        UserDecryptionRequest_2 as UserDecryptionRequest,
+        UserDecryptionRequest_3 as UserDecryptionRequestV2,
     },
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
@@ -180,7 +181,6 @@ impl std::fmt::Debug for ProtocolEventKind {
             Self::UserDecryptionV2(e) => f
                 .debug_struct("UserDecryptionV2")
                 .field("decryptionId", &e.decryptionId)
-                .field("snsCtMaterials", &e.snsCtMaterials)
                 .field("handles", &e.handles)
                 .field("payload", &e.payload)
                 .finish(),
@@ -210,10 +210,7 @@ impl PartialEq for ProtocolEventKind {
             (Self::PublicDecryption(a), Self::PublicDecryption(b)) => a == b,
             (Self::UserDecryption(a), Self::UserDecryption(b)) => a == b,
             (Self::UserDecryptionV2(a), Self::UserDecryptionV2(b)) => {
-                a.decryptionId == b.decryptionId
-                    && a.snsCtMaterials == b.snsCtMaterials
-                    && a.handles == b.handles
-                    && a.payload == b.payload
+                a.decryptionId == b.decryptionId && a.handles == b.handles && a.payload == b.payload
             }
             (Self::PrepKeygen(a), Self::PrepKeygen(b)) => a == b,
             (Self::Keygen(a), Self::Keygen(b)) => a == b,
@@ -249,16 +246,21 @@ fn otlp_context_from_row(row: &PgRow) -> anyhow::Result<PropagationContext> {
     )?)
 }
 
-pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    let sns_ct_materials = row
-        .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
+fn ct_handles_from_row(row: &PgRow) -> anyhow::Result<Vec<FixedBytes<32>>> {
+    row.try_get::<Option<Vec<Vec<u8>>>, _>("ct_handles")?
+        .ok_or_else(|| anyhow::anyhow!("ct_handles is null"))?
         .iter()
-        .map(SnsCiphertextMaterial::from)
-        .collect();
+        .map(|h| {
+            FixedBytes::<32>::try_from(h.as_slice())
+                .map_err(|_| anyhow!("ct_handle is not 32 bytes: {} bytes", h.len()))
+        })
+        .collect()
+}
 
+pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = ProtocolEventKind::PublicDecryption(PublicDecryptionRequest {
         decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
-        snsCtMaterials: sns_ct_materials,
+        ctHandles: ct_handles_from_row(row)?,
         extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
     });
     Ok(ProtocolEvent {
@@ -272,11 +274,7 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> 
 }
 
 pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    let sns_ct_materials = row
-        .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
-        .iter()
-        .map(SnsCiphertextMaterial::from)
-        .collect();
+    let ct_handles = ct_handles_from_row(row)?;
     let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);
     let user_address: Address = row.try_get::<[u8; 20], _>("user_address")?.into();
     let public_key: Vec<u8> = row.try_get("public_key")?;
@@ -292,7 +290,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = match signature {
         None => ProtocolEventKind::UserDecryption(UserDecryptionRequest {
             decryptionId: decryption_id,
-            snsCtMaterials: sns_ct_materials,
+            ctHandles: ct_handles,
             userAddress: user_address,
             publicKey: public_key.into(),
             extraData: extra_data.into(),
@@ -304,21 +302,21 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
             let start_timestamp: i64 = row.try_get("start_timestamp")?;
             let duration_seconds: i64 = row.try_get("duration_seconds")?;
 
-            if owner_addresses.len() != sns_ct_materials.len()
-                || contract_addresses.len() != sns_ct_materials.len()
+            if owner_addresses.len() != ct_handles.len()
+                || contract_addresses.len() != ct_handles.len()
             {
                 anyhow::bail!(
                     "handle owner/contract array length mismatch for user decryption row"
                 );
             }
 
-            let handles = sns_ct_materials
+            let handles = ct_handles
                 .iter()
                 .zip(owner_addresses.iter())
                 .zip(contract_addresses.iter())
-                .map(|((m, owner), contract)| {
+                .map(|((handle, owner), contract)| {
                     Ok::<_, anyhow::Error>(HandleEntry {
-                        handle: m.ctHandle,
+                        handle: *handle,
                         contractAddress: Address::try_from(contract.as_slice())?,
                         ownerAddress: Address::try_from(owner.as_slice())?,
                     })
@@ -332,7 +330,6 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
 
             ProtocolEventKind::UserDecryptionV2(UserDecryptionRequestV2 {
                 decryptionId: decryption_id,
-                snsCtMaterials: sns_ct_materials,
                 handles,
                 payload: UserDecryptionRequestPayload {
                     userAddress: user_address,
@@ -820,11 +817,13 @@ impl TryFrom<DecryptionEvents> for ProtocolEventKind {
 
     fn try_from(value: DecryptionEvents) -> Result<Self, Self::Error> {
         match value {
-            // `UserDecryptionRequest_0` is the legacy event; `UserDecryptionRequest_1` is the
-            // RFC016 overload.
-            DecryptionEvents::PublicDecryptionRequest_0(e) => Ok(e.into()),
-            DecryptionEvents::UserDecryptionRequest_0(e) => Ok(e.into()),
-            DecryptionEvents::UserDecryptionRequest_1(e) => Ok(e.into()),
+            // Handle-only overloads (v0.15): `_1` for public, `_2` for the legacy-style user
+            // event and `_3` for the RFC016 unified user event
+            // The `SnsCiphertextMaterial`-carrying variants (public `_0` and user `_0`, `_1`) are
+            // intentionally ignored.
+            DecryptionEvents::PublicDecryptionRequest_1(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequest_2(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequest_3(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected Decryption event")),
         }
     }
