@@ -241,7 +241,7 @@ jobs:
       # DOCKER BUILD STATUS HANDLING
       # ======================================================================
       - name: Login to zws GitHub Container Registry
-        uses: ./.github/actions/docker-login
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ${{ secrets.HARBOR_URL }}
           username: ${{ secrets.HARBOR_READ_LOGIN }}
