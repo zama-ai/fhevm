@@ -61,7 +61,14 @@ export interface AbstractEthereumSigner {
  * `(address verifyingContractSource, uint64 chainIDSource, address[] initialSigners, uint256 initialThreshold)`.
  * In v12 both verifiers carry their own signer set + threshold (v13 moved the KMS set to `ProtocolConfig`).
  */
-export type EIP712VerifierInitConfig = {
+export type InputVerifierInitConfig = {
+  readonly verifyingContractSource: string;
+  readonly chainIDSource: bigint;
+  readonly initialSigners: readonly string[];
+  readonly initialThreshold: bigint;
+};
+
+export type KMSVerifierInitConfig = {
   readonly verifyingContractSource: string;
   readonly chainIDSource: bigint;
   readonly initialSigners: readonly string[];
@@ -83,8 +90,8 @@ export type HCULimitInitConfig = {
  * ACL/FHEVMExecutor take none.
  */
 export type BootstrapConfigV12 = {
-  readonly kmsVerifier: EIP712VerifierInitConfig;
-  readonly inputVerifier: EIP712VerifierInitConfig;
+  readonly kmsVerifier: KMSVerifierInitConfig;
+  readonly inputVerifier: InputVerifierInitConfig;
   readonly hcuLimit: HCULimitInitConfig;
 };
 

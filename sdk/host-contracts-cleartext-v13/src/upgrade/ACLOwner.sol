@@ -15,6 +15,13 @@ interface IOwnable2Step {
     function transferOwnership(address newOwner) external;
 }
 
+/// @dev Minimal view of ACL's pause surface. `pause()` is gated on the caller being a registered
+///      pauser; `unpause()` is gated on the caller being the ACL owner (i.e. this contract).
+interface IACLPausable {
+    function pause() external;
+    function unpause() external;
+}
+
 /**
  * @title  ACLOwner
  * @notice Standing owner of the FHEVM host-contract stack. Every host proxy authorizes upgrades
@@ -23,10 +30,16 @@ interface IOwnable2Step {
  *         whole stack in a single ownership root.
  *
  * @dev Intentionally NON-upgradeable, to keep this trust root as small and auditable as possible.
- *      Scope is deliberately minimal: accept ACL ownership, batch-upgrade, and migrate ownership.
- *      Pause/unpause and other ACL-owner-only management functions are deferred — they are added
- *      later by deploying a NEW `ACLOwner` and migrating via {transferACLOwnership}, never by
- *      upgrading this contract.
+ *      It exposes the common privileged operations explicitly (accept ACL ownership, batch-upgrade,
+ *      pause/unpause, migrate ownership) plus a generic {execute} escape hatch so ANY other
+ *      ACL-owner-gated call can be made without deploying a new `ACLOwner`. The contract itself is never
+ *      upgraded; the trust root is rotated by migrating ownership via {transferACLOwnership}. For
+ *      {pause} to succeed this contract must be a registered pauser in `PauserSet` (done at setup, while
+ *      the pre-transfer ACL owner still holds `addPauser` authority).
+ *
+ *      NOTE: {execute} is a deliberately broad power — the owner can make this contract issue any call
+ *      as `ACL.owner()`. The security model rests entirely on the owner key (an EOA now, a
+ *      multisig/timelock later); scope it accordingly.
  *
  *      This contract is itself `Ownable2Step`; its owner (an EOA now, a multisig/timelock later)
  *      drives all privileged operations and can be rotated without touching the host stack.
@@ -48,8 +61,14 @@ contract ACLOwner is Ownable2Step {
     /// @notice Emitted for each proxy upgraded, making the atomic batch auditable from logs.
     event HostUpgraded(address indexed proxy, address indexed implementation);
 
+    /// @notice Emitted for each call forwarded via {execute}, keeping arbitrary owner-driven calls auditable.
+    event Executed(address indexed target, bytes data);
+
     /// @notice Thrown when {upgrade} is called with no operations.
     error NoOps();
+
+    /// @notice Thrown when {execute} targets an address with no deployed code.
+    error TargetHasNoCode(address target);
 
     /**
      * @param initialOwner The address that controls this admin (drives upgrades / migration).
@@ -80,6 +99,48 @@ contract ACLOwner is Ownable2Step {
             IUUPSUpgradeable(ops[i].proxy).upgradeToAndCall(ops[i].implementation, ops[i].initData);
             emit HostUpgraded(ops[i].proxy, ops[i].implementation);
         }
+    }
+
+    /**
+     * @notice Generic escape hatch: forward an arbitrary call to `target` with `data`, as this contract.
+     * @dev Because this contract is the ACL owner, the forwarded call's `msg.sender` is `ACL.owner()`, so
+     *      any `onlyACLOwner`-gated function on any host contract (e.g. `ProtocolConfig.defineNewKmsContext`,
+     *      `HCULimit.setHCUPerBlock`, ...) can be invoked through here without deploying a new `ACLOwner`.
+     *      A revert in `target` bubbles up unchanged. Non-payable: host owner-gated methods take no value.
+     * @param target The contract to call. Must have deployed code (a low-level call to a codeless address
+     *               would silently "succeed").
+     * @param data   ABI-encoded calldata (selector + arguments).
+     * @return result The raw return data from `target`.
+     */
+    function execute(address target, bytes calldata data) external onlyOwner returns (bytes memory result) {
+        if (target.code.length == 0) {
+            revert TargetHasNoCode(target);
+        }
+
+        bool success;
+        (success, result) = target.call(data);
+        if (!success) {
+            // Bubble up the target's revert reason verbatim.
+            assembly {
+                revert(add(result, 0x20), mload(result))
+            }
+        }
+
+        emit Executed(target, data);
+    }
+
+    /**
+     * @notice Pause the ACL (emergency stop). Requires this contract to be a registered pauser.
+     */
+    function pause() external onlyOwner {
+        IACLPausable(acl).pause();
+    }
+
+    /**
+     * @notice Unpause the ACL. Gated by ACL on its owner, which is this contract.
+     */
+    function unpause() external onlyOwner {
+        IACLPausable(acl).unpause();
     }
 
     /**

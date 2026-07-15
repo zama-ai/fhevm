@@ -20,6 +20,6 @@ export type {
   BootstrapConfigV12,
   DeployedV12,
   // Per-contract bootstrap init configs.
-  EIP712VerifierInitConfig,
+  InputVerifierInitConfig as EIP712VerifierInitConfig,
   HCULimitInitConfig,
 } from './types/public.js';
