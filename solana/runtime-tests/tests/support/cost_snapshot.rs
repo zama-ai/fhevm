@@ -127,10 +127,10 @@ pub fn assert_cost_snapshot(
             expected.cpi_instructions, measured.cpi_instructions
         ));
     }
-    if measured.cpi_instruction_data_bytes != expected.cpi_instruction_data_bytes {
+    if measured.total_cpi_instruction_data_bytes != expected.total_cpi_instruction_data_bytes {
         failures.push(format!(
-            "CPI instruction data bytes changed: {} -> {}",
-            expected.cpi_instruction_data_bytes, measured.cpi_instruction_data_bytes
+            "total CPI instruction data bytes changed: {} -> {}",
+            expected.total_cpi_instruction_data_bytes, measured.total_cpi_instruction_data_bytes
         ));
     }
     if measured.compute_units != expected.compute_units {
@@ -159,17 +159,17 @@ pub fn assert_cost_snapshot(
 /// account-meta pubkeys plus the program id), not a count of accounts loaded
 /// at runtime.
 ///
-/// `cpi_instructions` / `cpi_instruction_data_bytes` cover every inner
+/// `cpi_instructions` / `total_cpi_instruction_data_bytes` cover every inner
 /// instruction at any stack depth, so nested CPIs (token -> host -> event
-/// batch) are all included. The dominant contributor today is the batched
-/// event CPI that carries the FHE operation records to the coprocessor.
+/// batch) are all included. The total therefore covers both application-to-host
+/// calls and any CPIs issued by the host.
 #[derive(Clone, Copy, Deserialize, Serialize)]
 struct Cost {
     compute_units: u64,
     unique_accounts: usize,
     instruction_data_bytes: usize,
     cpi_instructions: usize,
-    cpi_instruction_data_bytes: usize,
+    total_cpi_instruction_data_bytes: usize,
 }
 
 fn measure(instruction: &Instruction, result: &InstructionResult) -> Cost {
@@ -184,7 +184,7 @@ fn measure(instruction: &Instruction, result: &InstructionResult) -> Cost {
         unique_accounts: accounts.len(),
         instruction_data_bytes: instruction.data.len(),
         cpi_instructions: result.inner_instructions.len(),
-        cpi_instruction_data_bytes: result
+        total_cpi_instruction_data_bytes: result
             .inner_instructions
             .iter()
             .map(|inner| inner.instruction.data.len())

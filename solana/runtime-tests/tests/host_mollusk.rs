@@ -3284,10 +3284,10 @@ impl EvalFixture {
         ix
     }
 
-    /// A frame at `MAX_FHE_EVAL_OPS`: `Ge` control + 14 alternating `Sub`/`Add` transient
-    /// steps + the durable `IfThenElse` output. Same accounts and output shape as
-    /// `block_cap_instruction`, so against the three-op profile the compute-unit delta
-    /// divided by 13 is the marginal cost of one FHE eval step.
+    /// A frame at `MAX_FHE_EVAL_OPS`: `Ge` control, alternating `Sub`/`Add` transient
+    /// steps, and the durable `IfThenElse` output. Same accounts and output shape as
+    /// `block_cap_instruction`, so the compute-unit delta against the three-op profile
+    /// isolates the additional host-side FHE eval steps.
     fn max_ops_instruction(&self) -> Instruction {
         let mut steps = vec![FheEvalStep::Binary {
             op: FheBinaryOpCode::Ge,
@@ -3296,7 +3296,9 @@ impl EvalFixture {
             output_fhe_type: 0,
             output: FheEvalOutput::AllowedLocal,
         }];
-        for index in 1..=14u16 {
+        let last_transient_index = u16::try_from(host::MAX_FHE_EVAL_OPS - 2)
+            .expect("MAX_FHE_EVAL_OPS must fit producer indices");
+        for index in 1..=last_transient_index {
             let op = if index % 2 == 1 {
                 FheBinaryOpCode::Sub
             } else {
@@ -3323,7 +3325,9 @@ impl EvalFixture {
         steps.push(FheEvalStep::Ternary {
             op: FheTernaryOpCode::IfThenElse,
             control: FheEvalOperand::AllowedLocal { producer_index: 0 },
-            if_true: FheEvalOperand::AllowedLocal { producer_index: 14 },
+            if_true: FheEvalOperand::AllowedLocal {
+                producer_index: last_transient_index,
+            },
             if_false: self.balance_operand(),
             output_fhe_type: 5,
             output: FheEvalOutput::AllowedDurable {
@@ -4021,12 +4025,11 @@ fn cost_snapshot_fhe_eval_three_op_frame() {
 }
 
 #[test]
-fn cost_snapshot_fhe_eval_sixteen_op_frame() {
+fn cost_snapshot_fhe_eval_max_op_frame() {
     // A frame at MAX_FHE_EVAL_OPS with the same fixture keys, accounts, and
-    // durable-output shape as the three-op profile: the compute-unit delta
-    // between the two profiles divided by 13 is the marginal cost of one FHE
-    // eval step, which prices designs that add steps to an existing plan
-    // (e.g. a spendable-balance check on transfers).
+    // durable-output shape as the three-op profile. The compute-unit delta
+    // isolates the extra direct host-side FHE eval steps; it does not include
+    // work performed by an application before invoking the host program.
     let fixture = EvalFixture::with_block_cap_keys(
         u64::MAX,
         Pubkey::new_from_array([0x21; 32]),
@@ -4038,5 +4041,5 @@ fn cost_snapshot_fhe_eval_sixteen_op_frame() {
         .context
         .process_and_validate_instruction(&ix, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_eval/sixteen_op_frame", &ix, &result);
+    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_eval/max_op_frame", &ix, &result);
 }
