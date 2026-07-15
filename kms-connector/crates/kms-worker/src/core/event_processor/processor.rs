@@ -190,8 +190,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             }
             ProtocolEventKind::UserDecryptionSolana(req) => {
                 // RFC-021: the ed25519 auth fields are typed on the event. The check verifies the
-                // ed25519 binding + Solana ACL; the client-address keys on the `solana:<hex
-                // identity>` prefix (kms#637). `extraData` carries only the KMS context.
+                // ed25519 binding + Solana ACL before the typed pubkey is sent to KMS.
                 self.decryption_processor
                     .check_user_decryption_request_solana(req)
                     .await

@@ -473,9 +473,8 @@ where
         UserDecryptionExtraData::new(payload.userAddress, payload.publicKey.clone())
     }
 
-    /// Picks the `client_address` for a Solana user-decryption KMS gRPC request: `solana:<hex
-    /// identity>`, with the ed25519 identity taken from the typed request payload (the authorization
-    /// check runs before this, so the identity is trustworthy here).
+    /// Sets the typed Solana pubkey from the authorized request payload. The legacy
+    /// `client_address` is intentionally empty.
     pub fn user_decryption_extra_data_for_solana(
         request: &UserDecryptionRequestSolana,
     ) -> UserDecryptionExtraData {
@@ -727,6 +726,7 @@ where
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.client_address;
             let enc_key = user_decrypt_data.public_key.to_vec();
+            let solana_pubkey = user_decrypt_data.solana_pubkey;
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
                 client_address,
@@ -737,6 +737,7 @@ where
                 extra_data: kms_extra_data,
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+                solana_pubkey,
             };
 
             Ok(user_decryption_request.into())
@@ -813,11 +814,11 @@ fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
 }
 
 pub struct UserDecryptionExtraData {
-    /// The `client_address` set on the KMS gRPC request. For EVM this is the checksummed
-    /// `userAddress`; for Solana it is `solana:<hex identity>` (kms#637's parser keys on the
-    /// `solana:` prefix).
+    /// The checksummed EVM user address. Empty for Solana requests.
     pub client_address: String,
     pub public_key: Bytes,
+    /// The exact Solana user identity. Unset for EVM requests.
+    pub solana_pubkey: Option<Vec<u8>>,
 }
 
 impl UserDecryptionExtraData {
@@ -826,15 +827,16 @@ impl UserDecryptionExtraData {
         Self {
             client_address: user_address.to_checksum(None),
             public_key,
+            solana_pubkey: None,
         }
     }
 
-    /// Solana user-decryption: `client_address` is `solana:<hex identity>` — lowercase, exactly
-    /// 64 hex chars, no `0x`.
+    /// Solana user-decryption uses the typed 32-byte ed25519 identity only.
     pub fn new_solana(identity: [u8; 32], public_key: Bytes) -> Self {
         Self {
-            client_address: format!("solana:{}", hex::encode(identity)),
+            client_address: String::new(),
             public_key,
+            solana_pubkey: Some(identity.to_vec()),
         }
     }
 }
@@ -961,6 +963,24 @@ mod tests {
             kms_decryption_extra_data(&Bytes::from_static(&[0x01, 0x02])),
             vec![0x01, 0x02]
         );
+    }
+
+    #[test]
+    fn evm_user_decryption_keeps_the_checksummed_address() {
+        let address = Address::repeat_byte(0x11);
+        let data = UserDecryptionExtraData::new(address, Bytes::from_static(&[0x22]));
+
+        assert_eq!(data.client_address, address.to_checksum(None));
+        assert_eq!(data.solana_pubkey, None);
+    }
+
+    #[test]
+    fn solana_user_decryption_uses_only_the_typed_pubkey() {
+        let identity = [0x33; 32];
+        let data = UserDecryptionExtraData::new_solana(identity, Bytes::from_static(&[0x44]));
+
+        assert!(data.client_address.is_empty());
+        assert_eq!(data.solana_pubkey, Some(identity.to_vec()));
     }
 
     enum PubDecryptACLMock {
