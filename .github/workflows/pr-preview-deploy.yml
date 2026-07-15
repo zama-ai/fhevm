@@ -298,6 +298,7 @@ jobs:
           sparse-checkout: |
             ci/scripts
             ci/pr-preview/thresholdWithEnclave
+            ci/pr-preview/registry-credential
             charts/kms-core
           path: .kms-deploy
 
