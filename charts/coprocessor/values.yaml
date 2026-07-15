@@ -116,6 +116,11 @@ commonConfig:
 
   # Env vars applied to all components before component-level env (which wins).
   # Use for shared vars or to override commonConfig-injected defaults.
+  # Block-scoped rollout env accepted by the current coprocessor binaries:
+  #   FHEVM_BRANCH_ACTIVATION_BLOCK=0  # first block that materializes branch state
+  #   FHEVM_BRANCH_CUTOVER_BLOCK=0     # first block executed only by the branch pipeline
+  # The zero defaults are intended for fresh chains. Existing chains must set
+  # an operator-agreed cutover at or above the activation block.
   env: []
 
 # -----------------------------------------------------------------------------
@@ -309,6 +314,7 @@ hostListenerShared:
   #     --log-level=INFO
   #     --reorg-maximum-duration-in-blocks=50
   #     --catchup-finalization-in-blocks=20      # wait N blocks before treating a block as finalized
+  #     --settlement-finality-lag=96             # minimum depth before advancing settlement
   #     --catchup-margin=5
   #     --catchup-paging=100
   #     --start-at-block=-40                     # can be negative from the latest block
@@ -316,8 +322,7 @@ hostListenerShared:
   #     --only-catchup-loop                      # requires --end-at-block
   #     --catchup-loop-sleep-secs=60
   #     --dependence-cache-size=10000
-  #     --dependence-by-connexity                # connected components instead of linear chains
-  #     --dependence-cross-block                 # allow chains across L1 block boundaries
+  #     --dependence-cross-block=true            # allow chains across L1 block boundaries
   #     --timeout-request-websocket=15           # websocket RPC timeout in seconds
   #   v0.12.* only:
   #     --dependent-ops-max-per-chain=0          # 0 disables slow-lane decisions
@@ -421,6 +426,8 @@ hostListenerPollerShared:
   #   v0.11 built-in only: --coprocessor-api-key
   #   shared flags:
   #     --finality-lag=15
+  #     --settlement-finality-lag=96            # minimum depth before advancing settlement
+  #     --reorg-maximum-duration-in-blocks=50   # minimum settlement reorg safety window
   #     --batch-size=100                        # maximum number of blocks to process per iteration
   #     --poll-interval-ms=6000                 # half block time on Ethereum
   #     --retry-interval-ms=1000                # backoff between RPC/DB retries
@@ -428,8 +435,7 @@ hostListenerPollerShared:
   #     --rpc-compute-units-per-second=1000
   #     --log-level=INFO
   #     --dependence-cache-size=10000
-  #     --dependence-by-connexity
-  #     --dependence-cross-block
+  #     --dependence-cross-block=true
   #   v0.12 only:
   #     --dependent-ops-max-per-chain=0
   extraArgs: []
@@ -534,6 +540,7 @@ hostListenerCatchupOnlyShared:
   #     --log-level=INFO
   #     --reorg-maximum-duration-in-blocks=50
   #     --catchup-finalization-in-blocks=20
+  #     --settlement-finality-lag=96
   #     --only-catchup-loop                      # requires --end-at-block
   #     --end-at-block=-15                       # relative to the latest block when negative
   #     --start-at-block=-30                     # optional catchup start
@@ -541,8 +548,7 @@ hostListenerCatchupOnlyShared:
   #     --catchup-margin=5
   #     --catchup-paging=100
   #     --dependence-cache-size=10000
-  #     --dependence-by-connexity
-  #     --dependence-cross-block
+  #     --dependence-cross-block=true
   #     --timeout-request-websocket=15
   #   v0.12 only:
   #     --dependent-ops-max-per-chain=0
@@ -654,6 +660,12 @@ hostListenerConsumerShared:
   #   --tfhe-contract-address, --kms-generation-address, --chain-id (from
   #   chains[].chainId), --broker-url (from config.brokerUrl), --health-port,
   #   --metrics-addr, --service-name
+  # Other flags:
+  #   --database-retry-interval=1000
+  #   --log-level=INFO
+  #   --dependence-cache-size=10000
+  #   --dependence-cross-block=true
+  #   --dependent-ops-max-per-chain=0
   extraArgs: []
 
   # Service ports configuration
@@ -939,8 +951,10 @@ tfheWorker:
   #   shared flags:
   #     --run-bg-worker                          # run the background worker loop
   #     --worker-polling-interval-ms=1000
+  #     --bridge-polling-interval-ms=1000        # confidential-bridge association polling
+  #     --bridge-associate-batch-size=128
   #     --generate-fhe-keys                      # unsafe; testing only
-  #     --work-items-batch-size=100
+  #     --work-items-batch-size=100              # retained for deployment CLI compatibility
   #     --dependence-chains-per-batch=20
   #     --coprocessor-fhe-threads=32
   #     --tokio-threads=4
@@ -949,13 +963,17 @@ tfheWorker:
   #     --log-level=INFO
   #     --worker-id=<uuid>                       # defaults to a random UUID at startup
   #     --dcid-ttl-sec=30                        # lock TTL in seconds
-  #     --disable-dcid-locking=false             # unsafe; may duplicate DCID work
   #     --dcid-timeslice-sec=90                  # release the lock after this slice
+  #     --processed-dcid-ttl-sec=172800           # retain processed locks for 48 hours
   #     --dcid-cleanup-interval-sec=3600         # expired lock cleanup interval
   #     --dcid-max-no-progress-cycles=2
   #     --dcid-ignore-dependency-count-threshold=100
-  #     --metric-rerand-batch-latency=0.1:5.0:0.01
+  #     --branch-cutover-block=0                 # fresh chains only; set explicitly for upgrades
   #     --metric-fhe-batch-latency=0.2:5.0:0.05
+  #   current-source env-only controls:
+  #     FHEVM_BRANCH_ACTIVATION_BLOCK=0
+  #     FHEVM_ALLOW_ZERO_CUTOVER=false           # emergency/fresh-chain override only
+  #     FHEVM_STRICT_CIPHERTEXT_DEDUP=false      # release-build default
   #   v0.11 only:
   #     --tenant-key-cache-size=32
   #     --coprocessor-private-key=/path/to/key
@@ -1259,6 +1277,7 @@ snsWorker:
   #     --pg-notify-channel
   #     - event_ciphertext128_computed
   #     --work-items-batch-size=4
+  #     --branch-cutover-block=0                 # fresh chains only; set explicitly for upgrades
   #     --pg-polling-interval=60
   #     --pg-pool-connections=10
   #     --pg-timeout=15s
@@ -1280,6 +1299,8 @@ snsWorker:
   #     --schedule-policy=rayon_parallel
   #     --metric-sns-op-latency=0.1:10.0:0.1
   #     --gauge-update-interval-secs=10          # enable on only some workers to avoid duplicate DB load
+  #   current-source env-only controls:
+  #     FHEVM_BRANCH_ACTIVATION_BLOCK=0
   #   v0.11 only:
   #     --keys-file-path=/path/to/keys
   extraArgs: []
