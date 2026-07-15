@@ -1,7 +1,7 @@
 use crate::dependence_chain::{LockMngr, LockingReason};
-use crate::tests::utils::{setup_test_app, TestInstance};
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
+use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use tokio::time::{sleep, Duration};
 use tracing::info;
 use uuid::Uuid;
@@ -445,8 +445,14 @@ async fn test_cleanup() {
     assert_eq!(deleted, inserted as u64);
 }
 
-async fn setup() -> TestInstance {
-    let test_instance = setup_test_app().await.expect("valid db instance");
+// These tests drive LockMngr directly against the database; a database-only
+// setup (no live in-process worker) keeps them deterministic — a running
+// worker would compete for the sample chains, mark them processed, and (with
+// the harness's zero cleanup TTLs) delete them mid-assertion.
+async fn setup() -> DBInstance {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
     let pool = PgPoolOptions::new()
         .max_connections(2)
         .connect(test_instance.db_url())

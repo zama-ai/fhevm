@@ -331,7 +331,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
 
 #[tokio::test]
 #[serial(db)]
-async fn test_fhe_binary_operands_events_panic() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_fhe_binary_zero_divisors_are_terminal() -> Result<(), Box<dyn std::error::Error>> {
     let EventHarness {
         app,
         pool: _,
@@ -407,8 +407,8 @@ async fn test_fhe_binary_operands_events_panic() -> Result<(), Box<dyn std::erro
     let errors = errors_on_allowed_handles(&app).await?;
     for msg in &errors {
         assert!(
-            msg.contains("ExecutionPanic"),
-            "Expected error message to contain 'ExecutionPanic', but got: {msg}"
+            msg.contains("scalar division"),
+            "expected deterministic zero-divisor validation error, got: {msg}"
         );
     }
     assert_eq!(

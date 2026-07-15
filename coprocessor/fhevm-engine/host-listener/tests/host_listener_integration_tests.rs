@@ -16,6 +16,7 @@ use alloy::rpc::types::{Filter, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use bigdecimal::BigDecimal;
+use fhevm_engine_common::branch::advance_settled_height;
 use fhevm_engine_common::chain_id::ChainId;
 use futures_util::future::try_join_all;
 use serial_test::serial;
@@ -268,7 +269,9 @@ async fn setup_with_block_time(
         reorg_maximum_duration_in_blocks: 100, // to go beyond chain start
         service_name: "host-listener-test".to_string(),
         catchup_finalization_in_blocks: 3,
-        dependence_by_connexity: false,
+        // Effective settlement lag = max(settlement_finality_lag, reorg window),
+        // so the existing reorg window still gates settlement here.
+        settlement_finality_lag: 3,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
@@ -466,7 +469,6 @@ async fn ingest_dependent_burst_seeded(
         setup,
         &receipts,
         IngestOptions {
-            dependence_by_connexity: false,
             dependence_cross_block: true,
             dependent_ops_max_per_chain,
             is_protocol_config_listener: true,
@@ -795,7 +797,6 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
             &setup,
             &receipts,
             IngestOptions {
-                dependence_by_connexity: false,
                 dependence_cross_block: true,
                 dependent_ops_max_per_chain: cap,
                 is_protocol_config_listener: true,
@@ -938,9 +939,27 @@ async fn test_slow_lane_priority_is_monotonic_across_blocks_locally(
     .await?;
     let second_dep_chain_id =
         dep_chain_id_for_output_handle(&setup, second_output).await?;
-    assert_eq!(
+    // Dependence chains are same-block connected components (they are the
+    // worker's batch acquisition unit), so a cross-block continuation forms a
+    // NEW chain linked to its parent via split_dependencies rather than
+    // extending the parent chain.
+    assert_ne!(
         second_dep_chain_id, slow_dep_chain_id,
-        "continuation should stay on the same dependence chain"
+        "cross-block continuation must form its own same-block chain"
+    );
+
+    // Monotonicity is what this test protects: slowness propagates across
+    // the cross-block link to the continuation chain, and the parent chain
+    // never downgrades back to fast.
+    let continuation_priority = sqlx::query_scalar::<_, i16>(
+        "SELECT schedule_priority FROM dependence_chain WHERE dependence_chain_id = $1",
+    )
+    .bind(&second_dep_chain_id)
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(
+        continuation_priority, 1,
+        "continuation of a slow chain must inherit slow priority"
     );
 
     let final_priority = sqlx::query_scalar::<_, i16>(
@@ -1250,7 +1269,7 @@ async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
     .execute(&setup.db_pool)
     .await?;
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO ciphertexts_branch (
             handle,
@@ -1265,21 +1284,21 @@ async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
             ($7, $8, $9, $10, $5, $6),
             ($11, $12, $13, $14, $5, $6)
         "#,
-        canonical_handle.to_vec(),
-        canonical_hash.to_vec(),
-        target_block_number as i64,
-        vec![0xAA_u8],
-        0_i16,
-        0_i16,
-        orphan_handle.to_vec(),
-        orphan_hash.to_vec(),
-        target_block_number as i64,
-        vec![0xBB_u8],
-        orphan_descendant_handle.to_vec(),
-        orphan_descendant_hash.to_vec(),
-        target_block_number as i64 + 1,
-        vec![0xBC_u8],
     )
+    .bind(canonical_handle.to_vec())
+    .bind(canonical_hash.to_vec())
+    .bind(target_block_number as i64)
+    .bind(vec![0xAA_u8])
+    .bind(0_i16)
+    .bind(0_i16)
+    .bind(orphan_handle.to_vec())
+    .bind(orphan_hash.to_vec())
+    .bind(target_block_number as i64)
+    .bind(vec![0xBB_u8])
+    .bind(orphan_descendant_handle.to_vec())
+    .bind(orphan_descendant_hash.to_vec())
+    .bind(target_block_number as i64 + 1)
+    .bind(vec![0xBC_u8])
     .execute(&setup.db_pool)
     .await?;
 
@@ -1289,6 +1308,7 @@ async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
         &mut db,
         &mut log_iter,
         latest_block_number,
+        latest_block_number - target_block_number,
         latest_block_number - target_block_number,
     )
     .await;
@@ -1318,6 +1338,23 @@ async fn test_update_finalized_blocks_drives_orphan_cleanup_via_rpc_caller(
     .fetch_one(&setup.db_pool)
     .await?;
     assert_eq!(orphan_status, "orphaned");
+
+    let pending_cleanup_jobs = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM branch_cleanup_jobs
+         WHERE chain_id = $1
+           AND finalized_block_hash = $2
+           AND status = 'pending'",
+    )
+    .bind(setup.chain_id.as_i64())
+    .bind(canonical_hash.to_vec())
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(pending_cleanup_jobs, 1);
+
+    let processed_cleanup_jobs =
+        db.process_orphaned_branch_cleanup_jobs().await?;
+    assert_eq!(processed_cleanup_jobs, 1);
 
     let orphan_rows = sqlx::query_scalar!(
         r#"
@@ -1816,6 +1853,190 @@ async fn test_legacy_allowed_handle_writes_are_mirrored_branchless(
 
 #[tokio::test]
 #[serial(db)]
+async fn test_settlement_blocks_on_pbs_event_block_hash(
+) -> Result<(), anyhow::Error> {
+    let db_instance = test_harness::instance::setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let chain_id = ChainId::try_from(4242_u64).unwrap();
+    let db = Database::new(&db_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let branch_cutover_block = 10_i64;
+    let block_10_hash = FixedBytes::<32>::from([0x10; 32]);
+    let block_11_hash = FixedBytes::<32>::from([0x11; 32]);
+    let ciphertext_producer_hash = FixedBytes::<32>::from([0xAA; 32]);
+    let pbs_handle = FixedBytes::<32>::from([0xBB; 32]);
+    let transaction_id = FixedBytes::<32>::from([0xCC; 32]);
+
+    sqlx::query(
+        r#"
+        INSERT INTO host_chain_blocks_valid
+            (chain_id, block_hash, parent_hash, block_number, block_status)
+        VALUES
+            ($1, $2, $3, $4, 'finalized'),
+            ($1, $5, $2, $6, 'finalized')
+        "#,
+    )
+    .bind(chain_id.as_i64())
+    .bind(block_10_hash.to_vec())
+    .bind(Vec::<u8>::new())
+    .bind(branch_cutover_block)
+    .bind(block_11_hash.to_vec())
+    .bind(branch_cutover_block + 1)
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO pbs_computations_branch (
+            handle,
+            transaction_id,
+            host_chain_id,
+            block_number,
+            producer_block_hash,
+            block_hash,
+            is_completed
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, FALSE)
+        "#,
+    )
+    .bind(pbs_handle.to_vec())
+    .bind(transaction_id.to_vec())
+    .bind(chain_id.as_i64())
+    .bind(branch_cutover_block)
+    .bind(ciphertext_producer_hash.to_vec())
+    .bind(block_10_hash.to_vec())
+    .execute(&pool)
+    .await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let settled_height = advance_settled_height(
+        &mut tx,
+        chain_id.as_i64(),
+        branch_cutover_block + 1,
+        branch_cutover_block,
+    )
+    .await?;
+    assert_eq!(
+        settled_height,
+        branch_cutover_block - 1,
+        "unfinished PBS work must block settlement for its event block even when its producer hash differs"
+    );
+
+    sqlx::query(
+        "UPDATE pbs_computations_branch
+            SET is_error = TRUE, error_message = 'forced terminal SNS error', error_at = NOW()
+          WHERE handle = $1",
+    )
+    .bind(pbs_handle.to_vec())
+    .execute(tx.as_mut())
+    .await?;
+
+    let settled_height = advance_settled_height(
+        &mut tx,
+        chain_id.as_i64(),
+        branch_cutover_block + 1,
+        branch_cutover_block,
+    )
+    .await?;
+    assert_eq!(
+        settled_height,
+        branch_cutover_block + 1,
+        "terminal PBS errors must not freeze settlement"
+    );
+    tx.rollback().await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_quarantined_cleanup_job_blocks_settlement(
+) -> Result<(), anyhow::Error> {
+    let db_instance = test_harness::instance::setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let chain_id = ChainId::try_from(139_u64).unwrap();
+    let db = Database::new(&db_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+    let genesis_hash = vec![0x39_u8; 32];
+    let finalized_hash = vec![0x3A_u8; 32];
+    let orphaned_hash = vec![0x3B_u8; 32];
+
+    sqlx::query!(
+        r#"
+        INSERT INTO host_chain_blocks_valid(
+            chain_id, block_hash, parent_hash, block_number, block_status
+         )
+         VALUES
+            ($1, $2, NULL, 0, 'finalized'),
+            ($1, $3, $2, 1, 'finalized')
+        "#,
+        chain_id.as_i64(),
+        &genesis_hash,
+        &finalized_hash,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO branch_cleanup_jobs(
+            chain_id,
+            finalized_block_hash,
+            finalized_block_number,
+            orphaned_block_hashes,
+            status,
+            attempts,
+            locked_at,
+            last_error
+         )
+         VALUES ($1, $2, 1, $3, 'pending', 10, NOW(), NULL)
+        "#,
+        chain_id.as_i64(),
+        &finalized_hash,
+        &vec![orphaned_hash],
+    )
+    .execute(&pool)
+    .await?;
+
+    db.record_orphaned_branch_cleanup_error(
+        &finalized_hash,
+        "forced test failure",
+    )
+    .await?;
+
+    let status = sqlx::query_scalar!(
+        r#"
+        SELECT status AS "status!"
+         FROM branch_cleanup_jobs
+         WHERE chain_id = $1 AND finalized_block_hash = $2
+        "#,
+        chain_id.as_i64(),
+        &finalized_hash,
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(status, "quarantined");
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let settled_height =
+        advance_settled_height(&mut tx, chain_id.as_i64(), 1, 0).await?;
+    tx.rollback().await?;
+
+    assert_eq!(settled_height, 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
 ) -> Result<(), anyhow::Error> {
     let setup = setup_with_block_time(None, 1.0).await?;
@@ -2185,6 +2406,41 @@ async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
     .await?;
     assert_eq!(orphan_descendant_status, "orphaned");
 
+    let orphan_rows_before_async_cleanup = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)
+        FROM computations_branch
+        WHERE host_chain_id = $1
+          AND producer_block_hash = ANY($2::bytea[])
+        "#,
+        setup.chain_id.as_i64(),
+        &orphaned_hashes as _,
+    )
+    .fetch_one(&setup.db_pool)
+    .await?
+    .unwrap_or(0);
+    assert!(
+        orphan_rows_before_async_cleanup > 0,
+        "finalized-block ingestion must defer destructive cleanup"
+    );
+
+    let cleanup_status = sqlx::query_scalar!(
+        r#"
+        SELECT status
+        FROM branch_cleanup_jobs
+        WHERE chain_id = $1 AND finalized_block_hash = $2
+        "#,
+        setup.chain_id.as_i64(),
+        canonical_hash.to_vec(),
+    )
+    .fetch_one(&setup.db_pool)
+    .await?;
+    assert_eq!(cleanup_status, "pending");
+
+    let processed_cleanup_jobs =
+        db.process_orphaned_branch_cleanup_jobs().await?;
+    assert_eq!(processed_cleanup_jobs, 1);
+
     let canonical_computations = sqlx::query_scalar!(
         r#"
         SELECT COUNT(*)
@@ -2503,9 +2759,11 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         reorg_maximum_duration_in_blocks: 50,
         service_name: String::new(),
         catchup_finalization_in_blocks: 3,
+        // Effective settlement lag = max(settlement_finality_lag, reorg window),
+        // so the existing reorg window still gates settlement here.
+        settlement_finality_lag: 3,
         only_catchup_loop: true,
         catchup_loop_sleep_secs: 60,
-        dependence_by_connexity: false,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
@@ -2522,6 +2780,126 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         err.contains("--only-catchup-loop requires negative --start-at-block"),
         "Unexpected error message: {err}"
     );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn orphan_cleanup_cannot_leave_digest_inserted_by_inflight_sns(
+) -> Result<(), anyhow::Error> {
+    let db_instance = test_harness::instance::setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+    let chain_id = ChainId::try_from(4343_u64)?;
+    let db = Database::new(&db_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+    let handle = vec![0xD1_u8; 32];
+    let canonical_producer = vec![0xD2_u8; 32];
+    let orphaned_event = vec![0xD3_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash, is_completed
+         ) VALUES ($1, $2, 10, $3, $4, TRUE)",
+    )
+    .bind(&handle)
+    .bind(chain_id.as_i64())
+    .bind(&canonical_producer)
+    .bind(&orphaned_event)
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, block_number, ciphertext,
+            ciphertext_version, ciphertext_type
+         ) VALUES ($1, $2, 10, $3, 0, 0)",
+    )
+    .bind(&handle)
+    .bind(&canonical_producer)
+    .bind(vec![0xD4_u8; 8])
+    .execute(&pool)
+    .await?;
+
+    let mut sns_tx = pool.begin().await?;
+    sqlx::query(
+        "SELECT 1 FROM pbs_computations_branch
+          WHERE host_chain_id = $1 AND handle = $2
+            AND producer_block_hash = $3 AND block_hash = $4
+          FOR KEY SHARE",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&handle)
+    .bind(&canonical_producer)
+    .bind(&orphaned_event)
+    .execute(sns_tx.as_mut())
+    .await?;
+
+    let cleanup_db = db.clone();
+    let cleanup_hash = orphaned_event.clone();
+    let cleanup = tokio::spawn(async move {
+        let mut tx = cleanup_db
+            .new_transaction()
+            .await?
+            .expect("live stack cleanup transaction");
+        cleanup_db
+            .cleanup_orphaned_branch_state(&mut tx, &[cleanup_hash])
+            .await?;
+        tx.commit().await
+    });
+
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let cleanup_waits_on_pbs: bool = sqlx::query_scalar(
+                "SELECT EXISTS(
+                    SELECT 1 FROM pg_stat_activity
+                     WHERE wait_event_type = 'Lock'
+                       AND query ILIKE '%DELETE FROM pbs_computations_branch%'
+                 )",
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("inspect cleanup lock wait");
+            if cleanup_waits_on_pbs {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("cleanup should wait on the SNS PBS witness lock");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash,
+            block_number, ciphertext
+         ) VALUES ($1, $2, $3, $4, $5, 10, $6)",
+    )
+    .bind(chain_id.as_i64())
+    .bind(vec![0xD5_u8; 32])
+    .bind(&handle)
+    .bind(&canonical_producer)
+    .bind(&orphaned_event)
+    .bind(vec![0xD6_u8; 32])
+    .execute(sns_tx.as_mut())
+    .await?;
+    sns_tx.commit().await?;
+
+    cleanup.await??;
+
+    let remaining_digest: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertext_digest_branch
+          WHERE host_chain_id = $1 AND handle = $2
+            AND producer_block_hash = $3 AND block_hash = $4",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&handle)
+    .bind(&canonical_producer)
+    .bind(&orphaned_event)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(remaining_digest, 0);
+
     Ok(())
 }
 
@@ -3341,7 +3719,9 @@ async fn test_wave1_dual_writes_legacy_and_branch_tables(
     let pool = db.pool.read().await.clone();
 
     let handle = FixedBytes::<32>::from([0x42; 32]);
+    let second_handle = FixedBytes::<32>::from([0x43; 32]);
     let tx_hash = FixedBytes::<32>::from([0x77; 32]);
+    let second_tx_hash = FixedBytes::<32>::from([0x78; 32]);
     let block_hash = FixedBytes::<32>::from([0x33; 32]);
     let caller: Address =
         "0x1111111111111111111111111111111111111111".parse()?;
@@ -3372,7 +3752,32 @@ async fn test_wave1_dual_writes_legacy_and_branch_tables(
         .new_transaction()
         .await?
         .expect("new_transaction() returns Some on a live stack");
-    db.insert_tfhe_event(&mut tx, &event).await?;
+    let second_event = LogTfhe {
+        event: EventLog {
+            address: Address::ZERO,
+            data: TfheContractEvents::TrivialEncrypt(
+                TfheContract::TrivialEncrypt {
+                    caller,
+                    pt: ClearConst::from_be_slice(&[8u8]),
+                    toType: 4u8,
+                    result: second_handle,
+                },
+            ),
+        },
+        transaction_hash: Some(second_tx_hash),
+        is_allowed: true,
+        block_number: 7,
+        block_hash,
+        block_timestamp: PrimitiveDateTime::MAX,
+        dependence_chain: second_tx_hash,
+        tx_depth_size: 1,
+        log_index: None,
+    };
+    assert_eq!(
+        db.insert_tfhe_events_batch(&mut tx, &[event, second_event])
+            .await?,
+        vec![true, true]
+    );
 
     // 2. Allowed handle + PBS computations.
     db.insert_allowed_handle(
@@ -3416,6 +3821,22 @@ async fn test_wave1_dual_writes_legacy_and_branch_tables(
         assert_eq!(legacy_count, 1, "missing legacy row in {legacy}");
         assert_eq!(branch_count, 1, "missing branch row in {branch}");
     }
+
+    let second_legacy_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM computations WHERE output_handle = $1",
+    )
+    .bind(second_handle.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    let second_branch_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM computations_branch WHERE output_handle = $1 AND producer_block_hash = $2",
+    )
+    .bind(second_handle.to_vec())
+    .bind(block_hash.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(second_legacy_count, 1);
+    assert_eq!(second_branch_count, 1);
 
     Ok(())
 }
@@ -4261,6 +4682,113 @@ async fn test_wave1_reorg_cleanup_preserves_legacy_ciphertext_bytes(
         legacy_ct128, 1,
         "legacy ciphertexts128 bytes must NOT be deleted by orphan cleanup"
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_reorg_cleanup_removes_or_repoints_canonical_repair_targets(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let orphan_hash = vec![0x81_u8; 32];
+    let canonical_hash = vec![0x82_u8; 32];
+    let no_survivor_handle = vec![0x83_u8; 32];
+    let survivor_handle = vec![0x84_u8; 32];
+    let key_id_gw = vec![0x85_u8; 32];
+    let block_number = 30_i64;
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash
+         ) VALUES
+            ($1, $3, $4, $5, $5),
+            ($2, $3, $4, $5, $5),
+            ($2, $3, $4, $6, $6)",
+    )
+    .bind(&no_survivor_handle)
+    .bind(&survivor_handle)
+    .bind(chain_id.as_i64())
+    .bind(block_number)
+    .bind(&orphan_hash)
+    .bind(&canonical_hash)
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash,
+            block_number, ciphertext, ciphertext128
+         ) VALUES
+            ($1, $2, $3, $5, $5, $6, $7, $8),
+            ($1, $2, $4, $5, $5, $6, $7, $8),
+            ($1, $2, $4, $9, $9, $6, $7, $8)",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&key_id_gw)
+    .bind(&no_survivor_handle)
+    .bind(&survivor_handle)
+    .bind(&orphan_hash)
+    .bind(block_number)
+    .bind(vec![0x86_u8; 32])
+    .bind(vec![0x87_u8; 32])
+    .bind(&canonical_hash)
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO s3_canonical_repair_queue(
+            host_chain_id, handle, target_producer_block_hash, target_block_hash,
+            target_block_number, reason
+         ) VALUES
+            ($1, $2, $4, $4, $5, 'orphan_no_survivor'),
+            ($1, $3, $4, $4, $5, 'orphan_with_survivor')",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&no_survivor_handle)
+    .bind(&survivor_handle)
+    .bind(&orphan_hash)
+    .bind(block_number)
+    .execute(&pool)
+    .await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    db.cleanup_orphaned_branch_state(
+        &mut tx,
+        std::slice::from_ref(&orphan_hash),
+    )
+    .await?;
+    tx.commit().await?;
+
+    let no_survivor_queue_rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&no_survivor_handle)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(no_survivor_queue_rows, 0);
+
+    let survivor_target: (Vec<u8>, Vec<u8>) = sqlx::query_as(
+        "SELECT target_producer_block_hash, target_block_hash
+         FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&survivor_handle)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(survivor_target, (canonical_hash.clone(), canonical_hash));
 
     Ok(())
 }
