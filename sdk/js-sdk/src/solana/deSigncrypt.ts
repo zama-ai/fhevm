@@ -1,5 +1,5 @@
 // In-SDK Solana user-decrypt de-signcryption. Uses the isolated, Solana-only TKMS WASM
-// (kms_lib.v0.14.0-solana.*, exporting process_user_decryption_resp_solana_from_js) — kept separate
+// (kms_lib.v0.15.0-0-solana.*, exporting process_user_decryption_resp_solana_from_js) — kept separate
 // from the EVM decrypt module's v0.13.10 blob because kms feature/solana is a newer, EVM-incompatible
 // kms version. See FI#1546. DESIGNED TO BE DELETED once the EVM TKMS bindings are upgraded and the
 // two blobs converge.
@@ -14,8 +14,8 @@ import initSolanaTkms, {
   process_user_decryption_resp_solana_from_js,
   type PublicEncKeyMlKem512,
   type PrivateEncKeyMlKem512,
-} from '../wasm/tkms/kms_lib.v0.14.0-solana.047a6862.js';
-import { tkmsWasmBase64 } from '../wasm/tkms/kms_lib_bg.v0.14.0-solana.047a6862.wasm.base64.js';
+} from '../wasm/tkms/kms_lib.v0.15.0-0-solana.37658beb.js';
+import { tkmsWasmBase64 } from '../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.37658beb.wasm.base64.js';
 import { bytesToHexNo0x } from '../core/base/bytes.js';
 import { remove0x } from '../core/base/string.js';
 

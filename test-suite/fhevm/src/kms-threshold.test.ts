@@ -1,5 +1,6 @@
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
+import YAML from "yaml";
 
 import { partyContainers, quorumPlan } from "./commands/kms-generation";
 import { resolveUpgradePlan } from "./flow/repair";
@@ -10,7 +11,9 @@ import {
   THRESHOLD_PEERS_MARKER,
   buildKmsThresholdOverride,
   kmsRenderOptionsFor,
+  kmsThresholdGenKeysConfigName,
   renderThresholdCoreConfig,
+  renderThresholdGenKeysConfig,
   renderThresholdPeers,
   thresholdCoreEnv,
 } from "./generate/kms-core";
@@ -143,6 +146,18 @@ describe("buildKmsThresholdOverride", () => {
     expect(entrypoint).toContain("if kms-gen-keys threshold --help");
     expect(entrypoint).toContain("--cmd signing-keys");
     expect(entrypoint).toContain("--num-parties 4");
+    expect(entrypoint).toContain(`--config-file config/${kmsThresholdGenKeysConfigName(4)}`);
+    const composeYaml = YAML.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS));
+    expect(composeYaml).toContain("$$CMD");
+    expect(composeYaml).toContain("$$NP");
+  });
+
+  test("newer keygen config keeps each party's storage and identity separate", () => {
+    const config = renderThresholdGenKeysConfig(3, RENDER_OPTS);
+    expect(config).toContain('prefix = "PUB-p3"');
+    expect(config).toContain('prefix = "PRIV-p3"');
+    expect(config).toContain("my_id = 3");
+    expect(config).toContain('tls_subject = "kms-core-3"');
   });
 
   test("rejects a non-threshold topology", () => {

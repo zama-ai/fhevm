@@ -35,6 +35,7 @@ const statePaths = (root: string) => {
     versionsEnvPath: path.join(envDir, "versions.env"),
     relayerConfigPath: path.join(generatedConfigDir, "relayer.yaml"),
     kmsCoreConfigPath: path.join(generatedConfigDir, "kms-core.toml"),
+    kmsGenKeysConfigPath: path.join(generatedConfigDir, "kms-gen-keys.toml"),
     gatewayAddressesPath: path.join(addressDir, "gateway", ".env.gateway"),
   };
 };
@@ -51,6 +52,7 @@ export let STATE_FILE = currentStatePaths.STATE_FILE;
 export let versionsEnvPath = currentStatePaths.versionsEnvPath;
 export let relayerConfigPath = currentStatePaths.relayerConfigPath;
 export let kmsCoreConfigPath = currentStatePaths.kmsCoreConfigPath;
+export let kmsGenKeysConfigPath = currentStatePaths.kmsGenKeysConfigPath;
 export let gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
 export let gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
 export let paymentBridgingAddressesSolidityPath = path.join(
@@ -72,6 +74,7 @@ export const setStateDir = (root = process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_
   versionsEnvPath = currentStatePaths.versionsEnvPath;
   relayerConfigPath = currentStatePaths.relayerConfigPath;
   kmsCoreConfigPath = currentStatePaths.kmsCoreConfigPath;
+  kmsGenKeysConfigPath = currentStatePaths.kmsGenKeysConfigPath;
   gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
   gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
   paymentBridgingAddressesSolidityPath = path.join(
@@ -99,6 +102,7 @@ export const TEMPLATE_KMS_CORE_CONFIG_THRESHOLD = path.join(
   TEMPLATE_CONFIG_DIR,
   "kms-core-threshold.toml",
 );
+export const TEMPLATE_KMS_GEN_KEYS_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "kms-gen-keys.toml");
 export const LATEST_SUPPORTED_PROFILE = path.join(PROFILE_DIR, "latest-supported.json");
 export const PROJECT = "fhevm";
 export const DEFAULT_HOST_RPC_PORT = 8545;

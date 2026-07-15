@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { ensureLockSnapshot } from "../resolve/bundle-store";
 import { generateRuntime } from "../generate";
 import { requiresMultichainAclAddress } from "../compat/compat";
@@ -5,10 +7,12 @@ import { stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
 import { PreflightError } from "../errors";
 import {
   COMPONENTS,
+  GENERATED_CONFIG_DIR,
   gatewayAddressesPath,
   gatewayAddressesSolidityPath,
   paymentBridgingAddressesSolidityPath,
   kmsCoreConfigPath,
+  kmsGenKeysConfigPath,
   relayerConfigPath,
   versionsEnvPath,
   envPath,
@@ -20,6 +24,7 @@ import {
 import type { State, StepName } from "../types";
 import { exists, readEnvFile } from "../utils/fs";
 import { generatedComposeComponents } from "../generate/compose";
+import { KMS_THRESHOLD_CONFIG_NAME, kmsThresholdGenKeysConfigName } from "../generate/kms-core";
 import { defaultHostChain, extraHostChains } from "./topology";
 
 /** Validates that a generated address file exists and contains the required keys. */
@@ -56,12 +61,24 @@ export const assertGeneratedAddressFileLacks = async (
 export const runtimeArtifactPaths = (state: State) => {
   const topology = topologyForState(state);
   const defaultChain = defaultHostChain(state);
+  const plan = stackSpecForState(state);
+  const thresholdConfigPaths =
+    plan.kms.mode === "threshold"
+      ? [
+          path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
+          ...Array.from({ length: plan.kms.parties }, (_, index) =>
+            path.join(GENERATED_CONFIG_DIR, kmsThresholdGenKeysConfigName(index + 1)),
+          ),
+        ]
+      : [];
   return [
     versionsEnvPath,
     relayerConfigPath,
     kmsCoreConfigPath,
+    kmsGenKeysConfigPath,
+    ...thresholdConfigPaths,
     ...COMPONENTS.map(envPath),
-    ...[...generatedComposeComponents(stackSpecForState(state))].map(composePath),
+    ...[...generatedComposeComponents(plan)].map(composePath),
     ...Array.from({ length: Math.max(0, topology.count - 1) }, (_, index) => envPath(`coprocessor.${index + 1}`)),
     ...(state.discovery
       ? [
@@ -111,4 +128,3 @@ export const multiChainComposeEntries = (state: Pick<State, "scenario">): Array<
   }
   return entries;
 };
-

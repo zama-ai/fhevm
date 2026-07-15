@@ -178,7 +178,7 @@ dv="$(echo "$r" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['re
 echo "==> [user-decrypt] PURE-SDK: @fhevm/sdk/solana keygen + /v3/user-decrypt (ed25519) + IN-SDK de-signcrypt (no kms checkout)"
 # Whole round-trip in fhevm-cli: the public SDK does ML-KEM keygen, the v3 ed25519 request, and
 # de-signcryption to cleartext via deSigncryptSolanaUserDecrypt (vendored Solana TKMS WASM,
-# kms_lib.v0.14.0-solana). The deployer's default keypair is the user whose ACL grants USE; its
+# kms_lib.*-solana). The deployer's default keypair is the user whose ACL grants USE; its
 # pubkey is the sole allowed acl_domain_key (matches the compute leg's TE_ALLOW). No kms-core build.
 UD_SK="0x$(python3 -c "import json,os;print(bytes(json.load(open(os.path.expanduser('~/.config/solana/id.json')))[:32]).hex())")"
 UD_CID="0x$(python3 -c "print(int('$CTX').to_bytes(32,'big').hex())")"
