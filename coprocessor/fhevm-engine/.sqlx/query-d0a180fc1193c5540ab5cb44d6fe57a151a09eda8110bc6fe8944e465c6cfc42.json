@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO branch_cleanup_jobs (\n                chain_id,\n                finalized_block_hash,\n                finalized_block_number,\n                orphaned_block_hashes,\n                status\n            )\n            VALUES ($1, $2, $3, $4, 'pending')\n            ON CONFLICT (chain_id, finalized_block_hash) DO UPDATE\n            SET finalized_block_number = EXCLUDED.finalized_block_number,\n                orphaned_block_hashes = EXCLUDED.orphaned_block_hashes,\n                status = 'pending',\n                attempts = 0,\n                locked_at = NULL,\n                last_error = NULL,\n                updated_at = NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d0a180fc1193c5540ab5cb44d6fe57a151a09eda8110bc6fe8944e465c6cfc42"
+}

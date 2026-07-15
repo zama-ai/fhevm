@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT producer_block_hash AS \"producer_block_hash!\", ciphertext AS \"ciphertext!\"\n                 FROM ciphertexts_branch\n                 WHERE handle = $1\n                   AND ciphertext IS NOT NULL\n                   AND ciphertext_version = $2\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "producer_block_hash!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "bdb53c69799e37e86f94c798ea4fc77870d2901696f23fefe2dd02fee50c70d5"
+}

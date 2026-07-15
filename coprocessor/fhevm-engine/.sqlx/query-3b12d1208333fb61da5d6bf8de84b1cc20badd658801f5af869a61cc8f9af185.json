@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT dst_event.id,\n               dst_event.src_handle,\n               dst_event.dst_handle,\n               dst_event.dst_chain_id,\n               dst_event.block_number,\n               dst_event.transaction_id,\n               src_event.src_chain_id AS \"src_chain_id!\"\n        FROM handle_bridged_events dst_event\n        JOIN LATERAL (\n            SELECT candidate.src_chain_id\n            FROM bridge_handle_events candidate\n            WHERE candidate.src_handle = dst_event.src_handle\n              AND candidate.dst_chain_id = dst_event.dst_chain_id\n              AND (\n                    candidate.block_hash = ''::bytea\n                    OR EXISTS (\n                        SELECT 1 FROM host_chain_blocks_valid src_block\n                        WHERE src_block.chain_id = candidate.src_chain_id\n                          AND src_block.block_hash = candidate.block_hash\n                          AND src_block.block_status = 'finalized'\n                    )\n              )\n            ORDER BY candidate.id\n            LIMIT 1\n        ) src_event ON TRUE\n        WHERE NOT dst_event.is_associated\n          AND (\n                (\n                    dst_event.block_number < $2\n                    AND NOT EXISTS (\n                        SELECT 1 FROM ciphertexts dst_ct\n                        WHERE dst_ct.handle = dst_event.dst_handle\n                    )\n                )\n                OR (\n                    dst_event.block_number >= $2\n                    AND NOT EXISTS (\n                        SELECT 1 FROM ciphertexts_branch dst_ct\n                        WHERE dst_ct.handle = dst_event.dst_handle\n                    )\n                )\n          )\n          AND (\n                dst_event.block_hash = ''::bytea\n                OR EXISTS (\n                    SELECT 1 FROM host_chain_blocks_valid dst_block\n                    WHERE dst_block.chain_id = dst_event.dst_chain_id\n                      AND dst_block.block_hash = dst_event.block_hash\n                      AND dst_block.block_status <> 'orphaned'\n                )\n          )\n          AND (\n                EXISTS (\n                    SELECT 1\n                    FROM ciphertexts_branch src_ct\n                    JOIN ciphertext_digest_branch src_digest\n                      ON src_digest.handle = src_ct.handle\n                     AND src_digest.producer_block_hash = src_ct.producer_block_hash\n                    WHERE src_ct.handle = dst_event.src_handle\n                      AND src_ct.ciphertext IS NOT NULL\n                      AND src_ct.ciphertext_version = $3\n                      AND src_digest.host_chain_id = src_event.src_chain_id\n                      AND src_digest.ciphertext IS NOT NULL\n                      AND src_digest.ciphertext128 IS NOT NULL\n                      AND src_digest.ciphertext128_format IS NOT NULL\n                      AND (\n                            src_digest.producer_block_hash = ''::bytea\n                            OR NOT EXISTS (\n                                SELECT 1 FROM host_chain_blocks_valid producer_block\n                                WHERE producer_block.chain_id = src_digest.host_chain_id\n                                  AND producer_block.block_hash = src_digest.producer_block_hash\n                                  AND producer_block.block_status = 'orphaned'\n                            )\n                      )\n                      AND (\n                            src_digest.block_hash = ''::bytea\n                            OR NOT EXISTS (\n                                SELECT 1 FROM host_chain_blocks_valid event_block\n                                WHERE event_block.chain_id = src_digest.host_chain_id\n                                  AND event_block.block_hash = src_digest.block_hash\n                                  AND event_block.block_status = 'orphaned'\n                            )\n                      )\n                )\n                OR (\n                    EXISTS (\n                        SELECT 1 FROM ciphertexts src_ct\n                        WHERE src_ct.handle = dst_event.src_handle\n                          AND src_ct.ciphertext IS NOT NULL\n                          AND src_ct.ciphertext_version = $3\n                    )\n                    AND EXISTS (\n                        SELECT 1 FROM ciphertext_digest src_digest\n                        WHERE src_digest.handle = dst_event.src_handle\n                          AND src_digest.host_chain_id = src_event.src_chain_id\n                          AND src_digest.ciphertext IS NOT NULL\n                          AND src_digest.ciphertext128 IS NOT NULL\n                    )\n                )\n          )\n        ORDER BY dst_event.id\n        FOR UPDATE OF dst_event SKIP LOCKED\n        LIMIT $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "src_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "dst_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "dst_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "src_chain_id!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "3b12d1208333fb61da5d6bf8de84b1cc20badd658801f5af869a61cc8f9af185"
+}
