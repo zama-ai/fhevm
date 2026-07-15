@@ -67,7 +67,7 @@ scDeploy:
     - {name: KMS_SIGNER_ADDRESS_1, value: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"}
     - {name: KMS_NODE_IP_ADDRESS_1, value: "kms-core-2-core-2"}
     - {name: KMS_NODE_STORAGE_URL_1, value: "https://placeholder-party-2.s3.eu-west-1.amazonaws.com"}
-    - {name: KMS_TX_SENDER_ADDRESS_2, value: "0x976EA74026E726554dB657fA54763abd0C3a0aa"}
+    - {name: KMS_TX_SENDER_ADDRESS_2, value: "0x976EA74026E726554dB657fA54763abd0C3a0aa8"}
     - {name: KMS_SIGNER_ADDRESS_2, value: "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"}
     - {name: KMS_NODE_IP_ADDRESS_2, value: "kms-core-3-core-3"}
     - {name: KMS_NODE_STORAGE_URL_2, value: "https://placeholder-party-3.s3.eu-west-1.amazonaws.com"}
