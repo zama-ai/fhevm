@@ -4,20 +4,23 @@
     "unique_accounts": 15,
     "instruction_data_bytes": 223,
     "cpi_instructions": 7,
-    "total_cpi_instruction_data_bytes": 2212
+    "total_cpi_instruction_data_bytes": 2212,
+    "max_cpi_instruction_data_bytes": 1427
   },
   "confidential_transfer/steady_state": {
     "compute_units": 350061,
     "unique_accounts": 15,
     "instruction_data_bytes": 223,
     "cpi_instructions": 5,
-    "total_cpi_instruction_data_bytes": 2296
+    "total_cpi_instruction_data_bytes": 2296,
+    "max_cpi_instruction_data_bytes": 1559
   },
   "initialize_token_account": {
     "compute_units": 65180,
     "unique_accounts": 12,
     "instruction_data_bytes": 16,
     "cpi_instructions": 6,
-    "total_cpi_instruction_data_bytes": 603
+    "total_cpi_instruction_data_bytes": 603,
+    "max_cpi_instruction_data_bytes": 249
   }
 }

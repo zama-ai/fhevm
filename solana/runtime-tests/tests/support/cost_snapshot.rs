@@ -133,6 +133,12 @@ pub fn assert_cost_snapshot(
             expected.total_cpi_instruction_data_bytes, measured.total_cpi_instruction_data_bytes
         ));
     }
+    if measured.max_cpi_instruction_data_bytes != expected.max_cpi_instruction_data_bytes {
+        failures.push(format!(
+            "maximum CPI instruction data bytes changed: {} -> {}",
+            expected.max_cpi_instruction_data_bytes, measured.max_cpi_instruction_data_bytes
+        ));
+    }
     if measured.compute_units != expected.compute_units {
         let direction = if measured.compute_units > expected.compute_units {
             "regression"
@@ -159,10 +165,9 @@ pub fn assert_cost_snapshot(
 /// account-meta pubkeys plus the program id), not a count of accounts loaded
 /// at runtime.
 ///
-/// `cpi_instructions` / `total_cpi_instruction_data_bytes` cover every inner
-/// instruction at any stack depth, so nested CPIs (token -> host -> event
-/// batch) are all included. The total therefore covers both application-to-host
-/// calls and any CPIs issued by the host.
+/// The CPI metrics cover every inner instruction at any stack depth, including
+/// application-to-host and host-issued nested calls. The total captures the
+/// aggregate payload while the maximum tracks the per-instruction runtime limit.
 #[derive(Clone, Copy, Deserialize, Serialize)]
 struct Cost {
     compute_units: u64,
@@ -170,6 +175,7 @@ struct Cost {
     instruction_data_bytes: usize,
     cpi_instructions: usize,
     total_cpi_instruction_data_bytes: usize,
+    max_cpi_instruction_data_bytes: usize,
 }
 
 fn measure(instruction: &Instruction, result: &InstructionResult) -> Cost {
@@ -189,6 +195,12 @@ fn measure(instruction: &Instruction, result: &InstructionResult) -> Cost {
             .iter()
             .map(|inner| inner.instruction.data.len())
             .sum(),
+        max_cpi_instruction_data_bytes: result
+            .inner_instructions
+            .iter()
+            .map(|inner| inner.instruction.data.len())
+            .max()
+            .unwrap_or(0),
     }
 }
 
