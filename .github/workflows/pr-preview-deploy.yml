@@ -355,13 +355,13 @@ jobs:
               echo "::error::party ${i}: could not read public vault bucket from configmap ${NAMESPACE}-${i}"
               exit 1
             fi
-            handle=$(aws s3api list-objects-v2 --bucket "${bucket}" --prefix "VerfAddress/" \
-              --query 'Contents[0].Key' --output text 2>/dev/null | sed 's#^VerfAddress/##')
+            handle=$(aws s3api list-objects-v2 --bucket "${bucket}" --prefix "PUB-p${i}/VerfAddress/" \
+              --query 'Contents[0].Key' --output text 2>/dev/null | sed 's#^PUB-p${i}/VerfAddress/##')
             if [[ -z "${handle}" || "${handle}" == "None" ]]; then
-              echo "::error::party ${i}: no VerfAddress object under s3://${bucket}/VerfAddress/ - kms-core may not have finished its init sequence"
+              echo "::error::party ${i}: no VerfAddress object under s3://${bucket}/PUB-p${i}/VerfAddress/ - kms-core may not have finished its init sequence"
               exit 1
             fi
-            signer=$(aws s3 cp "s3://${bucket}/VerfAddress/${handle}" - 2>/dev/null | tr -d '[:space:]')
+            signer=$(aws s3 cp "s3://${bucket}/PUB-p${i}/VerfAddress/${handle}" - 2>/dev/null | tr -d '[:space:]')
             echo "party_${i}_signer=${signer}" >> "$GITHUB_OUTPUT"
             echo "Party ${i}: bucket=${bucket} handle=${handle} signer=${signer}"
           done
