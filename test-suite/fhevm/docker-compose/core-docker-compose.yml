@@ -18,9 +18,14 @@ services:
           export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key)
           export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key)
           echo "=================GENERATING SIGNING KEYS================="
-          # Older cores scope to signing keys via --cmd signing-keys; newer cores dropped it. Probe and inject only when supported.
-          if kms-gen-keys --help 2>&1 | grep -q -- "--cmd"; then CMD="--cmd signing-keys"; else CMD=""; fi
-          kms-gen-keys --public-storage s3 --public-s3-bucket "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET" --public-s3-prefix "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX" --aws-s3-endpoint "$$S3_ENDPOINT" --aws-region "$$S3_REGION" --private-storage file --private-file-path "$$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH" $$CMD centralized
+          if kms-gen-keys --help 2>&1 | grep -q -- "--config-file"; then
+            printf "[keygen]\noverwrite = false\nshow_existing = false\n\n[aws]\nregion = \"%s\"\ns3_endpoint = \"%s\"\n\n[public_vault.storage.s3]\nbucket = \"%s\"\nprefix = \"%s\"\n\n[private_vault.storage.file]\npath = \"%s\"\n" "$$S3_REGION" "$$S3_ENDPOINT" "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET" "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX" "$$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH" > /tmp/kms-gen-keys.toml
+            kms-gen-keys --config-file /tmp/kms-gen-keys.toml
+          else
+            # Older cores scope to signing keys via --cmd signing-keys; newer cores dropped it.
+            if kms-gen-keys --help 2>&1 | grep -q -- "--cmd"; then CMD="--cmd signing-keys"; else CMD=""; fi
+            kms-gen-keys --public-storage s3 --public-s3-bucket "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET" --public-s3-prefix "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX" --aws-s3-endpoint "$$S3_ENDPOINT" --aws-region "$$S3_REGION" --private-storage file --private-file-path "$$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH" $$CMD centralized
+          fi
           echo "=================STARTING KMS SERVICE================="
           kms-server --config-file config/config.toml
         '
