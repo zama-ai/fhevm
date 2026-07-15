@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use alloy::primitives::{Address, FixedBytes, B256};
 use fhevm_engine_common::utils::to_hex;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{Pool, Postgres};
 use tracing::{debug, error, warn};
 
 use crate::metrics::{
@@ -277,34 +277,112 @@ impl DriftDetector {
             return Ok(());
         };
 
-        let row = sqlx::query(
-            "SELECT ciphertext, ciphertext128 FROM ciphertext_digest WHERE handle = $1",
+        // Prefer local rows for finalized event blocks. In a fork scenario the
+        // same handle can exist under different producer/event block hashes; an
+        // off-branch row that happens to match consensus must not mask drift on
+        // the finalized branch. Fully branchless rows remain a compatibility
+        // fallback only when no event-scoped row exists for this handle.
+        let rows = sqlx::query!(
+            r#"
+            WITH event_scoped AS (
+                SELECT
+                    d.ciphertext,
+                    d.ciphertext128,
+                    EXISTS (
+                        SELECT 1
+                        FROM host_chain_blocks_valid b
+                        WHERE b.chain_id = d.host_chain_id
+                          AND b.block_hash = d.block_hash
+                          AND b.block_status = 'finalized'
+                    ) AS finalized
+                FROM ciphertext_digest_branch d
+                WHERE d.handle = $1
+                  AND d.block_hash <> ''::bytea
+             ),
+             has_event_scoped_rows AS (
+                SELECT EXISTS(SELECT 1 FROM event_scoped) AS value
+             ),
+             selected AS (
+                SELECT ciphertext, ciphertext128
+                FROM event_scoped
+                WHERE finalized
+                UNION ALL
+                SELECT d.ciphertext, d.ciphertext128
+                FROM ciphertext_digest_branch d
+                WHERE d.handle = $1
+                  AND d.producer_block_hash = ''::bytea
+                  AND d.block_hash = ''::bytea
+                  AND NOT (SELECT value FROM has_event_scoped_rows)
+             )
+             SELECT
+                ciphertext,
+                ciphertext128,
+                ciphertext IS NOT NULL AND ciphertext128 IS NOT NULL AS is_complete
+             FROM selected
+            "#,
+            handle.as_slice(),
         )
-        .bind(handle.as_slice())
-        .fetch_optional(db_pool)
+        .fetch_all(db_pool)
         .await?;
 
-        let local_digests = row.and_then(|r| {
-            let ct: Option<Vec<u8>> = r.get("ciphertext");
-            let ct128: Option<Vec<u8>> = r.get("ciphertext128");
-            ct.zip(ct128)
-        });
-        let Some((local_ciphertext_digest, local_ciphertext128_digest)) = local_digests else {
+        // Collect complete (non-NULL) local digest pairs. Incomplete rows only
+        // defer when no complete row exists yet.
+        let mut local_pairs = Vec::new();
+        let mut has_incomplete_row = false;
+        for row in &rows {
+            let is_complete = row.is_complete.unwrap_or(false);
+            let ct = row.ciphertext.clone();
+            let ct128 = row.ciphertext128.clone();
+            if is_complete {
+                if let Some(pair) = ct.zip(ct128) {
+                    local_pairs.push(pair);
+                }
+            } else {
+                has_incomplete_row = true;
+            }
+        }
+
+        if local_pairs.is_empty() {
             debug!(
                 handle = %handle,
                 host_chain_id = chain_id_from_handle(handle),
                 local_node_id = %self.local_node_id,
                 block_number = consensus.context.block_number,
                 tx_hash = ?consensus.context.tx_hash,
-                "Local digests not yet available; deferring drift check"
+                selected_local_rows = rows.len(),
+                has_incomplete_row,
+                "Local digests not yet ready; deferring drift check"
             );
             return Ok(());
-        };
+        }
 
-        if consensus.digests.ciphertext_digest.as_slice() != local_ciphertext_digest.as_slice()
-            || consensus.digests.ciphertext128_digest.as_slice()
-                != local_ciphertext128_digest.as_slice()
+        // Check if any local branch-variant matches the consensus digest.
+        let consensus_match = local_pairs.iter().any(|(ct, ct128)| {
+            consensus.digests.ciphertext_digest.as_slice() == ct.as_slice()
+                && consensus.digests.ciphertext128_digest.as_slice() == ct128.as_slice()
+        });
+
+        if has_incomplete_row
+            && Instant::now().duration_since(consensus.received_at)
+                < self.drift_no_consensus_timeout
         {
+            debug!(
+                handle = %handle,
+                host_chain_id = chain_id_from_handle(handle),
+                local_node_id = %self.local_node_id,
+                block_number = consensus.context.block_number,
+                tx_hash = ?consensus.context.tx_hash,
+                selected_local_rows = rows.len(),
+                complete_local_rows = local_pairs.len(),
+                consensus_match,
+                "Selected local rows are still incomplete; deferring drift check until completion or timeout"
+            );
+            return Ok(());
+        }
+
+        if !consensus_match {
+            // Report drift using the first complete local pair for diagnostics.
+            let (local_ciphertext_digest, local_ciphertext128_digest) = &local_pairs[0];
             let local_digests = DigestPair {
                 ciphertext_digest: FixedBytes::from(
                     <[u8; 32]>::try_from(local_ciphertext_digest.as_slice())
@@ -330,15 +408,16 @@ impl DriftDetector {
                 log_index = ?consensus.context.log_index,
                 consensus_ciphertext_digest = %consensus.digests.ciphertext_digest,
                 consensus_ciphertext128_digest = %consensus.digests.ciphertext128_digest,
-                local_ciphertext_digest = %to_hex(&local_ciphertext_digest),
-                local_ciphertext128_digest = %to_hex(&local_ciphertext128_digest),
+                local_ciphertext_digest = %to_hex(local_ciphertext_digest),
+                local_ciphertext128_digest = %to_hex(local_ciphertext128_digest),
+                local_row_count = local_pairs.len(),
                 local_matches_observed_variant = local_variant_sender_count > 0,
                 local_variant_sender_count,
                 consensus_variant_sender_count,
                 observed_variant_count = observed_variants.len(),
                 observed_variants = ?observed_variants,
                 source = "consensus",
-                "Drift detected: local digest does not match consensus"
+                "Drift detected: no local digest matches consensus"
             );
             self.deferred_drift_detected += 1;
 
@@ -852,6 +931,16 @@ mod tests {
             Duration::from_secs(2),
             auto_revert_enabled,
         )
+    }
+
+    fn age_consensus_past_timeout(detector: &mut DriftDetector, handle: CiphertextDigest) {
+        let timeout = detector.drift_no_consensus_timeout;
+        let state = detector
+            .open_handles
+            .get_mut(&handle)
+            .expect("handle is tracked");
+        let consensus = state.consensus.as_mut().expect("consensus is tracked");
+        consensus.received_at = Instant::now() - timeout - Duration::from_millis(1);
     }
 
     fn make_consensus_state(
@@ -1558,7 +1647,7 @@ mod tests {
             .connect(instance.db_url.as_str())
             .await
             .expect("pool");
-        sqlx::query("TRUNCATE ciphertext_digest")
+        sqlx::query("TRUNCATE ciphertext_digest, ciphertext_digest_branch")
             .execute(&pool)
             .await
             .expect("truncate");
@@ -1601,7 +1690,7 @@ mod tests {
         assert_eq!(detector.deferred_drift_detected, 1);
     }
 
-    // Set up host_chains + transactions + computations so that
+    // Set up host_chains + transactions + computations_branch so that
     // `on_drift_detected`'s block lookup succeeds for a compute-output handle
     // at the given chain id and block. Returns the constructed handle bytes.
     async fn setup_computation_for_recovery(
@@ -1631,15 +1720,17 @@ mod tests {
             .execute(pool)
             .await
             .unwrap();
+        let producer_block_hash: Vec<u8> = vec![0xCC; 32];
         sqlx::query(
-            "INSERT INTO computations (output_handle, dependencies, fhe_operation, is_scalar, \
-             transaction_id, host_chain_id, block_number) \
-             VALUES ($1, ARRAY[]::bytea[], 1, false, $2, $3, $4)",
+            "INSERT INTO computations_branch (output_handle, dependencies, fhe_operation, is_scalar, \
+             transaction_id, host_chain_id, block_number, producer_block_hash) \
+             VALUES ($1, ARRAY[]::bytea[], 1, false, $2, $3, $4, $5)",
         )
         .bind(handle.as_slice())
         .bind(&txn_id)
         .bind(chain_id)
         .bind(block_number)
+        .bind(&producer_block_hash)
         .execute(pool)
         .await
         .unwrap();
@@ -1794,13 +1885,14 @@ mod tests {
 
         // Insert a row with NULL ciphertext digests (digest computation not yet complete).
         sqlx::query(
-            "INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, txn_limited_retries_count)
-             VALUES (12345, $1, $2, $3, $4, 0)",
+            "INSERT INTO ciphertext_digest_branch (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, txn_limited_retries_count, producer_block_hash)
+             VALUES (12345, $1, $2, $3, $4, 0, $5)",
         )
         .bind(&[0u8; 32][..])
         .bind(&handle[..])
         .bind(None::<&[u8]>)
         .bind(None::<&[u8]>)
+        .bind(&[] as &[u8])
         .execute(&pool)
         .await
         .unwrap();
@@ -1832,7 +1924,7 @@ mod tests {
         let local_ct = vec![0xBBu8; 32];
         let local_ct128 = vec![0xCCu8; 32];
         sqlx::query(
-            "UPDATE ciphertext_digest SET ciphertext = $1, ciphertext128 = $2 WHERE handle = $3",
+            "UPDATE ciphertext_digest_branch SET ciphertext = $1, ciphertext128 = $2 WHERE handle = $3",
         )
         .bind(&local_ct)
         .bind(&local_ct128)
@@ -1951,5 +2043,645 @@ mod tests {
             .unwrap();
         assert!(state.local_consensus_checked);
         assert_eq!(detector.deferred_drift_detected, 0);
+    }
+
+    // --- Multi-row branch-handling tests for M4 R1 ---
+
+    /// Insert a `ciphertext_digest_branch` row with an explicit
+    /// `producer_block_hash`. Branch rows allow multiple entries per handle,
+    /// one for each producer block hash.
+    async fn insert_ciphertext_digest_with_block_hash(
+        pool: &Pool<Postgres>,
+        host_chain_id: i64,
+        handle: &[u8; 32],
+        ciphertext: Option<&[u8]>,
+        ciphertext128: Option<&[u8]>,
+        producer_block_hash: &[u8],
+        block_hash: &[u8],
+    ) {
+        let block_number = (!producer_block_hash.is_empty()).then_some(1_i64);
+        sqlx::query(
+            r#"INSERT INTO ciphertext_digest_branch
+               (host_chain_id, handle, ciphertext, ciphertext128, producer_block_hash, block_hash, block_number, key_id_gw)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
+        )
+        .bind(host_chain_id)
+        .bind(&handle[..])
+        .bind(ciphertext)
+        .bind(ciphertext128)
+        .bind(producer_block_hash)
+        .bind(block_hash)
+        .bind(block_number)
+        .bind(&[0u8; 32][..])
+        .execute(pool)
+        .await
+        .expect("insert ciphertext_digest_branch row");
+    }
+
+    async fn insert_finalized_block(pool: &Pool<Postgres>, host_chain_id: i64, block_hash: &[u8]) {
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status)
+             VALUES ($1, $2, NULL, 10, 'finalized')",
+        )
+        .bind(host_chain_id)
+        .bind(block_hash)
+        .execute(pool)
+        .await
+        .expect("insert finalized block");
+    }
+
+    /// Two local rows for the same handle (different branches), one matches
+    /// consensus → no drift.
+    #[tokio::test]
+    #[serial(db)]
+    async fn drift_multi_row_one_matches() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xD1; 32];
+        let consensus_ct = [0xAA; 32];
+        let consensus_ct128 = [0xBB; 32];
+        let other_ct = [0xCC; 32];
+        let other_ct128 = [0xDD; 32];
+        let branch_a = [0x1A; 32];
+        let branch_b = [0x1B; 32];
+        insert_finalized_block(&pool, 12345, &branch_a).await;
+
+        // Row on branch A: matches consensus.
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&consensus_ct),
+            Some(&consensus_ct128),
+            &branch_a,
+            &branch_a,
+        )
+        .await;
+        // Row on branch B: does NOT match consensus.
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&other_ct),
+            Some(&other_ct128),
+            &branch_b,
+            &branch_b,
+        )
+        .await;
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(consensus_ct),
+                    FixedBytes::from(consensus_ct128),
+                    vec![senders()[0], senders()[1], senders()[2]],
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked, "local check should complete");
+        assert_eq!(
+            detector.deferred_drift_detected, 0,
+            "no drift: one row matches"
+        );
+    }
+
+    /// Two local rows for the same handle, neither matches consensus → drift.
+    #[tokio::test]
+    #[serial(db)]
+    async fn drift_multi_row_none_match() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xD2; 32];
+        let consensus_ct = [0xAA; 32];
+        let consensus_ct128 = [0xBB; 32];
+        let branch_a = [0x2A; 32];
+        let branch_b = [0x2B; 32];
+        insert_finalized_block(&pool, 12345, &branch_a).await;
+
+        // Row on branch A: does NOT match consensus.
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&[0xCC; 32]),
+            Some(&[0xDD; 32]),
+            &branch_a,
+            &branch_a,
+        )
+        .await;
+        // Row on branch B: also does NOT match consensus.
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&[0xEE; 32]),
+            Some(&[0xFF; 32]),
+            &branch_b,
+            &branch_b,
+        )
+        .await;
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(consensus_ct),
+                    FixedBytes::from(consensus_ct128),
+                    vec![senders()[0], senders()[1], senders()[2]],
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked, "local check should complete");
+        assert_eq!(
+            detector.deferred_drift_detected, 1,
+            "drift: no row matches consensus"
+        );
+    }
+
+    /// One row with NULL digests (incomplete), one complete row matching
+    /// consensus → no drift; incomplete row is skipped.
+    #[tokio::test]
+    #[serial(db)]
+    async fn drift_multi_row_null_digests_skipped() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xD3; 32];
+        let consensus_ct = [0xAA; 32];
+        let consensus_ct128 = [0xBB; 32];
+        let branch_a = [0x3A; 32];
+        let branch_b = [0x3B; 32];
+        insert_finalized_block(&pool, 12345, &branch_b).await;
+
+        // Row on branch A: incomplete (NULL digests).
+        insert_ciphertext_digest_with_block_hash(
+            &pool, 12345, &handle, None, None, &branch_a, &branch_a,
+        )
+        .await;
+        // Row on branch B: complete and matches consensus.
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&consensus_ct),
+            Some(&consensus_ct128),
+            &branch_b,
+            &branch_b,
+        )
+        .await;
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(consensus_ct),
+                    FixedBytes::from(consensus_ct128),
+                    vec![senders()[0], senders()[1], senders()[2]],
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked, "local check should complete");
+        assert_eq!(
+            detector.deferred_drift_detected, 0,
+            "no drift: complete row matches; null row skipped"
+        );
+    }
+
+    /// A matching off-branch row must not mask a finalized branch mismatch.
+    #[tokio::test]
+    #[serial(db)]
+    async fn drift_ignores_matching_non_finalized_branch_row() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xD4; 32];
+        let consensus_ct = [0xAA; 32];
+        let consensus_ct128 = [0xBB; 32];
+        let finalized_branch = [0x4A; 32];
+        let non_finalized_branch = [0x4B; 32];
+        insert_finalized_block(&pool, 12345, &finalized_branch).await;
+
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&[0xCC; 32]),
+            Some(&[0xDD; 32]),
+            &finalized_branch,
+            &finalized_branch,
+        )
+        .await;
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&consensus_ct),
+            Some(&consensus_ct128),
+            &non_finalized_branch,
+            &non_finalized_branch,
+        )
+        .await;
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(consensus_ct),
+                    FixedBytes::from(consensus_ct128),
+                    vec![senders()[0], senders()[1], senders()[2]],
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked, "local check should complete");
+        assert_eq!(
+            detector.deferred_drift_detected, 1,
+            "off-branch digest match must not mask finalized branch drift"
+        );
+    }
+
+    /// Branchless producer rows can still be scoped to a finalized event block.
+    /// They must be compared before falling back to fully branchless rows.
+    #[tokio::test]
+    #[serial(db)]
+    async fn drift_checks_finalized_event_scoped_branchless_row() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xD5; 32];
+        let consensus_ct = [0xAA; 32];
+        let consensus_ct128 = [0xBB; 32];
+        let event_block = [0x5A; 32];
+        insert_finalized_block(&pool, 12345, &event_block).await;
+
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&consensus_ct),
+            Some(&consensus_ct128),
+            &[],
+            &event_block,
+        )
+        .await;
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(consensus_ct),
+                    FixedBytes::from(consensus_ct128),
+                    vec![senders()[0], senders()[1], senders()[2]],
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked, "local check should complete");
+        assert_eq!(
+            detector.deferred_drift_detected, 0,
+            "finalized event-scoped branchless row should be compared"
+        );
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn drift_defers_complete_finalized_mismatch_until_incomplete_sibling_timeout() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xD6; 32];
+        let consensus_ct = [0xAA; 32];
+        let consensus_ct128 = [0xBB; 32];
+        let complete_branch = [0x6A; 32];
+        let incomplete_branch = [0x6B; 32];
+        insert_finalized_block(&pool, 12345, &complete_branch).await;
+        insert_finalized_block(&pool, 12345, &incomplete_branch).await;
+
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&[0xCC; 32]),
+            Some(&[0xDD; 32]),
+            &complete_branch,
+            &complete_branch,
+        )
+        .await;
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            None,
+            None,
+            &incomplete_branch,
+            &incomplete_branch,
+        )
+        .await;
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(consensus_ct),
+                    FixedBytes::from(consensus_ct128),
+                    senders(),
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(!state.local_consensus_checked);
+        assert_eq!(
+            detector.deferred_drift_detected, 0,
+            "incomplete scoped rows should defer a complete mismatch before timeout"
+        );
+
+        age_consensus_past_timeout(&mut detector, FixedBytes::from(handle));
+        detector
+            .refresh_pending_consensus_checks(&pool)
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked);
+        assert_eq!(
+            detector.deferred_drift_detected, 1,
+            "a complete finalized mismatch should be reported after incomplete siblings time out"
+        );
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn drift_defers_matching_finalized_row_until_incomplete_sibling_timeout() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xD8; 32];
+        let consensus_ct = [0xAA; 32];
+        let consensus_ct128 = [0xBB; 32];
+        let matching_branch = [0x8A; 32];
+        let incomplete_branch = [0x8B; 32];
+        insert_finalized_block(&pool, 12345, &matching_branch).await;
+        insert_finalized_block(&pool, 12345, &incomplete_branch).await;
+
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&consensus_ct),
+            Some(&consensus_ct128),
+            &matching_branch,
+            &matching_branch,
+        )
+        .await;
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            None,
+            None,
+            &incomplete_branch,
+            &incomplete_branch,
+        )
+        .await;
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(consensus_ct),
+                    FixedBytes::from(consensus_ct128),
+                    senders(),
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(!state.local_consensus_checked);
+        assert_eq!(
+            detector.deferred_drift_detected, 0,
+            "incomplete scoped rows should defer even when a complete row already matches"
+        );
+
+        age_consensus_past_timeout(&mut detector, FixedBytes::from(handle));
+        detector
+            .refresh_pending_consensus_checks(&pool)
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked);
+        assert_eq!(
+            detector.deferred_drift_detected, 0,
+            "a complete matching scoped row should resolve no-drift after incomplete siblings time out"
+        );
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn drift_uses_incomplete_sibling_if_it_completes_before_timeout() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xD9; 32];
+        let consensus_ct = [0xAA; 32];
+        let consensus_ct128 = [0xBB; 32];
+        let complete_branch = [0x9A; 32];
+        let incomplete_branch = [0x9B; 32];
+        insert_finalized_block(&pool, 12345, &complete_branch).await;
+        insert_finalized_block(&pool, 12345, &incomplete_branch).await;
+
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&[0xCC; 32]),
+            Some(&[0xDD; 32]),
+            &complete_branch,
+            &complete_branch,
+        )
+        .await;
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            None,
+            None,
+            &incomplete_branch,
+            &incomplete_branch,
+        )
+        .await;
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(consensus_ct),
+                    FixedBytes::from(consensus_ct128),
+                    senders(),
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(!state.local_consensus_checked);
+        assert_eq!(detector.deferred_drift_detected, 0);
+
+        sqlx::query(
+            "UPDATE ciphertext_digest_branch
+             SET ciphertext = $1, ciphertext128 = $2
+             WHERE handle = $3 AND block_hash = $4",
+        )
+        .bind(&consensus_ct[..])
+        .bind(&consensus_ct128[..])
+        .bind(&handle[..])
+        .bind(&incomplete_branch[..])
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        detector
+            .refresh_pending_consensus_checks(&pool)
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked);
+        assert_eq!(
+            detector.deferred_drift_detected, 0,
+            "a sibling that completes before timeout should participate in consensus comparison"
+        );
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn drift_does_not_use_branchless_fallback_when_event_scoped_row_exists() {
+        let (pool, _inst) = setup_db().await;
+        let handle = [0xD7; 32];
+        let consensus_ct = [0xAA; 32];
+        let consensus_ct128 = [0xBB; 32];
+        let event_branch = [0x7A; 32];
+
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&[0xCC; 32]),
+            Some(&[0xDD; 32]),
+            &event_branch,
+            &event_branch,
+        )
+        .await;
+        insert_ciphertext_digest_with_block_hash(
+            &pool,
+            12345,
+            &handle,
+            Some(&consensus_ct),
+            Some(&consensus_ct128),
+            &[],
+            &[],
+        )
+        .await;
+
+        let mut detector = detector();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(consensus_ct),
+                    FixedBytes::from(consensus_ct128),
+                    senders(),
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(!state.local_consensus_checked);
+        assert_eq!(
+            detector.deferred_drift_detected, 0,
+            "event-scoped rows should suppress branchless fallback until finalized"
+        );
+
+        insert_finalized_block(&pool, 12345, &event_branch).await;
+        detector
+            .refresh_pending_consensus_checks(&pool)
+            .await
+            .unwrap();
+
+        let state = detector
+            .open_handles
+            .get(&FixedBytes::from(handle))
+            .unwrap();
+        assert!(state.local_consensus_checked);
+        assert_eq!(
+            detector.deferred_drift_detected, 1,
+            "finalized scoped mismatch should be reported after finality"
+        );
     }
 }
