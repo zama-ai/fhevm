@@ -207,6 +207,24 @@ mod tests {
     }
 
     #[test]
+    fn json_serialization_is_pinned() {
+        let att = sample_attestation();
+        let json = serde_json::to_string(&att).unwrap();
+        let expected = format!(
+            "{{\"version\":1,\"key_id\":\"0x45\",\
+             \"ciphertext_digest\":\"0x{}\",\
+             \"sns_ciphertext_digest\":\"0x{}\",\
+             \"format\":\"uncompressed_on_cpu\",\
+             \"signer\":\"0x00112233445566778899aabbccddeeff00112233\",\
+             \"signature\":\"0x{}\"}}",
+            "11".repeat(32),
+            "22".repeat(32),
+            "ab".repeat(65)
+        );
+        assert_eq!(json, expected);
+    }
+
+    #[test]
     fn json_rejects_unknown_version() {
         let mut value = serde_json::to_value(sample_attestation()).unwrap();
         value["version"] = serde_json::Value::from(99u8);

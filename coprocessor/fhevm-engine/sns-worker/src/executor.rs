@@ -13,12 +13,16 @@ use crate::SchedulePolicy;
 use crate::UploadJob;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
+use fhevm_engine_common::branch::{
+    is_branchless_producer, read_settled_height, select_producer_candidate, ProducerBlockHashed,
+};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::DbKeyId;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
+use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::versioning::StackMode;
@@ -26,7 +30,8 @@ use opentelemetry::trace::{Status, TraceContextExt};
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
 use sqlx::Pool;
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
+use std::collections::HashSet;
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -52,12 +57,66 @@ pub enum Order {
     Desc,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ct128WriteStatus {
+    Allowed,
+    Settled,
+}
+
 impl fmt::Display for Order {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Order::Asc => write!(f, "ASC"),
             Order::Desc => write!(f, "DESC"),
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SnsTaskRow {
+    handle: Vec<u8>,
+    transaction_id: Option<Vec<u8>>,
+    host_chain_id: i64,
+    producer_block_hash: Vec<u8>,
+    block_hash: Vec<u8>,
+    block_number: Option<i64>,
+}
+
+type SnsTaskKey = (i64, Vec<u8>, Vec<u8>, Vec<u8>);
+
+#[derive(Clone, Debug)]
+struct SnsTaskFailure {
+    key: SnsTaskKey,
+    error_message: String,
+}
+
+impl SnsTaskFailure {
+    fn from_task(task: &HandleItem, error_message: String) -> Self {
+        Self {
+            key: sns_task_key(task),
+            error_message,
+        }
+    }
+}
+
+fn sns_task_key(task: &HandleItem) -> SnsTaskKey {
+    (
+        task.host_chain_id.as_i64(),
+        task.handle.clone(),
+        task.producer_block_hash.clone(),
+        task.block_hash.clone(),
+    )
+}
+
+#[derive(Clone, Debug)]
+struct CiphertextBytesCandidate {
+    producer_block_hash: Vec<u8>,
+    ciphertext: Vec<u8>,
+}
+
+impl ProducerBlockHashed for CiphertextBytesCandidate {
+    fn producer_block_hash(&self) -> &[u8] {
+        &self.producer_block_hash
     }
 }
 
@@ -105,6 +164,36 @@ impl HealthCheckService for SwitchNSquashService {
 
         status.set_custom_check("s3_buckets", is_s3_ready, true);
         status.set_custom_check("s3_connection", is_s3_connected, true);
+
+        match sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM pbs_computations_branch WHERE is_error = TRUE",
+        )
+        .fetch_one(&self.pool)
+        .await
+        {
+            Ok(count) => status.set_custom_check("sns_terminal_errors", count == 0, true),
+            Err(err) => {
+                status.set_custom_check("sns_terminal_errors", false, true);
+                status.add_error_details(format!("Failed to query terminal SNS errors: {err}"));
+            }
+        }
+
+        match sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM s3_canonical_repair_queue WHERE status = 'quarantined'",
+        )
+        .fetch_one(&self.pool)
+        .await
+        {
+            Ok(count) => {
+                status.set_custom_check("s3_canonical_repair_quarantine", count == 0, true)
+            }
+            Err(err) => {
+                status.set_custom_check("s3_canonical_repair_quarantine", false, true);
+                status.add_error_details(format!(
+                    "Failed to query quarantined canonical S3 repairs: {err}"
+                ));
+            }
+        }
 
         status
     }
@@ -267,14 +356,16 @@ pub(crate) async fn run_loop(
         )
         .await
         .inspect(|res| {
-            if let Some((_, tasks_processed)) = res {
-                TASK_EXECUTE_SUCCESS_COUNTER.inc_by(*tasks_processed as u64);
+            if let Some((_, tasks_processed, terminal_errors)) = res {
+                TASK_EXECUTE_SUCCESS_COUNTER
+                    .inc_by(tasks_processed.saturating_sub(*terminal_errors) as u64);
+                TASK_EXECUTE_FAILURE_COUNTER.inc_by(*terminal_errors as u64);
             }
         })
         .inspect_err(|_| {
             TASK_EXECUTE_FAILURE_COUNTER.inc();
         })?;
-        let Some((maybe_remaining, _tasks_processed)) = result else {
+        let Some((maybe_remaining, _tasks_processed, _terminal_errors)) = result else {
             info!("Cutover completed — SnS BCS worker stopping");
             return Ok(());
         };
@@ -347,56 +438,66 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
         return Ok(());
     };
 
-    let count: Option<i64> = sqlx::query_scalar!(
-        "
-        SELECT COUNT(*)::BIGINT
-        FROM ciphertexts128
-        "
+    let count = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*)::BIGINT AS "count!"
+        FROM ciphertexts128_branch
+        "#
     )
     .fetch_one(trx.as_mut())
     .await?;
 
-    let count = count.unwrap_or(0);
     if count <= limit as i64 {
         // Avoid unnecessary cleanup when there are not too many rows
         trx.rollback().await?;
         return Ok(());
     }
 
-    info!(count, "Starting garbage collection of ciphertexts128");
+    info!(
+        count,
+        "Starting garbage collection of ciphertexts128_branch"
+    );
 
     // Limit the number of rows to update in case of a large backlog due to catchup or burst.
     // Skip locked to prevent concurrent updates.
     let cleanup_span = tracing::info_span!("cleanup_ct128", rows_affected = tracing::field::Empty);
-    let rows_affected: u64 = sqlx::query!(
-        "
-        WITH uploaded_ct128 AS (
-            SELECT c.handle
-            FROM ciphertexts128 c
-            JOIN ciphertext_digest d
-            ON d.handle = c.handle
-            WHERE d.ciphertext IS NOT NULL
-              AND d.ciphertext128 IS NOT NULL
-            FOR UPDATE OF c SKIP LOCKED
-            LIMIT $1
+    let rows_affected: u64 = async {
+        Ok::<u64, sqlx::Error>(
+            sqlx::query!(
+                r#"
+                WITH uploaded_ct128 AS (
+                    SELECT c.handle, c.producer_block_hash
+                    FROM ciphertexts128_branch c
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM ciphertext_digest_branch d
+                        WHERE d.handle = c.handle
+                          AND d.producer_block_hash = c.producer_block_hash
+                          AND d.ciphertext128 IS NULL
+                    )
+                    FOR UPDATE OF c SKIP LOCKED
+                    LIMIT $1
+                )
+                DELETE FROM ciphertexts128_branch c
+                USING uploaded_ct128 r
+                WHERE c.handle = r.handle
+                AND c.producer_block_hash = r.producer_block_hash
+                "#,
+                limit as i32,
+            )
+            .execute(trx.as_mut())
+            .await?
+            .rows_affected(),
         )
-
-        DELETE FROM ciphertexts128 c
-        USING uploaded_ct128 r
-        WHERE c.handle = r.handle;
-        ",
-        limit as i32,
-    )
-    .execute(trx.as_mut())
+    }
     .instrument(cleanup_span.clone())
-    .await?
-    .rows_affected();
+    .await?;
     cleanup_span.record("rows_affected", rows_affected as i64);
 
     if rows_affected > 0 {
         info!(parent: &cleanup_span,
             rows_affected = rows_affected,
-            "Cleaning up old ciphertexts128"
+            "Cleaning up old ciphertexts128_branch"
         );
     }
 
@@ -406,7 +507,7 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 }
 
 /// Fetch and process SnS tasks from the database.
-/// Returns (maybe_remaining, number_of_tasks_processed) on success.
+/// Returns (maybe_remaining, number_of_tasks_processed, terminal_errors) on success.
 /// Returns `Ok(None)` when a committed cutover has retired this BCS worker
 /// (caller should stop); `Ok(Some((maybe_remaining, tasks_processed)))` otherwise.
 async fn fetch_and_execute_sns_tasks(
@@ -417,7 +518,7 @@ async fn fetch_and_execute_sns_tasks(
     token: &CancellationToken,
     uploads_enabled: bool,
     gcs_mode: bool,
-) -> Result<Option<(bool, usize)>, ExecutionError> {
+) -> Result<Option<(bool, usize, usize)>, ExecutionError> {
     // Cutover safety (BCS only): begin a write tx fenced against cutover before
     // writing any ct128 / digest rows into the tables execute_cutover merges.
     // `None` means a committed cutover retired this stack. See
@@ -445,53 +546,76 @@ async fn fetch_and_execute_sns_tasks(
 
     let mut maybe_remaining = false;
     let tasks_processed;
-    if let Some(mut tasks) =
-        query_sns_tasks(trx, conf.db.batch_limit, order, &keys.key_id_gw).await?
+    let terminal_errors;
+    if let Some(mut tasks) = query_sns_tasks(
+        trx,
+        conf.db.batch_limit,
+        conf.db.branch_cutover_block,
+        order,
+        &keys.key_id_gw,
+    )
+    .await?
     {
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
         tasks_processed = tasks.len();
 
         let batch_exec_span = tracing::info_span!("batch_execution", count = tasks.len());
 
-        batch_exec_span.in_scope(|| {
+        let failures = batch_exec_span.in_scope(|| {
             process_tasks(
                 &mut tasks,
                 keys,
-                tx,
                 conf.enable_compression,
                 conf.schedule_policy,
                 token.clone(),
-                uploads_enabled,
             )
         })?;
-
-        update_computations_status(trx, &tasks)
-            .instrument(batch_exec_span.clone())
-            .await?;
+        terminal_errors = failures.len();
+        let failed_task_keys = failures
+            .iter()
+            .map(|failure| failure.key.clone())
+            .collect::<HashSet<_>>();
 
         let batch_store_span = tracing::info_span!(
             parent: &batch_exec_span,
             "batch_store_ciphertext128"
         );
         let batch_store = async {
-            update_ciphertext128(trx, &tasks).await?;
+            let skipped_settled_tasks =
+                update_ciphertext128(trx, &tasks, &failed_task_keys).await?;
+            update_computations_status(
+                trx,
+                &tasks,
+                &failures,
+                &failed_task_keys,
+                &skipped_settled_tasks,
+            )
+            .instrument(batch_exec_span.clone())
+            .await?;
             notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
 
-            // Try to enqueue the tasks for upload in the DB
-            // This is a best-effort attempt, as the upload worker might not be available
-            enqueue_upload_tasks(trx, &tasks).await?;
-            Ok::<(), ExecutionError>(())
+            // Persist the upload rows before dispatch so recovery remains durable
+            // when the in-memory uploader is unavailable.
+            enqueue_upload_tasks(trx, &tasks, &failed_task_keys, &skipped_settled_tasks).await?;
+            Ok::<_, ExecutionError>(skipped_settled_tasks)
         };
-        if let Err(err) = batch_store.instrument(batch_store_span.clone()).await {
-            batch_store_span
-                .context()
-                .span()
-                .set_status(Status::error(err.to_string()));
-            return Err(err);
-        }
+        let skipped_settled_tasks = match batch_store.instrument(batch_store_span.clone()).await {
+            Ok(skipped_settled_tasks) => skipped_settled_tasks,
+            Err(err) => {
+                batch_store_span
+                    .context()
+                    .span()
+                    .set_status(Status::error(err.to_string()));
+                return Err(err);
+            }
+        };
         drop(batch_store_span);
 
         db_txn.commit().await?;
+
+        if uploads_enabled {
+            dispatch_upload_tasks(tx, &tasks, &failed_task_keys, &skipped_settled_tasks);
+        }
 
         for task in tasks.iter() {
             if let Some(transaction_id) = &task.transaction_id {
@@ -500,10 +624,11 @@ async fn fetch_and_execute_sns_tasks(
         }
     } else {
         tasks_processed = 0;
+        terminal_errors = 0;
         db_txn.rollback().await?;
     }
 
-    Ok(Some((maybe_remaining, tasks_processed)))
+    Ok(Some((maybe_remaining, tasks_processed, terminal_errors)))
 }
 
 /// Queries the database for a fixed number of tasks.
@@ -511,70 +636,194 @@ async fn fetch_and_execute_sns_tasks(
 pub async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     limit: u32,
+    _branch_cutover_block: i64,
     order: Order,
     key_id_gw: &DbKeyId,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
-    let query = format!(
-        "
-        SELECT a.*, c.ciphertext
-        FROM pbs_computations a
-        JOIN ciphertexts c 
-        ON a.handle = c.handle
-        WHERE c.ciphertext IS NOT NULL
-        AND a.is_completed = FALSE
-        ORDER BY a.created_at {}
-        FOR UPDATE SKIP LOCKED
-        LIMIT $1;
-        ",
-        order
-    );
+    let build_task = |handle: Vec<u8>,
+                      transaction_id: Option<Vec<u8>>,
+                      host_chain_id_raw: i64,
+                      producer_block_hash: Vec<u8>,
+                      block_hash: Vec<u8>,
+                      block_number: Option<i64>,
+                      ciphertext: Vec<u8>|
+     -> Result<HandleItem, ExecutionError> {
+        let host_chain_id = ChainId::try_from(host_chain_id_raw)
+            .map_err(|e| ExecutionError::ConversionError(e.into()))?;
+        let task_span = tracing::info_span!(
+            "task",
+            txn_id = tracing::field::Empty,
+            handle = tracing::field::Empty
+        );
+        telemetry::record_short_hex(&task_span, "handle", &handle);
+        telemetry::record_short_hex_if_some(&task_span, "txn_id", transaction_id.as_deref());
 
-    let records = sqlx::query(&query)
-        .bind(limit as i64)
-        .fetch_all(db_txn.as_mut())
-        .await?;
+        Ok(HandleItem {
+            // TODO: During key rotation, ensure all coprocessors pin the same key_id_gw for a batch
+            // (e.g., via gateway coordination) to keep ciphertext_digest consistent.
+            key_id_gw: key_id_gw.clone(),
+            host_chain_id,
+            handle,
+            producer_block_hash,
+            block_hash,
+            block_number,
+            ct64_compressed: Arc::new(ciphertext),
+            ct128: Arc::new(BigCiphertext::default()), // to be computed
+            ct64_digest: None,
+            ct128_digest: None,
+            s3_format_version: None,
+            span: task_span,
+            transaction_id,
+        })
+    };
+    let order_asc = matches!(order, Order::Asc);
+    let task_rows = sqlx::query!(
+        r#"
+            SELECT
+                a.handle AS "handle!",
+                a.transaction_id,
+                a.host_chain_id AS "host_chain_id!",
+                a.producer_block_hash AS "producer_block_hash!",
+                a.block_hash AS "block_hash!",
+                a.block_number
+            FROM pbs_computations_branch a
+            WHERE a.is_completed = FALSE
+              AND a.is_error = FALSE
+              AND (
+                a.producer_block_hash = ''::BYTEA
+                OR a.block_number IS NULL
+                OR a.block_number > COALESCE(
+                    (
+                      SELECT s.settled_height
+                      FROM coprocessor_settlement s
+                      WHERE s.chain_id = a.host_chain_id
+                    ),
+                    -1
+                )
+              )
+              AND (
+                a.producer_block_hash = ''::BYTEA
+                OR NOT EXISTS (
+                    SELECT 1
+                    FROM host_chain_blocks_valid producer
+                    WHERE producer.chain_id = a.host_chain_id
+                      AND producer.block_hash = a.producer_block_hash
+                      AND producer.block_status = 'orphaned'
+                )
+              )
+              AND (
+                a.block_hash = ''::BYTEA
+                OR NOT EXISTS (
+                    SELECT 1
+                    FROM host_chain_blocks_valid event_block
+                    WHERE event_block.chain_id = a.host_chain_id
+                      AND event_block.block_hash = a.block_hash
+                      AND event_block.block_status = 'orphaned'
+                )
+              )
+              AND EXISTS (
+                  SELECT 1 FROM ciphertexts_branch c
+                   WHERE c.handle = a.handle
+                     AND c.producer_block_hash = a.producer_block_hash
+                     AND c.ciphertext IS NOT NULL
+                     AND c.ciphertext_version = $2
+              )
+            ORDER BY
+                CASE WHEN $3::BOOLEAN THEN a.created_at END ASC,
+                CASE WHEN NOT $3::BOOLEAN THEN a.created_at END DESC
+            FOR UPDATE OF a SKIP LOCKED
+            LIMIT $1
+            "#,
+        limit as i64,
+        current_ciphertext_version(),
+        order_asc,
+    )
+    .fetch_all(db_txn.as_mut())
+    .await?;
+    let task_rows = task_rows
+        .into_iter()
+        .map(|row| SnsTaskRow {
+            handle: row.handle,
+            transaction_id: row.transaction_id,
+            host_chain_id: row.host_chain_id,
+            producer_block_hash: row.producer_block_hash,
+            block_hash: row.block_hash,
+            block_number: row.block_number,
+        })
+        .collect::<Vec<_>>();
 
-    info!(target: "worker", { count = records.len(), order = order.to_string() }, "Fetched SnS tasks");
-    tracing::Span::current().record("count", records.len());
-
-    if records.is_empty() {
+    if task_rows.is_empty() {
+        info!(target: "worker", { count = 0, order = order.to_string() }, "Fetched SnS tasks");
+        tracing::Span::current().record("count", 0);
         return Ok(None);
     }
 
-    // Convert the records into HandleItem structs
-    let tasks = records
-        .into_iter()
-        .map(|record| {
-            let host_chain_id_raw: i64 = record.try_get("host_chain_id")?;
-            let host_chain_id = ChainId::try_from(host_chain_id_raw)
-                .map_err(|e| ExecutionError::ConversionError(e.into()))?;
-            let handle: Vec<u8> = record.try_get("handle")?;
-            let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
-            let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
-            let task_span = tracing::info_span!(
-                "task",
-                txn_id = tracing::field::Empty,
-                handle = tracing::field::Empty
-            );
-            telemetry::record_short_hex(&task_span, "handle", &handle);
-            telemetry::record_short_hex_if_some(&task_span, "txn_id", transaction_id.as_deref());
+    let handles = task_rows
+        .iter()
+        .map(|row| row.handle.clone())
+        .collect::<Vec<_>>();
+    let mut ciphertext_candidates: std::collections::HashMap<
+        Vec<u8>,
+        Vec<CiphertextBytesCandidate>,
+    > = std::collections::HashMap::new();
+    let rows = sqlx::query!(
+        r#"
+        SELECT handle, producer_block_hash, ciphertext
+        FROM ciphertexts_branch
+        WHERE handle = ANY($1::BYTEA[])
+          AND ciphertext IS NOT NULL
+          AND ciphertext_version = $2
+        "#,
+        &handles as _,
+        current_ciphertext_version(),
+    )
+    .fetch_all(db_txn.as_mut())
+    .await?;
+    for row in rows {
+        let handle = row.handle;
+        ciphertext_candidates
+            .entry(handle)
+            .or_default()
+            .push(CiphertextBytesCandidate {
+                producer_block_hash: row.producer_block_hash,
+                ciphertext: row.ciphertext,
+            });
+    }
 
-            Ok(HandleItem {
-                // TODO: During key rotation, ensure all coprocessors pin the same key_id_gw for a batch
-                // (e.g., via gateway coordination) to keep ciphertext_digest consistent.
-                key_id_gw: key_id_gw.clone(),
-                host_chain_id,
-                handle,
-                ct64_compressed: Arc::new(ciphertext),
-                ct128: Arc::new(BigCiphertext::default()), // to be computed
-                ct64_digest: None,
-                ct128_digest: None,
-                s3_format_version: None,
-                span: task_span,
-                transaction_id,
-            })
+    let tasks = task_rows
+        .into_iter()
+        .map(|row| {
+            let candidates = ciphertext_candidates.get(&row.handle).ok_or_else(|| {
+                ExecutionError::MissingCiphertext64(format!(
+                    "missing ciphertext candidates for handle {}",
+                    hex::encode(&row.handle)
+                ))
+            })?;
+            let ciphertext = select_producer_candidate(candidates, &row.producer_block_hash)
+                .ok_or_else(|| {
+                    ExecutionError::MissingCiphertext64(format!(
+                        "missing matching ciphertext for handle {} and producer {}",
+                        hex::encode(&row.handle),
+                        hex::encode(&row.producer_block_hash),
+                    ))
+                })?
+                .ciphertext
+                .clone();
+
+            build_task(
+                row.handle,
+                row.transaction_id,
+                row.host_chain_id,
+                row.producer_block_hash,
+                row.block_hash,
+                row.block_number,
+                ciphertext,
+            )
         })
         .collect::<Result<Vec<_>, ExecutionError>>()?;
+
+    info!(target: "worker", { count = tasks.len(), order = order.to_string() }, "Fetched SnS tasks");
+    tracing::Span::current().record("count", tasks.len());
 
     Ok(Some(tasks))
 }
@@ -582,8 +831,17 @@ pub async fn query_sns_tasks(
 async fn enqueue_upload_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
+    failed_task_keys: &HashSet<SnsTaskKey>,
+    skipped_settled_tasks: &HashSet<(Vec<u8>, Vec<u8>)>,
 ) -> Result<(), ExecutionError> {
     for task in tasks.iter() {
+        if failed_task_keys.contains(&sns_task_key(task)) {
+            continue;
+        }
+        if skipped_settled_tasks.contains(&(task.handle.clone(), task.producer_block_hash.clone()))
+        {
+            continue;
+        }
         // false = the handle's provenance was deleted by reorg cleanup while
         // this batch was computing; its publication is cancelled (logged by
         // the callee) and the computed ct128 is simply left unpublished.
@@ -592,64 +850,81 @@ async fn enqueue_upload_tasks(
     Ok(())
 }
 
+fn dispatch_upload_tasks(
+    tx: &Sender<UploadJob>,
+    tasks: &[HandleItem],
+    failed_task_keys: &HashSet<SnsTaskKey>,
+    skipped_settled_tasks: &HashSet<(Vec<u8>, Vec<u8>)>,
+) {
+    for task in tasks {
+        if failed_task_keys.contains(&sns_task_key(task))
+            || skipped_settled_tasks
+                .contains(&(task.handle.clone(), task.producer_block_hash.clone()))
+        {
+            continue;
+        }
+
+        // Dispatch only after the transaction that marks SNS completion commits,
+        // so the uploader's provenance guard can observe the completed witness.
+        if let Err(err) = tx.try_send(UploadJob::Normal(task.clone())) {
+            // The digest row committed with the batch, so the resubmit loop is
+            // the durable fallback when the in-memory queue is unavailable.
+            error!(
+                action = "review",
+                error = %err,
+                handle = %to_hex(&task.handle),
+                "Failed to send task to upload worker"
+            );
+        }
+    }
+}
+
 /// Processes the tasks by decompressing and converting the ciphertexts.
 ///
 /// This uses the `rayon` to parallelize the squash_noise_and_serialize.
 ///
-/// The computed ciphertexts are sent to the upload worker via the provided channel.
+/// The caller dispatches computed ciphertexts after their database state commits.
 fn process_tasks(
     batch: &mut [HandleItem],
     keys: &KeySet,
-    tx: &Sender<UploadJob>,
     enable_compression: bool,
     policy: SchedulePolicy,
     token: CancellationToken,
-    uploads_enabled: bool,
-) -> Result<(), ExecutionError> {
+) -> Result<Vec<SnsTaskFailure>, ExecutionError> {
     set_server_key(keys.server_key.clone());
 
-    match policy {
-        SchedulePolicy::Sequential => {
-            for task in batch.iter_mut() {
-                compute_task(
-                    task,
-                    tx,
-                    enable_compression,
-                    token.clone(),
-                    &keys.client_key,
-                    uploads_enabled,
-                );
-            }
-        }
+    let failures = match policy {
+        SchedulePolicy::Sequential => batch
+            .iter_mut()
+            .filter_map(|task| {
+                compute_task(task, enable_compression, token.clone(), &keys.client_key)
+                    .map(|error| SnsTaskFailure::from_task(task, error))
+            })
+            .collect(),
         SchedulePolicy::RayonParallel => {
             rayon::broadcast(|_| {
                 tfhe::set_server_key(keys.server_key.clone());
             });
 
-            batch.par_iter_mut().for_each(|task| {
-                compute_task(
-                    task,
-                    tx,
-                    enable_compression,
-                    token.clone(),
-                    &keys.client_key,
-                    uploads_enabled,
-                );
-            });
+            batch
+                .par_iter_mut()
+                .filter_map(|task| {
+                    compute_task(task, enable_compression, token.clone(), &keys.client_key)
+                        .map(|error| SnsTaskFailure::from_task(task, error))
+                })
+                .collect()
         }
-    }
+    };
 
-    Ok(())
+    Ok(failures)
 }
 
 fn compute_task(
     task: &mut HandleItem,
-    tx: &Sender<UploadJob>,
     enable_compression: bool,
     token: CancellationToken,
     _client_key: &Option<ClientKey>,
-    uploads_enabled: bool,
-) {
+) -> Option<String> {
     let started_at = SystemTime::now();
     let thread_id = format!("{:?}", std::thread::current().id());
     // Cross-boundary: compute_task runs on a thread-pool worker;
@@ -663,13 +938,13 @@ fn compute_task(
     // Check if the task is cancelled
     if token.is_cancelled() {
         warn!({ handle }, "Task processing cancelled");
-        return;
+        return None;
     }
 
     let ct64_compressed = task.ct64_compressed.as_ref();
     if ct64_compressed.is_empty() {
         error!({ handle }, "Empty ciphertext64, skipping task");
-        return; // Skip empty ciphertexts
+        return Some("empty ciphertext64".to_owned());
     }
 
     let decompress_span = tracing::info_span!("decompress_ct64");
@@ -681,7 +956,7 @@ fn compute_task(
                 .span()
                 .set_status(Status::error(err.to_string()));
             error!({ handle = handle, error = %err }, "Failed to decompress ct64");
-            return;
+            return Some(format!("failed to decompress ct64: {err}"));
         }
     };
 
@@ -714,50 +989,11 @@ fn compute_task(
 
             task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
 
-            // In GCS (green) dry-run mode uploads are suppressed: the ct128 is
-            // persisted to `ciphertexts128` + `ciphertext_digest` (with NULL
-            // digests) only. The backfill happens after cutover, when the
-            // resubmit loop drains those rows. Skipping the dispatch here avoids
-            // filling the bounded upload channel (and the resulting error-log
-            // spam) for the whole evaluation window.
-            if !uploads_enabled {
-                let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
-                if elapsed > 0.0 {
-                    SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
-                }
-                return;
-            }
-
-            // Start uploading the ciphertexts as soon as the ct128 is computed
-            //
-            // The service must continue running the squashed noise algorithm,
-            // regardless of the availability of the upload worker.
-            if let Err(err) = tx
-                .try_send(UploadJob::Normal(task.clone()))
-                .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
-            {
-                let send_task_span = tracing::error_span!("send_task");
-                let _send_task_enter = send_task_span.enter();
-                send_task_span
-                    .context()
-                    .span()
-                    .set_status(Status::error(err.to_string()));
-                // This could happen if either we are experiencing a burst of tasks
-                // or the upload worker cannot recover the connection to AWS S3
-                //
-                // In this case, we should log the error and rely on the retry mechanism.
-                //
-                // There are three levels of task buffering:
-                // 1. The spawned uploading tasks (size: conf.max_concurrent_uploads)
-                // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
-                // 3. The PostgresDB (size: unlimited)
-                error!({ action = "review", error = %err }, "Failed to send task to upload worker");
-            }
-
             let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
             if elapsed > 0.0 {
                 SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
             }
+            None
         }
         Err(err) => {
             squash_span
@@ -765,8 +1001,53 @@ fn compute_task(
                 .span()
                 .set_status(Status::error(err.to_string()));
             error!({ handle = handle, error = %err }, "Failed to convert ct");
+            Some(format!("failed to convert ciphertext: {err}"))
         }
+    }
+}
+
+fn check_ct128_write_above_settled(
+    task: &HandleItem,
+    settled_height: i64,
+) -> Result<Ct128WriteStatus, ExecutionError> {
+    if is_branchless_producer(&task.producer_block_hash) {
+        return Ok(Ct128WriteStatus::Allowed);
+    }
+    let Some(block_number) = task.block_number else {
+        return Err(ExecutionError::DbError(sqlx::Error::Protocol(format!(
+            "refusing branch ct128 write without block_number for handle {} producer_block_hash {}",
+            hex::encode(&task.handle),
+            hex::encode(&task.producer_block_hash),
+        ))));
     };
+    if block_number <= settled_height {
+        warn!(
+            handle = %hex::encode(&task.handle),
+            producer_block_hash = %hex::encode(&task.producer_block_hash),
+            block_number,
+            settled_height,
+            "Skipping settled branch ct128 write"
+        );
+        return Ok(Ct128WriteStatus::Settled);
+    }
+    Ok(Ct128WriteStatus::Allowed)
+}
+
+#[cfg(test)]
+fn ensure_ct128_write_above_settled(
+    task: &HandleItem,
+    settled_height: i64,
+) -> Result<(), ExecutionError> {
+    match check_ct128_write_above_settled(task, settled_height)? {
+        Ct128WriteStatus::Allowed => Ok(()),
+        Ct128WriteStatus::Settled => Err(ExecutionError::DbError(sqlx::Error::Protocol(format!(
+            "refusing settled branch ct128 write for handle {} producer_block_hash {} block {} <= settled_height {}",
+            hex::encode(&task.handle),
+            hex::encode(&task.producer_block_hash),
+            task.block_number.unwrap_or_default(),
+            settled_height,
+        )))),
+    }
 }
 
 /// Updates the database with the computed large ciphertexts.
@@ -777,20 +1058,49 @@ fn compute_task(
 async fn update_ciphertext128(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
-) -> Result<(), ExecutionError> {
+    failed_task_keys: &HashSet<SnsTaskKey>,
+) -> Result<HashSet<(Vec<u8>, Vec<u8>)>, ExecutionError> {
+    let mut settled_heights = std::collections::HashMap::<i64, i64>::new();
+    let mut skipped_settled_tasks = HashSet::new();
     for task in tasks {
+        if failed_task_keys.contains(&sns_task_key(task)) {
+            continue;
+        }
         if !task.ct128.is_empty() {
+            let host_chain_id = task.host_chain_id.as_i64();
+            let settled_height = if let Some(settled_height) = settled_heights.get(&host_chain_id) {
+                *settled_height
+            } else {
+                let settled_height = read_settled_height(db_txn, host_chain_id).await?;
+                settled_heights.insert(host_chain_id, settled_height);
+                settled_height
+            };
+            if check_ct128_write_above_settled(task, settled_height)? == Ct128WriteStatus::Settled {
+                skipped_settled_tasks
+                    .insert((task.handle.clone(), task.producer_block_hash.clone()));
+                continue;
+            }
+
             let ciphertext128 = task.ct128.bytes();
             let persist_span = tracing::info_span!("ciphertexts128_insert");
             let res = sqlx::query!(
-                "
-                INSERT INTO ciphertexts128 (
-                        handle,
-                        ciphertext
+                r#"
+                INSERT INTO ciphertexts128_branch (
+                    handle,
+                    producer_block_hash,
+                    block_number,
+                    ciphertext
                 )
-                VALUES ($1, $2)",
-                task.handle,
-                ciphertext128,
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (handle, producer_block_hash)
+                DO UPDATE SET
+                    ciphertext = EXCLUDED.ciphertext,
+                    block_number = COALESCE(ciphertexts128_branch.block_number, EXCLUDED.block_number)
+                "#,
+                &task.handle,
+                &task.producer_block_hash,
+                task.block_number,
+                &ciphertext128,
             )
             .execute(db_txn.as_mut())
             .instrument(persist_span.clone())
@@ -823,21 +1133,68 @@ async fn update_ciphertext128(
         }
     }
 
-    Ok(())
+    Ok(skipped_settled_tasks)
 }
 
 async fn update_computations_status(
     db_txn: &mut Transaction<'_, Postgres>,
     tasks: &[HandleItem],
+    failures: &[SnsTaskFailure],
+    failed_task_keys: &HashSet<SnsTaskKey>,
+    skipped_settled_tasks: &HashSet<(Vec<u8>, Vec<u8>)>,
 ) -> Result<(), ExecutionError> {
+    for failure in failures {
+        let (host_chain_id, handle, producer_block_hash, block_hash) = &failure.key;
+        sqlx::query!(
+            r#"
+            UPDATE pbs_computations_branch
+               SET is_error = TRUE,
+                   error_message = $5,
+                   error_at = NOW()
+             WHERE host_chain_id = $1
+               AND handle = $2
+               AND producer_block_hash = $3
+               AND block_hash = $4
+               AND is_completed = FALSE
+            "#,
+            *host_chain_id,
+            handle,
+            producer_block_hash,
+            block_hash,
+            &failure.error_message,
+        )
+        .execute(db_txn.as_mut())
+        .await?;
+    }
+
     for task in tasks {
+        if failed_task_keys.contains(&sns_task_key(task)) {
+            continue;
+        }
+        if skipped_settled_tasks
+            .contains(&(task.handle.to_vec(), task.producer_block_hash.to_vec()))
+        {
+            continue;
+        }
+
         if !task.ct128.is_empty() {
             sqlx::query!(
-                "
-                UPDATE pbs_computations
-                SET is_completed = TRUE, completed_at = NOW()
-                WHERE handle = $1;",
-                task.handle
+                r#"
+                UPDATE pbs_computations_branch
+                SET is_completed = TRUE,
+                    completed_at = NOW(),
+                    is_error = FALSE,
+                    error_message = NULL,
+                    error_at = NULL
+                WHERE host_chain_id = $1
+                  AND handle = $2
+                  AND producer_block_hash = $3
+                  AND block_hash = $4
+                "#,
+                task.host_chain_id.as_i64(),
+                &task.handle,
+                &task.producer_block_hash,
+                &task.block_hash,
             )
             .execute(db_txn.as_mut())
             .await?;
@@ -853,8 +1210,7 @@ async fn notify_ciphertext128_ready(
     db_txn: &mut Transaction<'_, Postgres>,
     db_channel: &str,
 ) -> Result<(), ExecutionError> {
-    sqlx::query("SELECT pg_notify($1, '')")
-        .bind(db_channel)
+    sqlx::query!("SELECT pg_notify($1, '')", db_channel)
         .execute(db_txn.as_mut())
         .await?;
     Ok(())
@@ -897,4 +1253,337 @@ fn decrypt_big_ct(
 async fn update_last_active(last_active_at: Arc<RwLock<SystemTime>>) {
     let mut value = last_active_at.write().await;
     *value = SystemTime::now();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
+
+    fn handle_item(producer_block_hash: Vec<u8>, block_number: Option<i64>) -> HandleItem {
+        handle_item_with_ct128(producer_block_hash, block_number, BigCiphertext::default())
+    }
+
+    fn handle_item_with_ct128(
+        producer_block_hash: Vec<u8>,
+        block_number: Option<i64>,
+        ct128: BigCiphertext,
+    ) -> HandleItem {
+        HandleItem {
+            host_chain_id: ChainId::try_from(12345_i64).unwrap(),
+            key_id_gw: vec![0x11; 32],
+            handle: vec![0x42; 32],
+            producer_block_hash,
+            block_hash: vec![0x24; 32],
+            block_number,
+            ct64_compressed: Arc::new(b"ct64".to_vec()),
+            ct128: Arc::new(ct128),
+            ct64_digest: None,
+            ct128_digest: None,
+            s3_format_version: None,
+            span: tracing::Span::none(),
+            transaction_id: None,
+        }
+    }
+
+    #[test]
+    fn write_guard_rejects_branch_ct128_at_or_below_settlement() {
+        let err = ensure_ct128_write_above_settled(&handle_item(vec![0xAA; 32], Some(10)), 10)
+            .expect_err("settled branch ct128 write should be rejected");
+
+        assert!(err
+            .to_string()
+            .contains("refusing settled branch ct128 write"));
+    }
+
+    #[test]
+    fn write_guard_rejects_branch_ct128_without_block_number() {
+        let err = ensure_ct128_write_above_settled(&handle_item(vec![0xAA; 32], None), 10)
+            .expect_err("branch ct128 write without block number should be rejected");
+
+        assert!(err
+            .to_string()
+            .contains("refusing branch ct128 write without block_number"));
+    }
+
+    #[test]
+    fn write_guard_allows_branchless_and_future_branch_ct128() {
+        ensure_ct128_write_above_settled(&handle_item(vec![], None), 10)
+            .expect("branchless rows are outside settlement");
+        ensure_ct128_write_above_settled(&handle_item(vec![0xAA; 32], Some(11)), 10)
+            .expect("future branch row should be accepted");
+    }
+
+    async fn setup_pool() -> (DBInstance, sqlx::PgPool) {
+        let test_instance = setup_test_db(ImportMode::None)
+            .await
+            .expect("valid db instance");
+
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(3)
+            .connect(test_instance.db_url())
+            .await
+            .expect("connect test db");
+
+        (test_instance, pool)
+    }
+
+    async fn set_settled_height(pool: &sqlx::PgPool, settled_height: i64) {
+        sqlx::query(
+            "INSERT INTO coprocessor_settlement (chain_id, settled_height)
+             VALUES ($1, $2)
+             ON CONFLICT (chain_id)
+             DO UPDATE SET settled_height = EXCLUDED.settled_height",
+        )
+        .bind(12345_i64)
+        .bind(settled_height)
+        .execute(pool)
+        .await
+        .expect("set settled height");
+    }
+
+    async fn count_ct128_rows(pool: &sqlx::PgPool) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128_branch WHERE handle = $1")
+            .bind(vec![0x42_u8; 32])
+            .fetch_one(pool)
+            .await
+            .expect("count ciphertexts128_branch rows")
+    }
+
+    async fn insert_sns_work_row(
+        pool: &sqlx::PgPool,
+        handle: &[u8],
+        producer_block_hash: &[u8],
+        block_hash: &[u8],
+        block_number: i64,
+    ) {
+        sqlx::query(
+            "INSERT INTO pbs_computations_branch(
+                handle, host_chain_id, block_number, producer_block_hash, block_hash
+             )
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(handle)
+        .bind(12345_i64)
+        .bind(block_number)
+        .bind(producer_block_hash)
+        .bind(block_hash)
+        .execute(pool)
+        .await
+        .expect("insert pbs branch work");
+
+        sqlx::query(
+            "INSERT INTO ciphertexts_branch(
+                handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type
+             )
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(handle)
+        .bind(producer_block_hash)
+        .bind(block_number)
+        .bind(vec![0x99_u8; 32])
+        .bind(current_ciphertext_version())
+        .bind(0_i16)
+        .execute(pool)
+        .await
+        .expect("insert ct64 branch row");
+    }
+
+    fn computed_handle_item(producer_block_hash: Vec<u8>, block_number: Option<i64>) -> HandleItem {
+        handle_item_with_ct128(
+            producer_block_hash,
+            block_number,
+            BigCiphertext::new(vec![0xCA, 0xFE], Ciphertext128Format::CompressedOnCpu),
+        )
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn query_sns_tasks_excludes_settled_branchful_rows() {
+        let (_test_instance, pool) = setup_pool().await;
+        set_settled_height(&pool, 10).await;
+        let settled_handle = vec![0x51; 32];
+        let future_handle = vec![0x52; 32];
+        let settled_producer = vec![0xA1; 32];
+        let future_producer = vec![0xA2; 32];
+        insert_sns_work_row(&pool, &settled_handle, &settled_producer, &[0xB1; 32], 10).await;
+        insert_sns_work_row(&pool, &future_handle, &future_producer, &[0xB2; 32], 11).await;
+
+        let mut tx = pool.begin().await.expect("begin transaction");
+        let tasks = query_sns_tasks(&mut tx, 10, 0, Order::Asc, &vec![0x11; 32])
+            .await
+            .expect("query sns tasks")
+            .expect("future task should remain selectable");
+        tx.rollback().await.expect("rollback transaction");
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].handle, future_handle);
+        assert_eq!(tasks[0].producer_block_hash, future_producer);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn query_sns_tasks_excludes_orphaned_branchful_rows() {
+        let (_test_instance, pool) = setup_pool().await;
+        let orphaned_handle = vec![0x61; 32];
+        let live_handle = vec![0x62; 32];
+        let orphaned_producer = vec![0xC1; 32];
+        let orphaned_event = vec![0xD1; 32];
+        let live_producer = vec![0xC2; 32];
+        let live_event = vec![0xD2; 32];
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid(chain_id, block_hash, parent_hash, block_number, block_status)
+             VALUES
+                (12345, $1::BYTEA, NULL, 10, 'orphaned'),
+                (12345, $2::BYTEA, NULL, 10, 'orphaned'),
+                (12345, $3::BYTEA, NULL, 11, 'pending'),
+                (12345, $4::BYTEA, $3::BYTEA, 11, 'pending')",
+        )
+        .bind(&orphaned_producer)
+        .bind(&orphaned_event)
+        .bind(&live_producer)
+        .bind(&live_event)
+        .execute(&pool)
+        .await
+        .expect("insert block statuses");
+        insert_sns_work_row(
+            &pool,
+            &orphaned_handle,
+            &orphaned_producer,
+            &orphaned_event,
+            10,
+        )
+        .await;
+        insert_sns_work_row(&pool, &live_handle, &live_producer, &live_event, 11).await;
+
+        let mut tx = pool.begin().await.expect("begin transaction");
+        let tasks = query_sns_tasks(&mut tx, 10, 0, Order::Asc, &vec![0x11; 32])
+            .await
+            .expect("query sns tasks")
+            .expect("live task should remain selectable");
+        tx.rollback().await.expect("rollback transaction");
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].handle, live_handle);
+        assert_eq!(tasks[0].producer_block_hash, live_producer);
+        assert_eq!(tasks[0].block_hash, live_event);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn update_ciphertext128_skips_settled_branch_write_path() {
+        let (_test_instance, pool) = setup_pool().await;
+        set_settled_height(&pool, 10).await;
+        let task = computed_handle_item(vec![0xAA; 32], Some(10));
+
+        let mut tx = pool.begin().await.expect("begin transaction");
+        let skipped = update_ciphertext128(&mut tx, &[task], &HashSet::new())
+            .await
+            .expect("settled branch ct128 write should be skipped");
+        tx.commit().await.expect("commit transaction");
+
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(count_ct128_rows(&pool).await, 0);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn update_computations_status_leaves_settled_skipped_branch_incomplete() {
+        let (_test_instance, pool) = setup_pool().await;
+        let task = computed_handle_item(vec![0xAA; 32], Some(10));
+        insert_sns_work_row(
+            &pool,
+            &task.handle,
+            &task.producer_block_hash,
+            &task.block_hash,
+            10,
+        )
+        .await;
+        let skipped = HashSet::from([(task.handle.to_vec(), task.producer_block_hash.to_vec())]);
+
+        let mut tx = pool.begin().await.expect("begin transaction");
+        update_computations_status(&mut tx, &[task], &[], &HashSet::new(), &skipped)
+            .await
+            .expect("update computation status");
+        tx.commit().await.expect("commit transaction");
+
+        let completed = sqlx::query_scalar!(
+            r#"
+            SELECT COUNT(*) AS "count!"
+             FROM pbs_computations_branch
+             WHERE handle = $1 AND producer_block_hash = $2 AND is_completed = TRUE
+            "#,
+            vec![0x42_u8; 32],
+            vec![0xAA_u8; 32],
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count completed pbs rows");
+        assert_eq!(completed, 0);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn update_computations_status_marks_sns_failure_terminal() {
+        let (_test_instance, pool) = setup_pool().await;
+        let task = handle_item(vec![0xAA; 32], Some(11));
+        insert_sns_work_row(
+            &pool,
+            &task.handle,
+            &task.producer_block_hash,
+            &task.block_hash,
+            11,
+        )
+        .await;
+        let failure = SnsTaskFailure::from_task(&task, "deterministic conversion failure".into());
+        let failed_keys = HashSet::from([failure.key.clone()]);
+
+        let mut tx = pool.begin().await.expect("begin transaction");
+        update_computations_status(&mut tx, &[task], &[failure], &failed_keys, &HashSet::new())
+            .await
+            .expect("persist terminal SNS error");
+        tx.commit().await.expect("commit transaction");
+
+        let row = sqlx::query!(
+            r#"
+            SELECT is_completed AS "is_completed!",
+                   is_error AS "is_error!",
+                   error_message,
+                   error_at
+              FROM pbs_computations_branch
+             WHERE handle = $1 AND producer_block_hash = $2
+            "#,
+            vec![0x42_u8; 32],
+            vec![0xAA_u8; 32],
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch PBS error state");
+
+        assert!(!row.is_completed);
+        assert!(row.is_error);
+        assert_eq!(
+            row.error_message.as_deref(),
+            Some("deterministic conversion failure")
+        );
+        assert!(row.error_at.is_some());
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn update_ciphertext128_allows_future_branch_write_path() {
+        let (_test_instance, pool) = setup_pool().await;
+        set_settled_height(&pool, 10).await;
+        let task = computed_handle_item(vec![0xAA; 32], Some(11));
+
+        let mut tx = pool.begin().await.expect("begin transaction");
+        let skipped = update_ciphertext128(&mut tx, &[task], &HashSet::new())
+            .await
+            .expect("future branch ct128 write should be accepted");
+        tx.commit().await.expect("commit transaction");
+
+        assert!(skipped.is_empty());
+        assert_eq!(count_ct128_rows(&pool).await, 1);
+    }
 }
