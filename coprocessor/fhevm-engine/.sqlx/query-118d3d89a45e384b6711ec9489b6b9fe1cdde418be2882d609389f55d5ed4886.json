@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    WITH stale_updates AS (\n                        SELECT *\n                        FROM unnest($1::BYTEA[], $2::BYTEA[], $3::BYTEA[])\n                            AS t(output_handle, transaction_id, producer_block_hash)\n                    )\n                    UPDATE computations_branch\n                    SET is_error = TRUE,\n                        error_message = 'settled branch work skipped by ciphertext write guard'\n                    FROM stale_updates s\n                    WHERE computations_branch.output_handle = s.output_handle\n                      AND computations_branch.transaction_id = s.transaction_id\n                      AND computations_branch.producer_block_hash = s.producer_block_hash\n                      AND computations_branch.is_completed = FALSE\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "ByteaArray",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "118d3d89a45e384b6711ec9489b6b9fe1cdde418be2882d609389f55d5ed4886"
+}

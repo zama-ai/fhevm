@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO pbs_computations (\n                        handle,\n                        transaction_id,\n                        host_chain_id,\n                        block_number\n                    )\n                    SELECT input.handle, $2, $3, $4\n                    FROM UNNEST($1::BYTEA[]) AS input(handle)\n                    ON CONFLICT DO NOTHING\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Bytea",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d1de944035f20f3403a4e259d1f1b814ac56148fea5964e7da5e8c0622dcc3fb"
+}

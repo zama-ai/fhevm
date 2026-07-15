@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO branch_cleanup_jobs(\n            chain_id,\n            finalized_block_hash,\n            finalized_block_number,\n            orphaned_block_hashes,\n            status,\n            attempts,\n            locked_at,\n            last_error\n         )\n         VALUES ($1, $2, 1, $3, 'pending', 10, NOW(), NULL)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f07754fad2ef53ea98bc6717d5607b48fc5b044b274fdab0e8357544a07087a"
+}

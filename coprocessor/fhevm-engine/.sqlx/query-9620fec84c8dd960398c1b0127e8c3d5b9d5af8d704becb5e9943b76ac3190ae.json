@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT req.handle AS \"handle!\",\n               req.producer_block_hash AS \"producer_block_hash!\",\n               (ARRAY_AGG(c.transaction_id ORDER BY c.transaction_id))[1] AS \"canonical_transaction_id!\",\n               (ARRAY_AGG(c.error_root_output_handle ORDER BY c.transaction_id))[1] AS \"root_output_handle?\",\n               (ARRAY_AGG(c.error_root_transaction_id ORDER BY c.transaction_id))[1] AS \"root_transaction_id?\",\n               (ARRAY_AGG(c.error_root_producer_block_hash ORDER BY c.transaction_id))[1] AS \"root_producer_block_hash?\"\n        FROM UNNEST($1::BYTEA[], $2::BYTEA[]) AS req(handle, producer_block_hash)\n        JOIN computations_branch c\n          ON c.host_chain_id = $3\n         AND c.output_handle = req.handle\n         AND c.producer_block_hash = req.producer_block_hash\n        GROUP BY req.handle, req.producer_block_hash\n        HAVING BOOL_AND(c.is_error)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "producer_block_hash!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "canonical_transaction_id!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "root_output_handle?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "root_transaction_id?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "root_producer_block_hash?",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "ByteaArray",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "9620fec84c8dd960398c1b0127e8c3d5b9d5af8d704becb5e9943b76ac3190ae"
+}

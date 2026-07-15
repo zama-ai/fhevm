@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE dependence_chain AS dc\n                SET\n                lock_expires_at = NOW() + make_interval(secs => $3)\n            WHERE dependence_chain_id = ANY($1) AND worker_id = $2\n            RETURNING dc.lock_expires_at::timestamptz AS \"lock_expires_at: chrono::DateTime<Utc>\";\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "lock_expires_at: chrono::DateTime<Utc>",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "88e3a2f29af5c4943601264e74fa72707963bcd6b270b5f4d3b063f01e2c5be1"
+}

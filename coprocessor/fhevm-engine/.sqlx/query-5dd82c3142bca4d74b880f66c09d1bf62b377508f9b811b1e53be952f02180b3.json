@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            a.handle AS \"handle!\",\n            a.producer_block_hash AS \"producer_block_hash!\",\n            CASE\n                WHEN a.producer_block_hash = ''::BYTEA THEN a.block_number\n                ELSE producer.block_number\n            END AS block_number\n        FROM allowed_handles_branch a\n        LEFT JOIN host_chain_blocks_valid producer\n          ON producer.chain_id = a.host_chain_id\n         AND producer.block_hash = a.producer_block_hash\n        WHERE (a.host_chain_id = $2 OR a.host_chain_id IS NULL)\n        AND a.handle = ANY($1::BYTEA[])\n        UNION ALL\n        SELECT\n            a.handle AS \"handle!\",\n            ''::BYTEA AS \"producer_block_hash!\",\n            a.block_number\n        FROM allowed_handles a\n        WHERE (a.host_chain_id = $2 OR a.host_chain_id IS NULL)\n        AND a.handle = ANY($1::BYTEA[])\n        AND NOT EXISTS (\n            SELECT 1\n            FROM allowed_handles_branch b\n            WHERE b.host_chain_id = a.host_chain_id\n              AND b.handle = a.handle\n              AND b.account_address = a.account_address\n              AND b.event_type = a.event_type\n        )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "producer_block_hash!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_number",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "5dd82c3142bca4d74b880f66c09d1bf62b377508f9b811b1e53be952f02180b3"
+}

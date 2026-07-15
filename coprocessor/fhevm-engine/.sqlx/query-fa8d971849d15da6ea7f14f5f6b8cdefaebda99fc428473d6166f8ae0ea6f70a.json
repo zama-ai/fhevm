@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO allowed_handles_branch(handle, account_address, event_type)\n                 SELECT * FROM UNNEST($1::BYTEA[], $2::TEXT[], $3::SMALLINT[])\n                 ON CONFLICT DO NOTHING;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "TextArray",
+        "Int2Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fa8d971849d15da6ea7f14f5f6b8cdefaebda99fc428473d6166f8ae0ea6f70a"
+}

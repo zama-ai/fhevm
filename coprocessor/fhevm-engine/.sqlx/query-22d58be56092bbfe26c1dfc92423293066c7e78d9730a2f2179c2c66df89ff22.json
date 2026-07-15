@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SAVEPOINT savepoint_upload_ciphertexts_task",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "22d58be56092bbfe26c1dfc92423293066c7e78d9730a2f2179c2c66df89ff22"
+}

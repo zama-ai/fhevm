@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH selected AS (\n                SELECT chain_id, finalized_block_hash\n                  FROM branch_cleanup_jobs\n                 WHERE chain_id = $1\n                   AND status = 'pending'\n                   AND (\n                        locked_at IS NULL\n                        OR locked_at < NOW() - INTERVAL '5 minutes'\n                   )\n                 ORDER BY finalized_block_number ASC, updated_at ASC\n                 FOR UPDATE SKIP LOCKED\n                 LIMIT 1\n            )\n            UPDATE branch_cleanup_jobs j\n               SET locked_at = NOW(),\n                   attempts = attempts + 1,\n                   updated_at = NOW()\n              FROM selected s\n             WHERE j.chain_id = s.chain_id\n               AND j.finalized_block_hash = s.finalized_block_hash\n             RETURNING\n                j.finalized_block_hash AS \"finalized_block_hash!\",\n                j.orphaned_block_hashes AS \"orphaned_block_hashes!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "finalized_block_hash!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "orphaned_block_hashes!",
+        "type_info": "ByteaArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9cc29bb56ca382db24d85c663100ac1b095dd0a9772428b08ac35713ba19ccea"
+}
