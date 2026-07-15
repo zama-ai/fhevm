@@ -145,6 +145,7 @@ jobs:
         gw-listener:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/gw-listener/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
 
   check-changes-host-listener:
@@ -161,6 +162,7 @@ jobs:
         host-listener:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/host-listener/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/contracts/*Events.sol
           - host-contracts/contracts/shared/**
@@ -179,6 +181,7 @@ jobs:
         sns-worker:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/sns-worker/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
 
   check-changes-tfhe-worker:
@@ -195,6 +198,7 @@ jobs:
         tfhe-worker:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/tfhe-worker/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
 
   check-changes-tx-sender:
@@ -211,6 +215,7 @@ jobs:
         tx-sender:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/transaction-sender/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
 
   check-changes-zkproof-worker:
@@ -227,6 +232,7 @@ jobs:
         zkproof-worker:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/zkproof-worker/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
 
   check-changes-consensus-detector:
@@ -243,6 +249,7 @@ jobs:
         consensus-detector:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/consensus-detector/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
 
   check-changes-upgrade-controller:
@@ -259,6 +266,7 @@ jobs:
         upgrade-controller:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/upgrade-controller/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
 
   ########################################################################
