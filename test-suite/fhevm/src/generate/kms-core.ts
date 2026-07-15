@@ -63,6 +63,8 @@ export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
 
 /** The single cluster-shared threshold config filename (mounted into every core). */
 export const KMS_THRESHOLD_CONFIG_NAME = "kms-core-threshold.toml";
+export const kmsThresholdGenKeysConfigName = (partyId: number): string =>
+  `kms-gen-keys-threshold-${partyId}.toml`;
 /** Marker in the checked-in template where the per-cluster peer roster is injected. */
 export const THRESHOLD_PEERS_MARKER = "# __THRESHOLD_PEERS__";
 
@@ -84,6 +86,28 @@ export const renderThresholdCoreConfig = (templateText: string, topology: Resolv
   }
   return templateText.replace(THRESHOLD_PEERS_MARKER, renderThresholdPeers(topology));
 };
+
+export const renderThresholdGenKeysConfig = (partyId: number, opts: KmsRenderOptions): string => `[keygen]
+overwrite = false
+show_existing = false
+
+[aws]
+region = "${opts.s3Region}"
+s3_endpoint = "${opts.s3Endpoint}"
+
+[public_vault.storage.s3]
+bucket = "${opts.s3Bucket}"
+prefix = "${kmsPublicPrefix(partyId)}"
+
+[private_vault.storage.s3]
+bucket = "${opts.s3Bucket}"
+prefix = "${kmsPrivatePrefix(partyId)}"
+
+[threshold]
+my_id = ${partyId}
+tls_subject = "${kmsCoreName(partyId)}"
+tls_wildcard = true
+`;
 
 /**
  * Per-party `KMS_CORE__*` overrides for the shared template's placeholders. The `__`
@@ -114,35 +138,38 @@ export const thresholdCoreEnv = (
 });
 
 /** Shell for the signing-key setup container, one invocation per party (unrolled in TS rather
- * than a shell loop, so prefixes come from kms-party.ts and no `$$` compose-interpolation
- * escaping is needed). Generates ONLY each party's signing key + self-signed CA cert into S3,
+ * than a shell loop, so prefixes come from kms-party.ts). Generates ONLY each party's signing
+ * key + self-signed CA cert into S3,
  * mirroring the KMS reference threshold compose. The FHE key shares and CRS are NOT pre-generated
  * here; they come from the real on-chain DKG (keygen/crsgen). `--num-parties` must match the
  * cluster size (the CLI rejects a signing-key-party-id greater than num-parties; it also defaults
  * to 4). The `--tls-*` flags shape the generated cert material — CN = the core name — which the
  * KMS context wiring surfaces as each node's caCert / mpcIdentity.
  *
- * The kms-gen-keys CLI differs across core images: older ones scope to signing keys with a
- * `--cmd signing-keys` selector (their `--cmd` default is `all`, which would also generate FHE
- * keys centrally), while newer ones dropped it and have the `threshold` subcommand emit the
- * signing keys + CA certs directly. Probe `--help` once and inject the selector only when the
- * image still understands it, so a pinned old or new CORE_VERSION both boot. AWS creds come from
- * the container env. */
+ * The kms-gen-keys CLI differs across core images. Argument-based versions use the `threshold`
+ * subcommand and some require `--cmd signing-keys` to avoid generating FHE keys centrally. Newer
+ * versions accept only `--config-file`. Probe `--help` so both pinned formats boot. AWS creds come
+ * from the container env. */
 const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =>
   [
     "set -e",
     `echo "=== generating signing keys for ${topology.parties} parties ==="`,
-    // Probe per-image: old cores need `--cmd signing-keys` + `--num-parties`; newer cores dropped both.
-    `if kms-gen-keys --help 2>&1 | grep -q -- '--cmd'; then CMD="--cmd signing-keys"; else CMD=""; fi`,
-    `if kms-gen-keys threshold --help 2>&1 | grep -q -- '--num-parties'; then NP="--num-parties ${topology.parties}"; else NP=""; fi`,
+    `if kms-gen-keys --help 2>&1 | grep -q -- '--public-storage'; then`,
+    `  if kms-gen-keys --help 2>&1 | grep -q -- '--cmd'; then CMD="--cmd signing-keys"; else CMD=""; fi`,
+    `  if kms-gen-keys threshold --help 2>&1 | grep -q -- '--num-parties'; then NP="--num-parties ${topology.parties}"; else NP=""; fi`,
     ...kmsPartyIds(topology.parties).map(
-      (party) => `kms-gen-keys --aws-region ${opts.s3Region} \\
+      (party) => `  kms-gen-keys --aws-region ${opts.s3Region} \\
   --public-storage s3 --public-s3-bucket ${opts.s3Bucket} --public-s3-prefix ${kmsPublicPrefix(party)} \\
   --aws-s3-endpoint ${opts.s3Endpoint} \\
   --private-storage s3 --private-s3-bucket ${opts.s3Bucket} --private-s3-prefix ${kmsPrivatePrefix(party)} \\
-  $CMD \\
-  threshold --signing-key-party-id ${party} --tls-subject ${kmsCoreName(party)} --tls-wildcard $NP`,
+  $$CMD \\
+  threshold --signing-key-party-id ${party} --tls-subject ${kmsCoreName(party)} --tls-wildcard $$NP`,
     ),
+    "else",
+    ...kmsPartyIds(topology.parties).map(
+      (party) => `  kms-gen-keys --config-file config/${kmsThresholdGenKeysConfigName(party)}`,
+    ),
+    "fi",
   ].join("\n");
 
 /**
@@ -165,6 +192,10 @@ export const buildKmsThresholdOverride = (
     image: opts.coreImage,
     entrypoint: ["/bin/sh", "-c", genKeysCommand(topology, opts)],
     environment: { AWS_ACCESS_KEY_ID: opts.s3AccessKey, AWS_SECRET_ACCESS_KEY: opts.s3SecretKey },
+    volumes: kmsPartyIds(topology.parties).map((partyId) => {
+      const name = kmsThresholdGenKeysConfigName(partyId);
+      return `${path.join(GENERATED_CONFIG_DIR, name)}:/app/kms/core/service/config/${name}`;
+    }),
   };
 
   const sharedConfigMount = `${path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME)}:/app/kms/core/service/config/${KMS_THRESHOLD_CONFIG_NAME}`;

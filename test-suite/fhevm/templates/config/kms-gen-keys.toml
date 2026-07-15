@@ -1,0 +1,14 @@
+[keygen]
+overwrite = false
+show_existing = false
+
+[aws]
+region = "eu-west-1"
+s3_endpoint = "http://minio:9000"
+
+[public_vault.storage.s3]
+bucket = "kms-public"
+prefix = "PUB"
+
+[private_vault.storage.file]
+path = "./keys"

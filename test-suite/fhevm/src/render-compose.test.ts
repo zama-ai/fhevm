@@ -137,11 +137,15 @@ describe("render-compose", () => {
     });
   });
 
-  test("persists kms-core private vault across container recreates", async () => {
+  test("persists kms-core private vault and supplies both keygen CLI formats", async () => {
     const doc = await loadMergedComposeDoc("core");
     const volumes = doc.services["kms-core"]?.volumes as string[] | undefined;
+    const entrypoint = JSON.stringify(doc.services["kms-core"]?.entrypoint);
     expect(doc.services["kms-core"]?.user).toBe("root");
     expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
+    expect(volumes?.some((mount) => mount.endsWith("config/kms-gen-keys.toml"))).toBe(true);
+    expect(entrypoint).toContain("--public-storage");
+    expect(entrypoint).toContain("--config-file config/kms-gen-keys.toml");
   });
 
   test("renders listener-core local override for the publisher only", async () => {
