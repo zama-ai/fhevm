@@ -74,6 +74,11 @@ SET last_caught_up_block = <target_block>, updated_at = NOW()
 WHERE chain_id = <chain_id>;
 ```
 
+Wave2 branch-context deployments must also run a finalizing host-listener path
+for the same chain. Consumer-only ingestion is fail-safe, but it does not
+advance `coprocessor_settlement.settled_height`; without a settling finalizer,
+branch tables and S3 repair queues will grow without draining.
+
 ### Dependent ops throttling (optional)
 
 `--dependent-ops-max-per-chain` enables slow-lane assignment (`0` disables).

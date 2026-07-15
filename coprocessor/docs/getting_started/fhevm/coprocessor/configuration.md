@@ -15,8 +15,6 @@ Options:
           Run the background worker
       --generate-fhe-keys
           Generate fhe keys and exit
-      --work-items-batch-size <WORK_ITEMS_BATCH_SIZE>
-          Work items batch size [default: 10]
       --tenant-key-cache-size <TENANT_KEY_CACHE_SIZE>
           Tenant key cache size [default: 32]
       --coprocessor-fhe-threads <COPROCESSOR_FHE_THREADS>
