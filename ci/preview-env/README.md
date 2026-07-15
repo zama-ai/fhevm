@@ -28,12 +28,12 @@ ci/preview-env/
 │   └── values-coprocessor-infra-e2e.yaml # crossplane/coprocessor-infra overlay: real RDS + S3
 ├── host-chain/
 │   ├── values-anvil-host-e2e.yaml       # anvil-node overlay, host chain
-│   └── values-host-contracts-e2e.yaml   # contracts overlay, host-contracts
+│   ├── values-host-contracts-e2e.yaml   # contracts overlay, host-contracts
+│   └── values-host-trigger-keygen-e2e.yaml # contracts overlay, real FHE key/CRS gen ceremony
 ├── gateway-chain/
 │   ├── values-anvil-gateway-e2e.yaml         # anvil-node overlay, gateway chain
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
-│   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
-│   └── values-gateway-trigger-keygen-e2e.yaml  # contracts overlay, real FHE key/CRS gen ceremony
+│   └── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
 ├── coprocessor/
 │   └── values-coprocessor-e2e.yaml      # coprocessor overlay
 ├── kms-connector/

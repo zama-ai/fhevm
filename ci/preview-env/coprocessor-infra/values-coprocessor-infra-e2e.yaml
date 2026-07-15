@@ -13,14 +13,18 @@
 # see templates/_helpers.tpl's "coprocessor-db.fullname" / "coprocessor-
 # bucket.fullname"):
 #   - DB connection Secret: coprocessor-infra-coprocessor-db
-#     (TODO: confirm exact secret keys against the live cluster - assumed
-#     endpoint/port/username/password, the usual crossplane-aws convention)
+#     (confirmed against the live cluster's underlying rds.aws.upbound.io
+#     Instance/AWSRelationalDatabase composition: endpoint/port/username/
+#     password/host/address keys)
 #   - S3 bucket ConfigMap:  coprocessor (S3_ENDPOINT / S3_URI_KEY keys)
 #
-# A single shared logical database ("fhevm_e2e") is used across
-# coprocessor, kms-connector and relayer-migrate in this ephemeral
-# namespace - each app owns its own tables/schema, so there's no need for
-# three separate RDS instances just for a throwaway preview environment.
+# A single shared logical database ("fhevm_e2e") is used across coprocessor
+# and relayer-migrate in this ephemeral namespace - each app owns its own
+# tables/schema, so there's no need for a separate RDS instance per app just
+# for a throwaway preview environment. kms-connector does NOT share this
+# instance - it gets its own dedicated RDS via kms's own tkms-infra chart
+# (see pr-preview-deploy.yml's "Enable dedicated kms-connector database"
+# step), mirroring zama-zws/gitops's tkms-infra/values-zws-dev.yaml.
 region: eu-west-1
 environment: fhevm-ci
 
@@ -44,7 +48,12 @@ coprocessorDatabase:
   backupRetentionPeriod: 0
   instanceClass: "db.t3.micro"
   engine: postgres
-  engineVersion: "17.2"
+  # 17.2 is no longer offered by RDS for new instances in this account/region
+  # ("Cannot find version 17.2 for postgres" from CreateDBInstance) - confirmed
+  # live against zama-zws/gitops's own newer envs (coproc-infra-test,
+  # relayer-infra-v2) which had to move to 17.9. Get the current default with:
+  # `aws rds describe-db-engine-versions --default-only --engine postgres`
+  engineVersion: "17.9"
   parameterGroupFamily: postgres17
   dbName: fhevm_e2e
   deletionProtection: false

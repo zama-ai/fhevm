@@ -317,6 +317,55 @@ jobs:
             echo "PCR2=$(docker inspect "${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}" | jq -r '.[0].Config.Labels["zama.kms.eif_pcr2"]')"
           } >> "$GITHUB_ENV"
 
+      - name: Enable dedicated kms-connector database (tkms-infra)
+        # kms's own thresholdWithEnclave/tkms-infra/values-kms-ci.yaml ships with
+        # kmsParties.connectorDatabase.enabled: false - there's no real RDS
+        # instance for kms-connector out of the box on this path. Patch it in
+        # here (instead of forking kms's own file) so kms-connector gets a
+        # real, dedicated Postgres instance from the same tkms-infra chart/
+        # Crossplane pipeline that already provisions the KMS parties' S3
+        # vaults - mirroring zama-zws/gitops's tkms-infra/values-zws-dev.yaml
+        # (kms-dev/kms-testnet's own kms-connector database).
+        #
+        # NOTE: connectorDatabase is templated *inside* tkms-infra's per-party
+        # loop (charts/tkms-infra/templates/kms-parties.yaml), so this
+        # provisions one small (db.t3.micro) instance per party (4 here,
+        # connection secrets "connector-database-1".."connector-database-4")
+        # - wasteful for our single kms-connector release, which only ever
+        # reads party 1's ("connector-database-1"), but the chart has no
+        # per-release toggle and each instance is destroyed with the namespace
+        # within hours, so the extra cost is negligible.
+        working-directory: .kms-deploy
+        run: |
+          values_file="ci/pr-preview/thresholdWithEnclave/tkms-infra/values-kms-ci.yaml"
+          yq -i '
+            .kmsParties.connectorDatabase.enabled = true |
+            .kmsParties.connectorDatabase.deletionPolicy = "Delete" |
+            .kmsParties.connectorDatabase.allocatedStorage = 20 |
+            .kmsParties.connectorDatabase.maxAllocatedStorage = 50 |
+            .kmsParties.connectorDatabase.backupRetentionPeriod = 0 |
+            .kmsParties.connectorDatabase.blueGreenUpdate.enabled = false |
+            .kmsParties.connectorDatabase.dbName = "connector" |
+            .kmsParties.connectorDatabase.deletionProtection = false |
+            .kmsParties.connectorDatabase.engine = "postgres" |
+            .kmsParties.connectorDatabase.engineVersion = "17.9" |
+            .kmsParties.connectorDatabase.parameterGroupFamily = "postgres17" |
+            .kmsParties.connectorDatabase.parameters = [{"name": "rds.force_ssl", "value": "0"}] |
+            .kmsParties.connectorDatabase.instanceClass = "db.t3.micro" |
+            .kmsParties.connectorDatabase.username = "zama" |
+            .kmsParties.connectorDatabase.monitoringInterval = 0 |
+            .kmsParties.connectorDatabase.performanceInsightsEnabled = false |
+            .kmsParties.connectorDatabase.multiAz = false |
+            .kmsParties.connectorDatabase.subnetCidrBlock = "172.31.0.0/16" |
+            .kmsParties.connectorDatabase.storageType = "gp3" |
+            .kmsParties.connectorDatabase.finalSnapshotEnabled = false |
+            .kmsParties.connectorDatabase.publiclyAccessible = false |
+            .kmsParties.connectorDatabase.storageEncrypted = false |
+            .kmsParties.connectorDatabase.connectionSecret.name = "connector-database" |
+            .kmsParties.connectorDatabase.service.create = true |
+            .kmsParties.connectorDatabase.service.name = "connector-database"
+          ' "${values_file}"
+
       - name: Deploy dedicated KMS (kms's own ci/scripts/deploy.sh)
         working-directory: .kms-deploy
         env:
@@ -335,6 +384,31 @@ jobs:
             --tag "${KMS_CORE_TAG}" \
             --num-parties 4 \
             --pcr0 "${PCR0}" --pcr1 "${PCR1}" --pcr2 "${PCR2}"
+
+      - name: Wait for kms-connector database to reconcile
+        # deploy.sh's own wait_tkms_infra_ready only polls S3 buckets/Kmsparties,
+        # not the AWSRelationalDatabase we just turned on above - it predates
+        # connectorDatabase and has no idea it now exists. coprocessor-infra
+        # (the only other AWSRelationalDatabase user in this namespace) isn't
+        # deployed until much later, so this can only be seeing our own 4.
+        run: |
+          max_wait=420; elapsed=0; interval=10
+          ready=false
+          while [[ $elapsed -lt $max_wait ]]; do
+            if kubectl get awsrelationaldatabase -n "${NAMESPACE}" \
+                -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null \
+                | grep -qv True; then
+              echo "Still waiting for kms-connector database... (${elapsed}s/${max_wait}s)"
+              sleep "$interval"; elapsed=$((elapsed + interval)); continue
+            fi
+            ready=true; echo "kms-connector database ready"; break
+          done
+          kubectl get awsrelationaldatabase -n "${NAMESPACE}" -o wide || true
+          if [[ "${ready}" != "true" ]]; then
+            echo "::error::kms-connector database not Ready after ${max_wait}s - see conditions/events above (or below via kubectl describe)"
+            kubectl describe awsrelationaldatabase -n "${NAMESPACE}" || true
+            exit 1
+          fi
 
       - name: Discover KMS party signer addresses (S3 public vault)
         id: kms-identity
@@ -458,7 +532,8 @@ jobs:
 
       - name: Wait for coprocessor-infra to reconcile
         run: |
-          max_wait=300; elapsed=0; interval=10
+          max_wait=420; elapsed=0; interval=10
+          ready=false
           while [[ $elapsed -lt $max_wait ]]; do
             if kubectl get s3,awsrelationaldatabase -n "${NAMESPACE}" \
                 -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null \
@@ -466,9 +541,14 @@ jobs:
               echo "Still waiting for coprocessor-infra resources... (${elapsed}s/${max_wait}s)"
               sleep "$interval"; elapsed=$((elapsed + interval)); continue
             fi
-            echo "coprocessor-infra resources ready"; break
+            ready=true; echo "coprocessor-infra resources ready"; break
           done
           kubectl get s3,awsrelationaldatabase -n "${NAMESPACE}" -o wide || true
+          if [[ "${ready}" != "true" ]]; then
+            echo "::error::coprocessor-infra resources not Ready after ${max_wait}s - see conditions/events above (or below via kubectl describe)"
+            kubectl describe s3,awsrelationaldatabase -n "${NAMESPACE}" || true
+            exit 1
+          fi
 
       ######################################################################
       # COPROCESSOR + KMS-CONNECTOR: real contract addresses (via
@@ -477,12 +557,21 @@ jobs:
       ######################################################################
       - name: Deploy coprocessor
         run: |
-          # TODO: confirm the exact key names inside the crossplane-managed
-          # coprocessor-infra-coprocessor-db connection secret (assumed
-          # endpoint/port/username/password below) against the live cluster.
+          # Confirmed against the live cluster: the crossplane-managed
+          # coprocessor-infra-coprocessor-db connection secret carries
+          # endpoint/port/username/password/host/address keys (the usual
+          # rds.aws.upbound.io Instance writeConnectionSecretToRef convention).
+          # Default AFTER decoding (not before) - defaulting the *encoded* jq
+          # output to a plaintext fallback and piping that through `base64 -d`
+          # corrupts it into garbage bytes instead of a clean "5432".
           db_secret_json=$(kubectl get secret coprocessor-infra-coprocessor-db -n "${NAMESPACE}" -o json)
-          db_endpoint=$(echo "$db_secret_json" | jq -r '.data.endpoint // empty' | base64 -d)
-          db_port=$(echo "$db_secret_json" | jq -r '.data.port // "5432"' | base64 -d)
+          db_endpoint=$(echo "$db_secret_json" | jq -r '.data.endpoint // empty' | base64 -d 2>/dev/null || true)
+          db_port=$(echo "$db_secret_json" | jq -r '.data.port // empty' | base64 -d 2>/dev/null || true)
+          db_port="${db_port:-5432}"
+          if [[ -z "${db_endpoint}" ]]; then
+            echo "::error::coprocessor-infra-coprocessor-db has no 'endpoint' key - coprocessor-infra's RDS instance likely isn't Ready yet (see 'Wait for coprocessor-infra to reconcile' above)"
+            exit 1
+          fi
           helm upgrade --install coprocessor "${COPROCESSOR_CHART}" --version "${COPROCESSOR_CHART_VERSION}" \
             -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
             --set-string "commonConfig.databaseEndpoint.value=${db_endpoint}:${db_port}" \
@@ -514,21 +603,42 @@ jobs:
           # values-kms-connector-e2e.yaml header note), so real contract
           # addresses are discovered here and injected via --set-string
           # instead of being hardcoded (and going stale on every contracts
-          # redeploy) in the values file. Same for the real RDS credentials/
-          # endpoint (unknown until coprocessor-infra reconciles).
+          # redeploy) in the values file.
+          #
+          # DB credentials come from tkms-infra's own dedicated connector
+          # database (party 1's "connector-database-1" secret - see "Enable
+          # dedicated kms-connector database" above), NOT coprocessor-infra's
+          # shared instance: kms-connector's data has nothing to do with
+          # coprocessor/relayer-migrate's, and sharing needlessly coupled
+          # kms-connector's readiness to coprocessor-infra's (much slower,
+          # Crossplane-reconciled) RDS provisioning.
+          require_nonempty() {
+            if [[ -z "${2}" ]]; then
+              echo "::error::${1} is empty - refusing to deploy kms-connector with a broken config (see the step that should have populated it above)"
+              exit 1
+            fi
+          }
           decryption=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.decryption\.address}')
           gateway_config=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.gateway_config\.address}')
           kms_generation=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.kms_generation\.address}')
           protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.protocol_config\.address}')
           acl=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
-          db_secret_json=$(kubectl get secret coprocessor-infra-coprocessor-db -n "${NAMESPACE}" -o json)
-          db_endpoint=$(echo "$db_secret_json" | jq -r '.data.endpoint // empty' | base64 -d)
-          db_port=$(echo "$db_secret_json" | jq -r '.data.port // "5432"' | base64 -d)
-          db_user=$(echo "$db_secret_json" | jq -r '.data.username // empty' | base64 -d)
-          db_password=$(echo "$db_secret_json" | jq -r '.data.password // empty' | base64 -d)
+          require_nonempty "gw-sc-addresses[decryption.address]" "${decryption}"
+          require_nonempty "gw-sc-addresses[gateway_config.address]" "${gateway_config}"
+          require_nonempty "host-sc-addresses[kms_generation.address]" "${kms_generation}"
+          require_nonempty "host-sc-addresses[protocol_config.address]" "${protocol_config}"
+          require_nonempty "host-sc-addresses[acl.address]" "${acl}"
+          db_secret_json=$(kubectl get secret connector-database-1 -n "${NAMESPACE}" -o json)
+          db_endpoint=$(echo "$db_secret_json" | jq -r '.data.endpoint // empty' | base64 -d 2>/dev/null || true)
+          db_port=$(echo "$db_secret_json" | jq -r '.data.port // empty' | base64 -d 2>/dev/null || true)
+          db_port="${db_port:-5432}"
+          db_user=$(echo "$db_secret_json" | jq -r '.data.username // empty' | base64 -d 2>/dev/null || true)
+          db_password=$(echo "$db_secret_json" | jq -r '.data.password // empty' | base64 -d 2>/dev/null || true)
+          require_nonempty "connector-database-1[endpoint]" "${db_endpoint}"
+          require_nonempty "connector-database-1[username]" "${db_user}"
           helm upgrade --install kms-connector "${KMS_CONNECTOR_CHART}" --version "${KMS_CONNECTOR_CHART_VERSION}" \
             -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-kms-connector-e2e.yaml \
-            --set-string "commonConfig.databaseUrl=postgresql://${db_user}:${db_password}@${db_endpoint}:${db_port}/fhevm_e2e" \
+            --set-string "commonConfig.databaseUrl=postgresql://${db_user}:${db_password}@${db_endpoint}:${db_port}/connector" \
             --set-string "commonConfig.gatewayContractAddresses.decryption=${decryption}" \
             --set-string "commonConfig.gatewayContractAddresses.gatewayConfig=${gateway_config}" \
             --set-string "commonConfig.ethereumContractAddresses.kmsGeneration=${kms_generation}" \
@@ -547,11 +657,13 @@ jobs:
       # KMS BOOTSTRAP: trigger the real FHE key + CRS generation ceremony
       # on-chain, now that coprocessor + kms-connector are both up to react to
       # the resulting KMSGeneration events (mirrors fhevm-cli's "bootstrap"
-      # step - see values-gateway-trigger-keygen-e2e.yaml header for why this
-      # targets gateway-contracts rather than host-contracts for our pinned
-      # bundle). No --wait: a real 4-party enclave DKG can take several
-      # minutes and the contracts chart's Job here only submits the trigger
-      # tx, it doesn't poll for on-chain completion.
+      # step - see values-host-trigger-keygen-e2e.yaml header for why this
+      # targets host-contracts, not gateway-contracts: our images are built at
+      # each PR's HEAD/`latest`, well past the v0.13 KMSGeneration migration to
+      # the canonical host chain - gateway-contracts no longer even ships
+      # task:triggerKeygen at this version). No --wait: a real 4-party enclave
+      # DKG can take several minutes and the contracts chart's Job here only
+      # submits the trigger tx, it doesn't poll for on-chain completion.
       #
       # TODO(kms-keygen-wait): nothing downstream yet blocks on the ceremony
       # actually finishing (fhevm-cli's waitForBootstrap polls MinIO for key
@@ -561,9 +673,9 @@ jobs:
       ######################################################################
       - name: Trigger KMS keygen + CRS generation
         run: |
-          helm upgrade --install gateway-trigger-keygen "${CONTRACTS_CHART}" --version "${CONTRACTS_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/gateway-chain/values-gateway-trigger-keygen-e2e.yaml \
-            --set-string "scDeploy.image.tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")" \
+          helm upgrade --install host-trigger-keygen "${CONTRACTS_CHART}" --version "${CONTRACTS_CHART_VERSION}" \
+            -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-host-trigger-keygen-e2e.yaml \
+            --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
             --wait --wait-for-jobs --timeout=10m
 
       ######################################################################
