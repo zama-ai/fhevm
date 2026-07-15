@@ -22,16 +22,11 @@ fn main() {
         .measurement_time(std::time::Duration::from_secs(1000))
         .configure_from_args();
     let bench_name = "synthetic";
-    let bench_optimization_target = if cfg!(feature = "latency") {
-        "opt_latency"
-    } else {
-        "opt_throughput"
-    };
 
     let mut group = c.benchmark_group(bench_name);
     if ecfg.benchmark_type == "LATENCY" || ecfg.benchmark_type == "ALL" {
         let num_elems = 1;
-        let bench_id = format!("{bench_name}::latency::counter::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+        let bench_id = format!("{bench_name}::latency::counter::FHEUint64::{num_elems}_elems");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             let _ = Runtime::new().unwrap().block_on(counter_increment(
                 b,
@@ -41,7 +36,7 @@ fn main() {
         });
 
         let bench_id =
-            format!("{bench_name}::latency::tree_reduction::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+            format!("{bench_name}::latency::tree_reduction::FHEUint64::{num_elems}_elems");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
             let _ = Runtime::new().unwrap().block_on(tree_reduction(
                 b,
@@ -55,7 +50,7 @@ fn main() {
         for num_elems in [10, 50, 200, 500] {
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
-                format!("{bench_name}::throughput::counter::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+                format!("{bench_name}::throughput::counter::FHEUint64::{num_elems}_elems");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 let _ = Runtime::new().unwrap().block_on(counter_increment(
                     b,
@@ -66,7 +61,7 @@ fn main() {
 
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
-                format!("{bench_name}::throughput::tree_reduction::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
+                format!("{bench_name}::throughput::tree_reduction::FHEUint64::{num_elems}_elems");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
                 let _ = Runtime::new().unwrap().block_on(tree_reduction(
                     b,

@@ -46,6 +46,9 @@ jobs:
               - coprocessor/fhevm-engine/scheduler/build.rs
               - coprocessor/proto/**
               - '.github/workflows/coprocessor-gpu-tests.yml'
+              - '.github/actions/gpu_setup/**'
+              - 'ci/detect_cuda.sh'
+              - 'ci/export_cuda_vars.sh'
               - ci/slab.toml
 
   setup-instance:
@@ -61,7 +64,7 @@ jobs:
       - name: Start remote instance
         id: start-remote-instance
         if: env.SECRETS_AVAILABLE == 'true'
-        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        uses: zama-ai/slab-github-runner@d4a5bb6e2a4b8aa19a10f596d7f142006a7e2c21 # v1.6.3
         with:
           mode: start
           github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
@@ -82,21 +85,6 @@ jobs:
     permissions:
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to read GitHub packages/container registry
-    strategy:
-      fail-fast: false
-      # explicit include-based build matrix, of known valid options
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            cuda: "12.2"
-            gcc: 11
-    env:
-      CUDA_PATH: "/usr/local/cuda-${{ matrix.cuda }}"
-      CUDA_MODULE_LOADER: "EAGER"
-      CC: "/usr/bin/gcc-${{ matrix.gcc }}"
-      CXX: "/usr/bin/g++-${{ matrix.gcc }}"
-      CUDAHOSTCXX: "/usr/bin/g++-${{ matrix.gcc }}"
-
     steps:
       - name: Install git LFS
         run: |
@@ -113,17 +101,12 @@ jobs:
       - name: Checkout LFS objects
         run: git lfs checkout
 
-      - name: Setup Hyperstack dependencies
+      - name: Setup GPU dependencies
         uses: ./.github/actions/gpu_setup
         with:
-          cuda-version: ${{ matrix.cuda }}
-          github-instance: ${{ env.SECRETS_AVAILABLE == 'false' }}
-
-      - name: Export CUDA variables
-        shell: bash
-        run: |
-          echo "PATH=$PATH:${CUDA_PATH}/bin" >> "${GITHUB_PATH}"
-          echo "LD_LIBRARY_PATH=${CUDA_PATH}/lib64:${LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
+          cuda-version: "12.8 12.2"
+          gcc-version: 12
+          cloud-provider: hyperstack
 
       - name: Install latest stable
         uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
@@ -134,9 +117,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake pkg-config libssl-dev \
-                                  libclang-dev docker-compose-v2 docker.io acl
+                                  libclang-dev acl
+          if ! command -v docker >/dev/null 2>&1; then
+            sudo apt-get install -y docker.io
+          fi
+          if ! docker compose version >/dev/null 2>&1; then
+            if dpkg-query --show --showformat='${Status}' containerd.io 2>/dev/null | grep -q "ok installed"; then
+              sudo apt-get install -y docker-compose-plugin
+            else
+              sudo apt-get install -y docker-compose-v2
+            fi
+          fi
+          sudo systemctl start docker
           sudo usermod -aG docker "$USER"
-          newgrp docker
           sudo setfacl --modify user:"$USER":rw /var/run/docker.sock
           cargo install sqlx-cli --version 0.7.2 --no-default-features --features postgres --locked
 
@@ -204,7 +197,7 @@ jobs:
       - name: Stop remote instance
         id: stop-instance
         if: env.SECRETS_AVAILABLE == 'true'
-        uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac
+        uses: zama-ai/slab-github-runner@d4a5bb6e2a4b8aa19a10f596d7f142006a7e2c21 # v1.6.3
         with:
           mode: stop
           github-token: ${{ secrets.SLAB_ACTION_TOKEN }}

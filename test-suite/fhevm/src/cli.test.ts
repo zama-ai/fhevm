@@ -281,6 +281,70 @@ describe("cli", () => {
     ]);
   });
 
+  test("passes ERC20 benchmark environment into the test container", () => {
+    const previousTransfers = process.env.ERC20_BENCH_TRANSFERS;
+    const previousOther = process.env.SOME_OTHER_BENCH_TRANSFERS;
+    process.env.ERC20_BENCH_TRANSFERS = "7";
+    process.env.SOME_OTHER_BENCH_TRANSFERS = "ignored";
+    try {
+      expect(buildTestContainerArgs(["./run-tests.sh"])).toEqual([
+        "docker",
+        "exec",
+        "-e",
+        "npm_config_update_notifier=false",
+        "-e",
+        "NPM_CONFIG_UPDATE_NOTIFIER=false",
+        "-e",
+        "ERC20_BENCH_TRANSFERS=7",
+        TEST_SUITE_CONTAINER,
+        "./run-tests.sh",
+      ]);
+    } finally {
+      if (previousTransfers === undefined) {
+        delete process.env.ERC20_BENCH_TRANSFERS;
+      } else {
+        process.env.ERC20_BENCH_TRANSFERS = previousTransfers;
+      }
+      if (previousOther === undefined) {
+        delete process.env.SOME_OTHER_BENCH_TRANSFERS;
+      } else {
+        process.env.SOME_OTHER_BENCH_TRANSFERS = previousOther;
+      }
+    }
+  });
+
+  test("passes auction benchmark environment into the test container", () => {
+    const previousBidders = process.env.AUCTION_BENCH_BIDDERS;
+    const previousOther = process.env.SOME_OTHER_BENCH_BIDDERS;
+    process.env.AUCTION_BENCH_BIDDERS = "500";
+    process.env.SOME_OTHER_BENCH_BIDDERS = "ignored";
+    try {
+      expect(buildTestContainerArgs(["./run-tests.sh"])).toEqual([
+        "docker",
+        "exec",
+        "-e",
+        "npm_config_update_notifier=false",
+        "-e",
+        "NPM_CONFIG_UPDATE_NOTIFIER=false",
+        "-e",
+        "AUCTION_BENCH_BIDDERS=500",
+        TEST_SUITE_CONTAINER,
+        "./run-tests.sh",
+      ]);
+    } finally {
+      if (previousBidders === undefined) {
+        delete process.env.AUCTION_BENCH_BIDDERS;
+      } else {
+        process.env.AUCTION_BENCH_BIDDERS = previousBidders;
+      }
+      if (previousOther === undefined) {
+        delete process.env.SOME_OTHER_BENCH_BIDDERS;
+      } else {
+        process.env.SOME_OTHER_BENCH_BIDDERS = previousOther;
+      }
+    }
+  });
+
   test("db-state-revert targets the block before the seed range", () => {
     expect(dbRevertTargetBlock(370)).toBe(369);
     expect(() => dbRevertTargetBlock(1)).toThrow("db-state-revert requires a positive seed boundary");

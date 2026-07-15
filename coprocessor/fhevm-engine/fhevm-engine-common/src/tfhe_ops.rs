@@ -903,10 +903,12 @@ pub fn perform_fhe_operation(
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     use crate::gpu_memory::{get_op_size_on_gpu, release_memory_on_gpu, reserve_memory_on_gpu};
 
-    let mut gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, input_operands)?;
-    input_operands
-        .iter()
-        .for_each(|i| gpu_mem_res += i.get_size_on_gpu());
+    // Existing input ciphertexts are already resident and therefore already
+    // excluded from CUDA's free-memory count. Reserve only the additional
+    // operation scratch/output allocation reported by TFHE. Counting inputs a
+    // second time was overly conservative and, for FheBool, performed a real
+    // encrypted bool-to-uint cast solely to estimate its size.
+    let gpu_mem_res = get_op_size_on_gpu(fhe_operation_int, input_operands)?;
     reserve_memory_on_gpu(gpu_mem_res, gpu_idx);
     let res = perform_fhe_operation_impl(fhe_operation_int, input_operands, output_type);
     release_memory_on_gpu(gpu_mem_res, gpu_idx);

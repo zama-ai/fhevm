@@ -71,6 +71,8 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) {
         bridge_polling_interval_ms: 1000,
         bridge_associate_batch_size: 128,
         generate_fhe_keys: false,
+        work_items_batch_size: 100,
+        dependence_chains_per_batch: 20,
         key_cache_size: 4,
         coprocessor_fhe_threads: 64,
         tokio_threads: 32,
@@ -773,68 +775,19 @@ pub async fn write_atomic_u64_bench_params(
 #[cfg(feature = "gpu")]
 pub const GPU_MAX_SUPPORTED_POLYNOMIAL_SIZE: usize = 16384;
 
-const FAST_BENCH_BIT_SIZES: [usize; 1] = [64];
-const BENCH_BIT_SIZES: [usize; 8] = [4, 8, 16, 32, 40, 64, 128, 256];
-const MULTI_BIT_CPU_SIZES: [usize; 6] = [4, 8, 16, 32, 40, 64];
-
 /// User configuration in which benchmarks must be run.
 #[derive(Default)]
 pub struct EnvConfig {
-    pub is_multi_bit: bool,
-    pub is_fast_bench: bool,
-    #[allow(dead_code)]
-    pub scheduling_policy: String,
     pub benchmark_type: String,
-    #[allow(dead_code)]
-    pub optimization_target: String,
 }
 
 impl EnvConfig {
-    #[allow(dead_code)]
     pub fn new() -> Self {
-        let is_multi_bit = match env::var("__TFHE_RS_PARAM_TYPE") {
-            Ok(val) => val.to_lowercase() == "multi_bit",
-            Err(_) => false,
-        };
-        let is_fast_bench = match env::var("__TFHE_RS_FAST_BENCH") {
-            Ok(val) => val.to_lowercase() == "true",
-            Err(_) => false,
-        };
-        let scheduling_policy: String = match env::var("FHEVM_DF_SCHEDULE") {
-            Ok(val) => val,
-            Err(_) => "MAX_PARALLELISM".to_string(),
-        };
         let benchmark_type: String = match env::var("BENCHMARK_TYPE") {
             Ok(val) => val,
             Err(_) => "ALL".to_string(),
         };
-        let optimization_target: String = match env::var("OPTIMIZATION_TARGET") {
-            Ok(val) => val,
-            Err(_) => "throughput".to_string(),
-        };
 
-        EnvConfig {
-            is_multi_bit,
-            is_fast_bench,
-            scheduling_policy,
-            benchmark_type,
-            optimization_target,
-        }
-    }
-
-    /// Get precisions values to benchmark.
-    #[allow(dead_code)]
-    pub fn bit_sizes(&self) -> Vec<usize> {
-        if self.is_fast_bench {
-            FAST_BENCH_BIT_SIZES.to_vec()
-        } else if self.is_multi_bit {
-            if cfg!(feature = "gpu") {
-                BENCH_BIT_SIZES.to_vec()
-            } else {
-                MULTI_BIT_CPU_SIZES.to_vec()
-            }
-        } else {
-            BENCH_BIT_SIZES.to_vec()
-        }
+        EnvConfig { benchmark_type }
     }
 }

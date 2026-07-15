@@ -57,6 +57,9 @@ pub enum PartitionStrategy {
     MaxLocality,
 }
 
+#[cfg(feature = "gpu")]
+const GPU_EXECUTION_STREAMS_PER_DEVICE: usize = 6;
+
 enum DeviceSelection {
     #[allow(dead_code)]
     Index(usize),
@@ -85,7 +88,10 @@ struct SchedulerKeys {
     gpu_idx: usize,
 }
 
+#[cfg(not(feature = "gpu"))]
 type PartitionResult = (Vec<(Handle, TaskOutput)>, NodeIndex);
+#[cfg(feature = "gpu")]
+type PartitionResult = (Vec<(Handle, TaskOutput)>, NodeIndex, usize);
 impl<'a> Scheduler<'a> {
     fn is_ready_task(&self, node: &ExecNode) -> bool {
         node.dependence_counter
@@ -113,6 +119,14 @@ impl<'a> Scheduler<'a> {
     }
 
     pub async fn schedule(&mut self) -> Result<()> {
+        // GPU ciphertexts may be cloned while the async coordinator threads
+        // completed partitions and forwards their outputs.  The TFHE server
+        // key is thread-local, so initialize this coordinator thread too.
+        #[cfg(feature = "gpu")]
+        if let Some(sks) = self.csks.first().cloned() {
+            tfhe::set_server_key(sks);
+        }
+
         let schedule_type = std::env::var("FHEVM_DF_SCHEDULE");
         match schedule_type {
             Ok(val) => match val.as_str() {
@@ -127,13 +141,25 @@ impl<'a> Scheduler<'a> {
                 unhandled => {
                     error!(target: "scheduler", { strategy = ?unhandled },
 			   "Scheduling strategy does not exist");
+                    #[cfg(not(feature = "gpu"))]
                     info!(target: "scheduler", { },
 			  "Reverting to default (generally best performance) strategy MAX_PARALLELISM");
-                    self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
-                        .await
+                    #[cfg(feature = "gpu")]
+                    info!(target: "scheduler", streams_per_device = GPU_EXECUTION_STREAMS_PER_DEVICE,
+                        "Reverting to default strategy MAX_LOCALITY");
+                    #[cfg(not(feature = "gpu"))]
+                    {
+                        self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
+                            .await
+                    }
+                    #[cfg(feature = "gpu")]
+                    {
+                        self.schedule_coarse_grain(PartitionStrategy::MaxLocality)
+                            .await
+                    }
                 }
             },
-            // Use overall best strategy as default
+            // Select the platform default strategy.
             #[cfg(not(feature = "gpu"))]
             _ => {
                 self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
@@ -141,7 +167,7 @@ impl<'a> Scheduler<'a> {
             }
             #[cfg(feature = "gpu")]
             _ => {
-                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
+                self.schedule_coarse_grain(PartitionStrategy::MaxLocality)
                     .await
             }
         }
@@ -198,6 +224,11 @@ impl<'a> Scheduler<'a> {
     }
 
     async fn schedule_coarse_grain(&mut self, strategy: PartitionStrategy) -> Result<()> {
+        #[cfg(feature = "gpu")]
+        if self.csks.is_empty() {
+            anyhow::bail!("No GPU server keys available");
+        }
+
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
         match strategy {
             PartitionStrategy::MaxLocality => {
@@ -208,12 +239,40 @@ impl<'a> Scheduler<'a> {
             }
         };
 
+        // MAX_LOCALITY initially creates one independent partition per connected
+        // transaction component. Running every partition on its own CUDA stream
+        // substantially oversubscribes the GPU for transfer-heavy blocks. Match
+        // the TFHE throughput benchmarks by distributing whole components over a
+        // bounded set of sequential execution lanes. Components remain intact,
+        // so dependent transactions retain their topological order and locality.
+        #[cfg(feature = "gpu")]
+        if strategy == PartitionStrategy::MaxLocality && execution_graph.node_count() > 0 {
+            let lane_count = execution_graph
+                .node_count()
+                .min(self.csks.len() * GPU_EXECUTION_STREAMS_PER_DEVICE);
+            let mut lanes: Vec<Vec<NodeIndex>> = (0..lane_count).map(|_| Vec::new()).collect();
+            for component_index in 0..execution_graph.node_count() {
+                let component = execution_graph
+                    .node_weight_mut(NodeIndex::new(component_index))
+                    .ok_or(SchedulerError::DataflowGraphError)?;
+                lanes[component_index % lane_count].append(&mut component.df_nodes);
+            }
+
+            execution_graph = Dag::default();
+            for df_nodes in lanes {
+                execution_graph.add_node(ExecNode {
+                    df_nodes,
+                    dependence_counter: std::sync::atomic::AtomicUsize::new(0),
+                });
+            }
+        }
+
         let task_dependences = execution_graph.map(|_, _| (), |_, edge| *edge);
 
         // Only retain transaction edges that cross execution partitions. Edges
         // internal to a partition are resolved directly by execute_partition;
-        // forwarding them again after the partition completes clones the same
-        // ciphertext into a graph that has already been consumed.
+        // forwarding them again after the partition completes deep-clones the
+        // same GPU ciphertext into a graph that has already been consumed.
         let mut node_partitions = HashMap::with_capacity(self.graph.graph.node_count());
         for partition_index in 0..execution_graph.node_count() {
             let partition = execution_graph
@@ -262,7 +321,15 @@ impl<'a> Scheduler<'a> {
                         tx.component_id,
                     ));
                 }
-                let keys = self.get_keys(DeviceSelection::RoundRobin)?;
+                #[cfg(feature = "gpu")]
+                let device = if strategy == PartitionStrategy::MaxLocality {
+                    DeviceSelection::Index(idx % self.csks.len())
+                } else {
+                    DeviceSelection::RoundRobin
+                };
+                #[cfg(not(feature = "gpu"))]
+                let device = DeviceSelection::RoundRobin;
+                let keys = self.get_keys(device)?;
                 let parent_span = tracing::Span::current();
                 set.spawn_blocking(move || {
                     let span_guard = parent_span.enter();
@@ -279,7 +346,19 @@ impl<'a> Scheduler<'a> {
             // outputs and update the trnsaction inputs of downstream
             // transactions
             let result = result?;
+            #[cfg(feature = "gpu")]
+            if let Some(sks) = self.csks.first().cloned() {
+                // Tokio may resume this async scheduler on a different
+                // thread after join_next(). TFHE keys are thread-local and
+                // graph output forwarding clones GPU ciphertexts.
+                tfhe::set_server_key(sks);
+            }
             let task_index = result.1;
+            #[cfg(feature = "gpu")]
+            {
+                let keys = self.get_keys(DeviceSelection::Index(result.2))?;
+                tfhe::set_server_key(keys.sks);
+            }
             for (handle, output) in result.0.into_iter() {
                 // Add computed allowed handles to the graph. These
                 // can be used as inputs and forwarded to subsequent,
@@ -532,7 +611,10 @@ fn execute_partition(
         let elapsed = started_at.elapsed();
         FHE_BATCH_LATENCY_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
-    (outputs, task_id)
+    #[cfg(not(feature = "gpu"))]
+    return (outputs, task_id);
+    #[cfg(feature = "gpu")]
+    (outputs, task_id, gpu_idx)
 }
 
 fn try_execute_node(

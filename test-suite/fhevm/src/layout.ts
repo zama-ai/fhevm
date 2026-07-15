@@ -292,6 +292,8 @@ export const TEST_GREP: Record<string, string> = {
   "operators": "test operator|FHEVM manual operations",
   "hcu-block-cap": "block cap scenarios",
   "erc20": "should transfer tokens between two users.",
+  "erc20-benchmark": "benchmark independent ERC20 transfers",
+  "auction-benchmark": "benchmark confidential auction bids",
   "negative-acl": "negative-acl",
   "multi-chain-isolation": "Multi-Chain State Isolation",
   "confidential-bridge": "Confidential Bridge",

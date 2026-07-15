@@ -193,7 +193,10 @@ services:
       - --ciphertext-commits-address=${CIPHERTEXT_COMMITS_ADDRESS}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
       - --database-pool-size=10
-      - --database-polling-interval-secs=20
+      # Notifications normally wake the sender immediately. Keep the fallback
+      # tight in local e2e so a missed notification cannot add tens of seconds
+      # to every GPU-backed public decrypt.
+      - --database-polling-interval-secs=1
       - --verify-proof-resp-database-channel=event_zkpok_computed
       - --add-ciphertexts-database-channel=event_ciphertexts_uploaded
       - --verify-proof-resp-batch-limit=128

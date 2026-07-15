@@ -20,6 +20,7 @@ import {
   DEFAULT_POSTGRES_USER,
   HEAVY_TEST_PROFILES,
   LIGHT_TEST_PROFILES,
+  REPO_ROOT,
   POSTGRES_HOST,
   ROLLOUT_STANDARD_TEST_PROFILES,
   STANDARD_SHARD_COMPUTE_TEST_PROFILES,
@@ -49,6 +50,7 @@ const DB_REVERT_CONTAINERS = [
   "zkproof-worker",
 ] as const;
 const DB_REVERT_RECOVERY_PROFILE = "input-proof-compute-decrypt";
+const GPU_WORKER_KINDS = ["tfhe", "zkproof", "sns"] as const;
 const KEY_BOOTSTRAP_LOG = /Fetched keyset/;
 const KEY_BOOTSTRAP_PROFILES = new Set(["input-proof", "input-proof-compute-decrypt"]);
 // Intentional ciphertext drift must never run on shared/live networks.
@@ -115,6 +117,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   operators: "Run manual operator workflows.",
   "hcu-block-cap": "Run HCU block cap scenarios.",
   erc20: "Run ERC20 transfer coverage.",
+  "erc20-benchmark": "Run independent encrypted ERC20 transfer throughput and latency benchmark.",
+  "auction-benchmark": "Run confidential auction bid throughput and latency benchmark.",
   "negative-acl": "Run negative ACL scenarios.",
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
   "confidential-bridge": "Run confidential bridge cross-chain decrypt coverage (multi-chain).",
@@ -483,6 +487,12 @@ const waitForDriftRevertStatus = async (
 };
 
 /** Builds the `docker exec` argv used to run tests inside the test-suite container. */
+const benchmarkEnvExecArgs = () =>
+  Object.keys(process.env)
+    .filter((name) => name.startsWith("ERC20_BENCH_") || name.startsWith("AUCTION_BENCH_"))
+    .sort()
+    .flatMap((name) => ["-e", `${name}=${process.env[name] ?? ""}`]);
+
 export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] = []) => [
   "docker",
   "exec",
@@ -490,6 +500,7 @@ export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] =
   "npm_config_update_notifier=false",
   "-e",
   "NPM_CONFIG_UPDATE_NOTIFIER=false",
+  ...benchmarkEnvExecArgs(),
   ...extraExecArgs,
   TEST_SUITE_CONTAINER,
   ...tail,
@@ -542,6 +553,41 @@ const coprocessorRuntimeContainers = (instanceCount: number) =>
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
     return DB_REVERT_CONTAINERS.map((suffix) => `${prefix}${suffix}`);
   }).flat();
+
+/** Returns active host GPU worker units for the requested topology, if any. */
+const activeGpuWorkerUnits = async (instanceCount: number) => {
+  const candidates = Array.from({ length: instanceCount }, (_, index) =>
+    GPU_WORKER_KINDS.map((kind) => `fhevm-gpu-${kind}-${index}`),
+  ).flat();
+  const active: string[] = [];
+  for (const unit of candidates) {
+    const result = await run(["systemctl", "--user", "is-active", "--quiet", unit], { allowFailure: true });
+    if (result.code === 0) active.push(unit);
+  }
+  if (active.length > 0 && active.length !== candidates.length) {
+    throw new PreflightError(
+      `db-state-revert found a partial host GPU worker set (${active.join(", ")}); stop or start all ${candidates.length} units before retrying`,
+    );
+  }
+  return active;
+};
+
+/** Stops or restarts the known host GPU worker units without affecting CI stacks. */
+const setGpuWorkerUnits = async (units: string[], action: "stop" | "start") => {
+  if (!units.length) return;
+  // The launcher intentionally uses collected transient units, so a stopped
+  // unit no longer exists for `systemctl start`. Recreate the units through
+  // the tracked launcher instead of silently falling back to Docker workers.
+  if (action === "start") {
+    await run(["bash", `${REPO_ROOT}/test-suite/fhevm/scripts/gpu-workers.sh`, "start"]);
+    return;
+  }
+  await run(["systemctl", "--user", action, ...units]);
+};
+
+/** Excludes Docker workers when host GPU units own the same Postgres queues. */
+const nonWorkerCoprocessorContainers = (containers: string[]) =>
+  containers.filter((container) => !/(?:tfhe|sns|zkproof)-worker$/.test(container));
 
 /** Builds the sns-worker container names for every configured coprocessor instance. */
 const snsWorkerContainers = (instanceCount: number) =>
@@ -770,7 +816,10 @@ const runDbStateRevert = async (
   }
   const timeoutSeconds = parsePositiveInteger(process.env.REVERT_POLL_TIMEOUT_SECONDS ?? "300", "REVERT_POLL_TIMEOUT_SECONDS");
   const pollIntervalSeconds = parsePositiveInteger(process.env.REVERT_POLL_INTERVAL_SECONDS ?? "2", "REVERT_POLL_INTERVAL_SECONDS");
-  const containers = coprocessorRuntimeContainers(topologyForState(state).count);
+  const instanceCount = topologyForState(state).count;
+  const containers = coprocessorRuntimeContainers(instanceCount);
+  const gpuWorkerUnits = await activeGpuWorkerUnits(instanceCount);
+  const containersToRestart = gpuWorkerUnits.length ? nonWorkerCoprocessorContainers(containers) : containers;
   const migrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION;
   const revertImage =
     localDbMigrationImageRef(state) ??
@@ -789,10 +838,13 @@ const runDbStateRevert = async (
     await runNamedE2e(options, testsToRun, "test coprocessor-db-state-revert seed");
 
     let before;
-    let stopped = false;
+    let gpuWorkersStopped = false;
+    let containersStopped = false;
     try {
-      await setContainersRunning(containers, "stop");
-      stopped = true;
+      await setGpuWorkerUnits(gpuWorkerUnits, "stop");
+      gpuWorkersStopped = gpuWorkerUnits.length > 0;
+      await setContainersRunning(containersToRestart, "stop");
+      containersStopped = true;
 
       before = await dbRevertSnapshot(chainId, postgres);
       console.log(`[revert] before ${formatDbRevertSnapshot(before)}`);
@@ -845,8 +897,11 @@ const runDbStateRevert = async (
       console.log(`[revert] after ${formatDbRevertSnapshot(after)}`);
       assertRevertDeletedData(baseline, before, after);
     } finally {
-      if (stopped) {
-        await setContainersRunning(containers, "start");
+      if (containersStopped) {
+        await setContainersRunning(containersToRestart, "start");
+      }
+      if (gpuWorkersStopped) {
+        await setGpuWorkerUnits(gpuWorkerUnits, "start");
       }
     }
 
@@ -1036,14 +1091,21 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           postgresUser: postgres.postgresUser,
           postgresPassword: postgres.postgresPassword,
         });
+        // With an all-node quorum (for example two-of-two), the injected
+        // ciphertext disagreement must make the decryption request fail. On a
+        // majority topology, honest nodes can still reach consensus and the
+        // request must succeed. Capture either outcome and validate it only
+        // after proving the on-chain divergence below.
         const result = await runWithHeartbeat(
           buildTestContainerArgs(
             runTestsArgs({ ...options, parallel: false, grep: grepPattern }),
             ["-e", "GATEWAY_RPC_URL="],
           ),
           "test ciphertext-drift",
+          { allowFailure: true },
         );
-        assertMatchedTests(result.stdout + result.stderr, "test ciphertext-drift");
+        const output = result.stdout + result.stderr;
+        assertMatchedTests(output, "test ciphertext-drift");
         const injectedHandleHex = await injector;
         const warning = await waitForDriftWarning(injectedHandleHex, {
           since: logSince,
@@ -1055,6 +1117,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         if (ciphertextCommitsAddress) {
           const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
           await assertOnChainDivergence(gatewayRpcUrl, ciphertextCommitsAddress, injectedHandleHex);
+        }
+        const topology = topologyForState(state);
+        if (topology.threshold >= topology.count && result.code === 0) {
+          throw new PreflightError("ciphertext-drift unexpectedly decrypted despite requiring every coprocessor to agree");
+        }
+        if (topology.threshold < topology.count && result.code !== 0) {
+          throw new PreflightError(`ciphertext-drift failed despite an honest quorum (exit ${result.code})`);
         }
       });
     }
@@ -1253,7 +1322,17 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
 
     const runGrep = async () => {
-      const shouldParallel = options.parallel ?? TEST_PARALLEL[name];
+      const requestedParallel = options.parallel ?? TEST_PARALLEL[name];
+      const gpuWorkerUnits = await activeGpuWorkerUnits(topologyForState(state).count);
+      // The operator matrix's default Mocha parallelism fans out to one worker
+      // per CPU core. That is useful for container CPU workers, but it floods a
+      // host GPU worker's single Postgres queue and makes otherwise independent
+      // decryptions time out. Keep the GPU lane deterministic and let the
+      // scheduler, rather than Mocha, own the concurrency.
+      const shouldParallel = gpuWorkerUnits.length ? false : requestedParallel;
+      if (requestedParallel && !shouldParallel) {
+        console.log("[test] host GPU workers active; disabling test-process parallelism for stable queueing");
+      }
       const grep = narrowedProfileGrep(filter, options.grep);
       console.log(`[test] ${name} (${options.network})`);
       const started = Date.now();

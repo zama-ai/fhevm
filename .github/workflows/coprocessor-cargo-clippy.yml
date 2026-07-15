@@ -84,6 +84,6 @@ jobs:
         # other ones require specific dependencies (e.g. GPU, etc.).
         SQLX_OFFLINE=true cargo clippy -p host-listener --all-targets \
           -- -D warnings
-        SQLX_OFFLINE=true cargo clippy --all-targets --features "bench latency throughput" \
+        SQLX_OFFLINE=true cargo clippy --all-targets --features "bench" \
           -- -D warnings
       working-directory: coprocessor/fhevm-engine
