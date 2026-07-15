@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) AS \"count!\"\n        FROM handle_bridged_events\n        WHERE NOT is_associated\n          AND NOT EXISTS (SELECT 1 FROM ciphertexts WHERE handle = handle_bridged_events.dst_handle)\n          AND NOT EXISTS (\n                SELECT 1 FROM ciphertexts_branch\n                WHERE handle = handle_bridged_events.dst_handle)\n          AND (\n                block_hash = ''::bytea\n                OR EXISTS (\n                    SELECT 1 FROM host_chain_blocks_valid dst_block\n                    WHERE dst_block.chain_id = handle_bridged_events.dst_chain_id\n                      AND dst_block.block_hash = handle_bridged_events.block_hash\n                      AND dst_block.block_status <> 'orphaned'\n                )\n          )\n          AND created_at <= now() - make_interval(secs => $1::int)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b56fd7c985880a04586b89936122e5aeb0c32f04ec96de80b0fe5081e2782ca8"
+}

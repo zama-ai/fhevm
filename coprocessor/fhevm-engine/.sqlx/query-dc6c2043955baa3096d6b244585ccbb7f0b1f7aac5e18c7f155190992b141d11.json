@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM s3_canonical_repair_queue\n             WHERE host_chain_id = $1\n               AND handle = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dc6c2043955baa3096d6b244585ccbb7f0b1f7aac5e18c7f155190992b141d11"
+}

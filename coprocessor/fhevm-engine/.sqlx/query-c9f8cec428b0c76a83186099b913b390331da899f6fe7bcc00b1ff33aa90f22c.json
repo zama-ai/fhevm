@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE branch_cleanup_jobs\n               SET status = CASE\n                       WHEN attempts >= $4 THEN 'quarantined'\n                       ELSE 'pending'\n                   END,\n                   locked_at = NULL,\n                   last_error = $3,\n                   updated_at = NOW()\n             WHERE chain_id = $1\n               AND finalized_block_hash = $2\n               AND status = 'pending'\n             RETURNING status AS \"status!\", attempts AS \"attempts!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "attempts!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "c9f8cec428b0c76a83186099b913b390331da899f6fe7bcc00b1ff33aa90f22c"
+}

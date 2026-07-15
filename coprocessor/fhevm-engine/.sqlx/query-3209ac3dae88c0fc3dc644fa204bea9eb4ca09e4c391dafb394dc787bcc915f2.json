@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE ciphertext_digest_branch\n             SET txn_limited_retries_count = $1,\n                 txn_last_error = $2,\n                 txn_last_error_at = NOW()\n             WHERE host_chain_id = $3\n               AND handle = $4\n               AND producer_block_hash = $5\n               AND block_hash = $6\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3209ac3dae88c0fc3dc644fa204bea9eb4ca09e4c391dafb394dc787bcc915f2"
+}

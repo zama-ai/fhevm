@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE handle_bridged_events SET is_associated = TRUE WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f3daf02364bc6b70aa18c6d5f54a3e2b31500c8ee09e5ca77d7070540c3beac7"
+}
