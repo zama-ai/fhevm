@@ -77,6 +77,16 @@ jobs:
     needs: check-labels
     if: needs.check-labels.outputs.should_deploy == 'true'
     uses: ./.github/workflows/host-contracts-docker-build.yml
+    # The top-level `permissions: {}` caps every nested reusable-workflow call in this
+    # chain, regardless of what host-contracts-docker-build.yml's own jobs request - see
+    # test-suite-orchestrate-e2e-tests.yml for the same &docker_permissions anchor pattern.
+    permissions: &docker_permissions
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
     secrets: inherit
 
   build-gateway-contracts:
@@ -84,6 +94,7 @@ jobs:
     needs: check-labels
     if: needs.check-labels.outputs.should_deploy == 'true'
     uses: ./.github/workflows/gateway-contracts-docker-build.yml
+    permissions: *docker_permissions
     secrets: inherit
 
   build-kms-connector:
@@ -91,6 +102,7 @@ jobs:
     needs: check-labels
     if: needs.check-labels.outputs.should_deploy == 'true'
     uses: ./.github/workflows/kms-connector-docker-build.yml
+    permissions: *docker_permissions
     secrets: inherit
 
   build-coprocessor:
@@ -98,6 +110,7 @@ jobs:
     needs: check-labels
     if: needs.check-labels.outputs.should_deploy == 'true'
     uses: ./.github/workflows/coprocessor-docker-build.yml
+    permissions: *docker_permissions
     secrets: inherit
 
   build-relayer:
@@ -105,6 +118,7 @@ jobs:
     needs: check-labels
     if: needs.check-labels.outputs.should_deploy == 'true'
     uses: ./.github/workflows/relayer-docker-build.yml
+    permissions: *docker_permissions
     secrets: inherit
 
   build-test-suite:
@@ -112,6 +126,7 @@ jobs:
     needs: check-labels
     if: needs.check-labels.outputs.should_deploy == 'true'
     uses: ./.github/workflows/test-suite-docker-build.yml
+    permissions: *docker_permissions
     secrets: inherit
 
   ##########################################################################
