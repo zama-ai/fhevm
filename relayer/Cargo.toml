@@ -31,6 +31,7 @@ dashmap = "6.1.0"
 derivative = "2.2"
 ed25519-dalek = "2"
 futures = "0.3.32"
+bs58 = "0.5.1"
 hex = "0.4.3"
 moka = { version = "0.12.13", features = ["future"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -38,6 +39,8 @@ serde_json = "1.0.149"
 sha2 = "0.10"
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "signal"] }
 tokio-util = "0.7.18"
+tonic = "0.12.3"
+yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v5.0.1+solana.2.1.21", default-features = false, features = ["tonic", "tonic-compression"] }
 async-trait = "0.1.51"
 thiserror = "2.0.18"
 config = "0.15.19"
