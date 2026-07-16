@@ -25,17 +25,23 @@ pub mod common {
 
 /// Single source of truth for the coprocessor stack version.
 ///
-/// Hard-coded on purpose — deliberately NOT derived from any crate's
-/// `CARGO_PKG_VERSION`. Per-crate package versions diverge across the workspace
-/// (the workers are versioned independently of `fhevm-engine-common`), so
-/// tying the stack version to one crate's package version was misleading: a
-/// worker at package `0.7.0` would report stack version `0.14.0`. This makes
-/// the stack version one explicit, fleet-wide value, bumped by a deliberate
-/// edit here on each blue/green stack upgrade.
+/// The fleet-wide stack version. Baseline is the hard-coded value below; only
+/// with the `stack-version-override` feature does it come from the build-time
+/// `BUILD_STACK_VERSION` env (defaulted by build.rs). The blue-green GCS image
+/// builds with the feature + a newer version; release builds omit the feature
+/// and cannot be overridden. Deliberately NOT a crate `CARGO_PKG_VERSION`
+/// (those diverge per-worker across the workspace).
 ///
-/// Exposed as a macro (not just a `const`) so it can be embedded inside
-/// `concat!` — e.g. the versioned GCS schema name in `database.rs` — while
-/// staying single-sourced.
+/// Exposed as a macro (not a `const`) so it embeds inside `concat!` — e.g. the
+/// versioned GCS schema name in `database.rs` — while staying single-sourced.
+/// `env!` keeps the override a compile-time literal.
+#[cfg(feature = "stack-version-override")]
+macro_rules! stack_version {
+    () => {
+        env!("BUILD_STACK_VERSION")
+    };
+}
+#[cfg(not(feature = "stack-version-override"))]
 macro_rules! stack_version {
     () => {
         "0.14.0"

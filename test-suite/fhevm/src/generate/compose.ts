@@ -174,11 +174,6 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     }),
   },
 };
-// Local `--build` coprocessor images opt into the stack-version override feature (released images default off).
-for (const spec of Object.values(COMPONENT_BUILD_SPECS.coprocessor)) {
-  spec.args = { ...(spec.args as Record<string, string> | undefined), STACK_VERSION_OVERRIDE: "1" };
-}
-
 const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];
 const CANONICAL_HOST_ONLY_SERVICES = new Set([
   "host-sc-trigger-keygen",
@@ -517,8 +512,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       const gcsInstance: ResolvedCoprocessorScenarioInstance = {
         index: bcsInstance.index,
         source: gcs.source,
-        // GCS declares the newer stackVersion so it's the incoming green stack (no-op unless the image has the override feature).
-        env: { ...gcs.env, STACK_VERSION_OVERRIDE: gcs.stackVersion },
+        env: gcs.env,
         args: gcs.args,
       };
       for (const [baseName, service] of Object.entries(doc.services)) {
@@ -543,7 +537,12 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         const buildSpec = localBuildSpecFor("coprocessor", baseName);
         if (buildSpec) {
           adjusted.image = retagLocal(service.image, `gcs-${gcs.stackVersion}`);
-          adjusted.build = buildSpec;
+          // GCS compiles the newer stack version (build arg enables the override feature),
+          // so its schema/version are gcs.stackVersion rather than the baseline.
+          adjusted.build = {
+            ...buildSpec,
+            args: { ...(buildSpec.args as Record<string, string> | undefined), BUILD_STACK_VERSION: gcs.stackVersion },
+          };
         }
         if (bcsInstance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
           adjusted.depends_on = rewriteCoprocessorDependsOn(

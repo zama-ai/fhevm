@@ -7,7 +7,6 @@
 //! deployment and runs in GCS mode; an equal-or-older binary is the live
 //! (blue) stack and runs normally.
 
-use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -47,32 +46,20 @@ fn parse_version(s: &str) -> (u64, u64, u64) {
     )
 }
 
-/// Version compared against `live`: the `STACK_VERSION_OVERRIDE` env under the
-/// `stack-version-override` feature (unset => `None`/machinery off), else compiled [`STACK_VERSION`].
-fn effective_stack_version() -> Option<Cow<'static, str>> {
-    #[cfg(feature = "stack-version-override")]
-    {
-        std::env::var("STACK_VERSION_OVERRIDE").ok().map(Cow::Owned)
-    }
-    #[cfg(not(feature = "stack-version-override"))]
-    {
-        Some(Cow::Borrowed(STACK_VERSION))
-    }
-}
-
-/// True iff this binary is strictly newer than `live` (`false` if machinery off).
+/// True iff this binary's [`STACK_VERSION`] is strictly newer than `live`.
 pub fn binary_is_newer_than(live: &str) -> bool {
-    effective_stack_version().is_some_and(|b| parse_version(&b) > parse_version(live))
+    parse_version(STACK_VERSION) > parse_version(live)
 }
 
-/// True iff this binary equals `live` (`false` if machinery off).
+/// True iff this binary's [`STACK_VERSION`] equals `live` (same major.minor.patch).
 pub fn binary_matches(live: &str) -> bool {
-    effective_stack_version().is_some_and(|b| parse_version(&b) == parse_version(live))
+    parse_version(STACK_VERSION) == parse_version(live)
 }
 
-/// True iff this binary is strictly older than `live` — a retired stack (`false` if machinery off).
+/// True iff this binary's [`STACK_VERSION`] is strictly older than `live` — i.e.
+/// it belongs to a retired stack that should no longer touch the database.
 pub fn binary_is_older_than(live: &str) -> bool {
-    effective_stack_version().is_some_and(|b| parse_version(&b) < parse_version(live))
+    parse_version(STACK_VERSION) < parse_version(live)
 }
 
 /// Runtime stack mode, shared between a service's work loop and the
