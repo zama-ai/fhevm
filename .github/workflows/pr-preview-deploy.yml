@@ -37,7 +37,7 @@ on:
       gateway_contracts_version:
         description: "Image tag for the gateway-contracts deployer image (same override rule as host_contracts_version)"
         required: true
-        default: "v0.9.8"
+        default: "v0.12.1"
       contracts_chart_version:
         description: "Version of the contracts Helm chart"
         required: true
@@ -99,7 +99,17 @@ env:
   ANVIL_NODE_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/anvil-node
   ANVIL_NODE_CHART_VERSION: "0.4.1"
   #=====CONTRACTS============================================================
-  GATEWAY_CONTRACTS_VERSION: "v0.9.8"
+  # gateway-contracts and host-contracts version independently within this
+  # monorepo (confirmed via `git show <tag>:*/package.json` - their internal
+  # package.json versions diverge across the same tag), but both are still
+  # built + published from every top-level repo tag, so pinning both to the
+  # same tag is valid and keeps things simple. v0.9.8 was tried here first but
+  # predates gateway-contracts' ProtocolPayment/mocked-$ZAMA-OFT feature
+  # (task:deployMockedZamaOFT et al., first released in v0.10.0 - see
+  # ../../../ci/preview-env/gateway-chain/values-gateway-contracts-e2e.yaml's
+  # deployCommands) causing "HH303: Unrecognized task" - confirmed via
+  # `git merge-base --is-ancestor <commit> <tag>`.
+  GATEWAY_CONTRACTS_VERSION: "v0.12.1"
   HOST_CONTRACTS_VERSION: "v0.12.1"
   CONTRACTS_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts
   CONTRACTS_CHART_VERSION: "0.8.2"
