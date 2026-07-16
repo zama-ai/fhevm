@@ -42,6 +42,8 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # Private key as a hex string (optional if `aws_kms_config` is configured)
 # If provided, the connector will use this private key
 # Format: hex string with or without 0x prefix
+# WARNING: Using a raw private key is intended for TESTING PURPOSES ONLY.
+#          Production deployments MUST use `aws_kms_config` instead (see below).
 # IMPORTANT: Keep this secure and never share it!
 # ENV: KMS_CONNECTOR_PRIVATE_KEY
 private_key = "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"

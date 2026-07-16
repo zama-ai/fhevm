@@ -15,7 +15,9 @@ import {
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
+  supportsConsensusDetector,
   supportsHostListenerConsumer,
+  supportsUpgradeController,
   validateBundleCompatibility,
 } from "./compat/compat";
 import { testDefaultScenario } from "./test-fixtures";
@@ -306,6 +308,30 @@ describe("compat", () => {
     ).toBe(false);
   });
 
+  test("gates consensus-detector and upgrade-controller on published image families", () => {
+    const stateFor = (env: Record<string, string>) => ({
+      versions: {
+        target: "latest-main" as const,
+        lockName: "latest-main.json",
+        env,
+        sources: [],
+      },
+    });
+    // v0.13.x tags are never published for these images (keys are pinned to
+    // host-listener's tag), so the whole family must stay unsupported.
+    expect(supportsConsensusDetector(stateFor({ COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.13.0" }))).toBe(false);
+    expect(supportsUpgradeController(stateFor({ COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "v0.13.0" }))).toBe(false);
+    expect(supportsConsensusDetector(stateFor({ COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.11.0" }))).toBe(false);
+    expect(supportsConsensusDetector(stateFor({}))).toBe(false);
+    expect(supportsUpgradeController(stateFor({}))).toBe(false);
+    expect(supportsConsensusDetector(stateFor({ COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.14.0-rc.1" }))).toBe(true);
+    expect(supportsConsensusDetector(stateFor({ COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.14.0" }))).toBe(true);
+    expect(supportsUpgradeController(stateFor({ COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "v0.14.0" }))).toBe(true);
+    // Unparsed main sha tags are published by CI and count as modern.
+    expect(supportsConsensusDetector(stateFor({ COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "02f6cc0" }))).toBe(true);
+    expect(supportsUpgradeController(stateFor({ COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "02f6cc0" }))).toBe(true);
+  });
+
   test("enables host-listener consumer for v0.13 prereleases and newer bundles", () => {
     expect(
       supportsHostListenerConsumer({
@@ -451,7 +477,14 @@ describe("compat", () => {
 
     const policy = compatPolicyForState(state);
     expect(policy.coprocessorArgs["gw-listener"]).toBeUndefined();
-    expect(policy.coprocessorDropFlags["host-listener"]).toEqual(["--confidential-bridge-address"]);
+    expect(policy.coprocessorDropFlags["host-listener"]?.sort()).toEqual([
+      "--confidential-bridge-address",
+      "--protocol-config-address",
+    ]);
+    expect(policy.coprocessorDropFlags["host-listener-poller"]?.sort()).toEqual([
+      "--confidential-bridge-address",
+      "--protocol-config-address",
+    ]);
     expect(policy.composeEnv.HOST_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
     expect(policy.composeEnv.GATEWAY_ADD_PAUSERS_INTERNAL_FLAG).toBe("--use-internal-proxy-address");
   });

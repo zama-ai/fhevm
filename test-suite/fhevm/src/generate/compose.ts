@@ -5,7 +5,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 
-import { type CompatPolicy, compatPolicyForState, supportsHostListenerConsumer } from "../compat/compat";
+import {
+  type CompatPolicy,
+  compatPolicyForState,
+  supportsConsensusDetector,
+  supportsHostListenerConsumer,
+  supportsUpgradeController,
+} from "../compat/compat";
 import {
   COMPONENTS,
   COMPOSE_OUT_DIR,
@@ -108,6 +114,12 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     }),
     "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
       target: "transaction-sender",
+    }),
+    "coprocessor-consensus-detector": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "consensus-detector",
+    }),
+    "coprocessor-upgrade-controller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "upgrade-controller",
     }),
   },
   "kms-connector": {
@@ -310,9 +322,11 @@ export const serviceNameList = (state: Pick<State, "scenario" | "versions">, com
     return [];
   }
   const topology = topologyForState(state);
-  const includeConsumer = supportsHostListenerConsumer(state);
   const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
-    (suffix) => includeConsumer || suffix !== "host-listener-consumer",
+    (suffix) =>
+      (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
+      (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
+      (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
   );
   const names: string[] = [];
   for (let index = 0; index < topology.count; index += 1) {
@@ -393,7 +407,11 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
   const services: Record<string, Record<string, unknown>> = {};
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
-  const includeConsumer = supportsHostListenerConsumer(plan);
+  const excludedServices = new Set([
+    ...(supportsHostListenerConsumer(plan) ? [] : ["coprocessor-host-listener-consumer"]),
+    ...(supportsConsensusDetector(plan) ? [] : ["coprocessor-consensus-detector"]),
+    ...(supportsUpgradeController(plan) ? [] : ["coprocessor-upgrade-controller"]),
+  ]);
   for (const instance of plan.coprocessor.instances) {
     const localServices =
       instance.source.mode === "local"
@@ -406,7 +424,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     const instanceEnv = await readEnvFile(envFileValue);
     const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
     for (const [name, service] of Object.entries(doc.services)) {
-      if (!includeConsumer && name === "coprocessor-host-listener-consumer") {
+      if (excludedServices.has(name)) {
         continue;
       }
       const suffix = name.replace(/^coprocessor-/, "");

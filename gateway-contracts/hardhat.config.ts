@@ -5,7 +5,6 @@ import "@openzeppelin/hardhat-upgrades";
 import "@typechain/hardhat";
 import dotenv from "dotenv";
 import "hardhat-dependency-compiler";
-import "hardhat-ignore-warnings";
 import { HardhatUserConfig, task, types } from "hardhat/config";
 import { resolve } from "path";
 import "solidity-coverage";
@@ -193,12 +192,6 @@ const config: HardhatUserConfig = {
       },
       evmVersion: "cancun",
       viaIR: false,
-    },
-  },
-  warnings: {
-    // Turn off all warnings for mocked contracts
-    "contracts/mocks/*": {
-      default: "off",
     },
   },
   paths: {

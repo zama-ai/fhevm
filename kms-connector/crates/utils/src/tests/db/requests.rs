@@ -18,7 +18,7 @@ use alloy::{
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        HandleEntry, PublicDecryptionRequest, SnsCiphertextMaterial,
+        HandleEntry, PublicDecryptionRequest_0 as PublicDecryptionRequest, SnsCiphertextMaterial,
         UserDecryptionRequest_0 as UserDecryptionRequest,
         UserDecryptionRequest_1 as UserDecryptionRequestV2,
     },
@@ -30,7 +30,10 @@ use fhevm_host_bindings::{
     },
     protocol_config::{
         IProtocolConfig::KmsThresholds,
-        ProtocolConfig::{KmsNodeParams, NewKmsContext, NewKmsEpoch, PcrValues},
+        ProtocolConfig::{
+            KmsContextDestroyed, KmsEpochDestroyed, KmsNodeParams, NewKmsContext, NewKmsEpoch,
+            PcrValues,
+        },
     },
 };
 use sqlx::{Pool, Postgres, types::chrono::Utc};
@@ -53,6 +56,8 @@ pub enum TestEventType {
     AbortCrsgen,
     NewKmsContext,
     NewKmsEpoch,
+    KmsContextDestroyed,
+    KmsEpochDestroyed,
 }
 
 impl TestEventType {
@@ -67,6 +72,8 @@ impl TestEventType {
             Self::AbortCrsgen => EventType::AbortCrsgenRequest,
             Self::NewKmsContext => EventType::NewKmsContext,
             Self::NewKmsEpoch => EventType::NewKmsEpoch,
+            Self::KmsContextDestroyed => EventType::KmsContextDestroyed,
+            Self::KmsEpochDestroyed => EventType::KmsEpochDestroyed,
         }
     }
 }
@@ -102,6 +109,12 @@ pub async fn insert_rand_request(
         TestEventType::AbortCrsgen => insert_rand_abort_crsgen_request(db, options).await?.into(),
         TestEventType::NewKmsContext => insert_rand_new_kms_context(db, options).await?.into(),
         TestEventType::NewKmsEpoch => insert_rand_new_kms_epoch(db, options).await?.into(),
+        TestEventType::KmsContextDestroyed => {
+            insert_rand_kms_context_destroyed(db, options).await?.into()
+        }
+        TestEventType::KmsEpochDestroyed => {
+            insert_rand_kms_epoch_destroyed(db, options).await?.into()
+        }
     };
     Ok(inserted_response)
 }
@@ -551,6 +564,61 @@ pub async fn insert_rand_new_kms_epoch(
     })
 }
 
+pub async fn insert_rand_kms_context_destroyed(
+    db: &Pool<Postgres>,
+    options: InsertRequestOptions,
+) -> anyhow::Result<KmsContextDestroyed> {
+    let context_id = options
+        .id
+        .or(options.context_id)
+        .unwrap_or(TESTING_KMS_CONTEXT);
+    let status = options.status.unwrap_or(OperationStatus::Pending);
+
+    sqlx::query!(
+        "INSERT INTO kms_context_destroyed(
+            context_id, tx_hash, created_at, otlp_context, already_sent, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        context_id.as_le_slice(),
+        options.tx_hash.map(|h| h.to_vec()),
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        options.already_sent,
+        status as OperationStatus,
+    )
+    .execute(db)
+    .await?;
+
+    Ok(KmsContextDestroyed {
+        kmsContextId: context_id,
+    })
+}
+
+pub async fn insert_rand_kms_epoch_destroyed(
+    db: &Pool<Postgres>,
+    options: InsertRequestOptions,
+) -> anyhow::Result<KmsEpochDestroyed> {
+    let epoch_id = options.id.or(options.epoch_id).unwrap_or(DEFAULT_EPOCH_ID);
+    let status = options.status.unwrap_or(OperationStatus::Pending);
+
+    sqlx::query!(
+        "INSERT INTO kms_epoch_destroyed(
+            epoch_id, tx_hash, created_at, otlp_context, already_sent, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        epoch_id.as_le_slice(),
+        options.tx_hash.map(|h| h.to_vec()),
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        options.already_sent,
+        status as OperationStatus,
+    )
+    .execute(db)
+    .await?;
+
+    Ok(KmsEpochDestroyed { epochId: epoch_id })
+}
+
 pub async fn check_no_uncompleted_request_in_db(
     db: &Pool<Postgres>,
     kind: TestEventType,
@@ -591,6 +659,14 @@ pub async fn check_no_uncompleted_request_in_db(
         }
         EventType::NewKmsEpoch => {
             "SELECT COUNT(epoch_id) FROM new_kms_epoch WHERE status NOT IN ('completed', 'failed')"
+        }
+        EventType::KmsContextDestroyed => {
+            "SELECT COUNT(context_id) FROM kms_context_destroyed
+            WHERE status NOT IN ('completed', 'failed')"
+        }
+        EventType::KmsEpochDestroyed => {
+            "SELECT COUNT(epoch_id) FROM kms_epoch_destroyed
+            WHERE status NOT IN ('completed', 'failed')"
         }
     };
     let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
@@ -633,6 +709,12 @@ pub async fn check_request_failed_in_db(
             "SELECT COUNT(context_id) FROM new_kms_context WHERE status = 'failed'"
         }
         EventType::NewKmsEpoch => "SELECT COUNT(*) FROM new_kms_epoch WHERE status = 'failed'",
+        EventType::KmsContextDestroyed => {
+            "SELECT COUNT(context_id) FROM kms_context_destroyed WHERE status = 'failed'"
+        }
+        EventType::KmsEpochDestroyed => {
+            "SELECT COUNT(epoch_id) FROM kms_epoch_destroyed WHERE status = 'failed'"
+        }
     };
     let count: i64 = sqlx::query_scalar(query).fetch_one(db).await?;
     if count > 0 {

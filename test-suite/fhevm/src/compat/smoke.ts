@@ -17,7 +17,7 @@ import {
   dockerArgs,
   envPath,
 } from "../layout";
-import { supportsHostListenerConsumer } from "./compat";
+import { supportsConsensusDetector, supportsHostListenerConsumer, supportsUpgradeController } from "./compat";
 import { generateComposeOverrides } from "../generate/compose";
 import { renderEnvMaps, type WalletMaterial } from "../generate/env";
 import { stackSpecForState } from "../stack-spec/stack-spec";
@@ -170,7 +170,9 @@ const main = async () => {
       "coprocessor": GROUP_BUILD_SERVICES.coprocessor.filter(
         (name) =>
           !name.endsWith("db-migration") &&
-          (name !== "coprocessor-host-listener-consumer" || supportsHostListenerConsumer(state)),
+          (name !== "coprocessor-host-listener-consumer" || supportsHostListenerConsumer(state)) &&
+          (name !== "coprocessor-consensus-detector" || supportsConsensusDetector(state)) &&
+          (name !== "coprocessor-upgrade-controller" || supportsUpgradeController(state)),
       ),
       "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter((name) => !name.endsWith("db-migration")),
     } as const;
