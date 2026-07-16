@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT current_handle, subjects, leaf_count, peaks\n                FROM solana_proof_lineages\n                WHERE lineage = $1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "current_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "subjects",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "leaf_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "peaks",
+        "type_info": "ByteaArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8115fb7c0d9485d91dfa987cad709ce1318ee95a04e15de2f80aa90c52a0c0ac"
+}

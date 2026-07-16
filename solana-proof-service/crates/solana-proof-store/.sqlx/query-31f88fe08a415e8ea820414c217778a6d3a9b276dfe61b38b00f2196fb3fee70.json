@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO solana_proof_leaves (\n                    lineage,\n                    leaf_index,\n                    commitment,\n                    block_slot,\n                    transaction_index\n                ) VALUES ($1, $2, $3, $4, $5)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "31f88fe08a415e8ea820414c217778a6d3a9b276dfe61b38b00f2196fb3fee70"
+}

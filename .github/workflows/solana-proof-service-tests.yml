@@ -31,6 +31,8 @@ jobs:
               - .github/workflows/solana-proof-service-tests.yml
               - solana-proof-service/**
               - solana/crates/zama-solana-transaction/**
+              - solana/crates/zama-solana-acl/**
+              - solana/programs/zama-host/**
 
   tests:
     name: solana-proof-service-tests/tests

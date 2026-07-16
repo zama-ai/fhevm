@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                slot,\n                block_hash,\n                parent_slot,\n                parent_hash,\n                block_time,\n                block_height,\n                executed_transaction_count\n            FROM solana_proof_blocks\n            WHERE slot = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slot",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "parent_slot",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "parent_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "block_time",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "block_height",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "executed_transaction_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "76637a18888d23037f740783ecce2f372d71cd90fa214883322a44089f133eae"
+}
