@@ -52,9 +52,7 @@ fn parse_version(s: &str) -> (u64, u64, u64) {
 fn effective_stack_version() -> Option<Cow<'static, str>> {
     #[cfg(feature = "stack-version-override")]
     {
-        std::env::var("STACK_VERSION_OVERRIDE")
-            .ok()
-            .map(Cow::Owned)
+        std::env::var("STACK_VERSION_OVERRIDE").ok().map(Cow::Owned)
     }
     #[cfg(not(feature = "stack-version-override"))]
     {
