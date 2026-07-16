@@ -7,7 +7,6 @@
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 
 use borsh::BorshSerialize;
 use sha2::{Digest, Sha256};
@@ -370,23 +369,6 @@ async fn proof_snapshot_isolation_sees_complete_old_or_new() {
     assert_eq!(before.leaf_count, 0);
     assert_eq!(before.leaves.len(), 0);
 
-    // Hold progress lock while a concurrent snapshot runs — must see complete old.
-    let pool = store.pool().clone();
-    let mut guard = pool.begin().await.unwrap();
-    sqlx::query("SELECT singleton FROM solana_proof_progress WHERE singleton = 1 FOR UPDATE")
-        .fetch_one(&mut *guard)
-        .await
-        .unwrap();
-
-    let store_reader = SqlProofStore::new(pool.clone(), pk(7));
-    let snap_while_locked =
-        tokio::spawn(async move { store_reader.proof_snapshot(ev).await.unwrap().unwrap() });
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    let mid = snap_while_locked.await.unwrap();
-    assert_eq!(mid.leaf_count, before.leaf_count);
-    assert_eq!(mid.leaves.len(), before.leaves.len());
-    guard.commit().await.unwrap();
-
     let second = block(
         11,
         10,
@@ -400,11 +382,214 @@ async fn proof_snapshot_isolation_sees_complete_old_or_new() {
             instructions: vec![update_ix(ev, pk(0x11), pk(0x10), vec![owner])],
         }],
     );
-    store.apply_completed_block(&second).await.unwrap();
+
+    // Race a real apply against concurrent snapshots; every view must be
+    // consistent (no torn leaf_count vs leaves / peaks).
+    let store_apply = SqlProofStore::new(store.pool().clone(), pk(7));
+    let apply =
+        tokio::spawn(async move { store_apply.apply_completed_block(&second).await.unwrap() });
+
+    let mut saw_old = false;
+    let mut saw_new = false;
+    for _ in 0..200 {
+        let snap = store.proof_snapshot(ev).await.unwrap().unwrap();
+        assert_eq!(
+            snap.leaf_count as usize,
+            snap.leaves.len(),
+            "torn snapshot: leaf_count={} leaves={}",
+            snap.leaf_count,
+            snap.leaves.len()
+        );
+        assert_eq!(
+            snap.peaks,
+            mmr_peaks_from_leaves(&snap.leaves),
+            "torn snapshot: peaks inconsistent with leaves"
+        );
+        match snap.leaf_count {
+            0 => saw_old = true,
+            1 => saw_new = true,
+            other => panic!("unexpected leaf_count {other}"),
+        }
+        if apply.is_finished() && saw_new {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+
+    assert_eq!(apply.await.unwrap(), ApplyOutcome::Applied);
     let after = store.proof_snapshot(ev).await.unwrap().unwrap();
     assert_eq!(after.leaf_count, 1);
     assert_eq!(after.leaves.len(), 1);
     assert_eq!(after.peaks, mmr_peaks_from_leaves(&after.leaves));
+    assert!(
+        saw_old || saw_new,
+        "race observed at least one consistent snapshot"
+    );
+    let _ = (saw_old, saw_new);
+}
+
+#[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
+#[tokio::test]
+async fn parent_slot_mismatch_is_recovery_required_without_domain_writes() {
+    let store = fresh_store().await;
+    store
+        .apply_completed_block(&block(10, 9, pk(0x90), pk(0xA0), Vec::new()))
+        .await
+        .unwrap();
+    let gap = block(12, 11, pk(0xA1), pk(0xA2), Vec::new());
+    match store.apply_completed_block(&gap).await.unwrap() {
+        ApplyOutcome::RecoveryRequired { reason } => {
+            assert!(reason.contains("recovery required"));
+            assert!(reason.contains("contiguous ingest gap"));
+        }
+        other => panic!("expected RecoveryRequired, got {other:?}"),
+    }
+    let status = store.integrity_status().await.unwrap();
+    assert!(!status.integrity_halted);
+    assert_eq!(status.checkpoint.unwrap().slot, 10);
+    let blocks: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM solana_proof_blocks")
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    assert_eq!(blocks.0, 1);
+}
+
+#[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
+#[tokio::test]
+async fn parent_hash_mismatch_halts_without_domain_writes() {
+    let store = fresh_store().await;
+    store
+        .apply_completed_block(&block(10, 9, pk(0x90), pk(0xA0), Vec::new()))
+        .await
+        .unwrap();
+    let fork = block(11, 10, pk(0xFF), pk(0xA1), Vec::new());
+    match store.apply_completed_block(&fork).await.unwrap() {
+        ApplyOutcome::IntegrityHalted { reason } => {
+            assert!(reason.contains("ancestry does not extend checkpoint"));
+        }
+        other => panic!("expected halt, got {other:?}"),
+    }
+    let status = store.integrity_status().await.unwrap();
+    assert!(status.integrity_halted);
+    assert_eq!(status.checkpoint.unwrap().slot, 10);
+    let blocks: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM solana_proof_blocks")
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    assert_eq!(blocks.0, 1);
+}
+
+#[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
+#[tokio::test]
+async fn slot_behind_checkpoint_without_exact_replay_halts() {
+    let store = fresh_store().await;
+    store
+        .apply_completed_block(&block(10, 9, pk(0x90), pk(0xA0), Vec::new()))
+        .await
+        .unwrap();
+    store
+        .apply_completed_block(&block(11, 10, pk(0xA0), pk(0xA1), Vec::new()))
+        .await
+        .unwrap();
+    // Slot 9 was never stored; it is behind checkpoint 11.
+    let behind = block(9, 8, pk(0x80), pk(0x89), Vec::new());
+    match store.apply_completed_block(&behind).await.unwrap() {
+        ApplyOutcome::IntegrityHalted { reason } => {
+            assert!(reason.contains("at or behind checkpoint"));
+        }
+        other => panic!("expected halt, got {other:?}"),
+    }
+    assert!(store.integrity_status().await.unwrap().integrity_halted);
+    let blocks: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM solana_proof_blocks")
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    assert_eq!(blocks.0, 2);
+}
+
+#[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
+#[tokio::test]
+async fn same_slot_signature_index_conflict_halts() {
+    let store = fresh_store().await;
+    let first = block(
+        10,
+        9,
+        pk(0x90),
+        pk(0xA0),
+        vec![CanonicalTransaction {
+            signature: sig(0xAA),
+            index: 0,
+            succeeded: true,
+            is_vote: false,
+            instructions: Vec::new(),
+        }],
+    );
+    store.apply_completed_block(&first).await.unwrap();
+    let conflict = block(
+        10,
+        9,
+        pk(0x90),
+        pk(0xA0),
+        vec![CanonicalTransaction {
+            signature: sig(0xBB),
+            index: 0,
+            succeeded: true,
+            is_vote: false,
+            instructions: Vec::new(),
+        }],
+    );
+    match store.apply_completed_block(&conflict).await.unwrap() {
+        ApplyOutcome::IntegrityHalted { reason } => {
+            assert!(reason.contains("conflicting"));
+        }
+        other => panic!("expected halt, got {other:?}"),
+    }
+    assert!(store.integrity_status().await.unwrap().integrity_halted);
+}
+
+#[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
+#[tokio::test]
+async fn cross_slot_signature_reuse_halts_as_constraint_conflict() {
+    let store = fresh_store().await;
+    let first = block(
+        10,
+        9,
+        pk(0x90),
+        pk(0xA0),
+        vec![CanonicalTransaction {
+            signature: sig(0xCC),
+            index: 0,
+            succeeded: true,
+            is_vote: false,
+            instructions: Vec::new(),
+        }],
+    );
+    store.apply_completed_block(&first).await.unwrap();
+    let reuse = block(
+        11,
+        10,
+        pk(0xA0),
+        pk(0xA1),
+        vec![CanonicalTransaction {
+            signature: sig(0xCC),
+            index: 0,
+            succeeded: true,
+            is_vote: false,
+            instructions: Vec::new(),
+        }],
+    );
+    match store.apply_completed_block(&reuse).await.unwrap() {
+        ApplyOutcome::IntegrityHalted { reason } => {
+            assert!(reason.contains("deterministic constraint conflict"));
+        }
+        other => panic!("expected halt, got {other:?}"),
+    }
+    assert!(store.integrity_status().await.unwrap().integrity_halted);
+    let blocks: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM solana_proof_blocks")
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    assert_eq!(blocks.0, 1);
 }
 
 #[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]

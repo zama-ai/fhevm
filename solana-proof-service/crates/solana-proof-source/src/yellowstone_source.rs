@@ -4,6 +4,16 @@
 //! next stack persists each [`CompletedBlock`] and its checkpoint in one SQL
 //! transaction. The caller pulls the next block only after that commit; this
 //! module has no queue, retry policy, or notion of a committed checkpoint.
+//!
+//! # Program-filtered streams and ancestry
+//!
+//! The subscribe request uses `account_include` on the host program, so
+//! Yellowstone emits only blocks that touch that program — empty intermediate
+//! slots are omitted. Consecutive filtered updates therefore may not satisfy
+//! `parent_slot == previous.slot`. This adapter still requires contiguous
+//! parent links between observed blocks and returns [`YellowstoneSourceError::Ancestry`]
+//! on a gap (never silently skips). Bounded RPC recovery (later slice) must
+//! fill missing blocks before ingest can continue.
 
 use futures::{Stream, StreamExt};
 use std::collections::HashMap;
@@ -873,6 +883,30 @@ mod tests {
         assert!(matches!(
             next_block(&mut stream, None, &mut replay_observed, &mut last_observed,).await,
             Err(YellowstoneSourceError::Ancestry { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn filtered_stream_gap_is_ancestry_error_not_silent_skip() {
+        // Simulates program-filtered Yellowstone omitting empty slot 8: after
+        // applying 7, the next program-touching block is 9 with parent 8.
+        let mut gap = block(9, vec![]);
+        gap.parent_slot = 8;
+        gap.parent_blockhash = bs58::encode(hash(8)).into_string();
+        let mut stream = futures::stream::iter([Ok(update(block(7, vec![]))), Ok(update(gap))]);
+        let mut replay_observed = true;
+        let mut last_observed = None;
+        next_block(&mut stream, None, &mut replay_observed, &mut last_observed)
+            .await
+            .unwrap();
+        assert!(matches!(
+            next_block(&mut stream, None, &mut replay_observed, &mut last_observed).await,
+            Err(YellowstoneSourceError::Ancestry {
+                slot: 9,
+                parent_slot: 8,
+                expected_parent_slot: 7,
+                ..
+            })
         ));
     }
 }

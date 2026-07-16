@@ -140,7 +140,11 @@ pub fn reduce_completed_block(
     let mut touched: BTreeSet<[u8; 32]> = BTreeSet::new();
 
     for tx in &block.transactions {
-        // Failed/vote identities retain position but produce no leaves.
+        // Failed/vote identities retain position (store inserts them) but must
+        // never produce MMR leaves — even if a caller handed us instructions.
+        if !tx.succeeded || tx.is_vote {
+            continue;
+        }
         if tx.instructions.is_empty() {
             continue;
         }
@@ -270,18 +274,49 @@ mod tests {
                 index: 1,
                 succeeded: false,
                 is_vote: false,
-                instructions: Vec::new(),
+                // Even with instructions present, failed txs must stage zero leaves.
+                instructions: vec![RawInstruction {
+                    program_id: program,
+                    accounts: vec![pk(0xA), pk(0xB), pk(0xE), pk(0xC), pk(0xD)],
+                    data: vec![0u8; 8],
+                    top_level_index: 0,
+                    stack_height: Some(1),
+                }],
             }],
         };
         let staged = reduce_completed_block(program, &block, &BTreeMap::new()).unwrap();
         assert!(staged.leaves.is_empty());
-        let _ = RawInstruction {
-            program_id: program,
-            accounts: Vec::new(),
-            data: Vec::new(),
-            top_level_index: 0,
-            stack_height: Some(1),
+        assert!(staged.lineages.is_empty());
+    }
+
+    #[test]
+    fn vote_transaction_produces_no_leaves() {
+        let program = pk(1);
+        let block = CompletedBlock {
+            slot: 12,
+            block_hash: pk(0xB0),
+            parent_slot: 11,
+            parent_hash: pk(0xB1),
+            block_time: None,
+            block_height: None,
+            executed_transaction_count: 1,
+            transactions: vec![CanonicalTransaction {
+                signature: [0x22; 64],
+                index: 0,
+                succeeded: true,
+                is_vote: true,
+                instructions: vec![RawInstruction {
+                    program_id: program,
+                    accounts: Vec::new(),
+                    data: Vec::new(),
+                    top_level_index: 0,
+                    stack_height: Some(1),
+                }],
+            }],
         };
+        let staged = reduce_completed_block(program, &block, &BTreeMap::new()).unwrap();
+        assert!(staged.leaves.is_empty());
+        assert!(staged.lineages.is_empty());
     }
 
     #[test]

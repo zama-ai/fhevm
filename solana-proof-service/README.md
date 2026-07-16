@@ -22,6 +22,13 @@ slices.
   the configured start is proven only by an explicit bounded recovery pass
   (`SqlProofStore::set_history_complete_after_recovery` is the seam; recovery
   itself is not implemented yet).
+- **Program-filtered Yellowstone gaps:** the source subscribes with
+  `account_include` for the host program, so empty intermediate slots are
+  omitted. Consecutive filtered blocks may not satisfy
+  `parent_slot == previous applied slot`. Ingest still requires contiguous
+  parent links and surfaces a gap as `RecoveryRequired` / source `Ancestry`
+  (never a silent skip). **TODO:** bounded RPC recovery must fill missing
+  blocks before live ingest can continue across gaps.
 - **Ops:** schema is service-owned. Apply migrations via
   `SqlProofStore::migrate` (or `sqlx migrate`) before ingest. Compile-checked
   queries require committed `.sqlx` metadata (`make sqlx-prepare` against a

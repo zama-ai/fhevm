@@ -22,6 +22,10 @@ pub enum RunnerError {
     Source(#[from] YellowstoneSourceError),
     #[error("ingest integrity halted: {0}")]
     IntegrityHalted(String),
+    /// Contiguous parent link missing (filtered-stream gap). Bounded RPC
+    /// recovery must fill intermediate blocks; this is not a silent skip.
+    #[error("contiguous ingest gap requires recovery: {0}")]
+    RecoveryRequired(String),
 }
 
 /// Runs until `cancel` is cancelled or a durable integrity halt is observed.
@@ -91,7 +95,22 @@ async fn drive_subscription(
                 info!("ingest cancelled");
                 return Ok(());
             }
-            block = subscription.next_block() => block?,
+            block = subscription.next_block() => match block {
+                Ok(block) => block,
+                // Program-filtered streams can skip empty slots; ancestry gaps
+                // need bounded RPC recovery, not a silent skip or retry loop.
+                Err(YellowstoneSourceError::Ancestry {
+                    slot,
+                    parent_slot,
+                    expected_parent_slot,
+                    ..
+                }) => {
+                    return Err(RunnerError::RecoveryRequired(format!(
+                        "contiguous ingest gap at slot {slot}: parent slot {parent_slot} does not extend previous applied slot {expected_parent_slot}; recovery required"
+                    )));
+                }
+                Err(error) => return Err(RunnerError::Source(error)),
+            },
         };
 
         match store.apply_completed_block(&block).await? {
@@ -100,6 +119,9 @@ async fn drive_subscription(
             }
             ApplyOutcome::AlreadyApplied => {
                 info!(slot = block.slot, "exact replay no-op");
+            }
+            ApplyOutcome::RecoveryRequired { reason } => {
+                return Err(RunnerError::RecoveryRequired(reason));
             }
             ApplyOutcome::IntegrityHalted { reason } => {
                 return Err(RunnerError::IntegrityHalted(reason));

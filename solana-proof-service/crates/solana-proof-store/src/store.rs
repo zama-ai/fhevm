@@ -38,7 +38,15 @@ pub struct ProofSnapshot {
 pub enum ApplyOutcome {
     Applied,
     AlreadyApplied,
-    IntegrityHalted { reason: String },
+    /// Contiguous parent link is missing (typical after a program-filtered
+    /// Yellowstone gap). No domain writes; bounded RPC recovery must fill
+    /// intermediate blocks before ingest can continue.
+    RecoveryRequired {
+        reason: String,
+    },
+    IntegrityHalted {
+        reason: String,
+    },
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -103,6 +111,15 @@ fn subjects_from_sql(subjects: Vec<Vec<u8>>) -> Result<Vec<[u8; 32]>, StoreError
             })
         })
         .collect()
+}
+
+/// Postgres unique_violation — treated as a deterministic integrity signal
+/// (e.g. signature reuse across slots), not a bare retryable database error.
+fn is_unique_violation(err: &sqlx::Error) -> bool {
+    match err {
+        sqlx::Error::Database(db) => db.code().as_deref() == Some("23505"),
+        _ => false,
+    }
 }
 
 impl SqlProofStore {
@@ -241,7 +258,12 @@ impl SqlProofStore {
         &self,
         lineage: [u8; 32],
     ) -> Result<Option<ProofSnapshot>, StoreError> {
+        // REPEATABLE READ so lineage metadata and leaf rows are one snapshot;
+        // under READ COMMITTED a concurrent apply can tear leaf_count vs leaves.
         let mut tx = self.pool.begin().await?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(&mut *tx)
+            .await?;
         let row = sqlx::query!(
             r#"
             SELECT
@@ -317,9 +339,6 @@ impl SqlProofStore {
         let progress = sqlx::query!(
             r#"
             SELECT
-                history_complete,
-                history_start_slot,
-                history_start_block_hash,
                 checkpoint_slot,
                 checkpoint_block_hash,
                 integrity_halted,
@@ -350,6 +369,9 @@ impl SqlProofStore {
                 tx.commit().await?;
                 return Ok(ApplyOutcome::IntegrityHalted { reason });
             }
+            Some(ApplyOutcome::RecoveryRequired { .. }) => {
+                unreachable!("replay probe never returns RecoveryRequired")
+            }
             Some(ApplyOutcome::Applied) => unreachable!("replay probe never returns Applied"),
             None => {}
         }
@@ -375,13 +397,25 @@ impl SqlProofStore {
                 tx.commit().await?;
                 return Ok(ApplyOutcome::IntegrityHalted { reason });
             }
-            if block.parent_slot != checkpoint_slot || block.parent_hash != checkpoint_hash {
+            if block.parent_slot != checkpoint_slot {
+                // Program-filtered Yellowstone streams omit empty blocks, so
+                // consecutive program-touching blocks may skip slots. Contiguous
+                // parent links are still required; a gap is not a silent skip —
+                // bounded RPC recovery must supply the missing blocks.
                 let reason = format!(
-                    "block {} ancestry does not extend checkpoint {}: parent {}/{:02x?}",
+                    "contiguous ingest gap at slot {}: parent slot {} does not extend checkpoint {}; recovery required",
+                    block.slot, block.parent_slot, checkpoint_slot
+                );
+                tx.commit().await?;
+                return Ok(ApplyOutcome::RecoveryRequired { reason });
+            }
+            if block.parent_hash != checkpoint_hash {
+                let reason = format!(
+                    "block {} ancestry does not extend checkpoint {}: parent hash {:02x?} != checkpoint {:02x?}",
                     block.slot,
                     checkpoint_slot,
-                    block.parent_slot,
-                    &block.parent_hash[..4]
+                    &block.parent_hash[..4],
+                    &checkpoint_hash[..4]
                 );
                 self.persist_halt(&mut tx, &reason).await?;
                 tx.commit().await?;
@@ -390,12 +424,7 @@ impl SqlProofStore {
         }
 
         // Stage reduction before any domain writes.
-        let existing = self.load_prior_lineages(&mut tx, block).await;
-        let existing = match existing {
-            Ok(existing) => existing,
-            Err(StoreError::Database(err)) => return Err(StoreError::Database(err)),
-            Err(other) => return Err(other),
-        };
+        let existing = self.load_prior_lineages(&mut tx, block).await?;
 
         let staged = match reduce_completed_block(self.program_id, block, &existing) {
             Ok(staged) => staged,
@@ -413,9 +442,15 @@ impl SqlProofStore {
             return Ok(ApplyOutcome::IntegrityHalted { reason });
         }
 
-        self.insert_block(&mut tx, block).await?;
-        self.insert_transactions(&mut tx, block).await?;
-        self.apply_staged(&mut tx, block.slot, &staged).await?;
+        if let Err(err) = self.insert_block(&mut tx, block).await {
+            return self.finish_unique_violation(tx, block.slot, err).await;
+        }
+        if let Err(err) = self.insert_transactions(&mut tx, block).await {
+            return self.finish_unique_violation(tx, block.slot, err).await;
+        }
+        if let Err(err) = self.apply_staged(&mut tx, block.slot, &staged).await {
+            return self.finish_unique_violation(tx, block.slot, err).await;
+        }
 
         let is_bootstrap = progress.checkpoint_slot.is_none();
         sqlx::query!(
@@ -448,6 +483,33 @@ impl SqlProofStore {
 
         tx.commit().await?;
         Ok(ApplyOutcome::Applied)
+    }
+
+    async fn finish_unique_violation(
+        &self,
+        tx: Transaction<'_, Postgres>,
+        slot: u64,
+        err: StoreError,
+    ) -> Result<ApplyOutcome, StoreError> {
+        match err {
+            StoreError::Database(db_err) if is_unique_violation(&db_err) => {
+                let reason = format!(
+                    "deterministic constraint conflict while applying slot {slot}: {db_err}"
+                );
+                // The failed statement aborted this transaction; roll it back
+                // and persist the halt in a fresh transaction.
+                tx.rollback().await?;
+                let mut halt_tx = self.pool.begin().await?;
+                self.persist_halt(&mut halt_tx, &reason).await?;
+                halt_tx.commit().await?;
+                Ok(ApplyOutcome::IntegrityHalted { reason })
+            }
+            other => {
+                // Drop the open transaction; connection returns to the pool on drop.
+                drop(tx);
+                Err(other)
+            }
+        }
     }
 
     async fn persist_halt(
