@@ -1,0 +1,255 @@
+[
+  {
+    "name": "top-level and inner instructions preserve loaded account order",
+    "static_account_tags": [1, 2],
+    "loaded_writable_account_tags": [3],
+    "loaded_readonly_account_tags": [4],
+    "top_level": [
+      {
+        "program_id_index": 0,
+        "accounts": [2, 1],
+        "data": [10, 11],
+        "stack_height": null
+      },
+      {
+        "program_id_index": 1,
+        "accounts": [3],
+        "data": [12],
+        "stack_height": null
+      }
+    ],
+    "inner_groups": [
+      {
+        "index": 0,
+        "instructions": [
+          {
+            "program_id_index": 2,
+            "accounts": [0, 3],
+            "data": [13],
+            "stack_height": 2
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "outcome": "accept",
+      "instructions": [
+        {
+          "program_tag": 1,
+          "account_tags": [3, 2],
+          "data": [10, 11],
+          "top_level_index": 0,
+          "is_inner": false
+        },
+        {
+          "program_tag": 3,
+          "account_tags": [1, 4],
+          "data": [13],
+          "top_level_index": 0,
+          "is_inner": true
+        },
+        {
+          "program_tag": 2,
+          "account_tags": [4],
+          "data": [12],
+          "top_level_index": 1,
+          "is_inner": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "nested inner stack transitions preserve execution order",
+    "static_account_tags": [1],
+    "top_level": [
+      {
+        "program_id_index": 0,
+        "accounts": [],
+        "data": [],
+        "stack_height": null
+      }
+    ],
+    "inner_groups": [
+      {
+        "index": 0,
+        "instructions": [
+          {
+            "program_id_index": 0,
+            "accounts": [],
+            "data": [],
+            "stack_height": 2
+          },
+          {
+            "program_id_index": 0,
+            "accounts": [],
+            "data": [],
+            "stack_height": 3
+          },
+          {
+            "program_id_index": 0,
+            "accounts": [],
+            "data": [],
+            "stack_height": 3
+          },
+          {
+            "program_id_index": 0,
+            "accounts": [],
+            "data": [],
+            "stack_height": 2
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "outcome": "accept",
+      "instructions": [
+        {
+          "program_tag": 1,
+          "account_tags": [],
+          "data": [],
+          "top_level_index": 0,
+          "is_inner": false
+        },
+        {
+          "program_tag": 1,
+          "account_tags": [],
+          "data": [],
+          "top_level_index": 0,
+          "is_inner": true
+        },
+        {
+          "program_tag": 1,
+          "account_tags": [],
+          "data": [],
+          "top_level_index": 0,
+          "is_inner": true
+        },
+        {
+          "program_tag": 1,
+          "account_tags": [],
+          "data": [],
+          "top_level_index": 0,
+          "is_inner": true
+        },
+        {
+          "program_tag": 1,
+          "account_tags": [],
+          "data": [],
+          "top_level_index": 0,
+          "is_inner": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "program index out of range rejects the transaction",
+    "static_account_tags": [1],
+    "top_level": [
+      {
+        "program_id_index": 1,
+        "accounts": [],
+        "data": [],
+        "stack_height": null
+      }
+    ],
+    "expected": { "outcome": "reject" }
+  },
+  {
+    "name": "account index out of range rejects the transaction",
+    "static_account_tags": [1, 2],
+    "top_level": [
+      {
+        "program_id_index": 0,
+        "accounts": [1, 9],
+        "data": [],
+        "stack_height": null
+      }
+    ],
+    "expected": { "outcome": "reject" }
+  },
+  {
+    "name": "duplicate inner groups reject the transaction",
+    "static_account_tags": [1],
+    "top_level": [
+      {
+        "program_id_index": 0,
+        "accounts": [],
+        "data": [],
+        "stack_height": null
+      }
+    ],
+    "inner_groups": [
+      { "index": 0, "instructions": [] },
+      { "index": 0, "instructions": [] }
+    ],
+    "expected": { "outcome": "reject" }
+  },
+  {
+    "name": "orphan inner group rejects the transaction",
+    "static_account_tags": [1],
+    "top_level": [
+      {
+        "program_id_index": 0,
+        "accounts": [],
+        "data": [],
+        "stack_height": null
+      }
+    ],
+    "inner_groups": [
+      { "index": 1, "instructions": [] }
+    ],
+    "expected": { "outcome": "reject" }
+  },
+  {
+    "name": "missing inner stack height rejects the transaction",
+    "static_account_tags": [1],
+    "top_level": [
+      {
+        "program_id_index": 0,
+        "accounts": [],
+        "data": [],
+        "stack_height": null
+      }
+    ],
+    "inner_groups": [
+      {
+        "index": 0,
+        "instructions": [
+          {
+            "program_id_index": 0,
+            "accounts": [],
+            "data": [],
+            "stack_height": null
+          }
+        ]
+      }
+    ],
+    "expected": { "outcome": "reject" }
+  },
+  {
+    "name": "impossible inner stack transition rejects the transaction",
+    "static_account_tags": [1],
+    "top_level": [
+      {
+        "program_id_index": 0,
+        "accounts": [],
+        "data": [],
+        "stack_height": null
+      }
+    ],
+    "inner_groups": [
+      {
+        "index": 0,
+        "instructions": [
+          {
+            "program_id_index": 0,
+            "accounts": [],
+            "data": [],
+            "stack_height": 3
+          }
+        ]
+      }
+    ],
+    "expected": { "outcome": "reject" }
+  }
+]

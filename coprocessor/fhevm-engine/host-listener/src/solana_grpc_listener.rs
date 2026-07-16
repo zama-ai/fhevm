@@ -19,7 +19,8 @@ use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::Channel;
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::prelude::{
-    subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequest,
+    subscribe_update::UpdateOneof, CommitmentLevel, CompiledInstruction,
+    InnerInstruction, InnerInstructions, SubscribeRequest,
     SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocksMeta,
     SubscribeRequestFilterTransactions, SubscribeUpdateTransactionInfo,
 };
@@ -292,6 +293,76 @@ fn resolve_instruction(
     })
 }
 
+fn resolve_execution_order(
+    account_keys: &[[u8; 32]],
+    top_level: &[CompiledInstruction],
+    inner_groups: &[InnerInstructions],
+) -> Result<Vec<crate::solana_reconstruct::DecodedInstruction>> {
+    let mut inner_by_index: HashMap<u32, &[InnerInstruction]> = HashMap::new();
+    for group in inner_groups {
+        if group.index as usize >= top_level.len() {
+            return Err(anyhow!(
+                "inner-instruction group index {} is out of range",
+                group.index
+            ));
+        }
+        if inner_by_index
+            .insert(group.index, group.instructions.as_slice())
+            .is_some()
+        {
+            return Err(anyhow!(
+                "duplicate inner-instruction group index {}",
+                group.index
+            ));
+        }
+        let mut previous_height = 1u32;
+        for (position, instruction) in group.instructions.iter().enumerate() {
+            let height = instruction.stack_height.ok_or_else(|| {
+                anyhow!(
+                    "inner instruction {position} in group {} has no stackHeight",
+                    group.index
+                )
+            })?;
+            if height < 2
+                || (position == 0 && height != 2)
+                || height > previous_height.saturating_add(1)
+            {
+                return Err(anyhow!(
+                    "impossible stackHeight {height} at inner instruction {position} in group {}",
+                    group.index
+                ));
+            }
+            previous_height = height;
+        }
+    }
+
+    let mut ordered = Vec::new();
+    for (index, instruction) in top_level.iter().enumerate() {
+        let index = index as u32;
+        ordered.push(resolve_instruction(
+            account_keys,
+            index,
+            false,
+            instruction.program_id_index,
+            &instruction.data,
+            &instruction.accounts,
+        )?);
+        if let Some(inner) = inner_by_index.get(&index) {
+            for instruction in inner.iter() {
+                ordered.push(resolve_instruction(
+                    account_keys,
+                    index,
+                    true,
+                    instruction.program_id_index,
+                    &instruction.data,
+                    &instruction.accounts,
+                )?);
+            }
+        }
+    }
+    Ok(ordered)
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn subscribe_loop(
     db: &Database,
@@ -559,57 +630,12 @@ async fn ingest_transaction(
     // Top-level + inner instruction invocations with resolved accounts (a
     // zama-host instruction is called directly as top-level, or via CPI as inner
     // for token flows); scanned by the reconstruction shadow-compare and ingest.
-    let all_instructions: Vec<crate::solana_reconstruct::DecodedInstruction> =
-        {
-            let decode = |top_level_index: u32,
-                          is_inner: bool,
-                          program_id_index: u32,
-                          data: &[u8],
-                          accounts: &[u8]| {
-                resolve_instruction(
-                    &account_keys,
-                    top_level_index,
-                    is_inner,
-                    program_id_index,
-                    data,
-                    accounts,
-                )
-                .map_err(IngestFailure::permanent)
-            };
-            let mut inner_by_index: HashMap<u32, Vec<_>> = HashMap::new();
-            for group in &meta.inner_instructions {
-                let inner = group
-                    .instructions
-                    .iter()
-                    .map(|ix| {
-                        decode(
-                            group.index,
-                            true,
-                            ix.program_id_index,
-                            &ix.data,
-                            &ix.accounts,
-                        )
-                    })
-                    .collect::<std::result::Result<Vec<_>, _>>()?;
-                inner_by_index.insert(group.index, inner);
-            }
-            let mut ordered = Vec::new();
-            for (index, ix) in message.instructions.iter().enumerate() {
-                let index = index as u32;
-                ordered.push(decode(
-                    index,
-                    false,
-                    ix.program_id_index,
-                    &ix.data,
-                    &ix.accounts,
-                )?);
-                if let Some(inner) = inner_by_index.remove(&index) {
-                    ordered.extend(inner);
-                }
-            }
-            ordered.extend(inner_by_index.into_values().flatten());
-            std::result::Result::<_, IngestFailure>::Ok(ordered)
-        }?;
+    let all_instructions = resolve_execution_order(
+        &account_keys,
+        &message.instructions,
+        &meta.inner_instructions,
+    )
+    .map_err(IngestFailure::permanent)?;
 
     let events = match reconstruct_events_for_insert(
         config,
@@ -865,7 +891,21 @@ fn compute_result_handle(
 
 #[cfg(test)]
 mod account_resolution_tests {
-    use super::{resolve_instruction, validated_account_keys};
+    use super::{resolve_execution_order, validated_account_keys};
+    use yellowstone_grpc_proto::prelude::{
+        CompiledInstruction, InnerInstruction, InnerInstructions,
+    };
+
+    mod shared_fixtures {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../solana/test-fixtures/transaction_decoding.rs"
+        ));
+    }
+
+    use shared_fixtures::{
+        transaction_decoding_fixtures, ExpectedInstruction, ExpectedOutcome,
+    };
 
     fn key(tag: u8) -> Vec<u8> {
         vec![tag; 32]
@@ -882,51 +922,75 @@ mod account_resolution_tests {
     }
 
     #[test]
-    fn rejects_out_of_range_program_index() {
-        let err = resolve_instruction(&[[1; 32]], 0, false, 1, &[7], &[0])
-            .expect_err("invalid program indexes must fail closed");
+    fn shared_transaction_decoding_contract() {
+        for fixture in transaction_decoding_fixtures() {
+            let key_bytes: Vec<Vec<u8>> =
+                fixture.account_tags().map(key).collect();
+            let account_keys =
+                validated_account_keys(key_bytes.iter()).unwrap();
+            let top_level: Vec<CompiledInstruction> = fixture
+                .top_level
+                .iter()
+                .map(|instruction| CompiledInstruction {
+                    program_id_index: instruction.program_id_index,
+                    accounts: instruction.accounts.clone(),
+                    data: instruction.data.clone(),
+                })
+                .collect();
+            let inner_groups: Vec<InnerInstructions> = fixture
+                .inner_groups
+                .iter()
+                .map(|group| InnerInstructions {
+                    index: group.index,
+                    instructions: group
+                        .instructions
+                        .iter()
+                        .map(|instruction| InnerInstruction {
+                            program_id_index: instruction.program_id_index,
+                            accounts: instruction.accounts.clone(),
+                            data: instruction.data.clone(),
+                            stack_height: instruction.stack_height,
+                        })
+                        .collect(),
+                })
+                .collect();
 
-        assert_eq!(err.to_string(), "program_id_index 1 out of range");
-    }
-
-    #[test]
-    fn rejects_out_of_range_account_index_without_compacting_positions() {
-        let err = resolve_instruction(
-            &[[1; 32], [2; 32], [3; 32]],
-            0,
-            false,
-            0,
-            &[7],
-            &[1, 9, 2],
-        )
-        .expect_err(
-            "invalid account indexes must reject the complete instruction",
-        );
-
-        assert_eq!(err.to_string(), "instruction account index 9 out of range");
-    }
-
-    #[test]
-    fn resolves_valid_top_level_and_inner_instructions_without_reordering_accounts(
-    ) {
-        let keys = validated_account_keys([&key(1), &key(2), &key(3)]).unwrap();
-        let top_level =
-            resolve_instruction(&keys, 4, false, 0, &[10, 11], &[2, 1])
-                .unwrap();
-        let inner =
-            resolve_instruction(&keys, 4, true, 1, &[12], &[0, 2]).unwrap();
-
-        assert_eq!(top_level.program, bs58::encode([1; 32]).into_string());
-        assert_eq!(top_level.data, vec![10, 11]);
-        assert_eq!(top_level.accounts, vec![[3; 32], [2; 32]]);
-        assert_eq!(top_level.top_level_index, 4);
-        assert!(!top_level.is_inner);
-
-        assert_eq!(inner.program, bs58::encode([2; 32]).into_string());
-        assert_eq!(inner.data, vec![12]);
-        assert_eq!(inner.accounts, vec![[1; 32], [3; 32]]);
-        assert_eq!(inner.top_level_index, 4);
-        assert!(inner.is_inner);
+            let decoded = resolve_execution_order(
+                &account_keys,
+                &top_level,
+                &inner_groups,
+            );
+            match &fixture.expected {
+                ExpectedOutcome::Accept { instructions } => {
+                    let actual: Vec<ExpectedInstruction> = decoded
+                        .unwrap_or_else(|error| {
+                            panic!("{}: {error}", fixture.name)
+                        })
+                        .into_iter()
+                        .map(|instruction| {
+                            let program = bs58::decode(instruction.program)
+                                .into_vec()
+                                .unwrap();
+                            ExpectedInstruction {
+                                program_tag: program[0],
+                                account_tags: instruction
+                                    .accounts
+                                    .iter()
+                                    .map(|account| account[0])
+                                    .collect(),
+                                data: instruction.data,
+                                top_level_index: instruction.top_level_index,
+                                is_inner: instruction.is_inner,
+                            }
+                        })
+                        .collect();
+                    assert_eq!(actual, *instructions, "{}", fixture.name);
+                }
+                ExpectedOutcome::Reject => {
+                    assert!(decoded.is_err(), "{}", fixture.name);
+                }
+            }
+        }
     }
 }
 
