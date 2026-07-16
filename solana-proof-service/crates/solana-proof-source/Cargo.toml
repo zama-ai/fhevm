@@ -1,0 +1,19 @@
+[package]
+name = "solana-proof-source"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Yellowstone completed-block source for the Solana proof service"
+
+[dependencies]
+bs58 = { workspace = true }
+futures = { workspace = true }
+thiserror = { workspace = true }
+tonic = { workspace = true }
+yellowstone-grpc-proto = { workspace = true }
+zama-solana-transaction = { workspace = true }
+
+[dev-dependencies]
+sha2 = { workspace = true }
+tokio = { workspace = true }

@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["crates/solana-proof-source"]
+
+[workspace.package]
+authors = ["Zama"]
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+
+[workspace.dependencies]
+bs58 = "0.5.1"
+futures = "0.3.32"
+sha2 = "0.10"
+thiserror = "2.0.18"
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }
+tonic = "0.12.3"
+yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v5.0.1+solana.2.1.21", default-features = false, features = ["tonic", "tonic-compression"] }
+zama-solana-transaction = { path = "../solana/crates/zama-solana-transaction" }
