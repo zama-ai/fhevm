@@ -782,12 +782,12 @@ pub fn deny_subject_address(subject: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[DENY_SUBJECT_SEED, subject.as_ref()], &crate::ID)
 }
 
-/// Returns the canonical HCU trust-registry record address for an app authority.
+/// Returns the canonical HCU trust-registry record address for a compute subject.
 pub fn hcu_trusted_app_address(app: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[HCU_TRUSTED_APP_SEED, app.as_ref()], &crate::ID)
 }
 
-/// Returns the canonical per-app HCU block meter address for an app authority.
+/// Returns the canonical per-subject HCU block meter address for a compute subject.
 pub fn hcu_block_meter_address(app: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[HCU_BLOCK_METER_SEED, app.as_ref()], &crate::ID)
 }

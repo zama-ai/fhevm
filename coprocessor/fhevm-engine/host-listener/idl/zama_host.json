@@ -549,23 +549,14 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_authority",
-          "docs": [
-            "The app identity the HCU block cap meters and trusts. Both HCU PDAs (`hcu_block_meter`,",
-            "`hcu_trusted_app_record`) are derived from this key — never from `payer` or",
-            "`app_account_authority`. A `Signer` so the identity is unforgeable: a program can only",
-            "sign its own PDAs via CPI seeds, so no caller can spend another app's meter or steal its",
-            "trusted bypass. Always required — even under the unrestricted default — so activating",
-            "the cap never changes the instruction's account shape."
-          ],
-          "signer": true
-        },
-        {
           "name": "hcu_block_meter",
           "docs": [
-            "Per-app HCU block meter (written once in the execution `charge`). Untrusted apps in the",
-            "metering band MUST supply it; trusted apps and the unrestricted default omit it. An",
-            "`UncheckedAccount` because it may be uninitialized (lazy-created) and is validated manually."
+            "Per-`compute_subject` HCU block meter (written once in the execution `charge`). The HCU PDAs",
+            "(`hcu_block_meter`, `hcu_trusted_app_record`) key on `compute_subject` — the mandatory signed",
+            "caller identity already used for ACL admission — so no caller can rotate a fresh signer to",
+            "mint a fresh per-slot meter. Untrusted subjects in the metering band MUST supply this meter;",
+            "trusted subjects and the unrestricted default omit it. An `UncheckedAccount` because it may",
+            "be uninitialized (lazy-created) and is validated manually."
           ],
           "writable": true,
           "optional": true
@@ -573,8 +564,9 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "Trust witness (read-only). Present + program-owned + `trusted == true` ⇒ bypass the cap;",
-            "absent (`None`) ⇒ untrusted, fall through to the meter; present-but-malformed ⇒ reject."
+            "Trust witness (read-only), keyed on `compute_subject`. Present + program-owned +",
+            "`trusted == true` ⇒ bypass the cap; absent (`None`) ⇒ untrusted, fall through to the meter;",
+            "present-but-malformed ⇒ reject."
           ],
           "optional": true
         },

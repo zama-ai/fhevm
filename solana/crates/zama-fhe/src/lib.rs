@@ -2834,14 +2834,12 @@ pub struct EvalCpiAccounts<'a, 'info> {
     pub host_config: AccountInfo<'info>,
     pub deny_subject_records: &'a [AccountInfo<'info>],
     pub system_program: AccountInfo<'info>,
-    /// The app identity the host meters and trusts: both HCU PDAs are derived from this key.
-    /// Mandatory on every eval and must sign (include its seeds in `signer_seeds` when it is a
-    /// program PDA), so activating the host block cap never changes the CPI account shape.
-    pub hcu_authority: AccountInfo<'info>,
-    /// Per-app HCU block meter (mut). Untrusted apps in the metering band supply it; trusted apps
-    /// and the unrestricted default pass `None`.
+    /// Per-`compute_subject` HCU block meter (mut). The host keys the meter on `compute_subject`, so
+    /// untrusted subjects in the metering band supply it; trusted subjects and the unrestricted
+    /// default pass `None`.
     pub hcu_block_meter: Option<AccountInfo<'info>>,
-    /// HCU trust witness (read-only). `Some` + valid ⇒ bypass; `None` ⇒ untrusted (metered).
+    /// HCU trust witness (read-only), keyed on `compute_subject`. `Some` + valid ⇒ bypass; `None` ⇒
+    /// untrusted (metered).
     pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
     pub event_authority: AccountInfo<'info>,
     pub program: AccountInfo<'info>,
@@ -2953,7 +2951,6 @@ where
         app_account_authority: accounts.app_account_authority,
         host_config: accounts.host_config,
         system_program: accounts.system_program,
-        hcu_authority: accounts.hcu_authority,
         hcu_block_meter: accounts.hcu_block_meter,
         hcu_trusted_app_record: accounts.hcu_trusted_app_record,
         event_authority: accounts.event_authority,
@@ -3064,7 +3061,6 @@ mod tests {
             host_config: account_info(Pubkey::new_unique(), false),
             deny_subject_records: &[],
             system_program: account_info(Pubkey::new_unique(), false),
-            hcu_authority: account_info(Pubkey::new_unique(), false),
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             event_authority: account_info(Pubkey::new_unique(), false),

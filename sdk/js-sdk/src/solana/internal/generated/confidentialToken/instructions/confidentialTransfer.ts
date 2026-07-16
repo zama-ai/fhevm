@@ -72,7 +72,6 @@ export type ConfidentialTransferInstruction<
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountHcuTrustedAppRecord extends string | AccountMeta<string> = string,
-  TAccountHcuAuthority extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -105,7 +104,6 @@ export type ConfidentialTransferInstruction<
       TAccountHcuTrustedAppRecord extends string
         ? ReadonlyAccount<TAccountHcuTrustedAppRecord>
         : TAccountHcuTrustedAppRecord,
-      TAccountHcuAuthority extends string ? ReadonlyAccount<TAccountHcuAuthority> : TAccountHcuAuthority,
       TAccountEventAuthority extends string ? ReadonlyAccount<TAccountEventAuthority> : TAccountEventAuthority,
       TAccountProgram extends string ? ReadonlyAccount<TAccountProgram> : TAccountProgram,
       ...TRemainingAccounts,
@@ -164,7 +162,6 @@ export type ConfidentialTransferAsyncInput<
   TAccountSystemProgram extends string = string,
   TAccountHcuBlockMeter extends string = string,
   TAccountHcuTrustedAppRecord extends string = string,
-  TAccountHcuAuthority extends string = string,
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
@@ -194,15 +191,13 @@ export type ConfidentialTransferAsyncInput<
   hostConfig: Address<TAccountHostConfig>;
   /** System program used for ACL account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
-  /** HCU block meter — supplied by an untrusted app under a metering-band cap, omitted otherwise. */
+  /**
+   * canonical `["hcu-block-meter", compute_signer]` PDA. The per-mint HCU block meter — supplied
+   * by an untrusted mint under a metering-band cap, omitted otherwise.
+   */
   hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
   /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
-  /**
-   * into the CPI. The mint-scoped identity the host block cap meters and trusts — mandatory
-   * on every eval, matching the host account shape.
-   */
-  hcuAuthority: Address<TAccountHcuAuthority>;
   eventAuthority: Address<TAccountEventAuthority>;
   program: Address<TAccountProgram>;
   amountAttestation: ConfidentialTransferInstructionDataArgs['amountAttestation'];
@@ -224,7 +219,6 @@ export async function getConfidentialTransferInstructionAsync<
   TAccountSystemProgram extends string,
   TAccountHcuBlockMeter extends string,
   TAccountHcuTrustedAppRecord extends string,
-  TAccountHcuAuthority extends string,
   TAccountEventAuthority extends string,
   TAccountProgram extends string,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -245,7 +239,6 @@ export async function getConfidentialTransferInstructionAsync<
     TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
-    TAccountHcuAuthority,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -268,7 +261,6 @@ export async function getConfidentialTransferInstructionAsync<
     TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
-    TAccountHcuAuthority,
     TAccountEventAuthority,
     TAccountProgram
   >
@@ -305,7 +297,6 @@ export async function getConfidentialTransferInstructionAsync<
       value: input.hcuTrustedAppRecord ?? null,
       isWritable: false,
     },
-    hcuAuthority: { value: input.hcuAuthority ?? null, isWritable: false },
     eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
     program: { value: input.program ?? null, isWritable: false },
   };
@@ -346,7 +337,6 @@ export async function getConfidentialTransferInstructionAsync<
       getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
-      getAccountMeta('hcuAuthority', accounts.hcuAuthority),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
       getAccountMeta('program', accounts.program),
     ],
@@ -369,7 +359,6 @@ export async function getConfidentialTransferInstructionAsync<
     TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
-    TAccountHcuAuthority,
     TAccountEventAuthority,
     TAccountProgram
   >);
@@ -391,7 +380,6 @@ export type ConfidentialTransferInput<
   TAccountSystemProgram extends string = string,
   TAccountHcuBlockMeter extends string = string,
   TAccountHcuTrustedAppRecord extends string = string,
-  TAccountHcuAuthority extends string = string,
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
@@ -421,15 +409,13 @@ export type ConfidentialTransferInput<
   hostConfig: Address<TAccountHostConfig>;
   /** System program used for ACL account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
-  /** HCU block meter — supplied by an untrusted app under a metering-band cap, omitted otherwise. */
+  /**
+   * canonical `["hcu-block-meter", compute_signer]` PDA. The per-mint HCU block meter — supplied
+   * by an untrusted mint under a metering-band cap, omitted otherwise.
+   */
   hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
   /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
-  /**
-   * into the CPI. The mint-scoped identity the host block cap meters and trusts — mandatory
-   * on every eval, matching the host account shape.
-   */
-  hcuAuthority: Address<TAccountHcuAuthority>;
   eventAuthority: Address<TAccountEventAuthority>;
   program: Address<TAccountProgram>;
   amountAttestation: ConfidentialTransferInstructionDataArgs['amountAttestation'];
@@ -451,7 +437,6 @@ export function getConfidentialTransferInstruction<
   TAccountSystemProgram extends string,
   TAccountHcuBlockMeter extends string,
   TAccountHcuTrustedAppRecord extends string,
-  TAccountHcuAuthority extends string,
   TAccountEventAuthority extends string,
   TAccountProgram extends string,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -472,7 +457,6 @@ export function getConfidentialTransferInstruction<
     TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
-    TAccountHcuAuthority,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -494,7 +478,6 @@ export function getConfidentialTransferInstruction<
   TAccountSystemProgram,
   TAccountHcuBlockMeter,
   TAccountHcuTrustedAppRecord,
-  TAccountHcuAuthority,
   TAccountEventAuthority,
   TAccountProgram
 > {
@@ -530,7 +513,6 @@ export function getConfidentialTransferInstruction<
       value: input.hcuTrustedAppRecord ?? null,
       isWritable: false,
     },
-    hcuAuthority: { value: input.hcuAuthority ?? null, isWritable: false },
     eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
     program: { value: input.program ?? null, isWritable: false },
   };
@@ -566,7 +548,6 @@ export function getConfidentialTransferInstruction<
       getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
-      getAccountMeta('hcuAuthority', accounts.hcuAuthority),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
       getAccountMeta('program', accounts.program),
     ],
@@ -589,7 +570,6 @@ export function getConfidentialTransferInstruction<
     TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
-    TAccountHcuAuthority,
     TAccountEventAuthority,
     TAccountProgram
   >);
@@ -627,17 +607,15 @@ export type ParsedConfidentialTransferInstruction<
     hostConfig: TAccountMetas[11];
     /** System program used for ACL account creation. */
     systemProgram: TAccountMetas[12];
-    /** HCU block meter — supplied by an untrusted app under a metering-band cap, omitted otherwise. */
+    /**
+     * canonical `["hcu-block-meter", compute_signer]` PDA. The per-mint HCU block meter — supplied
+     * by an untrusted mint under a metering-band cap, omitted otherwise.
+     */
     hcuBlockMeter?: TAccountMetas[13] | undefined;
     /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
     hcuTrustedAppRecord?: TAccountMetas[14] | undefined;
-    /**
-     * into the CPI. The mint-scoped identity the host block cap meters and trusts — mandatory
-     * on every eval, matching the host account shape.
-     */
-    hcuAuthority: TAccountMetas[15];
-    eventAuthority: TAccountMetas[16];
-    program: TAccountMetas[17];
+    eventAuthority: TAccountMetas[15];
+    program: TAccountMetas[16];
   };
   data: ConfidentialTransferInstructionData;
 };
@@ -648,10 +626,10 @@ export function parseConfidentialTransferInstruction<
 >(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedConfidentialTransferInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 18) {
+  if (instruction.accounts.length < 17) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 18,
+      expectedAccountMetas: 17,
     });
   }
   let accountIndex = 0;
@@ -682,7 +660,6 @@ export function parseConfidentialTransferInstruction<
       systemProgram: getNextAccount(),
       hcuBlockMeter: getNextOptionalAccount(),
       hcuTrustedAppRecord: getNextOptionalAccount(),
-      hcuAuthority: getNextAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },
