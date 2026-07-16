@@ -379,24 +379,20 @@ describe('Multi-Chain State Isolation', function () {
       expect(handleA.slice(46, 62)).to.eq(this.chains[0].chainId.toString(16).padStart(16, '0'));
       expect(handleB.slice(46, 62)).to.eq(this.chains[1].chainId.toString(16).padStart(16, '0'));
 
-      const [instanceA, instanceB] = await Promise.all([
-        createInstance(this.chains[0]),
-        createInstance(this.chains[1]),
-      ]);
-      const [decryptedA, decryptedB] = await Promise.all([
-        instanceA.userDecryptSingleHandle({
-          handle: handleA,
-          contractAddress: this.chainA.userDecryptAddress,
-          signer: this.deployerA,
-        }),
-        instanceB.userDecryptSingleHandle({
-          handle: handleB,
-          contractAddress: this.chainB.userDecryptAddress,
-          signer: this.deployerB,
-        }),
-      ]);
-
+      const instanceA = await createInstance(this.chains[0]);
+      const decryptedA = await instanceA.userDecryptSingleHandle({
+        handle: handleA,
+        contractAddress: this.chainA.userDecryptAddress,
+        signer: this.deployerA,
+      });
       expect(decryptedA).to.equal(18446744073709551600n);
+
+      const instanceB = await createInstance(this.chains[1]);
+      const decryptedB = await instanceB.userDecryptSingleHandle({
+        handle: handleB,
+        contractAddress: this.chainB.userDecryptAddress,
+        signer: this.deployerB,
+      });
       expect(decryptedB).to.equal(18446744073709551600n);
     });
   });

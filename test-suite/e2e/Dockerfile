@@ -10,7 +10,6 @@ WORKDIR /app
 RUN apk add --no-cache \
     bash \
     curl \
-    docker-cli \
     wget \
     vim \
     jq \
