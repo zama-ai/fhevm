@@ -7,24 +7,23 @@
 # below are unqualified (no ".<namespace>.svc.cluster.local" suffix) so this
 # file works unchanged under any per-PR namespace.
 #
-# databaseEndpoint / all image tags are overridden at deploy time via
-# --set-string in pr-preview-deploy.yml (real RDS endpoint from
-# coprocessor-infra's connection secret; real per-PR short-SHA image tags) -
-# the values here are just fallback defaults so this file stays valid
-# standalone.
+# All image tags are overridden at deploy time via --set-string in
+# pr-preview-deploy.yml (real per-PR short-SHA image tags) - the values here
+# are just fallback defaults so this file stays valid standalone.
+#
+# databaseUser/databasePassword/databaseEndpoint below are already real, not
+# placeholders: they point at the in-cluster Postgres release deployed by
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml, whose Service
+# name + fixed ephemeral test credentials are known ahead of deploy time (see
+# that file's header) - no --set-string/secret discovery needed for the DB.
 #
 # Deployed as:
 #   helm upgrade --install coprocessor oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor \
 #     -n <namespace> -f this-file
 commonConfig:
-  databaseUser:
-    valueFrom: {secretKeyRef: {name: coprocessor-infra-coprocessor-db, key: username}}
-  databasePassword:
-    valueFrom: {secretKeyRef: {name: coprocessor-infra-coprocessor-db, key: password}}
-  # Real value injected via --set-string at deploy time (crossplane RDS endpoint
-  # isn't known until coprocessor-infra reconciles). Placeholder keeps this
-  # file helm-template-valid on its own.
-  databaseEndpoint: {value: "coprocessor-infra-coprocessor-db:5432"}
+  databaseUser: {value: "zama"}
+  databasePassword: {value: "zama"}
+  databaseEndpoint: {value: "postgres-coprocessor:5432"}
   databaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e"
   databaseAuthMode: password
   hostChainWsUrl: "ws://anvil-host-anvil-node:8545"

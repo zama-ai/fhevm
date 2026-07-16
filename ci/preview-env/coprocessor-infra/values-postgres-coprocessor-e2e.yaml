@@ -1,0 +1,57 @@
+# In-cluster Postgres for coprocessor, for the fhevm e2e preview namespace.
+# Dedicated to coprocessor alone - relayer/relayer-migrate and kms-connector
+# each get their own separate Postgres release instead of sharing this one
+# (see ../relayer/values-postgres-relayer-e2e.yaml and
+# ../kms-connector/values-postgres-connector-e2e.yaml), mirroring
+# zama-zws/gitops's production topology: coprocessor-infra's own RDS
+# ("fhevm_e2e"/"coprocessor" db) is a separate instance from relayer-infra's
+# ("relayer" db) - see values/relayer/relayer-infra/values-relayer-dev.yaml.
+#
+# Uses Bitnami's own published postgresql chart directly (same one
+# zama-zws/gitops's kms-dev/postgresql.yaml runs), not a fhevm/zama chart -
+# there's nothing fhevm-specific about a plain Postgres instance.
+#
+# fullnameOverride pins the release's primary Service to a deterministic name
+# ("postgres-coprocessor:5432", confirmed via `helm template`) so dependent
+# charts (coprocessor, relayer-migrate) can hardcode it instead of discovering
+# it live. auth.username/password are fixed, non-secret, ephemeral
+# test-only credentials (same reasoning as DEPLOYER_PRIVATE_KEY/mnemonic
+# elsewhere in this environment) - not worth indirecting through a Secret
+# lookup for a namespace that's destroyed within hours.
+#
+# Deployed as:
+#   helm upgrade --install postgres-coprocessor \
+#     oci://registry-1.docker.io/bitnamicharts/postgresql \
+#     -n <namespace> -f this-file
+fullnameOverride: postgres-coprocessor
+
+auth:
+  username: zama
+  password: zama
+  database: fhevm_e2e
+
+# No PVC: this StatefulSet's data lives (and dies) with the namespace, and
+# skipping persistence means the pod is Ready in seconds instead of waiting
+# on a StorageClass to bind a volume.
+#
+# nodeSelector/tolerations pin this onto the zws-pool Karpenter node pool -
+# same convention as ../../charts/anvil-node/values.yaml's commented-out
+# example.
+primary:
+  persistence:
+    enabled: false
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - key: "karpenter.sh/nodepool"
+      operator: "Equal"
+      value: "zws-pool"
+      effect: "NoSchedule"
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "1"
+    memory: "1Gi"

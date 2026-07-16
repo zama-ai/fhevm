@@ -1,0 +1,43 @@
+# In-cluster Postgres dedicated to relayer + relayer-migrate, for the fhevm
+# e2e preview namespace. Kept separate from coprocessor's instance
+# (../coprocessor-infra/values-postgres-coprocessor-e2e.yaml) - mirrors
+# zama-zws/gitops's production topology, where relayer-infra provisions its
+# own RDS instance ("relayer" db) rather than sharing coprocessor-infra's
+# (see values/relayer/relayer-infra/values-relayer-dev.yaml).
+#
+# Uses Bitnami's own published postgresql chart directly, same as
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml - see that file's
+# header for the full rationale (fullnameOverride -> deterministic Service
+# name, plain non-secret ephemeral test credentials, no PVC).
+#
+# Deployed as:
+#   helm upgrade --install postgres-relayer \
+#     oci://registry-1.docker.io/bitnamicharts/postgresql \
+#     -n <namespace> -f this-file
+fullnameOverride: postgres-relayer
+
+auth:
+  username: zama
+  password: zama
+  database: relayer
+
+primary:
+  persistence:
+    enabled: false
+  # Pins onto the zws-pool Karpenter node pool - see
+  # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - key: "karpenter.sh/nodepool"
+      operator: "Equal"
+      value: "zws-pool"
+      effect: "NoSchedule"
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "1"
+    memory: "1Gi"

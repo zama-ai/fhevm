@@ -21,15 +21,13 @@
 #   helm upgrade --install kms-connector oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector \
 #     -n <namespace> -f this-file
 commonConfig:
-  # This chart's own values.yaml documents releases "coprocessor-db"/
-  # "relayer-db" as one database each - kms-connector instead shares the
-  # single "fhevm_e2e" database coprocessor-infra provisions (same server,
-  # same database name, different tables), mirroring database-docker-
-  # compose.yml's single "coprocessor-and-kms-db" container. Real endpoint/
-  # credentials (from the coprocessor-infra-coprocessor-db secret) are
-  # injected via --set-string in pr-preview-deploy.yml; placeholder here
-  # keeps the file helm-template-valid on its own.
-  databaseUrl: "postgresql://zama:CHANGEME@coprocessor-infra-coprocessor-db:5432/fhevm_e2e"
+  # Dedicated in-cluster Postgres release (../kms-connector/values-postgres-
+  # connector-e2e.yaml, Bitnami's postgresql chart) - NOT shared with
+  # coprocessor/relayer-migrate's instance: kms-connector's data has nothing
+  # to do with theirs. Service name + fixed ephemeral test credentials are
+  # known ahead of deploy time (see that file's header), so this is already
+  # real, not a placeholder - no --set-string/secret discovery needed for the DB.
+  databaseUrl: "postgresql://zama:zama@postgres-connector:5432/connector"
   gatewayUrl: "http://anvil-gateway-anvil-node:8546"
   ethereumUrl: "http://anvil-host-anvil-node:8545"
   gatewayChainId: "54321"

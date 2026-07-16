@@ -5,8 +5,11 @@ name: pr-preview-destroy
 # pr-preview-deploy.yml. Mirrors zama-ai/kms's ci/.github/workflows/
 # pr-preview-destroy.yml: same Tailscale cluster, same "helm uninstall
 # everything, then delete the namespace" approach so Crossplane claims
-# (coprocessor-infra, tkms-infra) are released and their underlying AWS
-# resources (RDS, S3, IAM) get deprovisioned instead of leaking.
+# (coprocessor-infra's S3 bucket, tkms-infra's S3 vaults/enclave nodegroups)
+# are released and their underlying AWS resources get deprovisioned instead
+# of leaking. Postgres (coprocessor + kms-connector) is plain in-cluster
+# StatefulSets, not a Crossplane claim, so it's already gone the moment the
+# namespace is - see coprocessor-infra/values-postgres-coprocessor-e2e.yaml.
 ##############################################################################
 
 on:

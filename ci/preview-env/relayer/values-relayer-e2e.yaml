@@ -41,7 +41,7 @@ env:
   # "Gateway/relayer account" role, already funded + max-approved on
   # ProtocolPayment by gateway-contracts' setTxSenderMockedPayment step).
   - {name: GATEWAY_PRIVATE_KEY, value: "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"}
-  # TODO: confirm real endpoint/credentials for the shared coprocessor-infra
-  # database (see values-relayer-migrate-e2e.yaml's matching TODO) - not yet
-  # discovered + injected via --set-string here.
-  - {name: DATABASE_URL, value: "postgresql://zama:CHANGEME@coprocessor-infra-coprocessor-db:5432/fhevm_e2e"}
+  # Dedicated in-cluster Postgres release (see values-postgres-relayer-e2e.yaml)
+  # - same endpoint/credentials as values-relayer-migrate-e2e.yaml, already
+  # real (not a placeholder).
+  - {name: DATABASE_URL, value: "postgresql://zama:zama@postgres-relayer:5432/relayer"}

@@ -1,0 +1,42 @@
+# In-cluster Postgres dedicated to kms-connector, for the fhevm e2e preview
+# namespace. Kept separate from coprocessor's instance
+# (../coprocessor-infra/values-postgres-coprocessor-e2e.yaml) and relayer's
+# (../relayer/values-postgres-relayer-e2e.yaml) - kms-connector's data has
+# nothing to do with either of theirs.
+#
+# Uses Bitnami's own published postgresql chart directly, same as
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml - see that file's
+# header for the full rationale (fullnameOverride -> deterministic Service
+# name, plain non-secret ephemeral test credentials, no PVC).
+#
+# Deployed as:
+#   helm upgrade --install postgres-connector \
+#     oci://registry-1.docker.io/bitnamicharts/postgresql \
+#     -n <namespace> -f this-file
+fullnameOverride: postgres-connector
+
+auth:
+  username: zama
+  password: zama
+  database: connector
+
+primary:
+  persistence:
+    enabled: false
+  # Pins onto the zws-pool Karpenter node pool - see
+  # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - key: "karpenter.sh/nodepool"
+      operator: "Equal"
+      value: "zws-pool"
+      effect: "NoSchedule"
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "1"
+    memory: "1Gi"
