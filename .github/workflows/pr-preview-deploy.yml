@@ -69,11 +69,11 @@ on:
       relayer_version:
         description: "Image tag for the relayer/relayer-migrate images (same override rule as host_contracts_version above)"
         required: true
-        default: "v0.11.1"
+        default: "v0.13.0"
       test_suite_version:
         description: "Image tag for the test-suite image (same override rule as host_contracts_version above)"
         required: true
-        default: "v0.11.3"
+        default: "v0.13.0"
       common_chart_version:
         description: "Version of the generic `common` Helm chart, used for postgres-*, relayer-migrate, relayer and test-suite alike"
         required: true
@@ -173,8 +173,20 @@ env:
   #=====COMMON===============================================================
   # RELAYER_VERSION/TEST_SUITE_VERSION back the relayer+relayer-migrate and
   # test-suite images respectively; both deploy via this same generic chart.
-  RELAYER_VERSION: "v0.11.1"
-  TEST_SUITE_VERSION: "v0.11.3"
+  #
+  # v0.11.1/v0.11.3 (relayer's own most-recently-tagged versions) 404'd on
+  # pull ("relayer-migrate:v0.11.1: not found") despite v0.11.1 being a real
+  # published GitHub Release that should have triggered a build per
+  # relayer-docker-build.yml's "release: always build" rule - most likely a
+  # build failure or a workflow-file version mismatch back when that release
+  # was cut (release-triggered workflows run whatever's on the default
+  # branch at event time, not the tag's own copy) that nobody caught since
+  # relayer wasn't on any deploy critical path back then. v0.13.0 is
+  # confirmed present and working: zama-zws/gitops's
+  # values-relayer-testnet.yaml (job.image.tag) and fhevm-test-suite/
+  # values-relayer-dev.yaml both pin exactly this tag in production.
+  RELAYER_VERSION: "v0.13.0"
+  TEST_SUITE_VERSION: "v0.13.0"
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================

@@ -36,7 +36,16 @@ commonConfig:
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
   protocolConfigContractAddress:
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
-  gatewayUrl: {value: "http://anvil-gateway-anvil-node:8546"}
+  # Must be ws:// (not http://): both gwListener's --gw-url and txSender's
+  # --gateway-url alloy providers use ProviderBuilder::connect_ws/WsConnect
+  # (confirmed via coprocessor/fhevm-engine/{gw-listener/src/bin/gw_listener.rs,
+  # transaction-sender/src/bin/transaction_sender.rs}) - there's no separate
+  # ws/http split field here the way commonConfig.hostChain{Ws,Http}Url has for
+  # the host chain, since neither consumer needs an HTTP connection to the
+  # gateway. anvil serves both HTTP and WS on the same port (see
+  # ../gateway-chain/values-anvil-gateway-e2e.yaml's single `port: 8546`), so
+  # only the scheme changes, not the host:port.
+  gatewayUrl: {value: "ws://anvil-gateway-anvil-node:8546"}
   gatewayContractAddresses:
     inputVerification:
       valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: input_verification.address}}
@@ -60,11 +69,13 @@ hostListenerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
 hostListenerPollerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
-  # This image version requires an explicit start block when no poller state
-  # exists yet for the chain (fresh e2e namespace every run) - confirmed via
-  # the pod's own "no poller state for this chain and no --seed-start-block"
-  # error. 0 = genesis, correct for anvil's freshly-mined chain.
-  extraArgs: ["--seed-start-block=0"]
+  # --seed-start-block was a v0.11.0-era flag ("no poller state for this
+  # chain and no --seed-start-block"); at v0.13.0 the poller binary
+  # (src/bin/poller.rs) has no such argument at all anymore ("unexpected
+  # argument '--seed-start-block' found") - confirmed via `git grep
+  # seed_start_block` at the v0.13.0 tag returning zero hits anywhere in
+  # coprocessor/. No replacement needed: it starts cleanly with no prior
+  # state on a fresh e2e namespace either way.
 hostListenerCatchupOnlyShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
 hostListenerConsumerShared:
@@ -77,10 +88,16 @@ tfheWorker:
   enabled: true
   replicas: 1
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/tfhe-worker, tag: latest}
+  # IRSA-annotated SA created by coprocessor-infra's Crossplane chart (see
+  # ../coprocessor-infra/values-coprocessor-infra-e2e.yaml's
+  # coprocessorBucket.irsa block) - matches zama-zws/gitops's
+  # values-zws-testnet.yaml pairing (all 3 S3-touching workers use it).
+  serviceAccountName: coprocessor
 zkProofWorker:
   enabled: true
   replicas: 1
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/zkproof-worker, tag: latest}
+  serviceAccountName: coprocessor
   # --pg-listen-channel/--pg-notify-channel aren't chart-templated (see
   # charts/coprocessor/values.yaml's zkProofWorker.extraArgs comment) - the
   # binary refuses to start without them ("required arguments were not
@@ -93,6 +110,24 @@ snsWorker:
   enabled: true
   replicas: 1
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/sns-worker, tag: latest}
+  # Without this, the pod runs as the namespace's `default` SA (no IAM role
+  # bound at all) - confirmed live: `kubectl get pod ... -o jsonpath='{.spec.
+  # serviceAccountName}'` returned "default", while a real "coprocessor" SA
+  # with an eks.amazonaws.com/role-arn annotation (from coprocessor-infra's
+  # Crossplane chart, see values-coprocessor-infra-e2e.yaml) sat unused in
+  # the same namespace. Without it, the AWS SDK has no credentials at all -
+  # "Failed to check bucket existence" / "dispatch failure".
+  serviceAccountName: coprocessor
+  config:
+    # Chart default is empty (see charts/coprocessor/values.yaml's
+    # snsWorker.config.s3BucketName comment) - matches zama-zws/gitops's
+    # values-zws-testnet.yaml pairing. coprocessor-infra's Crossplane chart
+    # (../coprocessor-infra/values-coprocessor-infra-e2e.yaml) writes this
+    # ConfigMap (name overridden there to "coprocessor", not the chart's
+    # release-derived default) - confirmed live via `kubectl get configmap
+    # coprocessor -o yaml`: S3_BUCKET_NAME/S3_ENDPOINT/S3_URI_KEY keys.
+    s3BucketName:
+      valueFrom: {configMapKeyRef: {name: coprocessor, key: S3_BUCKET_NAME}}
   # Same as zkProofWorker.extraArgs above - required, not chart-templated.
   # --pg-listen-channels takes multiple positional values.
   extraArgs:

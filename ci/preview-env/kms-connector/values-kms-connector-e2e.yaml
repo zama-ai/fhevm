@@ -9,13 +9,23 @@
 # pr-preview-deploy.yml's "Deploy kms-connector" step instead - nothing
 # to fill in here.
 #
-# kmsWorker needs a real kms-core endpoint (config.kmsCoreEndpoints), wired
-# to the dedicated per-PR KMS deployed by kms's own deploy.sh (party service
-# DNS: kms-core-<i>-core-<i>, port 50100/50001 depending on TLS mode - see
-# kms/ci/scripts/lib/kms_deployment.sh's get_party_pod_name). TODO: this
-# still needs a concrete config.kmsCoreEndpoints entry per party once the
-# real per-party gRPC port/TLS convention for aws-ci threshold+enclave
-# deployments is confirmed against a live run.
+# kmsWorker's config.kmsCoreEndpoints (below) points at the dedicated per-PR
+# KMS's 4 parties. Confirmed live via `kubectl get svc` against a running
+# deploy: each party is its own StatefulSet/Service pair named
+# kms-core-<i>-core-<i> (not the single "kms-core-<i>" mpc-testnet's
+# per-party kms-connector releases use - zama-zws/gitops's
+# values-kms-connector-6-mpc-testnet.yaml's "http://kms-core-6:50100" is
+# per-party there because each party gets its OWN kms-connector release; ours
+# is one release talking to all 4), exposing 3 named ports: client (50100,
+# what connector/kms-worker's gRPC client uses - scheme "http://", not
+# "https://": kms-connector/crates/utils/src/conn.rs's shared
+# connect_to_rpc_node_inner always uses connect_http, and the chart's own
+# default confirms this: charts/kms-connector/values.yaml's kmsCoreEndpoints:
+# "http://kms-core:50051"), peer (50001, inter-party MPC - not for the
+# connector) and metrics (9646). kmsCoreEndpoints deserializes to
+# Vec<String> via a comma-separated list (kms-connector/crates/utils/src/
+# config/deserialize.rs's `.list_separator(",")`), hence the single
+# comma-joined string below rather than a YAML list.
 #
 # Deployed as:
 #   helm upgrade --install kms-connector oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector \
@@ -40,6 +50,7 @@ commonConfig:
 # just the host chain so args still render cleanly.
 kmsConnectorKmsWorker:
   config:
+    kmsCoreEndpoints: "http://kms-core-1-core-1:50100"
     hostChains:
       - url: "$(KMS_CONNECTOR_ETHEREUM_URL)"
         chainId: "$(KMS_CONNECTOR_ETHEREUM_CHAIN_ID)"
