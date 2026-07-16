@@ -15,13 +15,12 @@ import {
   supportsCanonicalProtocolConfigSeeding,
   supportsHostListenerConsumer,
   validateBundleCompatibility,
-  versionBeforeReleaseFamily,
 } from "../compat/compat";
 import { serviceNameList } from "../generate/compose";
 import { generateRuntime } from "../generate";
 import { resolveScenarioForOptions, stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
 import { effectiveOverrides, listScenarioSummaries } from "../scenario/resolve";
-import { composeEnv, run, runStreaming } from "../utils/process";
+import { run, runStreaming } from "../utils/process";
 import { loadState, markStep, saveState } from "../state/state";
 import {
   BootstrapTimeout,
@@ -68,7 +67,6 @@ import {
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
   coprocessorHostKey,
-  dockerArgs,
   envPath,
   gatewayAddressesPath,
   hostChainAddressesPath,
@@ -464,50 +462,6 @@ const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
     ),
   )).every(Boolean);
 
-/** Reads the compiled-in stack version from the resolved tfhe-worker image (source of truth for any pin). */
-const coprocessorBinaryStackVersion = async (): Promise<{ major: number; minor: number } | undefined> => {
-  const result = await run(
-    [
-      ...dockerArgs("coprocessor"),
-      "run", "--rm", "--no-deps", "coprocessor-tfhe-worker", "tfhe_worker", "--stack-version",
-    ],
-    { env: await composeEnv("coprocessor"), allowFailure: true },
-  );
-  const match = result.stdout.match(/(\d+)\.(\d+)\.\d+/);
-  if (result.code !== 0 || !match) {
-    return undefined;
-  }
-  return { major: Number(match[1]), minor: Number(match[2]) };
-};
-
-/** Aligns versioning with the binary's family so workers boot in normal mode; blue-green keeps the migration seed. */
-const seedVersioningForNonBlueGreen = async (state: State) => {
-  if (state.scenario.kind === "blue-green") return;
-  // Pre-0.14 bundles predate the versioning table (and the retirement fence).
-  const bundleVersion = state.versions.env.COPROCESSOR_TFHE_WORKER_VERSION ?? "";
-  if (versionBeforeReleaseFamily(bundleVersion, [0, 14, 0], { unparsed: "modern" })) return;
-  const binary = await coprocessorBinaryStackVersion();
-  if (!binary) {
-    console.log("[coprocessor] could not read the binary stack version; leaving versioning at the migration seed");
-    return;
-  }
-  const live = `v${binary.major}.${binary.minor}`;
-  if (live === "v0.14") return;
-  const topology = topologyForState(state);
-  for (let index = 0; index < topology.count; index += 1) {
-    const db = coprocessorDatabaseName(index);
-    const result = await postgresExec(db, [
-      "-c",
-      `UPDATE versioning SET stack_version = '${live}', updated_at = NOW()` +
-        ` WHERE singleton = TRUE AND stack_version = 'v0.14';`,
-    ]);
-    if (result.code !== 0) {
-      throw new PreflightError(`versioning seed failed for ${db}: ${(result.stderr || result.stdout).trim()}`);
-    }
-  }
-  console.log(`[coprocessor] versioning seeded to ${live} (binary-reported)`);
-};
-
 const restartZkproofWorker = async (index: number, reason: string) => {
   const container = toServiceName("zkproof-worker", index);
   console.log(`[coprocessor] restarting ${container} (${reason})`);
@@ -876,16 +830,14 @@ export const runStep = async (state: State, step: StepName) => {
     case "coprocessor": {
       const skipMigration = await coprocessorDbsSeeded(state);
       if (skipMigration) {
-        await seedVersioningForNonBlueGreen(state);
         await stepComposeUp("coprocessor", state, coprocessorHealthContainers(state), { noDeps: true });
       } else {
-        // Two-phase bring-up: migrations → versioning seed → workers, so workers never race into GCS mode.
+        // Migrations before workers, so a GCS fleet isn't started before the versioning baseline is seeded.
         const allServices = serviceNameList(state, "coprocessor");
         const migrationServices = allServices.filter((name) => name.endsWith("db-migration"));
         const runtimeServices = allServices.filter((name) => !name.endsWith("db-migration"));
         await stepComposeUp("coprocessor", state, migrationServices);
         await waitForCoprocessorDbMigrations(state);
-        await seedVersioningForNonBlueGreen(state);
         await stepComposeUp("coprocessor", state, runtimeServices, { noDeps: true });
       }
       await waitForCoprocessorServices(state, true);

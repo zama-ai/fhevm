@@ -56,6 +56,8 @@ gpu = ["tfhe/gpu"]
 latency = []
 throughput = []
 compact-hex = []
+# Runtime stack-version override via STACK_VERSION_OVERRIDE env (unset => machinery off).
+stack-version-override = []
 
 [build-dependencies]
 tonic-build = { workspace = true }

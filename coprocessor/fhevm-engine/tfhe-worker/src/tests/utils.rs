@@ -148,12 +148,6 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
 
     println!("Running migrations...");
     sqlx::migrate!("./migrations").run(&pool).await?;
-    // Align live version with the binary; the migration seeds the older BCS baseline, which
-    // would otherwise make resolve_gcs_mode boot the worker paused in GCS mode.
-    sqlx::query("UPDATE versioning SET stack_version = $1 WHERE singleton = TRUE")
-        .bind(fhevm_engine_common::STACK_VERSION)
-        .execute(&pool)
-        .await?;
     println!("Creating test keys");
     setup_test_key(&pool, false).await?;
     println!("DB prepared");

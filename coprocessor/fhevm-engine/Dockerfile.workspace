@@ -63,6 +63,9 @@ FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
 ARG CARGO_PROFILE=release
 ARG BUILD_ID=unknown
+# Compile in the STACK_VERSION_OVERRIDE runtime override (fhevm-engine-common feature).
+# Off by default (strict release); enable for test/e2e with --build-arg STACK_VERSION_OVERRIDE=1.
+ARG STACK_VERSION_OVERRIDE=0
 ARG SCCACHE_BUCKET
 ARG SCCACHE_REGION=eu-west-3
 ARG SCCACHE_S3_PREFIX
@@ -120,7 +123,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace && \
+    FEATURES=""; if [ "${STACK_VERSION_OVERRIDE}" = "1" ]; then FEATURES="--features fhevm-engine-common/stack-version-override"; fi && \
+    SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace ${FEATURES} && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
     cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \

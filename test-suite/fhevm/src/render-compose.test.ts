@@ -387,7 +387,11 @@ gcs:
       const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
         services: Record<
           string,
-          { container_name?: string; build?: { args?: Record<string, string> } }
+          {
+            container_name?: string;
+            build?: { args?: Record<string, string> };
+            environment?: Record<string, string>;
+          }
         >;
       };
       // BCS side keeps the base `coprocessor-*` names.
@@ -399,9 +403,10 @@ gcs:
       expect(doc.services["coprocessor-gcs-upgrade-controller"]?.container_name).toBe(
         "coprocessor-gcs-upgrade-controller",
       );
-      // GCS builds from local HEAD; no STACK_VERSION_OVERRIDE arg.
+      // GCS builds from local HEAD with the stack-version-override feature and declares the newer version.
       expect(doc.services["coprocessor-gcs-host-listener"]?.build).toBeDefined();
-      expect(doc.services["coprocessor-gcs-host-listener"]?.build?.args?.STACK_VERSION_OVERRIDE).toBeUndefined();
+      expect(doc.services["coprocessor-gcs-host-listener"]?.build?.args?.STACK_VERSION_OVERRIDE).toBe("1");
+      expect(doc.services["coprocessor-gcs-host-listener"]?.environment?.STACK_VERSION_OVERRIDE).toBe("0.15.0");
       // GCS reuses BCS's db-migration — no `coprocessor-gcs-db-migration`.
       expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
     });

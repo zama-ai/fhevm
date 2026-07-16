@@ -54,6 +54,8 @@ testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }
 serde = { workspace = true }
 serial_test = { workspace = true }
+# Enable the stack-version override for tests only (release builds omit it).
+fhevm-engine-common = { path = "../fhevm-engine-common", features = ["stack-version-override"] }
 
 [[bin]]
 name = "tfhe_worker"
