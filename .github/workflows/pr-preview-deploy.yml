@@ -77,7 +77,7 @@ on:
       common_chart_version:
         description: "Version of the generic `common` Helm chart, used for postgres-*, relayer-migrate, relayer and test-suite alike"
         required: true
-        default: "0.3.3"
+        default: "?3"
 concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
   # workflow_dispatch: one slot per run - manual dispatches never cancel
@@ -128,7 +128,7 @@ env:
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================
-  KMS_REPO_REF: "v0.13.3"
+  KMS_REPO_REF: "v0.13.10"
   KMS_CORE_TAG: "v0.13.3"
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
