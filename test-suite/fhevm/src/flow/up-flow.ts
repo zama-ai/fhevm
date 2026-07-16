@@ -16,11 +16,10 @@ import {
   supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
-import { driftDatabaseName } from "../drift";
 import { serviceNameList } from "../generate/compose";
 import { generateRuntime } from "../generate";
 import { resolveScenarioForOptions, stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
-import { effectiveOverrides, hasLocalCoprocessorInstance, listScenarioSummaries } from "../scenario/resolve";
+import { effectiveOverrides, listScenarioSummaries } from "../scenario/resolve";
 import { run, runStreaming } from "../utils/process";
 import { loadState, markStep, saveState } from "../state/state";
 import {
@@ -66,8 +65,8 @@ import {
   SCHEMA_COUPLED_GROUPS,
   STATE_DIR,
   TEST_SUITE_CONTAINER,
+  coprocessorDatabaseName,
   coprocessorHostKey,
-  dockerArgs,
   envPath,
   gatewayAddressesPath,
   hostChainAddressesPath,
@@ -107,6 +106,7 @@ import {
   kmsConnectorHealthContainers,
   castBool,
   coprocessorHealthContainers,
+  waitForCoprocessorDbMigrations,
   discoverKmsSigners,
   dockerInspect,
   ensureMaterial,
@@ -200,7 +200,8 @@ export const assertDockerMemory = async (scenario: State["scenario"]) => {
   const memBytes = parseInt(result.stdout.trim(), 10);
   if (isNaN(memBytes)) return;
 
-  const minGb = scenario.hostChains.length > 1 && scenario.topology.count > 1 ? 32 : 16;
+  const count = scenario.kind === "coprocessor-consensus" ? scenario.topology.count : 2;
+  const minGb = scenario.hostChains.length > 1 && count > 1 ? 32 : 16;
   if (memBytes >= (minGb - 1) * 1024 ** 3) return;
 
   const reportedGb = Math.round((memBytes / 1024 ** 3) * 2) / 2;
@@ -253,8 +254,10 @@ const describeOverride = (item: { group: string; services?: string[] }) =>
   `${item.group}${item.services?.length ? `[${item.services.join(",")}]` : ""}`;
 
 /** Computes the user-visible override set after scenario expansion. */
-const visibleOverrides = (state: Pick<State, "overrides" | "scenario">) =>
-  effectiveOverrides(state.overrides, state.scenario);
+const visibleOverrides = (state: Pick<State, "overrides" | "scenario">) => {
+  if (state.scenario.kind === "blue-green") return state.overrides;
+  return effectiveOverrides(state.overrides, state.scenario);
+};
 
 /** Builds human-readable warnings for risky override combinations. */
 const overrideWarnings = (overrides: LocalOverride[], target?: string) => {
@@ -433,7 +436,9 @@ const assertSchemaCompatibility = async (
   if (allowSchemaMismatch || !SCHEMA_GUARD_TARGETS.has(bundle.target)) {
     return;
   }
-  for (const item of partialSchemaOverrides(effectiveOverrides(overrides, scenario))) {
+  const scenarioForOverrides =
+    scenario.kind === "coprocessor-consensus" ? effectiveOverrides(overrides, scenario) : overrides;
+  for (const item of partialSchemaOverrides(scenarioForOverrides)) {
     await assertSchemaRepoStable(
       item.group,
       bundle,
@@ -452,7 +457,9 @@ const coprocessorDbSeeded = async (database: string) => {
 
 const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
   (await Promise.all(
-    Array.from({ length: topologyForState(state).count }, (_, index) => driftDatabaseName(index)).map(coprocessorDbSeeded),
+    Array.from({ length: topologyForState(state).count }, (_, index) => coprocessorDatabaseName(index)).map(
+      coprocessorDbSeeded,
+    ),
   )).every(Boolean);
 
 const restartZkproofWorker = async (index: number, reason: string) => {
@@ -475,7 +482,7 @@ const upsertHostChainInCoprocessorDb = async (
   index: number,
   logPrefix: string,
 ) => {
-  const dbName = driftDatabaseName(index);
+  const dbName = coprocessorDatabaseName(index);
   const chainHost = state.discovery?.hosts[chain.key] ?? {};
   const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? "";
   console.log(`${logPrefix} registering ${chain.key} in ${dbName}`);
@@ -822,9 +829,18 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     case "coprocessor": {
       const skipMigration = await coprocessorDbsSeeded(state);
-      const services = skipMigration ? coprocessorHealthContainers(state) : serviceNameList(state, "coprocessor");
-      await stepComposeUp("coprocessor", state, services, { noDeps: skipMigration });
-      await waitForCoprocessorServices(state, skipMigration);
+      if (skipMigration) {
+        await stepComposeUp("coprocessor", state, coprocessorHealthContainers(state), { noDeps: true });
+      } else {
+        // Migrations before workers, so a GCS fleet isn't started before the versioning baseline is seeded.
+        const allServices = serviceNameList(state, "coprocessor");
+        const migrationServices = allServices.filter((name) => name.endsWith("db-migration"));
+        const runtimeServices = allServices.filter((name) => !name.endsWith("db-migration"));
+        await stepComposeUp("coprocessor", state, migrationServices);
+        await waitForCoprocessorDbMigrations(state);
+        await stepComposeUp("coprocessor", state, runtimeServices, { noDeps: true });
+      }
+      await waitForCoprocessorServices(state, true);
       if (requiresLegacyHostChainSeedShim(state)) {
         await applyLegacyHostChainSeedShim(state);
       }
@@ -1302,9 +1318,11 @@ export const status = async () => {
     );
     if (state.scenario.origin !== "default") {
       console.log(`[scenario] ${state.scenario.origin}${state.scenario.sourcePath ? ` ${state.scenario.sourcePath}` : ""}`);
-      for (const instance of state.scenario.instances) {
-        const source = instance.source.mode === "registry" ? `registry:${instance.source.tag}` : instance.source.mode;
-        console.log(`[coprocessor-${instance.index}] ${source}`);
+      if (state.scenario.kind === "coprocessor-consensus") {
+        for (const instance of state.scenario.instances) {
+          const source = instance.source.mode === "registry" ? `registry:${instance.source.tag}` : instance.source.mode;
+          console.log(`[coprocessor-${instance.index}] ${source}`);
+        }
       }
     }
     console.log(`[steps] ${state.completedSteps.join(", ") || "none"}`);
