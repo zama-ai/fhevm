@@ -3,6 +3,7 @@
  */
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
+import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
@@ -66,6 +67,7 @@ const TEST_PROFILE_NAMES = [
   "heavy",
   "kms-context-switch",
   "kms-generation",
+  "kms-generation-abort",
   "light",
   "rollout-standard",
   "standard",
@@ -124,6 +126,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
+  "kms-generation-abort":
+    "Abort an in-flight keygen and crsgen, prove the contract and every kms-connector retire the requests, then prove the pipeline recovers with a fresh keygen/crsgen to full activation. Disruptive: rotates the active key/CRS — run last or re-up afterwards.",
   "kms-context-switch":
     "Drive the NewKmsContext + NewKmsEpoch lifecycle on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each, with the input-proof app smoke at baseline, while the switch is pending, and after each transition. On a cluster with a spare core (e.g. --scenario swap-threshold-kms) the NewKmsContext step is a genuine node swap — stop a committee node's tx-sender before the switch so it cannot confirm on-chain, promote the spare, and force it into the 2t+1 quorum (threshold-mode KMS).",
 };
@@ -1005,6 +1009,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   const runProfile = async (name: string) => {
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
+    }
+    if (name === "kms-generation-abort") {
+      return runKmsGenerationAbortProfile(state);
     }
     if (name === "kms-context-switch") {
       return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
