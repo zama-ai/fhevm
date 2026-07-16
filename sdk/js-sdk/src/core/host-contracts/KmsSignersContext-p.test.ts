@@ -1,6 +1,6 @@
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
-import type { BytesHex, ChecksummedAddress, Uint256BigInt, Uint8Number } from '../types/primitives.js';
+import type { ChecksummedAddress, Uint256BigInt, Uint8Number } from '../types/primitives.js';
 import { describe, expect, it } from 'vitest';
 import {
   assertExtraDataMatchesKmsSingersContext,
@@ -8,7 +8,6 @@ import {
   extraDataMatchesKmsSingersContext,
   kmsSignersContextToExtraData,
 } from './KmsSignersContext-p.js';
-import { reconcileKmsSignersContext } from './readKmsSignersContext-p.js';
 import { EXTRA_DATA_V0, EXTRA_DATA_V1, EXTRA_DATA_V2 } from '../kms/kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -106,99 +105,48 @@ describe('assertExtraDataMatchesKmsSingersContext — same-era permits (no migra
 });
 
 // ---------------------------------------------------------------------------
-// KNOWN GAP — protocol migration with a stale cached permit.
+// Cross-era extraData — stale cached permit across a protocol migration.
 //
 // Scenario: the user signed a decryption permit while the chain was on an older
 // protocol version, cached it (e.g. localStorage), never refreshed the cache,
 // and the chain has since migrated (v11 -> v12 -> v13 -> v14). The permit's
 // EIP-712 message embeds the OLD extraData encoding, and the signature covers
-// it, so the SDK cannot rewrite it — the decrypt path has to accept the old
-// encoding and resolve the KMS signers context it refers to (the machinery
-// exists: `readKmsSignersContextFromExtraData` accepts v0/v1 on v12+).
+// it, so the SDK cannot rewrite it.
 //
-// Today `fetchKmsSigncryptedSharesV1`/`V2` strict-compare the permit's
-// extraData bytes against the CURRENT on-chain context (see the TODO in
-// fetchKmsSigncryptedSharesV1-p.ts), so every test in this block throws.
-//
-// Each test is marked `it.fails` (= asserts the body currently fails). Once the
-// migration patch lands, vitest will report these as failing tests — that is
-// the signal to remove the `.fails` markers and keep them as regression tests.
+// `assertExtraDataMatchesKmsSingersContext` is byte-strict BY DESIGN and
+// rejects cross-era encodings — these tests pin that down. Migration support
+// is the decrypt flow's job: it must resolve the signer context FROM the
+// permit's extraData (`readKmsSignersContextFromExtraData`, where v0 is the
+// "current context" sentinel, mirroring `KMSVerifier._extractKmsContextId`)
+// instead of calling this strict helper against the current context (PR #3204).
+// The end-to-end migration behavior is covered by the
+// `clientDecrypt.stalePermitMigration` suites in `test/fheTest/{viem,ethers}`.
 // ---------------------------------------------------------------------------
-describe('assertExtraDataMatchesKmsSingersContext — stale cached permit across protocol migration (KNOWN GAP)', () => {
-  it.fails('accepts a stale v11 permit (extraData v0 = 0x00) after migration to v12/v13', () => {
+describe('assertExtraDataMatchesKmsSingersContext — cross-era encodings are rejected (byte-strict by design)', () => {
+  it('rejects a stale v11 permit extraData (v0 = 0x00) against a v12/v13-era context', () => {
     expect(() =>
       assertExtraDataMatchesKmsSingersContext(
         { extraData: STALE_V11_PERMIT_EXTRA_DATA, kmsSignersContext: contextV12V13(7n) },
         {},
       ),
-    ).not.toThrow();
+    ).toThrow('does not match KmsSignersContext extraData');
   });
 
-  it.fails('accepts a stale v11 permit (extraData v0 = 0x00) after migration to v14', () => {
+  it('rejects a stale v11 permit extraData (v0 = 0x00) against a v14-era context', () => {
     expect(() =>
       assertExtraDataMatchesKmsSingersContext(
         { extraData: STALE_V11_PERMIT_EXTRA_DATA, kmsSignersContext: contextV14(7n, 3n) },
         {},
       ),
-    ).not.toThrow();
+    ).toThrow('does not match KmsSignersContext extraData');
   });
 
-  it.fails(
-    'accepts a stale v12/v13 permit (extraData v1) after migration to v14 when the context id still matches',
-    () => {
-      expect(() =>
-        assertExtraDataMatchesKmsSingersContext(
-          { extraData: staleV12V13PermitExtraData(7n), kmsSignersContext: contextV14(7n, 3n) },
-          {},
-        ),
-      ).not.toThrow();
-    },
-  );
-});
-
-describe('reconcileKmsSignersContext — chain-independent paths', () => {
-  // Only the code paths that never reach the RPC client are covered here; the
-  // strict/loose on-chain refetch paths are exercised by the localstack suites.
-  const unusedContext = {
-    runtime: {} as FhevmRuntime,
-    client: {},
-    options: { batchRpcCalls: false },
-  };
-
-  it('returns the requested context when the relayer extraData matches exactly', async () => {
-    const requested = contextV12V13(7n);
-    await expect(
-      reconcileKmsSignersContext(unusedContext, {
-        kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-        protocolConfigAddress: undefined,
-        requestedKmsSignersContext: requested,
-        relayerKmsExtraDataBytesHex: staleV12V13PermitExtraData(7n) as BytesHex,
-        mode: 'exact',
-      }),
-    ).resolves.toBe(requested);
-  });
-
-  it('throws in exact mode when the relayer used an older extraData encoding (v0 vs current v1)', async () => {
-    await expect(
-      reconcileKmsSignersContext(unusedContext, {
-        kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-        protocolConfigAddress: undefined,
-        requestedKmsSignersContext: contextV12V13(7n),
-        relayerKmsExtraDataBytesHex: STALE_V11_PERMIT_EXTRA_DATA as BytesHex,
-        mode: 'exact',
-      }),
-    ).rejects.toThrow('Exact reconciliation failed');
-  });
-
-  it('throws on extraData serialization version mismatch before any on-chain access (v1 vs v2)', async () => {
-    await expect(
-      reconcileKmsSignersContext(unusedContext, {
-        kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-        protocolConfigAddress: undefined,
-        requestedKmsSignersContext: contextV14(7n, 3n),
-        relayerKmsExtraDataBytesHex: staleV12V13PermitExtraData(7n) as BytesHex,
-        mode: 'strict',
-      }),
-    ).rejects.toThrow('ExtraData serialization version mismatch');
+  it('rejects a stale v12/v13 permit extraData (v1) against a v14-era context even when the context id matches', () => {
+    expect(() =>
+      assertExtraDataMatchesKmsSingersContext(
+        { extraData: staleV12V13PermitExtraData(7n), kmsSignersContext: contextV14(7n, 3n) },
+        {},
+      ),
+    ).toThrow('does not match KmsSignersContext extraData');
   });
 });
