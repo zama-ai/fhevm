@@ -90,7 +90,6 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
     relayerKmsExtraDataBytesHex: relayerExtraDataBytesHex,
     requestedKmsSignersContext: requestedKmsSignersContext,
-    mode: 'loose',
   });
 
   // 7. Verify and Compute PublicDecryptionProof
