@@ -50,7 +50,7 @@ commonConfig:
 # just the host chain so args still render cleanly.
 kmsConnectorKmsWorker:
   config:
-    kmsCoreEndpoints: "http://kms-core-1-core-1:50100"
+    kmsCoreEndpoints: "http://kms-core-1-core-1:50100,http://kms-core-2-core-2:50100,http://kms-core-3-core-3:50100,http://kms-core-4-core-4:50100"
     hostChains:
       - url: "$(KMS_CONNECTOR_ETHEREUM_URL)"
         chainId: "$(KMS_CONNECTOR_ETHEREUM_CHAIN_ID)"

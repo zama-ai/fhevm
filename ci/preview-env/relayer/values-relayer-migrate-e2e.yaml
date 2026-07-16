@@ -35,6 +35,10 @@ env:
   # production topology where relayer-infra provisions its own RDS separate
   # from coprocessor-infra's. Service name + fixed ephemeral test credentials
   # are known ahead of deploy time, so this is already real, not a placeholder.
-  # TODO: confirm relayer-migrate's actual DATABASE_URL format requirement
-  # against relayer/relayer-migrate/.env.example.
   - {name: DATABASE_URL, value: "postgresql://zama:zama@postgres-relayer:5432/relayer"}
+  # relayer-migrate/src/config.rs's Config struct (envy::from_env) only has
+  # these two fields, both required (no #[serde(default)]) - confirmed via
+  # `git show v0.13.0:relayer/relayer-migrate/src/config.rs`. Without this,
+  # it panics at startup: "Configuration error: MissingValue(\"max_attempts\")".
+  # 20 matches zama-zws/gitops's values-relayer-testnet.yaml job.env.
+  - {name: MAX_ATTEMPTS, value: "20"}
