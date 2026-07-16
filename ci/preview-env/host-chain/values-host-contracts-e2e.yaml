@@ -114,7 +114,7 @@ scDeploy:
     - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}
     - {name: KMS_PCR_VALUES, value: '[{"pcr0":"0x00","pcr1":"0x00","pcr2":"0x00"}]'}
   deployCommands:
-    - npx hardhat task:deployAllHostContracts --with-kms-generation true
+    - npx hardhat task:deployAllHostContracts
     # task:addHostPausers intentionally omitted — deferred to a follow-up step, same reasoning
     # as gateway-contracts' deferred task:addHostChainsToGatewayConfig.
   verifyContracts: false
