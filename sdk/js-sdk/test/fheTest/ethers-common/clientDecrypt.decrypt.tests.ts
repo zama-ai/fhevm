@@ -82,11 +82,9 @@ export function defineClientDecryptDecryptTests(parameters: {
       });
 
       expect(signedPermit).toBeDefined();
-      // While the v3 relayer routes are disabled (RELAYER_V3_ROUTES_ENABLED =
-      // false in src/core/runtime/userDecryptFlowVersion-p.ts), permits are
-      // always V1 regardless of protocol version. Restore the version-based
-      // expectation (protocol >= 0.14 -> V2) when the v3 routes are re-enabled.
-      expect(signedPermit.version).toBe(1);
+      const [major, minor] = client.protocolVersion!.version.split('.').map(Number);
+      const expectedPermitVersion = major! * 1000 + minor! < 14 ? 1 : 2;
+      expect(signedPermit.version).toBe(expectedPermitVersion);
       expect(signedPermit.eip712.primaryType).toBe('UserDecryptRequestVerification');
       expect(signedPermit.isDelegated).toBe(false);
     });
