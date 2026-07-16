@@ -37,8 +37,9 @@ cores reach it, and where it publishes its public key material:
 
 - **two distinct wallets**: the _tx-sender_ is the **KMS connector's** wallet (it
   pays gas and authenticates on-chain confirmations); the _signer_ is the
-  **KMS core's** signing key (it signs key-material attestations). A common
-  mistake is swapping them;
+  **KMS core's** signing key (it signs key-material attestations and the core's
+  responses to gRPC commands — keygens, decryptions). A common mistake is
+  swapping them;
 - **network endpoints**: the core's MPC endpoint (peer-to-peer between parties) and
   the public vault (S3 bucket) where the core publishes its verification address and
   TLS CA cert;
@@ -87,7 +88,8 @@ For the upcoming KMS committee update on <ENV>, please provide:
 Notes:
 - (1) and (2) are different keys: (1) is your kms-connector's wallet, pays gas and
   authenticates confirmations; (2) is your kms-core's signing key, signs
-  key-material attestations. Do not swap them.
+  key-material attestations and the core's responses to gRPC commands (keygens,
+  decryptions). Do not swap them.
 - (6) must be copied verbatim from your config, not retyped.
 - (7) is your long-lived TLS CA — reshares and context switches do not regenerate
   it. If you plan to rotate it, tell the coordinator: registering the new cert
@@ -163,8 +165,13 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
 
 1. **Collect and validate the new committee's metadata**: questionnaire (§2.1),
    per-party verification (Annex B.2), env file assembly + validation (Annex B.3).
-   For continuing members, reuse their existing on-chain values verbatim
-   (`getKmsNodesForContext(<currentContextId>)`).
+   For continuing members, reuse their registered values verbatim — but note the
+   contract stores only four fields: `getKmsNodesForContext(<currentContextId>)`
+   returns tx-sender, signer, `ipAddress` and `storageUrl`. The MPC-metadata
+   fields (`partyId`, `mpcIdentity`, `caCert`, `storagePrefix`) are recovered from
+   the current context's `NewKmsContext` event, which carries the full
+   `KmsNodeParams` and is integrity-checked by the anchor
+   (`getKmsContextAnchor`).
 2. **Broadcast on the host** — via a DAO proposal where governance owns the
    contract (production), or directly with `DEPLOYER_PRIVATE_KEY` where it does
    not (devnet/test stacks):
@@ -330,7 +337,7 @@ cast call $PC "getCurrentKmsContextAndEpoch()(uint256,uint256)" --rpc-url $RPC
 cast call $PC "getKmsNodesForContext(uint256)((address,address,string,string)[])" <contextId> --rpc-url $RPC
 
 # Anchor hash for a context (used to cross-check reinitialize inputs)
-cast call $PC "getKmsContextAnchor(uint256)((uint256,bytes32))" <contextId> --rpc-url $RPC
+cast call $PC "getKmsContextAnchor(uint256)(uint256,bytes32)" <contextId> --rpc-url $RPC
 ```
 
 Richer, event-indexed progress view (states, outstanding confirmations, destroyed-switch detection):
@@ -462,13 +469,18 @@ source "${1:?usage: validate-committee-env.sh committee.env}"
 
 fail() { echo "FAIL: $*"; exit 1; }
 
-n=${NUM_KMS_NODES:?NUM_KMS_NODES is unset}
-[ "$n" -eq "$((3 * MPC_THRESHOLD + 1))" ] || fail "n must be 3*MPC_THRESHOLD+1"
-
-for v in PUBLIC_DECRYPTION_THRESHOLD USER_DECRYPTION_THRESHOLD KMS_GEN_THRESHOLD \
-         KMS_SOFTWARE_VERSION KMS_PCR_VALUES; do
+int_re='^[0-9]+$'
+# Numeric committee-level values: set AND integer, checked before any arithmetic.
+for v in NUM_KMS_NODES MPC_THRESHOLD PUBLIC_DECRYPTION_THRESHOLD \
+         USER_DECRYPTION_THRESHOLD KMS_GEN_THRESHOLD; do
+  [[ "${!v:-}" =~ $int_re ]] || fail "$v must be set to an integer (got '${!v:-}')"
+done
+for v in KMS_SOFTWARE_VERSION KMS_PCR_VALUES; do
   [ -n "${!v:-}" ] || fail "$v is unset"
 done
+
+n=$NUM_KMS_NODES
+[ "$n" -eq "$((3 * MPC_THRESHOLD + 1))" ] || fail "n must be 3*MPC_THRESHOLD+1"
 
 # Gateway spelling must be present and equal to its host twin.
 [ "${KMS_GENERATION_THRESHOLD:-}" = "$KMS_GEN_THRESHOLD" ] ||
@@ -489,7 +501,9 @@ for i in $(seq 0 $((n - 1))); do
   done
   v=KMS_NODE_CA_CERT_$i
   [[ "${!v}" =~ ^0x([0-9a-fA-F]{2})+$ ]] || fail "$v is not 0x-prefixed hex bytes"
-  v=KMS_NODE_PARTY_ID_$i;     ids+=("${!v}")
+  v=KMS_NODE_PARTY_ID_$i
+  [[ "${!v}" =~ $int_re ]] || fail "$v must be an integer (got '${!v}')"
+  ids+=("${!v}")
   v=KMS_TX_SENDER_ADDRESS_$i; txs+=("${!v}")
   v=KMS_SIGNER_ADDRESS_$i;    signers+=("${!v}")
   v=KMS_NODE_MPC_IDENTITY_$i; mpcs+=("${!v}")
