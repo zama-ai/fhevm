@@ -222,7 +222,7 @@ contract Decryption is
      */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 6;
+    uint256 private constant MINOR_VERSION = 7;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -231,7 +231,7 @@ contract Decryption is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 7;
+    uint64 private constant REINITIALIZER_VERSION = 8;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -320,11 +320,11 @@ contract Decryption is
     }
 
     /**
-     * @notice Re-initializes the contract from V5.
+     * @notice Re-initializes the contract from V6.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV7() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IDecryption-publicDecryptionRequest}.
@@ -377,7 +377,9 @@ contract Decryption is
         // Collect the fee from the transaction sender for this public decryption request.
         _collectPublicDecryptionFee(msg.sender);
 
+        // Dual emission: for both pre and post 0.15 consumers
         emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, extraData);
+        emit PublicDecryptionRequest(publicDecryptionId, ctHandles, extraData);
     }
 
     /**
@@ -545,7 +547,9 @@ contract Decryption is
         // Collect the fee from the transaction sender for this user decryption request.
         _collectUserDecryptionFee(msg.sender);
 
+        // Dual emission: for both pre and post 0.15 consumers
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+        emit UserDecryptionRequest(userDecryptionId, ctHandles, userAddress, publicKey, extraData);
     }
 
     /**
@@ -643,9 +647,17 @@ contract Decryption is
         // Collect the fee from the transaction sender for this delegated user decryption request.
         _collectUserDecryptionFee(msg.sender);
 
+        // Dual emission: for both pre and post 0.15 consumers
         emit UserDecryptionRequest(
             userDecryptionId,
             snsCtMaterials,
+            delegationAccounts.delegateAddress,
+            publicKey,
+            extraData
+        );
+        emit UserDecryptionRequest(
+            userDecryptionId,
+            ctHandles,
             delegationAccounts.delegateAddress,
             publicKey,
             extraData
@@ -727,7 +739,9 @@ contract Decryption is
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
         $.decryptionContextId[userDecryptionId] = contextId;
 
+        // Dual emission: for both pre and post 0.15 consumers
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, handles, payload);
+        emit UserDecryptionRequest(userDecryptionId, handles, payload);
     }
 
     /**

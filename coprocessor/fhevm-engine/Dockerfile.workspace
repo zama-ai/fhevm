@@ -63,9 +63,32 @@ FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
 
 ARG CARGO_PROFILE=release
 ARG BUILD_ID=unknown
+ARG SCCACHE_BUCKET
+ARG SCCACHE_REGION=eu-west-3
+ARG SCCACHE_S3_PREFIX
+ARG SCCACHE_VERSION=v0.15.0
+ENV SCCACHE_IDLE_TIMEOUT=0
+ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
+ENV SCCACHE_REGION=${SCCACHE_REGION}
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
+ENV AWS_REGION=${SCCACHE_REGION}
 
 USER root
 WORKDIR /app
+
+# TODO(sccache): temporary inline install for testing; remove once sccache
+# ships in the rust-glibc golden image and rely on that instead.
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64)  triple=x86_64-unknown-linux-musl ;; \
+        aarch64) triple=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
+    chmod +x /usr/local/bin/sccache; \
+    sccache --version
 
 # Copy contract artifacts from contract_builder stage
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
@@ -89,8 +112,16 @@ WORKDIR /app/coprocessor/fhevm-engine
 # the same RUN instruction for COPY --from to work in later stages.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
+    --mount=type=secret,id=sccache_aws_access_key_id \
+    --mount=type=secret,id=sccache_aws_secret_access_key \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then \
+      export RUSTC_WRAPPER=sccache; \
+      export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
+      export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
+    fi && \
     cargo fetch && \
     SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
     cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \
     cp target/${CARGO_PROFILE}/host_listener /out/ && \
@@ -100,6 +131,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cp target/${CARGO_PROFILE}/sns_worker /out/ && \
     cp target/${CARGO_PROFILE}/transaction_sender /out/ && \
     cp target/${CARGO_PROFILE}/zkproof_worker /out/ && \
+    cp target/${CARGO_PROFILE}/consensus-detector /out/ && \
+    cp target/${CARGO_PROFILE}/upgrade-controller /out/ && \
     cp target/${CARGO_PROFILE}/resolve_database_url /out/
 
 # =============================================================================
@@ -107,13 +140,45 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # =============================================================================
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS sqlx_builder
 
+ARG SCCACHE_BUCKET
+ARG SCCACHE_REGION=eu-west-3
+ARG SCCACHE_S3_PREFIX
+ARG SCCACHE_VERSION=v0.15.0
+ENV SCCACHE_IDLE_TIMEOUT=0
+ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
+ENV SCCACHE_REGION=${SCCACHE_REGION}
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
+ENV AWS_REGION=${SCCACHE_REGION}
+
 USER root
 WORKDIR /app
 
+# TODO(sccache): temporary inline install for testing; remove once sccache
+# ships in the rust-glibc golden image and rely on that instead.
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64)  triple=x86_64-unknown-linux-musl ;; \
+        aarch64) triple=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
+    chmod +x /usr/local/bin/sccache; \
+    sccache --version
+
 # Install sqlx-cli
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=secret,id=sccache_aws_access_key_id \
+    --mount=type=secret,id=sccache_aws_secret_access_key \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then \
+      export RUSTC_WRAPPER=sccache; \
+      export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
+      export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
+    fi && \
     cargo install sqlx-cli --version 0.7.2 \
-    --no-default-features --features postgres,rustls --locked
+    --no-default-features --features postgres,rustls --locked && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi
 
 # =============================================================================
 # Stage 2a: tfhe-worker runtime
@@ -196,7 +261,33 @@ USER fhevm:fhevm
 CMD ["/usr/local/bin/zkproof_worker"]
 
 # =============================================================================
-# Stage 2g: db-migration runtime (special: Postgres-based image)
+# Stage 2g: consensus-detector runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS consensus-detector
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/consensus-detector /usr/local/bin/consensus-detector
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/consensus-detector"]
+
+# =============================================================================
+# Stage 2h: upgrade-controller runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS upgrade-controller
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/upgrade-controller /usr/local/bin/upgrade-controller
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/upgrade-controller"]
+
+# =============================================================================
+# Stage 2i: db-migration runtime (special: Postgres-based image)
 # =============================================================================
 FROM cgr.dev/zama.ai/postgres:17 AS db-migration
 

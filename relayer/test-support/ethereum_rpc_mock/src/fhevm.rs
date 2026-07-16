@@ -1066,7 +1066,7 @@ fn build_user_decrypt_response(
 }
 
 fn build_public_decrypt_request(contract: Address, decryption_id: U256, handles: Vec<B256>) -> Log {
-    let request = Decryption::PublicDecryptionRequest {
+    let request = Decryption::PublicDecryptionRequest_0 {
         decryptionId: decryption_id,
         snsCtMaterials: create_sns_materials(handles),
         extraData: Bytes::from(vec![0x00]),
@@ -1076,7 +1076,7 @@ fn build_public_decrypt_request(contract: Address, decryption_id: U256, handles:
         contract,
         &request,
         vec![
-            Decryption::PublicDecryptionRequest::SIGNATURE_HASH,
+            Decryption::PublicDecryptionRequest_0::SIGNATURE_HASH,
             B256::from(decryption_id),
         ],
     )

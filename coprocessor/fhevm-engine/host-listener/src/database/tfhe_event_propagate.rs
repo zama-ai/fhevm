@@ -606,8 +606,9 @@ impl Database {
     /// at BEGIN (via `begin_guarded_pool`), then takes the shared cutover advisory
     /// lock and re-checks retirement. Returns `Ok(None)` if a committed cutover has
     /// retired this stack — the caller must skip the write. GCS-mode connections
-    /// (`self.gcs_mode`) skip the gate: they write the gcs schema, not the cutover
-    /// target. See `versioning::cutover_gate`.
+    /// (`self.gcs_mode`) still take the shared lock (their gcs-schema writes are
+    /// merged into the cutover target) but skip the retirement re-check, since a
+    /// green stack can never be retired. See `versioning::cutover_gate`.
     pub async fn new_transaction(
         &self,
     ) -> Result<Option<Transaction<'_>>, SqlxError> {

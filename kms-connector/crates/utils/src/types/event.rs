@@ -9,8 +9,8 @@ use alloy::{
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        DecryptionEvents, HandleEntry, PublicDecryptionRequest, SnsCiphertextMaterial,
-        UserDecryptionRequest_0 as UserDecryptionRequest,
+        DecryptionEvents, HandleEntry, PublicDecryptionRequest_0 as PublicDecryptionRequest,
+        SnsCiphertextMaterial, UserDecryptionRequest_0 as UserDecryptionRequest,
         UserDecryptionRequest_1 as UserDecryptionRequestV2,
     },
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
@@ -23,7 +23,8 @@ use fhevm_host_bindings::{
     protocol_config::{
         IProtocolConfig::KmsThresholds,
         ProtocolConfig::{
-            KmsNodeParams, NewKmsContext, NewKmsEpoch, PcrValues, ProtocolConfigEvents,
+            KmsContextDestroyed, KmsEpochDestroyed, KmsNodeParams, NewKmsContext, NewKmsEpoch,
+            PcrValues, ProtocolConfigEvents,
         },
     },
 };
@@ -130,6 +131,12 @@ impl ProtocolEvent {
             ProtocolEventKind::NewKmsEpoch(e) => {
                 update_new_kms_epoch_status(db, e.epochId, status, already_sent).await
             }
+            ProtocolEventKind::KmsContextDestroyed(e) => {
+                update_kms_context_destroyed_status(db, e.kmsContextId, status, already_sent).await
+            }
+            ProtocolEventKind::KmsEpochDestroyed(e) => {
+                update_kms_epoch_destroyed_status(db, e.epochId, status, already_sent).await
+            }
         };
         result.map_err(|e| {
             anyhow!(
@@ -161,6 +168,8 @@ pub enum ProtocolEventKind {
     AbortCrsgen(AbortCrsgen),
     NewKmsContext(NewKmsContext),
     NewKmsEpoch(NewKmsEpoch),
+    KmsContextDestroyed(KmsContextDestroyed),
+    KmsEpochDestroyed(KmsEpochDestroyed),
 }
 
 impl std::fmt::Debug for ProtocolEventKind {
@@ -189,6 +198,8 @@ impl std::fmt::Debug for ProtocolEventKind {
                 .field("previousEpochId", &e.previousEpochId)
                 .field("materialBlockNumber", &e.materialBlockNumber)
                 .finish(),
+            Self::KmsContextDestroyed(e) => f.debug_tuple("KmsContextDestroyed").field(e).finish(),
+            Self::KmsEpochDestroyed(e) => f.debug_tuple("KmsEpochDestroyed").field(e).finish(),
         }
     }
 }
@@ -217,6 +228,10 @@ impl PartialEq for ProtocolEventKind {
                     && a.previousEpochId == b.previousEpochId
                     && a.materialBlockNumber == b.materialBlockNumber
             }
+            (Self::KmsContextDestroyed(a), Self::KmsContextDestroyed(b)) => {
+                a.kmsContextId == b.kmsContextId
+            }
+            (Self::KmsEpochDestroyed(a), Self::KmsEpochDestroyed(b)) => a.epochId == b.epochId,
             _ => false,
         }
     }
@@ -428,6 +443,34 @@ pub fn from_new_kms_epoch_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     })
 }
 
+pub fn from_kms_context_destroyed_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::KmsContextDestroyed(KmsContextDestroyed {
+        kmsContextId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("context_id")?),
+    });
+    Ok(ProtocolEvent {
+        kind,
+        tx_hash: tx_hash_from_row(row),
+        already_sent: row.try_get::<bool, _>("already_sent")?,
+        error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        otlp_context: otlp_context_from_row(row)?,
+    })
+}
+
+pub fn from_kms_epoch_destroyed_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let kind = ProtocolEventKind::KmsEpochDestroyed(KmsEpochDestroyed {
+        epochId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
+    });
+    Ok(ProtocolEvent {
+        kind,
+        tx_hash: tx_hash_from_row(row),
+        already_sent: row.try_get::<bool, _>("already_sent")?,
+        error_counter: 0,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        otlp_context: otlp_context_from_row(row)?,
+    })
+}
+
 pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = ProtocolEventKind::Crsgen(CrsgenRequest {
         crsId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
@@ -614,6 +657,36 @@ async fn update_new_kms_epoch_status(
     execute_update_event_query(db, query).await
 }
 
+async fn update_kms_context_destroyed_status(
+    db: &Pool<Postgres>,
+    context_id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) -> anyhow::Result<()> {
+    let query = sqlx::query!(
+        "UPDATE kms_context_destroyed SET status = $1, already_sent = $2 WHERE context_id = $3",
+        status as OperationStatus,
+        already_sent,
+        context_id.as_le_slice()
+    );
+    execute_update_event_query(db, query).await
+}
+
+async fn update_kms_epoch_destroyed_status(
+    db: &Pool<Postgres>,
+    epoch_id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+) -> anyhow::Result<()> {
+    let query = sqlx::query!(
+        "UPDATE kms_epoch_destroyed SET status = $1, already_sent = $2 WHERE epoch_id = $3",
+        status as OperationStatus,
+        already_sent,
+        epoch_id.as_le_slice()
+    );
+    execute_update_event_query(db, query).await
+}
+
 async fn execute_update_event_query(
     db: &Pool<Postgres>,
     query: Query<'_, Postgres, PgArguments>,
@@ -659,6 +732,12 @@ impl Display for ProtocolEventKind {
             }
             ProtocolEventKind::NewKmsEpoch(e) => {
                 write!(f, "NewKmsEpoch #{:#066x}", e.epochId)
+            }
+            ProtocolEventKind::KmsContextDestroyed(e) => {
+                write!(f, "KmsContextDestroyed #{:#066x}", e.kmsContextId)
+            }
+            ProtocolEventKind::KmsEpochDestroyed(e) => {
+                write!(f, "KmsEpochDestroyed #{:#066x}", e.epochId)
             }
         }
     }
@@ -724,6 +803,18 @@ impl From<NewKmsEpoch> for ProtocolEventKind {
     }
 }
 
+impl From<KmsContextDestroyed> for ProtocolEventKind {
+    fn from(value: KmsContextDestroyed) -> Self {
+        Self::KmsContextDestroyed(value)
+    }
+}
+
+impl From<KmsEpochDestroyed> for ProtocolEventKind {
+    fn from(value: KmsEpochDestroyed) -> Self {
+        Self::KmsEpochDestroyed(value)
+    }
+}
+
 impl TryFrom<DecryptionEvents> for ProtocolEventKind {
     type Error = anyhow::Error;
 
@@ -731,7 +822,7 @@ impl TryFrom<DecryptionEvents> for ProtocolEventKind {
         match value {
             // `UserDecryptionRequest_0` is the legacy event; `UserDecryptionRequest_1` is the
             // RFC016 overload.
-            DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
+            DecryptionEvents::PublicDecryptionRequest_0(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_0(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_1(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected Decryption event")),
@@ -761,6 +852,8 @@ impl TryFrom<ProtocolConfigEvents> for ProtocolEventKind {
         match value {
             ProtocolConfigEvents::NewKmsContext(e) => Ok(e.into()),
             ProtocolConfigEvents::NewKmsEpoch(e) => Ok(e.into()),
+            ProtocolConfigEvents::KmsContextDestroyed(e) => Ok(e.into()),
+            ProtocolConfigEvents::KmsEpochDestroyed(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected ProtocolConfig event")),
         }
     }
