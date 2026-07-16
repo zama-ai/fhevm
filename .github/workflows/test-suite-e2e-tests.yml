@@ -176,7 +176,7 @@ jobs:
       ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario || 'two-of-three-multi-chain' }}
       TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
-    runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64
+    runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=80gb
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
