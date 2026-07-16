@@ -193,7 +193,10 @@ export const GROUP_BUILD_COMPONENTS: Record<OverrideGroup, string[]> = {
   "coprocessor": ["coprocessor"],
   "kms-connector": ["kms-connector"],
   "listener-core": ["listener-core"],
-  "relayer": ["relayer"],
+  // Solana MMR proofs live in the standalone solana-proof-service image; keep it
+  // in the relayer override group so `--override relayer` (and clean-e2e) rebuilds
+  // both from this worktree and cannot silently reuse a stale local proof image.
+  "relayer": ["relayer", "solana-proof-service"],
   "gateway-contracts": ["gateway-mocked-payment", "gateway-sc"],
   "host-contracts": ["host-sc"],
   "test-suite": ["test-suite"],
@@ -221,6 +224,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
   "relayer": [
     "relayer-db-migration",
     "relayer",
+    "solana-proof-service",
   ],
   "gateway-contracts": [
     "gateway-deploy-mocked-zama-oft",

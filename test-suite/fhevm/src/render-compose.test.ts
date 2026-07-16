@@ -264,6 +264,15 @@ describe("render-compose", () => {
       );
       expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
+
+      const proofDoc = YAML.parse(await readFile(composePath("solana-proof-service"), "utf8")) as {
+        services: Record<string, { image?: string; build?: { context?: string; dockerfile?: string } }>;
+      };
+      expect(proofDoc.services["solana-proof-service"]?.image).toContain(":fhevm-local");
+      expect(proofDoc.services["solana-proof-service"]?.build?.dockerfile).toContain(
+        "solana-proof-service/Dockerfile",
+      );
+      expect(proofDoc.services["solana-proof-db"]).toBeUndefined();
     });
   });
 

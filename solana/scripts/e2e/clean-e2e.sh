@@ -86,16 +86,22 @@ PY
 #    The `solana` scenario declares the RFC-021 Solana host alongside the default EVM host, so
 #    fhevm-cli generates the Solana relayer + kms-connector config and boots solana-proof-service
 #    (the solana-side bring-up below no longer patches those — single config writer).
+#    `--override relayer` also rebuilds solana-proof-service from this worktree (same override
+#    group) so a stale `solana-proof-service:local` / `:fhevm-local` image cannot outlive HEAD.
 ( cd "$FHEVM" && ./fhevm-cli up \
     --scenario solana \
     --lock-file "$LOCK" \
     ${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"} \
     --allow-schema-mismatch )
-# NOTE: relayer + kms-connector must run feature/solana code, NOT the pinned 4f42734 baseline
-# images: the prebuilt kms-connector at that tag rejects the generated Solana host_chains config
-# ("missing field acl_address") — its config schema predates the optional-acl_address change the
-# config generator (src/generate/solana.ts) assumes. Dropping these --overrides breaks clean-e2e
-# unless SOLANA_E2E_LOCK_PINS points them at branch-published feature/solana images instead.
+# NOTE: relayer + kms-connector + solana-proof-service must run feature/solana
+# worktree code (via --override), NOT the pinned 4f42734 baseline images: the
+# prebuilt kms-connector at that tag rejects the generated Solana host_chains
+# config ("missing field acl_address") — its config schema predates the
+# optional-acl_address change the config generator (src/generate/solana.ts)
+# assumes. Dropping these --overrides breaks clean-e2e unless
+# SOLANA_E2E_LOCK_PINS points them at branch-published feature/solana images
+# instead. `--override relayer` also rebuilds solana-proof-service so a stale
+# `:local` / `:fhevm-local` image cannot outlive HEAD.
 
 # 3. Bring the Solana side-stack online against the freshly-deployed live backend.
 #    Reads gateway addresses + KMS/coprocessor signer set live, so it tracks the new signer.

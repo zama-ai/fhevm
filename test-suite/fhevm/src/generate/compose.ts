@@ -155,6 +155,9 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile"),
     relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile"),
   },
+  "solana-proof-service": {
+    "solana-proof-service": buildSpec("../../..", "solana-proof-service/Dockerfile"),
+  },
   "gateway-mocked-payment": {
     "gateway-deploy-mocked-zama-oft": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-set-relayer-mocked-payment": buildSpec("../../../gateway-contracts", "Dockerfile"),

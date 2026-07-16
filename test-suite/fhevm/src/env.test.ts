@@ -568,4 +568,53 @@ describe("env", () => {
     expect(rendered.versionsEnv.RELAYER_IMAGE_REPOSITORY).toBe("ghcr.io/zama-ai/fhevm/relayer");
     expect(rendered.versionsEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe("ghcr.io/zama-ai/fhevm/relayer-migrate");
   });
+
+  test("boots solana-proof-service env keys for a Solana topology", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario({
+        hostChains: [
+          { key: "host", chainId: "12345", rpcPort: 8545 },
+          { key: "solana", type: "solana", chainId: "9223372036854788153", rpcPort: 8899 },
+        ],
+      }),
+      discovery: {
+        gateway: {},
+        hosts: { solana: { ACL_CONTRACT_ADDRESS: "SoLaNaProgram1111111111111111111111111111111" } },
+        kmsSigners: ["0x1"],
+        fheKeyId: "f".repeat(64),
+        crsKeyId: "c".repeat(64),
+        endpoints: {
+          gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
+          hosts: {
+            host: { http: "http://host-node:8545", ws: "ws://host-node:8545" },
+            solana: { http: "http://host.docker.internal:8899", ws: "ws://host.docker.internal:8900" },
+          },
+          minioInternal: "http://minio:9000",
+          minioExternal: "http://localhost:9000",
+        },
+      },
+      completedSteps: [],
+      updatedAt: "2026-07-16T00:00:00.000Z",
+    };
+
+    const rendered = await renderEnvMaps({ discovery: state.discovery }, stackSpecForState(state), templateEnvs, deriveWallet);
+    const proof = rendered.componentEnvs["solana-proof-service"];
+    expect(proof.SOLANA_PROOF__SOLANA__PROGRAM_ID).toBe("SoLaNaProgram1111111111111111111111111111111");
+    expect(proof.SOLANA_PROOF__SOLANA__RPC_URL).toBe("http://host.docker.internal:8899");
+    expect(proof.SOLANA_PROOF__YELLOWSTONE__GRPC_URL).toBe("http://host.docker.internal:10000");
+    expect(proof.SOLANA_PROOF__SERVER__BIND_ADDRESS).toBe("0.0.0.0:8088");
+  });
 });
