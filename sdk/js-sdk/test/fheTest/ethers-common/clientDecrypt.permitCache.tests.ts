@@ -93,16 +93,11 @@ export function defineClientDecryptPermitCacheTests(parameters: {
       expect(typedValue.value).toBeDefined();
     });
 
-    // ------------------------------------------------------------------------
-    // KNOWN GAP — the documented cache flow ("stringify with JSON.stringify()
-    // and parse back") does not survive an actual JSON string today:
-    // `eip712.domain.chainId` is a BigInt, so `JSON.stringify` throws, and the
-    // parse-side validation requires `chainId` to be a bigint, so a
-    // string-revived object is rejected too. `it.fails` asserts the body
-    // currently fails; when the serializer becomes JSON-safe, vitest reports
-    // this test as failing — remove the `.fails` marker then.
-    // ------------------------------------------------------------------------
-    it.fails('round-trips a permit through a JSON string (localStorage flow) — KNOWN GAP: bigint chainId', async () => {
+    // The documented cache flow: serialize, JSON.stringify into storage
+    // (e.g. localStorage), JSON.parse on restore, parse back. The serializer
+    // emits the domain's chainId as a decimal string (JSON-safe) and parse
+    // converts it back to a bigint.
+    it('round-trips a permit through a JSON string (localStorage flow) and decrypts', async () => {
       const client = await createReadyClient();
       const { transportKeyPair, serialized } = await signAndSerialize(client);
 
@@ -114,6 +109,15 @@ export function defineClientDecryptPermitCacheTests(parameters: {
         transportKeyPair,
       });
       expect(restored.version).toBe(serialized.version);
+
+      const encryptedValue = await readHandle();
+      const typedValue = await client.decryptValue({
+        contractAddress: config.fheTestAddress,
+        encryptedValue,
+        signedPermit: restored,
+        transportKeyPair,
+      });
+      expect(typedValue.value).toBeDefined();
     });
 
     it('rejects a serialized permit with an unknown version', async () => {
