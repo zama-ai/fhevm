@@ -299,7 +299,7 @@ checksum = "84e0378e959aa6a885897522080a990e80eb317f1e9a222a604492ea50e13096"
 dependencies = [
  "alloy-primitives",
  "num_enum",
- "strum",
+ "strum 0.27.1",
 ]
 
 [[package]]
@@ -1885,7 +1885,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?rev=b9087af025de26cd6ada5033e8044b05a518cf22#b9087af025de26cd6ada5033e8044b05a518cf22"
+source = "git+https://github.com/zama-ai/kms.git?rev=b14d45dcd459328f9a1ded2410de953beae28a95#b14d45dcd459328f9a1ded2410de953beae28a95"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -3747,7 +3747,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -4097,8 +4097,8 @@ dependencies = [
 
 [[package]]
 name = "kms-grpc"
-version = "0.14.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=b9087af025de26cd6ada5033e8044b05a518cf22#b9087af025de26cd6ada5033e8044b05a518cf22"
+version = "0.15.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=b14d45dcd459328f9a1ded2410de953beae28a95#b14d45dcd459328f9a1ded2410de953beae28a95"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -4110,8 +4110,8 @@ dependencies = [
  "prost 0.14.4",
  "rand 0.8.6",
  "serde",
- "strum",
- "strum_macros",
+ "strum 0.28.0",
+ "strum_macros 0.28.0",
  "tfhe",
  "tfhe-versionable",
  "thiserror 2.0.18",
@@ -5148,7 +5148,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -5185,7 +5185,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -6536,8 +6536,14 @@ version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f64def088c51c9510a8579e3c5d67c65349dcf755e5479ad3d010aa6454e2c32"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.27.1",
 ]
+
+[[package]]
+name = "strum"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
 
 [[package]]
 name = "strum_macros"
@@ -6549,6 +6555,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustversion",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
  "syn 2.0.117",
 ]
 
@@ -6680,7 +6698,7 @@ dependencies = [
  "rayon",
  "serde",
  "sha3 0.10.8",
- "strum",
+ "strum 0.27.1",
  "tfhe-csprng",
  "tfhe-fft",
  "tfhe-ntt",
@@ -6845,8 +6863,8 @@ dependencies = [
 
 [[package]]
 name = "threshold-hashing"
-version = "0.14.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=b9087af025de26cd6ada5033e8044b05a518cf22#b9087af025de26cd6ada5033e8044b05a518cf22"
+version = "0.15.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=b14d45dcd459328f9a1ded2410de953beae28a95#b14d45dcd459328f9a1ded2410de953beae28a95"
 dependencies = [
  "anyhow",
  "bc2wrap",
@@ -6858,8 +6876,8 @@ dependencies = [
 
 [[package]]
 name = "threshold-types"
-version = "0.14.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=b9087af025de26cd6ada5033e8044b05a518cf22#b9087af025de26cd6ada5033e8044b05a518cf22"
+version = "0.15.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=b14d45dcd459328f9a1ded2410de953beae28a95#b14d45dcd459328f9a1ded2410de953beae28a95"
 dependencies = [
  "anyhow",
  "async-trait",
