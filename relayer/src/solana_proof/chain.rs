@@ -252,7 +252,11 @@ fn decode_transaction_result(
     if meta.err.is_some() {
         // This guard deliberately precedes account-key and instruction decoding:
         // failed transactions committed no state and must contribute no leaves.
-        return Err(ChainError::Rpc("transaction failed".to_string()));
+        return Ok(ChainTransaction {
+            signature: signature.to_string(),
+            slot: parsed.slot,
+            instructions: Vec::new(),
+        });
     }
     let static_keys: Vec<[u8; 32]> = parsed
         .transaction
@@ -613,7 +617,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_transaction_is_rejected_before_instruction_decoding() {
+    fn failed_transaction_is_ignored_before_instruction_decoding() {
         let result = json!({
             "slot": 42,
             "transaction": { "message": {
@@ -631,10 +635,11 @@ mod tests {
             }
         });
 
-        let error = decode_transaction_value("failed", result)
-            .expect_err("failed transactions must be rejected");
+        let transaction = decode_transaction_value("failed", result)
+            .expect("failed transactions are valid chain history");
 
-        assert!(error.to_string().contains("transaction failed"));
+        assert!(transaction.instructions.is_empty());
+        assert_eq!(transaction.slot, 42);
     }
 
     #[test]
