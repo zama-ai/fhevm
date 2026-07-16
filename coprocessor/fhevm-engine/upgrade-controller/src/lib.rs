@@ -996,16 +996,17 @@ pub async fn handle_unanimity_consensus(
         Option<i64>,
         Option<Vec<u8>>,
         Option<i64>,
+        Option<i64>,
     );
     let row: Option<GcsUpgradeStateRow> = sqlx::query_as(
-        "SELECT state, start_block, end_block, proposal_id, host_chain_id
+        "SELECT state, start_block, end_block, proposal_id, host_chain_id, gw_start_block
            FROM upgrade_state WHERE stack_role = 'GCS'",
     )
     .fetch_optional(pool)
     .await?;
 
     match row {
-        Some((state, start_block, end_block, proposal_id, host_chain_id))
+        Some((state, start_block, end_block, proposal_id, host_chain_id, gw_start_block))
             if state == "DryRunStarted" =>
         {
             // Classify the event. Host track iff chain_id matches the stored
@@ -1060,17 +1061,41 @@ pub async fn handle_unanimity_consensus(
                     }
                 }
             } else {
-                info!(
-                    chain_id = payload.chain_id,
-                    block_height = payload.block_height,
-                    "event_unanimity_consensus: gateway-track unanimity — setting gw_consensus_reached"
-                );
-                sqlx::query(
-                    "UPDATE upgrade_state SET gw_consensus_reached = TRUE, updated_at = NOW()
-                      WHERE stack_role = 'GCS' AND state = 'DryRunStarted'",
-                )
-                .execute(pool)
-                .await?;
+                // Gateway consensus only counts at/after gw_start_block —
+                // symmetric with the host window guard above. Drops late/replayed
+                // events from an earlier Gateway window, and pre-window events
+                // misclassified as Gateway when host_chain_id is NULL (legacy row).
+                match gw_start_block {
+                    Some(gw_start) if payload.block_height >= gw_start => {
+                        info!(
+                            chain_id = payload.chain_id,
+                            block_height = payload.block_height,
+                            gw_start_block = gw_start,
+                            "event_unanimity_consensus: gateway-track unanimity at/after gw_start_block — setting gw_consensus_reached"
+                        );
+                        sqlx::query(
+                            "UPDATE upgrade_state SET gw_consensus_reached = TRUE, updated_at = NOW()
+                              WHERE stack_role = 'GCS' AND state = 'DryRunStarted'",
+                        )
+                        .execute(pool)
+                        .await?;
+                    }
+                    Some(gw_start) => {
+                        warn!(
+                            payload_block_height = payload.block_height,
+                            gw_start_block = gw_start,
+                            "event_unanimity_consensus: gateway block_height below gw_start_block — ignoring"
+                        );
+                        return Ok(());
+                    }
+                    None => {
+                        warn!(
+                            payload_block_height = payload.block_height,
+                            "event_unanimity_consensus: GCS row missing gw_start_block — ignoring gateway consensus"
+                        );
+                        return Ok(());
+                    }
+                }
             }
 
             // Cutover only once BOTH tracks have been observed. The WHERE reads
@@ -1095,7 +1120,7 @@ pub async fn handle_unanimity_consensus(
             info!("event_unanimity_consensus: both host and gateway consensus reached — transitioning to UpgradeAuthorized and running cutover");
             execute_cutover(pool).await?;
         }
-        Some((state, _, _, _, _)) => {
+        Some((state, _, _, _, _, _)) => {
             warn!(
                 state,
                 "event_unanimity_consensus: GCS state is not DryRunStarted — skipping cutover"
