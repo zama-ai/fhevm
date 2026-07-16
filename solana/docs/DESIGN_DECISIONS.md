@@ -916,9 +916,9 @@ The accepted design is eager materialization from confirmed instruction reconstr
 separate finality gate; KMS revalidates confirmed authorization at the plaintext-release boundary.
 
 The accepted product rule treats a valid confirmed authorization as sufficient. Coprocessor work is
-therefore scheduled from confirmed ingestion. The KMS ACL read and all three relayer proof RPC reads
-(`getSignaturesForAddress`, `getTransaction`, and `getAccountInfo`) use explicit confirmed commitment;
-KMS remains the only plaintext-release boundary.
+therefore scheduled from confirmed ingestion. The KMS ACL read and the proof-service confirmed RPC /
+Yellowstone path (`getAccountInfo` peak cross-check, completed-block ingest, bounded RPC recovery)
+use explicit confirmed commitment; KMS remains the only plaintext-release boundary.
 
 Decision provenance: accepted by the Solana feature owner during the review of
 [`zama-ai/fhevm#3122`](https://github.com/zama-ai/fhevm/pull/3122) on 2026-07-13. The accepted trade-off
@@ -1261,7 +1261,7 @@ Consequences:
 Coprocessor scheduling and decrypt authorization are decoupled for Solana. Material can be prepared
 before a decrypt request; plaintext is released only after KMS authorization succeeds.
 
-## DD-035: Relayer-Colocated, Untrusted Solana MMR Proof Service
+## DD-035: Standalone Untrusted Solana MMR Proof Service
 
 Status: adopted
 
@@ -1406,10 +1406,13 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - `fhe_eval` supports `RandBounded`; the superseded standalone bounded-random instructions were
   removed with the old model (DD-032).
 - The relayer's Solana user-decrypt path does not call the MMR proof service in-process
-  (DD-035) — only the interim internal HTTP endpoint exists today. When it lands, the user-decrypt
-  dedup hash must also cover the proof fields (`acl_value_key`, `proof_slot`, proof bytes).
-- Proof-service high availability (DD-035): a single relayer-colocated instance with a file-backed
-  rebuildable cache is the whole story today; replication/failover is unaddressed.
+  (DD-035). Clients fetch proofs from standalone `solana-proof-service` via `PROOF_SERVICE_URL`
+  before submitting to `/v3/user-decrypt`. When optional in-process integration lands, the
+  user-decrypt dedup hash must also cover the proof fields (`acl_value_key`, `proof_slot`, proof
+  bytes).
+- Proof-service high availability (DD-035): a single standalone instance with Yellowstone ingest +
+  PostgreSQL durable store (plus bounded confirmed RPC recovery) is the whole story today;
+  replication/failover is unaddressed.
 - The old 4-leg receiver-callback flow was deleted with the legacy model, but a Solana-native
   composition pattern for contract-to-contract confidential calls has not been designed to replace
   it.
@@ -1425,7 +1428,7 @@ Context:
 DD-033 kept compute-step (`fhe_eval`) events while making the ACL lifecycle event-free. Those
 compute events used a size-based transport switch: `emit_cpi!` for frames of `≤ MAX_CPI_EVAL_EVENTS`
 (8) events, falling back to plain `emit!` logs for larger frames (the self-CPI frames would otherwise
-overflow the 32KiB bump heap). Two consumers exist: the host-listener indexer and the relayer MMR
+overflow the 32KiB bump heap). Two consumers exist: the host-listener indexer and the standalone MMR
 proof service (DD-035).
 
 Decision:
@@ -1438,8 +1441,9 @@ is too large for CPI transport (`ZamaHostError::FheEvalBornPublicFrameTooLarge`,
 (DD-015) and lives in no instruction argument, so its `emit_cpi!` event is the only way an off-chain
 proof builder can recover it. The host-listener runs reconstruction-only (Yellowstone gRPC, DD-003):
 it never needed these events and derives every handle from instruction data + sysvar-streamed block
-entropy. The `emit_cpi!` path and the relayer's op-event resolution are retained as a transitional
-indexing ABI until the relayer migrates to a Geyser datasource (fhevm-internal#1665).
+entropy. The `emit_cpi!` path and the proof service's op-event resolution are retained as a
+transitional indexing ABI until Carbon/Geyser indexing fully owns born-public handle recovery
+(fhevm-internal#1665).
 
 Rationale:
 
@@ -1448,12 +1452,10 @@ results, and a `> 8`-step born-public frame already failed closed (its handle wa
 the log fallback was dead weight that also hid a latent stranding case; deleting it and adding the
 fail-closed frame guard turns "silently unrecoverable later" into "rejected now." Non-born-public
 durable handles are unaffected — they reconstruct from the `fhe_eval` durable-output arguments and
-need no event. `emit_cpi!` cannot yet be removed entirely: the relayer, still on RPC polling
-(`getSignaturesForAddress`/`getTransaction`, DD-035), cannot recover `previous_bank_hash` from RPC
-(the bank hash lives in the SlotHashes sysvar, retained only ~512 slots, and `≠` the block's PoH
-`blockhash`), so the op event is its sole source of born-public handles until #1665's Carbon/Geyser
-ingestion (with SlotHashes+Clock sysvar subscriptions and a historical-bankhash backfill policy)
-lands.
+need no event. `emit_cpi!` cannot yet be removed entirely: `solana-proof-service` still resolves
+born-public handles from the op-event (block entropy is not recoverable from instruction args alone),
+so the op event remains its sole source of those handles until #1665's Carbon/Geyser ingestion
+(with SlotHashes+Clock sysvar subscriptions and a historical-bankhash backfill policy) lands.
 
 Consequences:
 
@@ -1465,8 +1467,8 @@ Consequences:
   (same discriminant; no error-code shift).
 - No IDL/wire change: `make_public` was already an `AllowedDurable` field (DD-036); the guard adds a
   validation, not an argument.
-- #1665 must remove the op event only after migrating the relayer off it — treat the event as an ABI
-  surface whose last consumer must move first.
+- #1665 must remove the op event only after migrating born-public handle recovery off it — treat the
+  event as an ABI surface whose last consumer must move first.
 
 ## DD-038: One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events
 

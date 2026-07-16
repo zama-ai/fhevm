@@ -1,7 +1,7 @@
 //! Shared encrypted-value ACL core for the Zama Solana port (RFC-024).
 //!
 //! The single source of truth — used identically by the on-chain `zama-host`
-//! program, the relayer proof service, and the off-chain KMS connector — for the
+//! program, the standalone `solana-proof-service`, and the off-chain KMS connector — for the
 //! `EncryptedValue` account layout, its Merkle Mountain Range history, the leaf
 //! commitments, the value-key derivation, and the decrypt-authorization rules.
 //! Sharing this crate makes the host↔KMS lockstep type-level instead of a

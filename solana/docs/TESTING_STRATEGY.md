@@ -51,7 +51,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    zama-host / confidential-token / host-listener is asserted (a mismatch would silently drop events).
 7. **End-to-end** (`.github/workflows/solana-e2e.yml`, `full-vertical.sh`): the Yellowstone-only
    path feeds ordinary computation facts through Yellowstone gRPC reconstruction while retaining only
-   the narrow produced-public lifecycle batch required by the relayer
+   the narrow produced-public lifecycle batch required by solana-proof-service
    reconstruction. It drives the **decrypt vertical** against a local validator + full coprocessor/KMS
    stack — compute → public-decrypt (solana-proof-service MMR proof) → user-decrypt (current) → historical-user-decrypt
    (superseded handle + live MMR proof) — exercising all three authorization paths. Operator execution
@@ -81,12 +81,13 @@ wall-clock exhaustion also depends on batch load and processing time; there is n
 fork-retry loop. Deterministic mismatches remain fail-closed, but the classification distinguishes
 them from ordinary proof-ahead catch-up in logs.
 
-A persistent proof-service `corrupt_cache` response means the store snapshot disagrees with the
-confirmed on-chain peaks after targeted catch-up. Recovery is operational, not an authorization
-fallback: stop `solana-proof-service`, reset its Postgres volume / DB, and
-restart it so the cache is replayed from the configured `start_signature` (or from the oldest retained
-program signature when absent). Until replay catches up, proof requests fail closed; the KMS never
-trusts the cache without re-verifying the proof against live chain state.
+A persistent proof-service `corrupt_cache` response means the PostgreSQL store snapshot disagrees with
+the confirmed on-chain peaks after Yellowstone ingest / bounded RPC recovery. Recovery is operational,
+not an authorization fallback: stop `solana-proof-service`, reset its Postgres volume / DB, and restart
+it so Yellowstone (plus configured `recovery.bootstrap_slot` RPC recovery when needed) rebuilds the
+durable store. Proof HTTP remains read-only against that store and fails closed (`lagging` /
+`corrupt_cache` / readiness gates) until history is complete; the KMS never trusts the store without
+re-verifying the proof against live chain state.
 
 ## Deliberately deferred (filed as follow-ups, not gaps in the merge)
 
