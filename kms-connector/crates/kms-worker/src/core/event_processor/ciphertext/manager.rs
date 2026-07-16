@@ -85,36 +85,15 @@ where
                 .map(|&handle| self.verify_and_retrieve_handle(&registry, handle)),
         )
         .await?;
-        let mut ciphertexts = Vec::with_capacity(resolved_handles.len());
 
-        // The KMS request carries a single `key_id`; every handle must resolve to the same one.
-        let Some(key_id) = resolved_handles.first().map(|r| r.key_id) else {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
-                "no handles resolved"
-            )));
-        };
-        for resolved_handle in resolved_handles.into_iter() {
-            if resolved_handle.key_id != key_id {
-                return Err(ProcessingError::Irrecoverable(anyhow!(
-                    "handles of the request resolve to different key ids: {:#066x} and {:#066x}",
-                    key_id,
-                    resolved_handle.key_id
-                )));
-            }
-
-            ciphertexts.push(resolved_handle.ciphertext);
-        }
+        let verified = aggregate_resolved_handles(resolved_handles)?;
 
         info!(
-            "All {} handle(s) resolved and verified! key_id: {:#066x}, FHE types: {:?}",
-            ciphertexts.len(),
-            key_id,
-            ciphertexts.iter().map(|ct| ct.fhe_type).collect::<Vec<_>>(),
+            "All {} handle(s) resolved and verified! (key_id: {:#066x})",
+            verified.ciphertexts.len(),
+            verified.key_id,
         );
-        Ok(VerifiedCiphertexts {
-            ciphertexts,
-            key_id,
-        })
+        Ok(verified)
     }
 
     /// Resolves a single handle's material via consensus and fetches its verified ciphertext.
@@ -243,6 +222,37 @@ struct ResolvedHandle {
     ciphertext: TypedCiphertext,
 }
 
+/// Aggregates the independently-resolved handles of a request into a single [`VerifiedCiphertexts`].
+///
+/// The KMS request carries a single `key_id`, so every handle must resolve to the same one; a
+/// request whose handles resolve to different key ids is rejected as `Irrecoverable`. Ciphertext
+/// order is preserved.
+fn aggregate_resolved_handles(
+    resolved_handles: Vec<ResolvedHandle>,
+) -> Result<VerifiedCiphertexts, ProcessingError> {
+    let Some(key_id) = resolved_handles.first().map(|r| r.key_id) else {
+        return Err(ProcessingError::Recoverable(anyhow!("no handles resolved")));
+    };
+
+    let mut ciphertexts = Vec::with_capacity(resolved_handles.len());
+    for resolved_handle in resolved_handles.into_iter() {
+        if resolved_handle.key_id != key_id {
+            return Err(ProcessingError::Irrecoverable(anyhow!(
+                "handles of the request resolve to different key ids: {:#066x} and {:#066x}",
+                key_id,
+                resolved_handle.key_id
+            )));
+        }
+
+        ciphertexts.push(resolved_handle.ciphertext);
+    }
+
+    Ok(VerifiedCiphertexts {
+        ciphertexts,
+        key_id,
+    })
+}
+
 /// Collects the URLs of the buckets whose attestation vouches for the winning material.
 fn winning_group_buckets(
     attestations: &[(Address, CiphertextAttestation)],
@@ -279,5 +289,54 @@ where
             config: CtAttestationConfig::default(),
             s3_ciphertext_retrieval_retries: Config::default().s3_ciphertext_retrieval_retries,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resolved(key_id: U256, handle_byte: u8) -> ResolvedHandle {
+        ResolvedHandle {
+            key_id,
+            ciphertext: TypedCiphertext {
+                ciphertext: vec![handle_byte],
+                external_handle: vec![handle_byte; 32],
+                fhe_type: handle_byte as i32,
+                ciphertext_format: 0,
+            },
+        }
+    }
+
+    /// Handles all resolving to the same `key_id` are aggregated in order.
+    #[test]
+    fn aggregate_accepts_matching_key_ids() {
+        let key_id = U256::from(7u64);
+        let verified =
+            aggregate_resolved_handles(vec![resolved(key_id, 1), resolved(key_id, 2)]).unwrap();
+
+        assert_eq!(verified.key_id, key_id);
+        assert_eq!(verified.ciphertexts.len(), 2);
+        // Order is preserved.
+        assert_eq!(verified.ciphertexts[0].fhe_type, 1);
+        assert_eq!(verified.ciphertexts[1].fhe_type, 2);
+    }
+
+    /// A request whose handles resolve to different `key_id`s is rejected as irrecoverable.
+    #[test]
+    fn aggregate_rejects_divergent_key_ids() {
+        let result = aggregate_resolved_handles(vec![
+            resolved(U256::from(1u64), 1),
+            resolved(U256::from(2u64), 2),
+        ]);
+
+        assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
+    }
+
+    /// An empty resolution set (no handles) is rejected as recoverable.
+    #[test]
+    fn aggregate_rejects_empty() {
+        let result = aggregate_resolved_handles(vec![]);
+        assert!(matches!(result, Err(ProcessingError::Recoverable(_))));
     }
 }

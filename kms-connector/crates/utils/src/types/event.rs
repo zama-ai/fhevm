@@ -247,8 +247,10 @@ fn otlp_context_from_row(row: &PgRow) -> anyhow::Result<PropagationContext> {
 }
 
 fn ct_handles_from_row(row: &PgRow) -> anyhow::Result<Vec<FixedBytes<32>>> {
+    // NULL `ct_handles` mapped to empty handle list, which is rejected later  by the `is_empty()`
+    // guard rather than erroring here and poisoning the whole picked batch
     row.try_get::<Option<Vec<Vec<u8>>>, _>("ct_handles")?
-        .ok_or_else(|| anyhow::anyhow!("ct_handles is null"))?
+        .unwrap_or_default()
         .iter()
         .map(|h| {
             FixedBytes::<32>::try_from(h.as_slice())
