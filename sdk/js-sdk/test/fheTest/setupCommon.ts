@@ -68,6 +68,26 @@ export function isCleartext(chainName: FheTestChainName) {
   return chainName === 'localcleartext' || chainName.startsWith('localcleartext_') || chainName.endsWith('_cleartext');
 }
 
+/**
+ * Protocol era (the minor version of the protocol: 11, 12, 13, 14) a test
+ * chain runs on, derived from its name. Used to gate migration tests that only
+ * make sense on chains at or above a given protocol version.
+ *
+ * `localstack` (latest) tracks the newest protocol (v0.14 era today).
+ */
+export function protocolEraOf(chainName: FheTestChainName): 11 | 12 | 13 | 14 {
+  if (chainName === 'localstack_v11') {
+    return 11;
+  }
+  if (chainName === 'localstack_v12' || chainName === 'localcleartext_v12') {
+    return 12;
+  }
+  if (chainName === 'localstack' || chainName === 'localstack_v14') {
+    return 14;
+  }
+  return 13;
+}
+
 // ---------------------------------------------------------------------------
 // Protocol version per chain
 // ---------------------------------------------------------------------------
