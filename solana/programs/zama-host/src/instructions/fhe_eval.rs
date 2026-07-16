@@ -492,11 +492,7 @@ fn bind_eval_output<'info>(
         // exactly, so indexers can reconstruct the appended MMR leaves from
         // instruction data alone. `output_subjects` may rotate the audience.
         let mut value = read_canonical_encrypted_value(output_info)?;
-        validate_durable_output_previous_state(
-            &value,
-            previous_handle,
-            previous_subjects,
-        )?;
+        validate_durable_output_previous_state(&value, previous_handle, previous_subjects)?;
         check_rotation_grants_not_denied(
             &ctx.accounts.host_config,
             ctx.remaining_accounts,
@@ -674,8 +670,10 @@ mod tests {
     fn durable_output_previous_state_accepts_exact_previous_match() {
         let subjects = vec![Pubkey::new_unique(), Pubkey::new_unique()];
         let value = lineage([9; 32], &subjects);
-        assert!(validate_durable_output_previous_state(&value, &Some([9; 32]), &Some(subjects),)
-            .is_ok());
+        assert!(
+            validate_durable_output_previous_state(&value, &Some([9; 32]), &Some(subjects),)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -742,8 +740,15 @@ mod tests {
         .try_serialize(&mut &mut data[..])
         .unwrap();
         let owner = crate::ID;
-        let record =
-            AccountInfo::new(&record_key, false, false, &mut lamports, &mut data, &owner, false);
+        let record = AccountInfo::new(
+            &record_key,
+            false,
+            false,
+            &mut lamports,
+            &mut data,
+            &owner,
+            false,
+        );
         let remaining = [record];
 
         let config = deny_enabled_config();

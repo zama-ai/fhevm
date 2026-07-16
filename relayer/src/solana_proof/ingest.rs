@@ -484,7 +484,10 @@ mod tests {
         // Replays the outgoing-audience leaves without double-advancing the state.
         assert_eq!(
             events,
-            vec![LineageEvent::handle_superseded(pk(0x10), &[owner, old_recipient])]
+            vec![LineageEvent::handle_superseded(
+                pk(0x10),
+                &[owner, old_recipient]
+            )]
         );
         assert_eq!(state.unwrap().subjects, vec![owner, new_recipient]);
     }

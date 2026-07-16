@@ -383,7 +383,10 @@ mod tests {
         // The outgoing audience (owner, old_recipient) is sealed into historical leaves.
         assert_eq!(
             events,
-            vec![LineageEvent::handle_superseded(pk(0x10), &[owner, old_recipient])]
+            vec![LineageEvent::handle_superseded(
+                pk(0x10),
+                &[owner, old_recipient]
+            )]
         );
         // Current membership rotated to the new audience.
         assert_eq!(state.unwrap().subjects, vec![owner, new_recipient]);

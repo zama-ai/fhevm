@@ -1219,7 +1219,10 @@ fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_lineage
         charlie_initial,
         &[charlie_owner, fixture.compute_signer],
     );
-    accounts.insert(charlie_balance_value, encrypted_value_account(&charlie_value));
+    accounts.insert(
+        charlie_balance_value,
+        encrypted_value_account(&charlie_value),
+    );
     let context = mollusk().with_context(accounts);
 
     let transferred_value_address = fixture.transferred_amount_value_address(fixture.alice_token);
@@ -1298,7 +1301,10 @@ fn seed_third_account(
         initial,
         &[charlie_owner, fixture.compute_signer],
     );
-    accounts.insert(charlie_balance_value, encrypted_value_account(&charlie_value));
+    accounts.insert(
+        charlie_balance_value,
+        encrypted_value_account(&charlie_value),
+    );
     (charlie_owner, charlie_token, charlie_balance_value)
 }
 
@@ -1308,8 +1314,11 @@ fn mollusk_confidential_transfer_rotates_back_to_previous_recipient() {
     // audience each time and seals every outgoing audience into historical leaves.
     let fixture = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
-    let (charlie_owner, charlie_token, charlie_balance_value) =
-        seed_third_account(&fixture, &mut accounts, handle_for_chain(3, BALANCE_FHE_TYPE));
+    let (charlie_owner, charlie_token, charlie_balance_value) = seed_third_account(
+        &fixture,
+        &mut accounts,
+        handle_for_chain(3, BALANCE_FHE_TYPE),
+    );
     let context = mollusk().with_context(accounts);
     let receipt_address = fixture.transferred_amount_value_address(fixture.alice_token);
 
@@ -1443,10 +1452,16 @@ fn mollusk_confidential_transfer_deny_list_enabled_rotation_to_new_recipient_suc
     let mut accounts = fixture.base_accounts();
     accounts.insert(
         fixture.host_config,
-        deny_enabled_host_config_account(fixture.owner, secp_evm_address(&coprocessor_signing_key())),
+        deny_enabled_host_config_account(
+            fixture.owner,
+            secp_evm_address(&coprocessor_signing_key()),
+        ),
     );
-    let (charlie_owner, charlie_token, charlie_balance_value) =
-        seed_third_account(&fixture, &mut accounts, handle_for_chain(3, BALANCE_FHE_TYPE));
+    let (charlie_owner, charlie_token, charlie_balance_value) = seed_third_account(
+        &fixture,
+        &mut accounts,
+        handle_for_chain(3, BALANCE_FHE_TYPE),
+    );
 
     let alice_deny = host::deny_subject_address(fixture.alice_token).0;
     let bob_deny = host::deny_subject_address(fixture.bob_token).0;
@@ -1510,10 +1525,16 @@ fn mollusk_confidential_transfer_deny_list_rejects_denied_rotation_added_subject
     let mut accounts = fixture.base_accounts();
     accounts.insert(
         fixture.host_config,
-        deny_enabled_host_config_account(fixture.owner, secp_evm_address(&coprocessor_signing_key())),
+        deny_enabled_host_config_account(
+            fixture.owner,
+            secp_evm_address(&coprocessor_signing_key()),
+        ),
     );
-    let (charlie_owner, charlie_token, charlie_balance_value) =
-        seed_third_account(&fixture, &mut accounts, handle_for_chain(3, BALANCE_FHE_TYPE));
+    let (charlie_owner, charlie_token, charlie_balance_value) = seed_third_account(
+        &fixture,
+        &mut accounts,
+        handle_for_chain(3, BALANCE_FHE_TYPE),
+    );
 
     let alice_deny = host::deny_subject_address(fixture.alice_token).0;
     let bob_deny = host::deny_subject_address(fixture.bob_token).0;
