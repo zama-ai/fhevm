@@ -31,7 +31,6 @@ dashmap = "6.1.0"
 derivative = "2.2"
 ed25519-dalek = "2"
 futures = "0.3.32"
-bs58 = "0.5.1"
 hex = "0.4.3"
 moka = { version = "0.12.13", features = ["future"] }
 serde = { version = "1.0", features = ["derive"] }

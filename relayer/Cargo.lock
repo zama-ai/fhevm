@@ -2901,7 +2901,6 @@ dependencies = [
  "aws-sdk-kms",
  "axum",
  "borsh",
- "bs58",
  "built",
  "chrono",
  "clap",
