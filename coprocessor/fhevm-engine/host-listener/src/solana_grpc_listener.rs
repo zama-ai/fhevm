@@ -17,6 +17,7 @@ use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, Message as TransactionMessage,
     SubscribeRequest, SubscribeUpdateTransactionInfo, TransactionStatusMeta,
 };
+use yellowstone_grpc_proto::prost::Message as _;
 use zama_solana_transaction::{
     CompiledInstruction as CanonicalCompiledInstruction,
     InnerInstructionGroup as CanonicalInnerInstructionGroup,
@@ -32,6 +33,10 @@ use crate::solana_grpc_source::{
 
 const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
 const MAX_PENDING_CONTEXT_BLOCKS: usize = 256;
+// A single decoded gRPC message is capped at 64 MiB. Keeping the cumulative
+// encoded size of queued blocks within the same bound prevents the 256-block
+// count limit from multiplying the transport's worst-case allocation.
+const MAX_PENDING_BLOCK_BYTES: usize = MAX_DECODING_MESSAGE_SIZE;
 const SOLANA_GRPC_INGEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,6 +134,36 @@ pub enum StartPosition {
     Resume(BlockCheckpoint),
 }
 
+#[derive(Debug, Default)]
+struct IngestionProgress {
+    applied: Option<BlockCheckpoint>,
+    retry: Option<BlockCheckpoint>,
+}
+
+impl IngestionProgress {
+    fn subscription_start(&self) -> (Option<BlockCheckpoint>, bool) {
+        match &self.retry {
+            Some(checkpoint) => (Some(checkpoint.clone()), false),
+            None => (self.applied.clone(), self.applied.is_some()),
+        }
+    }
+
+    fn observe_unapplied(&mut self, checkpoint: BlockCheckpoint) {
+        if self.retry.is_none() {
+            self.retry = Some(checkpoint);
+        }
+    }
+
+    fn commit(
+        &mut self,
+        checkpoint: BlockCheckpoint,
+        next_unapplied: Option<BlockCheckpoint>,
+    ) {
+        self.applied = Some(checkpoint);
+        self.retry = next_unapplied;
+    }
+}
+
 /// Connects, subscribes, and ingests until `cancel` fires. Reconnects with a
 /// `from_slot` cursor on stream errors; inserts are idempotent so replay is safe.
 pub async fn run(
@@ -142,25 +177,25 @@ pub async fn run(
         grpc_url = %config.grpc_url,
         "Starting Solana host listener (Yellowstone gRPC transport)"
     );
-    let mut applied_checkpoint = match start {
-        StartPosition::Tip => None,
-        StartPosition::Resume(checkpoint) => Some(checkpoint),
+    let mut progress = IngestionProgress {
+        applied: match start {
+            StartPosition::Tip => None,
+            StartPosition::Resume(checkpoint) => Some(checkpoint),
+        },
+        retry: None,
     };
-    let mut retry_cursor = None;
 
     loop {
         if cancel.is_cancelled() {
             return Ok(());
         }
-        let (resume, resume_is_applied) =
-            subscription_start(&applied_checkpoint, &retry_cursor);
+        let (resume, resume_is_applied) = progress.subscription_start();
         match subscribe_loop(
             db,
             config,
             resume,
             resume_is_applied,
-            &mut applied_checkpoint,
-            &mut retry_cursor,
+            &mut progress,
             &cancel,
         )
         .await
@@ -169,11 +204,11 @@ pub async fn run(
             Err(err) => match err.downcast::<FatalListenerError>() {
                 Ok(fatal) => {
                     let err = fatal.into_inner();
-                    error!(error = %err, checkpoint = ?applied_checkpoint, retry_cursor = ?retry_cursor, "gRPC listener stopped on fail-closed ingestion error");
+                    error!(error = %err, checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC listener stopped on fail-closed ingestion error");
                     return Err(err);
                 }
                 Err(err) => {
-                    error!(error = %err, checkpoint = ?applied_checkpoint, retry_cursor = ?retry_cursor, "gRPC subscription dropped; reconnecting inclusively");
+                    error!(error = %err, checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC subscription dropped; reconnecting inclusively");
                     tokio::select! {
                         _ = cancel.cancelled() => return Ok(()),
                         _ = tokio::time::sleep(Duration::from_secs(2)) => {}
@@ -181,16 +216,6 @@ pub async fn run(
                 }
             },
         }
-    }
-}
-
-fn subscription_start(
-    applied_checkpoint: &Option<BlockCheckpoint>,
-    retry_cursor: &Option<BlockCheckpoint>,
-) -> (Option<BlockCheckpoint>, bool) {
-    match retry_cursor {
-        Some(checkpoint) => (Some(checkpoint.clone()), false),
-        None => (applied_checkpoint.clone(), applied_checkpoint.is_some()),
     }
 }
 
@@ -314,8 +339,7 @@ async fn subscribe_loop(
     config: &SolanaGrpcListenerConfig,
     resume: Option<BlockCheckpoint>,
     resume_is_applied: bool,
-    applied_checkpoint: &mut Option<BlockCheckpoint>,
-    retry_cursor: &mut Option<BlockCheckpoint>,
+    progress: &mut IngestionProgress,
     cancel: &CancellationToken,
 ) -> Result<()> {
     let endpoint = Channel::from_shared(config.grpc_url.clone())
@@ -358,6 +382,7 @@ async fn subscribe_loop(
     };
     let mut stream = response.into_inner();
     let mut pending_blocks = VecDeque::new();
+    let mut pending_encoded_bytes = 0;
 
     loop {
         tokio::select! {
@@ -394,13 +419,14 @@ async fn subscribe_loop(
                             config,
                             &mut validator,
                             &mut pending_blocks,
-                            applied_checkpoint,
-                            retry_cursor,
+                            &mut pending_encoded_bytes,
+                            progress,
                             cancel,
                         )
                         .await?;
                     }
                     Some(UpdateOneof::Block(block)) => {
+                        let encoded_len = block.encoded_len();
                         let decision = validator.seal(block).map_err(|error| {
                             FatalListenerError::new(error.context(
                                 "validate sealed Solana block",
@@ -414,26 +440,24 @@ async fn subscribe_loop(
                                     "sealed Solana blocks exceeded {MAX_PENDING_CONTEXT_BLOCKS} pending context slots"
                                 )).into());
                             }
-                            let requires_context = block_requires_reconstruction_context(config, &block)
-                                .map_err(|error| {
-                                    FatalListenerError::new(error.context(
-                                        "inspect sealed Solana block",
-                                    ))
-                                })?;
-                            if retry_cursor.is_none() {
-                                *retry_cursor = Some(block.checkpoint());
-                            }
-                            pending_blocks.push_back(PendingBlock {
-                                block,
-                                requires_context,
-                            });
+                            let pending = prepare_block(config, block, encoded_len).map_err(|error| {
+                                FatalListenerError::new(error.context(
+                                    "prepare sealed Solana block",
+                                ))
+                            })?;
+                            pending_encoded_bytes = checked_pending_bytes(
+                                pending_encoded_bytes,
+                                pending.encoded_len,
+                            ).map_err(FatalListenerError::new)?;
+                            progress.observe_unapplied(pending.block.checkpoint());
+                            pending_blocks.push_back(pending);
                             drain_pending_blocks(
                                 db,
                                 config,
                                 &mut validator,
                                 &mut pending_blocks,
-                                applied_checkpoint,
-                                retry_cursor,
+                                &mut pending_encoded_bytes,
+                                progress,
                                 cancel,
                             )
                             .await?;
@@ -450,7 +474,124 @@ async fn subscribe_loop(
 #[derive(Debug)]
 struct PendingBlock {
     block: SealedBlock,
-    requires_context: bool,
+    transactions: Vec<PreparedTransaction>,
+    requirement: ContextRequirement,
+    matching_transaction_count: usize,
+    encoded_len: usize,
+}
+
+#[derive(Debug)]
+struct PreparedTransaction {
+    info: SubscribeUpdateTransactionInfo,
+    instructions: Vec<crate::solana_reconstruct::DecodedInstruction>,
+    requirement: ContextRequirement,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ContextRequirement {
+    slot_hashes: bool,
+    clock: bool,
+}
+
+impl ContextRequirement {
+    fn union(self, other: Self) -> Self {
+        Self {
+            slot_hashes: self.slot_hashes || other.slot_hashes,
+            clock: self.clock || other.clock,
+        }
+    }
+
+    fn is_satisfied_by(self, block: &SealedBlock) -> bool {
+        (!self.slot_hashes || block.previous_bank_hash.is_some())
+            && (!self.clock || block.clock_unix_timestamp.is_some())
+    }
+}
+
+fn prepare_block(
+    config: &SolanaGrpcListenerConfig,
+    mut block: SealedBlock,
+    encoded_len: usize,
+) -> Result<PendingBlock> {
+    let matching_transaction_count = block.transactions.len();
+    let mut requirement = ContextRequirement::default();
+    let mut transactions = Vec::new();
+    for info in std::mem::take(&mut block.transactions) {
+        let meta = info
+            .meta
+            .as_ref()
+            .ok_or_else(|| anyhow!("transaction has no status meta"))?;
+        if meta.err.is_some() || info.is_vote {
+            continue;
+        }
+        let tx = info.transaction.as_ref().ok_or_else(|| {
+            anyhow!("successful transaction has no transaction")
+        })?;
+        let message = tx
+            .message
+            .as_ref()
+            .ok_or_else(|| anyhow!("successful transaction has no message"))?;
+        let instructions = decode_transaction_instructions(message, meta)?;
+        let transaction_requirement = transaction_context_requirement(
+            config,
+            &instructions,
+            block.block_time.is_some(),
+        );
+        requirement = requirement.union(transaction_requirement);
+        transactions.push(PreparedTransaction {
+            info,
+            instructions,
+            requirement: transaction_requirement,
+        });
+    }
+    Ok(PendingBlock {
+        block,
+        transactions,
+        requirement,
+        matching_transaction_count,
+        encoded_len,
+    })
+}
+
+fn transaction_context_requirement(
+    config: &SolanaGrpcListenerConfig,
+    instructions: &[crate::solana_reconstruct::DecodedInstruction],
+    has_block_time: bool,
+) -> ContextRequirement {
+    use crate::solana_reconstruct::{
+        decode_encrypted_value_instruction, encrypted_value_material_requests,
+        is_fhe_eval_instruction,
+    };
+
+    let mut requirement = ContextRequirement::default();
+    for instruction in instructions
+        .iter()
+        .filter(|instruction| instruction.program == config.program_id)
+    {
+        if is_fhe_eval_instruction(&instruction.data) {
+            requirement.slot_hashes = true;
+            requirement.clock = true;
+        } else if !has_block_time
+            && decode_encrypted_value_instruction(&instruction.data)
+                .is_some_and(|decoded| {
+                    !encrypted_value_material_requests(&decoded).is_empty()
+                })
+        {
+            requirement.clock = true;
+        }
+    }
+    requirement
+}
+
+fn checked_pending_bytes(current: usize, added: usize) -> Result<usize> {
+    let total = current
+        .checked_add(added)
+        .ok_or_else(|| anyhow!("pending sealed block byte count overflow"))?;
+    if total > MAX_PENDING_BLOCK_BYTES {
+        anyhow::bail!(
+            "sealed Solana blocks exceeded {MAX_PENDING_BLOCK_BYTES} pending encoded bytes"
+        );
+    }
+    Ok(total)
 }
 
 async fn drain_pending_blocks(
@@ -458,28 +599,33 @@ async fn drain_pending_blocks(
     config: &SolanaGrpcListenerConfig,
     validator: &mut BlockValidator,
     pending_blocks: &mut VecDeque<PendingBlock>,
-    applied_checkpoint: &mut Option<BlockCheckpoint>,
-    retry_cursor: &mut Option<BlockCheckpoint>,
+    pending_encoded_bytes: &mut usize,
+    progress: &mut IngestionProgress,
     cancel: &CancellationToken,
 ) -> Result<()> {
     while let Some(front) = pending_blocks.front_mut() {
         validator.refresh_context(&mut front.block);
-        if front.requires_context
-            && !block_has_reconstruction_context(&front.block)
-        {
+        if !front.requirement.is_satisfied_by(&front.block) {
             return Ok(());
         }
 
         let pending = pending_blocks
             .pop_front()
             .expect("front was present immediately before pop");
-        match ingest_block(db, config, &pending.block, cancel).await {
+        *pending_encoded_bytes -= pending.encoded_len;
+        match ingest_block(db, config, &pending, cancel).await {
             Ok(BlockIngestOutcome::Complete) => {
-                validator.commit(&pending.block);
-                *applied_checkpoint = Some(pending.block.checkpoint());
-                *retry_cursor = pending_blocks
-                    .front()
-                    .map(|pending| pending.block.checkpoint());
+                validator.commit(
+                    &pending.block,
+                    pending.requirement.slot_hashes,
+                    pending.requirement.clock,
+                );
+                progress.commit(
+                    pending.block.checkpoint(),
+                    pending_blocks
+                        .front()
+                        .map(|pending| pending.block.checkpoint()),
+                );
             }
             Ok(BlockIngestOutcome::Cancelled) => return Ok(()),
             Err(err) if err.kind() == IngestFailureKind::Retryable => {
@@ -509,10 +655,14 @@ fn is_terminal_replay_status(status: &tonic::Status) -> bool {
 #[cfg(test)]
 mod replay_status_tests {
     use super::{
-        is_terminal_replay_status, sealed_block_timestamp, subscription_start,
-        BlockCheckpoint,
+        checked_pending_bytes, is_terminal_replay_status,
+        sealed_block_timestamp, IngestionProgress, MAX_PENDING_BLOCK_BYTES,
     };
-    use crate::solana_grpc_source::SealedBlock;
+    use crate::solana_grpc_listener::StartPosition;
+    use crate::solana_grpc_source::{
+        BlockValidator, SealDecision, SealedBlock,
+    };
+    use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
 
     #[test]
     fn classifies_replay_gaps_without_treating_transport_as_terminal() {
@@ -533,17 +683,53 @@ mod replay_status_tests {
     }
 
     #[test]
-    fn first_unapplied_block_is_an_inclusive_retry_cursor() {
-        let applied = None;
-        let retry = Some(BlockCheckpoint {
+    fn retryable_first_block_replays_as_unapplied_then_commits() {
+        let update = SubscribeUpdateBlock {
             slot: 5,
-            block_hash: [5; 32],
-        });
+            blockhash: bs58::encode([5; 32]).into_string(),
+            parent_slot: 4,
+            parent_blockhash: bs58::encode([4; 32]).into_string(),
+            ..Default::default()
+        };
+        let mut first_validator = BlockValidator::new(StartPosition::Tip, true);
+        let SealDecision::Process(first) =
+            first_validator.seal(update.clone()).unwrap()
+        else {
+            panic!()
+        };
+        let checkpoint = first.checkpoint();
+        let mut progress = IngestionProgress::default();
+        progress.observe_unapplied(checkpoint.clone());
 
-        let (resume, resume_is_applied) = subscription_start(&applied, &retry);
-
-        assert_eq!(resume, retry);
+        // A retryable apply failure does not mutate progress.
+        let (resume, resume_is_applied) = progress.subscription_start();
+        assert_eq!(resume, Some(checkpoint.clone()));
         assert!(!resume_is_applied);
+        assert!(progress.applied.is_none());
+
+        let mut retry_validator = BlockValidator::new(
+            StartPosition::Resume(checkpoint.clone()),
+            resume_is_applied,
+        );
+        let SealDecision::Process(retried) =
+            retry_validator.seal(update).unwrap()
+        else {
+            panic!()
+        };
+        retry_validator.commit(&retried, false, false);
+        progress.commit(retried.checkpoint(), None);
+
+        assert_eq!(progress.applied, Some(checkpoint));
+        assert!(progress.retry.is_none());
+    }
+
+    #[test]
+    fn pending_byte_budget_fails_without_large_allocations() {
+        assert_eq!(
+            checked_pending_bytes(MAX_PENDING_BLOCK_BYTES - 1, 1).unwrap(),
+            MAX_PENDING_BLOCK_BYTES
+        );
+        assert!(checked_pending_bytes(MAX_PENDING_BLOCK_BYTES - 1, 2).is_err());
     }
 
     #[test]
@@ -568,42 +754,6 @@ mod replay_status_tests {
     }
 }
 
-fn block_requires_reconstruction_context(
-    config: &SolanaGrpcListenerConfig,
-    block: &SealedBlock,
-) -> Result<bool> {
-    for transaction in &block.transactions {
-        let meta = transaction
-            .meta
-            .as_ref()
-            .ok_or_else(|| anyhow!("transaction has no status meta"))?;
-        if meta.err.is_some() || transaction.is_vote {
-            continue;
-        }
-        let tx = transaction.transaction.as_ref().ok_or_else(|| {
-            anyhow!("successful transaction has no transaction")
-        })?;
-        let message = tx
-            .message
-            .as_ref()
-            .ok_or_else(|| anyhow!("successful transaction has no message"))?;
-        let instructions = decode_transaction_instructions(message, meta)?;
-        if instructions.iter().any(|instruction| {
-            instruction.program == config.program_id
-                && crate::solana_reconstruct::is_fhe_eval_instruction(
-                    &instruction.data,
-                )
-        }) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-fn block_has_reconstruction_context(block: &SealedBlock) -> bool {
-    block.previous_bank_hash.is_some() && block.clock_unix_timestamp.is_some()
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BlockIngestOutcome {
     Complete,
@@ -613,21 +763,22 @@ enum BlockIngestOutcome {
 async fn ingest_block(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
-    block: &SealedBlock,
+    pending: &PendingBlock,
     cancel: &CancellationToken,
 ) -> std::result::Result<BlockIngestOutcome, IngestFailure> {
-    for transaction in &block.transactions {
-        let meta = transaction.meta.as_ref().ok_or_else(|| {
-            IngestFailure::fatal(anyhow!("transaction has no status meta"))
-        })?;
-        if meta.err.is_some() || transaction.is_vote {
-            continue;
+    for transaction in &pending.transactions {
+        if !transaction.requirement.is_satisfied_by(&pending.block) {
+            return Err(IngestFailure::fatal(anyhow!(
+                "missing required Solana reconstruction context for transaction {} in slot {}",
+                transaction.info.index,
+                pending.block.slot
+            )));
         }
         let result = tokio::select! {
             _ = cancel.cancelled() => return Ok(BlockIngestOutcome::Cancelled),
             result = tokio::time::timeout(
                 SOLANA_GRPC_INGEST_TIMEOUT,
-                ingest_transaction(db, config, block, transaction),
+                ingest_transaction(db, config, &pending.block, transaction),
             ) => result,
         };
         match result {
@@ -635,18 +786,18 @@ async fn ingest_block(
             Err(_) => {
                 return Err(IngestFailure::retryable(anyhow!(
                     "timed out ingesting Solana transaction {} in slot {}",
-                    transaction.index,
-                    block.slot
+                    transaction.info.index,
+                    pending.block.slot
                 )))
             }
         }
     }
     info!(
-        slot = block.slot,
-        parent_slot = block.parent_slot,
-        block_height = ?block.block_height,
-        executed_transaction_count = block.executed_transaction_count,
-        matching_transaction_count = block.transactions.len(),
+        slot = pending.block.slot,
+        parent_slot = pending.block.parent_slot,
+        block_height = ?pending.block.block_height,
+        executed_transaction_count = pending.block.executed_transaction_count,
+        matching_transaction_count = pending.matching_transaction_count,
         "ingested sealed Solana block"
     );
     Ok(BlockIngestOutcome::Complete)
@@ -656,26 +807,8 @@ async fn ingest_transaction(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
     sealed_block: &SealedBlock,
-    info: &SubscribeUpdateTransactionInfo,
+    transaction: &PreparedTransaction,
 ) -> std::result::Result<(), IngestFailure> {
-    let meta = info
-        .meta
-        .as_ref()
-        .ok_or_else(|| IngestFailure::fatal(anyhow!("tx has no meta")))?;
-    let tx = info.transaction.as_ref().ok_or_else(|| {
-        IngestFailure::fatal(anyhow!("tx has no transaction"))
-    })?;
-    let message = tx
-        .message
-        .as_ref()
-        .ok_or_else(|| IngestFailure::fatal(anyhow!("tx has no message")))?;
-
-    // Top-level + inner instruction invocations with resolved accounts (a
-    // zama-host instruction is called directly as top-level, or via CPI as inner
-    // for token flows); scanned by the reconstruction shadow-compare and ingest.
-    let all_instructions = decode_transaction_instructions(message, meta)
-        .map_err(IngestFailure::fatal)?;
-
     let slot_bank_hash = sealed_block
         .previous_bank_hash
         .map(|hash| HashMap::from([(sealed_block.slot, hash)]))
@@ -687,7 +820,7 @@ async fn ingest_transaction(
 
     let events = match reconstruct_events_for_insert(
         config,
-        &all_instructions,
+        &transaction.instructions,
         sealed_block.slot,
         &slot_bank_hash,
         &slot_clock_ts,
@@ -718,7 +851,7 @@ async fn ingest_transaction(
         parent_hash: sealed_block.parent_block_hash,
     };
 
-    let transaction_id = solana_transaction_id(&info.signature);
+    let transaction_id = solana_transaction_id(&transaction.info.signature);
     let mut db_tx = db
         .new_transaction()
         .await
@@ -736,8 +869,8 @@ async fn ingest_transaction(
 
     info!(
         slot = sealed_block.slot,
-        transaction_index = info.index,
-        signature = %bs58::encode(&info.signature).into_string(),
+        transaction_index = transaction.info.index,
+        signature = %bs58::encode(&transaction.info.signature).into_string(),
         tfhe_events = stats.tfhe_events,
         material_requests = stats.material_requests,
         inserted_rows = stats.inserted_rows,
@@ -1083,7 +1216,8 @@ mod account_resolution_tests {
 mod fhe_eval_acl_tests {
     use super::{
         fhe_eval_durable_encrypted_value, reconstruct_events_for_insert,
-        ReconstructionOutcome, SolanaGrpcListenerConfig,
+        sealed_block_timestamp, transaction_context_requirement,
+        ContextRequirement, ReconstructionOutcome, SolanaGrpcListenerConfig,
     };
     use anchor_lang::AnchorSerialize;
     use sha2::{Digest, Sha256};
@@ -1095,9 +1229,10 @@ mod fhe_eval_acl_tests {
 
     use crate::database::tfhe_event_propagate::Handle;
     use crate::solana_adapter::SolanaHostEvent;
+    use crate::solana_grpc_source::SealedBlock;
     use crate::solana_reconstruct::{
         AllowSubjectsArgs, DecodedInstruction, EncryptedValueSubjectGrant,
-        ENCRYPTED_VALUE_ACCOUNT_INDEX,
+        MakeHandlePublicArgs, ENCRYPTED_VALUE_ACCOUNT_INDEX,
     };
     use zama_host::state::AclSubjectEntry;
 
@@ -1250,6 +1385,82 @@ mod fhe_eval_acl_tests {
         // the caller must surface, not silently drop.
         let accounts: Vec<[u8; 32]> = (0..9).map(acct).collect();
         assert_eq!(fhe_eval_durable_encrypted_value(&accounts, 0), None);
+    }
+
+    #[test]
+    fn context_requirement_matches_persisted_work() {
+        let make_public = decoded_ix(
+            encode_instruction(
+                "make_handle_public",
+                MakeHandlePublicArgs { handle: [4; 32] },
+            ),
+            encrypted_value_accounts(),
+            0,
+            false,
+        );
+        let lifecycle_requirement = transaction_context_requirement(
+            &config(),
+            &[make_public.clone()],
+            false,
+        );
+        assert_eq!(
+            lifecycle_requirement,
+            ContextRequirement {
+                slot_hashes: false,
+                clock: true,
+            }
+        );
+        let mut lifecycle_block = SealedBlock {
+            slot: 42,
+            block_hash: [4; 32],
+            parent_slot: 41,
+            parent_block_hash: [3; 32],
+            block_time: None,
+            block_height: None,
+            executed_transaction_count: 1,
+            transactions: vec![],
+            previous_bank_hash: None,
+            clock_unix_timestamp: None,
+        };
+        assert!(!lifecycle_requirement.is_satisfied_by(&lifecycle_block));
+        lifecycle_block.clock_unix_timestamp = Some(1_700_000_000);
+        assert!(lifecycle_requirement.is_satisfied_by(&lifecycle_block));
+        assert_eq!(
+            sealed_block_timestamp(&lifecycle_block),
+            super::unix_to_pdt(1_700_000_000)
+        );
+        assert_eq!(
+            transaction_context_requirement(&config(), &[make_public], true),
+            ContextRequirement::default()
+        );
+
+        let allow = decoded_ix(
+            encode_instruction(
+                "allow_subjects",
+                AllowSubjectsArgs {
+                    subjects: vec![EncryptedValueSubjectGrant {
+                        subject: [7; 32],
+                    }],
+                },
+            ),
+            encrypted_value_accounts(),
+            0,
+            false,
+        );
+        assert_eq!(
+            transaction_context_requirement(&config(), &[allow], false),
+            ContextRequirement::default()
+        );
+
+        let fhe_eval =
+            decoded_ix(discriminator("fhe_eval").to_vec(), vec![], 0, false);
+        assert_eq!(
+            transaction_context_requirement(&config(), &[fhe_eval], true),
+            ContextRequirement {
+                slot_hashes: true,
+                clock: true,
+            }
+        );
     }
 
     #[tokio::test]

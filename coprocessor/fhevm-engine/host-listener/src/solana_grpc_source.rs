@@ -84,15 +84,29 @@ impl SlotContext {
             }
         }
     }
+
+    fn verify_replay(
+        &self,
+        pubkey: &[u8],
+        identity: &AccountIdentity,
+    ) -> Result<()> {
+        let retained =
+            if bs58::encode(pubkey).into_string() == SLOT_HASHES_SYSVAR {
+                &self.slot_hashes
+            } else if bs58::encode(pubkey).into_string() == CLOCK_SYSVAR {
+                &self.clock
+            } else {
+                bail!("unexpected account in Solana sysvar stream")
+            };
+        if retained.as_ref().is_some_and(|current| current != identity) {
+            bail!("conflicting committed Solana sysvar account replay")
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct BlockIdentity {
-    block_hash: [u8; 32],
-    parent_slot: u64,
-    parent_block_hash: [u8; 32],
-    transactions: Vec<SubscribeUpdateTransactionInfo>,
-}
+struct BlockIdentity(SubscribeUpdateBlock);
 
 #[derive(Debug)]
 pub(super) enum SealDecision {
@@ -107,6 +121,7 @@ pub(super) struct BlockValidator {
     checkpoint_observed: bool,
     last_observed: Option<(BlockCheckpoint, BlockIdentity)>,
     last_committed: Option<BlockCheckpoint>,
+    last_committed_context: Option<(u64, SlotContext)>,
     contexts: BTreeMap<u64, SlotContext>,
 }
 
@@ -118,6 +133,7 @@ impl BlockValidator {
             resume_is_applied,
             last_observed: None,
             last_committed: None,
+            last_committed_context: None,
             contexts: BTreeMap::new(),
         }
     }
@@ -129,15 +145,22 @@ impl BlockValidator {
         let info = update
             .account
             .ok_or_else(|| anyhow!("Solana account update has no account"))?;
+        let identity = AccountIdentity {
+            data: info.data,
+            write_version: info.write_version,
+            transaction_signature: info.txn_signature,
+        };
         if self
             .last_committed
             .as_ref()
             .is_some_and(|checkpoint| update.slot <= checkpoint.slot)
         {
-            bail!(
-                "late Solana sysvar account update for slot {} after checkpoint",
-                update.slot
-            );
+            if let Some((slot, context)) = &self.last_committed_context {
+                if update.slot == *slot {
+                    context.verify_replay(&info.pubkey, &identity)?;
+                }
+            }
+            return Ok(());
         }
         if !self.contexts.contains_key(&update.slot)
             && self.contexts.len() == MAX_CONTEXT_SLOTS
@@ -146,14 +169,10 @@ impl BlockValidator {
                 "Solana sysvar context exceeded {MAX_CONTEXT_SLOTS} pending slots"
             );
         }
-        self.contexts.entry(update.slot).or_default().insert(
-            &info.pubkey,
-            AccountIdentity {
-                data: info.data,
-                write_version: info.write_version,
-                transaction_signature: info.txn_signature,
-            },
-        )
+        self.contexts
+            .entry(update.slot)
+            .or_default()
+            .insert(&info.pubkey, identity)
     }
 
     pub fn seal(
@@ -170,7 +189,7 @@ impl BlockValidator {
             &block.transactions,
             block.executed_transaction_count,
         )?;
-        let identity = block_identity(&block, block_hash, parent_block_hash);
+        let identity = block_identity(&block);
 
         if !self.checkpoint_observed {
             let StartPosition::Resume(checkpoint) = &self.start else {
@@ -190,6 +209,7 @@ impl BlockValidator {
             if self.resume_is_applied {
                 self.last_observed = Some((checkpoint.clone(), identity));
                 self.last_committed = Some(checkpoint.clone());
+                self.last_committed_context = None;
                 self.contexts.remove(&block.slot);
                 return Ok(SealDecision::Replay);
             }
@@ -269,9 +289,24 @@ impl BlockValidator {
             .and_then(|account| clock_unix_timestamp(&account.data));
     }
 
-    pub fn commit(&mut self, block: &SealedBlock) {
+    pub fn commit(
+        &mut self,
+        block: &SealedBlock,
+        retain_slot_hashes: bool,
+        retain_clock: bool,
+    ) {
         self.last_committed = Some(block.checkpoint());
-        self.contexts.remove(&block.slot);
+        self.last_committed_context =
+            self.contexts.remove(&block.slot).and_then(|mut context| {
+                if !retain_slot_hashes {
+                    context.slot_hashes = None;
+                }
+                if !retain_clock {
+                    context.clock = None;
+                }
+                (context.slot_hashes.is_some() || context.clock.is_some())
+                    .then_some((block.slot, context))
+            });
     }
 
     #[cfg(test)]
@@ -379,17 +414,8 @@ fn validate_transactions(
     Ok(())
 }
 
-fn block_identity(
-    block: &SubscribeUpdateBlock,
-    block_hash: [u8; 32],
-    parent_block_hash: [u8; 32],
-) -> BlockIdentity {
-    BlockIdentity {
-        block_hash,
-        parent_slot: block.parent_slot,
-        parent_block_hash,
-        transactions: block.transactions.clone(),
-    }
+fn block_identity(block: &SubscribeUpdateBlock) -> BlockIdentity {
+    BlockIdentity(block.clone())
 }
 
 #[cfg(test)]
@@ -461,7 +487,7 @@ mod tests {
         let SealDecision::Process(block) = decision else {
             panic!()
         };
-        validator.commit(&block);
+        validator.commit(&block, false, false);
         assert_eq!(validator.current_checkpoint().unwrap().slot, 2);
     }
 
@@ -498,19 +524,24 @@ mod tests {
     #[test]
     fn inclusive_replay_is_idempotent_but_conflicts_halt() {
         let mut validator = BlockValidator::new(StartPosition::Tip, true);
-        let original = block(2, hash(2), 1, hash(1), vec![failed(1)]);
+        let mut original = block(2, hash(2), 1, hash(1), vec![failed(1)]);
+        original.block_time = Some(Default::default());
+        original.block_time.as_mut().unwrap().timestamp = 100;
         let SealDecision::Process(processed) =
             validator.seal(original.clone()).unwrap()
         else {
             panic!()
         };
-        validator.commit(&processed);
+        validator.commit(&processed, false, false);
         assert!(matches!(
-            validator.seal(original).unwrap(),
+            validator.seal(original.clone()).unwrap(),
             SealDecision::Replay
         ));
-        let mut changed_payload = failed(1);
-        changed_payload
+        let mut changed_time = original.clone();
+        changed_time.block_time.as_mut().unwrap().timestamp = 101;
+        assert!(validator.seal(changed_time).is_err());
+        let mut changed_payload = original.clone();
+        changed_payload.transactions[0]
             .meta
             .as_mut()
             .unwrap()
@@ -518,12 +549,11 @@ mod tests {
             .as_mut()
             .unwrap()
             .err = vec![2];
-        assert!(validator
-            .seal(block(2, hash(2), 1, hash(1), vec![changed_payload]))
-            .is_err());
-        assert!(validator
-            .seal(block(2, hash(2), 1, hash(1), vec![failed(2)]))
-            .is_err());
+        assert!(validator.seal(changed_payload).is_err());
+
+        let mut changed_count = original.clone();
+        changed_count.executed_transaction_count += 1;
+        assert!(validator.seal(changed_count).is_err());
         assert!(validator
             .seal(block(2, hash(9), 1, hash(1), vec![failed(1)]))
             .is_err());
@@ -644,7 +674,7 @@ mod tests {
         assert_eq!(sealed.previous_bank_hash, Some(hash(1)));
         assert_eq!(sealed.clock_unix_timestamp, Some(1_700_000_000));
         assert!(validator.current_checkpoint().is_none());
-        validator.commit(&sealed);
+        validator.commit(&sealed, true, true);
         assert_eq!(validator.current_checkpoint().unwrap().slot, 2);
     }
 
@@ -740,12 +770,12 @@ mod tests {
     }
 
     #[test]
-    fn resume_accepts_checkpoint_context_then_rejects_late_updates() {
-        let account = || SubscribeUpdateAccount {
+    fn irrelevant_late_context_is_harmless_but_retained_conflicts_halt() {
+        let account = |data: Vec<u8>| SubscribeUpdateAccount {
             slot: 9,
             account: Some(SubscribeUpdateAccountInfo {
                 pubkey: bs58::decode(CLOCK_SYSVAR).into_vec().unwrap(),
-                data: vec![1],
+                data,
                 write_version: 1,
                 ..Default::default()
             }),
@@ -758,13 +788,25 @@ mod tests {
         let mut validator =
             BlockValidator::new(StartPosition::Resume(checkpoint), true);
 
-        validator.observe_account(account()).unwrap();
+        validator.observe_account(account(vec![1])).unwrap();
         assert!(matches!(
             validator
                 .seal(block(9, hash(9), 8, hash(8), vec![]))
                 .unwrap(),
             SealDecision::Replay
         ));
-        assert!(validator.observe_account(account()).is_err());
+        validator.observe_account(account(vec![2])).unwrap();
+
+        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        validator.observe_account(account(vec![1])).unwrap();
+        let SealDecision::Process(sealed) = validator
+            .seal(block(9, hash(9), 8, hash(8), vec![]))
+            .unwrap()
+        else {
+            panic!()
+        };
+        validator.commit(&sealed, false, true);
+        validator.observe_account(account(vec![1])).unwrap();
+        assert!(validator.observe_account(account(vec![2])).is_err());
     }
 }
