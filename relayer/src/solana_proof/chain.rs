@@ -13,6 +13,10 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
+use zama_solana_transaction::{
+    CompiledInstruction as CanonicalCompiledInstruction,
+    InnerInstructionGroup as CanonicalInnerInstructionGroup,
+};
 
 use crate::solana_proof::decode::RawInstruction;
 
@@ -250,31 +254,77 @@ fn decode_transaction_result(
             instructions: Vec::new(),
         });
     }
-    let mut account_keys: Vec<[u8; 32]> = parsed
+    let static_keys: Vec<[u8; 32]> = parsed
         .transaction
         .message
         .account_keys
         .iter()
         .map(|s| base58_to_32(s))
         .collect::<Result<_, _>>()?;
-    if let Some(loaded) = parsed
+    let (loaded_writable_keys, loaded_readonly_keys) = if let Some(loaded) = parsed
         .meta
         .as_ref()
         .and_then(|m| m.loaded_addresses.as_ref())
     {
-        for addr in loaded.writable.iter().chain(loaded.readonly.iter()) {
-            account_keys.push(base58_to_32(addr)?);
-        }
-    }
-    let instructions = flatten_execution_order(
-        &parsed.transaction.message.instructions,
-        parsed
-            .meta
-            .as_ref()
-            .map(|m| m.inner_instructions.as_slice())
-            .unwrap_or(&[]),
-        &account_keys,
-    )?;
+        (
+            loaded
+                .writable
+                .iter()
+                .map(|address| base58_to_32(address))
+                .collect::<Result<Vec<_>, _>>()?,
+            loaded
+                .readonly
+                .iter()
+                .map(|address| base58_to_32(address))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let top_level = parsed
+        .transaction
+        .message
+        .instructions
+        .iter()
+        .map(|instruction| canonical_instruction(instruction, false))
+        .collect::<Result<Vec<_>, _>>()?;
+    let inner_groups = parsed
+        .meta
+        .as_ref()
+        .map(|meta| {
+            meta.inner_instructions
+                .iter()
+                .map(|group| {
+                    Ok(CanonicalInnerInstructionGroup {
+                        top_level_index: group.index,
+                        instructions: group
+                            .instructions
+                            .iter()
+                            .map(|instruction| canonical_instruction(instruction, true))
+                            .collect::<Result<Vec<_>, ChainError>>()?,
+                    })
+                })
+                .collect::<Result<Vec<_>, ChainError>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let instructions = zama_solana_transaction::resolve_transaction(
+        &static_keys,
+        &loaded_writable_keys,
+        &loaded_readonly_keys,
+        top_level,
+        inner_groups,
+    )
+    .map_err(|error| ChainError::Rpc(error.to_string()))?
+    .into_iter()
+    .map(|instruction| RawInstruction {
+        program_id: instruction.program_id,
+        accounts: instruction.accounts,
+        data: instruction.data,
+        top_level_index: instruction.top_level_index,
+        stack_height: Some(instruction.stack_height),
+    })
+    .collect();
     Ok(ChainTransaction {
         signature: signature.to_string(),
         slot: parsed.slot,
@@ -290,35 +340,21 @@ fn decode_transaction_value(
     decode_transaction_result(signature, parsed)
 }
 
-fn compiled_to_raw(
-    ix: &CompiledIx,
-    account_keys: &[[u8; 32]],
-    top_level_index: usize,
+fn canonical_instruction(
+    instruction: &CompiledIx,
     is_inner: bool,
-) -> Result<RawInstruction, ChainError> {
-    let program_id = *account_keys
-        .get(ix.program_id_index)
-        .ok_or_else(|| ChainError::Rpc("programIdIndex out of range".to_string()))?;
-    let accounts = ix
-        .accounts
-        .iter()
-        .map(|&idx| {
-            account_keys
-                .get(idx)
-                .copied()
-                .ok_or_else(|| ChainError::Rpc("account index out of range".to_string()))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let data = bs58_decode(&ix.data)?;
-    Ok(RawInstruction {
-        program_id,
-        accounts,
-        data,
-        top_level_index,
-        // RPC omits stackHeight on message instructions; their height is known.
-        // Inner instructions retain the RPC field so missing nesting metadata
-        // can be rejected by the lifecycle decoder.
-        stack_height: if is_inner { ix.stack_height } else { Some(1) },
+) -> Result<CanonicalCompiledInstruction, ChainError> {
+    Ok(CanonicalCompiledInstruction {
+        program_id_index: instruction.program_id_index,
+        account_indices: instruction.accounts.clone(),
+        data: bs58_decode(&instruction.data)?,
+        // RPC omits stackHeight on message instructions; the canonical decoder
+        // assigns their known height of one.
+        stack_height: if is_inner {
+            instruction.stack_height
+        } else {
+            None
+        },
     })
 }
 
@@ -404,61 +440,6 @@ impl ChainFetcher for RpcChainFetcher {
             leaf_count: decoded.leaf_count,
         }))
     }
-}
-
-/// Interleaves top-level instructions with the inner instructions they spawned
-/// via CPI, in on-chain execution order: top-level instruction `i` runs, then
-/// (if any) the inner instructions Solana recorded at group `index == i`.
-fn flatten_execution_order(
-    top_level: &[CompiledIx],
-    inner_groups: &[InnerIxGroup],
-    account_keys: &[[u8; 32]],
-) -> Result<Vec<RawInstruction>, ChainError> {
-    let mut by_index: std::collections::HashMap<usize, &Vec<CompiledIx>> =
-        std::collections::HashMap::new();
-    for group in inner_groups {
-        if group.index >= top_level.len() {
-            return Err(ChainError::Rpc(format!(
-                "inner-instruction group index {} is out of range",
-                group.index
-            )));
-        }
-        if by_index.insert(group.index, &group.instructions).is_some() {
-            return Err(ChainError::Rpc(format!(
-                "duplicate inner-instruction group index {}",
-                group.index
-            )));
-        }
-        let mut previous_height = 1u32;
-        for (position, instruction) in group.instructions.iter().enumerate() {
-            let height = instruction.stack_height.ok_or_else(|| {
-                ChainError::Rpc(format!(
-                    "inner instruction {position} in group {} has no stackHeight",
-                    group.index
-                ))
-            })?;
-            if height < 2
-                || (position == 0 && height != 2)
-                || height > previous_height.saturating_add(1)
-            {
-                return Err(ChainError::Rpc(format!(
-                    "impossible stackHeight {height} at inner instruction {position} in group {}",
-                    group.index
-                )));
-            }
-            previous_height = height;
-        }
-    }
-    let mut out = Vec::new();
-    for (i, ix) in top_level.iter().enumerate() {
-        out.push(compiled_to_raw(ix, account_keys, i, false)?);
-        if let Some(inner) = by_index.get(&i) {
-            for inner_ix in inner.iter() {
-                out.push(compiled_to_raw(inner_ix, account_keys, i, true)?);
-            }
-        }
-    }
-    Ok(out)
 }
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {

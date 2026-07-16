@@ -4975,6 +4975,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "zama-solana-transaction"
+version = "0.1.0"
+
+[[package]]
 name = "zerocopy"
 version = "0.8.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"

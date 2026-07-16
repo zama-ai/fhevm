@@ -1,0 +1,5 @@
+[package]
+name = "zama-solana-transaction"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause-Clear"

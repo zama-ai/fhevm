@@ -5372,6 +5372,7 @@ dependencies = [
  "yellowstone-grpc-proto",
  "zama-host",
  "zama-solana-acl",
+ "zama-solana-transaction",
 ]
 
 [[package]]
@@ -14077,6 +14078,10 @@ dependencies = [
  "sha2 0.10.9",
  "solana-sha256-hasher",
 ]
+
+[[package]]
+name = "zama-solana-transaction"
+version = "0.1.0"
 
 [[package]]
 name = "zerocopy"
