@@ -188,6 +188,38 @@ jobs:
             core.setOutput('short_sha', shortSha);
             core.setOutput('tags_json', JSON.stringify(tags));
 
+            // Deployment plan summary: chart versions are static (top-level env,
+            // known before any build even runs), image tags are the ones just
+            // resolved above - this is the earliest point in the workflow both
+            // are known together, so publish it here rather than adding a
+            // separate job/step later that just re-reads the same data.
+            const env = process.env;
+            await core.summary
+              .addHeading(`fhevm e2e preview - deployment plan (PR #${context.payload.pull_request.number}, ${shortSha})`)
+              .addHeading('Helm charts', 3)
+              .addTable([
+                [{data: 'Component', header: true}, {data: 'Chart', header: true}, {data: 'Version', header: true}],
+                ['anvil-node (host + gateway chains)', env.ANVIL_NODE_CHART, env.ANVIL_NODE_CHART_VERSION],
+                ['contracts (host/gateway/keygen)', env.CONTRACTS_CHART, env.CONTRACTS_CHART_VERSION],
+                ['coprocessor', env.COPROCESSOR_CHART, env.COPROCESSOR_CHART_VERSION],
+                ['kms-connector', env.KMS_CONNECTOR_CHART, env.KMS_CONNECTOR_CHART_VERSION],
+                ['coprocessor-infra (Crossplane RDS + S3)', env.COPROCESSOR_INFRA_CHART, env.COPROCESSOR_INFRA_CHART_VERSION],
+                ['relayer-migrate / relayer / test-suite (common chart)', env.COMMON_CHART, env.COMMON_CHART_VERSION],
+              ])
+              .addHeading('Dedicated KMS (zama-ai/kms)', 3)
+              .addTable([
+                [{data: 'Component', header: true}, {data: 'Ref / tag', header: true}],
+                ['kms repo ref (deploy scripts + tkms-infra/kms-core charts)', env.KMS_REPO_REF],
+                ['kms-core image tag', env.KMS_CORE_TAG],
+              ])
+              .addHeading('PR-built images', 3)
+              .addRaw(`Short SHA \`${shortSha}\` if this PR changed the component, otherwise \`latest\` (last main build).\n\n`)
+              .addTable([
+                [{data: 'Component', header: true}, {data: 'Tag', header: true}],
+                ...Object.entries(tags).map(([component, tag]) => [component, tag]),
+              ])
+              .write();
+
   ##########################################################################
   # Deploy the full stack to a per-PR namespace on the zws-dev Tailscale
   # cluster: anvil chains -> dedicated KMS -> contracts -> coprocessor +
