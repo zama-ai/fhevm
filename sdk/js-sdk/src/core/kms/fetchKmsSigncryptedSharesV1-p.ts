@@ -9,14 +9,14 @@ import type { SignedDecryptionPermit, SignedDecryptionPermitV1 } from '../types/
 import type { Handle } from '../types/encryptedTypes-p.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
 import { createKmsSigncryptedShares } from './KmsSigncryptedShares-p.js';
-import { readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
+import { readKmsSignersContextFromExtraData } from '../host-contracts/readKmsSignersContext-p.js';
 import { assertIsSignedDecryptionPermit } from './SignedDecryptionPermit-p.js';
 import { assertKmsDecryptionBitLimit } from './utils.js';
 import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
-import { assertExtraDataMatchesKmsSingersContext } from '../host-contracts/KmsSignersContext-p.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
 import { checkDelegation } from '../host-contracts/checkDelegation.js';
 import { resolveFhevmTkmsVersion } from '../runtime/resolveFhevmVersions-p.js';
+import { fromKmsExtraDataBytesHex } from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -64,7 +64,12 @@ export function assertPermitV1IncludesContractAddresses(
 
 export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { options, pairs } = parameters;
-  const signedPermit = parameters.signedPermit as SignedDecryptionPermitV1;
+
+  if (parameters.signedPermit.version !== 1) {
+    throw Error(`fetchKmsSigncryptedSharesV1 requires a v1 permit, got v${parameters.signedPermit.version}`);
+  }
+
+  const signedPermitV1: SignedDecryptionPermitV1 = parameters.signedPermit;
 
   // This helper must support base clients, where TKMS is not mandatory
   // and tkmsVersion may not be initialized in the CoreFhevm instance yet.
@@ -72,7 +77,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
 
   // Check: every requested contractAddress is listed in the permit
   assertPermitV1IncludesContractAddresses(
-    signedPermit,
+    signedPermitV1,
     pairs.map((p) => p.contractAddress),
   );
 
@@ -82,10 +87,10 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
     ...options,
   };
 
-  assertIsSignedDecryptionPermit(signedPermit, {});
+  assertIsSignedDecryptionPermit(signedPermitV1, {});
 
   // The max number of contracts allowed in a permit is managed by the `SignedDecryptionPermit` directly
-  const { encryptedDataOwnerAddress, signerAddress, signature } = signedPermit;
+  const { encryptedDataOwnerAddress, signerAddress, signature } = signedPermitV1;
 
   // 1. Check: At least one handle/contract pair is required
   if (pairs.length === 0) {
@@ -95,7 +100,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
   }
 
   // 2. Check: At least one contract
-  const contractAddressesLength = signedPermit.eip712.message.contractAddresses.length;
+  const contractAddressesLength = signedPermitV1.eip712.message.contractAddresses.length;
   if (contractAddressesLength === 0) {
     throw Error('contractAddresses is empty');
   }
@@ -116,10 +121,10 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
   assertKmsDecryptionBitLimit(handles);
 
   // 6. Check: Expiration date
-  signedPermit.assertNotExpired();
+  signedPermitV1.assertNotExpired();
 
   // 7. Check: ACL permissions (user is signer or delegatorAddress)
-  if (signedPermit.eip712.primaryType === 'DelegatedUserDecryptRequestVerification') {
+  if (signedPermitV1.eip712.primaryType === 'DelegatedUserDecryptRequestVerification') {
     await checkDelegation(context, {
       aclAddress: context.chain.fhevm.contracts.acl.address as ChecksummedAddress,
       delegate: signerAddress,
@@ -138,51 +143,34 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
   // Not required because a signedPermit is guaranteed to be verified.
 
   // 9. Fetch `KmsSignersContext` on-chain (cached)
-  // Reject the permit early if it was signed against a different KMS context
-  // (e.g. stale permit from a previous context rotation).
-  //
-  // Compares the `extraData` embedded in the permit's EIP-712 message with the
-  // `extraData` derived from the provided context. A mismatch indicates the permit
-  // was created for a different KMS context (e.g. different context ID or version)
-  // and must not be used for decryption.
-  //
-  // TODO: The current check is a strict byte-level comparison. A permit signed
-  // with the correct `kmsContextId` but a different `extraData` encoding format
-  // (e.g. a version change in the serialization scheme) will be rejected even
-  // though the context ID matches. Consider comparing the decoded `kmsContextId`
-  // instead of the raw `extraData` bytes.
-  const requestedKmsSignersContext: KmsSignersContext = await readCurrentKmsSignersContext(context, {
+  const extraData = fromKmsExtraDataBytesHex(signedPermitV1.eip712.message.extraData);
+  const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContextFromExtraData(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    extraData,
   });
-
-  assertExtraDataMatchesKmsSingersContext(
-    {
-      extraData: signedPermit.eip712.message.extraData,
-      kmsSignersContext: requestedKmsSignersContext,
-    },
-    { subject: 'Invalid permit' },
-  );
 
   // 10. Fetch `KmsSigncryptedShares` from the relayer
   let shares: readonly KmsSigncryptedShare[];
 
-  if (signedPermit.eip712.primaryType === 'DelegatedUserDecryptRequestVerification') {
+  if (signedPermitV1.eip712.primaryType === 'DelegatedUserDecryptRequestVerification') {
     shares = await context.runtime.relayer.fetchDelegatedUserDecrypt(context, {
+      version: 1,
       payload: {
         handleContractPairs,
         kmsDecryptEip712Signer: signerAddress,
-        kmsDecryptEip712Message: signedPermit.eip712.message,
+        kmsDecryptEip712Message: signedPermitV1.eip712.message,
         kmsDecryptEip712Signature: signature,
       },
       options: relayerOptions as RelayerDelegatedUserDecryptOptions,
     });
   } else {
     shares = await context.runtime.relayer.fetchUserDecrypt(context, {
+      version: 1,
       payload: {
         handleContractPairs,
         kmsDecryptEip712Signer: signerAddress,
-        kmsDecryptEip712Message: signedPermit.eip712.message,
+        kmsDecryptEip712Message: signedPermitV1.eip712.message,
         kmsDecryptEip712Signature: signature,
       },
       options: relayerOptions as RelayerUserDecryptOptions,

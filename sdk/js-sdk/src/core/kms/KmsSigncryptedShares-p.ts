@@ -232,7 +232,6 @@ export async function createKmsSigncryptedShares(
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
     relayerKmsExtraDataBytesHex,
     requestedKmsSignersContext: metadata.kmsSignersContext,
-    mode: 'loose',
   });
 
   return new KmsSigncryptedSharesImpl({ ...metadata, kmsSignersContext: reconciledKmsSignersContext }, shares);

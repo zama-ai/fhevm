@@ -205,7 +205,7 @@ export async function signDecryptionPermitV1(
     startTimestamp,
     durationSeconds,
     signerAddress: signerAddressArg,
-    transportKeyPair: transportKeyPair,
+    transportKeyPair,
     signer,
     delegatorAddress,
   } = parameters;
