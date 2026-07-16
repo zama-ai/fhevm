@@ -62,8 +62,11 @@ pub fn next_handle() -> Handle {
     let v = count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut out = [0_u8; 32];
     // Keep generated test handles in a namespace disjoint from scalar-encoded handles.
+    // The protocol reserves byte 30 for the FHE type, so keep the uniqueness
+    // counter entirely outside that byte. This also prevents typed handles
+    // whose counters differ only at byte 30 from colliding after the type is set.
     out[0] = 0x80;
-    out[24..].copy_from_slice(&v.to_be_bytes());
+    out[22..30].copy_from_slice(&v.to_be_bytes());
     Handle::from(out)
 }
 
