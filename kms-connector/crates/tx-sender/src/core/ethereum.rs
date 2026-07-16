@@ -1,17 +1,14 @@
 use crate::core::tx_sender::{Error, get_revert_reason, overprovision_gas};
 use alloy::{
     hex,
-    providers::{Provider, fillers::TxFiller},
+    providers::Provider,
     rpc::types::{TransactionReceipt, TransactionRequest},
     sol_types::SolValue,
 };
 use anyhow::anyhow;
-use connector_utils::{
-    provider::NonceManagedProvider,
-    types::{
-        CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponseKind,
-        NewKmsContextResponse, PrepKeygenResponse,
-    },
+use connector_utils::types::{
+    CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponseKind, NewKmsContextResponse,
+    PrepKeygenResponse,
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::KMSGenerationInstance,
@@ -24,14 +21,13 @@ use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 /// The struct used to send keygen transactions to Ethereum.
-pub struct EthereumTransactionSender<F, P>
+pub struct EthereumTransactionSender<P>
 where
-    F: TxFiller,
     P: Provider,
 {
-    provider: NonceManagedProvider<F, P>,
-    kms_generation_contract: KMSGenerationInstance<NonceManagedProvider<F, P>>,
-    protocol_config_contract: ProtocolConfigInstance<NonceManagedProvider<F, P>>,
+    provider: P,
+    kms_generation_contract: KMSGenerationInstance<P>,
+    protocol_config_contract: ProtocolConfigInstance<P>,
     config: EthereumSenderConfig,
 }
 
@@ -58,15 +54,14 @@ impl From<&super::Config> for EthereumSenderConfig {
     }
 }
 
-impl<F, P> EthereumTransactionSender<F, P>
+impl<P> EthereumTransactionSender<P>
 where
-    F: TxFiller,
     P: Provider,
 {
     pub fn new(
-        provider: NonceManagedProvider<F, P>,
-        kms_generation_contract: KMSGenerationInstance<NonceManagedProvider<F, P>>,
-        protocol_config_contract: ProtocolConfigInstance<NonceManagedProvider<F, P>>,
+        provider: P,
+        kms_generation_contract: KMSGenerationInstance<P>,
+        protocol_config_contract: ProtocolConfigInstance<P>,
         inner_config: EthereumSenderConfig,
     ) -> Self {
         Self {
@@ -245,9 +240,8 @@ where
     }
 }
 
-impl<F, P> Clone for EthereumTransactionSender<F, P>
+impl<P> Clone for EthereumTransactionSender<P>
 where
-    F: TxFiller,
     P: Provider + Clone,
 {
     fn clone(&self) -> Self {
@@ -268,7 +262,7 @@ mod tests {
         primitives::Address,
         providers::{
             ProviderBuilder, SendableTx,
-            fillers::{FillProvider, FillerControlFlow},
+            fillers::{FillProvider, FillerControlFlow, TxFiller},
             mock::Asserter,
         },
         rpc::types::trace::geth::GethTrace,
@@ -276,6 +270,7 @@ mod tests {
     };
     use connector_utils::{
         config::KmsWallet,
+        provider::NonceManagedProvider,
         tests::rand::{rand_signature, rand_u256},
     };
     use serde::de::DeserializeOwned;
