@@ -292,7 +292,7 @@ fn resolve_transaction_instructions(
     meta: &TransactionStatusMeta,
 ) -> Result<Vec<zama_solana_transaction::ResolvedInstruction>> {
     if meta.err.is_some() {
-        anyhow::bail!("failed transaction cannot be decoded");
+        return Ok(Vec::new());
     }
     let static_keys = validated_account_keys(&message.account_keys)?;
     let loaded_writable_keys =
@@ -975,7 +975,7 @@ mod account_resolution_tests {
     }
 
     #[test]
-    fn failed_transaction_is_rejected_before_instruction_decoding() {
+    fn failed_transaction_is_ignored_before_instruction_decoding() {
         let message = TransactionMessage {
             account_keys: vec![vec![1; 31]],
             ..Default::default()
@@ -985,10 +985,10 @@ mod account_resolution_tests {
             ..Default::default()
         };
 
-        let err = resolve_transaction_instructions(&message, &meta)
-            .expect_err("failed transactions must be rejected");
+        let instructions = resolve_transaction_instructions(&message, &meta)
+            .expect("failed transactions are valid chain history");
 
-        assert!(err.to_string().contains("failed transaction"));
+        assert!(instructions.is_empty());
     }
 }
 
