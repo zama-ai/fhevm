@@ -1,6 +1,9 @@
 name: js-sdk-publish
 
 on:
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       release:
