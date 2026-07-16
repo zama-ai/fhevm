@@ -282,6 +282,14 @@ fn decode_transaction_result(
     })
 }
 
+fn decode_transaction_value(
+    signature: &str,
+    value: serde_json::Value,
+) -> Result<ChainTransaction, ChainError> {
+    let parsed = serde_json::from_value(value).map_err(|e| ChainError::Rpc(e.to_string()))?;
+    decode_transaction_result(signature, parsed)
+}
+
 fn compiled_to_raw(
     ix: &CompiledIx,
     account_keys: &[[u8; 32]],
@@ -372,9 +380,7 @@ impl ChainFetcher for RpcChainFetcher {
         if result.is_null() {
             return Ok(None);
         }
-        let parsed: GetTransactionResult =
-            serde_json::from_value(result).map_err(|e| ChainError::Rpc(e.to_string()))?;
-        Ok(Some(decode_transaction_result(signature, parsed)?))
+        Ok(Some(decode_transaction_value(signature, result)?))
     }
 
     async fn get_lineage_state(
@@ -507,72 +513,71 @@ mod tests {
     #[test]
     fn shared_transaction_decoding_contract() {
         for fixture in transaction_decoding_fixtures() {
-            let top_level: Vec<CompiledIx> = fixture
+            let top_level: Vec<serde_json::Value> = fixture
                 .top_level
                 .iter()
-                .map(|instruction| CompiledIx {
-                    program_id_index: instruction.program_id_index as usize,
-                    accounts: instruction
-                        .accounts
-                        .iter()
-                        .map(|index| *index as usize)
-                        .collect(),
-                    data: fixture_base58_encode(&instruction.data),
-                    stack_height: instruction.stack_height,
+                .map(|instruction| {
+                    json!({
+                        "programIdIndex": instruction.program_id_index,
+                        "accounts": instruction.accounts,
+                        "data": fixture_base58_encode(&instruction.data),
+                        "stackHeight": instruction.stack_height,
+                    })
                 })
                 .collect();
-            let inner_groups: Vec<InnerIxGroup> = fixture
+            let inner_groups: Vec<serde_json::Value> = fixture
                 .inner_groups
                 .iter()
-                .map(|group| InnerIxGroup {
-                    index: group.index as usize,
-                    instructions: group
+                .map(|group| {
+                    let instructions: Vec<serde_json::Value> = group
                         .instructions
                         .iter()
-                        .map(|instruction| CompiledIx {
-                            program_id_index: instruction.program_id_index as usize,
-                            accounts: instruction
-                                .accounts
-                                .iter()
-                                .map(|index| *index as usize)
-                                .collect(),
-                            data: fixture_base58_encode(&instruction.data),
-                            stack_height: instruction.stack_height,
+                        .map(|instruction| {
+                            json!({
+                                "programIdIndex": instruction.program_id_index,
+                                "accounts": instruction.accounts,
+                                "data": fixture_base58_encode(&instruction.data),
+                                "stackHeight": instruction.stack_height,
+                            })
                         })
-                        .collect(),
+                        .collect();
+                    json!({
+                        "index": group.index,
+                        "instructions": instructions,
+                    })
                 })
                 .collect();
 
-            let parsed = GetTransactionResult {
-                slot: 0,
-                transaction: TxEnvelope {
-                    message: Message {
-                        account_keys: fixture
+            let result = json!({
+                "slot": 0,
+                "transaction": {
+                    "message": {
+                        "accountKeys": fixture
                             .static_account_tags
                             .iter()
                             .map(|tag| fixture_base58_encode(&[*tag; 32]))
-                            .collect(),
-                        instructions: top_level,
-                    },
+                            .collect::<Vec<_>>(),
+                        "instructions": top_level,
+                    }
                 },
-                meta: Some(Meta {
-                    inner_instructions: inner_groups,
-                    err: None,
-                    loaded_addresses: Some(LoadedAddresses {
-                        writable: fixture
+                "meta": {
+                    "err": null,
+                    "innerInstructions": inner_groups,
+                    "loadedAddresses": {
+                        "writable": fixture
                             .loaded_writable_account_tags
                             .iter()
                             .map(|tag| fixture_base58_encode(&[*tag; 32]))
-                            .collect(),
-                        readonly: fixture
+                            .collect::<Vec<_>>(),
+                        "readonly": fixture
                             .loaded_readonly_account_tags
                             .iter()
                             .map(|tag| fixture_base58_encode(&[*tag; 32]))
-                            .collect(),
-                    }),
-                }),
-            };
-            let decoded = decode_transaction_result("fixture", parsed)
+                            .collect::<Vec<_>>(),
+                    }
+                }
+            });
+            let decoded = decode_transaction_value("fixture", result)
                 .map(|transaction| transaction.instructions);
             match &fixture.expected {
                 ExpectedOutcome::Accept { instructions } => {
@@ -635,7 +640,7 @@ mod tests {
 
     #[test]
     fn failed_transaction_is_rejected_before_instruction_decoding() {
-        let parsed: GetTransactionResult = serde_json::from_value(json!({
+        let result = json!({
             "slot": 42,
             "transaction": { "message": {
                 // Deliberately malformed: decoding this key would fail.
@@ -650,10 +655,9 @@ mod tests {
                 "err": { "InstructionError": [0, "Custom"] },
                 "innerInstructions": []
             }
-        }))
-        .unwrap();
+        });
 
-        let transaction = decode_transaction_result("failed", parsed).unwrap();
+        let transaction = decode_transaction_value("failed", result).unwrap();
 
         assert!(transaction.instructions.is_empty());
         assert_eq!(transaction.slot, 42);
