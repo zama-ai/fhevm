@@ -40,6 +40,7 @@ jobs:
               - coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
               - coprocessor/fhevm-engine/host-listener/src/solana_reconstruct.rs
               - coprocessor/fhevm-engine/host-listener/src/solana_grpc_listener.rs
+              - coprocessor/fhevm-engine/host-listener/src/solana_grpc_source.rs
 
   build-and-test:
     name: solana-tests/build-and-test

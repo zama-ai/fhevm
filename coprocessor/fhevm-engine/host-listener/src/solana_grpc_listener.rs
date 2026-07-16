@@ -1,8 +1,4 @@
 //! Yellowstone gRPC reconstruction path for the Solana host listener.
-//!
-//! gRPC transaction updates do not carry block time, so we track a
-//! `slot -> block_time` map from `blocks_meta` updates and fall back to a single
-//! RPC `getBlockTime` on a miss.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -10,20 +6,16 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use futures_util::stream::StreamExt;
-use solana_client::nonblocking::rpc_client::RpcClient;
 use time::{OffsetDateTime, PrimitiveDateTime};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::Channel;
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::prelude::{
-    subscribe_update::UpdateOneof, CommitmentLevel,
-    Message as TransactionMessage, SubscribeRequest,
-    SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocksMeta,
-    SubscribeRequestFilterTransactions, SubscribeUpdateTransactionInfo,
-    TransactionStatusMeta,
+    subscribe_update::UpdateOneof, Message as TransactionMessage,
+    SubscribeRequest, SubscribeUpdateTransactionInfo, TransactionStatusMeta,
 };
 use zama_solana_transaction::{
     CompiledInstruction as CanonicalCompiledInstruction,
@@ -34,18 +26,15 @@ use crate::database::tfhe_event_propagate::Database;
 use crate::solana_adapter::{
     insert_solana_events, solana_transaction_id, SolanaBlockMeta,
 };
-use crate::solana_slot_hashes::{
-    clock_unix_timestamp, previous_bank_hash_from_slot_hashes, CLOCK_SYSVAR,
-    SLOT_HASHES_SYSVAR,
+use crate::solana_grpc_source::{
+    build_subscribe_request, BlockValidator, SealDecision, SealedBlock,
 };
 
 const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
-const SOLANA_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const SOLANA_GRPC_INGEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum IngestFailureKind {
-    Permanent,
     Retryable,
     Fatal,
 }
@@ -57,13 +46,6 @@ struct IngestFailure {
 }
 
 impl IngestFailure {
-    fn permanent(error: impl Into<anyhow::Error>) -> Self {
-        Self {
-            kind: IngestFailureKind::Permanent,
-            error: error.into(),
-        }
-    }
-
     fn retryable(error: impl Into<anyhow::Error>) -> Self {
         Self {
             kind: IngestFailureKind::Retryable,
@@ -121,41 +103,12 @@ impl fmt::Display for FatalListenerError {
 
 impl std::error::Error for FatalListenerError {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CursorDecision {
-    Advance,
-    RetrySameCursor,
-    FatalSameCursor,
-}
-
-fn cursor_decision_for_ingest_failure(
-    kind: IngestFailureKind,
-) -> CursorDecision {
-    match kind {
-        IngestFailureKind::Permanent => CursorDecision::Advance,
-        IngestFailureKind::Retryable => CursorDecision::RetrySameCursor,
-        IngestFailureKind::Fatal => CursorDecision::FatalSameCursor,
-    }
-}
-
-fn apply_cursor_decision(
-    from_slot: &mut Option<u64>,
-    slot: u64,
-    decision: CursorDecision,
-) {
-    if decision == CursorDecision::Advance {
-        *from_slot = Some(slot);
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct SolanaGrpcListenerConfig {
     /// Yellowstone gRPC endpoint, e.g. `http://poc-solana-validator:10000`.
     pub grpc_url: String,
     /// Optional `x-token` auth metadata (None for a local validator).
     pub x_token: Option<String>,
-    /// RPC endpoint used only as a `getBlockTime` fallback for block timestamps.
-    pub rpc_fallback_url: String,
     /// Base58 zama-host program id whose instructions are reconstructed.
     pub program_id: String,
     /// On-chain HostConfig chain_id used in handle derivation (distinct from the
@@ -163,11 +116,24 @@ pub struct SolanaGrpcListenerConfig {
     pub chain_id: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlockCheckpoint {
+    pub slot: u64,
+    pub block_hash: [u8; 32],
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StartPosition {
+    Tip,
+    Resume(BlockCheckpoint),
+}
+
 /// Connects, subscribes, and ingests until `cancel` fires. Reconnects with a
 /// `from_slot` cursor on stream errors; inserts are idempotent so replay is safe.
 pub async fn run(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
+    start: StartPosition,
     cancel: CancellationToken,
 ) -> Result<()> {
     info!(
@@ -175,25 +141,10 @@ pub async fn run(
         grpc_url = %config.grpc_url,
         "Starting Solana host listener (Yellowstone gRPC transport)"
     );
-    // Authorization is revalidated by KMS before plaintext release. Confirmed
-    // data is sufficient for eager ciphertext-material preparation.
-    let rpc = RpcClient::new_with_timeout_and_commitment(
-        config.rpc_fallback_url.clone(),
-        SOLANA_RPC_REQUEST_TIMEOUT,
-        solana_commitment_config::CommitmentConfig::confirmed(),
-    );
-    // TODO(unbounded-cache): these per-slot maps are insert/get only — never
-    // evicted — so they grow without bound in this long-lived process. Only recent
-    // slots are ever read (txs arrive near the tip), so prune on insert (retain
-    // slots >= newest - WINDOW) or use a bounded/LRU map.
-    let mut slot_time: HashMap<u64, PrimitiveDateTime> = HashMap::new();
-    // `slot -> previous_bank_hash` sourced from the SlotHashes sysvar stream;
-    // consumed by the reconstruction path (recompute of trivial/rand/fhe_eval).
-    let mut slot_bank_hash: HashMap<u64, [u8; 32]> = HashMap::new();
-    // `slot -> Clock.unix_timestamp` from the Clock sysvar stream (the value the
-    // program uses in handle derivation, which differs from getBlockTime).
-    let mut slot_clock_ts: HashMap<u64, i64> = HashMap::new();
-    let mut from_slot: Option<u64> = None;
+    let mut checkpoint = match start {
+        StartPosition::Tip => None,
+        StartPosition::Resume(checkpoint) => Some(checkpoint),
+    };
 
     loop {
         if cancel.is_cancelled() {
@@ -201,12 +152,9 @@ pub async fn run(
         }
         match subscribe_loop(
             db,
-            &rpc,
             config,
-            &mut slot_time,
-            &mut slot_bank_hash,
-            &mut slot_clock_ts,
-            &mut from_slot,
+            checkpoint.clone(),
+            &mut checkpoint,
             &cancel,
         )
         .await
@@ -215,11 +163,11 @@ pub async fn run(
             Err(err) => match err.downcast::<FatalListenerError>() {
                 Ok(fatal) => {
                     let err = fatal.into_inner();
-                    error!(error = %err, from_slot = ?from_slot, "gRPC listener stopped on fail-closed ingestion error");
+                    error!(error = %err, checkpoint = ?checkpoint, "gRPC listener stopped on fail-closed ingestion error");
                     return Err(err);
                 }
                 Err(err) => {
-                    error!(error = %err, from_slot = ?from_slot, "gRPC subscription dropped; reconnecting");
+                    error!(error = %err, checkpoint = ?checkpoint, "gRPC subscription dropped; reconnecting inclusively");
                     tokio::select! {
                         _ = cancel.cancelled() => return Ok(()),
                         _ = tokio::time::sleep(Duration::from_secs(2)) => {}
@@ -345,22 +293,19 @@ fn resolve_transaction_instructions(
     .map_err(anyhow::Error::from)
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn subscribe_loop(
     db: &Database,
-    rpc: &RpcClient,
     config: &SolanaGrpcListenerConfig,
-    slot_time: &mut HashMap<u64, PrimitiveDateTime>,
-    slot_bank_hash: &mut HashMap<u64, [u8; 32]>,
-    slot_clock_ts: &mut HashMap<u64, i64>,
-    from_slot: &mut Option<u64>,
+    resume: Option<BlockCheckpoint>,
+    checkpoint: &mut Option<BlockCheckpoint>,
     cancel: &CancellationToken,
 ) -> Result<()> {
-    let channel = Channel::from_shared(config.grpc_url.clone())
-        .context("invalid grpc url")?
-        .connect()
-        .await
-        .context("connect grpc endpoint")?;
+    let endpoint = Channel::from_shared(config.grpc_url.clone())
+        .context("invalid grpc url")?;
+    let channel = tokio::select! {
+        _ = cancel.cancelled() => return Ok(()),
+        result = endpoint.connect() => result.context("connect grpc endpoint")?,
+    };
 
     let token: Option<MetadataValue<Ascii>> = config
         .x_token
@@ -380,26 +325,38 @@ async fn subscribe_loop(
     )
     .max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
 
-    let request = build_subscribe_request(config, *from_slot);
+    let is_resume = resume.is_some();
+    let start = resume
+        .map(StartPosition::Resume)
+        .unwrap_or(StartPosition::Tip);
+    let request = build_subscribe_request(&config.program_id, &start);
+    let mut validator = BlockValidator::new(start);
     let outbound = futures_util::stream::once(async move { request })
         .chain(futures_util::stream::pending::<SubscribeRequest>());
 
-    let mut stream = client
-        .subscribe(outbound)
-        .await
-        .context("subscribe")?
-        .into_inner();
+    let response = tokio::select! {
+        _ = cancel.cancelled() => return Ok(()),
+        result = client.subscribe(outbound) => result.context("subscribe")?,
+    };
+    let mut stream = response.into_inner();
 
     loop {
         tokio::select! {
             _ = cancel.cancelled() => return Ok(()),
-            // The subscription requests blocks_meta (see build_subscribe_request), which the
-            // validator emits every slot, so prolonged total silence means the stream stalled
-            // rather than the chain being idle. Bound the await so a stall reconnects instead of
-            // hanging forever waiting on a stream that will never produce again.
+            // Sealed blocks are emitted for every produced slot, including slots with zero
+            // matching transactions. Prolonged silence therefore means the stream stalled.
             msg = tokio::time::timeout(Duration::from_secs(30), stream.message()) => {
                 let msg = msg.map_err(|_| anyhow!("grpc stream idle for 30s; reconnecting"))?;
-                let Some(update) = msg.context("grpc stream")? else {
+                let msg = match msg {
+                    Ok(message) => message,
+                    Err(status) if is_resume && is_terminal_replay_status(&status) => {
+                        return Err(FatalListenerError::new(anyhow!(
+                            "inclusive Yellowstone replay unavailable: {status}"
+                        )).into());
+                    }
+                    Err(status) => return Err(anyhow!(status).context("grpc stream")),
+                };
+                let Some(update) = msg else {
                     // A None message means the server closed the stream. This is NOT a
                     // cancellation (handled above) — return an error so the outer loop reconnects
                     // and resumes from `from_slot`, rather than exiting silently and missing every
@@ -407,113 +364,51 @@ async fn subscribe_loop(
                     return Err(anyhow!("grpc stream closed by server"));
                 };
                 match update.update_oneof {
-                    Some(UpdateOneof::BlockMeta(bm)) => {
-                        if let Some(ts) = bm.block_time.and_then(|t| unix_to_pdt(t.timestamp)) {
-                            slot_time.insert(bm.slot, ts);
-                        }
-                    }
                     Some(UpdateOneof::Account(acc)) => {
-                        // Cache per-slot derivation inputs from the sysvar stream:
-                        // SlotHashes -> previous_bank_hash, Clock -> unix_timestamp.
-                        if let Some(info) = acc.account {
-                            let pubkey =
-                                bs58::encode(&info.pubkey).into_string();
-                            if pubkey == SLOT_HASHES_SYSVAR {
-                                if let Some(prev) =
-                                    previous_bank_hash_from_slot_hashes(
-                                        &info.data, acc.slot,
-                                    )
-                                {
-                                    slot_bank_hash.insert(acc.slot, prev);
-                                }
-                            } else if pubkey == CLOCK_SYSVAR {
-                                if let Some(ts) =
-                                    clock_unix_timestamp(&info.data)
-                                {
-                                    slot_clock_ts.insert(acc.slot, ts);
-                                }
-                            }
-                        }
+                        validator.observe_account(acc).map_err(|error| {
+                            FatalListenerError::new(error.context(
+                                "validate Solana sysvar update",
+                            ))
+                        })?;
                     }
-                    Some(UpdateOneof::Transaction(txu)) => {
-                        let slot = txu.slot;
-                        if let Some(info) = txu.transaction {
-                            let signature =
-                                bs58::encode(&info.signature).into_string();
-                            if info.is_vote {
-                                *from_slot = Some(slot);
-                                continue;
-                            }
-                            match tokio::time::timeout(
-                                SOLANA_GRPC_INGEST_TIMEOUT,
-                                ingest_transaction(
-                                    db, rpc, config, slot, &info, slot_time,
-                                    &*slot_bank_hash, &*slot_clock_ts,
-                                ),
-                            )
-                            .await
-                            {
-                                Ok(Ok(())) => {}
+                    Some(UpdateOneof::Block(block)) => {
+                        let decision = validator.seal(block).map_err(|error| {
+                            FatalListenerError::new(error.context(
+                                "validate sealed Solana block",
+                            ))
+                        })?;
+                        if let SealDecision::Process(block) = decision {
+                            let ingest = tokio::select! {
+                                _ = cancel.cancelled() => return Ok(()),
+                                result = tokio::time::timeout(
+                                    SOLANA_GRPC_INGEST_TIMEOUT,
+                                    ingest_block(db, config, &block),
+                                ) => result,
+                            };
+                            match ingest {
+                                Ok(Ok(())) => {
+                                    *checkpoint = Some(block.checkpoint());
+                                }
+                                Ok(Err(err)) if err.kind() == IngestFailureKind::Retryable => {
+                                    return Err(err.into_error().context(
+                                        "retryable sealed block ingest failure",
+                                    ));
+                                }
                                 Ok(Err(err)) => {
-                                    let decision =
-                                        cursor_decision_for_ingest_failure(
-                                            err.kind(),
-                                        );
-                                    apply_cursor_decision(
-                                        from_slot, slot, decision,
-                                    );
-                                    match decision {
-                                        CursorDecision::Advance => {
-                                            error!(
-                                                slot,
-                                                signature = %signature,
-                                                error = %err,
-                                                "permanently failed to ingest gRPC transaction; skipping"
-                                            );
-                                            continue;
-                                        }
-                                        CursorDecision::RetrySameCursor => {
-                                            error!(
-                                                slot,
-                                                signature = %signature,
-                                                from_slot = ?from_slot,
-                                                error = %err,
-                                                "retryable gRPC transaction ingest failure; reconnecting without advancing cursor"
-                                            );
-                                            return Err(err
-                                                .into_error()
-                                                .context("retryable gRPC transaction ingest failure"));
-                                        }
-                                        CursorDecision::FatalSameCursor => {
-                                            error!(
-                                                slot,
-                                                signature = %signature,
-                                                from_slot = ?from_slot,
-                                                error = %err,
-                                                "fatal gRPC transaction ingest failure; stopping without advancing cursor"
-                                            );
-                                            return Err(FatalListenerError::new(
-                                                err.into_error(),
-                                            )
-                                            .into());
-                                        }
-                                    }
+                                    return Err(FatalListenerError::new(
+                                        err.into_error().context(
+                                            "fatal sealed block ingest failure",
+                                        ),
+                                    ).into());
                                 }
                                 Err(_) => {
-                                    warn!(
-                                        slot,
-                                        signature = %signature,
-                                        timeout = ?SOLANA_GRPC_INGEST_TIMEOUT,
-                                        from_slot = ?from_slot,
-                                        "timed out ingesting gRPC transaction; reconnecting without advancing cursor"
-                                    );
                                     return Err(anyhow!(
-                                        "timed out ingesting gRPC transaction {signature} in slot {slot}"
+                                        "timed out ingesting sealed Solana block {}",
+                                        block.slot
                                     ));
                                 }
                             }
                         }
-                        *from_slot = Some(slot);
                     }
                     Some(UpdateOneof::Ping(_)) => debug!("grpc ping"),
                     _ => {}
@@ -523,91 +418,103 @@ async fn subscribe_loop(
     }
 }
 
-fn build_subscribe_request(
-    config: &SolanaGrpcListenerConfig,
-    from_slot: Option<u64>,
-) -> SubscribeRequest {
-    let mut transactions = HashMap::new();
-    transactions.insert(
-        "zama_host".to_string(),
-        SubscribeRequestFilterTransactions {
-            vote: Some(false),
-            failed: Some(false),
-            signature: None,
-            account_include: vec![config.program_id.clone()],
-            account_exclude: vec![],
-            account_required: vec![],
-        },
-    );
+fn is_terminal_replay_status(status: &tonic::Status) -> bool {
+    let message = status.message();
+    message == "from_slot is not supported"
+        || message == "failed to send from_slot request"
+        || message.starts_with("broadcast from ")
+            && message.contains(" is not available")
+}
 
-    let mut blocks_meta = HashMap::new();
-    blocks_meta.insert("meta".to_string(), SubscribeRequestFilterBlocksMeta {});
+#[cfg(test)]
+mod replay_status_tests {
+    use super::is_terminal_replay_status;
 
-    // Stream the SlotHashes + Clock sysvar accounts to source
-    // `previous_bank_hash` and `unix_timestamp` per slot for handle reconstruction.
-    let mut accounts = HashMap::new();
-    accounts.insert(
-        "sysvars".to_string(),
-        SubscribeRequestFilterAccounts {
-            account: vec![
-                SLOT_HASHES_SYSVAR.to_string(),
-                CLOCK_SYSVAR.to_string(),
-            ],
-            owner: vec![],
-            filters: vec![],
-            nonempty_txn_signature: None,
-        },
-    );
-
-    SubscribeRequest {
-        accounts,
-        slots: HashMap::new(),
-        transactions,
-        transactions_status: HashMap::new(),
-        blocks: HashMap::new(),
-        blocks_meta,
-        entry: HashMap::new(),
-        commitment: Some(CommitmentLevel::Confirmed as i32),
-        accounts_data_slice: vec![],
-        ping: None,
-        from_slot,
+    #[test]
+    fn classifies_replay_gaps_without_treating_transport_as_terminal() {
+        for message in [
+            "from_slot is not supported",
+            "failed to send from_slot request",
+            "broadcast from 7 is not available, last available: 12",
+        ] {
+            assert!(is_terminal_replay_status(&tonic::Status::internal(
+                message
+            )));
+        }
+        assert!(!is_terminal_replay_status(&tonic::Status::unavailable(
+            "connection reset"
+        )));
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+async fn ingest_block(
+    db: &Database,
+    config: &SolanaGrpcListenerConfig,
+    block: &SealedBlock,
+) -> std::result::Result<(), IngestFailure> {
+    for transaction in &block.transactions {
+        let meta = transaction.meta.as_ref().ok_or_else(|| {
+            IngestFailure::fatal(anyhow!("transaction has no status meta"))
+        })?;
+        if meta.err.is_some() || transaction.is_vote {
+            continue;
+        }
+        ingest_transaction(db, config, block, transaction).await?;
+    }
+    info!(
+        slot = block.slot,
+        parent_slot = block.parent_slot,
+        block_height = ?block.block_height,
+        executed_transaction_count = block.executed_transaction_count,
+        matching_transaction_count = block.transactions.len(),
+        "ingested sealed Solana block"
+    );
+    Ok(())
+}
+
 async fn ingest_transaction(
     db: &Database,
-    rpc: &RpcClient,
     config: &SolanaGrpcListenerConfig,
-    slot: u64,
+    sealed_block: &SealedBlock,
     info: &SubscribeUpdateTransactionInfo,
-    slot_time: &mut HashMap<u64, PrimitiveDateTime>,
-    slot_bank_hash: &HashMap<u64, [u8; 32]>,
-    slot_clock_ts: &HashMap<u64, i64>,
 ) -> std::result::Result<(), IngestFailure> {
     let meta = info
         .meta
         .as_ref()
-        .ok_or_else(|| IngestFailure::permanent(anyhow!("tx has no meta")))?;
+        .ok_or_else(|| IngestFailure::fatal(anyhow!("tx has no meta")))?;
     let tx = info.transaction.as_ref().ok_or_else(|| {
-        IngestFailure::permanent(anyhow!("tx has no transaction"))
+        IngestFailure::fatal(anyhow!("tx has no transaction"))
     })?;
-    let message = tx.message.as_ref().ok_or_else(|| {
-        IngestFailure::permanent(anyhow!("tx has no message"))
-    })?;
+    let message = tx
+        .message
+        .as_ref()
+        .ok_or_else(|| IngestFailure::fatal(anyhow!("tx has no message")))?;
 
     // Top-level + inner instruction invocations with resolved accounts (a
     // zama-host instruction is called directly as top-level, or via CPI as inner
     // for token flows); scanned by the reconstruction shadow-compare and ingest.
     let all_instructions = decode_transaction_instructions(message, meta)
-        .map_err(IngestFailure::permanent)?;
+        .map_err(IngestFailure::fatal)?;
+
+    let slot_bank_hash = HashMap::from([(
+        sealed_block.slot,
+        sealed_block.previous_bank_hash.ok_or_else(|| {
+            IngestFailure::fatal(anyhow!("missing SlotHashes context"))
+        })?,
+    )]);
+    let slot_clock_ts = HashMap::from([(
+        sealed_block.slot,
+        sealed_block.clock_unix_timestamp.ok_or_else(|| {
+            IngestFailure::fatal(anyhow!("missing Clock context"))
+        })?,
+    )]);
 
     let events = match reconstruct_events_for_insert(
         config,
         &all_instructions,
-        slot,
-        slot_bank_hash,
-        slot_clock_ts,
+        sealed_block.slot,
+        &slot_bank_hash,
+        &slot_clock_ts,
     )
     .await
     .map_err(|err| {
@@ -621,22 +528,20 @@ async fn ingest_transaction(
         return Ok(());
     }
 
-    let block_timestamp = match slot_time.get(&slot) {
-        Some(ts) => *ts,
-        None => {
-            let ts = rpc.get_block_time(slot).await.map_err(|err| {
-                IngestFailure::retryable(err).context("getBlockTime fallback")
-            })?;
-            let pdt = unix_to_pdt(ts).ok_or_else(|| {
-                IngestFailure::permanent(anyhow!("invalid block_time {ts}"))
-            })?;
-            slot_time.insert(slot, pdt);
-            pdt
-        }
-    };
+    let block_timestamp = sealed_block
+        .block_time
+        .and_then(unix_to_pdt)
+        .ok_or_else(|| {
+            IngestFailure::fatal(anyhow!(
+                "missing or invalid block time for slot {}",
+                sealed_block.slot
+            ))
+        })?;
     let block = SolanaBlockMeta {
-        block_number: slot,
+        block_number: sealed_block.slot,
         block_timestamp,
+        block_hash: sealed_block.block_hash,
+        parent_hash: sealed_block.parent_block_hash,
     };
 
     let transaction_id = solana_transaction_id(&info.signature);
@@ -656,7 +561,8 @@ async fn ingest_transaction(
         .map_err(|err| IngestFailure::retryable(err).context("commit db tx"))?;
 
     info!(
-        slot,
+        slot = sealed_block.slot,
+        transaction_index = info.index,
         signature = %bs58::encode(&info.signature).into_string(),
         tfhe_events = stats.tfhe_events,
         material_requests = stats.material_requests,
@@ -993,38 +899,6 @@ mod account_resolution_tests {
 }
 
 #[cfg(test)]
-mod ingest_cursor_tests {
-    use super::{
-        apply_cursor_decision, cursor_decision_for_ingest_failure,
-        CursorDecision, IngestFailureKind,
-    };
-
-    #[test]
-    fn retryable_ingest_failure_keeps_cursor_for_replay() {
-        let mut from_slot = Some(40);
-        let decision =
-            cursor_decision_for_ingest_failure(IngestFailureKind::Retryable);
-
-        apply_cursor_decision(&mut from_slot, 42, decision);
-
-        assert_eq!(decision, CursorDecision::RetrySameCursor);
-        assert_eq!(from_slot, Some(40));
-    }
-
-    #[test]
-    fn permanent_ingest_failure_advances_cursor() {
-        let mut from_slot = Some(40);
-        let decision =
-            cursor_decision_for_ingest_failure(IngestFailureKind::Permanent);
-
-        apply_cursor_decision(&mut from_slot, 42, decision);
-
-        assert_eq!(decision, CursorDecision::Advance);
-        assert_eq!(from_slot, Some(42));
-    }
-}
-
-#[cfg(test)]
 mod fhe_eval_acl_tests {
     use super::{
         fhe_eval_durable_encrypted_value, reconstruct_events_for_insert,
@@ -1054,7 +928,6 @@ mod fhe_eval_acl_tests {
         SolanaGrpcListenerConfig {
             grpc_url: "http://127.0.0.1:1".to_owned(),
             x_token: None,
-            rpc_fallback_url: "http://127.0.0.1:1".to_owned(),
             program_id: ZAMA_HOST.to_owned(),
             chain_id: zama_host::SOLANA_POC_CHAIN_ID,
         }
