@@ -10,6 +10,16 @@
 #     -n <namespace> -f this-file
 fullnameOverride: relayer-migrate
 
+# Unlike the fhevm-specific coprocessor/kms-connector charts (which hardcode
+# `imagePullSecrets: [{name: registry-credentials}]` in their templates),
+# this generic `common` chart only adds imagePullSecrets if set here -
+# without it, pulling this private hub.zama.org/ghcr/zama-ai/* image fails
+# with "authorization failed: no basic auth credentials" (confirmed via
+# `kubectl describe pod`). The Secret itself already exists in-namespace
+# (created once per-namespace, shared across all fhevm components).
+imagePullSecrets:
+  - name: registry-credentials
+
 image:
   repository: hub.zama.org/ghcr/zama-ai/fhevm/relayer-migrate
   tag: latest

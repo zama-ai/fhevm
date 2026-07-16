@@ -7,6 +7,14 @@ name: pr-preview-deploy
 # chains, its own dedicated KMS with real keygen, its own contracts,
 # coprocessor, kms-connector, relayer and test-suite. Nothing is shared
 # across PRs, so concurrent previews never collide.
+#
+# Two PR labels control deployment (see check-labels below):
+#   - pr-preview-e2e: deploy the pinned versions from the env block below,
+#     no images built.
+#   - pr-preview-e2e-build: also build fresh images from the PR branch for
+#     every fhevm-owned component and deploy those instead.
+# Neither label affects the dedicated KMS (env.KMS_REPO_REF/KMS_CORE_TAG):
+# it's a separate zama-ai/kms deployment, never built by this workflow.
 ##############################################################################
 
 on:
@@ -14,64 +22,67 @@ on:
     types: [opened, labeled, synchronize, reopened]
   workflow_dispatch:
     inputs:
-      pr_number:
-        description: "The PR number to deploy"
-        required: true
-        default: "123"
+      namespace_suffix:
+        description: "Optional fixed suffix for the fhevm-ci-<actor>-<suffix> namespace (e.g. a ticket id). Leave empty to use this run's own id (always unique)."
+        required: false
+        default: ""
       build_images:
-        description: "Whether to build the images"
+        description: "Build fresh images from the selected branch (the branch picked above via 'Use workflow from'). Uncheck to skip building entirely and deploy exactly the pinned versions below."
         required: true
         default: "true"
-      contracts_version:
-        description: "The version of the contracts to deploy"
+      host_contracts_version:
+        description: "Image tag for the host-contracts deployer image (ignored while build_images=true and it changed - see build_images above)"
         required: true
-        default: "0.8.2"
+        default: "v0.12.1"
+      gateway_contracts_version:
+        description: "Image tag for the gateway-contracts deployer image (same override rule as host_contracts_version)"
+        required: true
+        default: "v0.9.8"
       contracts_chart_version:
-        description: "The version of the contracts chart to deploy"
+        description: "Version of the contracts Helm chart"
         required: true
         default: "0.8.2"
       coprocessor_version:
-        description: "The version of the coprocessor to deploy"
+        description: "Image tag for coprocessor images (same override rule as host_contracts_version above)"
         required: true
-        default: "0.13.0"
+        default: "v0.11.0"
       coprocessor_chart_version:
-        description: "The version of the coprocessor chart to deploy"
+        description: "Version of the coprocessor Helm chart"
         required: true
         default: "0.13.0"
       kms_connector_version:
-        description: "The version of the kms connector to deploy"
+        description: "Image tag for kms-connector images (same override rule as host_contracts_version above)"
         required: true
-        default: "1.5.2"
+        default: "v0.11.0"
       kms_connector_chart_version:
-        description: "The version of the kms connector chart to deploy"
+        description: "Version of the kms-connector Helm chart"
         required: true
-        default: "1.5.2"
+        default: "1.5.1"
       kms_core_version:
-        description: "The version of the kms core to deploy"
+        description: "Image tag for the dedicated KMS's kms-core (zama-ai/kms, not built by this workflow)"
         required: true
-        default: "v0.13.10"
+        default: "v0.13.3"
       kms_repo_ref:
-        description: "The ref of the kms repo to deploy"
+        description: "Git ref of zama-ai/kms to check out for deploy scripts + tkms-infra/kms-core charts"
         required: true
-        default: "v0.13.10"
+        default: "v0.13.3"
       relayer_version:
-        description: "The version of the relayer to deploy"
+        description: "Image tag for the relayer/relayer-migrate images (same override rule as host_contracts_version above)"
         required: true
-        default: "0.1.0"
-      relayer_chart_version:
-        description: "The version of the relayer chart to deploy"
-        required: true
-        default: "0.1.0"
+        default: "v0.11.1"
       test_suite_version:
-        description: "The version of the test suite to deploy"
+        description: "Image tag for the test-suite image (same override rule as host_contracts_version above)"
         required: true
-        default: "0.1.0"
-      test_suite_chart_version:
-        description: "The version of the test suite chart to deploy"
+        default: "v0.11.3"
+      common_chart_version:
+        description: "Version of the generic `common` Helm chart, used for postgres-*, relayer-migrate, relayer and test-suite alike"
         required: true
-        default: "0.1.0"
+        default: "0.3.3"
 concurrency:
-  group: pr-preview-deploy-${{ github.event.pull_request.number }}
+  # pull_request: one preview per PR, new pushes cancel the in-flight run.
+  # workflow_dispatch: one slot per run - manual dispatches never cancel
+  # each other (each is an independent, deliberately-triggered deployment).
+  group: pr-preview-deploy-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 permissions: {}
@@ -84,55 +95,108 @@ permissions: {}
 env:
   # Real OCI chart refs + versions, pinned to the same known-good releases
   # zama-zws/gitops's fhevm-dev environment currently runs.
+  #=====ANVIL NODE===========================================================
   ANVIL_NODE_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/anvil-node
   ANVIL_NODE_CHART_VERSION: "0.4.1"
+  #=====CONTRACTS============================================================
+  GATEWAY_CONTRACTS_VERSION: "v0.9.8"
+  HOST_CONTRACTS_VERSION: "v0.12.1"
   CONTRACTS_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts
   CONTRACTS_CHART_VERSION: "0.8.2"
+  #=====COPROCESSOR==========================================================
+  COPROCESSOR_VERSION: "v0.11.0"
   COPROCESSOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor
   COPROCESSOR_CHART_VERSION: "0.13.0"
+  #=====KMS CONNECTOR=========================================================
+  # 1.5.2 predates the "epoch changes" chart rework (#2700): its
+  # commonConfig.*ContractAddresses schema is kmsGeneration under
+  # gatewayContractAddresses (not ethereumContractAddresses) and has no
+  # protocolConfig field at all, so the --set-string calls below (which use
+  # the 1.5.3+ schema) silently rendered an empty KMSGeneration address into
+  # every kms-connector deployment - confirmed via `helm get manifest`.
+  KMS_CONNECTOR_VERSION: "v0.11.0"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
-  KMS_CONNECTOR_CHART_VERSION: "1.5.2"
+  KMS_CONNECTOR_CHART_VERSION: "1.5.1"
+  #=====COPROCESSOR INFRA======================================================
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
+  #=====COMMON===============================================================
+  # RELAYER_VERSION/TEST_SUITE_VERSION back the relayer+relayer-migrate and
+  # test-suite images respectively; both deploy via this same generic chart.
+  RELAYER_VERSION: "v0.11.1"
+  TEST_SUITE_VERSION: "v0.11.3"
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
-  COMMON_CHART_VERSION: "0.3.0"
-  KMS_REPO_REF: "v0.13.10"
-  KMS_CORE_TAG: "v0.13.10"
+  COMMON_CHART_VERSION: "0.3.3"
+  #=====KMS==================================================================
+  KMS_REPO_REF: "v0.13.3"
+  KMS_CORE_TAG: "v0.13.3"
+  #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
 
 jobs:
   ##########################################################################
-  # Gate: only PRs carrying the pr-preview-e2e label get a preview stack.
+  # Gate: only PRs carrying pr-preview-e2e or pr-preview-e2e-build get a
+  # preview stack; the latter additionally builds fresh images (see
+  # build-host-contracts etc. below) instead of deploying the pinned
+  # versions from the env block above. Manual workflow_dispatch runs are
+  # always a deliberate, explicit request (there's no label to check -
+  # dispatching the workflow *is* the request), so they always deploy, and
+  # build_images comes from the matching input instead of a label.
   ##########################################################################
   check-labels:
     name: check-labels
     runs-on: ubuntu-latest
     if: >-
-      github.event.action != 'labeled' || github.event.label.name == 'pr-preview-e2e'
+      github.event_name == 'workflow_dispatch' ||
+      github.event.action != 'labeled' ||
+      github.event.label.name == 'pr-preview-e2e' ||
+      github.event.label.name == 'pr-preview-e2e-build'
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
+      build_images: ${{ steps.check.outputs.build_images }}
     steps:
       - id: check
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_BUILD_IMAGES: ${{ inputs.build_images }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
-          echo "PR labels: $PR_LABELS"
-          if echo "$PR_LABELS" | jq -e '.[] | select(. == "pr-preview-e2e")' > /dev/null; then
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "build_images=${DISPATCH_BUILD_IMAGES}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "PR labels: $PR_LABELS"
+          if echo "$PR_LABELS" | jq -e '.[] | select(. == "pr-preview-e2e-build")' > /dev/null; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "build_images=true" >> "$GITHUB_OUTPUT"
+          elif echo "$PR_LABELS" | jq -e '.[] | select(. == "pr-preview-e2e")' > /dev/null; then
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            echo "build_images=false" >> "$GITHUB_OUTPUT"
           else
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "build_images=false" >> "$GITHUB_OUTPUT"
           fi
 
   ##########################################################################
-  # Build every fhevm-owned image at this PR's HEAD commit. Each reusable
-  # workflow already only builds+pushes when it detects relevant path
-  # changes (see check-changes-for-docker-build.yml); unchanged components
-  # report "skipped" and resolve-tags below falls back to `latest` for them.
+  # Build every fhevm-owned image at this PR's HEAD commit (or, for a manual
+  # workflow_dispatch, at whichever branch was picked via "Use workflow
+  # from") - but only when build_images is on, i.e. the pr-preview-e2e-build
+  # label (pull_request) or the build_images input (workflow_dispatch); see
+  # check-labels above for how that's resolved for either trigger. Each
+  # reusable workflow already only builds+pushes when it detects relevant
+  # path changes (see check-changes-for-docker-build.yml); unchanged
+  # components report "skipped" and resolve-tags below falls back to the
+  # matching pinned version (env for pull_request, the matching *_version
+  # input for workflow_dispatch) for them - same as when build_images is
+  # off altogether and no build-* job below even runs.
   ##########################################################################
   build-host-contracts:
     name: build/host-contracts
     needs: check-labels
-    if: needs.check-labels.outputs.should_deploy == 'true'
+    if: &should_build_images >-
+      needs.check-labels.outputs.should_deploy == 'true' &&
+      needs.check-labels.outputs.build_images == 'true'
     uses: ./.github/workflows/host-contracts-docker-build.yml
     # The top-level `permissions: {}` caps every nested reusable-workflow call in this
     # chain, regardless of what host-contracts-docker-build.yml's own jobs request - see
@@ -149,7 +213,7 @@ jobs:
   build-gateway-contracts:
     name: build/gateway-contracts
     needs: check-labels
-    if: needs.check-labels.outputs.should_deploy == 'true'
+    if: *should_build_images
     uses: ./.github/workflows/gateway-contracts-docker-build.yml
     permissions: *docker_permissions
     secrets: inherit
@@ -157,7 +221,7 @@ jobs:
   build-kms-connector:
     name: build/kms-connector
     needs: check-labels
-    if: needs.check-labels.outputs.should_deploy == 'true'
+    if: *should_build_images
     uses: ./.github/workflows/kms-connector-docker-build.yml
     permissions: *docker_permissions
     secrets: inherit
@@ -165,7 +229,7 @@ jobs:
   build-coprocessor:
     name: build/coprocessor
     needs: check-labels
-    if: needs.check-labels.outputs.should_deploy == 'true'
+    if: *should_build_images
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: *docker_permissions
     secrets: inherit
@@ -173,7 +237,7 @@ jobs:
   build-relayer:
     name: build/relayer
     needs: check-labels
-    if: needs.check-labels.outputs.should_deploy == 'true'
+    if: *should_build_images
     uses: ./.github/workflows/relayer-docker-build.yml
     permissions: *docker_permissions
     secrets: inherit
@@ -181,16 +245,19 @@ jobs:
   build-test-suite:
     name: build/test-suite
     needs: check-labels
-    if: needs.check-labels.outputs.should_deploy == 'true'
+    if: *should_build_images
     uses: ./.github/workflows/test-suite-docker-build.yml
     permissions: *docker_permissions
     secrets: inherit
 
   ##########################################################################
-  # Resolve one real tag per image: the PR's own 7-char short SHA if this
-  # run just built it, `latest` (last main build) if it was skipped as
-  # unchanged. Centralized here so the deploy job doesn't need 16 separate
-  # `needs.*.outputs.*` lookups sprinkled through its helm commands.
+  # Resolve one real tag per image: the PR's own (or, on workflow_dispatch,
+  # the picked branch's) 7-char short SHA if this run just built it, else
+  # the matching pinned version (env for pull_request, the matching
+  # *_version input for workflow_dispatch) if it was skipped as unchanged
+  # or build_images was off altogether. Centralized here so the deploy job
+  # doesn't need 16 separate `needs.*.outputs.*` lookups sprinkled through
+  # its helm commands.
   ##########################################################################
   resolve-tags:
     name: resolve-tags
@@ -207,70 +274,146 @@ jobs:
     outputs:
       short_sha: ${{ steps.resolve.outputs.short_sha }}
       tags_json: ${{ steps.resolve.outputs.tags_json }}
+      namespace: ${{ steps.resolve.outputs.namespace }}
+      # Chart versions: static top-level env defaults on pull_request: the
+      # *_chart_version workflow_dispatch inputs override them on manual
+      # runs. Resolved here (not read directly off env in the deploy job)
+      # so both trigger types go through one code path.
+      contracts_chart_version: ${{ steps.resolve.outputs.contracts_chart_version }}
+      coprocessor_chart_version: ${{ steps.resolve.outputs.coprocessor_chart_version }}
+      kms_connector_chart_version: ${{ steps.resolve.outputs.kms_connector_chart_version }}
+      common_chart_version: ${{ steps.resolve.outputs.common_chart_version }}
+      kms_repo_ref: ${{ steps.resolve.outputs.kms_repo_ref }}
+      kms_core_tag: ${{ steps.resolve.outputs.kms_core_tag }}
     steps:
       - id: resolve
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           NEEDS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
+          # The `inputs` context (not github.event.inputs) is always a defined
+          # object - {} on pull_request, the actual dispatch inputs on
+          # workflow_dispatch - so `pick()` below can safely dereference
+          # `inputs.*` unconditionally without a null-check, even though its
+          # result is only used when isDispatch is true.
+          INPUTS: ${{ toJSON(inputs) }}
+          ACTOR: ${{ github.actor }}
         with:
           script: |
             const needs = JSON.parse(process.env.NEEDS);
-            const shortSha = context.payload.pull_request.head.sha.substring(0, 7);
+            const isDispatch = process.env.EVENT_NAME === 'workflow_dispatch';
+            const inputs = JSON.parse(process.env.INPUTS);
+            const env = process.env;
 
-            // "success" -> this run built and pushed a fresh image at shortSha.
-            // Anything else (skipped/failure/cancelled) -> component didn't
-            // change in this PR; fall back to the latest main build.
-            const pick = (result) => (result === 'success' ? shortSha : 'latest');
+            // pull_request: this PR's own head SHA. workflow_dispatch: the tip
+            // of whichever branch was picked via "Use workflow from" (context.sha
+            // already resolves to that, since the whole run - including every
+            // nested build-*-docker-build.yml call below - executes against it).
+            const shortSha = isDispatch
+              ? context.sha.substring(0, 7)
+              : context.payload.pull_request.head.sha.substring(0, 7);
+
+            // "success" -> this run built+pushed shortSha, anything else
+            // (skipped/failure/cancelled, i.e. unchanged - or build_images
+            // off, so the build-* job didn't even run and `result` is
+            // undefined) falls back to a pinned version.
+            const pick = (result, pinnedVersion) => (result === 'success' ? shortSha : pinnedVersion);
+
+            // Pinned version per component family: the env default on
+            // pull_request, the matching workflow_dispatch input on manual
+            // runs. Same pin backs every sub-image built from that one
+            // repo/version (e.g. all 4 kms-connector binaries) - except
+            // host/gateway contracts, which are independently versioned.
+            const pinned = (envVar, dispatchInput) => (isDispatch ? dispatchInput : envVar);
+            const hostContractsPin = pinned(env.HOST_CONTRACTS_VERSION, inputs.host_contracts_version);
+            const gatewayContractsPin = pinned(env.GATEWAY_CONTRACTS_VERSION, inputs.gateway_contracts_version);
+            const kmsConnectorPin = pinned(env.KMS_CONNECTOR_VERSION, inputs.kms_connector_version);
+            const coprocessorPin = pinned(env.COPROCESSOR_VERSION, inputs.coprocessor_version);
+            const relayerPin = pinned(env.RELAYER_VERSION, inputs.relayer_version);
+            const testSuitePin = pinned(env.TEST_SUITE_VERSION, inputs.test_suite_version);
 
             const tags = {
-              host_contracts: pick(needs['build-host-contracts'].outputs.build_result),
-              gateway_contracts: pick(needs['build-gateway-contracts'].outputs.build_result),
-              kms_connector_db_migration: pick(needs['build-kms-connector'].outputs.db_migration_build_result),
-              kms_connector_gw_listener: pick(needs['build-kms-connector'].outputs.gw_listener_build_result),
-              kms_connector_kms_worker: pick(needs['build-kms-connector'].outputs.kms_worker_build_result),
-              kms_connector_tx_sender: pick(needs['build-kms-connector'].outputs.tx_sender_build_result),
-              coprocessor_db_migration: pick(needs['build-coprocessor'].outputs.db_migration_build_result),
-              coprocessor_gw_listener: pick(needs['build-coprocessor'].outputs.gw_listener_build_result),
-              coprocessor_host_listener: pick(needs['build-coprocessor'].outputs.host_listener_build_result),
-              coprocessor_sns_worker: pick(needs['build-coprocessor'].outputs.sns_worker_build_result),
-              coprocessor_tfhe_worker: pick(needs['build-coprocessor'].outputs.tfhe_worker_build_result),
-              coprocessor_tx_sender: pick(needs['build-coprocessor'].outputs.tx_sender_build_result),
-              coprocessor_zkproof_worker: pick(needs['build-coprocessor'].outputs.zkproof_worker_build_result),
-              relayer_migrate: pick(needs['build-relayer'].outputs.relayer_migrate_build_result),
-              relayer: pick(needs['build-relayer'].outputs.relayer_build_result),
-              test_suite: pick(needs['build-test-suite'].outputs.build_result),
+              host_contracts: pick(needs['build-host-contracts'].outputs.build_result, hostContractsPin),
+              gateway_contracts: pick(needs['build-gateway-contracts'].outputs.build_result, gatewayContractsPin),
+              kms_connector_db_migration: pick(needs['build-kms-connector'].outputs.db_migration_build_result, kmsConnectorPin),
+              kms_connector_gw_listener: pick(needs['build-kms-connector'].outputs.gw_listener_build_result, kmsConnectorPin),
+              kms_connector_kms_worker: pick(needs['build-kms-connector'].outputs.kms_worker_build_result, kmsConnectorPin),
+              kms_connector_tx_sender: pick(needs['build-kms-connector'].outputs.tx_sender_build_result, kmsConnectorPin),
+              coprocessor_db_migration: pick(needs['build-coprocessor'].outputs.db_migration_build_result, coprocessorPin),
+              coprocessor_gw_listener: pick(needs['build-coprocessor'].outputs.gw_listener_build_result, coprocessorPin),
+              coprocessor_host_listener: pick(needs['build-coprocessor'].outputs.host_listener_build_result, coprocessorPin),
+              coprocessor_sns_worker: pick(needs['build-coprocessor'].outputs.sns_worker_build_result, coprocessorPin),
+              coprocessor_tfhe_worker: pick(needs['build-coprocessor'].outputs.tfhe_worker_build_result, coprocessorPin),
+              coprocessor_tx_sender: pick(needs['build-coprocessor'].outputs.tx_sender_build_result, coprocessorPin),
+              coprocessor_zkproof_worker: pick(needs['build-coprocessor'].outputs.zkproof_worker_build_result, coprocessorPin),
+              relayer_migrate: pick(needs['build-relayer'].outputs.relayer_migrate_build_result, relayerPin),
+              relayer: pick(needs['build-relayer'].outputs.relayer_build_result, relayerPin),
+              test_suite: pick(needs['build-test-suite'].outputs.build_result, testSuitePin),
+            };
+
+            // Namespace: PR number for pull_request (stable, one preview per PR).
+            // workflow_dispatch has no PR to key off - default to this run's own
+            // id (always unique, traceable back to the run that created it),
+            // overridable via namespace_suffix for a stable/memorable name.
+            const namespace = isDispatch
+              ? `fhevm-ci-${env.ACTOR}-${inputs.namespace_suffix || context.runId}`
+              : `fhevm-ci-${env.ACTOR}-${context.payload.pull_request.number}`;
+
+            // Chart/ref versions: static top-level env on pull_request: the
+            // matching workflow_dispatch input (already defaulted by the
+            // trigger's own input schema) on manual runs.
+            const chartVersions = {
+              contracts_chart_version: isDispatch ? inputs.contracts_chart_version : env.CONTRACTS_CHART_VERSION,
+              coprocessor_chart_version: isDispatch ? inputs.coprocessor_chart_version : env.COPROCESSOR_CHART_VERSION,
+              kms_connector_chart_version: isDispatch ? inputs.kms_connector_chart_version : env.KMS_CONNECTOR_CHART_VERSION,
+              // Backs postgres-*/relayer-migrate/relayer/test-suite alike - they
+              // all deploy via the same generic `common` chart, see deploy job.
+              common_chart_version: isDispatch ? inputs.common_chart_version : env.COMMON_CHART_VERSION,
+              kms_repo_ref: isDispatch ? inputs.kms_repo_ref : env.KMS_REPO_REF,
+              kms_core_tag: isDispatch ? inputs.kms_core_version : env.KMS_CORE_TAG,
             };
 
             core.info(`Resolved tags: ${JSON.stringify(tags, null, 2)}`);
+            core.info(`Resolved namespace: ${namespace}`);
+            core.info(`Resolved chart versions: ${JSON.stringify(chartVersions, null, 2)}`);
             core.setOutput('short_sha', shortSha);
             core.setOutput('tags_json', JSON.stringify(tags));
+            core.setOutput('namespace', namespace);
+            for (const [key, value] of Object.entries(chartVersions)) {
+              core.setOutput(key, value);
+            }
 
-            // Deployment plan summary: chart versions are static (top-level env,
-            // known before any build even runs), image tags are the ones just
-            // resolved above - this is the earliest point in the workflow both
-            // are known together, so publish it here rather than adding a
-            // separate job/step later that just re-reads the same data.
-            const env = process.env;
+            // Deployment plan summary: this is the earliest point in the
+            // workflow every version (chart + image) is known together, so
+            // publish it here rather than adding a separate job/step later
+            // that just re-reads the same data.
             await core.summary
-              .addHeading(`fhevm e2e preview - deployment plan (PR #${context.payload.pull_request.number}, ${shortSha})`)
+              .addHeading(
+                isDispatch
+                  ? `fhevm e2e preview - deployment plan (manual dispatch, ${namespace}, ${shortSha})`
+                  : `fhevm e2e preview - deployment plan (PR #${context.payload.pull_request.number}, ${shortSha})`
+              )
               .addHeading('Helm charts', 3)
               .addTable([
                 [{data: 'Component', header: true}, {data: 'Chart', header: true}, {data: 'Version', header: true}],
                 ['anvil-node (host + gateway chains)', env.ANVIL_NODE_CHART, env.ANVIL_NODE_CHART_VERSION],
-                ['contracts (host/gateway/keygen)', env.CONTRACTS_CHART, env.CONTRACTS_CHART_VERSION],
-                ['coprocessor', env.COPROCESSOR_CHART, env.COPROCESSOR_CHART_VERSION],
-                ['kms-connector', env.KMS_CONNECTOR_CHART, env.KMS_CONNECTOR_CHART_VERSION],
+                ['contracts (host/gateway/keygen)', env.CONTRACTS_CHART, chartVersions.contracts_chart_version],
+                ['coprocessor', env.COPROCESSOR_CHART, chartVersions.coprocessor_chart_version],
+                ['kms-connector', env.KMS_CONNECTOR_CHART, chartVersions.kms_connector_chart_version],
                 ['coprocessor-infra (Crossplane S3)', env.COPROCESSOR_INFRA_CHART, env.COPROCESSOR_INFRA_CHART_VERSION],
-                ['relayer-migrate / relayer / test-suite / postgres-* (common chart)', env.COMMON_CHART, env.COMMON_CHART_VERSION],
+                ['postgres-* / relayer-migrate / relayer / test-suite (common chart)', env.COMMON_CHART, chartVersions.common_chart_version],
               ])
               .addHeading('Dedicated KMS (zama-ai/kms)', 3)
               .addTable([
                 [{data: 'Component', header: true}, {data: 'Ref / tag', header: true}],
-                ['kms repo ref (deploy scripts + tkms-infra/kms-core charts)', env.KMS_REPO_REF],
-                ['kms-core image tag', env.KMS_CORE_TAG],
+                ['kms repo ref (deploy scripts + tkms-infra/kms-core charts)', chartVersions.kms_repo_ref],
+                ['kms-core image tag', chartVersions.kms_core_tag],
               ])
-              .addHeading('PR-built images', 3)
-              .addRaw(`Short SHA \`${shortSha}\` if this PR changed the component, otherwise \`latest\` (last main build).\n\n`)
+              .addHeading('Images', 3)
+              .addRaw(
+                `Short SHA \`${shortSha}\` for components built this run (build_images=\`${needs['check-labels'].outputs.build_images}\`) ` +
+                  `and actually changed, otherwise the pinned version shown per component below.\n\n`
+              )
               .addTable([
                 [{data: 'Component', header: true}, {data: 'Tag', header: true}],
                 ...Object.entries(tags).map(([component, tag]) => [component, tag]),
@@ -293,8 +436,18 @@ jobs:
     env:
       # Job-specific, computed from context/needs - can't live in the
       # workflow-level env above (needs isn't available there).
-      NAMESPACE: fhevm-ci-${{ github.actor }}-${{ github.event.pull_request.number }}
+      NAMESPACE: ${{ needs.resolve-tags.outputs.namespace }}
       TAGS_JSON: ${{ needs.resolve-tags.outputs.tags_json }}
+      # Override the workflow-level pull_request defaults above: on
+      # workflow_dispatch these come from the matching *_chart_version /
+      # kms_repo_ref / kms_core_version input instead (see resolve-tags);
+      # on pull_request resolve-tags just passes the same defaults through.
+      CONTRACTS_CHART_VERSION: ${{ needs.resolve-tags.outputs.contracts_chart_version }}
+      COPROCESSOR_CHART_VERSION: ${{ needs.resolve-tags.outputs.coprocessor_chart_version }}
+      KMS_CONNECTOR_CHART_VERSION: ${{ needs.resolve-tags.outputs.kms_connector_chart_version }}
+      COMMON_CHART_VERSION: ${{ needs.resolve-tags.outputs.common_chart_version }}
+      KMS_REPO_REF: ${{ needs.resolve-tags.outputs.kms_repo_ref }}
+      KMS_CORE_TAG: ${{ needs.resolve-tags.outputs.kms_core_tag }}
     steps:
       - name: Checkout fhevm
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -727,7 +880,9 @@ jobs:
           kubectl get events -n "${NAMESPACE}" --sort-by=.lastTimestamp | tail -100 || true
 
       - name: Comment on PR
-        if: success()
+        # No PR to comment on for a manual workflow_dispatch run - the
+        # deployment plan + this step's info live in the run summary instead.
+        if: success() && github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -743,3 +898,21 @@ jobs:
 
             This environment is destroyed automatically when the PR is closed
             (see pr-preview-destroy.yml), or on the next push to this PR.
+
+      - name: Write connection info to summary
+        if: success() && github.event_name == 'workflow_dispatch'
+        run: |
+          {
+            echo "### :rocket: e2e preview environment deployed"
+            echo
+            echo "Namespace \`${NAMESPACE}\` on zws-dev."
+            echo
+            echo "Connect:"
+            echo '```bash'
+            echo "tailscale configure kubeconfig ${TAILSCALE_HOSTNAME}"
+            echo "kubectl get pods -n ${NAMESPACE}"
+            echo '```'
+            echo
+            echo "This environment is **not** tied to a PR, so it is only destroyed"
+            echo "manually - see pr-preview-destroy.yml or clean up the namespace directly."
+          } >> "$GITHUB_STEP_SUMMARY"

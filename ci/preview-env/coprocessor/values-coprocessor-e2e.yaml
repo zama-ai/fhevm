@@ -44,8 +44,11 @@ commonConfig:
       valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: ciphertext_commits.address}}
     gatewayConfig:
       valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: gateway_config.address}}
-    multichainAcl:
-      valueFrom: {configMapKeyRef: {name: gw-sc-addresses, key: multichain_acl.address}}
+    # multichainAcl intentionally omitted: task:deployAllGatewayContracts (see
+    # ../gateway-chain/values-gateway-contracts-e2e.yaml) doesn't deploy a
+    # MultichainAcl contract at this contracts version, so gw-sc-addresses has
+    # no multichain_acl.address key - confirmed via `kubectl get configmap`.
+    # txSender.disabledArgs below drops the corresponding legacy CLI arg.
 
 # Image tags below are placeholders - pr-preview-deploy.yml overrides
 # every one of them via --set-string with the real per-PR short-SHA tag
@@ -57,6 +60,11 @@ hostListenerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
 hostListenerPollerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+  # This image version requires an explicit start block when no poller state
+  # exists yet for the chain (fresh e2e namespace every run) - confirmed via
+  # the pod's own "no poller state for this chain and no --seed-start-block"
+  # error. 0 = genesis, correct for anvil's freshly-mined chain.
+  extraArgs: ["--seed-start-block=0"]
 hostListenerCatchupOnlyShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
 hostListenerConsumerShared:
@@ -73,10 +81,26 @@ zkProofWorker:
   enabled: true
   replicas: 1
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/zkproof-worker, tag: latest}
+  # --pg-listen-channel/--pg-notify-channel aren't chart-templated (see
+  # charts/coprocessor/values.yaml's zkProofWorker.extraArgs comment) - the
+  # binary refuses to start without them ("required arguments were not
+  # provided"). Channel names match test-suite/fhevm/docker-compose's
+  # coprocessor-docker-compose.yml reference topology.
+  extraArgs:
+    - --pg-listen-channel=event_zkpok_new_work
+    - --pg-notify-channel=event_zkpok_computed
 snsWorker:
   enabled: true
   replicas: 1
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/sns-worker, tag: latest}
+  # Same as zkProofWorker.extraArgs above - required, not chart-templated.
+  # --pg-listen-channels takes multiple positional values.
+  extraArgs:
+    - --pg-listen-channels
+    - event_pbs_computations
+    - event_ciphertext_computed
+    - --pg-notify-channel
+    - event_ciphertext128_computed
 txSender:
   enabled: true
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/tx-sender, tag: latest}
@@ -84,6 +108,12 @@ txSender:
   # accounts, so any unused index works; picked one not already used as a
   # placeholder identity elsewhere.
   wallet: {secret: {value: "0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e"}}
+  # --multichain-acl-address is legacy v0.11-only (see charts/coprocessor/
+  # values.yaml's txSender.disabledArgs comment) and would reference a
+  # nonexistent gw-sc-addresses key at this contracts version (see
+  # commonConfig.gatewayContractAddresses above) - caused
+  # CreateContainerConfigError without this.
+  disabledArgs: ["multichain-acl-address"]
 
 chains:
   - name: host

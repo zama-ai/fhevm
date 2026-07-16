@@ -14,6 +14,13 @@
 #     -n <namespace> -f this-file
 fullnameOverride: relayer
 
+# See values-relayer-migrate-e2e.yaml's header note: this generic `common`
+# chart needs imagePullSecrets set explicitly (unlike coprocessor/
+# kms-connector's own charts, which hardcode it) to pull private
+# hub.zama.org/ghcr/zama-ai/* images.
+imagePullSecrets:
+  - name: registry-credentials
+
 image:
   repository: hub.zama.org/ghcr/zama-ai/fhevm/relayer
   tag: latest
