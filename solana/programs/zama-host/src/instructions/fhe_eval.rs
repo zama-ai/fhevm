@@ -490,15 +490,24 @@ fn bind_eval_output<'info>(
     if output_info.owner == &crate::ID {
         // Supersede: the plan's previous_* fields must match the stored state
         // exactly, so indexers can reconstruct the appended MMR leaves from
-        // instruction data alone.
+        // instruction data alone. `output_subjects` may rotate the audience.
         let mut value = read_canonical_encrypted_value(output_info)?;
         validate_durable_output_previous_state(
             &value,
-            output_subjects,
             previous_handle,
             previous_subjects,
         )?;
+        check_rotation_grants_not_denied(
+            &ctx.accounts.host_config,
+            ctx.remaining_accounts,
+            Some(remaining_accounts_used),
+            &value.subjects,
+            output_subjects,
+        )?;
         supersede_current_handle(output_info, &mut value, result)?;
+        // Seal the outgoing audience into historical leaves first (above), then rotate
+        // to the new set — every added subject cleared the deny-list check above.
+        value.subjects = output_subjects.iter().map(|entry| entry.pubkey).collect();
         // Born-public opt-in: after the outgoing handle's historical leaves, seal a
         // public-decrypt leaf for the NEW current handle (leaf order: historical(old)
         // per subject FIRST, then public(new) LAST). Same commitment as
@@ -551,13 +560,15 @@ fn bind_eval_output<'info>(
     Ok(output_info.key())
 }
 
-/// Shared create-or-supersede plan validation against an existing lineage.
-/// Membership is immutable through eval binding: the plan's subject pubkeys
-/// must equal the stored subjects (membership is extended only via
-/// `allow_subjects`).
+/// Supersede plan validation against an existing lineage. The plan's
+/// `previous_handle`/`previous_subjects` must equal the stored state exactly, so
+/// indexers reconstruct the appended MMR leaves from instruction data alone. The
+/// audience (`output_subjects`) is NOT constrained to the stored set: a supersede
+/// may explicitly rotate it — the outgoing audience is sealed into historical
+/// leaves before the new set replaces it, and every added subject passes the
+/// grant deny-list via [`check_rotation_grants_not_denied`].
 pub(super) fn validate_durable_output_previous_state(
     value: &EncryptedValue,
-    output_subjects: &[AclSubjectEntry],
     previous_handle: &Option<[u8; 32]>,
     previous_subjects: &Option<Vec<Pubkey>>,
 ) -> Result<()> {
@@ -569,14 +580,37 @@ pub(super) fn validate_durable_output_previous_state(
         previous_subjects.as_deref() == Some(value.subjects.as_slice()),
         ZamaHostError::PreviousStateMismatch
     );
-    require!(
-        output_subjects.len() == value.subjects.len()
-            && output_subjects
-                .iter()
-                .zip(value.subjects.iter())
-                .all(|(planned, stored)| planned.pubkey == *stored),
-        ZamaHostError::PreviousStateMismatch
-    );
+    Ok(())
+}
+
+/// Deny-list gate for a supersede that rotates the audience. Every subject present
+/// in `output_subjects` but absent from the stored set is a new grant and must
+/// clear the grant deny-list exactly as `allow_subjects` gates added subjects, so
+/// rotation cannot bypass the deny list. Respects `grant_deny_list_enabled` and
+/// (via the shared helpers) pause-independent deny semantics; the deny record for
+/// each added subject is located in `remaining_accounts` by canonical address.
+pub(super) fn check_rotation_grants_not_denied<'info>(
+    host_config: &HostConfig,
+    remaining_accounts: &[AccountInfo<'info>],
+    mut remaining_accounts_used: Option<&mut [bool]>,
+    stored_subjects: &[Pubkey],
+    output_subjects: &[AclSubjectEntry],
+) -> Result<()> {
+    if !host_config.grant_deny_list_enabled {
+        return Ok(());
+    }
+    for entry in output_subjects {
+        if stored_subjects.contains(&entry.pubkey) {
+            continue;
+        }
+        let deny_record = deny_subject_record_for(
+            host_config,
+            remaining_accounts,
+            remaining_accounts_used.as_deref_mut(),
+            entry.pubkey,
+        )?;
+        check_grant_not_denied_info(host_config, entry.pubkey, deny_record)?;
+    }
     Ok(())
 }
 
@@ -610,6 +644,25 @@ mod tests {
         }
     }
 
+    fn deny_enabled_config() -> HostConfig {
+        HostConfig {
+            admin: Pubkey::default(),
+            chain_id: 0,
+            gateway_chain_id: 0,
+            input_verification_contract: [0; 20],
+            coprocessor_signer: [0; 20],
+            decryption_contract: [0; 20],
+            current_kms_context_id: 0,
+            paused: false,
+            grant_deny_list_enabled: true,
+            max_hcu_per_tx: 0,
+            max_hcu_depth_per_tx: 0,
+            hcu_block_cap_per_app: u64::MAX,
+            updated_slot: 0,
+            bump: 0,
+        }
+    }
+
     fn grants(subjects: &[Pubkey]) -> Vec<AclSubjectEntry> {
         subjects
             .iter()
@@ -618,26 +671,20 @@ mod tests {
     }
 
     #[test]
-    fn durable_output_previous_state_accepts_exact_match() {
+    fn durable_output_previous_state_accepts_exact_previous_match() {
         let subjects = vec![Pubkey::new_unique(), Pubkey::new_unique()];
         let value = lineage([9; 32], &subjects);
-        assert!(validate_durable_output_previous_state(
-            &value,
-            &grants(&subjects),
-            &Some([9; 32]),
-            &Some(subjects),
-        )
-        .is_ok());
+        assert!(validate_durable_output_previous_state(&value, &Some([9; 32]), &Some(subjects),)
+            .is_ok());
     }
 
     #[test]
-    fn durable_output_previous_state_rejects_mismatches() {
+    fn durable_output_previous_state_rejects_previous_mismatch() {
         let subjects = vec![Pubkey::new_unique()];
         let value = lineage([9; 32], &subjects);
         // Wrong previous handle.
         assert!(validate_durable_output_previous_state(
             &value,
-            &grants(&subjects),
             &Some([8; 32]),
             &Some(subjects.clone()),
         )
@@ -645,23 +692,67 @@ mod tests {
         // Wrong previous subjects.
         assert!(validate_durable_output_previous_state(
             &value,
-            &grants(&subjects),
             &Some([9; 32]),
             &Some(vec![Pubkey::new_unique()]),
         )
         .is_err());
         // Missing previous_* on an existing lineage (create shape on supersede).
+        assert!(validate_durable_output_previous_state(&value, &None, &None).is_err());
+    }
+
+    #[test]
+    fn durable_output_previous_state_ignores_output_audience() {
+        // Validation pins only the outgoing state (previous_handle/previous_subjects); it no
+        // longer constrains the new audience, so a supersede may rotate `output_subjects`.
+        let subjects = vec![Pubkey::new_unique()];
+        let value = lineage([9; 32], &subjects);
         assert!(
-            validate_durable_output_previous_state(&value, &grants(&subjects), &None, &None)
-                .is_err()
+            validate_durable_output_previous_state(&value, &Some([9; 32]), &Some(subjects)).is_ok()
         );
-        // Planned output subjects diverge from stored membership.
-        assert!(validate_durable_output_previous_state(
-            &value,
-            &grants(&[Pubkey::new_unique()]),
-            &Some([9; 32]),
-            &Some(subjects),
-        )
-        .is_err());
+    }
+
+    #[test]
+    fn assert_output_acl_metadata_rejects_empty_and_over_cap_rotations() {
+        let app_account = Pubkey::new_unique();
+        // Empty rotated set is rejected, mirroring remove_subject's last-subject rule.
+        assert!(assert_output_acl_metadata(app_account, app_account, &[]).is_err());
+        // A rotated set above MAX_ACL_SUBJECTS (8) is rejected.
+        let over_cap = grants(
+            &(0..=zama_solana_acl::MAX_ENCRYPTED_VALUE_SUBJECTS)
+                .map(|_| Pubkey::new_unique())
+                .collect::<Vec<_>>(),
+        );
+        assert!(assert_output_acl_metadata(app_account, app_account, &over_cap).is_err());
+    }
+
+    #[test]
+    fn rotation_added_denied_subject_is_rejected() {
+        let stored = vec![Pubkey::new_unique()];
+        let added = Pubkey::new_unique();
+        let rotated = grants(&[stored[0], added]);
+        let (record_key, bump) = deny_subject_address(added);
+
+        let mut lamports = 1_000_000u64;
+        let mut data = vec![0u8; 8 + crate::state::DenySubjectRecord::SPACE];
+        crate::state::DenySubjectRecord {
+            subject: added,
+            denied: true,
+            bump,
+        }
+        .try_serialize(&mut &mut data[..])
+        .unwrap();
+        let owner = crate::ID;
+        let record =
+            AccountInfo::new(&record_key, false, false, &mut lamports, &mut data, &owner, false);
+        let remaining = [record];
+
+        let config = deny_enabled_config();
+
+        // A stored subject that stays put needs no record; only `added` is checked, and it is denied.
+        assert_eq!(
+            check_rotation_grants_not_denied(&config, &remaining, None, &stored, &rotated)
+                .unwrap_err(),
+            error!(ZamaHostError::AclSubjectDenied)
+        );
     }
 }

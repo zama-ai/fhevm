@@ -68,6 +68,7 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
     #[allow(clippy::too_many_arguments)]
     fn admit_durable_output_account(
         &mut self,
+        host_config: &crate::state::HostConfig,
         remaining_accounts: &[AccountInfo],
         output_encrypted_value_index: u16,
         output_acl_domain_key: Pubkey,
@@ -104,9 +105,15 @@ impl<'a, 'info> AdmissionState<'a, 'info> {
             let value = read_canonical_encrypted_value(output_info)?;
             super::validate_durable_output_previous_state(
                 &value,
-                output_subjects,
                 previous_handle,
                 previous_subjects,
+            )?;
+            super::check_rotation_grants_not_denied(
+                host_config,
+                remaining_accounts,
+                None,
+                &value.subjects,
+                output_subjects,
             )?;
         } else {
             require!(
@@ -197,6 +204,7 @@ impl EvalStepVisitor for AdmissionState<'_, '_> {
                     output_subjects,
                 )?;
                 self.admit_durable_output_account(
+                    &ctx.accounts.host_config,
                     ctx.remaining_accounts,
                     *output_encrypted_value_index,
                     *output_acl_domain_key,

@@ -443,11 +443,12 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
     for seeds in &extra_output_authority_seeds {
         signer_seed_vec.push(seeds.as_slice());
     }
-    validate_deny_subject_records_for_output_authorities(
+    validate_deny_subject_records_for_grant_subjects(
         request.context.host_config.grant_deny_list_enabled,
         request.context.deny_subject_records,
         app_authority.key(),
         &extra_output_authorities,
+        &request.plan.rotation_added_subjects(),
     )?;
 
     zama_fhe::invoke_eval_signed_resolved(
@@ -470,11 +471,12 @@ pub(crate) fn eval<'info>(request: Eval<'_, 'info>) -> Result<()> {
     Ok(())
 }
 
-fn validate_deny_subject_records_for_output_authorities<'info>(
+fn validate_deny_subject_records_for_grant_subjects<'info>(
     deny_list_enabled: bool,
     supplied_records: &[AccountInfo<'info>],
     app_authority: Pubkey,
     extra_output_authorities: &[OutputAuthority<'info>],
+    rotation_added_subjects: &[Pubkey],
 ) -> Result<()> {
     if !deny_list_enabled {
         require!(
@@ -491,11 +493,17 @@ fn validate_deny_subject_records_for_output_authorities<'info>(
                 .any(|later| later.key() == supplied.key()),
             ConfidentialTokenError::UnexpectedRemainingAccounts
         );
+        // A supplied deny record must witness either an output authority or a subject a
+        // supersede grants for the first time (rotation-added) — the host deny-list-checks
+        // both, so both may reach it through remaining accounts.
         require!(
             is_deny_record_for_authority(supplied.key(), app_authority)
                 || extra_output_authorities
                     .iter()
-                    .any(|authority| is_deny_record_for_authority(supplied.key(), authority.key())),
+                    .any(|authority| is_deny_record_for_authority(supplied.key(), authority.key()))
+                || rotation_added_subjects
+                    .iter()
+                    .any(|subject| is_deny_record_for_authority(supplied.key(), *subject)),
             ConfidentialTokenError::UnexpectedRemainingAccounts
         );
     }

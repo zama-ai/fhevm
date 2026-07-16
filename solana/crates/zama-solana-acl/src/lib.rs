@@ -51,9 +51,11 @@ pub enum AclError {
 
 /// Current authorization state and compact history for one encrypted-value lineage.
 ///
-/// One account per lineage, reused across every handle update. `peaks`/`subjects`
-/// grow with use (the on-chain account is `realloc`-grown), so a current-only
-/// lineage (`leaf_count == 0`) stays tiny and pays nothing for history.
+/// One account per lineage, reused across every handle update. The on-chain
+/// account is `realloc`-grown and never shrunk, so its byte size tracks the
+/// high-water mark of `peaks` plus `subjects` (`subjects` may rotate rather than
+/// only grow); a current-only lineage (`leaf_count == 0`) stays tiny and pays
+/// nothing for history.
 #[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct EncryptedValue {
     /// App-level ACL domain, such as a confidential token mint.

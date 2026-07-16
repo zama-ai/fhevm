@@ -339,7 +339,9 @@ pub enum FheEvalOutput {
         /// Encrypted value label for the output lineage.
         output_encrypted_value_label: [u8; 32],
         /// Subjects on the output lineage. On create these are the initial
-        /// subjects; on supersede they must equal the stored subjects exactly.
+        /// subjects; on supersede they become the new audience, which may rotate
+        /// away from the stored set (the outgoing audience is sealed into
+        /// historical leaves first; added subjects pass the grant deny-list).
         output_subjects: Vec<AclSubjectEntry>,
         /// Superseded handle: `None` on create, `Some(current_handle)` on update.
         /// Carried in instruction data so indexers can reconstruct the appended

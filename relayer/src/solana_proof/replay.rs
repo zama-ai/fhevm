@@ -182,13 +182,14 @@ pub fn apply_instruction(
                 .as_mut()
                 .ok_or(ReplayError::UnknownLineage(*encrypted_value))?;
             validate_previous_state(state, *encrypted_value, *previous_handle, previous_subjects)?;
-            if state.subjects.as_slice() != output_subjects.as_slice() {
-                return Err(ReplayError::PreviousStateMismatch(*encrypted_value));
-            }
+            // The outgoing audience (`state.subjects`) is sealed into historical leaves first,
+            // then the audience rotates to `output_subjects` — matching the on-chain order, where
+            // a supersede may explicitly rotate the subject set.
             let mut events = vec![LineageEvent::handle_superseded(
                 *previous_handle,
                 &state.subjects,
             )];
+            state.subjects = output_subjects.clone();
             match make_public_handle {
                 Some(handle) => {
                     state.current_handle = Some(*handle);
@@ -349,6 +350,100 @@ mod tests {
             vec![
                 historical_access_leaf_commitment(ev, 0, pk(0x10), owner),
                 historical_access_leaf_commitment(ev, 1, pk(0x10), spender),
+            ]
+        );
+    }
+
+    #[test]
+    fn fhe_eval_supersession_rotates_subjects_and_seals_the_outgoing_audience() {
+        let ev = pk(0x07);
+        let owner = pk(0x30);
+        let old_recipient = pk(0x31);
+        let new_recipient = pk(0x32);
+        let create = DecodedInstruction::CreateEncryptedValue {
+            encrypted_value: ev,
+            handle: pk(0x10),
+            subjects: vec![
+                SubjectGrant { subject: owner },
+                SubjectGrant {
+                    subject: old_recipient,
+                },
+            ],
+        };
+        let rotate = DecodedInstruction::FheEvalUpdateEncryptedValue {
+            encrypted_value: ev,
+            previous_handle: pk(0x10),
+            previous_subjects: vec![owner, old_recipient],
+            output_subjects: vec![owner, new_recipient],
+            make_public_handle: None,
+        };
+
+        let (state, events) = replay(&[create, rotate]).unwrap();
+
+        // The outgoing audience (owner, old_recipient) is sealed into historical leaves.
+        assert_eq!(
+            events,
+            vec![LineageEvent::handle_superseded(pk(0x10), &[owner, old_recipient])]
+        );
+        // Current membership rotated to the new audience.
+        assert_eq!(state.unwrap().subjects, vec![owner, new_recipient]);
+        let reconstructed = reconstruct(ev, &events).unwrap();
+        assert_eq!(
+            reconstructed.leaves,
+            vec![
+                historical_access_leaf_commitment(ev, 0, pk(0x10), owner),
+                historical_access_leaf_commitment(ev, 1, pk(0x10), old_recipient),
+            ]
+        );
+    }
+
+    #[test]
+    fn fhe_eval_supersession_rotates_subjects_and_marks_public_in_one_output() {
+        let ev = pk(0x08);
+        let owner = pk(0x30);
+        let old_recipient = pk(0x31);
+        let new_recipient = pk(0x32);
+        let public_handle = pk(0x50);
+        let create = DecodedInstruction::CreateEncryptedValue {
+            encrypted_value: ev,
+            handle: pk(0x10),
+            subjects: vec![
+                SubjectGrant { subject: owner },
+                SubjectGrant {
+                    subject: old_recipient,
+                },
+            ],
+        };
+        let rotate_public = DecodedInstruction::FheEvalUpdateEncryptedValue {
+            encrypted_value: ev,
+            previous_handle: pk(0x10),
+            previous_subjects: vec![owner, old_recipient],
+            output_subjects: vec![owner, new_recipient],
+            make_public_handle: Some(public_handle),
+        };
+
+        let (state, events) = replay(&[create, rotate_public]).unwrap();
+
+        // Outgoing audience sealed first, then the born-public leaf for the new handle.
+        assert_eq!(
+            events,
+            vec![
+                LineageEvent::handle_superseded(pk(0x10), &[owner, old_recipient]),
+                LineageEvent::MarkedPublic {
+                    handle: public_handle
+                },
+            ]
+        );
+        let state = state.unwrap();
+        assert_eq!(state.subjects, vec![owner, new_recipient]);
+        assert_eq!(state.current_handle, Some(public_handle));
+        let reconstructed = reconstruct(ev, &events).unwrap();
+        assert_eq!(
+            reconstructed.leaves,
+            vec![
+                historical_access_leaf_commitment(ev, 0, pk(0x10), owner),
+                historical_access_leaf_commitment(ev, 1, pk(0x10), old_recipient),
+                public_decrypt_leaf_commitment(ev, 2, public_handle),
             ]
         );
     }

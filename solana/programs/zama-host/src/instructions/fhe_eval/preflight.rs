@@ -225,11 +225,25 @@ fn preflight_output(output: &FheEvalOutput, preflight: &mut EvalPreflight<'_, '_
         FheEvalOutput::AllowedDurable {
             output_encrypted_value_index,
             output_app_account_authority_index,
+            output_subjects,
+            previous_subjects,
             ..
         } => {
             preflight.mark_account(*output_encrypted_value_index)?;
             let authority = preflight.mark_output_authority(*output_app_account_authority_index)?;
             preflight.mark_deny_record(authority)?;
+            // A supersede that rotates the audience deny-checks each added subject in the bind
+            // pass; mark their deny records here so finish() accounts for them. The added set is
+            // `output_subjects \ previous_subjects` from instruction data alone — a lying
+            // previous_subjects is rejected later with PreviousStateMismatch, so trusting it for
+            // account-marking is safe. `None` previous is a create (no rotation, nothing added).
+            if let Some(previous_subjects) = previous_subjects {
+                for subject in output_subjects {
+                    if !previous_subjects.contains(&subject.pubkey) {
+                        preflight.mark_deny_record(subject.pubkey)?;
+                    }
+                }
+            }
         }
     }
     Ok(())
