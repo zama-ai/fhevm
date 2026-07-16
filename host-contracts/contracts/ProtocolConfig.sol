@@ -524,11 +524,10 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         //   Pending/Created) is settled by destroyKmsContext() instead, which clears its paired
         //   epoch itself.
         EpochState state = $.epochState[epochId];
-        if (state == EpochState.Pending) {
-            if ($.contextState[$.contextForEpoch[epochId]] != ContextState.Active) {
-                revert InvalidKmsEpoch(epochId);
-            }
-        } else if (state != EpochState.Active) {
+        bool isEpochActive = state == EpochState.Active;
+        bool isEpochPendingUnderActiveContext = state == EpochState.Pending &&
+            $.contextState[$.contextForEpoch[epochId]] == ContextState.Active;
+        if (!isEpochActive && !isEpochPendingUnderActiveContext) {
             revert InvalidKmsEpoch(epochId);
         }
 
