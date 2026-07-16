@@ -8,10 +8,8 @@ import { getCurrentKmsContextAndEpoch } from './getCurrentKmsContextAndEpoch-p.j
 import { getHostContractVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import {
   assertIsKmsExtraData,
-  createKmsExtraData,
   createKmsExtraDataV1,
   createKmsExtraDataV2,
-  equalsKmsExtraData,
   EXTRA_DATA_V0,
   fromKmsExtraDataBytesHex,
   isKmsExtraDataCompatibleWithKmsVerifier,
@@ -297,152 +295,13 @@ async function _readKmsSignersContextFromExtraData_Protocol_14_or_higher(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type ReconcileMode = 'exact' | 'strict' | 'loose';
-
-/**
- * Reconciles the KMS signers context used by the SDK with the one the relayer
- * actually used when forwarding the decryption request to KMS nodes.
- *
- * The returned {@link KmsSignersContext} provides the signers and threshold
- * needed to verify the KMS signcrypted shares and reconstruct the decrypted values.
- *
- * ### Assumptions
- *
- * - The relayer **cannot be trusted**.
- * - On-chain data is the **source of truth**.
- *
- * ### Nomenclature
- *
- * - `requestedKmsExtraData` — `createKmsExtraData({ kmsContextId, kmsEpochId })`
- *   derived from `requestedKmsSignersContext`.
- * - `relayerKmsExtraData` — `fromKmsExtraDataBytesHex(relayerKmsExtraDataBytesHex)`
- *   (its `.kmsContextId` / `.kmsEpochId`).
- *
- * ### Host-Contract Compatibility
- *
- * `extraData` is versioned independently from the host-contract package. The
- * currently supported combinations are:
- *
- * - host-contracts v11 support `extraData` v0.
- * - host-contracts v12 and v13 support `extraData` v0 and v1.
- * - host-contracts v14 support `extraData` v0, v1, and v2.
- *
- * ### Resolution (checked in order, then by `mode`)
- *
- * 1. `relayerKmsExtraData` equals `requestedKmsExtraData` → return
- *    `requestedKmsSignersContext`. This is the **only** path that trusts cached
- *    data, and it applies in every mode.
- * 2. Otherwise, in `'exact'` mode → **throw**. This mode never parses, refreshes,
- *    or reconciles differing `extraData`.
- * 3. `extraData` serialization version mismatch → **throw** (`'strict'`/`'loose'`).
- *    The SDK and relayer must agree on the encoding format, even for the same context ID.
- * 4. Versions match but context/epoch differ → force a **full on-chain refetch**
- *    (cached data is never reused, since a mismatch means on-chain state may have
- *    diverged: rotation, destruction, signer/epoch changes). The accept criterion
- *    then depends on `mode`:
- *    - `'strict'` → accept **only** if the relayer's context equals the *current*
- *      on-chain context (both `kmsContextId` and `kmsEpochId`); otherwise throw.
- *    - `'loose'` → accept **any** on-chain-valid context (non-destroyed, in range),
- *      current or not; throw only if destroyed / out of range.
- *
- * ### Modes
- *
- * - `'exact'` — Accept only step 1 (`extraData` equality). Rejects any
- *   relayer/context drift without parsing or on-chain recovery.
- * - `'strict'` — Accept step 1, or a relayer context whose `kmsContextId` **and**
- *   `kmsEpochId` equal the current on-chain values. Rejects valid-but-not-current
- *   contexts. The epoch check is required because RFC 005 introduces same-context
- *   epoch rotations (new shares, same party set) — a stale epoch must be rejected
- *   even when the context ID matches.
- * - `'loose'` — Accept any on-chain valid context (non-destroyed, in range),
- *   regardless of whether it is current. Covers context rotations in either direction.
- */
-export async function reconcileKmsSignersContextNotOK(
-  context: Context,
-  parameters: {
-    readonly kmsVerifierAddress: ChecksummedAddress;
-    readonly protocolConfigAddress: ChecksummedAddress | undefined;
-    readonly requestedKmsSignersContext: KmsSignersContext;
-    readonly relayerKmsExtraDataBytesHex: BytesHex;
-    readonly mode: ReconcileMode;
-  },
-): Promise<KmsSignersContext> {
-  const { kmsVerifierAddress, protocolConfigAddress, requestedKmsSignersContext, relayerKmsExtraDataBytesHex, mode } =
-    parameters;
-
-  const relayerKmsExtraData = fromKmsExtraDataBytesHex(relayerKmsExtraDataBytesHex);
-
-  assertIsKmsSignersContext(requestedKmsSignersContext, {});
-
-  const requestedKmsExtraData = createKmsExtraData({
-    kmsContextId: requestedKmsSignersContext.id,
-    kmsEpochId: requestedKmsSignersContext.epochId,
-  });
-
-  // 1. Exact match — the relayer used the same context as the SDK.
-  if (equalsKmsExtraData(relayerKmsExtraData, requestedKmsExtraData)) {
-    return requestedKmsSignersContext;
-  }
-
-  if (mode === 'exact') {
-    throw new Error(
-      `Exact reconciliation failed: relayer extraData ${relayerKmsExtraData.toBytesHex()} ` +
-        `does not match requested extraData ${requestedKmsExtraData.toBytesHex()}.`,
-    );
-  }
-
-  // Reject if extraData serialization version differs.
-  if (relayerKmsExtraData.version !== 0 && relayerKmsExtraData.version !== requestedKmsExtraData.version) {
-    throw new Error(
-      `ExtraData serialization version mismatch: SDK uses v${requestedKmsExtraData.version}, ` +
-        `relayer returned v${relayerKmsExtraData.version}. ` +
-        `The SDK and relayer must agree on the extraData encoding format.`,
-    );
-  }
-
-  // Versions match but context IDs differ — verify the relayer's context on-chain.
-  const relayerKmsContextId = relayerKmsExtraData.kmsContextId;
-  const relayerKmsEpochId = relayerKmsExtraData.kmsEpochId;
-
-  // 2. In strict mode, only accept if the relayer used the current on-chain context.
-  if (mode === 'strict') {
-    // `readCurrentKmsSignersContext` with `forceRefresh` fetches the current context.
-    // If `relayerKmsContextId` matches current, we're good.
-    const currentContext = await readCurrentKmsSignersContext(context, {
-      kmsVerifierAddress,
-      protocolConfigAddress,
-      forceRefresh: true,
-    });
-
-    if (currentContext.id !== relayerKmsContextId || currentContext.epochId !== relayerKmsEpochId) {
-      throw new Error(
-        `Strict reconciliation failed: relayer used context ${relayerKmsContextId}, ` +
-          `but the current on-chain context is ${currentContext.id}.`,
-      );
-    }
-
-    return currentContext;
-  }
-
-  // 3. Loose mode — accept any valid (non-destroyed, in-range) context.
-  //    `readKmsSignersContextFromExtraData` with `forceRefresh` + specific `kmsContextId`/`kmsEpochId` will
-  //    throw if the context is destroyed or out of range.
-  return readKmsSignersContextFromExtraData(context, {
-    kmsVerifierAddress,
-    protocolConfigAddress,
-    forceRefresh: true,
-    extraData: relayerKmsExtraData,
-  });
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 /**
  * Reconciles the KMS signers context the SDK anchored on the **signed permit**
  * with the context the relayer/KMS actually used, and returns the signer set the
  * signcrypted shares must be verified against.
  *
- * This is the corrected replacement for {@link reconcileKmsSignersContext}: it has
+ * This replaced the earlier mode-based (`'exact' | 'strict' | 'loose'`)
+ * reconciliation: it has
  * no `mode`, and it mirrors the on-chain gateway `Decryption.sol` rule
  * (`_extractContextId(request) == _extractContextId(response)`, then context-scoped
  * signer verification). The SDK re-checks it here because the relayer is untrusted
