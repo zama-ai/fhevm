@@ -232,6 +232,7 @@ const applyDiscoveryEnv = (
     APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
   });
+  applySolanaProofServiceEnv(envs, state, chains);
   updateContracts(envs["test-suite"], {
     GATEWAY_CONFIG_ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
     DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
@@ -246,6 +247,26 @@ const applyDiscoveryEnv = (
     LZ_ENDPOINT_ADDRESS: primaryHost.LZ_ENDPOINT_ADDRESS,
   });
   envs["test-suite"].BRIDGE_REAL_LZ = chains.some((chain) => realLzEndpointFor(chain.key)) ? "true" : "";
+};
+
+/** Yellowstone gRPC port published by the host-native geyser plugin (setup-solana-side). */
+const SOLANA_YELLOWSTONE_GRPC_PORT = 10000;
+
+/**
+ * Points the standalone solana-proof-service at the Solana host's program id + host-reachable
+ * validator RPC / Yellowstone. No-op for EVM-only topologies.
+ */
+const applySolanaProofServiceEnv = (
+  envs: Record<string, Record<string, string>>,
+  state: Pick<State, "discovery">,
+  chains: ReturnType<typeof hostChainRuntimes>,
+) => {
+  const solana = chains.find((chain) => chain.type === "solana");
+  const proofEnv = envs["solana-proof-service"];
+  if (!solana || !proofEnv) return;
+  proofEnv.SOLANA_PROOF__SOLANA__PROGRAM_ID = solanaProgramId(state.discovery, solana.key);
+  proofEnv.SOLANA_PROOF__SOLANA__RPC_URL = solanaValidatorUrl(solana);
+  proofEnv.SOLANA_PROOF__YELLOWSTONE__GRPC_URL = `http://host.docker.internal:${SOLANA_YELLOWSTONE_GRPC_PORT}`;
 };
 
 export type KmsParty = { party: number; endpoint: string; privateKey: string; dbName: string };

@@ -11,7 +11,7 @@ Every decrypt authorizes through exactly one of these, and each has dedicated co
 | Path | On-chain check | Where tested |
 |---|---|---|
 | **current** | `handle == current_handle && subject ∈ subjects` (no proof) | `zama-solana-acl` unit (`authorize_current`); `host_mollusk` current-decrypt cases |
-| **historical** | MMR proof of `HistoricalAccessLeaf(handle, subject)` vs live peaks | `zama-solana-acl` (`authorize_historical`, `mmr_verify`); `host_mollusk` supersede-then-prove; relayer `solana_proof` reconstruction |
+| **historical** | MMR proof of `HistoricalAccessLeaf(handle, subject)` vs live peaks | `zama-solana-acl` (`authorize_historical`, `mmr_verify`); `host_mollusk` supersede-then-prove; `solana-proof-service` reconstruction |
 | **public** | MMR proof of `PublicDecryptLeaf(handle)` vs live peaks | `zama-solana-acl` (`authorize_public`); `token_mollusk` burn→redeem and `disclose_secp` after-supersession; `host_mollusk` `verify_public_decrypt` negatives (DD-040) |
 
 Negative coverage for each: wrong subject, wrong handle, foreign-lineage proof, invalid/forged proof —
@@ -42,7 +42,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
     `solana-grpc`, which includes reconstruction): reconstructs MMR leaves from instruction data +
     sysvar-streamed block entropy (Yellowstone gRPC), with no dependence on emitted events. Derives
     supersede/produced-public handles directly; fails closed on incomplete plans.
-5. **Off-chain proof service — relayer** (`relayer/src/solana_proof`): ingest (atomic, gap-free,
+5. **Off-chain proof service — solana-proof-service** (`solana-proof-service/`): ingest (atomic, gap-free,
    fail-closed), decode (incl. `emit_cpi!` op-event resolution for born-public handles), replay, and
    `build_verified_proof` cross-check against confirmed peaks (a wrong record surfaces as
    `PeaksDiverged`/`CorruptCache`, never a bad proof).
@@ -53,7 +53,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    path feeds ordinary computation facts through Yellowstone gRPC reconstruction while retaining only
    the narrow produced-public lifecycle batch required by the relayer
    reconstruction. It drives the **decrypt vertical** against a local validator + full coprocessor/KMS
-   stack — compute → public-decrypt (relayer MMR proof) → user-decrypt (current) → historical-user-decrypt
+   stack — compute → public-decrypt (solana-proof-service MMR proof) → user-decrypt (current) → historical-user-decrypt
    (superseded handle + live MMR proof) — exercising all three authorization paths. Operator execution
    is intentionally representative rather than exhaustive: the live vertical retains one example for
    encrypted/encrypted and encrypted/scalar binary wiring, unary type conversion, ternary selection,
@@ -81,9 +81,9 @@ wall-clock exhaustion also depends on batch load and processing time; there is n
 fork-retry loop. Deterministic mismatches remain fail-closed, but the classification distinguishes
 them from ordinary proof-ahead catch-up in logs.
 
-A persistent relayer `corrupt_cache` response means the file-backed proof cache disagrees with the
+A persistent proof-service `corrupt_cache` response means the store snapshot disagrees with the
 confirmed on-chain peaks after targeted catch-up. Recovery is operational, not an authorization
-fallback: stop the relayer, remove the JSON file configured by `solana_proof.leaf_store_path`, and
+fallback: stop `solana-proof-service`, reset its Postgres volume / DB, and
 restart it so the cache is replayed from the configured `start_signature` (or from the oldest retained
 program signature when absent). Until replay catches up, proof requests fail closed; the KMS never
 trusts the cache without re-verifying the proof against live chain state.

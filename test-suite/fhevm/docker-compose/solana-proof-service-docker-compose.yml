@@ -1,0 +1,39 @@
+services:
+  solana-proof-db:
+    container_name: fhevm-solana-proof-db
+    platform: linux/amd64
+    image: postgres:17
+    environment:
+      POSTGRES_DB: solana_proof_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5434:5432"
+    volumes:
+      - solana_proof_postgres_data:/var/lib/postgresql/data
+
+  solana-proof-service:
+    container_name: fhevm-solana-proof-service
+    platform: linux/amd64
+    image: ${SOLANA_PROOF_SERVICE_IMAGE_REPOSITORY:-solana-proof-service}:${SOLANA_PROOF_SERVICE_VERSION:-local}
+    build:
+      context: ../../..
+      dockerfile: solana-proof-service/Dockerfile
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/solana-proof-service.env
+    ports:
+      - "8088:8088"
+    # Reaches the host-native validator RPC (:8899) and Yellowstone gRPC (:10000).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      solana-proof-db:
+        condition: service_healthy
+
+volumes:
+  solana_proof_postgres_data:

@@ -84,8 +84,8 @@ PY
 
 # 2. Clean rebuild of the whole EVM stack with the Solana code baked in from bootstrap.
 #    The `solana` scenario declares the RFC-021 Solana host alongside the default EVM host, so
-#    fhevm-cli generates the Solana relayer + kms-connector config itself (the solana-side bring-up
-#    below no longer patches those — single config writer).
+#    fhevm-cli generates the Solana relayer + kms-connector config and boots solana-proof-service
+#    (the solana-side bring-up below no longer patches those — single config writer).
 ( cd "$FHEVM" && ./fhevm-cli up \
     --scenario solana \
     --lock-file "$LOCK" \

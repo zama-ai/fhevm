@@ -77,7 +77,7 @@ this note records the operational model in one place.
   material was requested when the handle was created, while KMS reads the live ACL at release time.
 - Materiality is not Solana host state. DD-031 moved ciphertext material commitments to the gateway
   `CiphertextCommits`; Solana ACL state answers only who may use or decrypt a handle.
-- The relayer-colocated MMR proof service is an untrusted helper (DD-035). The end-to-end decrypt flow
+- The standalone `solana-proof-service` is an untrusted helper (DD-035). The end-to-end decrypt flow
   fetches historical and public MMR proofs from this service (`GET /internal/solana/mmr-proof`); the
   KMS re-verifies each proof against confirmed on-chain peaks before releasing plaintext. One case is
   still built by the test client rather than the service: the amount burned during an unwrap, whose
@@ -174,13 +174,13 @@ sequenceDiagram
 flowchart TD
     prog["zama-host fhe_eval"] -->|"emit_cpi! (≤8-event frames only;<br/>no emit! log fallback)"| ev["op-event (self-CPI inner ix):<br/>carries the block-entropy output handle"]
     prog -->|"instruction data (args)"| ix["fhe_eval durable-output / make_public args"]
-    ev --> relayer["relayer proof service (RPC polling today):<br/>resolves born-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
+    ev --> relayer["solana-proof-service (Yellowstone + Postgres):<br/>resolves born-public handle from op-event,<br/>reconstructs MMR, cross-checks vs confirmed peaks"]
     ix --> listener["host-listener indexer:<br/>Yellowstone gRPC reconstruction-only<br/>(SlotHashes+Clock sysvar streams → block entropy;<br/>never reads events)"]
     relayer -.->|"migrate to Carbon/Geyser,<br/>then drop op-event ABI"| followup["fhevm-internal#1665"]
 ```
 
 Ingestion is Yellowstone-only: the host-listener always rebuilds events from instruction data and never
-consumes emitted events. `emit_cpi!` is kept for one reason — the relayer proof service reads it over
+consumes emitted events. `emit_cpi!` is kept for one reason — the proof service / host-listener path reads it over
 RPC to recover the handles of values made public at creation (those handles come from block randomness
 and appear in no instruction argument). Both the on-chain events and the now-unused emit-decode listener
 code are removed once Carbon indexing lands (fhevm-internal#1665, #1676).
@@ -214,7 +214,7 @@ to a follow-up.
 - DD-032: introduced stable `EncryptedValue` lineages, single allowed-subject ACL, and MMR leaves.
 - DD-033: lifecycle instructions emit no events; indexers replay instruction data.
 - DD-034: Solana compute is scheduled eagerly (`is_allowed` is a scheduling gate, not decrypt auth).
-- DD-035: proof building is relayer-colocated and untrusted; KMS re-verifies proofs against confirmed
+- DD-035: proof building is a standalone untrusted service; KMS re-verifies proofs against confirmed
   chain state.
 - DD-036: burn-redemption consume authorizes by MMR public-decrypt proof (born-public delta), not the
   live handle — closes the Vector-2 fund-stranding window.

@@ -51,12 +51,12 @@ run_public_decrypt_with_proof() {
   local acl="$3"
   local expected_leaf_count="${4:-}"
   local expected_leaf_index="${5:-}"
-  # The e2e sources MMR proofs from the running relayer proof service. The client retries a transient
-  # `503 lagging` internally (re-invoking here would be unsafe for stateful steps).
+  # The e2e sources MMR proofs from the standalone solana-proof-service. The client retries a
+  # transient `503 lagging` internally (re-invoking here would be unsafe for stateful steps).
   local proof
   proof="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
     PUBLIC_DECRYPT_PROOF=1 PUB_HANDLE="$handle" PUB_ACL="$acl" \
-    RELAYER_URL=http://127.0.0.1:3000 \
+    PROOF_SERVICE_URL=http://127.0.0.1:8088 \
     ./target/debug/poc-live-client 2>&1)" \
     || fail "$label public proof: $proof"
   echo "$proof" | grep -E 'PUB H|PUB mmrProofBytes' >/dev/null || fail "$label public proof missing fields: $proof"
@@ -211,7 +211,7 @@ done
 # here; the client retries a transient `503 lagging` internally, so this is not re-invoked on lag.
 hist_proof="$(cd "$ROOT/solana/scripts/e2e/live-client" && \
   HISTORICAL_STEP=supersede TE_VALUE="$VALUE" \
-  RELAYER_URL=http://127.0.0.1:3000 \
+  PROOF_SERVICE_URL=http://127.0.0.1:8088 \
   ./target/debug/poc-live-client 2>&1)" || fail "historical supersede/proof command failed: $hist_proof"
 echo "$hist_proof" | grep -E 'HIST H_new|HIST mmrProofBytes' || fail "historical supersede/proof: $hist_proof"
 HIST_H_OLD2="$(hist_field "$hist_proof" H_old)"

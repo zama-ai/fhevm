@@ -1165,7 +1165,7 @@ record alive. The `previous_handle`/`previous_subjects` args on durable `fhe_eva
 verified against account state — redundant on-chain, but they make every transaction independently
 interpretable, so indexers reconstruct MMR leaves statelessly from instruction data alone (see DD-033).
 The shared `zama_solana_acl` crate (byte-identical MMR math and account codec) is the single source of
-truth used by `zama-host`, the relayer proof service (DD-035), and the KMS connector, so host↔KMS
+truth used by `zama-host`, the solana-proof-service (DD-035), and the KMS connector, so host↔KMS
 lockstep is type-level rather than a convention both sides have to keep in sync by hand.
 
 No "RFC-024 option F" or similarly labeled alternatives-considered note was found in the commit history
@@ -1208,7 +1208,7 @@ Decision:
 State-changing `EncryptedValue` lifecycle paths (`fhe_eval` durable outputs, `allow_subjects`, and
 `make_handle_public`) emit no ACL lifecycle Anchor events by design. The host-listener reconstructs
 compute and material requests from confirmed Yellowstone transaction instructions plus streamed
-Clock/SlotHashes state. The relayer's MMR proof service decodes lifecycle changes from instruction data —
+Clock/SlotHashes state. The solana-proof-service decodes lifecycle changes from instruction data —
 including inner/CPI instructions, since confidential-token and other app programs invoke them via CPI
 — rather than subscribing to emitted ACL events. Durable `fhe_eval` outputs carry
 `previous_handle`/`previous_subjects` args that are self-describing: verified against account state
@@ -1221,7 +1221,7 @@ Rationale:
 
 `DESIGN_DECISIONS.md` (DD-004 context) already notes that plain `emit!` logs can be truncated and
 Anchor `emit_cpi!` adds nested CPI frames; avoiding events for a lifecycle that must survive CPI and be
-replayed byte-for-byte from cold RPC history (the relayer proof service ingests from
+replayed byte-for-byte from cold RPC history (the solana-proof-service recovers from
 `getSignaturesForAddress`/`getTransaction` alone, see DD-035) sidesteps both concerns for this
 particular subsystem. No further code-comment rationale beyond this was found for the CPI-depth angle
 specifically; `EVM_PARITY.md` separately notes `fhe_eval`'s own step batching is bounded partly to
@@ -1231,7 +1231,7 @@ Consequences:
 
 The coprocessor produces handle-only material requests and inserts them directly into
 `pbs_computations`; it does not derive authorization from instruction names or maintain allow reasons.
-The host-listener's `solana_reconstruct.rs` decode arms and the relayer's `solana_proof::decode` module
+The host-listener's `solana_reconstruct.rs` decode arms and the `solana-proof-service` store decode path
 parse raw instruction data (Anchor discriminators + borsh args) instead of dispatching on ACL events.
 
 ## DD-034: Eager Compute Scheduling For Solana (Q11 Option A)
@@ -1273,27 +1273,25 @@ between the chain and the KMS connector.
 
 Decision:
 
-Colocate the proof-builder with the relayer (`relayer/src/solana_proof`) rather than making it its own
-service or putting it in the KMS connector. It ingests the four `zama-host` `EncryptedValue`
-instructions by replaying plain RPC (`getSignaturesForAddress` + `getTransaction`, inner instructions
-included) using ingestion/proof logic layered on the same `zama_solana_acl` crate `zama-host` uses
-(DD-032), and exposes an interim internal HTTP endpoint (`GET /internal/solana/mmr-proof`) until the
-Solana user-decrypt path lands and can call `build_proof` in-process instead.
+Serve proofs from the standalone `solana-proof-service` workspace (Yellowstone completed-block
+ingest + PostgreSQL store + `GET /internal/solana/mmr-proof`) rather than colocating leaf ownership
+inside the relayer. The service stays in the same trust class the relayer already occupies —
+availability-critical, but never an authorization anchor. The KMS connector re-verifies every proof
+against live confirmed on-chain peaks (DD-032), so a bad or compromised proof service can only cause
+a decrypt to fail, never to wrongly authorize one. Proof building cross-checks reconstructed peaks
+against the live confirmed account and fails closed on divergence (`lagging` / `corrupt_cache`).
 
-Rationale (verbatim from the commit message): this service is in the same trust class as the relayer
-already occupies — availability-critical, but never an authorization anchor. The KMS connector
-re-verifies every proof against live confirmed on-chain peaks (DD-032), so a bad or compromised proof
-service can only cause a decrypt to fail, never to wrongly authorize one. Proof building cross-checks
-its reconstructed peaks against the live confirmed account and triggers targeted catch-up ingestion on
-divergence before refusing a proof, rather than trusting its own replay blindly.
+Rationale: extracting MMR ownership keeps the relayer focused on the Solana v3 decrypt envelope
+(ed25519 attestation, `0x03` extraData validation, gateway forwarding) while the proof service owns
+durable ingest/recovery. Clients discover proofs over the internal HTTP endpoint and embed them in
+signed user-decrypt requests.
 
 Consequences:
 
-The relayer's own Solana user-decrypt flow does **not** yet call this proof service in-process — that
-integration is a known gap; today it is reachable only over the interim internal HTTP endpoint, and
-only once a deployment's `solana_proof` config section is present (`relayer/src/http/server.rs` mounts
-it conditionally). The `FileLeafStore` backing it is a rebuildable cache: safe to delete, since a full
-RPC re-replay reconstructs it from `start_signature`/`start_slot`.
+The relayer no longer mounts `/internal/solana/mmr-proof` and has no leaf/checkpoint/proof DB. Solana
+user-decrypt still does **not** call the proof service in-process — clients (e2e live-client /
+test-suite vertical) fetch proofs via `PROOF_SERVICE_URL` before submitting to `/v3/user-decrypt`.
+That optional in-process integration remains a known product gap.
 
 ## DD-036: Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle
 
@@ -1407,7 +1405,7 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   remains the plaintext-release boundary.
 - `fhe_eval` supports `RandBounded`; the superseded standalone bounded-random instructions were
   removed with the old model (DD-032).
-- The relayer's own Solana user-decrypt path does not yet call the MMR proof service in-process
+- The relayer's Solana user-decrypt path does not call the MMR proof service in-process
   (DD-035) — only the interim internal HTTP endpoint exists today. When it lands, the user-decrypt
   dedup hash must also cover the proof fields (`acl_value_key`, `proof_slot`, proof bytes).
 - Proof-service high availability (DD-035): a single relayer-colocated instance with a file-backed
@@ -1445,7 +1443,7 @@ indexing ABI until the relayer migrates to a Geyser datasource (fhevm-internal#1
 
 Rationale:
 
-No consumer reads `emit!` logs: the relayer proof builder reads only inner-instruction `emit_cpi!`
+No consumer reads `emit!` logs: the proof service / host-listener path reads only inner-instruction `emit_cpi!`
 results, and a `> 8`-step born-public frame already failed closed (its handle was unresolvable). So
 the log fallback was dead weight that also hid a latent stranding case; deleting it and adding the
 fail-closed frame guard turns "silently unrecoverable later" into "rejected now." Non-born-public

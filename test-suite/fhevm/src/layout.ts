@@ -113,7 +113,19 @@ export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
 export const DEFAULT_POSTGRES_PASSWORD = "postgres";
 export const DEFAULT_POSTGRES_DB = "coprocessor";
-export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, MINIO_PORT, 9001];
+export const PORTS = [
+  3000,
+  3001,
+  POSTGRES_PORT,
+  5433,
+  5434,
+  8088,
+  DEFAULT_HOST_RPC_PORT,
+  DEFAULT_GATEWAY_RPC_PORT,
+  DEFAULT_EXTRA_HOST_RPC_PORT,
+  MINIO_PORT,
+  9001,
+];
 export const MINIO_INTERNAL_URL = `http://minio:${MINIO_PORT}`;
 export const MINIO_EXTERNAL_URL = `http://localhost:${MINIO_PORT}`;
 export const POSTGRES_HOST = `db:${POSTGRES_PORT}`;
@@ -145,6 +157,7 @@ export const COMPONENTS = [
   "coprocessor",
   "kms-connector",
   "relayer",
+  "solana-proof-service",
   "test-suite",
 ] as const;
 
@@ -164,7 +177,7 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "coprocessor": ["coprocessor"],
   "kms-connector": ["kms-connector"],
   "bootstrap": ["gateway-sc", "host-sc"],
-  "relayer": ["relayer"],
+  "relayer": ["relayer", "solana-proof-service"],
   "test-suite": ["test-suite"],
 };
 
