@@ -9,7 +9,7 @@
 //! keyed by its own `chain_id` in S3:
 //!
 //!   * **host chain** — for each finalized, fully-computed, *non-trivial* block
-//!     in `(start_block, end_block]` (one carrying a real FHE op, not only
+//!     in `[start_block, end_block]` (one carrying a real FHE op, not only
 //!     `trivialEncrypt`), poll every operator's per-block state-hash blob.
 //!   * **Gateway inputs** — likewise for each sealed Gateway block carrying
 //!     re-randomized ZK-proof input ciphertexts.
@@ -28,7 +28,7 @@
 //! authorizes cutover once BOTH tracks have anchored. A timeout/abort path is
 //! intentionally not implemented yet.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -224,6 +224,14 @@ fn all_some_and_identical(slots: &[Option<Vec<u8>>]) -> bool {
     iter.all(|s| matches!(s, Some(b) if b == first))
 }
 
+/// True iff every operator has responded (no `None` slots). Distinguishes
+/// "every operator answered but they disagree" (an upgrade-blocking divergence)
+/// from "still waiting for a slow operator" — the two look identical to
+/// [`all_some_and_identical`], which returns false for both.
+fn all_slots_filled(slots: &[Option<Vec<u8>>]) -> bool {
+    !slots.is_empty() && slots.iter().all(Option::is_some)
+}
+
 /// Returns `(start_block, end_block)` for the GCS dry-run when it's active.
 /// `None` otherwise. Scoped to `stack_role = 'GCS'` because BCS also stays
 /// `status='in_progress'` during the upgrade and doesn't own the replay window.
@@ -257,6 +265,10 @@ struct ConsensusTrack {
     chain_id: i64,
     anchor_emitted: bool,
     partial: HashMap<i64, Vec<Option<Vec<u8>>>>,
+    /// Blocks we've already logged a divergence warning for. State hashes are
+    /// deterministic per block, so a divergence is permanent — warn once per
+    /// block instead of re-warning on every poll tick.
+    divergence_warned: HashSet<i64>,
 }
 
 impl ConsensusTrack {
@@ -265,6 +277,7 @@ impl ConsensusTrack {
             chain_id,
             anchor_emitted: false,
             partial: HashMap::new(),
+            divergence_warned: HashSet::new(),
         }
     }
 
@@ -272,6 +285,7 @@ impl ConsensusTrack {
     fn reset(&mut self) {
         self.anchor_emitted = false;
         self.partial.clear();
+        self.divergence_warned.clear();
     }
 }
 
@@ -322,11 +336,25 @@ async fn poll_track(
             track.partial.clear();
             return Ok(());
         }
+        // Every operator responded but their state hashes disagree — the exact
+        // determinism divergence the dry run exists to catch. Without this the
+        // block stays a non-anchor forever and a stuck upgrade is
+        // indistinguishable from one still waiting on a slow operator. Warn once
+        // per block (divergence is permanent) and keep polling other candidates.
+        if all_slots_filled(slots) && track.divergence_warned.insert(block) {
+            warn!(
+                chain_id = track.chain_id,
+                block,
+                operator_count = urls.len(),
+                "state-hash divergence — all operators responded but hashes disagree; \
+                 this block cannot anchor consensus"
+            );
+        }
     }
     Ok(())
 }
 
-/// Host-chain blocks eligible to anchor consensus: those in `(start, end]` that
+/// Host-chain blocks eligible to anchor consensus: those in `[start, end]` that
 /// have a locally produced `state_hash` (⇒ finalized + fully computed, per the
 /// state_hash worker) AND carry at least one non-trivial, successful FHE op
 /// (`fhe_operation <> trivialEncrypt`). Trivial-only / empty blocks are excluded
@@ -342,7 +370,7 @@ async fn host_consensus_candidates(
         "SELECT sh.block_number
            FROM {GCS_SCHEMA_QUOTED}.state_hash sh
           WHERE sh.chain_id = $1
-            AND sh.block_number > $2 AND sh.block_number <= $3
+            AND sh.block_number >= $2 AND sh.block_number <= $3
             AND EXISTS (
                 SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations c
                  WHERE c.host_chain_id = sh.chain_id
@@ -719,5 +747,21 @@ mod tests {
     fn all_some_and_identical_rejects_partial() {
         let v = vec![Some(vec![1, 2, 3]), None, Some(vec![1, 2, 3])];
         assert!(!all_some_and_identical(&v));
+    }
+
+    #[test]
+    fn all_slots_filled_distinguishes_divergence_from_waiting() {
+        // Every operator responded but hashes differ → filled (divergence).
+        let divergent = vec![Some(vec![1, 2, 3]), Some(vec![9, 9, 9])];
+        assert!(all_slots_filled(&divergent));
+        assert!(!all_some_and_identical(&divergent));
+
+        // Still waiting on an operator → not filled.
+        let waiting = vec![Some(vec![1, 2, 3]), None];
+        assert!(!all_slots_filled(&waiting));
+
+        // Empty slot set → not filled.
+        let empty: Vec<Option<Vec<u8>>> = vec![];
+        assert!(!all_slots_filled(&empty));
     }
 }
