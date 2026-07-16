@@ -9,8 +9,8 @@ import type { ChecksummedAddress, TypedValue } from '../types/primitives.js';
 import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } from '../types/relayer.js';
 import type { SignedDecryptionPermit } from '../types/signedDecryptionPermit.js';
 import type { TransportKeyPair } from './TransportKeyPair-p.js';
-import { isSemverStrictlyBefore } from '../base/semver.js';
 import { getResolvedProtocolVersion } from '../runtime/CoreFhevm-p.js';
+import { shouldUseUserDecryptV2 } from '../runtime/userDecryptFlowVersion-p.js';
 import { decryptKmsSigncryptedShares } from './decryptKmsSigncryptedShares-p.js';
 import { fetchKmsSigncryptedSharesV1 } from './fetchKmsSigncryptedSharesV1-p.js';
 import { fetchKmsSigncryptedSharesV2 } from './fetchKmsSigncryptedSharesV2-p.js';
@@ -54,7 +54,7 @@ export async function decryptValuesFromPairs(fhevm: Context, parameters: Paramet
   }
 
   let kmsSigncryptedShares: KmsSigncryptedShares;
-  if (isSemverStrictlyBefore(protocolVersion.version, '0.14.0')) {
+  if (!shouldUseUserDecryptV2(protocolVersion)) {
     kmsSigncryptedShares = await fetchKmsSigncryptedSharesV1(fhevm, parameters);
   } else {
     kmsSigncryptedShares = await fetchKmsSigncryptedSharesV2(fhevm, {

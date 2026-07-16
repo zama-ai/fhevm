@@ -6,7 +6,7 @@ import type {
   RelayerClientWithRuntime,
 } from '../types.js';
 import { getResolvedProtocolVersion } from '../../../runtime/CoreFhevm-p.js';
-import { isSemverStrictlyBefore } from '../../../base/semver.js';
+import { shouldUseUserDecryptV2 } from '../../../runtime/userDecryptFlowVersion-p.js';
 import { fetchUserDecryptV1 } from './fetchUserDecryptV1.js';
 import { fetchUserDecryptV2 } from './fetchUserDecryptV2.js';
 
@@ -25,7 +25,7 @@ export async function fetchUserDecrypt(
     );
   }
 
-  if (isSemverStrictlyBefore(protocolVersion.version, '0.14.0')) {
+  if (!shouldUseUserDecryptV2(protocolVersion)) {
     return await fetchUserDecryptV1(relayerClient, parameters as FetchUserDecryptParametersV1);
   }
 

@@ -7,7 +7,7 @@ import type { NativeSigner } from '../modules/ethereum/types.js';
 import type { TransportKeyPair } from './TransportKeyPair-p.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { getResolvedProtocolVersion } from '../runtime/CoreFhevm-p.js';
-import { isSemverStrictlyBefore } from '../base/semver.js';
+import { shouldUseUserDecryptV2 } from '../runtime/userDecryptFlowVersion-p.js';
 import {
   isSignedDecryptionPermitV1,
   parseSignedDecryptionPermitV1,
@@ -135,7 +135,7 @@ export async function signDecryptionPermit(
     );
   }
 
-  if (isSemverStrictlyBefore(protocolVersion.version, '0.14.0')) {
+  if (!shouldUseUserDecryptV2(protocolVersion)) {
     return await signDecryptionPermitV1(context, parameters);
   }
 
