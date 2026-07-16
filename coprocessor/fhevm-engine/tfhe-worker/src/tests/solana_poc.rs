@@ -95,6 +95,8 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
 
     let block = SolanaBlockMeta {
         block_number: 1,
+        block_hash: [1; 32],
+        parent_hash: [0; 32],
         block_timestamp: PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 11)?,
             Time::MIDNIGHT,

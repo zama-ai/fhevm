@@ -53,6 +53,8 @@ pub enum SolanaMappedEvent {
 pub struct SolanaBlockMeta {
     pub block_number: u64,
     pub block_timestamp: time::PrimitiveDateTime,
+    pub block_hash: [u8; 32],
+    pub parent_hash: [u8; 32],
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -191,18 +193,9 @@ pub async fn insert_solana_events(
 
     // Populate the dependence_chain scheduling table the tfhe-worker locks against; without
     // it the inserted computations are never scheduled (the EVM ingest path likewise calls
-    // update_dependence_chain after inserting tfhe events). Solana host slots carry no
-    // EVM-style block hash, so derive a unique per-slot hash from the slot number — it is used
-    // only for reorg bookkeeping, which a single local validator never exercises.
+    // update_dependence_chain after inserting tfhe events).
     if inserted_compute {
-        let mut block_hash = [0u8; 32];
-        block_hash[24..32].copy_from_slice(&block.block_number.to_be_bytes());
-        let block_summary = BlockSummary {
-            number: block.block_number,
-            hash: FixedBytes::<32>::from(block_hash),
-            parent_hash: FixedBytes::<32>::ZERO,
-            timestamp: 0,
-        };
+        let block_summary = solana_block_summary(block);
         db.update_dependence_chain(
             tx,
             chains,
@@ -218,6 +211,15 @@ pub async fn insert_solana_events(
         material_requests: material_requests.len(),
         inserted_rows,
     })
+}
+
+fn solana_block_summary(block: SolanaBlockMeta) -> BlockSummary {
+    BlockSummary {
+        number: block.block_number,
+        hash: FixedBytes::<32>::from(block.block_hash),
+        parent_hash: FixedBytes::<32>::from(block.parent_hash),
+        timestamp: 0,
+    }
 }
 
 pub fn to_log_tfhe(
@@ -727,6 +729,24 @@ mod tests {
     }
 
     #[test]
+    fn dependence_chain_uses_validator_block_hashes() {
+        let block_timestamp = PrimitiveDateTime::new(
+            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
+            Time::MIDNIGHT,
+        );
+        let summary = solana_block_summary(SolanaBlockMeta {
+            block_number: 42,
+            block_timestamp,
+            block_hash: [7; 32],
+            parent_hash: [6; 32],
+        });
+
+        assert_eq!(summary.number, 42);
+        assert_eq!(summary.hash, FixedBytes::<32>::from([7; 32]));
+        assert_eq!(summary.parent_hash, FixedBytes::<32>::from([6; 32]));
+    }
+
+    #[test]
     fn builds_existing_db_log_shape() {
         let tx_id = solana_transaction_id(&[1_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
@@ -749,6 +769,8 @@ mod tests {
             SolanaBlockMeta {
                 block_number: 42,
                 block_timestamp,
+                block_hash: [1; 32],
+                parent_hash: [0; 32],
             },
             true,
             7,
@@ -788,6 +810,8 @@ mod tests {
             SolanaBlockMeta {
                 block_number: 42,
                 block_timestamp,
+                block_hash: [1; 32],
+                parent_hash: [0; 32],
             },
         );
 
@@ -817,6 +841,8 @@ mod tests {
             SolanaBlockMeta {
                 block_number: 42,
                 block_timestamp,
+                block_hash: [1; 32],
+                parent_hash: [0; 32],
             },
         );
 
@@ -854,6 +880,8 @@ mod tests {
             SolanaBlockMeta {
                 block_number: 42,
                 block_timestamp,
+                block_hash: [1; 32],
+                parent_hash: [0; 32],
             },
         );
 
@@ -903,6 +931,8 @@ mod tests {
             SolanaBlockMeta {
                 block_number: 42,
                 block_timestamp,
+                block_hash: [1; 32],
+                parent_hash: [0; 32],
             },
         );
 
