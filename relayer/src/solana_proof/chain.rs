@@ -245,14 +245,14 @@ fn decode_transaction_result(
     signature: &str,
     parsed: GetTransactionResult,
 ) -> Result<ChainTransaction, ChainError> {
-    if parsed.meta.as_ref().and_then(|m| m.err.as_ref()).is_some() {
+    let meta = parsed
+        .meta
+        .as_ref()
+        .ok_or_else(|| ChainError::Rpc("transaction metadata is missing".to_string()))?;
+    if meta.err.is_some() {
         // This guard deliberately precedes account-key and instruction decoding:
         // failed transactions committed no state and must contribute no leaves.
-        return Ok(ChainTransaction {
-            signature: signature.to_string(),
-            slot: parsed.slot,
-            instructions: Vec::new(),
-        });
+        return Err(ChainError::Rpc("transaction failed".to_string()));
     }
     let static_keys: Vec<[u8; 32]> = parsed
         .transaction
@@ -261,26 +261,23 @@ fn decode_transaction_result(
         .iter()
         .map(|s| base58_to_32(s))
         .collect::<Result<_, _>>()?;
-    let (loaded_writable_keys, loaded_readonly_keys) = if let Some(loaded) = parsed
-        .meta
-        .as_ref()
-        .and_then(|m| m.loaded_addresses.as_ref())
-    {
-        (
-            loaded
-                .writable
-                .iter()
-                .map(|address| base58_to_32(address))
-                .collect::<Result<Vec<_>, _>>()?,
-            loaded
-                .readonly
-                .iter()
-                .map(|address| base58_to_32(address))
-                .collect::<Result<Vec<_>, _>>()?,
-        )
-    } else {
-        (Vec::new(), Vec::new())
-    };
+    let (loaded_writable_keys, loaded_readonly_keys) =
+        if let Some(loaded) = meta.loaded_addresses.as_ref() {
+            (
+                loaded
+                    .writable
+                    .iter()
+                    .map(|address| base58_to_32(address))
+                    .collect::<Result<Vec<_>, _>>()?,
+                loaded
+                    .readonly
+                    .iter()
+                    .map(|address| base58_to_32(address))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
+        } else {
+            (Vec::new(), Vec::new())
+        };
     let top_level = parsed
         .transaction
         .message
@@ -288,26 +285,20 @@ fn decode_transaction_result(
         .iter()
         .map(|instruction| canonical_instruction(instruction, false))
         .collect::<Result<Vec<_>, _>>()?;
-    let inner_groups = parsed
-        .meta
-        .as_ref()
-        .map(|meta| {
-            meta.inner_instructions
-                .iter()
-                .map(|group| {
-                    Ok(CanonicalInnerInstructionGroup {
-                        top_level_index: group.index,
-                        instructions: group
-                            .instructions
-                            .iter()
-                            .map(|instruction| canonical_instruction(instruction, true))
-                            .collect::<Result<Vec<_>, ChainError>>()?,
-                    })
-                })
-                .collect::<Result<Vec<_>, ChainError>>()
+    let inner_groups = meta
+        .inner_instructions
+        .iter()
+        .map(|group| {
+            Ok(CanonicalInnerInstructionGroup {
+                top_level_index: group.index,
+                instructions: group
+                    .instructions
+                    .iter()
+                    .map(|instruction| canonical_instruction(instruction, true))
+                    .collect::<Result<Vec<_>, ChainError>>()?,
+            })
         })
-        .transpose()?
-        .unwrap_or_default();
+        .collect::<Result<Vec<_>, ChainError>>()?;
     let instructions = zama_solana_transaction::resolve_transaction(
         &static_keys,
         &loaded_writable_keys,
@@ -487,8 +478,8 @@ mod tests {
     }
 
     use shared_fixtures::{
-        base58_encode as fixture_base58_encode, transaction_decoding_fixtures, ExpectedInstruction,
-        ExpectedOutcome,
+        base58_encode as fixture_base58_encode, fixture_key, transaction_decoding_fixtures,
+        ExpectedInstruction, ExpectedOutcome,
     };
 
     #[test]
@@ -536,7 +527,7 @@ mod tests {
                         "accountKeys": fixture
                             .static_account_tags
                             .iter()
-                            .map(|tag| fixture_base58_encode(&[*tag; 32]))
+                            .map(|tag| fixture_base58_encode(&fixture_key(*tag)))
                             .collect::<Vec<_>>(),
                         "instructions": top_level,
                     }
@@ -548,12 +539,12 @@ mod tests {
                         "writable": fixture
                             .loaded_writable_account_tags
                             .iter()
-                            .map(|tag| fixture_base58_encode(&[*tag; 32]))
+                            .map(|tag| fixture_base58_encode(&fixture_key(*tag)))
                             .collect::<Vec<_>>(),
                         "readonly": fixture
                             .loaded_readonly_account_tags
                             .iter()
-                            .map(|tag| fixture_base58_encode(&[*tag; 32]))
+                            .map(|tag| fixture_base58_encode(&fixture_key(*tag)))
                             .collect::<Vec<_>>(),
                     }
                 }
@@ -566,18 +557,20 @@ mod tests {
                         .unwrap_or_else(|error| panic!("{}: {error}", fixture.name))
                         .into_iter()
                         .map(|instruction| ExpectedInstruction {
-                            program_tag: instruction.program_id[0],
-                            account_tags: instruction
-                                .accounts
-                                .iter()
-                                .map(|account| account[0])
-                                .collect(),
+                            program: instruction.program_id,
+                            accounts: instruction.accounts,
                             data: instruction.data,
                             top_level_index: instruction.top_level_index as u32,
-                            is_inner: instruction.stack_height != Some(1),
+                            stack_height: instruction
+                                .stack_height
+                                .expect("resolved instruction has stack height"),
                         })
                         .collect();
-                    assert_eq!(actual, *instructions, "{}", fixture.name);
+                    let expected = instructions
+                        .iter()
+                        .map(|instruction| instruction.resolve())
+                        .collect::<Vec<_>>();
+                    assert_eq!(actual, expected, "{}", fixture.name);
                 }
                 ExpectedOutcome::Reject => {
                     assert!(decoded.is_err(), "{}", fixture.name);
@@ -638,9 +631,27 @@ mod tests {
             }
         });
 
-        let transaction = decode_transaction_value("failed", result).unwrap();
+        let error = decode_transaction_value("failed", result)
+            .expect_err("failed transactions must be rejected");
 
-        assert!(transaction.instructions.is_empty());
-        assert_eq!(transaction.slot, 42);
+        assert!(error.to_string().contains("transaction failed"));
+    }
+
+    #[test]
+    fn missing_transaction_meta_is_rejected_before_instruction_decoding() {
+        let result = json!({
+            "slot": 42,
+            "transaction": { "message": {
+                // Deliberately malformed: decoding this key would fail.
+                "accountKeys": ["not-base58!"],
+                "instructions": []
+            }},
+            "meta": null
+        });
+
+        let error = decode_transaction_value("missing-meta", result)
+            .expect_err("transactions without metadata must be rejected");
+
+        assert!(error.to_string().contains("metadata is missing"));
     }
 }

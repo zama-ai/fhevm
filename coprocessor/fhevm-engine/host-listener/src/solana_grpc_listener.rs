@@ -272,6 +272,28 @@ fn decode_transaction_instructions(
     message: &TransactionMessage,
     meta: &TransactionStatusMeta,
 ) -> Result<Vec<crate::solana_reconstruct::DecodedInstruction>> {
+    resolve_transaction_instructions(message, meta)?
+        .into_iter()
+        .map(|instruction| {
+            Ok(crate::solana_reconstruct::DecodedInstruction {
+                program: bs58::encode(instruction.program_id).into_string(),
+                data: instruction.data,
+                accounts: instruction.accounts,
+                top_level_index: u32::try_from(instruction.top_level_index)
+                    .context("top-level instruction index exceeds u32")?,
+                is_inner: instruction.stack_height != 1,
+            })
+        })
+        .collect()
+}
+
+fn resolve_transaction_instructions(
+    message: &TransactionMessage,
+    meta: &TransactionStatusMeta,
+) -> Result<Vec<zama_solana_transaction::ResolvedInstruction>> {
+    if meta.err.is_some() {
+        anyhow::bail!("failed transaction cannot be decoded");
+    }
     let static_keys = validated_account_keys(&message.account_keys)?;
     let loaded_writable_keys =
         validated_account_keys(&meta.loaded_writable_addresses)?;
@@ -320,19 +342,7 @@ fn decode_transaction_instructions(
         top_level,
         inner_groups,
     )
-    .map_err(anyhow::Error::from)?
-    .into_iter()
-    .map(|instruction| {
-        Ok(crate::solana_reconstruct::DecodedInstruction {
-            program: bs58::encode(instruction.program_id).into_string(),
-            data: instruction.data,
-            accounts: instruction.accounts,
-            top_level_index: u32::try_from(instruction.top_level_index)
-                .context("top-level instruction index exceeds u32")?,
-            is_inner: instruction.stack_height != 1,
-        })
-    })
-    .collect()
+    .map_err(anyhow::Error::from)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -846,10 +856,10 @@ fn compute_result_handle(
 
 #[cfg(test)]
 mod account_resolution_tests {
-    use super::{decode_transaction_instructions, validated_account_keys};
+    use super::{resolve_transaction_instructions, validated_account_keys};
     use yellowstone_grpc_proto::prelude::{
         CompiledInstruction, InnerInstruction, InnerInstructions,
-        Message as TransactionMessage, TransactionStatusMeta,
+        Message as TransactionMessage, TransactionError, TransactionStatusMeta,
     };
 
     mod shared_fixtures {
@@ -860,17 +870,15 @@ mod account_resolution_tests {
     }
 
     use shared_fixtures::{
-        transaction_decoding_fixtures, ExpectedInstruction, ExpectedOutcome,
+        fixture_key, transaction_decoding_fixtures, ExpectedInstruction,
+        ExpectedOutcome,
     };
-
-    fn key(tag: u8) -> Vec<u8> {
-        vec![tag; 32]
-    }
 
     #[test]
     fn rejects_malformed_account_key_length() {
-        let err = validated_account_keys([&key(1), &vec![2; 31]])
-            .expect_err("short account keys must fail closed");
+        let err =
+            validated_account_keys([&fixture_key(1).to_vec(), &vec![2; 31]])
+                .expect_err("short account keys must fail closed");
 
         assert!(err.to_string().contains(
             "account key 1 has invalid length 31, expected 32 bytes"
@@ -912,7 +920,7 @@ mod account_resolution_tests {
                     .static_account_tags
                     .iter()
                     .copied()
-                    .map(key)
+                    .map(|tag| fixture_key(tag).to_vec())
                     .collect(),
                 instructions: top_level,
                 ..Default::default()
@@ -923,18 +931,18 @@ mod account_resolution_tests {
                     .loaded_writable_account_tags
                     .iter()
                     .copied()
-                    .map(key)
+                    .map(|tag| fixture_key(tag).to_vec())
                     .collect(),
                 loaded_readonly_addresses: fixture
                     .loaded_readonly_account_tags
                     .iter()
                     .copied()
-                    .map(key)
+                    .map(|tag| fixture_key(tag).to_vec())
                     .collect(),
                 ..Default::default()
             };
 
-            let decoded = decode_transaction_instructions(&message, &meta);
+            let decoded = resolve_transaction_instructions(&message, &meta);
             match &fixture.expected {
                 ExpectedOutcome::Accept { instructions } => {
                     let actual: Vec<ExpectedInstruction> = decoded
@@ -942,30 +950,45 @@ mod account_resolution_tests {
                             panic!("{}: {error}", fixture.name)
                         })
                         .into_iter()
-                        .map(|instruction| {
-                            let program = bs58::decode(instruction.program)
-                                .into_vec()
-                                .unwrap();
-                            ExpectedInstruction {
-                                program_tag: program[0],
-                                account_tags: instruction
-                                    .accounts
-                                    .iter()
-                                    .map(|account| account[0])
-                                    .collect(),
-                                data: instruction.data,
-                                top_level_index: instruction.top_level_index,
-                                is_inner: instruction.is_inner,
-                            }
+                        .map(|instruction| ExpectedInstruction {
+                            program: instruction.program_id,
+                            accounts: instruction.accounts,
+                            data: instruction.data,
+                            top_level_index: u32::try_from(
+                                instruction.top_level_index,
+                            )
+                            .unwrap(),
+                            stack_height: instruction.stack_height,
                         })
                         .collect();
-                    assert_eq!(actual, *instructions, "{}", fixture.name);
+                    let expected = instructions
+                        .iter()
+                        .map(|instruction| instruction.resolve())
+                        .collect::<Vec<_>>();
+                    assert_eq!(actual, expected, "{}", fixture.name);
                 }
                 ExpectedOutcome::Reject => {
                     assert!(decoded.is_err(), "{}", fixture.name);
                 }
             }
         }
+    }
+
+    #[test]
+    fn failed_transaction_is_rejected_before_instruction_decoding() {
+        let message = TransactionMessage {
+            account_keys: vec![vec![1; 31]],
+            ..Default::default()
+        };
+        let meta = TransactionStatusMeta {
+            err: Some(TransactionError { err: vec![1] }),
+            ..Default::default()
+        };
+
+        let err = resolve_transaction_instructions(&message, &meta)
+            .expect_err("failed transactions must be rejected");
+
+        assert!(err.to_string().contains("failed transaction"));
     }
 }
 
