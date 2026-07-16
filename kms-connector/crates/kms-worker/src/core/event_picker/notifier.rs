@@ -7,14 +7,15 @@ use connector_utils::types::db::{
     NEW_KMS_CONTEXT_NOTIFICATION, NEW_KMS_EPOCH_NOTIFICATION, PREP_KEYGEN_REQUEST_NOTIFICATION,
     PUBLIC_DECRYPT_REQUEST_NOTIFICATION, USER_DECRYPT_REQUEST_NOTIFICATION,
 };
+use futures::future::select_all;
 use sqlx::{Pool, Postgres, postgres::PgListener};
 use std::time::Duration;
 use tokio::{
     select,
     sync::mpsc::Sender,
-    time::{Instant, Interval, MissedTickBehavior, interval},
+    time::{Interval, MissedTickBehavior, interval},
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 pub struct DbEventNotifier {
     /// The entity collecting Postgres notifications.
@@ -96,44 +97,41 @@ impl DbEventNotifier {
         Ok(())
     }
 
-    pub async fn start(mut self) {
-        let db_fast_event_polling = self.db_fast_event_polling;
-        let db_long_event_polling = self.db_long_event_polling;
+    fn ticker(&self, kind: EventType) -> EventTicker {
+        let polling = match kind {
+            EventType::PublicDecryptionRequest => self.db_fast_event_polling,
+            EventType::UserDecryptionRequest => self.db_fast_event_polling,
+            EventType::PrepKeygenRequest => self.db_long_event_polling,
+            EventType::KeygenRequest => self.db_long_event_polling,
+            EventType::CrsgenRequest => self.db_long_event_polling,
+            EventType::AbortKeygenRequest => self.db_long_event_polling,
+            EventType::AbortCrsgenRequest => self.db_long_event_polling,
+            EventType::NewKmsContext => self.db_long_event_polling,
+            EventType::NewKmsEpoch => self.db_long_event_polling,
+            EventType::KmsContextDestroyed => self.db_long_event_polling,
+            EventType::KmsEpochDestroyed => self.db_long_event_polling,
+        };
+        EventTicker::new(polling, kind)
+    }
 
-        let mut public_decrypt_ticker =
-            EventTicker::new(db_fast_event_polling, EventType::PublicDecryptionRequest);
-        let mut user_decrypt_ticker =
-            EventTicker::new(db_fast_event_polling, EventType::UserDecryptionRequest);
-        let mut prep_keygen_ticker =
-            EventTicker::new(db_long_event_polling, EventType::PrepKeygenRequest);
-        let mut keygen_ticker = EventTicker::new(db_long_event_polling, EventType::KeygenRequest);
-        let mut crsgen_ticker = EventTicker::new(db_long_event_polling, EventType::CrsgenRequest);
-        let mut abort_keygen_ticker =
-            EventTicker::new(db_long_event_polling, EventType::AbortKeygenRequest);
-        let mut abort_crsgen_ticker =
-            EventTicker::new(db_long_event_polling, EventType::AbortCrsgenRequest);
-        let mut new_kms_context_ticker =
-            EventTicker::new(db_long_event_polling, EventType::NewKmsContext);
-        let mut new_kms_epoch_ticker =
-            EventTicker::new(db_long_event_polling, EventType::NewKmsEpoch);
-        let mut kms_context_destroyed_ticker =
-            EventTicker::new(db_long_event_polling, EventType::KmsContextDestroyed);
-        let mut kms_epoch_destroyed_ticker =
-            EventTicker::new(db_long_event_polling, EventType::KmsEpochDestroyed);
+    pub async fn start(mut self) {
+        let mut tickers = [
+            self.ticker(EventType::PublicDecryptionRequest),
+            self.ticker(EventType::UserDecryptionRequest),
+            self.ticker(EventType::PrepKeygenRequest),
+            self.ticker(EventType::KeygenRequest),
+            self.ticker(EventType::CrsgenRequest),
+            self.ticker(EventType::AbortKeygenRequest),
+            self.ticker(EventType::AbortCrsgenRequest),
+            self.ticker(EventType::NewKmsContext),
+            self.ticker(EventType::NewKmsEpoch),
+            self.ticker(EventType::KmsContextDestroyed),
+            self.ticker(EventType::KmsEpochDestroyed),
+        ];
 
         loop {
             let notification = select! {
-                _ = public_decrypt_ticker.tick() => public_decrypt_ticker.deliver(),
-                _ = user_decrypt_ticker.tick() => user_decrypt_ticker.deliver(),
-                _ = prep_keygen_ticker.tick() => prep_keygen_ticker.deliver(),
-                _ = keygen_ticker.tick() => keygen_ticker.deliver(),
-                _ = crsgen_ticker.tick() => crsgen_ticker.deliver(),
-                _ = abort_keygen_ticker.tick() => abort_keygen_ticker.deliver(),
-                _ = abort_crsgen_ticker.tick() => abort_crsgen_ticker.deliver(),
-                _ = new_kms_context_ticker.tick() => new_kms_context_ticker.deliver(),
-                _ = new_kms_epoch_ticker.tick() => new_kms_epoch_ticker.deliver(),
-                _ = kms_context_destroyed_ticker.tick() => kms_context_destroyed_ticker.deliver(),
-                _ = kms_epoch_destroyed_ticker.tick() => kms_epoch_destroyed_ticker.deliver(),
+                (kind, _idx, _rest) = select_all(tickers.iter_mut().map(|t| Box::pin(t.tick()))) => kind,
                 result = self.db_listener.recv() => match result.map(EventType::try_from) {
                     Ok(Ok(notif)) => {
                         info!("Received Postgres notification: {}", notif.pg_notification());
@@ -150,18 +148,10 @@ impl DbEventNotifier {
                 },
             };
 
-            match notification {
-                EventType::PublicDecryptionRequest => public_decrypt_ticker.reset(),
-                EventType::UserDecryptionRequest => user_decrypt_ticker.reset(),
-                EventType::PrepKeygenRequest => prep_keygen_ticker.reset(),
-                EventType::KeygenRequest => keygen_ticker.reset(),
-                EventType::CrsgenRequest => crsgen_ticker.reset(),
-                EventType::AbortKeygenRequest => abort_keygen_ticker.reset(),
-                EventType::AbortCrsgenRequest => abort_crsgen_ticker.reset(),
-                EventType::NewKmsContext => new_kms_context_ticker.reset(),
-                EventType::NewKmsEpoch => new_kms_epoch_ticker.reset(),
-                EventType::KmsContextDestroyed => kms_context_destroyed_ticker.reset(),
-                EventType::KmsEpochDestroyed => kms_epoch_destroyed_ticker.reset(),
+            if let Some(ticker) = tickers.iter_mut().find(|t| t.kind == notification) {
+                ticker.reset();
+            } else {
+                warn!("Notification from unknown event type: {notification:?}");
             }
 
             if self.notif_sender.send(notification).await.is_err() {
@@ -171,12 +161,12 @@ impl DbEventNotifier {
     }
 }
 
-/// Wrapper of `tokio::time::Interval` that can deliver `EventType` notification.
+/// Wrapper of `tokio::time::Interval` that ticks into an `EventType` notification.
 struct EventTicker {
     /// The interval at which to check for new responses.
     ticker: Interval,
 
-    /// The `EventType` kind of notification to deliver.
+    /// The `EventType` kind of notification this ticker represents.
     kind: EventType,
 }
 
@@ -191,16 +181,12 @@ impl EventTicker {
         Self { ticker, kind }
     }
 
-    pub async fn tick(&mut self) -> Instant {
-        self.ticker.tick().await
+    pub async fn tick(&mut self) -> EventType {
+        self.ticker.tick().await;
+        self.kind
     }
 
     pub fn reset(&mut self) {
         self.ticker.reset();
-    }
-
-    pub fn deliver(&self) -> EventType {
-        debug!("{} polling triggered", self.kind);
-        self.kind
     }
 }
