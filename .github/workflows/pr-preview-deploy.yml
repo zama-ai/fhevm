@@ -94,13 +94,6 @@ env:
   KMS_CONNECTOR_CHART_VERSION: "1.5.2"
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
-  # In-cluster Postgres for coprocessor/relayer-migrate + kms-connector (see
-  # coprocessor-infra/values-postgres-coprocessor-e2e.yaml and kms-connector/
-  # values-postgres-connector-e2e.yaml) - Bitnami's own published chart, no
-  # fhevm/zama chart involved since there's nothing fhevm-specific about a
-  # plain Postgres instance.
-  POSTGRES_CHART: oci://registry-1.docker.io/bitnamicharts/postgresql
-  POSTGRES_CHART_VERSION: "13.0.0"
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.0"
   KMS_REPO_REF: "v0.13.10"
@@ -268,8 +261,7 @@ jobs:
                 ['coprocessor', env.COPROCESSOR_CHART, env.COPROCESSOR_CHART_VERSION],
                 ['kms-connector', env.KMS_CONNECTOR_CHART, env.KMS_CONNECTOR_CHART_VERSION],
                 ['coprocessor-infra (Crossplane S3)', env.COPROCESSOR_INFRA_CHART, env.COPROCESSOR_INFRA_CHART_VERSION],
-                ['postgres-coprocessor / postgres-connector / postgres-relayer (in-cluster DBs)', env.POSTGRES_CHART, env.POSTGRES_CHART_VERSION],
-                ['relayer-migrate / relayer / test-suite (common chart)', env.COMMON_CHART, env.COMMON_CHART_VERSION],
+                ['relayer-migrate / relayer / test-suite / postgres-* (common chart)', env.COMMON_CHART, env.COMMON_CHART_VERSION],
               ])
               .addHeading('Dedicated KMS (zama-ai/kms)', 3)
               .addTable([
@@ -415,28 +407,32 @@ jobs:
           } >> "$GITHUB_ENV"
 
       ######################################################################
-      # IN-CLUSTER DATABASES: plain Postgres StatefulSets (Bitnami's chart),
-      # not Crossplane/RDS - see coprocessor-infra/values-postgres-
-      # coprocessor-e2e.yaml's header for why. One dedicated instance per
-      # consumer (coprocessor, kms-connector, relayer+relayer-migrate),
-      # mirroring zama-zws/gitops's production topology where each has its
-      # own RDS instance rather than sharing one. Deployed early since they
-      # have no dependency on anything else in this namespace and are ready
-      # in seconds, so they're long done well before their consumers need them.
+      # IN-CLUSTER DATABASES: plain Postgres StatefulSets on the official
+      # docker.io/library/postgres image, via the same generic `common` chart
+      # relayer/test-suite use below - not Crossplane/RDS, and NOT Bitnami's
+      # postgresql chart (see coprocessor-infra/values-postgres-coprocessor-
+      # e2e.yaml's header for why: Bitnami moved every pinned image tag off
+      # the free docker.io/bitnami catalog in August 2025). One dedicated
+      # instance per consumer (coprocessor, kms-connector,
+      # relayer+relayer-migrate), mirroring zama-zws/gitops's production
+      # topology where each has its own RDS instance rather than sharing one.
+      # Deployed early since they have no dependency on anything else in this
+      # namespace and are ready in seconds, so they're long done well before
+      # their consumers need them.
       ######################################################################
       - name: Deploy in-cluster Postgres for coprocessor
         run: |
-          helm upgrade --install postgres-coprocessor "${POSTGRES_CHART}" --version "${POSTGRES_CHART_VERSION}" \
+          helm upgrade --install postgres-coprocessor "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
             -n "${NAMESPACE}" -f ci/preview-env/coprocessor-infra/values-postgres-coprocessor-e2e.yaml --wait
 
       - name: Deploy in-cluster Postgres for kms-connector
         run: |
-          helm upgrade --install postgres-connector "${POSTGRES_CHART}" --version "${POSTGRES_CHART_VERSION}" \
+          helm upgrade --install postgres-connector "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
             -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-postgres-connector-e2e.yaml --wait
 
       - name: Deploy in-cluster Postgres for relayer + relayer-migrate
         run: |
-          helm upgrade --install postgres-relayer "${POSTGRES_CHART}" --version "${POSTGRES_CHART_VERSION}" \
+          helm upgrade --install postgres-relayer "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
             -n "${NAMESPACE}" -f ci/preview-env/relayer/values-postgres-relayer-e2e.yaml --wait
 
       - name: Deploy dedicated KMS (kms's own ci/scripts/deploy.sh)

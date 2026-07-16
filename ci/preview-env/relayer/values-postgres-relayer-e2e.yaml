@@ -5,34 +5,52 @@
 # own RDS instance ("relayer" db) rather than sharing coprocessor-infra's
 # (see values/relayer/relayer-infra/values-relayer-dev.yaml).
 #
-# Uses Bitnami's own published postgresql chart directly, same as
+# Uses the SAME generic `common` chart directly, same as
 # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml - see that file's
-# header for the full rationale (fullnameOverride -> deterministic Service
-# name, plain non-secret ephemeral test credentials, no PVC).
+# header for the full rationale (why not Bitnami's postgresql chart,
+# fullnameOverride -> deterministic Service name, plain non-secret ephemeral
+# test credentials, emptyDir not a PVC).
 #
 # Deployed as:
 #   helm upgrade --install postgres-relayer \
-#     oci://registry-1.docker.io/bitnamicharts/postgresql \
+#     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
 #     -n <namespace> -f this-file
 fullnameOverride: postgres-relayer
 
-auth:
-  username: zama
-  password: zama
-  database: relayer
+statefulset:
+  enabled: true
 
-primary:
-  persistence:
-    enabled: false
-  # Pins onto the zws-pool Karpenter node pool - see
-  # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
-  nodeSelector:
-    karpenter.sh/nodepool: zws-pool
-  tolerations:
-    - key: "karpenter.sh/nodepool"
-      operator: "Equal"
-      value: "zws-pool"
-      effect: "NoSchedule"
+image:
+  repository: postgres
+  tag: "17-alpine"
+  pullPolicy: IfNotPresent
+
+env:
+  - {name: POSTGRES_USER, value: "zama"}
+  - {name: POSTGRES_PASSWORD, value: "zama"}
+  - {name: POSTGRES_DB, value: "relayer"}
+  - {name: PGDATA, value: "/var/lib/postgresql/data/pgdata"}
+
+service:
+  enabled: true
+  ports:
+    - {name: tcp-postgresql, port: 5432}
+
+volumes:
+  - name: data
+    emptyDir: {}
+volumeMounts:
+  - name: data
+    mountPath: /var/lib/postgresql/data
+
+readinessProbe:
+  exec: {command: ["pg_isready", "-U", "zama"]}
+  initialDelaySeconds: 5
+  periodSeconds: 5
+livenessProbe:
+  exec: {command: ["pg_isready", "-U", "zama"]}
+  initialDelaySeconds: 10
+  periodSeconds: 10
 
 resources:
   requests:
@@ -41,3 +59,13 @@ resources:
   limits:
     cpu: "1"
     memory: "1Gi"
+
+# Pins onto the zws-pool Karpenter node pool - see
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

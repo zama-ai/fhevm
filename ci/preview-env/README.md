@@ -7,9 +7,10 @@ driven by `test-suite/fhevm` (`fhevm-cli`). Mirrors the layout and conventions o
 
 Every PR that carries the `pr-preview-e2e` label gets a per-PR namespace
 (`fhevm-ci-<actor>-<pr>`) on the real `zws-dev` Tailscale cluster — real published OCI charts,
-a Crossplane-provisioned S3 bucket (`coprocessor-infra/`), in-cluster Postgres (Bitnami's chart,
-one dedicated instance each for coprocessor, kms-connector, and relayer/relayer-migrate — see
-`coprocessor-infra/values-postgres-coprocessor-e2e.yaml`'s header for why this isn't RDS), and a
+a Crossplane-provisioned S3 bucket (`coprocessor-infra/`), in-cluster Postgres (official
+`postgres:17-alpine` image via the generic `common` chart, one dedicated instance each for
+coprocessor, kms-connector, and relayer/relayer-migrate — see `coprocessor-infra/values-postgres-
+coprocessor-e2e.yaml`'s header for why this isn't RDS, or Bitnami's postgresql chart), and a
 dedicated real 4-party threshold+enclave KMS reused directly from `zama-ai/kms`'s own
 `ci/scripts/deploy.sh` (no vendored `kms-core` chart usage here at all). See
 [`../../.github/workflows/pr-preview-deploy.yml`](../../.github/workflows/pr-preview-deploy.yml).
@@ -28,7 +29,7 @@ the right choice for local iteration.
 ci/preview-env/
 ├── coprocessor-infra/
 │   ├── values-coprocessor-infra-e2e.yaml    # crossplane/coprocessor-infra overlay: S3 only
-│   └── values-postgres-coprocessor-e2e.yaml # Bitnami postgresql overlay: in-cluster DB, dedicated to coprocessor
+│   └── values-postgres-coprocessor-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to coprocessor
 ├── host-chain/
 │   ├── values-anvil-host-e2e.yaml       # anvil-node overlay, host chain
 │   ├── values-host-contracts-e2e.yaml   # contracts overlay, host-contracts
@@ -41,11 +42,11 @@ ci/preview-env/
 │   └── values-coprocessor-e2e.yaml      # coprocessor overlay
 ├── kms-connector/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
-│   └── values-postgres-connector-e2e.yaml  # Bitnami postgresql overlay: in-cluster DB, dedicated to kms-connector
+│   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
 ├── relayer/
 │   ├── values-relayer-e2e.yaml          # `common` chart overlay, relayer server
 │   ├── values-relayer-migrate-e2e.yaml  # `common` chart overlay, relayer DB migration Job
-│   └── values-postgres-relayer-e2e.yaml # Bitnami postgresql overlay: in-cluster DB, dedicated to relayer + relayer-migrate
+│   └── values-postgres-relayer-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to relayer + relayer-migrate
 └── test-suite/
     └── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
 ```
@@ -53,14 +54,17 @@ ci/preview-env/
 Every file here is a **values overlay for a chart**. `anvil-node`/`contracts`/`coprocessor`/
 `kms-connector` target the real, published production charts directly via
 `oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/*` refs (see `pr-preview-deploy.yml`).
-`relayer`/`test-suite` target the generic `oci://hub.zama.org/ghcr/zama-zws/helm-charts/common`
-chart (the same one `zama-zws/gitops`'s `fhevm-dev` environment uses for these two components),
-not a fhevm-specific chart. The two `values-postgres-*-e2e.yaml` files target Bitnami's own
-published `postgresql` chart directly (`oci://registry-1.docker.io/bitnamicharts/postgresql`) —
-there's nothing fhevm-specific about a plain in-cluster Postgres instance, and it sidesteps
-Crossplane/RDS entirely for these two throwaway databases (see that file's header for why).
-`kms-core` (KMS itself) is never deployed from this repo at all — the CI path reuses
-`zama-ai/kms`'s own deploy pipeline as-is (see `pr-preview-deploy.yml`).
+`relayer`/`test-suite`/the three `values-postgres-*-e2e.yaml` files all target the generic
+`oci://hub.zama.org/ghcr/zama-zws/helm-charts/common` chart (the same one `zama-zws/gitops`'s
+`fhevm-dev` environment uses for `relayer`/`test-suite`), not a fhevm-specific chart - there's
+nothing fhevm-specific about a plain in-cluster Postgres instance either, running the official
+`docker.io/library/postgres:17-alpine` image. Deliberately NOT Bitnami's own `postgresql` chart:
+Bitnami restructured its free container catalog on 2025-08-28 and moved every pinned/versioned
+image tag off `docker.io/bitnami` into the unsupported, no-longer-updated `docker.io/
+bitnamilegacy` archive, breaking fresh installs of that chart (see values-postgres-coprocessor-
+e2e.yaml's header for the full story). This also sidesteps Crossplane/RDS entirely for these
+three throwaway databases. `kms-core` (KMS itself) is never deployed from this repo at all — the
+CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `pr-preview-deploy.yml`).
 
 Note this path's own images (contracts/kms-connector/relayer/test-suite) are addressed via
 `hub.zama.org/ghcr/zama-ai/fhevm/...` (the Harbor pull-through-cache mirror of `ghcr.io`), not

@@ -7,46 +7,71 @@
 # ("fhevm_e2e"/"coprocessor" db) is a separate instance from relayer-infra's
 # ("relayer" db) - see values/relayer/relayer-infra/values-relayer-dev.yaml.
 #
-# Uses Bitnami's own published postgresql chart directly (same one
-# zama-zws/gitops's kms-dev/postgresql.yaml runs), not a fhevm/zama chart -
-# there's nothing fhevm-specific about a plain Postgres instance.
+# Uses the SAME generic `common` chart as relayer/test-suite below (see
+# ../relayer/values-relayer-e2e.yaml), NOT Bitnami's postgresql chart:
+# Bitnami restructured its free container catalog on 2025-08-28 and moved
+# every pinned/versioned image tag (including the one this chart's 13.0.0
+# release pins, docker.io/bitnami/postgresql:16.0.0-debian-11-r3) off
+# docker.io/bitnami into the unsupported, no-longer-updated docker.io/
+# bitnamilegacy archive - so a fresh `helm install` of that chart now fails
+# with ErrImagePull. The official docker.io/library/postgres image below has
+# no such catalog-restructuring risk: it's a Docker Official Image, built +
+# maintained by the PostgreSQL project itself, and there's nothing
+# fhevm-specific about a plain Postgres instance anyway.
 #
-# fullnameOverride pins the release's primary Service to a deterministic name
+# fullnameOverride pins the release's Service to a deterministic name
 # ("postgres-coprocessor:5432", confirmed via `helm template`) so dependent
 # charts (coprocessor, relayer-migrate) can hardcode it instead of discovering
-# it live. auth.username/password are fixed, non-secret, ephemeral
-# test-only credentials (same reasoning as DEPLOYER_PRIVATE_KEY/mnemonic
-# elsewhere in this environment) - not worth indirecting through a Secret
-# lookup for a namespace that's destroyed within hours.
+# it live. POSTGRES_USER/PASSWORD are fixed, non-secret, ephemeral test-only
+# credentials (same reasoning as DEPLOYER_PRIVATE_KEY/mnemonic elsewhere in
+# this environment) - not worth indirecting through a Secret lookup for a
+# namespace that's destroyed within hours.
 #
 # Deployed as:
 #   helm upgrade --install postgres-coprocessor \
-#     oci://registry-1.docker.io/bitnamicharts/postgresql \
+#     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
 #     -n <namespace> -f this-file
 fullnameOverride: postgres-coprocessor
 
-auth:
-  username: zama
-  password: zama
-  database: fhevm_e2e
+statefulset:
+  enabled: true
 
-# No PVC: this StatefulSet's data lives (and dies) with the namespace, and
-# skipping persistence means the pod is Ready in seconds instead of waiting
-# on a StorageClass to bind a volume.
-#
-# nodeSelector/tolerations pin this onto the zws-pool Karpenter node pool -
-# same convention as ../../charts/anvil-node/values.yaml's commented-out
-# example.
-primary:
-  persistence:
-    enabled: false
-  nodeSelector:
-    karpenter.sh/nodepool: zws-pool
-  tolerations:
-    - key: "karpenter.sh/nodepool"
-      operator: "Equal"
-      value: "zws-pool"
-      effect: "NoSchedule"
+image:
+  repository: postgres
+  tag: "17-alpine"
+  pullPolicy: IfNotPresent
+
+env:
+  - {name: POSTGRES_USER, value: "zama"}
+  - {name: POSTGRES_PASSWORD, value: "zama"}
+  - {name: POSTGRES_DB, value: "fhevm_e2e"}
+  # Subdirectory, not the mount root: avoids initdb's "directory exists but
+  # is not empty" complaint on volume backends that seed a lost+found dir.
+  - {name: PGDATA, value: "/var/lib/postgresql/data/pgdata"}
+
+service:
+  enabled: true
+  ports:
+    - {name: tcp-postgresql, port: 5432}
+
+# emptyDir, not a PVC: this StatefulSet's data lives (and dies) with the
+# namespace, and skipping persistence means the pod is Ready in seconds
+# instead of waiting on a StorageClass to bind a volume.
+volumes:
+  - name: data
+    emptyDir: {}
+volumeMounts:
+  - name: data
+    mountPath: /var/lib/postgresql/data
+
+readinessProbe:
+  exec: {command: ["pg_isready", "-U", "zama"]}
+  initialDelaySeconds: 5
+  periodSeconds: 5
+livenessProbe:
+  exec: {command: ["pg_isready", "-U", "zama"]}
+  initialDelaySeconds: 10
+  periodSeconds: 10
 
 resources:
   requests:
@@ -55,3 +80,13 @@ resources:
   limits:
     cpu: "1"
     memory: "1Gi"
+
+# Pins onto the zws-pool Karpenter node pool - same convention as
+# ../../charts/anvil-node/values.yaml's commented-out example.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

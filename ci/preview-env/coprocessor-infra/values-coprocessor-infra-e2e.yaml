@@ -2,16 +2,17 @@
 # S3 ONLY - real AWS resource (via Crossplane), same chart zama-zws/gitops's
 # fhevm-dev environment uses (see environments/fhevm-dev/coprocessor-infra.yaml).
 #
-# coprocessorDatabase is explicitly disabled below: Postgres for both
-# coprocessor and kms-connector is deployed directly in-cluster instead (see
-# values-postgres-coprocessor-e2e.yaml / kms-connector/values-postgres-
-# connector-e2e.yaml, Bitnami's postgresql chart) - RDS via Crossplane took
-# minutes to reconcile per namespace and, being a real AWS resource, was
-# subject to shared account-wide throttling/reconciliation-queue starvation
-# from unrelated namespaces (a stuck coproc-infra instance in a AZ-mismatch
-# retry loop once blocked every fhevm-ci RDS claim cluster-wide). A throwaway
-# in-cluster StatefulSet has none of that: no AWS API calls, no Crossplane
-# queue, ready in seconds, and destroyed for free with the namespace.
+# coprocessorDatabase is explicitly disabled below: Postgres for coprocessor,
+# kms-connector, and relayer/relayer-migrate is deployed directly in-cluster
+# instead (see values-postgres-coprocessor-e2e.yaml / kms-connector/values-
+# postgres-connector-e2e.yaml / relayer/values-postgres-relayer-e2e.yaml) -
+# RDS via Crossplane took minutes to reconcile per namespace and, being a
+# real AWS resource, was subject to shared account-wide throttling/
+# reconciliation-queue starvation from unrelated namespaces (a stuck
+# coproc-infra instance in a AZ-mismatch retry loop once blocked every
+# fhevm-ci RDS claim cluster-wide). A throwaway in-cluster StatefulSet has
+# none of that: no AWS API calls, no Crossplane queue, ready in seconds, and
+# destroyed for free with the namespace.
 #
 # Deployed as:
 #   helm upgrade --install coprocessor-infra \

@@ -20,12 +20,11 @@ job:
   restartPolicy: Never
 
 env:
-  # Dedicated in-cluster Postgres release (values-postgres-relayer-e2e.yaml,
-  # Bitnami's postgresql chart) - NOT shared with coprocessor's instance,
-  # mirroring zama-zws/gitops's production topology where relayer-infra
-  # provisions its own RDS separate from coprocessor-infra's. Service name +
-  # fixed ephemeral test credentials are known ahead of deploy time, so this
-  # is already real, not a placeholder.
+  # Dedicated in-cluster Postgres release (values-postgres-relayer-e2e.yaml)
+  # - NOT shared with coprocessor's instance, mirroring zama-zws/gitops's
+  # production topology where relayer-infra provisions its own RDS separate
+  # from coprocessor-infra's. Service name + fixed ephemeral test credentials
+  # are known ahead of deploy time, so this is already real, not a placeholder.
   # TODO: confirm relayer-migrate's actual DATABASE_URL format requirement
   # against relayer/relayer-migrate/.env.example.
   - {name: DATABASE_URL, value: "postgresql://zama:zama@postgres-relayer:5432/relayer"}
