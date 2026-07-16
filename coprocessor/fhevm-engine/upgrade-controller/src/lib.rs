@@ -975,6 +975,17 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
 /// are set. The transition is a conditional UPDATE guarded on both latches +
 /// `state='DryRunStarted'`, so whichever event arrives second fires cutover
 /// exactly once and any later/replayed firing is a no-op.
+///
+/// Latches are *recorded* in either `UpgradeActivated` or `DryRunStarted`, but
+/// cutover only *fires* in `DryRunStarted`. This matters because the Gateway
+/// zkproof-worker is released independently during `UpgradeActivated` (before
+/// the host stack, which unpauses ~`READINESS_CONFIRMATIONS` blocks later at
+/// the `DryRunStarted` transition). So a Gateway anchor commonly arrives while
+/// the row is still `UpgradeActivated`; if we ignored it there, the detector's
+/// per-track anchor latches permanently and never re-emits, wedging cutover
+/// forever. Recording `gw_consensus_reached` early (it survives the
+/// state transition, which never resets latches — only activation does) lets
+/// the later host anchor, arriving in `DryRunStarted`, complete the pair.
 pub async fn handle_unanimity_consensus(
     pool: &Pool<Postgres>,
     gcs_mode: bool,
@@ -1007,7 +1018,7 @@ pub async fn handle_unanimity_consensus(
 
     match row {
         Some((state, start_block, end_block, proposal_id, host_chain_id, gw_start_block))
-            if state == "DryRunStarted" =>
+            if state == "UpgradeActivated" || state == "DryRunStarted" =>
         {
             // Classify the event. Host track iff chain_id matches the stored
             // host_chain_id; everything else is the Gateway track. For a legacy
@@ -1036,7 +1047,8 @@ pub async fn handle_unanimity_consensus(
                         );
                         sqlx::query(
                             "UPDATE upgrade_state SET host_consensus_reached = TRUE, updated_at = NOW()
-                              WHERE stack_role = 'GCS' AND state = 'DryRunStarted'",
+                              WHERE stack_role = 'GCS'
+                                AND state IN ('UpgradeActivated', 'DryRunStarted')",
                         )
                         .execute(pool)
                         .await?;
@@ -1075,7 +1087,8 @@ pub async fn handle_unanimity_consensus(
                         );
                         sqlx::query(
                             "UPDATE upgrade_state SET gw_consensus_reached = TRUE, updated_at = NOW()
-                              WHERE stack_role = 'GCS' AND state = 'DryRunStarted'",
+                              WHERE stack_role = 'GCS'
+                                AND state IN ('UpgradeActivated', 'DryRunStarted')",
                         )
                         .execute(pool)
                         .await?;
@@ -1098,9 +1111,14 @@ pub async fn handle_unanimity_consensus(
                 }
             }
 
-            // Cutover only once BOTH tracks have been observed. The WHERE reads
-            // the freshly-updated latches atomically, so this flips (and fires
-            // cutover) exactly once — whichever track completed the pair.
+            // Cutover only once BOTH tracks have been observed AND the row is in
+            // DryRunStarted. The `state = 'DryRunStarted'` guard keeps a Gateway
+            // latch recorded early (during UpgradeActivated) from firing cutover
+            // before the host stack has even entered the dry-run; the later host
+            // anchor, which arrives in DryRunStarted, is what completes the pair.
+            // The WHERE reads the freshly-updated latches atomically, so this
+            // flips (and fires cutover) exactly once — whichever track completed
+            // the pair while in DryRunStarted.
             let result = sqlx::query(
                 r#"
                 UPDATE upgrade_state
@@ -1123,7 +1141,7 @@ pub async fn handle_unanimity_consensus(
         Some((state, _, _, _, _, _)) => {
             warn!(
                 state,
-                "event_unanimity_consensus: GCS state is not DryRunStarted — skipping cutover"
+                "event_unanimity_consensus: GCS state is not UpgradeActivated/DryRunStarted — skipping cutover"
             );
         }
         None => {
