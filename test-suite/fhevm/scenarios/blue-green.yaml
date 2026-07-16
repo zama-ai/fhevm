@@ -1,0 +1,19 @@
+version: 1
+kind: blue-green
+name: Blue-Green Upgrade
+description: >
+  Single-operator Blue-Green upgrade flow. BCS runs a pinned previous-release
+  image; GCS is built locally from HEAD. Override BCS via `--bcs-tag <tag-or-sha>`.
+
+    ./fhevm-cli up --scenario blue-green --build
+    ./fhevm-cli test blue-green
+
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-1
+
+gcs:
+  source:
+    mode: local
+  stackVersion: "0.15.0"

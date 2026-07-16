@@ -1,5 +1,5 @@
 import { supportsConsensusDetector, supportsHostListenerConsumer, supportsUpgradeController } from "../compat/compat";
-import { hasLocalCoprocessorInstance } from "../scenario/resolve";
+import { assertCoprocessorConsensus, hasLocalCoprocessorInstance } from "../scenario/resolve";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   GROUP_BUILD_COMPONENTS,
@@ -211,7 +211,7 @@ export const resolveUpgradePlan = (
     : [];
   const overrideServices = selectedServices.length ? [...new Set(selectedServices)] : fullGroupServices;
   const releaseServices = lockFileMode ? GROUP_BUILD_SERVICES[group] : overrideServices;
-  const scenario = state.scenario;
+  const scenario = assertCoprocessorConsensus(state.scenario, "repair.upgradePlan");
   const instances: ResolvedCoprocessorScenarioInstance[] = scenario.instances.length
     ? scenario.instances
     : Array.from({ length: topologyForState(state).count }, (_, index) => ({

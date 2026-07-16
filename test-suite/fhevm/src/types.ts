@@ -119,6 +119,58 @@ export type ResolvedCoprocessorScenario = {
   kms: ResolvedKmsTopology;
 };
 
+// Raw `blue-green` scenario as written in YAML.
+export type BlueGreenScenario = {
+  version: 1;
+  kind: "blue-green";
+  name?: string;
+  description?: string;
+  hostChains?: HostChainScenario[];
+  topology?: {
+    count: number;
+    threshold: number;
+  };
+  // Blue (previous release) fleet.
+  bcs?: {
+    source?: CoprocessorInstanceSource;
+    env?: Record<string, string>;
+    args?: Record<string, string[]>;
+  };
+  gcs: {
+    source?: CoprocessorInstanceSource;
+    stackVersion: string;
+    env?: Record<string, string>;
+    args?: Record<string, string[]>;
+  };
+  kms?: KmsScenarioBlock;
+};
+
+export type ResolvedBlueGreenScenarioFleet = {
+  source: CoprocessorInstanceSource;
+  env: Record<string, string>;
+  args: Record<string, string[]>;
+};
+
+export type ResolvedBlueGreenScenario = {
+  version: 1;
+  kind: "blue-green";
+  origin: "default" | "file";
+  name?: string;
+  description?: string;
+  hostChains: HostChainScenario[];
+  sourcePath?: string;
+  topology: {
+    count: number;
+    threshold: number;
+  };
+  bcs: ResolvedBlueGreenScenarioFleet;
+  gcs: ResolvedBlueGreenScenarioFleet & { stackVersion: string };
+  kms: ResolvedKmsTopology;
+};
+
+// Union of every scenario shape the runtime accepts. Narrow on `kind`.
+export type ResolvedScenario = ResolvedCoprocessorScenario | ResolvedBlueGreenScenario;
+
 export type ScenarioSummary = {
   key: string;
   filePath: string;
@@ -181,7 +233,7 @@ export type State = {
   requiresGitHub?: boolean;
   versions: VersionBundle;
   overrides: LocalOverride[];
-  scenario: ResolvedCoprocessorScenario;
+  scenario: ResolvedScenario;
   scenarioSourcePath?: string;
   discovery?: Discovery;
   builtImages?: BuiltImage[];
@@ -194,7 +246,11 @@ export type UpOptions = {
   requestedTarget?: VersionTarget;
   sha?: string;
   overrides: LocalOverride[];
+  // True when overrides were expanded from --build (all groups) rather than explicit --override flags.
+  build?: boolean;
   scenarioPath?: string;
+  // Blue-green only: override `bcs.source` to `{mode: registry, tag: bcsTag}`.
+  bcsTag?: string;
   fromStep?: StepName;
   lockFile?: string;
   allowSchemaMismatch: boolean;

@@ -1,0 +1,21 @@
+version: 1
+kind: blue-green
+name: Blue-Green Upgrade (2-of-3)
+description: >
+  Three-operator Blue-Green upgrade with threshold 2 (matches `two-of-three`
+  drift-revert). Cutover still requires unanimity across all N operators
+  per RFC-021. See blue-green.yaml for details.
+
+topology:
+  count: 3
+  threshold: 2
+
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-1
+
+gcs:
+  source:
+    mode: local
+  stackVersion: "0.15.0"
