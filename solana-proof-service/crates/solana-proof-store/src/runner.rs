@@ -29,10 +29,15 @@ pub enum RunnerError {
 }
 
 /// Runs until `cancel` is cancelled or a durable integrity halt is observed.
+///
+/// `on_progress` is invoked after each successful apply / exact-replay no-op so
+/// the HTTP readiness layer can derive a live ingest heartbeat without storing
+/// a stale `ready=true` flag.
 pub async fn run_sequential_ingest(
     source: &YellowstoneBlockSource,
     store: &SqlProofStore,
     cancel: CancellationToken,
+    on_progress: Option<&(dyn Fn(u64) + Send + Sync)>,
 ) -> Result<(), RunnerError> {
     let mut backoff = Duration::from_millis(200);
     const MAX_BACKOFF: Duration = Duration::from_secs(5);
@@ -68,7 +73,8 @@ pub async fn run_sequential_ingest(
             Err(error) => return Err(RunnerError::Source(error)),
         };
 
-        match drive_subscription(subscription, store, &cancel, &mut backoff).await {
+        match drive_subscription(subscription, store, &cancel, &mut backoff, on_progress).await
+        {
             Ok(()) => return Ok(()),
             Err(RunnerError::Source(YellowstoneSourceError::Retryable(message))) => {
                 warn!(%message, ?backoff, "yellowstone stream failed; reconnecting");
@@ -88,6 +94,7 @@ async fn drive_subscription(
     store: &SqlProofStore,
     cancel: &CancellationToken,
     backoff: &mut Duration,
+    on_progress: Option<&(dyn Fn(u64) + Send + Sync)>,
 ) -> Result<(), RunnerError> {
     const INITIAL_BACKOFF: Duration = Duration::from_millis(200);
     loop {
@@ -119,10 +126,16 @@ async fn drive_subscription(
                 // Meaningful stream progress — safe to collapse reconnect delay.
                 *backoff = INITIAL_BACKOFF;
                 info!(slot = block.slot, "applied completed block");
+                if let Some(on_progress) = on_progress {
+                    on_progress(block.slot);
+                }
             }
             ApplyOutcome::AlreadyApplied => {
                 *backoff = INITIAL_BACKOFF;
                 info!(slot = block.slot, "exact replay no-op");
+                if let Some(on_progress) = on_progress {
+                    on_progress(block.slot);
+                }
             }
             ApplyOutcome::RecoveryRequired { reason } => {
                 return Err(RunnerError::RecoveryRequired(reason));

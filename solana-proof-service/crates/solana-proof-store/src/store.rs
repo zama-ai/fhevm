@@ -319,11 +319,19 @@ impl SqlProofStore {
             None => None,
         };
 
+        let leaf_count = row.leaf_count as u64;
+        if leaf_count != leaf_commitments.len() as u64 {
+            return Err(StoreError::Database(sqlx::Error::Protocol(format!(
+                "lineage leaf_count {leaf_count} does not match leaves row count {}",
+                leaf_commitments.len()
+            ))));
+        }
+
         Ok(Some(ProofSnapshot {
             lineage,
             current_handle,
             subjects,
-            leaf_count: row.leaf_count as u64,
+            leaf_count,
             peaks,
             leaves: leaf_commitments,
             last_slot: row.last_slot as u64,
