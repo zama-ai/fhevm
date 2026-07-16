@@ -53,19 +53,19 @@ on:
       kms_connector_version:
         description: "Image tag for kms-connector images (same override rule as host_contracts_version above)"
         required: true
-        default: "v0.11.0"
+        default: "v0.12.0"
       kms_connector_chart_version:
         description: "Version of the kms-connector Helm chart"
         required: true
-        default: "1.5.1"
+        default: "1.5.2"
       kms_core_version:
         description: "Image tag for the dedicated KMS's kms-core (zama-ai/kms, not built by this workflow)"
         required: true
-        default: "v0.13.3"
+        default: "v0.13.10"
       kms_repo_ref:
         description: "Git ref of zama-ai/kms to check out for deploy scripts + tkms-infra/kms-core charts"
         required: true
-        default: "v0.13.3"
+        default: "v0.13.10"
       relayer_version:
         description: "Image tag for the relayer/relayer-migrate images (same override rule as host_contracts_version above)"
         required: true
@@ -114,9 +114,9 @@ env:
   # protocolConfig field at all, so the --set-string calls below (which use
   # the 1.5.3+ schema) silently rendered an empty KMSGeneration address into
   # every kms-connector deployment - confirmed via `helm get manifest`.
-  KMS_CONNECTOR_VERSION: "v0.11.0"
+  KMS_CONNECTOR_VERSION: "v0.12.0"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
-  KMS_CONNECTOR_CHART_VERSION: "1.5.1"
+  KMS_CONNECTOR_CHART_VERSION: "1.5.2"
   #=====COPROCESSOR INFRA======================================================
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
@@ -129,7 +129,7 @@ env:
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================
   KMS_REPO_REF: "v0.13.10"
-  KMS_CORE_TAG: "v0.13.3"
+  KMS_CORE_TAG: "v0.13.10"
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
 
