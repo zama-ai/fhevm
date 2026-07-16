@@ -3,25 +3,58 @@
 Standalone service that ingests confirmed Solana blocks and serves ACL MMR
 proofs (RFC-024 / fhevm-internal #1682).
 
-This workspace currently holds:
+This workspace holds:
 
 - Yellowstone completed-block source (`solana-proof-source`)
 - Atomic PostgreSQL store + sequential ingest runner (`solana-proof-store`)
+- Service binary with typed internal proof HTTP API + derived readiness
+  (`solana-proof-service`)
 
-HTTP proof API, bounded RPC recovery, and multi-replica wiring land in later
-slices.
+Bounded RPC recovery and multi-replica wiring land in later slices.
+
+## HTTP surface
+
+| Route | Purpose |
+| --- | --- |
+| `GET /health/liveness` | Process responds |
+| `GET /health/readiness` | Derived live proof readiness (never stores `ready=true`) |
+| `GET /metrics` | Prometheus metrics (bounded labels only) |
+| `GET /internal/solana/mmr-proof?encrypted_value=<base58>&leaf_index=<u64>` | Verified MMR proof |
+| `GET /swagger-ui` / `GET /api-docs/openapi.json` | Generated OpenAPI |
+
+Success proof DTO (preserved until #1721):
+
+```json
+{
+  "mmr_proof": { "leaf_index": 0, "siblings": ["<hex>", "..."] },
+  "leaf_count": 1,
+  "proof_slot": 1,
+  "verified": true,
+  "status": "verified"
+}
+```
+
+Lagging store → HTTP 503 with `status: "lagging"`. Equal-count peak divergence
+or internal snapshot inconsistency → HTTP 500 with `status: "corrupt_store"`
+(fail closed). The proof path is **read-only**: SQL `proof_snapshot` + confirmed
+on-chain peak check; no request-triggered catch-up writer.
+
+Readiness classifications: `database_unavailable`, `writer_missing`,
+`source_lagging`, `history_incomplete`, `recovery_required`, `integrity_halted`.
 
 ## PoC gaps (non-prod TODOs)
 
 - **Single replica:** process restart or deploy causes brief API + ingest
   downtime. There is no rolling zero-downtime ingest handoff.
 - **Internal only:** intended for localhost / Tailscale-class networks. No
-  app auth, mTLS, or rate limits in v1.
+  app auth, mTLS, or rate limits in v1. **TODO(prod):** add auth before any
+  broader exposure.
 - **Bootstrap A incomplete until recovery:** a fresh empty Postgres starts
   with `history_complete=false` on the first applied block. Continuity from
   the configured start is proven only by an explicit bounded recovery pass
   (`SqlProofStore::set_history_complete_after_recovery` is the seam; recovery
-  itself is not implemented yet).
+  itself is not implemented yet). Readiness stays `history_incomplete` /
+  `recovery_required` until then.
 - **Program-filtered Yellowstone gaps:** the source subscribes with
   `account_include` for the host program, so empty intermediate slots are
   omitted. Consecutive filtered blocks may not satisfy
@@ -33,6 +66,15 @@ slices.
   `SqlProofStore::migrate` (or `sqlx migrate`) before ingest. Compile-checked
   queries require committed `.sqlx` metadata (`make sqlx-prepare` against a
   live `DATABASE_URL`).
+
+## Run
+
+```bash
+# from solana-proof-service/
+export SOLANA_PROOF_CONFIG_PATH=config/app.yaml
+# or override: SOLANA_PROOF__DATABASE__CONNECTION_STRING=postgres://...
+NO_DNA=1 cargo run -p solana-proof-service
+```
 
 ## Develop
 

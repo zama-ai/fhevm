@@ -1,0 +1,303 @@
+//! Derived live readiness for proof serving.
+//!
+//! Never stores `ready=true`. Combines database reachability, persisted
+//! integrity / history completeness, and process-local ingest heartbeat /
+//! recovery state on each probe.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use serde::Serialize;
+use solana_proof_store::{IntegrityStatus, SqlProofStore};
+use utoipa::ToSchema;
+
+use crate::ingest_health::{IngestHealth, IngestTerminal};
+
+/// Bounded readiness classification labels (also used as metric labels).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadinessClass {
+    Ready,
+    DatabaseUnavailable,
+    WriterMissing,
+    SourceLagging,
+    HistoryIncomplete,
+    RecoveryRequired,
+    IntegrityHalted,
+}
+
+impl ReadinessClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::DatabaseUnavailable => "database_unavailable",
+            Self::WriterMissing => "writer_missing",
+            Self::SourceLagging => "source_lagging",
+            Self::HistoryIncomplete => "history_incomplete",
+            Self::RecoveryRequired => "recovery_required",
+            Self::IntegrityHalted => "integrity_halted",
+        }
+    }
+
+    pub fn is_ready(self) -> bool {
+        matches!(self, Self::Ready)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct ReadinessReport {
+    pub ready: bool,
+    pub status: ReadinessClass,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint_slot: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_ingest_slot: Option<u64>,
+}
+
+/// Pure classification from already-fetched inputs (unit-testable without infra).
+pub fn classify_readiness(
+    db_ok: bool,
+    integrity: Option<&IntegrityStatus>,
+    ingest: &IngestHealth,
+    max_ingest_silence: Duration,
+) -> ReadinessReport {
+    if !db_ok {
+        return report(
+            ReadinessClass::DatabaseUnavailable,
+            Some("database reachability check failed".to_owned()),
+            None,
+            ingest.last_slot(),
+        );
+    }
+
+    let Some(integrity) = integrity else {
+        return report(
+            ReadinessClass::DatabaseUnavailable,
+            Some("integrity status unavailable".to_owned()),
+            None,
+            ingest.last_slot(),
+        );
+    };
+
+    let checkpoint_slot = integrity.checkpoint.as_ref().map(|c| c.slot);
+
+    if integrity.integrity_halted {
+        return report(
+            ReadinessClass::IntegrityHalted,
+            integrity.integrity_halt_reason.clone(),
+            checkpoint_slot,
+            ingest.last_slot(),
+        );
+    }
+
+    if let Some(terminal) = ingest.terminal() {
+        match terminal {
+            IngestTerminal::RecoveryRequired { reason } => {
+                return report(
+                    ReadinessClass::RecoveryRequired,
+                    Some(reason),
+                    checkpoint_slot,
+                    ingest.last_slot(),
+                );
+            }
+            IngestTerminal::IntegrityHalted { reason } => {
+                return report(
+                    ReadinessClass::IntegrityHalted,
+                    Some(reason),
+                    checkpoint_slot,
+                    ingest.last_slot(),
+                );
+            }
+            IngestTerminal::Cancelled
+            | IngestTerminal::SourceFailed { .. }
+            | IngestTerminal::StoreFailed { .. } => {
+                return report(
+                    ReadinessClass::WriterMissing,
+                    Some(format!("ingest writer stopped: {terminal:?}")),
+                    checkpoint_slot,
+                    ingest.last_slot(),
+                );
+            }
+        }
+    }
+
+    if !integrity.history_complete {
+        return report(
+            ReadinessClass::HistoryIncomplete,
+            Some(
+                "history_complete=false until bounded recovery proves continuity from start"
+                    .to_owned(),
+            ),
+            checkpoint_slot,
+            ingest.last_slot(),
+        );
+    }
+
+    if !ingest.writer_running() {
+        return report(
+            ReadinessClass::WriterMissing,
+            Some("ingest writer is not running".to_owned()),
+            checkpoint_slot,
+            ingest.last_slot(),
+        );
+    }
+
+    if ingest.silence_exceeded(max_ingest_silence) {
+        return report(
+            ReadinessClass::SourceLagging,
+            Some(format!(
+                "no ingest progress for more than {}s",
+                max_ingest_silence.as_secs()
+            )),
+            checkpoint_slot,
+            ingest.last_slot(),
+        );
+    }
+
+    report(
+        ReadinessClass::Ready,
+        None,
+        checkpoint_slot,
+        ingest.last_slot(),
+    )
+}
+
+fn report(
+    status: ReadinessClass,
+    reason: Option<String>,
+    checkpoint_slot: Option<u64>,
+    last_ingest_slot: Option<u64>,
+) -> ReadinessReport {
+    ReadinessReport {
+        ready: status.is_ready(),
+        status,
+        reason,
+        checkpoint_slot,
+        last_ingest_slot,
+    }
+}
+
+/// Live readiness probe against the store + ingest health.
+pub async fn evaluate_readiness(
+    store: &SqlProofStore,
+    ingest: &Arc<IngestHealth>,
+    max_ingest_silence: Duration,
+) -> ReadinessReport {
+    let db_ok = sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(store.pool())
+        .await
+        .is_ok();
+    if !db_ok {
+        return classify_readiness(false, None, ingest, max_ingest_silence);
+    }
+
+    match store.integrity_status().await {
+        Ok(status) => classify_readiness(true, Some(&status), ingest, max_ingest_silence),
+        Err(_) => classify_readiness(false, None, ingest, max_ingest_silence),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use solana_proof_source::BlockCheckpoint;
+
+    fn status(history_complete: bool, halted: bool) -> IntegrityStatus {
+        IntegrityStatus {
+            history_complete,
+            history_start: Some(BlockCheckpoint {
+                slot: 1,
+                block_hash: [1u8; 32],
+            }),
+            checkpoint: Some(BlockCheckpoint {
+                slot: 10,
+                block_hash: [2u8; 32],
+            }),
+            integrity_halted: halted,
+            integrity_halt_reason: halted.then(|| "conflict".to_owned()),
+        }
+    }
+
+    #[test]
+    fn database_unavailable_wins() {
+        let ingest = IngestHealth::new();
+        let report = classify_readiness(false, None, &ingest, Duration::from_secs(60));
+        assert_eq!(report.status, ReadinessClass::DatabaseUnavailable);
+        assert!(!report.ready);
+    }
+
+    #[test]
+    fn integrity_halt_before_history() {
+        let ingest = IngestHealth::new();
+        ingest.mark_started();
+        let report = classify_readiness(
+            true,
+            Some(&status(false, true)),
+            &ingest,
+            Duration::from_secs(60),
+        );
+        assert_eq!(report.status, ReadinessClass::IntegrityHalted);
+    }
+
+    #[test]
+    fn recovery_required_from_ingest_terminal() {
+        let ingest = IngestHealth::new();
+        ingest.mark_started();
+        ingest.mark_finished(Err(solana_proof_store::RunnerError::RecoveryRequired(
+            "gap".into(),
+        )));
+        let report = classify_readiness(
+            true,
+            Some(&status(true, false)),
+            &ingest,
+            Duration::from_secs(60),
+        );
+        assert_eq!(report.status, ReadinessClass::RecoveryRequired);
+        assert_eq!(report.reason.as_deref(), Some("gap"));
+    }
+
+    #[test]
+    fn history_incomplete_until_recovery_seam() {
+        let ingest = IngestHealth::new();
+        ingest.mark_started();
+        let report = classify_readiness(
+            true,
+            Some(&status(false, false)),
+            &ingest,
+            Duration::from_secs(60),
+        );
+        assert_eq!(report.status, ReadinessClass::HistoryIncomplete);
+    }
+
+    #[test]
+    fn writer_missing_when_task_exits() {
+        let ingest = IngestHealth::new();
+        ingest.mark_started();
+        ingest.mark_finished(Ok(()));
+        let report = classify_readiness(
+            true,
+            Some(&status(true, false)),
+            &ingest,
+            Duration::from_secs(60),
+        );
+        assert_eq!(report.status, ReadinessClass::WriterMissing);
+    }
+
+    #[test]
+    fn ready_when_history_complete_and_writer_live() {
+        let ingest = IngestHealth::new();
+        ingest.mark_started();
+        ingest.mark_progress(42);
+        let report = classify_readiness(
+            true,
+            Some(&status(true, false)),
+            &ingest,
+            Duration::from_secs(60),
+        );
+        assert_eq!(report.status, ReadinessClass::Ready);
+        assert!(report.ready);
+        assert_eq!(report.last_ingest_slot, Some(42));
+    }
+}
