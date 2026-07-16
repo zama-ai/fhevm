@@ -5,21 +5,12 @@ use prometheus::{Encoder, IntCounterVec, Opts, Registry, TextEncoder};
 use std::sync::OnceLock;
 
 static REGISTRY: OnceLock<Registry> = OnceLock::new();
-static HTTP_RESPONSES: OnceLock<IntCounterVec> = OnceLock::new();
 static READINESS: OnceLock<IntCounterVec> = OnceLock::new();
 static PROOF_OUTCOMES: OnceLock<IntCounterVec> = OnceLock::new();
 
 pub fn init_metrics() {
     let registry = Registry::new();
 
-    let http = IntCounterVec::new(
-        Opts::new(
-            "solana_proof_http_responses_total",
-            "HTTP responses by endpoint, method, and status class",
-        ),
-        &["endpoint", "method", "status_class"],
-    )
-    .expect("http counter");
     let readiness = IntCounterVec::new(
         Opts::new(
             "solana_proof_readiness_total",
@@ -37,21 +28,12 @@ pub fn init_metrics() {
     )
     .expect("proof counter");
 
-    registry.register(Box::new(http.clone())).unwrap();
     registry.register(Box::new(readiness.clone())).unwrap();
     registry.register(Box::new(proofs.clone())).unwrap();
 
-    HTTP_RESPONSES.set(http).ok();
     READINESS.set(readiness).ok();
     PROOF_OUTCOMES.set(proofs).ok();
     REGISTRY.set(registry).ok();
-}
-
-pub fn record_http(endpoint: &str, method: &str, status: StatusCode) {
-    let class = status_class(status);
-    if let Some(counter) = HTTP_RESPONSES.get() {
-        counter.with_label_values(&[endpoint, method, class]).inc();
-    }
 }
 
 pub fn record_readiness(status: &str) {
@@ -63,15 +45,6 @@ pub fn record_readiness(status: &str) {
 pub fn record_proof(status: &str) {
     if let Some(counter) = PROOF_OUTCOMES.get() {
         counter.with_label_values(&[status]).inc();
-    }
-}
-
-fn status_class(status: StatusCode) -> &'static str {
-    match status.as_u16() {
-        200..=299 => "2xx",
-        400..=499 => "4xx",
-        500..=599 => "5xx",
-        _ => "other",
     }
 }
 

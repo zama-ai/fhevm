@@ -3,15 +3,40 @@
 //! Never stores `ready=true`. Combines database reachability, persisted
 //! integrity / history completeness, and process-local ingest heartbeat /
 //! recovery state on each probe.
+//!
+//! Readiness is the bootstrap / ingest gate. Per-request proof trust is
+//! peak-equality against confirmed chain state (see `proof`), not this probe.
 
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use serde::Serialize;
-use solana_proof_store::{IntegrityStatus, SqlProofStore};
+use solana_proof_store::{IntegrityStatus, SqlProofStore, StoreError};
 use utoipa::ToSchema;
 
 use crate::ingest_health::{IngestHealth, IngestTerminal};
+
+/// DB reachability + integrity inputs for [`evaluate_readiness`].
+#[async_trait]
+pub trait ReadinessQueryable: Send + Sync {
+    async fn database_reachable(&self) -> bool;
+    async fn integrity_status(&self) -> Result<IntegrityStatus, StoreError>;
+}
+
+#[async_trait]
+impl ReadinessQueryable for SqlProofStore {
+    async fn database_reachable(&self) -> bool {
+        sqlx::query_scalar::<_, i32>("SELECT 1")
+            .fetch_one(self.pool())
+            .await
+            .is_ok()
+    }
+
+    async fn integrity_status(&self) -> Result<IntegrityStatus, StoreError> {
+        SqlProofStore::integrity_status(self).await
+    }
+}
 
 /// Bounded readiness classification labels (also used as metric labels).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
@@ -180,16 +205,12 @@ fn report(
 }
 
 /// Live readiness probe against the store + ingest health.
-pub async fn evaluate_readiness(
-    store: &SqlProofStore,
+pub async fn evaluate_readiness<S: ReadinessQueryable>(
+    store: &S,
     ingest: &Arc<IngestHealth>,
     max_ingest_silence: Duration,
 ) -> ReadinessReport {
-    let db_ok = sqlx::query_scalar::<_, i32>("SELECT 1")
-        .fetch_one(store.pool())
-        .await
-        .is_ok();
-    if !db_ok {
+    if !store.database_reachable().await {
         return classify_readiness(false, None, ingest, max_ingest_silence);
     }
 
@@ -299,5 +320,36 @@ mod tests {
         assert_eq!(report.status, ReadinessClass::Ready);
         assert!(report.ready);
         assert_eq!(report.last_ingest_slot, Some(42));
+    }
+
+    #[test]
+    fn mark_started_alone_is_not_ready_when_history_complete() {
+        let ingest = IngestHealth::new();
+        ingest.mark_started();
+        let report = classify_readiness(
+            true,
+            Some(&status(true, false)),
+            &ingest,
+            Duration::from_secs(60),
+        );
+        assert_eq!(report.status, ReadinessClass::SourceLagging);
+        assert!(!report.ready);
+    }
+
+    #[test]
+    fn source_lagging_when_silence_exceeded_after_progress() {
+        let ingest = IngestHealth::new();
+        ingest.mark_started();
+        ingest.mark_progress(7);
+        std::thread::sleep(Duration::from_millis(5));
+        let report = classify_readiness(
+            true,
+            Some(&status(true, false)),
+            &ingest,
+            Duration::from_millis(1),
+        );
+        assert_eq!(report.status, ReadinessClass::SourceLagging);
+        assert!(!report.ready);
+        assert_eq!(report.last_ingest_slot, Some(7));
     }
 }

@@ -47,9 +47,8 @@ impl IngestHealth {
         self.writer_running.store(true, Ordering::SeqCst);
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.terminal = None;
-        // Count task start as a heartbeat so readiness does not flap
-        // `source_lagging` before the first completed block arrives.
-        inner.last_progress_at = Some(Instant::now());
+        // Do not advance last_progress_at here: Ready requires a real apply
+        // (mark_progress). Start alone must not look like ingest progress.
     }
 
     pub fn mark_progress(&self, slot: u64) {

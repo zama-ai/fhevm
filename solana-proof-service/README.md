@@ -34,10 +34,16 @@ Success proof DTO (preserved until #1721):
 }
 ```
 
-Lagging store → HTTP 503 with `status: "lagging"`. Equal-count peak divergence
-or internal snapshot inconsistency → HTTP 500 with `status: "corrupt_store"`
-(fail closed). The proof path is **read-only**: SQL `proof_snapshot` + confirmed
-on-chain peak check; no request-triggered catch-up writer.
+Lagging store (behind **or briefly ahead of** a different confirmed RPC) → HTTP
+503 with `status: "lagging"`. Equal-count peak divergence or snapshot
+inconsistency → HTTP 500 with `status: "corrupt_cache"` (fail closed; wire name
+preserved for relayer DTO parity until #1721). The proof path is **read-only**:
+SQL `proof_snapshot` + confirmed on-chain peak check; no request-triggered
+catch-up writer.
+
+**Readiness vs proof trust:** `/health/readiness` is the bootstrap / ingest gate
+(history complete, writer live, recent progress). Per-request proof trust is
+peak-equality against confirmed chain state, not the readiness probe.
 
 Readiness classifications: `database_unavailable`, `writer_missing`,
 `source_lagging`, `history_incomplete`, `recovery_required`, `integrity_halted`.

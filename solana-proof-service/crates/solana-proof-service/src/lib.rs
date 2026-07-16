@@ -17,5 +17,5 @@ pub use chain::{ChainError, ChainFetcher, OnChainLineageState, RpcChainFetcher};
 pub use config::ServiceConfig;
 pub use http::{router, AppState};
 pub use ingest_health::IngestHealth;
-pub use proof::{build_proof, MmrProofResult, ProofError};
-pub use readiness::{evaluate_readiness, ReadinessClass, ReadinessReport};
+pub use proof::{build_proof, MmrProofResult, ProofError, ProofSnapshotSource};
+pub use readiness::{evaluate_readiness, ReadinessClass, ReadinessQueryable, ReadinessReport};
