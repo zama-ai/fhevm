@@ -16,7 +16,9 @@ use fhevm_host_bindings::{
             AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
         },
     },
-    protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch},
+    protocol_config::ProtocolConfig::{
+        KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
+    },
 };
 use sqlx::postgres::PgNotification;
 use std::{fmt::Display, str::FromStr};
@@ -147,6 +149,8 @@ pub enum EventType {
     AbortCrsgenRequest,
     NewKmsContext,
     NewKmsEpoch,
+    KmsContextDestroyed,
+    KmsEpochDestroyed,
 }
 
 impl Display for EventType {
@@ -161,6 +165,8 @@ impl Display for EventType {
             EventType::AbortCrsgenRequest => write!(f, "AbortCrsgenRequest"),
             EventType::NewKmsContext => write!(f, "NewKmsContext"),
             EventType::NewKmsEpoch => write!(f, "NewKmsEpoch"),
+            EventType::KmsContextDestroyed => write!(f, "KmsContextDestroyed"),
+            EventType::KmsEpochDestroyed => write!(f, "KmsEpochDestroyed"),
         }
     }
 }
@@ -181,6 +187,8 @@ impl From<&ProtocolEventKind> for EventType {
             ProtocolEventKind::AbortCrsgen(_) => Self::AbortCrsgenRequest,
             ProtocolEventKind::NewKmsContext(_) => Self::NewKmsContext,
             ProtocolEventKind::NewKmsEpoch(_) => Self::NewKmsEpoch,
+            ProtocolEventKind::KmsContextDestroyed(_) => Self::KmsContextDestroyed,
+            ProtocolEventKind::KmsEpochDestroyed(_) => Self::KmsEpochDestroyed,
         }
     }
 }
@@ -199,6 +207,8 @@ impl TryFrom<PgNotification> for EventType {
             ABORT_CRSGEN_REQUEST_NOTIFICATION => Ok(Self::AbortCrsgenRequest),
             NEW_KMS_CONTEXT_NOTIFICATION => Ok(Self::NewKmsContext),
             NEW_KMS_EPOCH_NOTIFICATION => Ok(Self::NewKmsEpoch),
+            KMS_CONTEXT_DESTROYED_NOTIFICATION => Ok(Self::KmsContextDestroyed),
+            KMS_EPOCH_DESTROYED_NOTIFICATION => Ok(Self::KmsEpochDestroyed),
             s => Err(anyhow!("Unknown notification channel: {s}")),
         }
     }
@@ -216,6 +226,8 @@ impl EventType {
             Self::AbortCrsgenRequest => ABORT_CRSGEN_REQUEST_NOTIFICATION,
             Self::NewKmsContext => NEW_KMS_CONTEXT_NOTIFICATION,
             Self::NewKmsEpoch => NEW_KMS_EPOCH_NOTIFICATION,
+            Self::KmsContextDestroyed => KMS_CONTEXT_DESTROYED_NOTIFICATION,
+            Self::KmsEpochDestroyed => KMS_EPOCH_DESTROYED_NOTIFICATION,
         }
     }
 
@@ -230,6 +242,8 @@ impl EventType {
             EventType::AbortCrsgenRequest => "abort_crsgen_request",
             EventType::NewKmsContext => "new_kms_context",
             EventType::NewKmsEpoch => "new_kms_epoch",
+            EventType::KmsContextDestroyed => "kms_context_destroyed",
+            EventType::KmsEpochDestroyed => "kms_epoch_destroyed",
         }
     }
 
@@ -244,6 +258,8 @@ impl EventType {
             EventType::AbortCrsgenRequest => AbortCrsgen::SIGNATURE_HASH,
             EventType::NewKmsContext => NewKmsContext::SIGNATURE_HASH,
             EventType::NewKmsEpoch => NewKmsEpoch::SIGNATURE_HASH,
+            EventType::KmsContextDestroyed => KmsContextDestroyed::SIGNATURE_HASH,
+            EventType::KmsEpochDestroyed => KmsEpochDestroyed::SIGNATURE_HASH,
         }
     }
 
@@ -273,6 +289,8 @@ pub const ABORT_KEYGEN_REQUEST_NOTIFICATION: &str = "abort_keygen_request_availa
 pub const ABORT_CRSGEN_REQUEST_NOTIFICATION: &str = "abort_crsgen_request_available";
 pub const NEW_KMS_CONTEXT_NOTIFICATION: &str = "new_kms_context_available";
 pub const NEW_KMS_EPOCH_NOTIFICATION: &str = "new_kms_epoch_available";
+pub const KMS_CONTEXT_DESTROYED_NOTIFICATION: &str = "kms_context_destroyed_available";
+pub const KMS_EPOCH_DESTROYED_NOTIFICATION: &str = "kms_epoch_destroyed_available";
 
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
 #[sqlx(type_name = "operation_status", rename_all = "lowercase")]

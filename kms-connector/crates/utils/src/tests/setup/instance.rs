@@ -5,10 +5,7 @@ use crate::{
     },
 };
 use alloy::transports::http::reqwest::Url;
-use fhevm_gateway_bindings::{
-    decryption::Decryption::DecryptionInstance,
-    gateway_config::GatewayConfig::GatewayConfigInstance,
-};
+use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::KMSGenerationInstance,
     protocol_config::ProtocolConfig::ProtocolConfigInstance,
@@ -103,10 +100,6 @@ impl TestInstance {
 
     pub fn decryption_contract(&self) -> &DecryptionInstance<WalletProvider> {
         &self.blockchain().decryption_contract
-    }
-
-    pub fn gateway_config_contract(&self) -> &GatewayConfigInstance<WalletProvider> {
-        &self.blockchain().gateway_config_contract
     }
 
     pub fn kms_generation_contract(&self) -> &KMSGenerationInstance<WalletProvider> {

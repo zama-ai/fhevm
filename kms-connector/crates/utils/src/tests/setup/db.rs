@@ -183,12 +183,18 @@ async fn prepare_db(pool: &Pool<Postgres>) -> anyhow::Result<()> {
     info!("Inserting context #{TESTING_KMS_CONTEXT}, epoch #{DEFAULT_EPOCH_ID}) for tests...");
     let now = Utc::now();
     sqlx::query!(
-        "INSERT INTO kms_context(id, epoch_id, is_valid, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+        "INSERT INTO kms_context(id, is_valid, created_at, updated_at)
+        VALUES ($1, TRUE, $2, $2) ON CONFLICT DO NOTHING",
         TESTING_KMS_CONTEXT.as_le_slice(),
-        DEFAULT_EPOCH_ID.as_le_slice(),
-        true,
         now,
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query!(
+        "INSERT INTO kms_epoch(id, context_id, is_valid, created_at, updated_at)
+        VALUES ($1, $2, TRUE, $3, $3) ON CONFLICT DO NOTHING",
+        DEFAULT_EPOCH_ID.as_le_slice(),
+        TESTING_KMS_CONTEXT.as_le_slice(),
         now,
     )
     .execute(pool)

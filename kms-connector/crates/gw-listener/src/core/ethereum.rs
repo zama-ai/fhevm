@@ -1,9 +1,7 @@
 use crate::{
     core::{
         Config,
-        publish::{
-            ChainName, EthereumEventAction, publish_context_and_epoch, publish_ethereum_batch,
-        },
+        publish::{ChainName, publish_batch, publish_context_and_epoch},
     },
     monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER},
 };
@@ -26,8 +24,8 @@ use fhevm_host_bindings::{
         PrepKeygenRequest,
     },
     protocol_config::ProtocolConfig::{
-        self, KmsContextDestroyed, NewKmsContext, NewKmsEpoch, ProtocolConfigEvents,
-        ProtocolConfigInstance,
+        self, KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
+        ProtocolConfigEvents, ProtocolConfigInstance,
     },
 };
 use sqlx::{Pool, Postgres};
@@ -38,7 +36,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Ethereum-side events signatures polled by `EthereumListener`.
 /// Used to build the multi-address `eth_getLogs` filter.
-const ETHEREUM_EVENT_SIGNATURES: [B256; 8] = [
+const ETHEREUM_EVENT_SIGNATURES: [B256; 9] = [
     PrepKeygenRequest::SIGNATURE_HASH,
     KeygenRequest::SIGNATURE_HASH,
     CrsgenRequest::SIGNATURE_HASH,
@@ -47,6 +45,7 @@ const ETHEREUM_EVENT_SIGNATURES: [B256; 8] = [
     NewKmsContext::SIGNATURE_HASH,
     NewKmsEpoch::SIGNATURE_HASH,
     KmsContextDestroyed::SIGNATURE_HASH,
+    KmsEpochDestroyed::SIGNATURE_HASH,
 ];
 
 /// Struct monitoring and storing Ethereum's keygen events.
@@ -193,21 +192,19 @@ where
         let filter = base_filter.from_block(from_block).to_block(to_block);
 
         let logs = self.provider.get_logs(&filter).await?;
-        let actions = self.prepare_actions(logs)?;
-        publish_ethereum_batch(&self.db_pool, actions, to_block).await?;
+        let events = self.prepare_events(logs)?;
+        publish_batch(&self.db_pool, events, ChainName::Ethereum, to_block).await?;
 
         Ok((to_block.saturating_add(1), to_block < finalized_block))
     }
 
-    /// Decodes logs and prepares the [`EthereumEventAction`] to perform for each of them.
-    ///
-    /// Most events are stored in DB for the kms-worker. `KmsContextDestroyed` events instead
-    /// become context invalidations, as no other service has anything to do with them.
-    fn prepare_actions(&self, logs: Vec<Log>) -> anyhow::Result<Vec<EthereumEventAction>> {
+    /// Decodes logs into the [`ProtocolEvent`]s to store in DB, for the kms-worker to forward
+    /// them to the KMS Core.
+    fn prepare_events(&self, logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
         let kms_generation_address = self.config.kms_generation_contract.address;
         let protocol_config_address = self.config.protocol_config_contract.address;
 
-        let mut actions = Vec::with_capacity(logs.len());
+        let mut events = Vec::with_capacity(logs.len());
         for log in logs {
             let log_address = log.inner.address;
             let event_kind = if log_address == kms_generation_address {
@@ -233,15 +230,6 @@ where
                     continue;
                 }
 
-                if let ProtocolConfigEvents::KmsContextDestroyed(e) = &protocol_config_event {
-                    info!("KMS context #{} destroyed on-chain", e.kmsContextId);
-                    EVENT_RECEIVED_COUNTER
-                        .with_label_values(&["kms_context_destroyed"])
-                        .inc();
-                    actions.push(EthereumEventAction::InvalidateContext(e.kmsContextId));
-                    continue;
-                }
-
                 protocol_config_event.try_into()?
             } else {
                 warn!("Skipping log from unexpected address: {log_address}");
@@ -253,11 +241,13 @@ where
 
             let span = info_span!("handle_ethereum_event", event = %event_kind);
             let otlp_ctx = PropagationContext::inject(&span.context());
-            actions.push(EthereumEventAction::StoreEvent(Box::new(
-                ProtocolEvent::new(event_kind, log.transaction_hash, otlp_ctx),
-            )));
+            events.push(ProtocolEvent::new(
+                event_kind,
+                log.transaction_hash,
+                otlp_ctx,
+            ));
         }
-        Ok(actions)
+        Ok(events)
     }
 
     /// Determines the block to start event listening from.
@@ -309,7 +299,6 @@ mod tests {
         tests::setup::{TestInstance, TestInstanceBuilder},
         types::ProtocolEventKind,
     };
-    use sqlx::Row;
     use std::time::Duration;
 
     #[rstest::rstest]
@@ -338,17 +327,24 @@ mod tests {
 
         listener.store_on_chain_context().await.unwrap();
 
-        let row = sqlx::query("SELECT is_valid, epoch_id FROM kms_context WHERE id = $1")
-            .bind(context_id.as_le_slice())
-            .fetch_one(test_instance.db())
-            .await
-            .unwrap();
+        let context_valid: bool = sqlx::query_scalar!(
+            "SELECT is_valid FROM kms_context WHERE id = $1",
+            context_id.as_le_slice()
+        )
+        .fetch_one(test_instance.db())
+        .await
+        .unwrap();
+        assert!(context_valid);
 
-        assert!(row.try_get::<bool, _>("is_valid").unwrap());
-        assert_eq!(
-            row.try_get::<Vec<u8>, _>("epoch_id").unwrap(),
+        let epoch_row = sqlx::query!(
+            "SELECT context_id, is_valid FROM kms_epoch WHERE id = $1",
             epoch_id.as_le_slice()
-        );
+        )
+        .fetch_one(test_instance.db())
+        .await
+        .unwrap();
+        assert!(epoch_row.is_valid);
+        assert_eq!(epoch_row.context_id, Some(context_id.to_le_bytes_vec()));
     }
 
     #[rstest::rstest]
@@ -392,21 +388,18 @@ mod tests {
             ..Default::default()
         };
 
-        let actions = listener
-            .prepare_actions(vec![make_log(&genesis), make_log(&normal)])
+        let events = listener
+            .prepare_events(vec![make_log(&genesis), make_log(&normal)])
             .unwrap();
 
-        assert_eq!(actions.len(), 1, "genesis NewKmsContext should be skipped");
-        match &actions[0] {
-            EthereumEventAction::StoreEvent(event) => match &event.kind {
-                ProtocolEventKind::NewKmsContext(e) => assert_eq!(
-                    e.previousContextId,
-                    KMS_CONTEXT_COUNTER_BASE + U256::ONE,
-                    "only the non-genesis context switch should be kept"
-                ),
-                other => panic!("unexpected event kind: {other:?}"),
-            },
-            other => panic!("unexpected action: {other:?}"),
+        assert_eq!(events.len(), 1, "genesis NewKmsContext should be skipped");
+        match &events[0].kind {
+            ProtocolEventKind::NewKmsContext(e) => assert_eq!(
+                e.previousContextId,
+                KMS_CONTEXT_COUNTER_BASE + U256::ONE,
+                "only the non-genesis context switch should be kept"
+            ),
+            other => panic!("unexpected event kind: {other:?}"),
         }
     }
 

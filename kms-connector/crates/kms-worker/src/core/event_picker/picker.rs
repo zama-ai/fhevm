@@ -105,6 +105,8 @@ impl DbEventPicker {
             EventType::AbortCrsgenRequest => self.pick_abort_crsgen_requests().await,
             EventType::NewKmsContext => self.pick_new_kms_context_events().await,
             EventType::NewKmsEpoch => self.pick_new_kms_epoch_events().await,
+            EventType::KmsContextDestroyed => self.pick_kms_context_destroyed_events().await,
+            EventType::KmsEpochDestroyed => self.pick_kms_epoch_destroyed_events().await,
         }
     }
 
@@ -247,6 +249,50 @@ impl DbEventPicker {
         .await?
         .iter()
         .map(event::from_new_kms_epoch_row)
+        .collect()
+    }
+
+    async fn pick_kms_context_destroyed_events(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE kms_context_destroyed
+                SET status = 'under_process'
+                FROM (
+                    SELECT context_id
+                    FROM kms_context_destroyed
+                    WHERE status = 'pending'
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE kms_context_destroyed.context_id = req.context_id
+                RETURNING req.context_id, tx_hash, already_sent, created_at, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_kms_context_destroyed_row)
+        .collect()
+    }
+
+    async fn pick_kms_epoch_destroyed_events(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE kms_epoch_destroyed
+                SET status = 'under_process'
+                FROM (
+                    SELECT epoch_id
+                    FROM kms_epoch_destroyed
+                    WHERE status = 'pending'
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE kms_epoch_destroyed.epoch_id = req.epoch_id
+                RETURNING req.epoch_id, tx_hash, already_sent, created_at, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_kms_epoch_destroyed_row)
         .collect()
     }
 

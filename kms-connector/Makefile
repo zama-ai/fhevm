@@ -6,11 +6,18 @@
 
 DB_COMPOSE := docker compose -f connector-db/docker-compose.yml
 DB_SERVICE := kms-connector-db
+DB_MIGRATION_SERVICE := kms-connector-db-migration
+
+# Connection string for the local compose DB, used to regenerate the sqlx cache.
+DATABASE_URL := postgresql://postgres:postgres@localhost:5432/kms-connector
 
 # Mirror the CI test environment so "passes locally" means "passes in CI".
 TEST_ENV := SQLX_OFFLINE=true RUST_BACKTRACE=full
 
-.PHONY: help db-up db-down test test-ci
+# Foundry root holding the mock contracts the blockchain tests deploy at runtime.
+CONTRACTS_ROOT := tests
+
+.PHONY: help db-up db-down precompile-mocks test test-ci regen-sqlx-cache
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -22,11 +29,28 @@ db-up: ## Start the shared Postgres server (waits until healthy)
 db-down: ## Stop the Postgres server and delete its volume
 	@$(DB_COMPOSE) down -v
 
-test: db-up ## Fast local loop: ensure DB is up, then run the tests (DB left running)
+# The blockchain tests deploy the mocks with `forge create`, which compiles them
+# lazily. Under nextest's parallelism, many `forge` processes otherwise race to
+# install solc into the shared ~/.svm dir and exec it mid-write, failing with
+# "Text file busy". Building once up front installs solc and warms the artifact
+# cache so the concurrent deploys only deploy.
+precompile-mocks: ## Compile the mock contracts once, serially, before the tests fan out
+	@forge build --root $(CONTRACTS_ROOT)
+
+test: db-up precompile-mocks ## Fast local loop: ensure DB is up, then run the tests (DB left running)
 	@$(TEST_ENV) cargo nextest run
 
-test-ci: ## Self-contained run: up -> test -> guaranteed teardown (mirrors CI)
+test-ci: precompile-mocks ## Self-contained run: up -> test -> guaranteed teardown (mirrors CI)
 	@$(DB_COMPOSE) up -d --wait $(DB_SERVICE)
 	@$(TEST_ENV) cargo nextest run; status=$$?; \
+	$(DB_COMPOSE) down -v; \
+	exit $$status
+
+regen-sqlx-cache: ## Spin up DB + run migrations, regenerate the sqlx offline cache, then teardown
+	@$(DB_COMPOSE) up -d --wait $(DB_SERVICE)
+	@$(DB_COMPOSE) run --build --rm $(DB_MIGRATION_SERVICE); status=$$?; \
+	if [ $$status -eq 0 ]; then \
+		DATABASE_URL="$(DATABASE_URL)" cargo sqlx prepare --workspace -- --all-targets --all-features; status=$$?; \
+	fi; \
 	$(DB_COMPOSE) down -v; \
 	exit $$status

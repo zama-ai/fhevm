@@ -4,7 +4,7 @@ name = "fhevm_host_bindings"
 publish = true
 edition = "2024"
 license = "BSD-3-Clause-Clear"
-version = "0.10.0"
+version = "0.15.0"
 
 [lints.rust]
 unused = "allow"

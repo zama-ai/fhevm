@@ -3,6 +3,7 @@ use anyhow::anyhow;
 use connector_utils::types::db::{
     ABORT_CRSGEN_REQUEST_NOTIFICATION, ABORT_KEYGEN_REQUEST_NOTIFICATION,
     CRSGEN_REQUEST_NOTIFICATION, EventType, KEYGEN_REQUEST_NOTIFICATION,
+    KMS_CONTEXT_DESTROYED_NOTIFICATION, KMS_EPOCH_DESTROYED_NOTIFICATION,
     NEW_KMS_CONTEXT_NOTIFICATION, NEW_KMS_EPOCH_NOTIFICATION, PREP_KEYGEN_REQUEST_NOTIFICATION,
     PUBLIC_DECRYPT_REQUEST_NOTIFICATION, USER_DECRYPT_REQUEST_NOTIFICATION,
 };
@@ -87,6 +88,12 @@ impl DbEventNotifier {
             .listen(NEW_KMS_CONTEXT_NOTIFICATION)
             .await?;
         self.db_listener.listen(NEW_KMS_EPOCH_NOTIFICATION).await?;
+        self.db_listener
+            .listen(KMS_CONTEXT_DESTROYED_NOTIFICATION)
+            .await?;
+        self.db_listener
+            .listen(KMS_EPOCH_DESTROYED_NOTIFICATION)
+            .await?;
         Ok(())
     }
 
@@ -101,6 +108,8 @@ impl DbEventNotifier {
             EventType::AbortCrsgenRequest => self.db_long_event_polling,
             EventType::NewKmsContext => self.db_long_event_polling,
             EventType::NewKmsEpoch => self.db_long_event_polling,
+            EventType::KmsContextDestroyed => self.db_long_event_polling,
+            EventType::KmsEpochDestroyed => self.db_long_event_polling,
         };
         EventTicker::new(polling, kind)
     }
@@ -116,6 +125,8 @@ impl DbEventNotifier {
             self.ticker(EventType::AbortCrsgenRequest),
             self.ticker(EventType::NewKmsContext),
             self.ticker(EventType::NewKmsEpoch),
+            self.ticker(EventType::KmsContextDestroyed),
+            self.ticker(EventType::KmsEpochDestroyed),
         ];
 
         loop {
