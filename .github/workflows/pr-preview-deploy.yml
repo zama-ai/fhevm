@@ -57,7 +57,7 @@ on:
       kms_connector_chart_version:
         description: "Version of the kms-connector Helm chart"
         required: true
-        default: "1.5.3"
+        default: "1.5.2"
       kms_core_version:
         description: "Image tag for the dedicated KMS's kms-core (zama-ai/kms, not built by this workflow)"
         required: true
@@ -140,20 +140,33 @@ env:
   COPROCESSOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor
   COPROCESSOR_CHART_VERSION: "0.13.0"
   #=====KMS CONNECTOR=========================================================
-  # 1.5.2 predates the "epoch changes" chart rework (#2700, chart bumped to
-  # 1.5.3): at 1.5.2, commonConfig.gatewayContractAddresses still owns
-  # kmsGeneration and there is no ethereumContractAddresses.protocolConfig
-  # field at all (confirmed via `git show <commit>:charts/kms-connector/
-  # values.yaml` at each chart version's introducing commit) - the
-  # --set-string calls below (ethereumContractAddresses.{kmsGeneration,
-  # protocolConfig,acl}, matching this repo's post-RFC013 schema) silently
-  # created unused keys and rendered an empty KMSGeneration address into
-  # every kms-connector deployment instead ("KMSGeneration address is not
-  # configured for key `kms_generation_contract`"). 1.5.3 is the fix and also
-  # the latest available chart version.
+  # v0.13.1-hotfix.kmsconnector.1 is the only kms-connector app build we've
+  # confirmed actually running in production (zama-zws/gitops's mpc-testnet,
+  # paired with this exact chart version). It predates PR #2700 ("epoch
+  # changes and key resharing", chart bumped 1.5.2 -> 1.5.3 on main) - at
+  # 1.5.2, commonConfig.gatewayContractAddresses still owns kmsGeneration,
+  # ethereumContractAddresses still has kmsVerifier (removed at 1.5.3 - see
+  # the --set-string calls below), and there's no ethereumContractAddresses.
+  # protocolConfig field at all yet. This is a DELIBERATE downgrade from
+  # v0.14.0-4/chart 1.5.3 (which fixed a different bug - gw-listener's Config
+  # struct there still requires kms_verifier_address but 1.5.3's chart no
+  # longer renders it - "invalid string length for key `kms_verifier_address`")
+  # to fall back to this known-good pairing instead.
+  #
+  # NOTE: gatewayContractAddresses.kmsGeneration (1.5.2) vs
+  # ethereumContractAddresses.kmsGeneration (1.5.3) is just a values.yaml
+  # namespace rename, not a routing change - confirmed via templates/
+  # _helpers.tpl + every kms-connector-*-deployment.yaml at both chart
+  # versions: whichever field the address is set through, it always ends up
+  # in the same KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS env var,
+  # always emitted alongside KMS_CONNECTOR_ETHEREUM_URL (never GATEWAY_URL).
+  # configs/contracts-<network>.yaml's "gateway.kms_generation.address" preset
+  # key is the same legacy naming, also resolved into that same ethereum-side
+  # env var by the helper - so there's no host-vs-gateway chain mismatch here
+  # regardless of HOST_CONTRACTS_VERSION's RFC013 topology.
   KMS_CONNECTOR_VERSION: "v0.13.1-hotfix.kmsconnector.1"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
-  KMS_CONNECTOR_CHART_VERSION: "1.5.3"
+  KMS_CONNECTOR_CHART_VERSION: "1.5.2"
   #=====COPROCESSOR INFRA======================================================
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
@@ -826,6 +839,7 @@ jobs:
             --set-string "tfheWorker.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")" \
             --set-string "txSender.image.tag=$(jq -r .coprocessor_tx_sender <<<"${TAGS_JSON}")" \
             --set-string "zkProofWorker.image.tag=$(jq -r .coprocessor_zkproof_worker <<<"${TAGS_JSON}")"
+          sleep 60
 
       - name: Create kms-connector-tx-sender secret
         run: |
@@ -856,20 +870,30 @@ jobs:
           decryption=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.decryption\.address}')
           gateway_config=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.gateway_config\.address}')
           kms_generation=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.kms_generation\.address}')
-          protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.protocol_config\.address}')
           acl=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
+          # kms_verifier: chart 1.5.2's ethereumContractAddresses.kmsVerifier defaults to
+          # the zero address, which parses fine (unlike an empty string - see the
+          # KMS_CONNECTOR_VERSION comment above), so this is only wired when we actually
+          # have a real value; falling back to that safe default otherwise instead of
+          # failing the deploy.
+          kms_verifier=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.kms_verifier\.address}' 2>/dev/null || echo "")
           require_nonempty "gw-sc-addresses[decryption.address]" "${decryption}"
           require_nonempty "gw-sc-addresses[gateway_config.address]" "${gateway_config}"
           require_nonempty "host-sc-addresses[kms_generation.address]" "${kms_generation}"
-          require_nonempty "host-sc-addresses[protocol_config.address]" "${protocol_config}"
           require_nonempty "host-sc-addresses[acl.address]" "${acl}"
+          kms_verifier_args=()
+          if [[ -n "${kms_verifier}" ]]; then
+            kms_verifier_args=(--set-string "commonConfig.ethereumContractAddresses.kmsVerifier=${kms_verifier}")
+          else
+            echo "::warning::host-sc-addresses[kms_verifier.address] is empty - leaving kms-connector's kmsVerifier at the chart's zero-address default"
+          fi
           helm upgrade --install kms-connector "${KMS_CONNECTOR_CHART}" --version "${KMS_CONNECTOR_CHART_VERSION}" \
             -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-kms-connector-e2e.yaml \
             --set-string "commonConfig.gatewayContractAddresses.decryption=${decryption}" \
             --set-string "commonConfig.gatewayContractAddresses.gatewayConfig=${gateway_config}" \
-            --set-string "commonConfig.ethereumContractAddresses.kmsGeneration=${kms_generation}" \
-            --set-string "commonConfig.ethereumContractAddresses.protocolConfig=${protocol_config}" \
+            --set-string "commonConfig.gatewayContractAddresses.kmsGeneration=${kms_generation}" \
             --set-string "commonConfig.ethereumContractAddresses.acl=${acl}" \
+            "${kms_verifier_args[@]}" \
             --set-string "kmsConnectorDbMigration.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/db-migration" \
             --set-string "kmsConnectorDbMigration.image.tag=$(jq -r .kms_connector_db_migration <<<"${TAGS_JSON}")" \
             --set-string "kmsConnectorGwListener.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/gw-listener" \
@@ -878,6 +902,7 @@ jobs:
             --set-string "kmsConnectorKmsWorker.image.tag=$(jq -r .kms_connector_kms_worker <<<"${TAGS_JSON}")" \
             --set-string "kmsConnectorTxSender.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/tx-sender" \
             --set-string "kmsConnectorTxSender.image.tag=$(jq -r .kms_connector_tx_sender <<<"${TAGS_JSON}")"
+          sleep 60
 
       ######################################################################
       # KMS BOOTSTRAP: trigger the real FHE key + CRS generation ceremony
