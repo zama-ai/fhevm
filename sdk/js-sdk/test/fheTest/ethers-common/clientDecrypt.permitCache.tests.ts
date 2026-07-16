@@ -1,6 +1,7 @@
 import type { ethers } from 'ethers';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
+import { parseTransportKeyPair, serializeTransportKeyPair } from '@fhevm/sdk/actions/chain';
 import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 import { decryptTestCases, fheTypeIdFromName, createLogger } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
@@ -162,6 +163,40 @@ export function defineClientDecryptPermitCacheTests(parameters: {
           transportKeyPair: otherTransportKeyPair,
         }),
       ).rejects.toThrow('publicKey does not match');
+    });
+
+    // The full browser-reload flow: a dApp caches BOTH artifacts (transport
+    // key pair + permit) as JSON strings, then a page reload creates a brand
+    // new client that restores them and decrypts. The serialized key pair is
+    // raw hex key material with no embedded TKMS version — it is re-bound to
+    // the chain's resolved TKMS version at parse time, so restoring across a
+    // protocol upgrade rests on the key bytes staying version-portable.
+    // (A true cross-TKMS-version restore — keys cached under one bundled TKMS
+    // build, restored under another — needs two protocol eras in one process
+    // and is left to the multi-wasm / rollout setups.)
+    it('restores a cached session (key pair + permit) from JSON strings on a fresh client and decrypts', async () => {
+      // Session 1: sign, serialize both artifacts to JSON strings ("localStorage").
+      const clientA = await createReadyClient();
+      const { transportKeyPair, serialized } = await signAndSerialize(clientA);
+      const keyPairJson = JSON.stringify(serializeTransportKeyPair(clientA, { transportKeyPair }));
+      const permitJson = JSON.stringify(serialized);
+
+      // Session 2 (page reload): a brand new client restores the session.
+      const clientB = await createReadyClient();
+      const restoredKeyPair = await parseTransportKeyPair(clientB, JSON.parse(keyPairJson));
+      const restoredPermit = await clientB.parseSignedDecryptionPermit({
+        serializedPermit: JSON.parse(permitJson) as typeof serialized,
+        transportKeyPair: restoredKeyPair,
+      });
+
+      const encryptedValue = await readHandle();
+      const typedValue = await clientB.decryptValue({
+        contractAddress: config.fheTestAddress,
+        encryptedValue,
+        signedPermit: restoredPermit,
+        transportKeyPair: restoredKeyPair,
+      });
+      expect(typedValue.value).toBeDefined();
     });
   });
 }
