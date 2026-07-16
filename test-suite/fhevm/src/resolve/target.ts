@@ -172,7 +172,7 @@ const findImageTag = (
 };
 
 /** Normalizes a full SHA into the short tag form used by repo-owned images. */
-const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
+export const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
 
 /** Locates the simple-ACL support floor in fetched main history. */
 export const simpleAclFloor = (commits: string[]) => {
