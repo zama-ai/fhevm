@@ -1146,6 +1146,29 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.destroyKmsEpoch(pendingEpochId);
     }
 
+    function test_destroyPendingContextClearsPairedEpoch() public {
+        _setupEpochLifecycle();
+        uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        uint256 pendingEpochId = EPOCH_COUNTER_BASE + 2;
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+
+        // A pending context switch is never stuck: destroying the pending context settles the
+        // whole pair, clearing the paired pending epoch with it.
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+
+        vm.expectEmit(true, false, false, true, address(protocolConfig));
+        emit IProtocolConfig.KmsContextDestroyed(pendingContextId);
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(pendingContextId);
+
+        assertFalse(protocolConfig.isValidKmsContext(pendingContextId));
+        assertFalse(protocolConfig.isValidEpochForContext(pendingContextId, pendingEpochId));
+        (uint256 contextAfter, uint256 epochAfter) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(contextAfter, activeContextId);
+        assertEq(epochAfter, activeEpochId);
+    }
+
     function test_revertDestroyEpochNotOwner() public {
         _setupEpochLifecycle();
         (, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();

@@ -514,18 +514,21 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert LatestActiveKmsEpochCannotBeDestroyed(epochId);
         }
 
-        // Two destroyable cases:
+        // Destroyable cases, everything else reverts:
         // - Active: retire a superseded epoch so its old shares stop being served.
         // - Pending under an Active context: abort a stuck same-set rotation. Activation
         //   confirmations are one-shot per signer, so a divergent vote can never reach unanimity
         //   and the epoch would otherwise stay Pending forever — with its context still current,
         //   neither destroyKmsContext() (reverts for the latest-active context) nor completion
-        //   could ever settle it. A pending context switch is settled by destroyKmsContext()
-        //   instead, which clears its paired epoch itself.
+        //   could ever settle it. The pending epoch of an in-flight context switch (context
+        //   Pending/Created) is settled by destroyKmsContext() instead, which clears its paired
+        //   epoch itself.
         EpochState state = $.epochState[epochId];
-        bool destroyable = state == EpochState.Active ||
-            (state == EpochState.Pending && $.contextState[$.contextForEpoch[epochId]] == ContextState.Active);
-        if (!destroyable) {
+        if (state == EpochState.Pending) {
+            if ($.contextState[$.contextForEpoch[epochId]] != ContextState.Active) {
+                revert InvalidKmsEpoch(epochId);
+            }
+        } else if (state != EpochState.Active) {
             revert InvalidKmsEpoch(epochId);
         }
 
