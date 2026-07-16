@@ -111,6 +111,13 @@ export function defineClientDecryptPermitCacheTests(parameters: {
       });
       expect(restored.version).toBe(serialized.version);
 
+      // Full eip712 deep-equality: re-serializing the restored permit must
+      // reproduce the original serialized form exactly (domain, types,
+      // primaryType, message — nothing lost or reshaped by the JSON round-trip).
+      const reSerialized = client.serializeSignedDecryptionPermit({ signedPermit: restored });
+      expect(reSerialized).toEqual(serialized);
+      expect(JSON.parse(JSON.stringify(reSerialized))).toEqual(revived);
+
       const encryptedValue = await readHandle();
       const typedValue = await client.decryptValue({
         contractAddress: config.fheTestAddress,
