@@ -18,7 +18,9 @@
 # a single-host scenario as `task:deployAllHostContracts --with-kms-generation
 # true` (the canonical host chain owns the real KMSGeneration implementation;
 # gateway's own KMSGeneration proxy stays an empty, unused stand-in in that
-# case) - followed here.
+# case) - followed here. Requires HOST_CONTRACTS_VERSION >= v0.13.0 (see
+# pr-preview-deploy.yml's env block) - the flag/ProtocolConfig split doesn't
+# exist before that ("HH305: Unrecognized param" if pinned older).
 #
 # KMS_* placeholders below mirror values-gateway-contracts-e2e.yaml's -
 # same TODO(kms-keygen) caveat applies (real dedicated-KMS signer addresses
@@ -114,7 +116,7 @@ scDeploy:
     - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}
     - {name: KMS_PCR_VALUES, value: '[{"pcr0":"0x00","pcr1":"0x00","pcr2":"0x00"}]'}
   deployCommands:
-    - npx hardhat task:deployAllHostContracts
+    - npx hardhat task:deployAllHostContracts --with-kms-generation true
     # task:addHostPausers intentionally omitted — deferred to a follow-up step, same reasoning
     # as gateway-contracts' deferred task:addHostChainsToGatewayConfig.
   verifyContracts: false

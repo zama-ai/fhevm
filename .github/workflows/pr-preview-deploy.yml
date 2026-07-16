@@ -33,11 +33,11 @@ on:
       host_contracts_version:
         description: "Image tag for the host-contracts deployer image (ignored while build_images=true and it changed - see build_images above)"
         required: true
-        default: "v0.12.1"
+        default: "v0.13.0"
       gateway_contracts_version:
         description: "Image tag for the gateway-contracts deployer image (same override rule as host_contracts_version)"
         required: true
-        default: "v0.12.1"
+        default: "v0.13.0"
       contracts_chart_version:
         description: "Version of the contracts Helm chart"
         required: true
@@ -77,7 +77,7 @@ on:
       common_chart_version:
         description: "Version of the generic `common` Helm chart, used for postgres-*, relayer-migrate, relayer and test-suite alike"
         required: true
-        default: "?3"
+        default: "0.3.3"
 concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
   # workflow_dispatch: one slot per run - manual dispatches never cancel
@@ -103,14 +103,26 @@ env:
   # monorepo (confirmed via `git show <tag>:*/package.json` - their internal
   # package.json versions diverge across the same tag), but both are still
   # built + published from every top-level repo tag, so pinning both to the
-  # same tag is valid and keeps things simple. v0.9.8 was tried here first but
-  # predates gateway-contracts' ProtocolPayment/mocked-$ZAMA-OFT feature
-  # (task:deployMockedZamaOFT et al., first released in v0.10.0 - see
-  # ../../../ci/preview-env/gateway-chain/values-gateway-contracts-e2e.yaml's
-  # deployCommands) causing "HH303: Unrecognized task" - confirmed via
-  # `git merge-base --is-ancestor <commit> <tag>`.
-  GATEWAY_CONTRACTS_VERSION: "v0.12.1"
-  HOST_CONTRACTS_VERSION: "v0.12.1"
+  # same tag is valid and keeps things simple. Picked v0.13.0 to match the
+  # real zws-testnet pairing (see zama-zws/gitops/values/{eth,gw}-blockchain/
+  # *-sc-deploy*/values-zws-testnet.yaml). Both MUST be >= v0.13.0 - this is
+  # also the RFC013 KMSGeneration-to-host-chain migration boundary, and every
+  # downstream step below (kms-connector's --set-string wiring, the KMS
+  # BOOTSTRAP trigger-keygen step) is written for the post-migration topology
+  # (KMSGeneration + ProtocolConfig on the canonical HOST chain, not Gateway).
+  # Older pins broke on tasks our deploy scripts/downstream steps need:
+  #   - v0.9.8 gateway-contracts predates ProtocolPayment/mocked-$ZAMA-OFT
+  #     (task:deployMockedZamaOFT et al., first released in v0.10.0) -
+  #     "HH303: Unrecognized task".
+  #   - v0.12.1 host-contracts predates the split canonical-host deploy task
+  #     (--with-kms-generation / ProtocolConfig / host-side KMSGeneration,
+  #     first released in v0.13.0) - "HH305: Unrecognized param" if passed,
+  #     and if worked around, breaks the kms-connector wiring + keygen-trigger
+  #     steps below instead (they'd need to target gw-sc-addresses/
+  #     gateway-contracts, and ProtocolConfig doesn't exist pre-v0.13 at all).
+  # All boundaries confirmed via `git merge-base --is-ancestor <commit> <tag>`.
+  GATEWAY_CONTRACTS_VERSION: "v0.13.0"
+  HOST_CONTRACTS_VERSION: "v0.13.0"
   CONTRACTS_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts
   CONTRACTS_CHART_VERSION: "0.8.2"
   #=====COPROCESSOR==========================================================
