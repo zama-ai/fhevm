@@ -1,5 +1,5 @@
 use alloy::{
-    consensus::Account,
+    consensus::TrieAccount,
     eips::{BlockId, BlockNumberOrTag, Encodable2718},
     network::{Ethereum, Network, TransactionBuilder},
     primitives::{
@@ -199,7 +199,7 @@ where
         self.inner.get_gas_price()
     }
 
-    fn get_account(&self, address: Address) -> RpcWithBlock<Address, Account> {
+    fn get_account(&self, address: Address) -> RpcWithBlock<Address, TrieAccount> {
         self.inner.get_account(address)
     }
 

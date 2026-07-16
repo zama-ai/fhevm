@@ -264,7 +264,7 @@ where
 mod tests {
     use super::*;
     use alloy::{
-        network::{Ethereum, IntoWallet, Network, TransactionBuilder},
+        network::{Ethereum, IntoWallet, Network, NetworkTransactionBuilder, TransactionBuilder},
         primitives::Address,
         providers::{
             ProviderBuilder, SendableTx,
