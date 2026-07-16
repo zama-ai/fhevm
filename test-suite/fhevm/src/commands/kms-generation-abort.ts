@@ -16,12 +16,12 @@
  *   - Abort immediately after the trigger — the ceremony is the slow path, so the abort always
  *     lands on chain first; waiting for connector ingestion can lose the race to a fast
  *     ceremony.
- *   - Assert connector statuses phase-agnostically — depending on where the abort catches a
- *     party, request rows end `aborted` (KMS Core canceled the ceremony), `completed` (late
- *     work absorbed on chain without consensus), or `failed` (a threshold party's ceremony
- *     died once its peers aborted theirs), and abort rows end `completed` or `failed`
- *     (nothing left to cancel). What matters: no work stays in flight, nothing activates, and
- *     recovery completes.
+ *   - Assert connector statuses without assuming a specific phase — depending on where the
+ *     abort catches a party, request rows end `aborted` (KMS Core canceled the ceremony),
+ *     `completed` (late work recorded on chain without consensus), or `failed` (a threshold
+ *     party's ceremony died once its peers aborted theirs), and abort rows end `completed`
+ *     or `failed` (nothing left to cancel). What matters: no work stays in flight, nothing
+ *     activates, and recovery completes.
  *
  * Disruptive: recovery rotates the active key/CRS. Persisted discovery is re-synced, but
  * running services keep their fetched keyset — run this profile last, or re-up afterwards.
@@ -247,8 +247,8 @@ export const assertActiveIdUnchanged = (kind: "key" | "CRS", baseline: bigint, c
 };
 
 /**
- * Aborts an in-flight keygen and proves every layer retired it: contract state, quiesced
- * connector DBs, and an unchanged active key.
+ * Aborts an in-flight keygen and proves every layer dropped it: the contract state, the
+ * connector DBs (no rows left in flight), and an unchanged active key.
  */
 const abortKeygenMidFlight = async (state: State, target: Target, owner: Owner, abi: AbiHashes, paramsType: string, baselineKeyId: bigint) => {
   console.log("[kms-generation-abort] triggering keygen to abort it mid-flight…");
@@ -389,12 +389,12 @@ export const runKmsGenerationAbortProfile = async (state: State) => {
     `[kms-generation-abort] baseline on ${target.where}: activeKeyId=${baseline.keyId} activeCrsId=${baseline.crsId} (owner ${owner.address})`,
   );
 
-  // Revert surface first: ids outside the request-id space are rejected outright.
+  // Revert checks first: ids that were never assigned to a request are rejected outright.
   await expectRevert(target, owner, "abortKeygen(0)", "AbortKeygenInvalidId(uint256)", "abortKeygen(uint256)", "0");
   await expectRevert(target, owner, "abortKeygen(unknown id)", "AbortKeygenInvalidId(uint256)", "abortKeygen(uint256)", (1n << 255n).toString());
   await expectRevert(target, owner, "abortCrsgen(0)", "AbortCrsgenInvalidId(uint256)", "abortCrsgen(uint256)", "0");
   await expectRevert(target, owner, "abortCrsgen(unknown id)", "AbortCrsgenInvalidId(uint256)", "abortCrsgen(uint256)", (1n << 255n).toString());
-  console.log("[kms-generation-abort] invalid-id revert surface OK");
+  console.log("[kms-generation-abort] invalid-id reverts OK");
 
   await abortKeygenMidFlight(state, target, owner, abi, paramsType, baseline.keyId);
   await abortCrsgenMidFlight(state, target, owner, abi, paramsType, baseline.crsId);
