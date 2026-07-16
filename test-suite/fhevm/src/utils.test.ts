@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { hostReachableMaterialUrl, hostReachableRpcUrl, mergeArgs } from "./utils/fs";
+import { hostReachableMaterialUrl, hostReachableRpcUrl, mergeArgs, uint256ToId } from "./utils/fs";
 import { run } from "./utils/process";
 
 describe("utils/fs", () => {
@@ -19,6 +19,12 @@ describe("utils/fs", () => {
   test("times out bounded process execution", async () => {
     await expect(run(["bun", "-e", "await new Promise((resolve) => setTimeout(resolve, 1000))"], { timeoutMs: 10 }))
       .rejects.toThrow(/timed out after 10ms/);
+  });
+
+  test("zero-pads bigints to the 64-hex-char id form", () => {
+    expect(uint256ToId(1n)).toBe("0000000000000000000000000000000000000000000000000000000000000001");
+    const id = (0x03n << 248n) | 5n;
+    expect(BigInt(`0x${uint256ToId(id)}`)).toBe(id);
   });
 
   test("replaces split-form flags without leaving orphaned values", () => {
