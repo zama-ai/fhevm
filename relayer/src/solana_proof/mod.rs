@@ -26,10 +26,6 @@ pub mod poller;
 pub mod proof;
 pub mod replay;
 pub mod store;
-// This behavior-neutral source seam is consumed by the stacked SQL ingestion
-// cutover; keeping it private avoids publishing an intermediate provider API.
-#[allow(dead_code)]
-pub(crate) mod yellowstone_source;
 
 pub use chain::{ChainFetcher, RpcChainFetcher};
 pub use config::SolanaProofConfig;
