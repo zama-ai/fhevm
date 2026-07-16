@@ -269,7 +269,14 @@ jobs:
       - build-coprocessor
       - build-relayer
       - build-test-suite
-    if: always() && needs.check-labels.outputs.should_deploy == 'true'
+    # always(): see deploy job's own if for why (build-* being legitimately
+    # skipped would otherwise transitively skip this job too, per
+    # actions/runner#2205) - explicit check-labels.result guards against
+    # always() also masking a genuine check-labels failure.
+    if: >-
+      always() &&
+      needs.check-labels.outputs.should_deploy == 'true' &&
+      needs.check-labels.result == 'success'
     runs-on: ubuntu-latest
     outputs:
       short_sha: ${{ steps.resolve.outputs.short_sha }}
@@ -428,7 +435,20 @@ jobs:
   deploy:
     name: deploy
     needs: [check-labels, resolve-tags]
-    if: needs.check-labels.outputs.should_deploy == 'true'
+    # always() is required here, not just cosmetic: without a status-check
+    # function, GitHub implicitly ANDs success() across the *entire*
+    # transitive needs graph (see actions/runner#2205) - including the
+    # build-* jobs resolve-tags needs, which are legitimately `skipped`
+    # whenever build_images is off. Without this, deploy silently no-ops
+    # even though should_deploy is 'true' and resolve-tags itself succeeded
+    # (confirmed the hard way: PR #3189's pr-preview-e2e-only run). Since
+    # always() alone would also let this job start after a genuine
+    # resolve-tags *failure* (with NAMESPACE/TAGS_JSON empty), explicitly
+    # require resolve-tags' own result too.
+    if: >-
+      always() &&
+      needs.check-labels.outputs.should_deploy == 'true' &&
+      needs.resolve-tags.result == 'success'
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
     timeout-minutes: 90
     permissions:
