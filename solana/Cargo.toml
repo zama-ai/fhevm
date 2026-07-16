@@ -4,6 +4,7 @@ members = [
     "crates/solana-ed25519-instruction",
     "crates/zama-fhe",
     "crates/zama-solana-acl",
+    "crates/zama-solana-transaction",
     "programs/confidential-deposit-app",
     "programs/confidential-token",
     "programs/demo-vault",

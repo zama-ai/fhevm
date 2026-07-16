@@ -19,11 +19,15 @@ use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::Channel;
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::prelude::{
-    subscribe_update::UpdateOneof, CommitmentLevel, CompiledInstruction,
-    InnerInstruction, InnerInstructions, Message as TransactionMessage,
-    SubscribeRequest, SubscribeRequestFilterAccounts,
-    SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterTransactions,
-    SubscribeUpdateTransactionInfo, TransactionStatusMeta,
+    subscribe_update::UpdateOneof, CommitmentLevel,
+    Message as TransactionMessage, SubscribeRequest,
+    SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocksMeta,
+    SubscribeRequestFilterTransactions, SubscribeUpdateTransactionInfo,
+    TransactionStatusMeta,
+};
+use zama_solana_transaction::{
+    CompiledInstruction as CanonicalCompiledInstruction,
+    InnerInstructionGroup as CanonicalInnerInstructionGroup,
 };
 
 use crate::database::tfhe_event_propagate::Database;
@@ -264,124 +268,71 @@ fn validated_account_keys<'a>(
         .collect()
 }
 
-fn resolve_instruction(
-    account_keys: &[[u8; 32]],
-    top_level_index: u32,
-    is_inner: bool,
-    program_id_index: u32,
-    data: &[u8],
-    account_indices: &[u8],
-) -> Result<crate::solana_reconstruct::DecodedInstruction> {
-    let program =
-        account_keys.get(program_id_index as usize).ok_or_else(|| {
-            anyhow!("program_id_index {program_id_index} out of range")
-        })?;
-    let accounts = account_indices
-        .iter()
-        .map(|&index| {
-            account_keys.get(index as usize).copied().ok_or_else(|| {
-                anyhow!("instruction account index {index} out of range")
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(crate::solana_reconstruct::DecodedInstruction {
-        program: bs58::encode(program).into_string(),
-        data: data.to_vec(),
-        accounts,
-        top_level_index,
-        is_inner,
-    })
-}
-
-fn resolve_execution_order(
-    account_keys: &[[u8; 32]],
-    top_level: &[CompiledInstruction],
-    inner_groups: &[InnerInstructions],
-) -> Result<Vec<crate::solana_reconstruct::DecodedInstruction>> {
-    let mut inner_by_index: HashMap<u32, &[InnerInstruction]> = HashMap::new();
-    for group in inner_groups {
-        if group.index as usize >= top_level.len() {
-            return Err(anyhow!(
-                "inner-instruction group index {} is out of range",
-                group.index
-            ));
-        }
-        if inner_by_index
-            .insert(group.index, group.instructions.as_slice())
-            .is_some()
-        {
-            return Err(anyhow!(
-                "duplicate inner-instruction group index {}",
-                group.index
-            ));
-        }
-        let mut previous_height = 1u32;
-        for (position, instruction) in group.instructions.iter().enumerate() {
-            let height = instruction.stack_height.ok_or_else(|| {
-                anyhow!(
-                    "inner instruction {position} in group {} has no stackHeight",
-                    group.index
-                )
-            })?;
-            if height < 2
-                || (position == 0 && height != 2)
-                || height > previous_height.saturating_add(1)
-            {
-                return Err(anyhow!(
-                    "impossible stackHeight {height} at inner instruction {position} in group {}",
-                    group.index
-                ));
-            }
-            previous_height = height;
-        }
-    }
-
-    let mut ordered = Vec::new();
-    for (index, instruction) in top_level.iter().enumerate() {
-        let index = index as u32;
-        ordered.push(resolve_instruction(
-            account_keys,
-            index,
-            false,
-            instruction.program_id_index,
-            &instruction.data,
-            &instruction.accounts,
-        )?);
-        if let Some(inner) = inner_by_index.get(&index) {
-            for instruction in inner.iter() {
-                ordered.push(resolve_instruction(
-                    account_keys,
-                    index,
-                    true,
-                    instruction.program_id_index,
-                    &instruction.data,
-                    &instruction.accounts,
-                )?);
-            }
-        }
-    }
-    Ok(ordered)
-}
-
 fn decode_transaction_instructions(
     message: &TransactionMessage,
     meta: &TransactionStatusMeta,
 ) -> Result<Vec<crate::solana_reconstruct::DecodedInstruction>> {
-    // Solana instruction indexes address static keys ++ ALT writable ++ ALT
-    // readonly. Keep assembly and instruction decoding in one production path.
-    let account_keys = validated_account_keys(
-        message
-            .account_keys
-            .iter()
-            .chain(meta.loaded_writable_addresses.iter())
-            .chain(meta.loaded_readonly_addresses.iter()),
-    )?;
-    resolve_execution_order(
-        &account_keys,
-        &message.instructions,
-        &meta.inner_instructions,
+    let static_keys = validated_account_keys(&message.account_keys)?;
+    let loaded_writable_keys =
+        validated_account_keys(&meta.loaded_writable_addresses)?;
+    let loaded_readonly_keys =
+        validated_account_keys(&meta.loaded_readonly_addresses)?;
+    let top_level = message
+        .instructions
+        .iter()
+        .map(|instruction| CanonicalCompiledInstruction {
+            program_id_index: instruction.program_id_index as usize,
+            account_indices: instruction
+                .accounts
+                .iter()
+                .map(|index| *index as usize)
+                .collect(),
+            data: instruction.data.clone(),
+            stack_height: None,
+        })
+        .collect::<Vec<_>>();
+    let inner_groups = meta
+        .inner_instructions
+        .iter()
+        .map(|group| CanonicalInnerInstructionGroup {
+            top_level_index: group.index as usize,
+            instructions: group
+                .instructions
+                .iter()
+                .map(|instruction| CanonicalCompiledInstruction {
+                    program_id_index: instruction.program_id_index as usize,
+                    account_indices: instruction
+                        .accounts
+                        .iter()
+                        .map(|index| *index as usize)
+                        .collect(),
+                    data: instruction.data.clone(),
+                    stack_height: instruction.stack_height,
+                })
+                .collect(),
+        })
+        .collect::<Vec<_>>();
+
+    zama_solana_transaction::resolve_transaction(
+        &static_keys,
+        &loaded_writable_keys,
+        &loaded_readonly_keys,
+        top_level,
+        inner_groups,
     )
+    .map_err(anyhow::Error::from)?
+    .into_iter()
+    .map(|instruction| {
+        Ok(crate::solana_reconstruct::DecodedInstruction {
+            program: bs58::encode(instruction.program_id).into_string(),
+            data: instruction.data,
+            accounts: instruction.accounts,
+            top_level_index: u32::try_from(instruction.top_level_index)
+                .context("top-level instruction index exceeds u32")?,
+            is_inner: instruction.stack_height != 1,
+        })
+    })
+    .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
