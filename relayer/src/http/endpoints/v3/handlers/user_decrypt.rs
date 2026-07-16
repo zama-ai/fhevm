@@ -8,6 +8,11 @@
 //! `userDecryptionRequest(HandleEntry[], …)` calldata builder and the
 //! shared receipt-handling path. GET is delegated verbatim to the v2
 //! handler since the response schema is unchanged.
+//!
+//! TODO(#1682): Solana clients currently fetch MMR proofs from the standalone
+//! `solana-proof-service` (`GET /internal/solana/mmr-proof`) and embed them in
+//! `extraData` before calling this route. The relayer does not own proof
+//! construction; optional in-process proof fetch remains a product gap.
 
 use crate::core::event::{
     ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
