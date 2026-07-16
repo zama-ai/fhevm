@@ -351,7 +351,7 @@ jobs:
             .kmsParties.connectorDatabase.engineVersion = "17.9" |
             .kmsParties.connectorDatabase.parameterGroupFamily = "postgres17" |
             .kmsParties.connectorDatabase.parameters = [{"name": "rds.force_ssl", "value": "0"}] |
-            .kmsParties.connectorDatabase.instanceClass = "db.t3.micro" |
+            .kmsParties.connectorDatabase.instanceClass = "db.t4g.small" |
             .kmsParties.connectorDatabase.username = "zama" |
             .kmsParties.connectorDatabase.monitoringInterval = 0 |
             .kmsParties.connectorDatabase.performanceInsightsEnabled = false |
