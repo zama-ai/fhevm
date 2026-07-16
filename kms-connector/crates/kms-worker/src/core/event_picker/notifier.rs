@@ -15,7 +15,7 @@ use tokio::{
     sync::mpsc::Sender,
     time::{Interval, MissedTickBehavior, interval},
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 pub struct DbEventNotifier {
     /// The entity collecting Postgres notifications.
