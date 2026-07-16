@@ -20,9 +20,10 @@ use tonic::transport::Channel;
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, CompiledInstruction,
-    InnerInstruction, InnerInstructions, SubscribeRequest,
-    SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocksMeta,
-    SubscribeRequestFilterTransactions, SubscribeUpdateTransactionInfo,
+    InnerInstruction, InnerInstructions, Message as TransactionMessage,
+    SubscribeRequest, SubscribeRequestFilterAccounts,
+    SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterTransactions,
+    SubscribeUpdateTransactionInfo, TransactionStatusMeta,
 };
 
 use crate::database::tfhe_event_propagate::Database;
@@ -363,6 +364,26 @@ fn resolve_execution_order(
     Ok(ordered)
 }
 
+fn decode_transaction_instructions(
+    message: &TransactionMessage,
+    meta: &TransactionStatusMeta,
+) -> Result<Vec<crate::solana_reconstruct::DecodedInstruction>> {
+    // Solana instruction indexes address static keys ++ ALT writable ++ ALT
+    // readonly. Keep assembly and instruction decoding in one production path.
+    let account_keys = validated_account_keys(
+        message
+            .account_keys
+            .iter()
+            .chain(meta.loaded_writable_addresses.iter())
+            .chain(meta.loaded_readonly_addresses.iter()),
+    )?;
+    resolve_execution_order(
+        &account_keys,
+        &message.instructions,
+        &meta.inner_instructions,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn subscribe_loop(
     db: &Database,
@@ -614,28 +635,11 @@ async fn ingest_transaction(
         IngestFailure::permanent(anyhow!("tx has no message"))
     })?;
 
-    // Resolved account-key list: static keys ++ ALT writable ++ ALT readonly,
-    // the order `program_id_index` and instruction account indexes address. Reject
-    // malformed provider data before reconstruction so positional accounts can
-    // never be shifted or replaced with sentinel values.
-    let account_keys = validated_account_keys(
-        message
-            .account_keys
-            .iter()
-            .chain(meta.loaded_writable_addresses.iter())
-            .chain(meta.loaded_readonly_addresses.iter()),
-    )
-    .map_err(IngestFailure::permanent)?;
-
     // Top-level + inner instruction invocations with resolved accounts (a
     // zama-host instruction is called directly as top-level, or via CPI as inner
     // for token flows); scanned by the reconstruction shadow-compare and ingest.
-    let all_instructions = resolve_execution_order(
-        &account_keys,
-        &message.instructions,
-        &meta.inner_instructions,
-    )
-    .map_err(IngestFailure::permanent)?;
+    let all_instructions = decode_transaction_instructions(message, meta)
+        .map_err(IngestFailure::permanent)?;
 
     let events = match reconstruct_events_for_insert(
         config,
@@ -891,9 +895,10 @@ fn compute_result_handle(
 
 #[cfg(test)]
 mod account_resolution_tests {
-    use super::{resolve_execution_order, validated_account_keys};
+    use super::{decode_transaction_instructions, validated_account_keys};
     use yellowstone_grpc_proto::prelude::{
         CompiledInstruction, InnerInstruction, InnerInstructions,
+        Message as TransactionMessage, TransactionStatusMeta,
     };
 
     mod shared_fixtures {
@@ -924,10 +929,6 @@ mod account_resolution_tests {
     #[test]
     fn shared_transaction_decoding_contract() {
         for fixture in transaction_decoding_fixtures() {
-            let key_bytes: Vec<Vec<u8>> =
-                fixture.account_tags().map(key).collect();
-            let account_keys =
-                validated_account_keys(key_bytes.iter()).unwrap();
             let top_level: Vec<CompiledInstruction> = fixture
                 .top_level
                 .iter()
@@ -955,11 +956,34 @@ mod account_resolution_tests {
                 })
                 .collect();
 
-            let decoded = resolve_execution_order(
-                &account_keys,
-                &top_level,
-                &inner_groups,
-            );
+            let message = TransactionMessage {
+                account_keys: fixture
+                    .static_account_tags
+                    .iter()
+                    .copied()
+                    .map(key)
+                    .collect(),
+                instructions: top_level,
+                ..Default::default()
+            };
+            let meta = TransactionStatusMeta {
+                inner_instructions: inner_groups,
+                loaded_writable_addresses: fixture
+                    .loaded_writable_account_tags
+                    .iter()
+                    .copied()
+                    .map(key)
+                    .collect(),
+                loaded_readonly_addresses: fixture
+                    .loaded_readonly_account_tags
+                    .iter()
+                    .copied()
+                    .map(key)
+                    .collect(),
+                ..Default::default()
+            };
+
+            let decoded = decode_transaction_instructions(&message, &meta);
             match &fixture.expected {
                 ExpectedOutcome::Accept { instructions } => {
                     let actual: Vec<ExpectedInstruction> = decoded

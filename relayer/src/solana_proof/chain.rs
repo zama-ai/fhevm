@@ -507,7 +507,6 @@ mod tests {
     #[test]
     fn shared_transaction_decoding_contract() {
         for fixture in transaction_decoding_fixtures() {
-            let account_keys: Vec<[u8; 32]> = fixture.account_tags().map(|tag| [tag; 32]).collect();
             let top_level: Vec<CompiledIx> = fixture
                 .top_level
                 .iter()
@@ -544,7 +543,37 @@ mod tests {
                 })
                 .collect();
 
-            let decoded = flatten_execution_order(&top_level, &inner_groups, &account_keys);
+            let parsed = GetTransactionResult {
+                slot: 0,
+                transaction: TxEnvelope {
+                    message: Message {
+                        account_keys: fixture
+                            .static_account_tags
+                            .iter()
+                            .map(|tag| fixture_base58_encode(&[*tag; 32]))
+                            .collect(),
+                        instructions: top_level,
+                    },
+                },
+                meta: Some(Meta {
+                    inner_instructions: inner_groups,
+                    err: None,
+                    loaded_addresses: Some(LoadedAddresses {
+                        writable: fixture
+                            .loaded_writable_account_tags
+                            .iter()
+                            .map(|tag| fixture_base58_encode(&[*tag; 32]))
+                            .collect(),
+                        readonly: fixture
+                            .loaded_readonly_account_tags
+                            .iter()
+                            .map(|tag| fixture_base58_encode(&[*tag; 32]))
+                            .collect(),
+                    }),
+                }),
+            };
+            let decoded = decode_transaction_result("fixture", parsed)
+                .map(|transaction| transaction.instructions);
             match &fixture.expected {
                 ExpectedOutcome::Accept { instructions } => {
                     let actual: Vec<ExpectedInstruction> = decoded

@@ -14,16 +14,6 @@ pub struct TransactionDecodingFixture {
     pub expected: ExpectedOutcome,
 }
 
-impl TransactionDecodingFixture {
-    pub fn account_tags(&self) -> impl Iterator<Item = u8> + '_ {
-        self.static_account_tags
-            .iter()
-            .chain(&self.loaded_writable_account_tags)
-            .chain(&self.loaded_readonly_account_tags)
-            .copied()
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct CompiledInstructionFixture {
     pub program_id_index: u32,
