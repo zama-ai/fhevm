@@ -443,13 +443,15 @@ const buildInstanceEnvs = async (
   }
   for (let index = 0; index < plan.topology.count; index += 1) {
     const wallet = await deriveWallet(mnemonic, COPROCESSOR_WALLET_INDICES[index]);
+    const ctBucket = `coproc-${index}-ct128`;
     envs["gateway-sc"][`COPROCESSOR_TX_SENDER_ADDRESS_${index}`] = wallet.address;
     envs["gateway-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
-    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/ct128`;
+    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/${ctBucket}`;
     envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
       Object.assign(envs["coprocessor"], baseInstance?.env ?? {});
+      envs["coprocessor"].BUCKET_NAME_CT128 = ctBucket;
       continue;
     }
     const next = { ...envs["coprocessor"] };
@@ -457,6 +459,7 @@ const buildInstanceEnvs = async (
     next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
     const instance = plan.coprocessor.instances.find((item) => item.index === index);
     Object.assign(next, instance?.env ?? {});
+    next.BUCKET_NAME_CT128 = ctBucket;
     instanceEnvs[`coprocessor.${index}`] = next;
   }
   return instanceEnvs;
