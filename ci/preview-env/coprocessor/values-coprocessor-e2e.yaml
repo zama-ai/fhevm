@@ -108,10 +108,12 @@ txSender:
   # accounts, so any unused index works; picked one not already used as a
   # placeholder identity elsewhere.
   wallet: {secret: {value: "0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e"}}
-  # --multichain-acl-address is legacy v0.11-only (see charts/coprocessor/
-  # values.yaml's txSender.disabledArgs comment) and would reference a
-  # nonexistent gw-sc-addresses key at this contracts version (see
-  # commonConfig.gatewayContractAddresses above) - caused
+  # --multichain-acl-address (see charts/coprocessor/values.yaml's
+  # txSender.disabledArgs comment) would reference a nonexistent
+  # gw-sc-addresses key: gateway-contracts still doesn't deploy a
+  # MultichainAcl contract even at v0.13.0 (see commonConfig.
+  # gatewayContractAddresses above; confirmed via `kubectl get configmap
+  # gw-sc-addresses` - no multichain_acl.address key) - caused
   # CreateContainerConfigError without this.
   disabledArgs: ["multichain-acl-address"]
 

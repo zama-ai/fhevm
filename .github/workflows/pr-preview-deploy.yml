@@ -45,7 +45,7 @@ on:
       coprocessor_version:
         description: "Image tag for coprocessor images (same override rule as host_contracts_version above)"
         required: true
-        default: "v0.11.0"
+        default: "v0.13.0"
       coprocessor_chart_version:
         description: "Version of the coprocessor Helm chart"
         required: true
@@ -53,19 +53,19 @@ on:
       kms_connector_version:
         description: "Image tag for kms-connector images (same override rule as host_contracts_version above)"
         required: true
-        default: "v0.12.0"
+        default: "v0.13.1-hotfix.kmsconnector.1"
       kms_connector_chart_version:
         description: "Version of the kms-connector Helm chart"
         required: true
-        default: "1.5.2"
+        default: "1.5.3"
       kms_core_version:
         description: "Image tag for the dedicated KMS's kms-core (zama-ai/kms, not built by this workflow)"
         required: true
-        default: "v0.13.10"
+        default: "v0.13.20"
       kms_repo_ref:
         description: "Git ref of zama-ai/kms to check out for deploy scripts + tkms-infra/kms-core charts"
         required: true
-        default: "v0.13.10"
+        default: "v0.13.20"
       relayer_version:
         description: "Image tag for the relayer/relayer-migrate images (same override rule as host_contracts_version above)"
         required: true
@@ -126,19 +126,34 @@ env:
   CONTRACTS_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts
   CONTRACTS_CHART_VERSION: "0.8.2"
   #=====COPROCESSOR==========================================================
-  COPROCESSOR_VERSION: "v0.11.0"
+  # Must be >= v0.13.0 to match host/gateway-contracts' RFC013 migration
+  # above: v0.11.0's gw-listener/host-listener/host-listener-poller binaries
+  # don't know about ciphertext-commits-address/kms-generation-address at
+  # all ("unexpected argument"), its tx-sender still hard-requires the since
+  # -removed multichain-acl-address/host-chain-url args, and its db-migration
+  # /sns-worker still have the since-removed per-tenant API key plumbing
+  # (TENANT_API_KEY) - confirmed via `git show <tag>:coprocessor/...`. Picked
+  # v0.13.0 to match the real zws-testnet pairing (see zama-zws/gitops/values/
+  # coproc/coproc-workers, eth-blockchain/eth-coproc-listener, gw-blockchain/
+  # gw-coprocessor's values-zws-testnet.yaml - all pinned to v0.13.0).
+  COPROCESSOR_VERSION: "v0.13.0"
   COPROCESSOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor
   COPROCESSOR_CHART_VERSION: "0.13.0"
   #=====KMS CONNECTOR=========================================================
-  # 1.5.2 predates the "epoch changes" chart rework (#2700): its
-  # commonConfig.*ContractAddresses schema is kmsGeneration under
-  # gatewayContractAddresses (not ethereumContractAddresses) and has no
-  # protocolConfig field at all, so the --set-string calls below (which use
-  # the 1.5.3+ schema) silently rendered an empty KMSGeneration address into
-  # every kms-connector deployment - confirmed via `helm get manifest`.
-  KMS_CONNECTOR_VERSION: "v0.12.0"
+  # 1.5.2 predates the "epoch changes" chart rework (#2700, chart bumped to
+  # 1.5.3): at 1.5.2, commonConfig.gatewayContractAddresses still owns
+  # kmsGeneration and there is no ethereumContractAddresses.protocolConfig
+  # field at all (confirmed via `git show <commit>:charts/kms-connector/
+  # values.yaml` at each chart version's introducing commit) - the
+  # --set-string calls below (ethereumContractAddresses.{kmsGeneration,
+  # protocolConfig,acl}, matching this repo's post-RFC013 schema) silently
+  # created unused keys and rendered an empty KMSGeneration address into
+  # every kms-connector deployment instead ("KMSGeneration address is not
+  # configured for key `kms_generation_contract`"). 1.5.3 is the fix and also
+  # the latest available chart version.
+  KMS_CONNECTOR_VERSION: "v0.13.1-hotfix.kmsconnector.1"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
-  KMS_CONNECTOR_CHART_VERSION: "1.5.2"
+  KMS_CONNECTOR_CHART_VERSION: "1.5.3"
   #=====COPROCESSOR INFRA======================================================
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
@@ -150,8 +165,8 @@ env:
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================
-  KMS_REPO_REF: "v0.13.10"
-  KMS_CORE_TAG: "v0.13.10"
+  KMS_REPO_REF: "v0.13.20"
+  KMS_CORE_TAG: "v0.13.20"
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
 
