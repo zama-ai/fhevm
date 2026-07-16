@@ -86,12 +86,12 @@ impl SlotContext {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 struct BlockIdentity {
     block_hash: [u8; 32],
     parent_slot: u64,
     parent_block_hash: [u8; 32],
-    transactions: Vec<(u64, Vec<u8>)>,
+    transactions: Vec<SubscribeUpdateTransactionInfo>,
 }
 
 #[derive(Debug)]
@@ -103,17 +103,21 @@ pub(super) enum SealDecision {
 #[derive(Debug)]
 pub(super) struct BlockValidator {
     start: StartPosition,
+    resume_is_applied: bool,
     checkpoint_observed: bool,
-    last_block: Option<(BlockCheckpoint, BlockIdentity)>,
+    last_observed: Option<(BlockCheckpoint, BlockIdentity)>,
+    last_committed: Option<BlockCheckpoint>,
     contexts: BTreeMap<u64, SlotContext>,
 }
 
 impl BlockValidator {
-    pub fn new(start: StartPosition) -> Self {
+    pub fn new(start: StartPosition, resume_is_applied: bool) -> Self {
         Self {
             checkpoint_observed: matches!(start, StartPosition::Tip),
             start,
-            last_block: None,
+            resume_is_applied,
+            last_observed: None,
+            last_committed: None,
             contexts: BTreeMap::new(),
         }
     }
@@ -126,9 +130,9 @@ impl BlockValidator {
             .account
             .ok_or_else(|| anyhow!("Solana account update has no account"))?;
         if self
-            .last_block
+            .last_committed
             .as_ref()
-            .is_some_and(|(checkpoint, _)| update.slot <= checkpoint.slot)
+            .is_some_and(|checkpoint| update.slot <= checkpoint.slot)
         {
             bail!(
                 "late Solana sysvar account update for slot {} after checkpoint",
@@ -162,7 +166,10 @@ impl BlockValidator {
         block
             .transactions
             .sort_by_key(|transaction| transaction.index);
-        validate_transactions(&block.transactions)?;
+        validate_transactions(
+            &block.transactions,
+            block.executed_transaction_count,
+        )?;
         let identity = block_identity(&block, block_hash, parent_block_hash);
 
         if !self.checkpoint_observed {
@@ -180,15 +187,24 @@ impl BlockValidator {
                 bail!("checkpoint block hash changed at slot {}", block.slot);
             }
             self.checkpoint_observed = true;
-            self.last_block = Some((checkpoint.clone(), identity));
-            self.contexts.remove(&block.slot);
-            return Ok(SealDecision::Replay);
+            if self.resume_is_applied {
+                self.last_observed = Some((checkpoint.clone(), identity));
+                self.last_committed = Some(checkpoint.clone());
+                self.contexts.remove(&block.slot);
+                return Ok(SealDecision::Replay);
+            }
         }
 
-        if let Some((checkpoint, previous_identity)) = &self.last_block {
+        if let Some((checkpoint, previous_identity)) = &self.last_observed {
             if block.slot == checkpoint.slot {
                 if &identity == previous_identity {
-                    self.contexts.remove(&block.slot);
+                    if self
+                        .last_committed
+                        .as_ref()
+                        .is_some_and(|committed| committed.slot == block.slot)
+                    {
+                        self.contexts.remove(&block.slot);
+                    }
                     return Ok(SealDecision::Replay);
                 }
                 bail!("conflicting sealed block replay at slot {}", block.slot);
@@ -207,11 +223,7 @@ impl BlockValidator {
             }
         }
 
-        let has_successful_transaction = block
-            .transactions
-            .iter()
-            .any(|tx| tx.meta.as_ref().is_some_and(|meta| meta.err.is_none()));
-        let context = self.contexts.remove(&block.slot);
+        let context = self.contexts.get(&block.slot);
         let (previous_bank_hash, clock_unix_timestamp) = match context {
             Some(context) => (
                 context.slot_hashes.as_ref().and_then(|account| {
@@ -227,15 +239,6 @@ impl BlockValidator {
             ),
             None => (None, None),
         };
-        if has_successful_transaction
-            && (previous_bank_hash.is_none() || clock_unix_timestamp.is_none())
-        {
-            bail!(
-                "missing or malformed SlotHashes/Clock context for successful transactions in slot {}",
-                block.slot
-            );
-        }
-
         let sealed = SealedBlock {
             slot: block.slot,
             block_hash,
@@ -248,19 +251,32 @@ impl BlockValidator {
             previous_bank_hash,
             clock_unix_timestamp,
         };
-        self.last_block = Some((sealed.checkpoint(), identity));
+        self.last_observed = Some((sealed.checkpoint(), identity));
         Ok(SealDecision::Process(sealed))
+    }
+
+    pub fn refresh_context(&self, block: &mut SealedBlock) {
+        let Some(context) = self.contexts.get(&block.slot) else {
+            return;
+        };
+        block.previous_bank_hash =
+            context.slot_hashes.as_ref().and_then(|account| {
+                previous_bank_hash_from_slot_hashes(&account.data, block.slot)
+            });
+        block.clock_unix_timestamp = context
+            .clock
+            .as_ref()
+            .and_then(|account| clock_unix_timestamp(&account.data));
+    }
+
+    pub fn commit(&mut self, block: &SealedBlock) {
+        self.last_committed = Some(block.checkpoint());
+        self.contexts.remove(&block.slot);
     }
 
     #[cfg(test)]
     fn current_checkpoint(&self) -> Option<&BlockCheckpoint> {
-        self.last_block
-            .as_ref()
-            .map(|(checkpoint, _)| checkpoint)
-            .or_else(|| match &self.start {
-                StartPosition::Resume(checkpoint) => Some(checkpoint),
-                StartPosition::Tip => None,
-            })
+        self.last_committed.as_ref()
     }
 }
 
@@ -278,20 +294,18 @@ pub(super) fn build_subscribe_request(
             include_entries: Some(false),
         },
     );
-    let mut accounts = HashMap::new();
-    for (name, address) in
-        [("slot_hashes", SLOT_HASHES_SYSVAR), ("clock", CLOCK_SYSVAR)]
-    {
-        accounts.insert(
-            name.to_owned(),
-            SubscribeRequestFilterAccounts {
-                account: vec![address.to_owned()],
-                owner: vec![],
-                filters: vec![],
-                nonempty_txn_signature: None,
-            },
-        );
-    }
+    let accounts = HashMap::from([(
+        "sysvars".to_owned(),
+        SubscribeRequestFilterAccounts {
+            account: vec![
+                SLOT_HASHES_SYSVAR.to_owned(),
+                CLOCK_SYSVAR.to_owned(),
+            ],
+            owner: vec![],
+            filters: vec![],
+            nonempty_txn_signature: None,
+        },
+    )]);
     SubscribeRequest {
         accounts,
         slots: HashMap::new(),
@@ -322,6 +336,7 @@ fn decode_hash(name: &str, value: &str) -> Result<[u8; 32]> {
 
 fn validate_transactions(
     transactions: &[SubscribeUpdateTransactionInfo],
+    executed_transaction_count: u64,
 ) -> Result<()> {
     for pair in transactions.windows(2) {
         if pair[0].index == pair[1].index {
@@ -329,6 +344,20 @@ fn validate_transactions(
         }
     }
     for transaction in transactions {
+        if transaction.signature.len() != 64 {
+            bail!(
+                "transaction {} signature has invalid length {}, expected 64 bytes",
+                transaction.index,
+                transaction.signature.len()
+            );
+        }
+        if transaction.index >= executed_transaction_count {
+            bail!(
+                "transaction index {} is outside executed transaction count {}",
+                transaction.index,
+                executed_transaction_count
+            );
+        }
         let Some(meta) = &transaction.meta else {
             bail!("transaction {} has no status meta", transaction.index);
         };
@@ -359,13 +388,7 @@ fn block_identity(
         block_hash,
         parent_slot: block.parent_slot,
         parent_block_hash,
-        transactions: block
-            .transactions
-            .iter()
-            .map(|transaction| {
-                (transaction.index, transaction.signature.clone())
-            })
-            .collect(),
+        transactions: block.transactions.clone(),
     }
 }
 
@@ -396,6 +419,7 @@ mod tests {
 
     fn failed(index: u64) -> SubscribeUpdateTransactionInfo {
         SubscribeUpdateTransactionInfo {
+            signature: vec![index as u8; 64],
             meta: Some(TransactionStatusMeta {
                 err: Some(TransactionError { err: vec![1] }),
                 ..Default::default()
@@ -412,30 +436,39 @@ mod tests {
         parent_hash: [u8; 32],
         transactions: Vec<SubscribeUpdateTransactionInfo>,
     ) -> SubscribeUpdateBlock {
+        let executed_transaction_count = transactions
+            .iter()
+            .map(|transaction| transaction.index + 1)
+            .max()
+            .unwrap_or(0);
         SubscribeUpdateBlock {
             slot,
             blockhash: bs58::encode(block_hash).into_string(),
             parent_slot,
             parent_blockhash: bs58::encode(parent_hash).into_string(),
             transactions,
+            executed_transaction_count,
             ..Default::default()
         }
     }
 
     #[test]
     fn empty_block_advances_checkpoint() {
-        let mut validator = BlockValidator::new(StartPosition::Tip);
+        let mut validator = BlockValidator::new(StartPosition::Tip, true);
         let decision = validator
             .seal(block(2, hash(2), 1, hash(1), vec![]))
             .unwrap();
-        assert!(matches!(decision, SealDecision::Process(_)));
+        let SealDecision::Process(block) = decision else {
+            panic!()
+        };
+        validator.commit(&block);
         assert_eq!(validator.current_checkpoint().unwrap().slot, 2);
     }
 
     #[test]
     fn transactions_are_sorted_and_failed_transactions_are_retained_for_ignore()
     {
-        let mut validator = BlockValidator::new(StartPosition::Tip);
+        let mut validator = BlockValidator::new(StartPosition::Tip, true);
         let decision = validator
             .seal(block(2, hash(2), 1, hash(1), vec![failed(3), failed(1)]))
             .unwrap();
@@ -454,7 +487,7 @@ mod tests {
 
     #[test]
     fn malformed_successful_transaction_halts() {
-        let mut validator = BlockValidator::new(StartPosition::Tip);
+        let mut validator = BlockValidator::new(StartPosition::Tip, true);
         let mut transaction = successful(0);
         transaction.meta = None;
         assert!(validator
@@ -464,21 +497,54 @@ mod tests {
 
     #[test]
     fn inclusive_replay_is_idempotent_but_conflicts_halt() {
-        let mut validator = BlockValidator::new(StartPosition::Tip);
+        let mut validator = BlockValidator::new(StartPosition::Tip, true);
         let original = block(2, hash(2), 1, hash(1), vec![failed(1)]);
-        assert!(matches!(
-            validator.seal(original.clone()).unwrap(),
-            SealDecision::Process(_)
-        ));
+        let SealDecision::Process(processed) =
+            validator.seal(original.clone()).unwrap()
+        else {
+            panic!()
+        };
+        validator.commit(&processed);
         assert!(matches!(
             validator.seal(original).unwrap(),
             SealDecision::Replay
         ));
+        let mut changed_payload = failed(1);
+        changed_payload
+            .meta
+            .as_mut()
+            .unwrap()
+            .err
+            .as_mut()
+            .unwrap()
+            .err = vec![2];
+        assert!(validator
+            .seal(block(2, hash(2), 1, hash(1), vec![changed_payload]))
+            .is_err());
         assert!(validator
             .seal(block(2, hash(2), 1, hash(1), vec![failed(2)]))
             .is_err());
         assert!(validator
             .seal(block(2, hash(9), 1, hash(1), vec![failed(1)]))
+            .is_err());
+    }
+
+    #[test]
+    fn malformed_signature_and_out_of_range_index_halt() {
+        for length in [0, 63] {
+            let mut transaction = failed(0);
+            transaction.signature = vec![1; length];
+            let mut invalid = block(2, hash(2), 1, hash(1), vec![transaction]);
+            invalid.executed_transaction_count = 1;
+            assert!(BlockValidator::new(StartPosition::Tip, true)
+                .seal(invalid)
+                .is_err());
+        }
+
+        let mut invalid = block(2, hash(2), 1, hash(1), vec![failed(1)]);
+        invalid.executed_transaction_count = 1;
+        assert!(BlockValidator::new(StartPosition::Tip, true)
+            .seal(invalid)
             .is_err());
     }
 
@@ -489,7 +555,7 @@ mod tests {
             block_hash: hash(5),
         };
         let mut validator =
-            BlockValidator::new(StartPosition::Resume(checkpoint));
+            BlockValidator::new(StartPosition::Resume(checkpoint), true);
         assert!(validator
             .seal(block(6, hash(6), 5, hash(5), vec![]))
             .is_err());
@@ -499,7 +565,7 @@ mod tests {
             block_hash: hash(5),
         };
         let mut validator =
-            BlockValidator::new(StartPosition::Resume(checkpoint));
+            BlockValidator::new(StartPosition::Resume(checkpoint), true);
         assert!(matches!(
             validator
                 .seal(block(5, hash(5), 4, hash(4), vec![]))
@@ -512,17 +578,123 @@ mod tests {
     }
 
     #[test]
-    fn missing_context_prevents_successful_block_advance() {
-        let mut validator = BlockValidator::new(StartPosition::Tip);
-        assert!(validator
+    fn unapplied_resume_processes_the_checkpoint_block() {
+        let checkpoint = BlockCheckpoint {
+            slot: 5,
+            block_hash: hash(5),
+        };
+        let mut validator =
+            BlockValidator::new(StartPosition::Resume(checkpoint), false);
+
+        let decision = validator
+            .seal(block(5, hash(5), 4, hash(4), vec![]))
+            .unwrap();
+
+        assert!(matches!(decision, SealDecision::Process(_)));
+        assert!(validator.current_checkpoint().is_none());
+    }
+
+    #[test]
+    fn missing_context_does_not_commit_the_sealed_block() {
+        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let decision = validator
             .seal(block(2, hash(2), 1, hash(1), vec![successful(0)]))
-            .is_err());
+            .unwrap();
+        let SealDecision::Process(block) = decision else {
+            panic!()
+        };
+        assert!(block.previous_bank_hash.is_none());
+        assert!(block.clock_unix_timestamp.is_none());
+        assert!(validator.current_checkpoint().is_none());
+    }
+
+    #[test]
+    fn sealed_block_can_wait_for_later_sysvar_context() {
+        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let SealDecision::Process(mut sealed) = validator
+            .seal(block(2, hash(2), 1, hash(1), vec![successful(0)]))
+            .unwrap()
+        else {
+            panic!()
+        };
+
+        let mut slot_hashes = 1_u64.to_le_bytes().to_vec();
+        slot_hashes.extend_from_slice(&1_u64.to_le_bytes());
+        slot_hashes.extend_from_slice(&hash(1));
+        let mut clock = vec![0; 40];
+        clock[32..40].copy_from_slice(&1_700_000_000_i64.to_le_bytes());
+        for (address, data) in
+            [(SLOT_HASHES_SYSVAR, slot_hashes), (CLOCK_SYSVAR, clock)]
+        {
+            validator
+                .observe_account(SubscribeUpdateAccount {
+                    slot: 2,
+                    account: Some(SubscribeUpdateAccountInfo {
+                        pubkey: bs58::decode(address).into_vec().unwrap(),
+                        data,
+                        write_version: 1,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+
+        validator.refresh_context(&mut sealed);
+        assert_eq!(sealed.previous_bank_hash, Some(hash(1)));
+        assert_eq!(sealed.clock_unix_timestamp, Some(1_700_000_000));
+        assert!(validator.current_checkpoint().is_none());
+        validator.commit(&sealed);
+        assert_eq!(validator.current_checkpoint().unwrap().slot, 2);
+    }
+
+    #[test]
+    fn context_can_lag_past_a_later_sealed_block() {
+        let mut validator = BlockValidator::new(StartPosition::Tip, true);
+        let SealDecision::Process(mut first) = validator
+            .seal(block(2, hash(2), 1, hash(1), vec![successful(0)]))
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(matches!(
+            validator
+                .seal(block(3, hash(3), 2, hash(2), vec![successful(0)]))
+                .unwrap(),
+            SealDecision::Process(_)
+        ));
+
+        let mut slot_hashes = 1_u64.to_le_bytes().to_vec();
+        slot_hashes.extend_from_slice(&1_u64.to_le_bytes());
+        slot_hashes.extend_from_slice(&hash(1));
+        let mut clock = vec![0; 40];
+        clock[32..40].copy_from_slice(&1_700_000_000_i64.to_le_bytes());
+        for (address, data) in
+            [(SLOT_HASHES_SYSVAR, slot_hashes), (CLOCK_SYSVAR, clock)]
+        {
+            validator
+                .observe_account(SubscribeUpdateAccount {
+                    slot: 2,
+                    account: Some(SubscribeUpdateAccountInfo {
+                        pubkey: bs58::decode(address).into_vec().unwrap(),
+                        data,
+                        write_version: 1,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+
+        validator.refresh_context(&mut first);
+        assert_eq!(first.previous_bank_hash, Some(hash(1)));
+        assert_eq!(first.clock_unix_timestamp, Some(1_700_000_000));
         assert!(validator.current_checkpoint().is_none());
     }
 
     #[test]
     fn account_identity_conflict_and_context_overflow_halt() {
-        let mut validator = BlockValidator::new(StartPosition::Tip);
+        let mut validator = BlockValidator::new(StartPosition::Tip, true);
         let account = |slot, data: Vec<u8>| SubscribeUpdateAccount {
             slot,
             account: Some(SubscribeUpdateAccountInfo {
@@ -536,7 +708,7 @@ mod tests {
         validator.observe_account(account(1, vec![1])).unwrap();
         assert!(validator.observe_account(account(1, vec![2])).is_err());
 
-        let mut validator = BlockValidator::new(StartPosition::Tip);
+        let mut validator = BlockValidator::new(StartPosition::Tip, true);
         for slot in 0..MAX_CONTEXT_SLOTS as u64 {
             validator.observe_account(account(slot, vec![1])).unwrap();
         }
@@ -558,7 +730,12 @@ mod tests {
         assert!(request.transactions.is_empty());
         assert!(request.blocks_meta.is_empty());
         assert_eq!(request.blocks.len(), 1);
-        assert_eq!(request.accounts.len(), 2);
+        assert_eq!(request.accounts.len(), 1);
+        let account_filter = request.accounts.get("sysvars").unwrap();
+        assert_eq!(
+            account_filter.account,
+            vec![SLOT_HASHES_SYSVAR.to_owned(), CLOCK_SYSVAR.to_owned()]
+        );
         assert_eq!(request.from_slot, Some(9));
     }
 
@@ -579,7 +756,7 @@ mod tests {
             block_hash: hash(9),
         };
         let mut validator =
-            BlockValidator::new(StartPosition::Resume(checkpoint));
+            BlockValidator::new(StartPosition::Resume(checkpoint), true);
 
         validator.observe_account(account()).unwrap();
         assert!(matches!(
