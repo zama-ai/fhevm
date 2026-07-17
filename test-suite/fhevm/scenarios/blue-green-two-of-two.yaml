@@ -1,0 +1,20 @@
+version: 1
+kind: blue-green
+name: Blue-Green Upgrade (2-of-2)
+description: >
+  Two-operator Blue-Green upgrade. Both operators must produce identical
+  per-block state hashes for consensus. See blue-green.yaml for details.
+
+topology:
+  count: 2
+  threshold: 2
+
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-1
+
+gcs:
+  source:
+    mode: local
+  stackVersion: "0.15.0"

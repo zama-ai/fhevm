@@ -256,7 +256,7 @@ const versionLt = (version: string, target: CompatSemver, options?: { unparsed?:
   return parsed.prerelease;
 };
 
-const versionBeforeReleaseFamily = (
+export const versionBeforeReleaseFamily = (
   version: string,
   target: CompatSemver,
   options?: { unparsed?: "modern" | "legacy" },
@@ -267,8 +267,14 @@ type CompatState =
   | Pick<StackSpec, "versions" | "overrides" | "coprocessor">;
 
 /** Computes the effective override set used for compatibility decisions. */
-const effectiveCompatOverrides = (state: CompatState) =>
-  effectiveOverrides(state.overrides, "scenario" in state ? state.scenario : state.coprocessor);
+const effectiveCompatOverrides = (state: CompatState) => {
+  const scenario = "scenario" in state ? state.scenario : state.coprocessor;
+  // Blue-green has no instance-based sources for `effectiveOverrides` to expand.
+  if (!scenario || scenario.kind !== "coprocessor-consensus") {
+    return state.overrides;
+  }
+  return effectiveOverrides(state.overrides, scenario);
+};
 
 /** Detects when local workspace overrides imply the modern runtime protocol. */
 const usesModernWorkspaceProtocol = (state: CompatState) =>
@@ -426,7 +432,9 @@ export const validateBundleCompatibility = (state: Pick<CompatState, "versions">
 
 /** Rejects multi-chain scenarios when the resolved coprocessor bundle predates multi-chain support. */
 export const assertSupportedBundleScenario = (state: CompatState) => {
-  const hostChains = "scenario" in state ? state.scenario.hostChains : state.coprocessor.hostChains;
+  const scenario = "scenario" in state ? state.scenario : state.coprocessor;
+  if (!scenario) return; // blue-green stack spec — handled by its own compat path
+  const hostChains = scenario.hostChains;
   if (hostChains.length <= 1 || !requiresLegacySingleChainCoprocessor(state)) {
     return;
   }

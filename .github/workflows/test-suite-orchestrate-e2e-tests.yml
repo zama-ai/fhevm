@@ -421,6 +421,45 @@ jobs:
       test-profile: kms-context-switch
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
 
+  # Same orchestrated images/lock, exercised against the kms-generation-abort acceptance profile on
+  # the 4-party committee: abort an in-flight keygen and crsgen, verify the contract and every
+  # kms-connector retire the requests, then prove recovery with a fresh keygen/crsgen to full
+  # activation. Runs on its own stack, so the active key/CRS rotation it performs cannot disturb the
+  # other legs.
+  # Standalone: gh workflow run test-suite-e2e-tests.yml -f scenario=four-party-threshold-kms \
+  #   -f test-profile=kms-generation-abort -f build=false
+  run-e2e-tests-kms-generation-abort:
+    needs: [create-e2e-tests-input]
+    if: *build-trigger-condition
+    uses:
+      ./.github/workflows/test-suite-e2e-tests.yml
+    permissions: *e2e_permissions
+    secrets: *e2e_secrets
+    with:
+      orchestrated: true
+      build: false
+      coprocessor-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
+      coprocessor-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
+      coprocessor-host-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-host-listener-version }}
+      coprocessor-sns-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-sns-worker-version }}
+      coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
+      coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
+      coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
+      connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
+      connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
+      connector-kms-worker-version: ${{ needs.create-e2e-tests-input.outputs.connector-kms-worker-version }}
+      connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
+      host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
+      kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
+      lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
+      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
+      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      scenario: four-party-threshold-kms
+      test-profile: kms-generation-abort
+      test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
+
   # Node-swap leg: kms-context-switch on a 5-core cluster with a 4-node committee + 1 idle spare. The
   # context switch drops a committee node and promotes the spare, exercising the asymmetric two-sets
   # reshare (one node leaves, one joins) and a forced-quorum decrypt that requires the joined node.
