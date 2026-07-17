@@ -352,11 +352,9 @@ async function countRowsReferencingProducer(
   chainId?: string,
 ): Promise<number> {
   const hasHostChainId = new Set([
-    'computations',
     'computations_branch',
-    'ciphertext_digest',
+    'pbs_computations_branch',
     'ciphertext_digest_branch',
-    'allowed_handles',
     'allowed_handles_branch',
   ]).has(table);
   const result = hasHostChainId
@@ -377,15 +375,11 @@ async function assertNoRowsReferencingProducer(
   const pool = new Pool({ connectionString: databaseUrl, max: 1 });
   try {
     for (const table of [
-      'computations',
       'computations_branch',
-      'ciphertext_digest',
+      'pbs_computations_branch',
       'ciphertext_digest_branch',
-      'ciphertexts',
       'ciphertexts_branch',
-      'ciphertexts128',
       'ciphertexts128_branch',
-      'allowed_handles',
       'allowed_handles_branch',
     ]) {
       expect(
@@ -532,102 +526,10 @@ describe('Real-Fork Consensus (E3)', function () {
         divergentWork.canonicalBlockNumber,
       );
 
-      // Step 4: Verify orphan cleanup removed branch-B rows.
-      // Wait for cleanup_orphaned_branch_state to run (triggered by finalization).
-      await sleep(15_000);
-
-      // Query coprocessor 2's DB for rows referencing orphaned block hashes.
-      // After cleanup, computations/ciphertexts/allowed_handles/ciphertext_digest
-      // rows for orphaned producer_block_hash values should be gone.
-      const pool2Check = new Pool({ connectionString: dbUrls[2], max: 1 });
-      try {
-        const orphanHashList = [c3ForkBlockHash];
-        const orphanChainId = c3Orphan!.chain_id;
-
-        // Check computations: no rows should reference the C3 orphaned producer_block_hash.
-        const compResult = await pool2Check.query(
-          'SELECT count(*)::int AS cnt FROM computations WHERE host_chain_id = $1 AND producer_block_hash = ANY($2::bytea[])',
-          [orphanChainId, orphanHashList],
-        );
-        expect(compResult.rows[0].cnt).to.eq(0, 'C3 orphaned computations must be cleaned up on coprocessor 2');
-
-        const compBranchResult = await pool2Check.query(
-          'SELECT count(*)::int AS cnt FROM computations_branch WHERE host_chain_id = $1 AND producer_block_hash = ANY($2::bytea[])',
-          [orphanChainId, orphanHashList],
-        );
-        expect(compBranchResult.rows[0].cnt).to.eq(
-          0,
-          'C3 orphaned computations_branch rows must be cleaned up on coprocessor 2',
-        );
-
-        // Check ciphertext_digest.
-        const digestResult = await pool2Check.query(
-          'SELECT count(*)::int AS cnt FROM ciphertext_digest WHERE host_chain_id = $1 AND producer_block_hash = ANY($2::bytea[])',
-          [orphanChainId, orphanHashList],
-        );
-        expect(digestResult.rows[0].cnt).to.eq(
-          0,
-          'C3 orphaned ciphertext_digest rows must be cleaned up on coprocessor 2',
-        );
-
-        const digestBranchResult = await pool2Check.query(
-          'SELECT count(*)::int AS cnt FROM ciphertext_digest_branch WHERE host_chain_id = $1 AND producer_block_hash = ANY($2::bytea[])',
-          [orphanChainId, orphanHashList],
-        );
-        expect(digestBranchResult.rows[0].cnt).to.eq(
-          0,
-          'C3 orphaned ciphertext_digest_branch rows must be cleaned up on coprocessor 2',
-        );
-
-        // Check ciphertexts.
-        const ctResult = await pool2Check.query(
-          'SELECT count(*)::int AS cnt FROM ciphertexts WHERE producer_block_hash = ANY($1::bytea[])',
-          [orphanHashList],
-        );
-        expect(ctResult.rows[0].cnt).to.eq(0, 'C3 orphaned ciphertexts must be cleaned up on coprocessor 2');
-
-        const ctBranchResult = await pool2Check.query(
-          'SELECT count(*)::int AS cnt FROM ciphertexts_branch WHERE producer_block_hash = ANY($1::bytea[])',
-          [orphanHashList],
-        );
-        expect(ctBranchResult.rows[0].cnt).to.eq(
-          0,
-          'C3 orphaned ciphertexts_branch rows must be cleaned up on coprocessor 2',
-        );
-
-        const ct128Result = await pool2Check.query(
-          'SELECT count(*)::int AS cnt FROM ciphertexts128 WHERE producer_block_hash = ANY($1::bytea[])',
-          [orphanHashList],
-        );
-        expect(ct128Result.rows[0].cnt).to.eq(0, 'C3 orphaned ciphertexts128 rows must be cleaned up on coprocessor 2');
-
-        const ct128BranchResult = await pool2Check.query(
-          'SELECT count(*)::int AS cnt FROM ciphertexts128_branch WHERE producer_block_hash = ANY($1::bytea[])',
-          [orphanHashList],
-        );
-        expect(ct128BranchResult.rows[0].cnt).to.eq(
-          0,
-          'C3 orphaned ciphertexts128_branch rows must be cleaned up on coprocessor 2',
-        );
-
-        // Check allowed_handles.
-        const ahResult = await pool2Check.query(
-          'SELECT count(*)::int AS cnt FROM allowed_handles WHERE host_chain_id = $1 AND producer_block_hash = ANY($2::bytea[])',
-          [orphanChainId, orphanHashList],
-        );
-        expect(ahResult.rows[0].cnt).to.eq(0, 'C3 orphaned allowed_handles must be cleaned up on coprocessor 2');
-
-        const ahBranchResult = await pool2Check.query(
-          'SELECT count(*)::int AS cnt FROM allowed_handles_branch WHERE host_chain_id = $1 AND producer_block_hash = ANY($2::bytea[])',
-          [orphanChainId, orphanHashList],
-        );
-        expect(ahBranchResult.rows[0].cnt).to.eq(
-          0,
-          'C3 orphaned allowed_handles_branch rows must be cleaned up on coprocessor 2',
-        );
-      } finally {
-        await pool2Check.end();
-      }
+      // Step 4: Verify orphan cleanup removed branch-B rows. Legacy tables do
+      // not carry producer_block_hash; branch provenance and cleanup are
+      // asserted on the branch-keyed tables.
+      await waitForNoRowsReferencingProducer('C3', dbUrls[2], c3Orphan!.chain_id, c3ForkBlockHash);
 
       // Step 5: Submit a new computation on the canonical chain.
       const contract = await deployEncryptedERC20Fixture();
