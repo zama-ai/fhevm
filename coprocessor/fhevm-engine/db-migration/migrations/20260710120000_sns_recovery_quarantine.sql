@@ -29,7 +29,14 @@ CHECK (
 
 DROP INDEX IF EXISTS idx_pbs_computations_branch_pending_created_at;
 
-CREATE INDEX idx_pbs_computations_branch_pending_created_at
+-- Production upgrades pre-create this replacement concurrently under a
+-- staging name. Rename it into place transactionally; fresh databases that do
+-- not run the online prerequisite fall back to the CREATE INDEX below while
+-- the table is not serving traffic.
+ALTER INDEX IF EXISTS idx_pbs_computations_branch_pending_created_at_v2
+RENAME TO idx_pbs_computations_branch_pending_created_at;
+
+CREATE INDEX IF NOT EXISTS idx_pbs_computations_branch_pending_created_at
 ON pbs_computations_branch (created_at, handle)
 WHERE is_completed = FALSE AND is_error = FALSE;
 

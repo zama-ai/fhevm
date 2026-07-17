@@ -168,10 +168,10 @@ run_branch_context_wave2_prerequisites() {
   echo "Running online migrations before branch-context wave2 indexes..."
   sqlx migrate run --source "$MIGRATION_DIR" --target-version $BRANCH_WAVE2_INDEX_PREVIOUS_VERSION || { echo "Failed to run migrations."; exit 1; }
 
-  # 20260610150000 and 20260610150400 add these metadata-only columns before
-  # building their partial indexes. Add them here so all eight indexes on hot
-  # mirrored branch tables can be built concurrently before transactional
-  # migrations resume.
+  # 20260610150000, 20260610150400 and 20260710120000 add these metadata-only
+  # columns before building their partial indexes. Add them here so all ten
+  # indexes on hot mirrored branch tables can be built concurrently before
+  # transactional migrations resume.
   run_sql "ALTER TABLE ciphertexts_branch
            ADD COLUMN IF NOT EXISTS block_number BIGINT NULL;"
   run_sql "ALTER TABLE ciphertexts128_branch
@@ -182,6 +182,10 @@ run_branch_context_wave2_prerequisites() {
            ADD COLUMN IF NOT EXISTS s3_publication_verified_digest BYTEA NULL;"
   run_sql "ALTER TABLE ciphertext_digest_branch
            ADD COLUMN IF NOT EXISTS s3_publication_verified_producer_block_hash BYTEA NULL;"
+  run_sql "ALTER TABLE pbs_computations_branch
+           ADD COLUMN IF NOT EXISTS is_error BOOLEAN NOT NULL DEFAULT FALSE,
+           ADD COLUMN IF NOT EXISTS error_message TEXT NULL,
+           ADD COLUMN IF NOT EXISTS error_at TIMESTAMPTZ NULL;"
 
   precreate_index "idx_ciphertexts_branch_block_number" \
     "CREATE INDEX CONCURRENTLY idx_ciphertexts_branch_block_number \
@@ -213,6 +217,37 @@ run_branch_context_wave2_prerequisites() {
   precreate_index "idx_pbs_computations_branch_transaction_id" \
     "CREATE INDEX CONCURRENTLY idx_pbs_computations_branch_transaction_id \
      ON pbs_computations_branch (transaction_id);"
+
+  # The existing pending index has the old `is_completed = false` predicate.
+  # Build its non-error replacement alongside it so 20260710120000 can swap
+  # names without rebuilding the index under a write-blocking SHARE lock.
+  local pending_index_is_current
+  pending_index_is_current=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "
+    SELECT EXISTS (
+      SELECT 1
+      FROM pg_class c
+      JOIN pg_index i ON i.indexrelid = c.oid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname = 'idx_pbs_computations_branch_pending_created_at'
+        AND i.indisvalid
+        AND pg_get_expr(i.indpred, i.indrelid) LIKE '%is_error%'
+    )")
+  if [[ "$pending_index_is_current" == "t" ]]; then
+    echo "Skipping pre-created pending PBS index; canonical index already has the non-error predicate"
+  else
+    precreate_index "idx_pbs_computations_branch_pending_created_at_v2" \
+      "CREATE INDEX CONCURRENTLY idx_pbs_computations_branch_pending_created_at_v2 \
+       ON pbs_computations_branch (created_at, handle) \
+       WHERE is_completed = FALSE AND is_error = FALSE;"
+  fi
+
+  # The predicate is initially empty, but PostgreSQL must still scan the whole
+  # live PBS table to build the index.
+  precreate_index "idx_pbs_computations_branch_errors" \
+    "CREATE INDEX CONCURRENTLY idx_pbs_computations_branch_errors \
+     ON pbs_computations_branch (host_chain_id, block_number, error_at) \
+     WHERE is_error = TRUE;"
 
   # 20260610150400: the s3_unverified predicate matches every pre-existing row
   # (the verification columns were just added as NULL) and even the initially
