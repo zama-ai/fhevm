@@ -233,4 +233,12 @@ pub enum ZamaHostError {
         "host chain id must set the Solana chain-type high bit and the gateway chain id must not"
     )]
     InvalidChainTypeBit,
+
+    /// Under a finite `hcu_block_cap_per_app`, a frame that binds no durable input, no verified
+    /// input, and no durable output leaves `compute_subject` a free variable: the caller could
+    /// rotate fresh subjects to mint fresh per-slot meters and evade the cap (fhevm-internal#1744).
+    /// Such a frame is also value-less — its transient outputs create no ACL leaf and are
+    /// undecryptable — so it is rejected outright.
+    #[msg("FHE eval frame anchors no durable/verified binding under a finite HCU block cap")]
+    FheEvalUnanchoredUnderBlockCap,
 }

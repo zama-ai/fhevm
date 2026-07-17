@@ -2237,6 +2237,12 @@ impl EvalBuilder {
     /// Mirrors the host admission checks (`context_id != 0`, non-empty steps,
     /// `steps.len() <= MAX_FHE_EVAL_OPS`) so a malformed frame fails locally
     /// instead of on-chain.
+    ///
+    /// Not mirrored (it depends on the deployed `hcu_block_cap_per_app`, unknown here): under a
+    /// finite block cap the host rejects a persist-nothing frame — one binding no durable input, no
+    /// verified input, and no durable output — with `FheEvalUnanchoredUnderBlockCap`
+    /// (fhevm-internal#1744). Give such a frame a durable output (the bootstrap/mint path) or a
+    /// verified input if it must run under a finite cap.
     pub fn finish(self) -> Result<EvalPlan> {
         validate_app_authority(self.app_authority)?;
         if self.context_id.bytes() == [0u8; 32] {

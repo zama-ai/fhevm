@@ -403,7 +403,7 @@ fn transfer_ix(
         program_id: fixture.token_program_id,
         accounts: token::accounts::ConfidentialTransfer {
             // Block-cap optional accounts threaded through the transfer CPI; the default
-            // unrestricted cap means None/None here. The mint's HCU authority is mandatory.
+            // unrestricted cap means None/None here.
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             owner: fixture.alice.pubkey(),

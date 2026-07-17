@@ -1507,11 +1507,28 @@ something the caller cannot freely re-pick:
   unrelated key loses input access. No other account the caller controls (`payer`,
   `app_account_authority`, output authorities) yields a fresh meter.
 
-It does NOT, by itself, constrain an **input-free frame** — `Rand` / `TrivialEncrypt` / scalar-only
-work with a transient (non-durable) output — submitted by a direct caller: there `compute_subject` is
-an unconstrained signer, so such a caller can still rotate it for a fresh per-slot meter. Closing that
-residual case (e.g. requiring input-free direct frames to meter a stable caller identity) is tracked
-as a follow-up; it does not affect the token program, whose compute subject is always the mint PDA.
+Metering the `compute_subject` does NOT, by itself, constrain a **persist-nothing frame** — `Rand` /
+`TrivialEncrypt` / scalar-only work with a transient (non-durable) output and no verified input —
+submitted by a direct caller: there `compute_subject` is an unconstrained signer, so such a caller
+could still rotate it for a fresh per-slot meter. The value-less part of that residual case
+(fhevm-internal#1744) is now closed: when `hcu_block_cap_per_app` is finite (`!= u64::MAX`),
+`fhe_eval` preflight rejects any frame that binds no `AllowedDurable` operand, no `VerifiedInput`
+operand, and no `AllowedDurable` output (`FheEvalUnanchoredUnderBlockCap`). Such a frame persists
+nothing and verifies nothing — `compute_subject` is a free variable and the frame is also value-less
+(its transient outputs create no ACL leaf and are undecryptable) — so nothing legitimate is
+forbidden. Under the ship default (`u64::MAX`) the check short-circuits, so behavior is unchanged
+where no finite cap is deployed. This never affected the token program, whose compute subject is
+always the mint PDA and whose frames always bind durable balance inputs.
+
+This is #1744's Option 1 broadened by a durable-output allowance to preserve the legitimate
+trivial-encrypt/`Rand` -> durable-output bootstrap/mint path. That allowance is not a full close: a
+durable output does NOT pin `compute_subject` (output binding authorizes against
+`app_account_authority`, never the subject), so a caller can still rotate the subject while binding a
+throwaway output lineage and get a fresh per-slot meter each time. That vector remains open but is
+now rent-bounded — each rotation costs ~one `HcuBlockMeter` PDA rent rather than being free —
+whereas the persist-nothing rotation was free. Closing it fully requires a host-registered app
+identity an input-free frame must present to be metered (#1708 Option B / #1744 Option 2), still
+deferred as speculative until input-free frames become a real metered workload.
 
 `hcu_authority` is removed everywhere: the host `fhe_eval` account list (an intended ABI break,
 resynced in the host-listener IDL), the `zama-fhe` CPI account struct, the confidential-token

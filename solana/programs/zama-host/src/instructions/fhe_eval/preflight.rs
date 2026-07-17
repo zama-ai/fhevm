@@ -4,12 +4,113 @@ pub(super) fn preflight_eval_frame<'info>(
     ctx: &Context<'info, FheEval<'info>>,
     args: &FheEvalArgs,
 ) -> Result<()> {
+    assert_frame_pins_or_persists_under_cap(args, ctx.accounts.host_config.hcu_block_cap_per_app)?;
     preflight_eval_frame_accounts(
         ctx.remaining_accounts,
         args,
         ctx.accounts.app_account_authority.key(),
         ctx.accounts.host_config.grant_deny_list_enabled,
     )
+}
+
+/// Rejects the value-less persist-nothing frame class under a finite block cap (fhevm-internal#1744).
+///
+/// The per-slot HCU meter keys on the signed `compute_subject`. A durable input requires the
+/// subject to be an allowed ACL subject, and a verified input requires it to equal the attested
+/// contract, so either operand pins the subject — the caller cannot swap in a fresh key without
+/// losing input access. A frame with neither pinning operand and no durable output persists nothing
+/// and verifies nothing: `compute_subject` is a free variable AND the frame produces nothing of
+/// value (its transient outputs create no ACL leaf and are undecryptable). That class is what the
+/// keypair-rotation bypass rode, so it is rejected before compute.
+///
+/// A durable OUTPUT is allowed through here, but note it does NOT pin the subject: output binding
+/// authorizes against `app_account_authority`, never `compute_subject`. So a throwaway-lineage
+/// create/supersede still lets a caller rotate the subject for a fresh per-slot meter — that vector
+/// remains open, but is rent-bounded (~one `HcuBlockMeter` PDA rent per rotation) rather than free,
+/// and closing it fully needs a registered app identity (the issue's Option 2, deferred). The
+/// allowance is kept because it is also the legitimate trivial-encrypt/`Rand` -> durable-output
+/// bootstrap/mint path. The deactivated cap (`u64::MAX`, the ship default) short-circuits, so
+/// behavior is unchanged wherever a finite cap is not deployed.
+fn assert_frame_pins_or_persists_under_cap(
+    args: &FheEvalArgs,
+    hcu_block_cap_per_app: u64,
+) -> Result<()> {
+    if hcu_block_cap_per_app == u64::MAX {
+        return Ok(());
+    }
+    require!(
+        args.steps.iter().any(step_pins_or_persists),
+        ZamaHostError::FheEvalUnanchoredUnderBlockCap
+    );
+    Ok(())
+}
+
+/// True for an operand that pins `compute_subject`: a durable ACL input (the subject must be an
+/// allowed subject) or a verified input (the subject must equal the attested contract). Exhaustive
+/// so a future operand variant must classify itself rather than default to "does not pin".
+fn operand_pins_subject(operand: &FheEvalOperand) -> bool {
+    match operand {
+        FheEvalOperand::AllowedDurable { .. } | FheEvalOperand::VerifiedInput { .. } => true,
+        FheEvalOperand::AllowedLocal { .. } | FheEvalOperand::Scalar(_) => false,
+    }
+}
+
+/// True for an output that persists durable state. Exhaustive so a future output variant must
+/// classify itself rather than default to "does not persist".
+fn output_persists(output: &FheEvalOutput) -> bool {
+    match output {
+        FheEvalOutput::AllowedDurable { .. } => true,
+        FheEvalOutput::AllowedLocal => false,
+    }
+}
+
+/// True when a step carries a subject-pinning operand or a durable output.
+fn step_pins_or_persists(step: &FheEvalStep) -> bool {
+    let (output, operand_pins) = match step {
+        FheEvalStep::Binary {
+            lhs, rhs, output, ..
+        } => (
+            output,
+            operand_pins_subject(lhs) || operand_pins_subject(rhs),
+        ),
+        FheEvalStep::Ternary {
+            control,
+            if_true,
+            if_false,
+            output,
+            ..
+        } => (
+            output,
+            operand_pins_subject(control)
+                || operand_pins_subject(if_true)
+                || operand_pins_subject(if_false),
+        ),
+        FheEvalStep::TrivialEncrypt { output, .. }
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::RandBounded { output, .. } => (output, false),
+        FheEvalStep::Unary {
+            operand, output, ..
+        } => (output, operand_pins_subject(operand)),
+        FheEvalStep::Sum {
+            operands, output, ..
+        } => (output, operands.iter().any(operand_pins_subject)),
+        FheEvalStep::IsIn {
+            value, set, output, ..
+        } => (
+            output,
+            operand_pins_subject(value) || set.iter().any(operand_pins_subject),
+        ),
+        FheEvalStep::MulDiv {
+            factor1,
+            factor2,
+            output,
+            ..
+        } => (
+            output,
+            operand_pins_subject(factor1) || operand_pins_subject(factor2),
+        ),
+    };
+    operand_pins || output_persists(output)
 }
 
 fn preflight_eval_frame_accounts(
@@ -285,5 +386,107 @@ mod tests {
         let data = Box::leak(Vec::new().into_boxed_slice());
         let owner = Box::leak(Box::new(System::id()));
         AccountInfo::new(key, false, false, lamports, data, owner, false)
+    }
+
+    fn frame(steps: Vec<FheEvalStep>) -> FheEvalArgs {
+        FheEvalArgs {
+            context_id: [1; 32],
+            steps,
+        }
+    }
+
+    fn trivial_local() -> FheEvalStep {
+        FheEvalStep::TrivialEncrypt {
+            plaintext: [0; 32],
+            fhe_type: 5,
+            output: FheEvalOutput::AllowedLocal,
+        }
+    }
+
+    fn durable_output() -> FheEvalOutput {
+        FheEvalOutput::AllowedDurable {
+            output_encrypted_value_index: 0,
+            output_app_account_authority_index: None,
+            output_acl_domain_key: Pubkey::new_unique(),
+            output_app_account: Pubkey::new_unique(),
+            output_encrypted_value_label: [0; 32],
+            output_subjects: Vec::new(),
+            previous_handle: None,
+            previous_subjects: None,
+            make_public: false,
+        }
+    }
+
+    fn verified_input() -> FheEvalOperand {
+        FheEvalOperand::VerifiedInput {
+            attestation: Box::new(CoprocessorInputAttestation {
+                input_handle: [0; 32],
+                ct_handles: Vec::new(),
+                handle_index: 0,
+                user_address: [0; 32],
+                contract_address: [0; 32],
+                contract_chain_id: 0,
+                extra_data: Vec::new(),
+                signatures: Vec::new(),
+            }),
+        }
+    }
+
+    const FINITE_CAP: u64 = 500_000;
+
+    #[test]
+    fn deactivated_cap_never_rejects_persist_nothing_frame() {
+        // u64::MAX (ship default) short-circuits: behavior is unchanged where the cap is not deployed.
+        assert!(
+            assert_frame_pins_or_persists_under_cap(&frame(vec![trivial_local()]), u64::MAX)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn finite_cap_rejects_persist_nothing_frame() {
+        assert!(
+            assert_frame_pins_or_persists_under_cap(&frame(vec![trivial_local()]), FINITE_CAP)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn finite_cap_accepts_durable_output_frame() {
+        // The trivial-encrypt -> durable-output bootstrap/mint path stays legal.
+        let step = FheEvalStep::TrivialEncrypt {
+            plaintext: [0; 32],
+            fhe_type: 5,
+            output: durable_output(),
+        };
+        assert!(assert_frame_pins_or_persists_under_cap(&frame(vec![step]), FINITE_CAP).is_ok());
+    }
+
+    #[test]
+    fn finite_cap_accepts_durable_input_frame() {
+        let step = FheEvalStep::Binary {
+            op: FheBinaryOpCode::Add,
+            lhs: FheEvalOperand::AllowedDurable {
+                handle: [1; 32],
+                encrypted_value_index: 0,
+            },
+            rhs: FheEvalOperand::Scalar([2; 32]),
+            output_fhe_type: 5,
+            output: FheEvalOutput::AllowedLocal,
+        };
+        assert!(assert_frame_pins_or_persists_under_cap(&frame(vec![step]), FINITE_CAP).is_ok());
+    }
+
+    #[test]
+    fn finite_cap_accepts_verified_input_transient_frame() {
+        // A verified input pins the subject (attested contract must equal it), so a transient-output
+        // frame that carries one is anchored and not persist-nothing.
+        let step = FheEvalStep::Unary {
+            op: FheUnaryOpCode::Not,
+            operand: verified_input(),
+            output_fhe_type: 5,
+            output: FheEvalOutput::AllowedLocal,
+        };
+        assert!(assert_frame_pins_or_persists_under_cap(&frame(vec![step]), FINITE_CAP).is_ok());
     }
 }

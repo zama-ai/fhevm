@@ -1988,6 +1988,11 @@
       "code": 6069,
       "name": "InvalidChainTypeBit",
       "msg": "host chain id must set the Solana chain-type high bit and the gateway chain id must not"
+    },
+    {
+      "code": 6070,
+      "name": "FheEvalUnanchoredUnderBlockCap",
+      "msg": "FHE eval frame anchors no durable/verified binding under a finite HCU block cap"
     }
   ],
   "types": [
