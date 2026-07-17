@@ -1,5 +1,4 @@
 use alloy::primitives::{Address, FixedBytes, U256};
-use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use fhevm_host_bindings::protocol_config::{
     IProtocolConfig::KmsThresholds,
     ProtocolConfig::{KmsNodeParams, PcrValues},
@@ -26,13 +25,8 @@ pub fn rand_digest() -> FixedBytes<32> {
     rand::rng().random::<[u8; 32]>().into()
 }
 
-pub fn rand_sns_ct() -> SnsCiphertextMaterial {
-    SnsCiphertextMaterial {
-        keyId: rand_u256(),
-        ctHandle: rand::rng().random::<[u8; 32]>().into(),
-        snsCiphertextDigest: rand::rng().random::<[u8; 32]>().into(),
-        coprocessorTxSenderAddresses: vec![rand_address()],
-    }
+pub fn rand_handle() -> FixedBytes<32> {
+    rand::rng().random::<[u8; 32]>().into()
 }
 
 pub fn rand_kms_thresholds() -> KmsThresholds {

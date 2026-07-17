@@ -8,7 +8,7 @@ use alloy::{
 };
 use connector_utils::tests::{
     rand::rand_address,
-    setup::{S3_CT_RFC023_BUCKET, s3_ct_attestation_signer},
+    setup::{S3_CT_BUCKET, s3_ct_attestation_signer},
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{
@@ -36,7 +36,7 @@ pub fn mock_copro_registry_load(asserter: &Asserter, s3_url: &str) -> Address {
     asserter.push_success(&vec![copro_tx_sender].abi_encode());
     asserter.push_success(&U256::ONE.abi_encode());
     let coprocessor = Coprocessor {
-        s3BucketUrl: format!("{s3_url}/{S3_CT_RFC023_BUCKET}"),
+        s3BucketUrl: format!("{s3_url}/{S3_CT_BUCKET}"),
         ..Default::default()
     };
     asserter.push_success(&coprocessor.abi_encode());
@@ -88,9 +88,8 @@ where
     Ok(kms_worker)
 }
 
-pub fn testing_ct_attestation_config(enabled: bool) -> CtAttestationConfig {
+pub fn testing_ct_attestation_config() -> CtAttestationConfig {
     CtAttestationConfig {
-        enabled,
         registry_refresh: Duration::from_hours(24), // Avoid refreshing the registry during test
         ..Default::default()
     }

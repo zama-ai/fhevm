@@ -454,6 +454,7 @@ const buildInstanceEnvs = async (
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
       Object.assign(envs["coprocessor"], baseInstance?.env ?? {});
+      envs["coprocessor"].BUCKET_NAME_CT128 = opBucket;
       continue;
     }
     const next = { ...envs["coprocessor"] };

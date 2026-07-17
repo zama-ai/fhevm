@@ -22,12 +22,7 @@ pub const MINIO_SECRET_KEY: &str = "fhevm-access-secret-key";
 pub const S3_CT_HANDLE: &str = "5a88e7aa46f312ff70df6e84c85eb40cdfd42b18a9ff00000000000030390500";
 pub const S3_CT_DIGEST: &str = "3a002df21130bda55f78d4403a73007a797f4a888174a620bbffc9052a045239";
 
-/// Bucket storing the test ciphertext under the RFC-023 layout (`{handle}/{context_id}`) only.
-///
-/// Kept separate from `ct128` (old `{digest}` layout only) so tests can exercise each URL
-/// format in isolation: retrieval from this bucket cannot succeed via the old-URL fallback,
-/// and retrieval from `ct128` cannot succeed via the RFC-023 URL.
-pub const S3_CT_RFC023_BUCKET: &str = "ct128-rfc023";
+pub const S3_CT_BUCKET: &str = "ct128";
 const COPROCESSOR_CONTEXT_ID: U256 = U256::ONE;
 
 /// The `keyId` bound by the test ciphertext attestation. On-chain `SnsCiphertextMaterial`
@@ -85,14 +80,11 @@ impl S3Instance {
             mc admin user add myminio {MINIO_ACCESS_KEY} {MINIO_SECRET_KEY} &&
             mc admin policy attach myminio readwrite --user {MINIO_ACCESS_KEY} &&
             mc mb --with-lock --ignore-existing myminio/kms-public &&
-            mc mb --with-lock --ignore-existing myminio/ct128 &&
-            mc mb --with-lock --ignore-existing myminio/{S3_CT_RFC023_BUCKET} &&
+            mc mb --with-lock --ignore-existing myminio/{S3_CT_BUCKET} &&
             mc anonymous set public myminio/kms-public &&
-            mc anonymous set public myminio/ct128 &&
-            mc anonymous set public myminio/{S3_CT_RFC023_BUCKET} &&
-            mc cp /data/{S3_CT_DIGEST} --attr Ct-Format=compressed_on_cpu myminio/ct128/{S3_CT_DIGEST} &&
+            mc anonymous set public myminio/{S3_CT_BUCKET} &&
             mc cp /data/{S3_CT_DIGEST} --attr \"ct-attestation='{attestation}'\" \
-                myminio/{S3_CT_RFC023_BUCKET}/{S3_CT_HANDLE}/{COPROCESSOR_CONTEXT_ID}",
+                myminio/{S3_CT_BUCKET}/{S3_CT_HANDLE}/{COPROCESSOR_CONTEXT_ID}",
             self.url
         );
 
