@@ -39,6 +39,13 @@ const MAX_DB_RETRIES: u64 = 10;
 /// Orchestrator will restart with fresh state.
 const MAX_CONSECUTIVE_RPC_FAILURES: u64 = 3;
 
+fn reorg_replay_anchor(
+    last_caught_up_block: u64,
+    reorg_maximum_duration_in_blocks: u64,
+) -> u64 {
+    last_caught_up_block.saturating_sub(reorg_maximum_duration_in_blocks)
+}
+
 fn handle_rpc_failure<E: std::fmt::Display>(
     consecutive_rpc_failures: &mut u64,
     block: Option<u64>,
@@ -284,7 +291,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let effective_settlement_finality_lag = config
         .settlement_finality_lag
         .max(config.reorg_maximum_duration_in_blocks);
-    let mut last_caught_up_block = match initial_anchor {
+    let persisted_caught_up_block = match initial_anchor {
         Some(block) => u64::try_from(block)
             .context("last_caught_up_block cannot be negative")?,
         None => {
@@ -306,9 +313,21 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 .context("initial last_caught_up_block cannot be negative")?
         }
     };
+    // The websocket listener detects reorgs from its in-memory header
+    // history. If it and the poller restart while the node switches branches,
+    // that notification is lost and the durable forward-only poller anchor
+    // would skip the rewritten blocks. Re-read the configured reorg window on
+    // every startup; ingestion is idempotent, and canonical finalization then
+    // marks any previously observed sibling branch orphaned.
+    let mut last_caught_up_block = reorg_replay_anchor(
+        persisted_caught_up_block,
+        config.reorg_maximum_duration_in_blocks,
+    );
+    let mut durable_caught_up_block = persisted_caught_up_block;
 
     info!(
         chain_id = %chain_id,
+        durable_caught_up_block = durable_caught_up_block,
         last_caught_up_block = last_caught_up_block,
         finality_lag = config.finality_lag,
         settlement_finality_lag = config.settlement_finality_lag,
@@ -486,10 +505,17 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         let blocks_failed = blocks_to_process.saturating_sub(processed_blocks);
 
         if new_anchor > last_caught_up_block {
-            let anchor = i64::try_from(new_anchor)
-                .context("last_caught_up_block overflow")?;
-            db.poller_set_last_caught_up_block(chain_id, anchor).await?;
-            db.tick.update();
+            // Keep the durable anchor at its pre-replay high-water mark until
+            // replay has caught up. Persisting an intermediate replay height
+            // would make repeated restarts walk the anchor backwards by one
+            // reorg window each time.
+            if new_anchor > durable_caught_up_block {
+                let anchor = i64::try_from(new_anchor)
+                    .context("last_caught_up_block overflow")?;
+                db.poller_set_last_caught_up_block(chain_id, anchor).await?;
+                db.tick.update();
+                durable_caught_up_block = new_anchor;
+            }
             last_caught_up_block = new_anchor;
         }
 
@@ -569,5 +595,20 @@ async fn ingest_with_retry(
                 sleep(retry_interval).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reorg_replay_anchor;
+
+    #[test]
+    fn replay_anchor_rewinds_by_the_reorg_window() {
+        assert_eq!(reorg_replay_anchor(100, 8), 92);
+    }
+
+    #[test]
+    fn replay_anchor_saturates_at_genesis() {
+        assert_eq!(reorg_replay_anchor(5, 8), 0);
     }
 }
