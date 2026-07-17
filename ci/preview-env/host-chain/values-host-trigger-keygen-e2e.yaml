@@ -96,7 +96,7 @@ scDeploy:
       (async () => {
         const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
         const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
-        const keyEvent = await waitForEvent(contract, 'ActivateKey', 8 * 60 * 1000);
+        const keyEvent = await waitForEvent(contract, 'ActivateKey', 15 * 60 * 1000);
         // KMS_ACTIVE_KEY_ID must be the 64-hex-char zero-padded form (NOT decimal) - the
         // KMS nodes publish key/CRS blobs to S3 under their raw uint256 request ID
         // rendered as hex with no 0x prefix (confirmed by listing the actual bucket:
@@ -147,7 +147,7 @@ scDeploy:
       (async () => {
         const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
         const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
-        const crsEvent = await waitForEvent(contract, 'ActivateCrs', 8 * 60 * 1000);
+        const crsEvent = await waitForEvent(contract, 'ActivateCrs', 15 * 60 * 1000);
         // See the matching comment on keyId above - same hex-padded (not decimal) S3
         // object-key requirement applies here.
         const crsId = crsEvent.args.crsId.toString(16).padStart(64, '0');

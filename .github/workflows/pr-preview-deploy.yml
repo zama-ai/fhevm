@@ -1,20 +1,15 @@
 name: pr-preview-deploy
 
 ##############################################################################
-# Ephemeral per-PR e2e preview environments.
-#
-# Every PR preview gets: its own namespace, its own anvil host+gateway
-# chains, its own dedicated KMS with real keygen, its own contracts,
-# coprocessor, kms-connector, relayer and test-suite. Nothing is shared
-# across PRs, so concurrent previews never collide.
+# Ephemeral per-PR e2e preview environments. Each preview gets its own
+# namespace with a fully isolated stack: anvil host+gateway chains, a
+# dedicated KMS (real keygen), contracts, coprocessor, kms-connector, relayer
+# and test-suite. Nothing is shared across PRs.
 #
 # Two PR labels control deployment (see check-labels below):
-#   - pr-preview-e2e: deploy the pinned versions from the env block below,
-#     no images built.
-#   - pr-preview-e2e-build: also build fresh images from the PR branch for
-#     every fhevm-owned component and deploy those instead.
-# Neither label affects the dedicated KMS (env.KMS_REPO_REF/KMS_CORE_TAG):
-# it's a separate zama-ai/kms deployment, never built by this workflow.
+#   - pr-preview-e2e: deploy the pinned versions below, build no images.
+#   - pr-preview-e2e-build: also build fresh images from the PR branch.
+# The dedicated KMS (env.KMS_REPO_REF/KMS_CORE_TAG) is never built here.
 ##############################################################################
 
 on:
@@ -84,90 +79,50 @@ on:
         default: "0.3.3"
 concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
-  # workflow_dispatch: one slot per run - manual dispatches never cancel
-  # each other (each is an independent, deliberately-triggered deployment).
+  # workflow_dispatch: keyed on run_id, so manual runs never cancel each other.
   group: pr-preview-deploy-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 permissions: {}
 
 ##############################################################################
-# Centralized version pins. All chart/tag versions the deploy job installs
-# live here so bumping one doesn't require hunting through ~350 lines of
-# helm commands - every job below inherits these via the top-level env.
+# Centralized version pins for every chart/tag the deploy job installs, so
+# bumping one doesn't mean hunting through the helm commands below. Every job
+# inherits these via the top-level env.
 ##############################################################################
 env:
-  # Real OCI chart refs + versions, pinned to the same known-good releases
-  # zama-zws/gitops's fhevm-dev environment currently runs.
+  # Chart refs/versions pinned to the same known-good releases zama-zws/
+  # gitops's fhevm-dev environment runs.
   #=====ANVIL NODE===========================================================
   ANVIL_NODE_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/anvil-node
   ANVIL_NODE_CHART_VERSION: "0.4.1"
   #=====CONTRACTS============================================================
-  # gateway-contracts and host-contracts version independently within this
-  # monorepo (confirmed via `git show <tag>:*/package.json` - their internal
-  # package.json versions diverge across the same tag), but both are still
-  # built + published from every top-level repo tag, so pinning both to the
-  # same tag is valid and keeps things simple. Picked v0.13.0 to match the
-  # real zws-testnet pairing (see zama-zws/gitops/values/{eth,gw}-blockchain/
-  # *-sc-deploy*/values-zws-testnet.yaml). Both MUST be >= v0.13.0 - this is
-  # also the RFC013 KMSGeneration-to-host-chain migration boundary, and every
-  # downstream step below (kms-connector's --set-string wiring, the KMS
-  # BOOTSTRAP trigger-keygen step) is written for the post-migration topology
-  # (KMSGeneration + ProtocolConfig on the canonical HOST chain, not Gateway).
-  # Older pins broke on tasks our deploy scripts/downstream steps need:
-  #   - v0.9.8 gateway-contracts predates ProtocolPayment/mocked-$ZAMA-OFT
-  #     (task:deployMockedZamaOFT et al., first released in v0.10.0) -
-  #     "HH303: Unrecognized task".
-  #   - v0.12.1 host-contracts predates the split canonical-host deploy task
-  #     (--with-kms-generation / ProtocolConfig / host-side KMSGeneration,
-  #     first released in v0.13.0) - "HH305: Unrecognized param" if passed,
-  #     and if worked around, breaks the kms-connector wiring + keygen-trigger
-  #     steps below instead (they'd need to target gw-sc-addresses/
-  #     gateway-contracts, and ProtocolConfig doesn't exist pre-v0.13 at all).
-  # All boundaries confirmed via `git merge-base --is-ancestor <commit> <tag>`.
+  # gateway/host-contracts version independently but are both published from
+  # every repo tag, so pinning both to v0.13.0 (matching the zws-testnet
+  # pairing) is valid. MUST be >= v0.13.0: this is the RFC013
+  # KMSGeneration-to-host-chain migration boundary, and every downstream step
+  # (kms-connector wiring, keygen trigger) assumes the post-migration topology
+  # (KMSGeneration + ProtocolConfig on the host chain). Older tags lack deploy
+  # tasks/args these steps need.
   GATEWAY_CONTRACTS_VERSION: "v0.13.0"
   HOST_CONTRACTS_VERSION: "v0.13.0"
   CONTRACTS_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts
   CONTRACTS_CHART_VERSION: "0.8.2"
   #=====COPROCESSOR==========================================================
-  # Must be >= v0.13.0 to match host/gateway-contracts' RFC013 migration
-  # above: v0.11.0's gw-listener/host-listener/host-listener-poller binaries
-  # don't know about ciphertext-commits-address/kms-generation-address at
-  # all ("unexpected argument"), its tx-sender still hard-requires the since
-  # -removed multichain-acl-address/host-chain-url args, and its db-migration
-  # /sns-worker still have the since-removed per-tenant API key plumbing
-  # (TENANT_API_KEY) - confirmed via `git show <tag>:coprocessor/...`. Picked
-  # v0.13.0 to match the real zws-testnet pairing (see zama-zws/gitops/values/
-  # coproc/coproc-workers, eth-blockchain/eth-coproc-listener, gw-blockchain/
-  # gw-coprocessor's values-zws-testnet.yaml - all pinned to v0.13.0).
+  # Must be >= v0.13.0 to match contracts' RFC013 migration above (older
+  # binaries lack the ciphertext-commits/kms-generation args and still require
+  # since-removed ones). Pinned v0.13.0 to match the zws-testnet pairing.
   COPROCESSOR_VERSION: "v0.13.0"
   COPROCESSOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor
   COPROCESSOR_CHART_VERSION: "0.13.0"
   #=====KMS CONNECTOR=========================================================
-  # v0.13.1-hotfix.kmsconnector.1 is the only kms-connector app build we've
-  # confirmed actually running in production (zama-zws/gitops's mpc-testnet,
-  # paired with this exact chart version). It predates PR #2700 ("epoch
-  # changes and key resharing", chart bumped 1.5.2 -> 1.5.3 on main) - at
-  # 1.5.2, commonConfig.gatewayContractAddresses still owns kmsGeneration,
-  # ethereumContractAddresses still has kmsVerifier (removed at 1.5.3 - see
-  # the --set-string calls below), and there's no ethereumContractAddresses.
-  # protocolConfig field at all yet. This is a DELIBERATE downgrade from
-  # v0.14.0-4/chart 1.5.3 (which fixed a different bug - gw-listener's Config
-  # struct there still requires kms_verifier_address but 1.5.3's chart no
-  # longer renders it - "invalid string length for key `kms_verifier_address`")
-  # to fall back to this known-good pairing instead.
-  #
-  # NOTE: gatewayContractAddresses.kmsGeneration (1.5.2) vs
-  # ethereumContractAddresses.kmsGeneration (1.5.3) is just a values.yaml
-  # namespace rename, not a routing change - confirmed via templates/
-  # _helpers.tpl + every kms-connector-*-deployment.yaml at both chart
-  # versions: whichever field the address is set through, it always ends up
-  # in the same KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS env var,
-  # always emitted alongside KMS_CONNECTOR_ETHEREUM_URL (never GATEWAY_URL).
-  # configs/contracts-<network>.yaml's "gateway.kms_generation.address" preset
-  # key is the same legacy naming, also resolved into that same ethereum-side
-  # env var by the helper - so there's no host-vs-gateway chain mismatch here
-  # regardless of HOST_CONTRACTS_VERSION's RFC013 topology.
+  # v0.13.1-hotfix.kmsconnector.1 + chart 1.5.2 is the known-good pairing
+  # confirmed running in production (zama-zws/gitops's mpc-testnet). Deliberate
+  # downgrade from v0.14.0-4/chart 1.5.3 (whose chart stopped rendering the
+  # kms_verifier_address that gw-listener's Config still requires). At chart
+  # 1.5.2, kmsGeneration lives under commonConfig.gatewayContractAddresses and
+  # kmsVerifier under ethereumContractAddresses (see the --set-string calls
+  # below); both route to the same env vars regardless of chain topology.
   KMS_CONNECTOR_VERSION: "v0.13.1-hotfix.kmsconnector.1"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
   KMS_CONNECTOR_CHART_VERSION: "1.5.2"
@@ -175,33 +130,17 @@ env:
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
   #=====COMMON===============================================================
-  # RELAYER_VERSION/TEST_SUITE_VERSION back the relayer+relayer-migrate and
-  # test-suite images respectively; both deploy via this same generic chart.
-  #
-  # v0.11.1/v0.11.3 (relayer's own most-recently-tagged versions) 404'd on
-  # pull ("relayer-migrate:v0.11.1: not found") despite v0.11.1 being a real
-  # published GitHub Release that should have triggered a build per
-  # relayer-docker-build.yml's "release: always build" rule - most likely a
-  # build failure or a workflow-file version mismatch back when that release
-  # was cut (release-triggered workflows run whatever's on the default
-  # branch at event time, not the tag's own copy) that nobody caught since
-  # relayer wasn't on any deploy critical path back then. v0.13.0 is
-  # confirmed present and working: zama-zws/gitops's
-  # values-relayer-testnet.yaml (job.image.tag) and fhevm-test-suite/
-  # values-relayer-dev.yaml both pin exactly this tag in production.
+  # RELAYER_VERSION/TEST_SUITE_VERSION back the relayer(+migrate) and
+  # test-suite images, both via the generic `common` chart. v0.13.0 is
+  # confirmed present + running in production (zama-zws/gitops relayer values);
+  # relayer's own v0.11.x tags 404 on pull.
   RELAYER_VERSION: "v0.13.0"
-  # Neither v0.13.0 nor v0.11.5-0 work as a *pinned* tag here - both bundle a
-  # tfhe/node-tfhe build that can't deserialize kms-core v0.13.20's
-  # tfhe-rs-1.6.1-format public keys ("invalid value: integer `1`, expected
-  # variant index 0 <= i < 1"), confirmed live under both
-  # @fhevm/sdk@*(v0.13.0, defaults to canonical tfhe wasm 1.5.3) and
-  # @zama-fhe/relayer-sdk@0.4.4 (v0.11.5-0, node-tfhe 1.4.0-alpha.3). The
-  # actual fix already exists on this branch's own sdk/js-sdk (commit
-  # 328709b7c hardcodes tfheVersion: '1.6.2' - confirmed via `git merge-base
-  # --is-ancestor` and reading the file directly), so build_images=true
-  # (build-test-suite job below) picks it up automatically via
-  # test-suite/e2e/package.json's "@fhevm/sdk": "*" workspace link - this
-  # pinned fallback only matters when build_images=false/skipped.
+  # The pinned test-suite tags (v0.13.0, v0.11.5-0) bundle a tfhe/node-tfhe
+  # that can't deserialize kms-core v0.13.20's tfhe-rs-1.6.1 public keys
+  # ("expected variant index 0 <= i < 1"). Test path uses @zama-fhe/relayer-sdk
+  # (node-tfhe 1.5.4), so the key format must match: pair with a kms-core on
+  # tfhe-rs 1.5.x (e.g. v0.13.10). This pinned fallback only matters when
+  # build_images is off.
   TEST_SUITE_VERSION: "v0.13.0"
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
@@ -214,13 +153,9 @@ env:
 
 jobs:
   ##########################################################################
-  # Gate: only PRs carrying pr-preview-e2e or pr-preview-e2e-build get a
-  # preview stack; the latter additionally builds fresh images (see
-  # build-host-contracts etc. below) instead of deploying the pinned
-  # versions from the env block above. Manual workflow_dispatch runs are
-  # always a deliberate, explicit request (there's no label to check -
-  # dispatching the workflow *is* the request), so they always deploy, and
-  # build_images comes from the matching input instead of a label.
+  # Gate: only PRs labeled pr-preview-e2e(-build) get a preview; the -build
+  # variant also builds fresh images. workflow_dispatch always deploys (the
+  # dispatch itself is the request); build_images comes from its input.
   ##########################################################################
   check-labels:
     name: check-labels
@@ -258,17 +193,10 @@ jobs:
           fi
 
   ##########################################################################
-  # Build every fhevm-owned image at this PR's HEAD commit (or, for a manual
-  # workflow_dispatch, at whichever branch was picked via "Use workflow
-  # from") - but only when build_images is on, i.e. the pr-preview-e2e-build
-  # label (pull_request) or the build_images input (workflow_dispatch); see
-  # check-labels above for how that's resolved for either trigger. Each
-  # reusable workflow already only builds+pushes when it detects relevant
-  # path changes (see check-changes-for-docker-build.yml); unchanged
-  # components report "skipped" and resolve-tags below falls back to the
-  # matching pinned version (env for pull_request, the matching *_version
-  # input for workflow_dispatch) for them - same as when build_images is
-  # off altogether and no build-* job below even runs.
+  # Build every fhevm-owned image at this PR's HEAD (or the dispatched
+  # branch), only when build_images is on. Each reusable workflow builds+
+  # pushes only on relevant path changes; unchanged components report
+  # "skipped" and resolve-tags below falls back to the pinned version.
   ##########################################################################
   build-host-contracts:
     name: build/host-contracts
@@ -277,9 +205,7 @@ jobs:
       needs.check-labels.outputs.should_deploy == 'true' &&
       needs.check-labels.outputs.build_images == 'true'
     uses: ./.github/workflows/host-contracts-docker-build.yml
-    # The top-level `permissions: {}` caps every nested reusable-workflow call in this
-    # chain, regardless of what host-contracts-docker-build.yml's own jobs request - see
-    # test-suite-orchestrate-e2e-tests.yml for the same &docker_permissions anchor pattern.
+    # Top-level `permissions: {}` caps every nested reusable-workflow call.
     permissions: &docker_permissions
       actions: 'read' # Required to read workflow run information
       contents: 'read' # Required to checkout repository code
@@ -330,13 +256,10 @@ jobs:
     secrets: inherit
 
   ##########################################################################
-  # Resolve one real tag per image: the PR's own (or, on workflow_dispatch,
-  # the picked branch's) 7-char short SHA if this run just built it, else
-  # the matching pinned version (env for pull_request, the matching
-  # *_version input for workflow_dispatch) if it was skipped as unchanged
-  # or build_images was off altogether. Centralized here so the deploy job
-  # doesn't need 16 separate `needs.*.outputs.*` lookups sprinkled through
-  # its helm commands.
+  # Resolve one real tag per image: this run's 7-char short SHA if it just
+  # built the component, else the pinned version (skipped/unchanged, or
+  # build_images off). Centralized so the deploy job doesn't need many
+  # scattered `needs.*.outputs.*` lookups.
   ##########################################################################
   resolve-tags:
     name: resolve-tags
@@ -348,10 +271,9 @@ jobs:
       - build-coprocessor
       - build-relayer
       - build-test-suite
-    # always(): see deploy job's own if for why (build-* being legitimately
-    # skipped would otherwise transitively skip this job too, per
-    # actions/runner#2205) - explicit check-labels.result guards against
-    # always() also masking a genuine check-labels failure.
+    # always(): build-* jobs are legitimately skipped when build_images is
+    # off, which would otherwise skip this job too (actions/runner#2205). The
+    # check-labels.result guard keeps always() from masking a real failure.
     if: >-
       always() &&
       needs.check-labels.outputs.should_deploy == 'true' &&
@@ -361,10 +283,8 @@ jobs:
       short_sha: ${{ steps.resolve.outputs.short_sha }}
       tags_json: ${{ steps.resolve.outputs.tags_json }}
       namespace: ${{ steps.resolve.outputs.namespace }}
-      # Chart versions: static top-level env defaults on pull_request: the
-      # *_chart_version workflow_dispatch inputs override them on manual
-      # runs. Resolved here (not read directly off env in the deploy job)
-      # so both trigger types go through one code path.
+      # Chart versions: env defaults on pull_request, *_chart_version inputs
+      # on workflow_dispatch. Resolved here so both triggers share one path.
       contracts_chart_version: ${{ steps.resolve.outputs.contracts_chart_version }}
       coprocessor_chart_version: ${{ steps.resolve.outputs.coprocessor_chart_version }}
       kms_connector_chart_version: ${{ steps.resolve.outputs.kms_connector_chart_version }}
@@ -378,11 +298,8 @@ jobs:
         env:
           NEEDS: ${{ toJSON(needs) }}
           EVENT_NAME: ${{ github.event_name }}
-          # The `inputs` context (not github.event.inputs) is always a defined
-          # object - {} on pull_request, the actual dispatch inputs on
-          # workflow_dispatch - so `pick()` below can safely dereference
-          # `inputs.*` unconditionally without a null-check, even though its
-          # result is only used when isDispatch is true.
+          # `inputs` is always a defined object ({} on pull_request), so the
+          # helpers below can dereference inputs.* without a null-check.
           INPUTS: ${{ toJSON(inputs) }}
           ACTOR: ${{ github.actor }}
         with:
@@ -392,25 +309,20 @@ jobs:
             const inputs = JSON.parse(process.env.INPUTS);
             const env = process.env;
 
-            // pull_request: this PR's own head SHA. workflow_dispatch: the tip
-            // of whichever branch was picked via "Use workflow from" (context.sha
-            // already resolves to that, since the whole run - including every
-            // nested build-*-docker-build.yml call below - executes against it).
+            // pull_request: this PR's head SHA. workflow_dispatch: tip of the
+            // picked branch (context.sha already resolves to it).
             const shortSha = isDispatch
               ? context.sha.substring(0, 7)
               : context.payload.pull_request.head.sha.substring(0, 7);
 
-            // "success" -> this run built+pushed shortSha, anything else
-            // (skipped/failure/cancelled, i.e. unchanged - or build_images
-            // off, so the build-* job didn't even run and `result` is
-            // undefined) falls back to a pinned version.
+            // "success" = this run built+pushed shortSha; anything else
+            // (skipped/unchanged, or build_images off) falls back to the pin.
             const pick = (result, pinnedVersion) => (result === 'success' ? shortSha : pinnedVersion);
 
-            // Pinned version per component family: the env default on
-            // pull_request, the matching workflow_dispatch input on manual
-            // runs. Same pin backs every sub-image built from that one
-            // repo/version (e.g. all 4 kms-connector binaries) - except
-            // host/gateway contracts, which are independently versioned.
+            // Pinned version per component: env default on pull_request, the
+            // matching input on dispatch. One pin backs every sub-image of a
+            // family (e.g. all kms-connector binaries), except host/gateway
+            // contracts, which version independently.
             const pinned = (envVar, dispatchInput) => (isDispatch ? dispatchInput : envVar);
             const hostContractsPin = pinned(env.HOST_CONTRACTS_VERSION, inputs.host_contracts_version);
             const gatewayContractsPin = pinned(env.GATEWAY_CONTRACTS_VERSION, inputs.gateway_contracts_version);
@@ -438,32 +350,22 @@ jobs:
               test_suite: pick(needs['build-test-suite'].outputs.build_result, testSuitePin),
             };
 
-            // Namespace: PR number for pull_request (stable, one preview per PR).
-            // workflow_dispatch has no PR to key off - default to this run's own
-            // id (always unique, traceable back to the run that created it),
-            // overridable via namespace_suffix for a stable/memorable name.
+            // Namespace: PR number on pull_request; on dispatch, this run's id
+            // (unique) or the optional namespace_suffix.
             const namespace = isDispatch
               ? `fhevm-ci-${env.ACTOR}-${inputs.namespace_suffix || context.runId}`
               : `fhevm-ci-${env.ACTOR}-${context.payload.pull_request.number}`;
 
-            // Chart/ref versions: static top-level env on pull_request: the
-            // matching workflow_dispatch input (already defaulted by the
-            // trigger's own input schema) on manual runs.
+            // Chart/ref versions: env on pull_request, matching input on dispatch.
             const chartVersions = {
               contracts_chart_version: isDispatch ? inputs.contracts_chart_version : env.CONTRACTS_CHART_VERSION,
               coprocessor_chart_version: isDispatch ? inputs.coprocessor_chart_version : env.COPROCESSOR_CHART_VERSION,
               kms_connector_chart_version: isDispatch ? inputs.kms_connector_chart_version : env.KMS_CONNECTOR_CHART_VERSION,
-              // Backs postgres-*/relayer-migrate/relayer/test-suite alike - they
-              // all deploy via the same generic `common` chart, see deploy job.
+              // Backs postgres-*/relayer-migrate/relayer/test-suite (common chart).
               common_chart_version: isDispatch ? inputs.common_chart_version : env.COMMON_CHART_VERSION,
               kms_repo_ref: isDispatch ? inputs.kms_repo_ref : env.KMS_REPO_REF,
               kms_core_tag: isDispatch ? inputs.kms_core_version : env.KMS_CORE_TAG,
-              // Number of kms-core parties (and, 1:1, of kms-connector + Postgres
-              // releases the deploy job creates - see its "Deploy kms-connector"
-              // step). NOT previously wired through at all: the nb_kms_core
-              // workflow_dispatch input existed but nothing ever read it, so manual
-              // dispatches silently always got the env.NB_KMS_CORE default
-              // regardless of what was typed into the form.
+              // Parties count (1:1 with kms-connector + Postgres releases).
               nb_kms_core: isDispatch ? inputs.nb_kms_core : env.NB_KMS_CORE,
             };
 
@@ -477,10 +379,8 @@ jobs:
               core.setOutput(key, value);
             }
 
-            // Deployment plan summary: this is the earliest point in the
-            // workflow every version (chart + image) is known together, so
-            // publish it here rather than adding a separate job/step later
-            // that just re-reads the same data.
+            // Deployment plan summary: earliest point every version (chart +
+            // image) is known together.
             await core.summary
               .addHeading(
                 isDispatch
@@ -516,23 +416,17 @@ jobs:
               .write();
 
   ##########################################################################
-  # Deploy the full stack to a per-PR namespace on the zws-dev Tailscale
-  # cluster: anvil chains -> dedicated KMS -> contracts -> coprocessor +
-  # kms-connector -> relayer + test-suite.
+  # Deploy the full stack to the per-PR namespace on the zws-dev cluster:
+  # anvil chains -> dedicated KMS -> contracts -> coprocessor + kms-connector
+  # -> relayer + test-suite.
   ##########################################################################
   deploy:
     name: deploy
     needs: [check-labels, resolve-tags]
-    # always() is required here, not just cosmetic: without a status-check
-    # function, GitHub implicitly ANDs success() across the *entire*
-    # transitive needs graph (see actions/runner#2205) - including the
-    # build-* jobs resolve-tags needs, which are legitimately `skipped`
-    # whenever build_images is off. Without this, deploy silently no-ops
-    # even though should_deploy is 'true' and resolve-tags itself succeeded
-    # (confirmed the hard way: PR #3189's pr-preview-e2e-only run). Since
-    # always() alone would also let this job start after a genuine
-    # resolve-tags *failure* (with NAMESPACE/TAGS_JSON empty), explicitly
-    # require resolve-tags' own result too.
+    # always() required: without it GitHub ANDs success() across the whole
+    # needs graph (actions/runner#2205), including build-* jobs that are
+    # skipped when build_images is off, silently no-oping deploy. Requiring
+    # resolve-tags' own success keeps a real failure from slipping through.
     if: >-
       always() &&
       needs.check-labels.outputs.should_deploy == 'true' &&
@@ -542,14 +436,11 @@ jobs:
     permissions:
       pull-requests: write # Required to comment on the PR with connection info
     env:
-      # Job-specific, computed from context/needs - can't live in the
-      # workflow-level env above (needs isn't available there).
+      # Job-specific, computed from needs (not available in workflow-level env).
       NAMESPACE: ${{ needs.resolve-tags.outputs.namespace }}
       TAGS_JSON: ${{ needs.resolve-tags.outputs.tags_json }}
-      # Override the workflow-level pull_request defaults above: on
-      # workflow_dispatch these come from the matching *_chart_version /
-      # kms_repo_ref / kms_core_version input instead (see resolve-tags);
-      # on pull_request resolve-tags just passes the same defaults through.
+      # workflow_dispatch overrides via resolve-tags; pull_request passes the
+      # same defaults through.
       CONTRACTS_CHART_VERSION: ${{ needs.resolve-tags.outputs.contracts_chart_version }}
       COPROCESSOR_CHART_VERSION: ${{ needs.resolve-tags.outputs.coprocessor_chart_version }}
       KMS_CONNECTOR_CHART_VERSION: ${{ needs.resolve-tags.outputs.kms_connector_chart_version }}
@@ -599,10 +490,8 @@ jobs:
           password: ${{ secrets.HARBOR_READ_TOKEN }}
 
       ######################################################################
-      # NAMESPACE: destroy-then-recreate on every run (mirrors kms's
-      # pr-preview-deploy.yml "Check if namespace exists, delete and create").
-      # This cascades deletion of any Crossplane claims (coprocessor-infra,
-      # tkms-infra) left over from a previous run on the same PR.
+      # NAMESPACE: destroy-then-recreate every run, cascading deletion of any
+      # leftover Crossplane claims (coprocessor-infra, tkms-infra).
       ######################################################################
       - name: Reset namespace
         run: |
@@ -623,21 +512,11 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
       ######################################################################
-      # DEDICATED KMS: reuse zama-ai/kms's own, already-tested deploy
-      # pipeline instead of re-deriving the tkms-infra/kms-core wiring by
-      # hand. thresholdWithEnclave, 4 parties, matches kms's own real
-      # PR-preview default (threshold=1, majority=2, reconstruct=3).
-      #
-      # NOTE: this also deploys the namespace's "registry-credentials"
-      # Secret as a side effect. deploy.sh's setup_infrastructure calls
-      # deploy_registry_credentials (see kms/ci/scripts/lib/infrastructure.sh)
-      # before deploy_kms, which for aws-ci installs the same sync-secrets
-      # Helm chart against the same shared common/hub-zama-org-registry-
-      # credentials AWS secret every other fhevm/kms namespace uses, into a
-      # Secret literally named "registry-credentials" - the exact name every
-      # fhevm chart's imagePullSecrets hardcodes. So by the time any step
-      # below pulls a private image, the Secret already exists; no need to
-      # install sync-secrets ourselves.
+      # DEDICATED KMS: reuse zama-ai/kms's own deploy pipeline
+      # (thresholdWithEnclave, 4 parties) instead of re-deriving the wiring.
+      # Side effect: deploy.sh also installs the namespace's
+      # "registry-credentials" Secret (the name every fhevm chart's
+      # imagePullSecrets hardcodes), so we don't install sync-secrets ourselves.
       ######################################################################
       - name: Sparse-checkout zama-ai/kms deploy scripts
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -654,10 +533,8 @@ jobs:
           path: .kms-deploy
 
       - name: Fetch enclave PCR values for KMS_CORE_TAG
-        # kms's own common-nitro-enclave.yml labels every enclave image it
-        # builds with zama.kms.eif_pcr{0,1,2} (the same measurements it wires
-        # into tkms-infra/kms-core's trustedReleases via common-update-argocd.yml).
-        # deploy.sh's generate_helm_overrides reads bare PCR0/PCR1/PCR2 env vars.
+        # kms's enclave images are labeled with zama.kms.eif_pcr{0,1,2} (wired
+        # into kms-core's trustedReleases). deploy.sh reads them as PCR0/1/2.
         env:
           IMAGE_REPO: hub.zama.org/ghcr/zama-ai/kms
         run: |
@@ -669,18 +546,11 @@ jobs:
           } >> "$GITHUB_ENV"
 
       ######################################################################
-      # IN-CLUSTER DATABASES: plain Postgres StatefulSets on the official
-      # docker.io/library/postgres image, via the same generic `common` chart
-      # relayer/test-suite use below - not Crossplane/RDS, and NOT Bitnami's
-      # postgresql chart (see coprocessor-infra/values-postgres-coprocessor-
-      # e2e.yaml's header for why: Bitnami moved every pinned image tag off
-      # the free docker.io/bitnami catalog in August 2025). One dedicated
-      # instance per consumer (coprocessor, kms-connector,
-      # relayer+relayer-migrate), mirroring zama-zws/gitops's production
-      # topology where each has its own RDS instance rather than sharing one.
-      # Deployed early since they have no dependency on anything else in this
-      # namespace and are ready in seconds, so they're long done well before
-      # their consumers need them.
+      # IN-CLUSTER DATABASES: plain Postgres StatefulSets via the generic
+      # `common` chart (not Crossplane/RDS, not Bitnami - its images left the
+      # free catalog). One instance per consumer (coprocessor, kms-connector,
+      # relayer), mirroring prod's per-RDS topology. Deployed early: no
+      # dependencies and ready in seconds.
       ######################################################################
       - name: Deploy in-cluster Postgres for coprocessor
         run: |
@@ -688,14 +558,9 @@ jobs:
             -n "${NAMESPACE}" -f ci/preview-env/coprocessor-infra/values-postgres-coprocessor-e2e.yaml --wait
 
       - name: Deploy in-cluster Postgres for kms-connector
-        # One dedicated instance PER PARTY (postgres-connector-<i>), not one shared
-        # instance - see "Deploy kms-connector" below for why: one kms-connector
-        # release per kms-core party, each needing its own DB. fullnameOverride is
-        # overridden per release so each gets its own Service/StatefulSet name (the
-        # values file's own fullnameOverride: postgres-connector is just the base
-        # values file's documented single-instance default, unused here). Launched
-        # in parallel (`&`+`wait`) since each takes only seconds and they're fully
-        # independent of each other.
+        # One instance PER PARTY (postgres-connector-<i>): one kms-connector
+        # release per kms-core party, each needing its own DB. fullnameOverride
+        # per release; launched in parallel since each takes only seconds.
         run: |
           for i in $(seq 1 "${NB_KMS_CORE}"); do
             helm upgrade --install "postgres-connector-${i}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
@@ -712,11 +577,9 @@ jobs:
       - name: Deploy dedicated KMS (kms's own ci/scripts/deploy.sh)
         working-directory: .kms-deploy
         env:
-          # deploy.sh's parse_args only recognizes CLI flags, not env vars, for
-          # TARGET/NAMESPACE/DEPLOYMENT_TYPE/NUM_PARTIES/PCR0-2 (--tag sets both
-          # KMS_CORE_TAG and KMS_CLIENT_TAG - see lib/common.sh's parse_args) -
-          # TLS is the one exception with a real env-var fallback (see
-          # lib/deploy.sh's `TLS="${TLS:-false}"`).
+          # deploy.sh's parse_args takes CLI flags, not env vars, for these
+          # (--tag sets both KMS_CORE_TAG and KMS_CLIENT_TAG). TLS is the one
+          # env-var exception.
           TLS: "true"
         run: |
           chmod +x ci/scripts/deploy.sh
@@ -730,32 +593,14 @@ jobs:
 
       - name: Discover KMS party signer addresses (S3 public vault)
         id: kms-identity
-        # Each party generates its own operator identity (a "SigningKey", verification
-        # address published as VerfAddress) as soon as kms-core boots, with no keygen
-        # ceremony/ContextSwitch involved (that's a separate, later thing - see "Trigger
-        # KMS keygen + CRS generation" below). deploy.sh above only waits for the K8s
-        # Pod/enclave to be Ready, not for this identity generation to finish - under
-        # Nitro attestation it can lag pod-readiness by a couple of minutes and parties
-        # don't all finish at the same time.
+        # Each party generates its own signer identity (VerfAddress) on boot,
+        # separate from keygen. deploy.sh only waits for pod readiness, which
+        # can precede identity generation by minutes under Nitro attestation.
         #
-        # All NB_KMS_CORE parties share one bucket (see any party's own
-        # KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET configmap value), segmented by
-        # each party's own "PUB-p<i>/" prefix (kms_deployment.sh's per-party helm loop
-        # sets kmsCore.publicVault.s3.prefix="PUB-p${i}" using this same index). The
-        # VerfAddress filename itself (the "handle") is the same across every party -
-        # kms-core's own kms-gen-keys-configmap.yaml job relies on exactly this:
-        # it reads the handle once from the client's local VerfKey, then fetches every
-        # peer's PUB-p<i>/VerfAddress/<same-handle> using that one shared handle. We
-        # mirror that: discover the handle once from whichever party resolves first,
-        # then reuse it for the rest instead of re-listing per party. Locally,
-        # fhevm-cli's discoverKmsSigners() (test-suite/fhevm/src/flow/readiness.ts)
-        # reads this same VerfAddress/<handle> object from MinIO.
-        #
-        # Emits s3_endpoint (reused as-is for KMS_NODE_STORAGE_URL_x below - each
-        # party's own registered storage URL is "${s3_endpoint}/PUB-p<i>", the exact
-        # same base this step already fetches VerfAddress from) and signers_json - a
-        # single JSON blob (not NB_KMS_CORE separate named outputs) since step outputs
-        # can't be addressed by a computed/looped name from a later step.
+        # All parties share one S3 bucket, segmented by a "PUB-p<i>/" prefix;
+        # the VerfAddress handle is identical across parties, so we discover it
+        # once and reuse it. Emits s3_endpoint and signers_json (one JSON blob,
+        # since step outputs can't be addressed by a looped name later).
         run: |
           s3_endpoint=$(kubectl get configmap "${NAMESPACE}-1" -n "${NAMESPACE}" \
             -o jsonpath='{.data.CORE_CLIENT__S3_ENDPOINT}' 2>/dev/null || echo "")
@@ -776,29 +621,14 @@ jobs:
           echo "signers_json=${signers_json}" >> "$GITHUB_OUTPUT"
 
       ######################################################################
-      # Unlike the signer address (an identity kms-core generates itself,
-      # discovered above), the per-party "tx sender" is fhevm's OWN wallet for
-      # submitting KMS responses on-chain (host-side KMSGeneration/ProtocolConfig
-      # AND gateway-side Decryption/InputVerification) - locally, fhevm-cli
-      # generates and funds one wallet per party itself (test-suite/fhevm/src/
-      # generate/env.ts, up-flow.ts's "base" step). kms's own deploy.sh/charts have
-      # no equivalent per-party connector/wallet concept to discover (confirmed: no
-      # "connector"/"tx-sender" hits anywhere in zama-ai/kms), so NB_KMS_CORE
-      # wallets are derived here instead, straight from the SAME well-known
-      # Foundry/Hardhat mnemonic both anvil chains use (see values-anvil-*-e2e.yaml
-      # / values-gateway-contracts-e2e.yaml's DEPLOYER_PRIVATE_KEY comment), at HD
-      # path indices 10..10+NB_KMS_CORE-1 - offset by 10 to stay clear of every
-      # other index already hand-picked from this mnemonic elsewhere in this
-      # namespace (0: both chains' contract deployer; 1-8: various
-      # KMS_SIGNER/COPROCESSOR/CUSTODIAN placeholder addresses baked into the
-      # contracts values files; 3 additionally reused as the gateway relayer tx
-      # sender - see git blame). Both anvil-host and anvil-gateway pre-fund well
-      # past 10+13 accounts (see accounts: "120" in both values-anvil-*-e2e.yaml),
-      # so this comfortably covers up to 13 parties with no chain config change.
+      # The per-party "tx sender" is fhevm's own wallet for submitting KMS
+      # responses on-chain. kms's deploy has no equivalent to discover, so we
+      # derive NB_KMS_CORE wallets from the same well-known Foundry/Hardhat
+      # mnemonic the anvil chains use, at HD indices 10..10+N-1 (offset 10 to
+      # avoid indices already used elsewhere in this namespace). Both chains
+      # pre-fund 120 accounts, covering up to 13 parties.
       #
-      # ethers (not cast/foundry) because it's the one HD-wallet-capable tool this
-      # job doesn't already need to install for something else - a plain npm
-      # install is simpler than adding a whole foundry setup step just for this.
+      # ethers because it's the one HD-wallet tool not already needed elsewhere.
       ######################################################################
       - name: Derive KMS tx-sender wallets
         id: kms-wallets
@@ -836,8 +666,7 @@ jobs:
 
       ######################################################################
       # CONTRACTS: gateway first, then host (needs gateway's Decryption /
-      # InputVerification addresses), then register the host chain back into
-      # the gateway's GatewayConfig.
+      # InputVerification addresses), then register the host chain into gateway.
       ######################################################################
       - name: Wire real KMS node info into gateway-contracts values
         id: gateway-contracts-values
@@ -846,13 +675,9 @@ jobs:
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
           S3_ENDPOINT: ${{ steps.kms-identity.outputs.s3_endpoint }}
         run: |
-          # NB_KMS_CORE real parties, not a fixed 4 - see values-gateway-contracts-e2e.yaml's
-          # header. Threshold formulas mirror kms's own N=4 pr-preview default (t=1,
-          # majority=2, reconstruct=3 - see kms/.github/workflows/pr-preview-deploy.yml's
-          # "Set Deployment Parameters"): t = floor((N-1)/3) is the standard BFT-MPC
-          # corruption threshold, majority = t+1, reconstruct = N-t. TODO: reconfirm this
-          # scaling matches kms's own real formula once a live keygen ceremony has run at
-          # N > 4 (kept best-effort like the N=4 defaults it replaces).
+          # NB_KMS_CORE real parties. Threshold formulas mirror kms's BFT-MPC
+          # defaults: t=floor((N-1)/3), majority=t+1, reconstruct=N-t. TODO:
+          # reconfirm this scaling against kms's own formula at N > 4.
           n="${NB_KMS_CORE}"
           t=$(( (n - 1) / 3 ))
           majority=$(( t + 1 ))
@@ -870,20 +695,12 @@ jobs:
             ]
           " "${generated}"
 
-          # KMS_NODE_STORAGE_URL_x below is deliberately the bare bucket root
-          # (no "/PUB-p${i}" suffix): all NB_KMS_CORE parties share one bucket
-          # (see "Discover KMS party signer addresses" above), and
-          # host-listener's S3 client (coprocessor/fhevm-engine/host-listener/
-          # .../aws_s3.rs split_url) only has a working code path for a bare
-          # vanity-domain bucket URL with no extra path segment - appending a
-          # party prefix makes it treat "PUB-p<i>" as a second bucket name and
-          # 404 (list_objects_v2 NoSuchKey), confirmed live. zws-dev's own
-          # gw-sc-deploy-1-init registers this exact same bare
-          # CORE_CLIENT__S3_ENDPOINT value for every KMS_NODE_STORAGE_URL_x (all
-          # pointing at kms-1's configmap, no per-party prefix) - since every
-          # party publishes identical public content under its own PUB-p<i>/
-          # prefix inside that one shared bucket, a prefix-less bucket-wide
-          # listing finds a match regardless of which party's copy it lands on.
+          # KMS_NODE_STORAGE_URL_x is deliberately the bare bucket root (no
+          # "/PUB-p<i>"): all parties share one bucket, and host-listener's S3
+          # client only handles a bare bucket URL (a party prefix makes it
+          # treat "PUB-p<i>" as a second bucket and 404). Every party publishes
+          # under its own prefix in that one bucket, so a prefix-less listing
+          # finds a match; matches zws-dev's own gw-sc-deploy registration.
           for i in $(seq 1 "${n}"); do
             idx=$((i - 1))
             signer=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .signer' <<<"${SIGNERS_JSON}")
@@ -903,11 +720,8 @@ jobs:
               ]
             " "${generated}"
           done
-          # Force every scDeploy.env[].value back to an explicit double-quoted YAML
-          # string: yq's default emitter drops quotes on "safe-looking" plain scalars,
-          # and a bare 40-hex-char address (e.g. 0x1CBd...C9Ec) is EXACTLY YAML 1.1's
-          # hex-int syntax - go-yaml happens to fall back to string on the int64
-          # overflow today, but that's an implementation accident, not a guarantee.
+          # Force scDeploy.env[].value to double-quoted strings: yq drops quotes
+          # on plain scalars, and a bare hex address is valid YAML hex-int syntax.
           yq -i '(.scDeploy.env[] | select(has("value")) | .value) style="double"' "${generated}"
           echo "values_file=${generated}" >> "$GITHUB_OUTPUT"
 
@@ -925,12 +739,9 @@ jobs:
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
           S3_ENDPOINT: ${{ steps.kms-identity.outputs.s3_endpoint }}
         run: |
-          # Mirrors "Wire real KMS node info into gateway-contracts values" above - same
-          # source data (real discovered signers + derived tx-sender wallets), just
-          # host-contracts' own field-naming scheme (see values-host-contracts-e2e.yaml's
-          # header for the cross-repo naming inconsistencies: KMS_NODE_IP_x here vs.
-          # KMS_NODE_IP_ADDRESS_x on gateway, KMS_GEN_THRESHOLD here vs.
-          # KMS_GENERATION_THRESHOLD on gateway).
+          # Mirrors the gateway-contracts wiring above, with host-contracts' own
+          # field names (KMS_NODE_IP_x vs KMS_NODE_IP_ADDRESS_x, KMS_GEN_THRESHOLD
+          # vs KMS_GENERATION_THRESHOLD).
           n="${NB_KMS_CORE}"
           t=$(( (n - 1) / 3 ))
           majority=$(( t + 1 ))
@@ -948,12 +759,8 @@ jobs:
             ]
           " "${generated}"
 
-          # KMS_NODE_STORAGE_URL_x below is deliberately the bare bucket root
-          # (no "/PUB-p${i}" suffix) - see the matching comment in the
-          # gateway-contracts wiring step above for why (confirmed-broken
-          # host-listener code path on party-prefixed vanity URLs) and why it's
-          # still correct (all parties share one bucket + zws-dev's own
-          # gw-sc-deploy-1-init does the exact same thing).
+          # KMS_NODE_STORAGE_URL_x is the bare bucket root - see the gateway
+          # wiring step above for why.
           for i in $(seq 1 "${n}"); do
             idx=$((i - 1))
             signer=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .signer' <<<"${SIGNERS_JSON}")
@@ -977,8 +784,7 @@ jobs:
               ]
             " "${generated}"
           done
-          # See the matching gateway-contracts step above for why this is needed
-          # (hex-address values must stay explicitly double-quoted strings).
+          # hex-address values must stay double-quoted strings - see gateway step.
           yq -i '(.scDeploy.env[] | select(has("value")) | .value) style="double"' "${generated}"
           echo "values_file=${generated}" >> "$GITHUB_OUTPUT"
 
@@ -997,11 +803,9 @@ jobs:
             --wait --wait-for-jobs --timeout=10m
 
       ######################################################################
-      # COPROCESSOR INFRA: real S3 bucket via Crossplane, same chart
-      # zama-zws/gitops's fhevm-dev environment uses (Postgres is in-cluster,
-      # deployed earlier above - see that step's comment). The claim still
-      # takes a little while to reconcile so we poll rather than relying on
-      # `helm --wait` alone (mirrors kms's wait_tkms_infra_ready pattern).
+      # COPROCESSOR INFRA: real S3 bucket via Crossplane (same chart as
+      # fhevm-dev). The claim reconciles asynchronously, so we poll rather
+      # than rely on `helm --wait` alone.
       ######################################################################
       - name: Deploy coprocessor-infra (Crossplane S3)
         run: |
@@ -1029,11 +833,9 @@ jobs:
           fi
 
       ######################################################################
-      # COPROCESSOR + KMS-CONNECTOR: real contract addresses (via
-      # configMapKeyRef in the values files) + real dedicated-KMS endpoints.
-      # DB endpoints are already real/static in the values files themselves
-      # (in-cluster Postgres, deployed earlier above) - nothing to discover
-      # or --set-string here for the DB.
+      # COPROCESSOR + KMS-CONNECTOR: real contract addresses (configMapKeyRef
+      # in the values files) + real dedicated-KMS endpoints. DB endpoints are
+      # already static in the values files (in-cluster Postgres).
       ######################################################################
       - name: Deploy coprocessor
         run: |
@@ -1055,10 +857,8 @@ jobs:
         env:
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
         run: |
-          # One Secret PER PARTY (kms-connector-tx-sender-<i>), matching the one
-          # kms-connector release per kms-core party below - kms-connector's chart has
-          # no wallet.secret.value literal option (unlike coprocessor's txSender), so
-          # the Secret must exist before install.
+          # One Secret PER PARTY: kms-connector's chart needs the wallet Secret
+          # to exist before install (no literal option like coprocessor's txSender).
           for i in $(seq 1 "${NB_KMS_CORE}"); do
             private_key=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${WALLETS_JSON}")
             if [[ -z "${private_key}" || "${private_key}" == "null" ]]; then
@@ -1072,20 +872,11 @@ jobs:
 
       - name: Deploy kms-connector
         run: |
-          # One kms-connector release PER kms-core party (kms-connector-<i>), each
-          # wired to only its own co-located kms-core instance (kmsCoreEndpoints -
-          # see values-kms-connector-e2e.yaml, and kms's own production
-          # values-kms-connector-mpc-testnet.yaml: kmsCoreEndpoints is a single
-          # "http://kms-core:50100" per party namespace there too, not a list of
-          # every party - the single "http://kms-core:50051" endpoint this file used
-          # to hardcode as a shared placeholder before that fix was never real to
-          # begin with), its own DB (postgres-connector-<i>), and its own tx-sender
-          # wallet Secret (kms-connector-tx-sender-<i>, created above). Contract
-          # addresses are shared across every party (same GatewayConfig/KMSGeneration/
-          # ACL for the whole namespace) - discovered once here and reused for all N
-          # --set-string calls below; kms-connector's commonConfig.*ContractAddresses
-          # fields are plain strings with no configMapKeyRef support in this chart
-          # (see values-kms-connector-e2e.yaml header note).
+          # One kms-connector release PER party (kms-connector-<i>), each wired
+          # to its own co-located kms-core, DB (postgres-connector-<i>), and
+          # tx-sender Secret. Contract addresses are shared namespace-wide,
+          # discovered once and reused; this chart's *ContractAddresses are
+          # plain strings (no configMapKeyRef).
           require_nonempty() {
             if [[ -z "${2}" ]]; then
               echo "::error::${1} is empty - refusing to deploy kms-connector with a broken config (see the step that should have populated it above)"
@@ -1096,11 +887,8 @@ jobs:
           gateway_config=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.gateway_config\.address}')
           kms_generation=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.kms_generation\.address}')
           acl=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.acl\.address}')
-          # kms_verifier: chart 1.5.2's ethereumContractAddresses.kmsVerifier defaults to
-          # the zero address, which parses fine (unlike an empty string - see the
-          # KMS_CONNECTOR_VERSION comment above), so this is only wired when we actually
-          # have a real value; falling back to that safe default otherwise instead of
-          # failing the deploy.
+          # kms_verifier: chart 1.5.2 defaults kmsVerifier to the zero address
+          # (parses fine), so only wire a real value when we have one.
           kms_verifier=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.kms_verifier\.address}' 2>/dev/null || echo "")
           require_nonempty "gw-sc-addresses[decryption.address]" "${decryption}"
           require_nonempty "gw-sc-addresses[gateway_config.address]" "${gateway_config}"
@@ -1135,32 +923,22 @@ jobs:
           sleep 60
 
       ######################################################################
-      # KMS BOOTSTRAP: trigger the real FHE key + CRS generation ceremony
-      # on-chain, now that coprocessor + kms-connector are both up to react to
-      # the resulting KMSGeneration events (mirrors fhevm-cli's "bootstrap"
-      # step - see values-host-trigger-keygen-e2e.yaml header for why this
-      # targets host-contracts, not gateway-contracts: our images are built at
-      # each PR's HEAD/`latest`, well past the v0.13 KMSGeneration migration to
-      # the canonical host chain - gateway-contracts no longer even ships
-      # task:triggerKeygen at this version).
-      #
-      # The job's own deployCommands (see values-host-trigger-keygen-e2e.yaml)
-      # trigger the request AND then poll on-chain for ActivateKey/ActivateCrs
-      # (real 4-party enclave DKG consensus, which lags the request tx by
-      # several minutes) before the Job exits - so --wait --wait-for-jobs here
-      # really does mean "key + CRS material exists", not just "request sent".
-      # Timeout is sized for up to ~8m per event, sequentially.
+      # KMS BOOTSTRAP: trigger the real FHE key + CRS generation on-chain, now
+      # that coprocessor + kms-connector are up to react to KMSGeneration
+      # events. Targets host-contracts (post-v0.13 migration; gateway no longer
+      # ships task:triggerKeygen). The Job polls on-chain for
+      # ActivateKey/ActivateCrs before exiting, so --wait-for-jobs means the
+      # key + CRS material exists, not just that the request was sent.
       ######################################################################
       - name: Trigger KMS keygen + CRS generation
         run: |
           helm upgrade --install host-trigger-keygen "${CONTRACTS_CHART}" --version "${CONTRACTS_CHART_VERSION}" \
             -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-host-trigger-keygen-e2e.yaml \
             --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
-            --wait --wait-for-jobs --timeout=20m
+            --wait --wait-for-jobs --timeout=45m
 
       ######################################################################
-      # RELAYER + TEST-SUITE: generic `common` chart + published images,
-      # mirroring zama-zws/gitops's fhevm-dev/relayer-dev pattern.
+      # RELAYER + TEST-SUITE: generic `common` chart + published images.
       ######################################################################
       - name: Deploy relayer-migrate
         run: |
@@ -1191,8 +969,7 @@ jobs:
           kubectl get events -n "${NAMESPACE}" --sort-by=.lastTimestamp | tail -100 || true
 
       - name: Comment on PR
-        # No PR to comment on for a manual workflow_dispatch run - the
-        # deployment plan + this step's info live in the run summary instead.
+        # No PR to comment on for workflow_dispatch - info goes to the run summary.
         if: success() && github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
