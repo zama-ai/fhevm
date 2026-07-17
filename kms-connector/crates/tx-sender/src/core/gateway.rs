@@ -10,9 +10,7 @@ use alloy::{
     rpc::types::{TransactionReceipt, TransactionRequest},
 };
 use anyhow::anyhow;
-use connector_utils::types::{
-    KmsResponseKind, PublicDecryptionResponse, UserDecryptionResponse,
-};
+use connector_utils::types::{KmsResponseKind, PublicDecryptionResponse, UserDecryptionResponse};
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use tracing::{debug, error, info, warn};
 
