@@ -858,6 +858,20 @@ jobs:
             ]
           " "${generated}"
 
+          # KMS_NODE_STORAGE_URL_x below is deliberately the bare bucket root
+          # (no "/PUB-p${i}" suffix): all NB_KMS_CORE parties share one bucket
+          # (see "Discover KMS party signer addresses" above), and
+          # host-listener's S3 client (coprocessor/fhevm-engine/host-listener/
+          # .../aws_s3.rs split_url) only has a working code path for a bare
+          # vanity-domain bucket URL with no extra path segment - appending a
+          # party prefix makes it treat "PUB-p<i>" as a second bucket name and
+          # 404 (list_objects_v2 NoSuchKey), confirmed live. zws-dev's own
+          # gw-sc-deploy-1-init registers this exact same bare
+          # CORE_CLIENT__S3_ENDPOINT value for every KMS_NODE_STORAGE_URL_x (all
+          # pointing at kms-1's configmap, no per-party prefix) - since every
+          # party publishes identical public content under its own PUB-p<i>/
+          # prefix inside that one shared bucket, a prefix-less bucket-wide
+          # listing finds a match regardless of which party's copy it lands on.
           for i in $(seq 1 "${n}"); do
             idx=$((i - 1))
             signer=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .signer' <<<"${SIGNERS_JSON}")
@@ -873,7 +887,7 @@ jobs:
                 {\"name\": \"KMS_TX_SENDER_ADDRESS_${idx}\", \"value\": \"${tx_sender}\"},
                 {\"name\": \"KMS_SIGNER_ADDRESS_${idx}\", \"value\": \"${signer}\"},
                 {\"name\": \"KMS_NODE_IP_ADDRESS_${idx}\", \"value\": \"kms-core-${i}-core-${i}\"},
-                {\"name\": \"KMS_NODE_STORAGE_URL_${idx}\", \"value\": \"${S3_ENDPOINT}/PUB-p${i}\"}
+                {\"name\": \"KMS_NODE_STORAGE_URL_${idx}\", \"value\": \"${S3_ENDPOINT}\"}
               ]
             " "${generated}"
           done
@@ -922,6 +936,12 @@ jobs:
             ]
           " "${generated}"
 
+          # KMS_NODE_STORAGE_URL_x below is deliberately the bare bucket root
+          # (no "/PUB-p${i}" suffix) - see the matching comment in the
+          # gateway-contracts wiring step above for why (confirmed-broken
+          # host-listener code path on party-prefixed vanity URLs) and why it's
+          # still correct (all parties share one bucket + zws-dev's own
+          # gw-sc-deploy-1-init does the exact same thing).
           for i in $(seq 1 "${n}"); do
             idx=$((i - 1))
             signer=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .signer' <<<"${SIGNERS_JSON}")
@@ -937,7 +957,7 @@ jobs:
                 {\"name\": \"KMS_TX_SENDER_ADDRESS_${idx}\", \"value\": \"${tx_sender}\"},
                 {\"name\": \"KMS_SIGNER_ADDRESS_${idx}\", \"value\": \"${signer}\"},
                 {\"name\": \"KMS_NODE_IP_${idx}\", \"value\": \"kms-core-${i}-core-${i}\"},
-                {\"name\": \"KMS_NODE_STORAGE_URL_${idx}\", \"value\": \"${S3_ENDPOINT}/PUB-p${i}\"},
+                {\"name\": \"KMS_NODE_STORAGE_URL_${idx}\", \"value\": \"${S3_ENDPOINT}\"},
                 {\"name\": \"KMS_NODE_PARTY_ID_${idx}\", \"value\": \"${i}\"},
                 {\"name\": \"KMS_NODE_MPC_IDENTITY_${idx}\", \"value\": \"kms-core-${i}\"},
                 {\"name\": \"KMS_NODE_CA_CERT_${idx}\", \"value\": \"0x706c616365686f6c6465722d63612d636572742d6532652d7370696b65\"},

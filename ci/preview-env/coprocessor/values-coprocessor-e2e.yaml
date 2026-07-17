@@ -67,6 +67,13 @@ dbMigration:
 
 hostListenerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+  # host-listener also downloads key material (ServerKey/PublicKey) straight
+  # from S3 on ActivateKey events (see its "Downloading failed" /
+  # "failed to load region from IMDS" errors when this was unset - same
+  # `default` SA / no-IAM-role gap as tfheWorker/zkProofWorker/snsWorker
+  # below, just not caught until the KMS keygen ceremony actually fired an
+  # ActivateKey event this far into the pipeline).
+  serviceAccountName: coprocessor
 hostListenerPollerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
   # --seed-start-block was a v0.11.0-era flag ("no poller state for this
@@ -76,10 +83,13 @@ hostListenerPollerShared:
   # seed_start_block` at the v0.13.0 tag returning zero hits anywhere in
   # coprocessor/. No replacement needed: it starts cleanly with no prior
   # state on a fresh e2e namespace either way.
+  serviceAccountName: coprocessor
 hostListenerCatchupOnlyShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+  serviceAccountName: coprocessor
 hostListenerConsumerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+  serviceAccountName: coprocessor
 
 gwListener:
   enabled: true

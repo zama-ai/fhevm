@@ -97,7 +97,15 @@ scDeploy:
         const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
         const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
         const keyEvent = await waitForEvent(contract, 'ActivateKey', 8 * 60 * 1000);
-        const keyId = keyEvent.args.keyId.toString();
+        // KMS_ACTIVE_KEY_ID must be the 64-hex-char zero-padded form (NOT decimal) - the
+        // KMS nodes publish key/CRS blobs to S3 under their raw uint256 request ID
+        // rendered as hex with no 0x prefix (confirmed by listing the actual bucket:
+        // .../PUB-p4/CRS/<id> objects are literally named e.g.
+        // '0500000000000000000000000000000000000000000000000000000000000001', which is
+        // exactly (2261564242916331941866620800950935700259179388000792266395655937654553313281n)
+        // .toString(16).padStart(64,'0') - using .toString() (decimal) here 404s downstream
+        // when the relayer builds the PublicKey/CRS fetch URL from this value.
+        const keyId = keyEvent.args.keyId.toString(16).padStart(64, '0');
         const keyStorageUrl = keyEvent.args.kmsNodeStorageUrls[0];
         if (!keyStorageUrl) {
           throw new Error('kmsNodeStorageUrls[0] is empty - party 0 never registered a storage URL in ProtocolConfig');
@@ -140,7 +148,9 @@ scDeploy:
         const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
         const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
         const crsEvent = await waitForEvent(contract, 'ActivateCrs', 8 * 60 * 1000);
-        const crsId = crsEvent.args.crsId.toString();
+        // See the matching comment on keyId above - same hex-padded (not decimal) S3
+        // object-key requirement applies here.
+        const crsId = crsEvent.args.crsId.toString(16).padStart(64, '0');
         const crsStorageUrl = crsEvent.args.kmsNodeStorageUrls[0];
         if (!crsStorageUrl) {
           throw new Error('kmsNodeStorageUrls[0] is empty - party 0 never registered a storage URL in ProtocolConfig');
