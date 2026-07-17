@@ -77,6 +77,16 @@ pub mod zama_host {
         instructions::set_grant_deny_list_enabled(ctx, enabled)
     }
 
+    /// Replaces the registered coprocessor signer set + threshold for input attestations
+    /// (EVM `InputVerifier` parity).
+    pub fn set_coprocessor_signers(
+        ctx: Context<HostAdmin>,
+        signers: Vec<[u8; 20]>,
+        threshold: u8,
+    ) -> Result<()> {
+        instructions::set_coprocessor_signers(ctx, signers, threshold)
+    }
+
     pub fn set_max_hcu_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
         instructions::set_max_hcu_per_tx(ctx, value)
     }

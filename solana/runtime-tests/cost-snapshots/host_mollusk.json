@@ -1,6 +1,6 @@
 {
   "fhe_eval/max_op_frame": {
-    "compute_units": 150975,
+    "compute_units": 151330,
     "unique_accounts": 9,
     "instruction_data_bytes": 921,
     "cpi_instructions": 3,
@@ -8,7 +8,7 @@
     "max_cpi_instruction_data_bytes": 36
   },
   "fhe_eval/three_op_frame": {
-    "compute_units": 61290,
+    "compute_units": 61645,
     "unique_accounts": 9,
     "instruction_data_bytes": 375,
     "cpi_instructions": 3,
@@ -16,7 +16,7 @@
     "max_cpi_instruction_data_bytes": 36
   },
   "verify_public_decrypt/happy": {
-    "compute_units": 40414,
+    "compute_units": 40751,
     "unique_accounts": 4,
     "instruction_data_bytes": 158,
     "cpi_instructions": 0,

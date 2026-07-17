@@ -266,7 +266,7 @@ impl CleartextLedger {
 }
 
 fn host_config_account(admin: Pubkey, coprocessor_signer: [u8; 20]) -> Account {
-    host_config_account_with_flags(admin, coprocessor_signer, 0, false)
+    host_config_account_with_flags(admin, &[coprocessor_signer], 1, 0, false)
 }
 
 fn host_config_account_with_kms_context(
@@ -274,12 +274,29 @@ fn host_config_account_with_kms_context(
     coprocessor_signer: [u8; 20],
     current_kms_context_id: u64,
 ) -> Account {
-    host_config_account_with_flags(admin, coprocessor_signer, current_kms_context_id, false)
+    host_config_account_with_flags(
+        admin,
+        &[coprocessor_signer],
+        1,
+        current_kms_context_id,
+        false,
+    )
+}
+
+/// Builds a `HostConfig` account carrying a multi-signer coprocessor set at `threshold` (used by
+/// the n-of-m input-attestation tests).
+fn host_config_account_with_signer_set(
+    admin: Pubkey,
+    coprocessor_signers: &[[u8; 20]],
+    threshold: u8,
+) -> Account {
+    host_config_account_with_flags(admin, coprocessor_signers, threshold, 0, false)
 }
 
 fn host_config_account_with_flags(
     admin: Pubkey,
-    coprocessor_signer: [u8; 20],
+    coprocessor_signers: &[[u8; 20]],
+    coprocessor_threshold: u8,
     current_kms_context_id: u64,
     grant_deny_list_enabled: bool,
 ) -> Account {
@@ -292,7 +309,9 @@ fn host_config_account_with_flags(
             chain_id: host::SOLANA_POC_CHAIN_ID,
             gateway_chain_id: GATEWAY_CHAIN_ID,
             input_verification_contract: INPUT_VERIFICATION_CONTRACT,
-            coprocessor_signer,
+            coprocessor_signers: host::pack_coprocessor_signers(coprocessor_signers),
+            coprocessor_signer_count: coprocessor_signers.len() as u8,
+            coprocessor_threshold,
             decryption_contract: DECRYPTION_CONTRACT,
             current_kms_context_id,
             paused: false,
@@ -311,7 +330,7 @@ fn host_config_account_with_flags(
 }
 
 fn deny_enabled_host_config_account(admin: Pubkey, coprocessor_signer: [u8; 20]) -> Account {
-    host_config_account_with_flags(admin, coprocessor_signer, 0, true)
+    host_config_account_with_flags(admin, &[coprocessor_signer], 1, 0, true)
 }
 
 fn deny_subject_record_account(subject: Pubkey, denied: bool) -> (Pubkey, Account) {
@@ -479,20 +498,36 @@ fn anchor_error(error: anchor_lang::error::ErrorCode) -> Check<'static> {
 use support::kms_cert::{secp_evm_address, secp_sign};
 
 /// Coprocessor signing key backing the `fromExternal` attestations; its EVM address is the
-/// `coprocessor_signer` configured on the fixture's `host_config`.
+/// registered coprocessor signer set configured on the fixture's `host_config`.
 fn coprocessor_signing_key() -> k256::ecdsa::SigningKey {
     k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap()
 }
 
+/// A distinct coprocessor signing key derived from a seed byte (for n-of-m signer-set tests).
+fn coprocessor_signing_key_n(seed: u8) -> k256::ecdsa::SigningKey {
+    k256::ecdsa::SigningKey::from_bytes(&[seed; 32].into()).unwrap()
+}
+
 /// Builds a coprocessor-signed `fromExternal` attestation over `amount_handle`, binding it to
-/// (`user`, `contract`). The token program checks `user == transfer authority` and
-/// `contract == mint compute-signer PDA`; the host re-verifies this signature in-frame.
+/// (`user`, `contract`), signed by the default single coprocessor key. The token program checks
+/// `user == transfer authority` and `contract == mint compute-signer PDA`; the host re-verifies
+/// the signature(s) in-frame.
 fn amount_attestation_for(
     amount_handle: [u8; 32],
     user: Pubkey,
     contract: Pubkey,
 ) -> host::CoprocessorInputAttestation {
-    let key = coprocessor_signing_key();
+    amount_attestation_signed_by(amount_handle, user, contract, &[coprocessor_signing_key()])
+}
+
+/// Like `amount_attestation_for`, but produces one signature per key in `keys` (n-of-m attestation
+/// building). Passing the same key twice yields duplicate signatures over the same digest.
+fn amount_attestation_signed_by(
+    amount_handle: [u8; 32],
+    user: Pubkey,
+    contract: Pubkey,
+    keys: &[k256::ecdsa::SigningKey],
+) -> host::CoprocessorInputAttestation {
     let ct_handles = vec![amount_handle];
     let contract_chain_id = host::SOLANA_POC_CHAIN_ID;
     let extra_data = vec![0x00u8];
@@ -519,7 +554,7 @@ fn amount_attestation_for(
         contract_address: contract.to_bytes(),
         contract_chain_id,
         extra_data,
-        signatures: vec![secp_sign(&key, &digest)],
+        signatures: keys.iter().map(|key| secp_sign(key, &digest)).collect(),
     }
 }
 
@@ -1766,6 +1801,182 @@ fn mollusk_request_disclose_balance_after_transfer_marks_current_handle_public()
     assert_eq!(events[0].expires_slot, expires_slot);
 }
 
+// ---------------------------------------------------------------------------
+// Registered coprocessor signer set + threshold (EVM InputVerifier parity)
+// ---------------------------------------------------------------------------
+
+/// Base accounts with the singleton `host_config` overridden to carry `coprocessor_signers` at
+/// `threshold` (n-of-m), keeping every other account identical to `base_accounts`.
+fn accounts_with_coprocessor_set(
+    fixture: &TokenFixture,
+    coprocessor_signers: &[[u8; 20]],
+    threshold: u8,
+) -> HashMap<Pubkey, Account> {
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(
+        fixture.host_config,
+        host_config_account_with_signer_set(fixture.owner, coprocessor_signers, threshold),
+    );
+    accounts
+}
+
+/// Runs a transfer of `amount` whose attestation is signed by `signing_keys`, against a config that
+/// registers `registered_keys` at `threshold`, and validates against `checks`.
+fn run_multisig_transfer(
+    registered_keys: &[k256::ecdsa::SigningKey],
+    threshold: u8,
+    signing_keys: &[k256::ecdsa::SigningKey],
+    amount_seed: u8,
+    checks: &[Check],
+) -> InstructionResult {
+    let fixture = TokenFixture::new();
+    let registered: Vec<[u8; 20]> = registered_keys.iter().map(secp_evm_address).collect();
+    let context = mollusk().with_context(accounts_with_coprocessor_set(
+        &fixture,
+        &registered,
+        threshold,
+    ));
+    let amount_handle = handle_for_chain(amount_seed, BALANCE_FHE_TYPE);
+    let attestation = amount_attestation_signed_by(
+        amount_handle,
+        fixture.owner,
+        fixture.compute_signer,
+        signing_keys,
+    );
+    let transfer = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        attestation,
+    );
+    context.process_and_validate_instruction(&transfer, checks)
+}
+
+#[test]
+fn mollusk_confidential_transfer_two_of_three_accepts_exactly_threshold_signatures() {
+    // 2-of-3: two valid signatures from registered signers clear the threshold.
+    let keys = [
+        coprocessor_signing_key_n(0x41),
+        coprocessor_signing_key_n(0x42),
+        coprocessor_signing_key_n(0x43),
+    ];
+    let result = run_multisig_transfer(&keys, 2, &keys[..2], 60, &[Check::success()]);
+    assert!(result.raw_result.is_ok());
+}
+
+#[test]
+fn mollusk_confidential_transfer_two_of_three_rejects_below_threshold_signatures() {
+    // 2-of-3 with a single valid signature is below threshold: the host rejects the attestation.
+    let keys = [
+        coprocessor_signing_key_n(0x41),
+        coprocessor_signing_key_n(0x42),
+        coprocessor_signing_key_n(0x43),
+    ];
+    run_multisig_transfer(
+        &keys,
+        2,
+        &keys[..1],
+        61,
+        &[host_error(
+            host::errors::ZamaHostError::InvalidInputAttestation,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_confidential_transfer_rejects_signature_from_unregistered_signer() {
+    // 2-of-3: one registered signature + one from a signer outside the set. The signature count is
+    // 2, but only one recovers to a registered signer, so the distinct-in-set count is below the
+    // threshold and the attestation is rejected.
+    let keys = [
+        coprocessor_signing_key_n(0x41),
+        coprocessor_signing_key_n(0x42),
+        coprocessor_signing_key_n(0x43),
+    ];
+    let outsider = coprocessor_signing_key_n(0x99);
+    let signing = [keys[0].clone(), outsider];
+    run_multisig_transfer(
+        &keys,
+        2,
+        &signing,
+        62,
+        &[host_error(
+            host::errors::ZamaHostError::InvalidInputAttestation,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_confidential_transfer_duplicate_signature_does_not_count_twice() {
+    // 2-of-3 with two signatures from the SAME registered signer counts as one distinct signer, so
+    // the threshold is not met (verify_threshold counts DISTINCT recovered addresses).
+    let keys = [
+        coprocessor_signing_key_n(0x41),
+        coprocessor_signing_key_n(0x42),
+        coprocessor_signing_key_n(0x43),
+    ];
+    let signing = [keys[0].clone(), keys[0].clone()];
+    run_multisig_transfer(
+        &keys,
+        2,
+        &signing,
+        63,
+        &[host_error(
+            host::errors::ZamaHostError::InvalidInputAttestation,
+        )],
+    );
+}
+
+/// Builds the full `confidential_transfer` legacy transaction carrying a threshold-4 attestation
+/// (4 × 65-byte signatures) over the real token account list, and asserts the bincode-serialized
+/// `Transaction` stays within the Solana packet limit. This pins the transaction-size ceiling the
+/// day multi-coprocessor input verification (t > 1) lands: the carried signature payload scales with
+/// the threshold, and a 4-of-m transfer is the heaviest realistic case.
+#[test]
+fn confidential_transfer_with_threshold_four_attestation_fits_in_one_packet() {
+    use solana_sdk::message::Message;
+    use solana_sdk::transaction::Transaction;
+
+    let fixture = TokenFixture::new();
+    let keys: Vec<k256::ecdsa::SigningKey> = (0..4)
+        .map(|i| coprocessor_signing_key_n(0x41 + i))
+        .collect();
+    let amount_handle = handle_for_chain(70, BALANCE_FHE_TYPE);
+    // Four signatures — a threshold-4 attestation (payload scales with t, not the set size).
+    let attestation =
+        amount_attestation_signed_by(amount_handle, fixture.owner, fixture.compute_signer, &keys);
+    assert_eq!(attestation.signatures.len(), 4);
+
+    let transfer = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        attestation,
+    );
+
+    // A legacy transaction with unsigned (default) signatures: `new_unsigned` reserves one 64-byte
+    // slot per required signer, so the bincode size already reflects the real wire size.
+    let message = Message::new(&[transfer], Some(&fixture.owner));
+    let tx = Transaction::new_unsigned(message);
+    let serialized = bincode::serialize(&tx).expect("serialize transaction");
+    eprintln!(
+        "threshold-4 confidential_transfer tx: {} bytes (limit {})",
+        serialized.len(),
+        solana_packet::PACKET_DATA_SIZE
+    );
+
+    assert!(
+        serialized.len() <= solana_packet::PACKET_DATA_SIZE,
+        "threshold-4 confidential_transfer tx is {} bytes, exceeds the {}-byte packet limit",
+        serialized.len(),
+        solana_packet::PACKET_DATA_SIZE,
+    );
+}
+
 #[test]
 fn mollusk_confidential_transfer_rejects_owner_mismatch() {
     let fixture = TokenFixture::new();
@@ -2009,32 +2220,53 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
 use anchor_spl::token::spl_token;
 use solana_sdk::program_option::COption;
 
-use support::kms_cert::{cleartext_u256, kms_signing_key};
+use support::kms_cert::{cleartext_u256, kms_signing_key, kms_signing_key_n};
 
 /// Builds a KMS `PublicDecryptVerification` secp256k1 cert (`signatures`, `extra_data`)
 /// over `handle`/`cleartext_amount`, matching `assert_kms_public_decrypt_cert_for_request`.
 /// `extra_data == [0x00]` binds the cert to the request's current KMS context.
 fn kms_public_decrypt_cert(handle: [u8; 32], cleartext_amount: u64) -> (Vec<[u8; 65]>, Vec<u8>) {
+    kms_public_decrypt_cert_signed_by(handle, cleartext_amount, &[kms_signing_key()])
+}
+
+/// Like `kms_public_decrypt_cert`, but produces one signature per key in `keys` (t-of-n cert
+/// building — the carried payload scales with the threshold t, not the party count n).
+fn kms_public_decrypt_cert_signed_by(
+    handle: [u8; 32],
+    cleartext_amount: u64,
+    keys: &[k256::ecdsa::SigningKey],
+) -> (Vec<[u8; 65]>, Vec<u8>) {
     let extra_data = vec![0x00u8];
-    let signatures = support::kms_cert::kms_public_decrypt_cert(
+    let signatures = support::kms_cert::kms_public_decrypt_cert_signed_by(
         handle,
         cleartext_u256(cleartext_amount),
         GATEWAY_CHAIN_ID,
         &DECRYPTION_CONTRACT,
         &extra_data,
+        keys,
     );
     (signatures, extra_data)
 }
 
 fn kms_context_account(context_id: u64) -> Account {
+    kms_context_account_with_signers(context_id, &[secp_evm_address(&kms_signing_key())], 1)
+}
+
+/// Builds a `KmsContext` account registering `signers` with `public_decryption` threshold set to
+/// `public_threshold` (the other thresholds are pinned to a satisfiable value for the set).
+fn kms_context_account_with_signers(
+    context_id: u64,
+    signers: &[[u8; 20]],
+    public_threshold: u8,
+) -> Account {
     let (_, bump) = host::kms_context_address(context_id);
     Account {
         lamports: 1_000_000_000,
         data: serialized_account(host::KmsContext {
             context_id,
-            signers: vec![secp_evm_address(&kms_signing_key())],
+            signers: signers.to_vec(),
             thresholds: host::KmsThresholds {
-                public_decryption: 1,
+                public_decryption: public_threshold,
                 user_decryption: 1,
                 kms_gen: 1,
                 mpc: 1,
@@ -3739,4 +3971,163 @@ fn cost_snapshot_initialize_token_account() {
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
 
     cost_snapshot::assert_cost_snapshot("token_mollusk", "initialize_token_account", &ix, &result);
+}
+
+// ---------------------------------------------------------------------------
+// KMS public-decrypt threshold fit table (EVM KMSVerifier parity)
+//
+// Public-decrypt certificates carry t signatures (t = the context's public-decryption threshold)
+// and the consume transaction also carries an MMR inclusion proof whose size scales with the
+// lineage depth. Both grow the serialized `disclose_amount_secp` transaction. This table pins the
+// wire-size corner where high threshold meets deep lineage against the Solana packet limit.
+// ---------------------------------------------------------------------------
+
+/// Builds a `disclose_amount_secp` legacy transaction carrying `sig_count` signatures and an MMR
+/// proof of `sibling_count` siblings over the real disclose account list, and returns its
+/// bincode-serialized wire size. Validity is irrelevant: this measures serialization only.
+fn disclose_amount_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
+    use solana_sdk::message::Message;
+    use solana_sdk::transaction::Transaction;
+
+    let fixture = DiscloseFixture::new();
+    let request = host::kms_context_address(999).0; // any pubkey; only its 32 bytes matter here
+    let proof = token::MmrInclusionProof {
+        leaf_index: 0,
+        siblings: vec![[0u8; 32]; sibling_count],
+    };
+    let ix = disclose_amount_secp_ix(
+        &fixture,
+        request,
+        handle_for_chain(80, BALANCE_FHE_TYPE),
+        500,
+        vec![[0u8; 65]; sig_count],
+        vec![0x00u8],
+        proof,
+    );
+    let message = Message::new(&[ix], Some(&fixture.owner));
+    let tx = Transaction::new_unsigned(message);
+    bincode::serialize(&tx)
+        .expect("serialize transaction")
+        .len()
+}
+
+#[test]
+fn disclose_amount_secp_threshold_fit_table() {
+    // Corner table: (threshold t, MMR proof sibling depth, expected-to-fit). Measured wire sizes
+    // for the full `disclose_amount_secp` legacy transaction against the 1232-byte packet limit.
+    //
+    // NOTE: this table measures the `disclose_amount_secp` DisclosureRequest-lifecycle transaction,
+    // the live consume path at this base. When fhevm-internal#1704 PR2 dissolves that lifecycle and
+    // re-expresses token disclosure as a thin consumer of the stateless `verify_public_decrypt`
+    // verifier, this table must move to (and be re-measured against) that thinner consume path.
+    //
+    // FINDING (fhevm-internal#1704): the single-packet envelope for public-decrypt consumes is
+    // NARROWER than a naive t<=9/depth<=10 assumption. Only t=7 up to depth 10 fits; a t=9 cert at
+    // depth 10 already overflows by ~111 bytes, and t=7 at depth 20 by ~301. The carried payload
+    // scales with the threshold t (t x 65B) plus the proof depth (depth x 32B), so deep-lineage x
+    // high-threshold consumes need the scratch-account two-tx fallback reserved in #1704. The
+    // `expected_fits` column pins the measured boundary so a regression (or a size shrink that
+    // widens the envelope) is caught here.
+    let cases = [
+        (7usize, 0usize, true),
+        (7, 10, true),
+        (7, 20, false),
+        (9, 10, false),
+        (13, 10, false),
+    ];
+    let limit = solana_packet::PACKET_DATA_SIZE;
+    eprintln!("disclose_amount_secp threshold fit table (packet limit = {limit} bytes):");
+    for (t, depth, expected_fits) in cases {
+        let size = disclose_amount_secp_tx_size(t, depth);
+        let fits = size <= limit;
+        eprintln!(
+            "  t={t:>2} sigs, depth={depth:>2} siblings -> {size:>4} bytes  ({}{})",
+            if fits { "FITS" } else { "OVER" },
+            if fits {
+                String::new()
+            } else {
+                format!(" by {}", size - limit)
+            },
+        );
+        assert_eq!(
+            fits, expected_fits,
+            "t={t}, depth={depth} measured {size} bytes (fits={fits}); table expected fits={expected_fits}. \
+             The single-packet envelope moved — update the table and revisit the #1704 two-tx fallback."
+        );
+    }
+}
+
+#[test]
+fn disclose_amount_secp_seven_of_thirteen_verifies_and_bounds_compute() {
+    // A realistic 7-of-13 KMS public-decrypt cert verifies on-chain and its compute stays well
+    // under budget. Cost is dominated by t secp256k1 recoveries (~25k CU each) on top of the
+    // single-sig baseline, so a 7-sig cert lands near ~40k + 6 * ~25k; assert a comfortable ceiling.
+    let fixture = DiscloseFixture::new();
+    let pinned = handle_for_chain(85, BALANCE_FHE_TYPE);
+    let superseded = handle_for_chain(86, BALANCE_FHE_TYPE);
+    let (lineage, proof) = public_leaf_lineage(
+        fixture.amount_value,
+        fixture.token_account,
+        fixture.mint,
+        token::burned_amount_label(),
+        &[fixture.owner, fixture.compute_signer],
+        pinned,
+        Some(superseded),
+    );
+
+    // 13 registered KMS signers, public-decrypt threshold 7; the cert is signed by 7 of them.
+    let keys: Vec<k256::ecdsa::SigningKey> = (0..13).map(|i| kms_signing_key_n(0x60 + i)).collect();
+    let registered: Vec<[u8; 20]> = keys.iter().map(secp_evm_address).collect();
+
+    let request_nonce = [0x77u8; 32];
+    let expires_slot = 200;
+    let (request_addr, request_account) = disclosure_request_account(
+        fixture.mint,
+        fixture.owner,
+        Pubkey::default(),
+        lineage.app_account,
+        pinned,
+        fixture.amount_value,
+        fixture.host_config,
+        fixture.kms_context_id,
+        request_nonce,
+        expires_slot,
+        token::DISCLOSURE_REQUEST_MODE_AMOUNT,
+        token::REQUEST_STATUS_PENDING,
+    );
+
+    let mut accounts = fixture.base();
+    accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
+    accounts.insert(request_addr, request_account);
+    accounts.insert(
+        fixture.kms_context,
+        kms_context_account_with_signers(fixture.kms_context_id, &registered, 7),
+    );
+    let context = mollusk().with_context(accounts);
+
+    let cleartext_amount = 500;
+    let (signatures, extra_data) =
+        kms_public_decrypt_cert_signed_by(pinned, cleartext_amount, &keys[..7]);
+    let result = context.process_and_validate_instruction(
+        &disclose_amount_secp_ix(
+            &fixture,
+            request_addr,
+            pinned,
+            cleartext_amount,
+            signatures,
+            extra_data,
+            proof,
+        ),
+        &[Check::success()],
+    );
+
+    eprintln!(
+        "disclose_amount_secp 7-of-13 compute units consumed: {}",
+        result.compute_units_consumed
+    );
+    assert!(
+        result.compute_units_consumed < 400_000,
+        "7-of-13 disclose consumed {} CU, exceeds the 400k ceiling",
+        result.compute_units_consumed
+    );
 }

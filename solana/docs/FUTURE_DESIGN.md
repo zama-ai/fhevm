@@ -6,16 +6,21 @@ to [`DESIGN_DECISIONS.md`](./DESIGN_DECISIONS.md).
 
 ## 1. Coprocessor signer set: single signer → registered n-of-m
 
-Today `HostConfig` holds one `coprocessor_signer: [u8; 20]` verified at threshold 1
-(`state/host_config.rs`). Input-attestation verification recovers that single EVM address and checks
-it (`eip712::verify_coprocessor_input`).
+**RESOLVED (DD-041).** `HostConfig` now stores a registered n-of-m coprocessor signer set
+(`coprocessor_signers: [[u8; 20]; MAX_COPROCESSOR_SIGNERS]` + `coprocessor_signer_count` +
+`coprocessor_threshold`), and input-attestation verification threshold-checks recovered signers
+against it via `eip712::verify_threshold` (the same machinery the KMS cert path uses). The set lives
+inline in `HostConfig` rather than a dedicated context PDA (the decision the earlier version of this
+item flagged as open): a fixed-cap array keeps the singleton layout pinned and adds no account to the
+byte-tight `fhe_eval`. Admin-gated rotation via `set_coprocessor_signers`.
 
-**Requirement:** move input trust to a registered n-of-m coprocessor signer set. The threshold
-machinery already exists — `eip712::verify_threshold` (distinct-signer counting, high-s rejection) is
-used for the KMS cert path and should back input verification too — and the shape to follow is the
-`KmsContext` PDA (`state/kms_context.rs`: a `context_id`-keyed signer set + per-operation thresholds,
-synced from the EVM registry). Decision needed: whether input signers get their own context PDA or
-share the KMS context surface.
+**Remaining forward work** (not the signer-set wiring itself):
+- A gateway-sync authority that mirrors the EVM `GatewayConfig` coprocessor registry into
+  `set_coprocessor_signers`, instead of admin-driven rotation.
+- The real proof / transciphering service that produces the attested ciphertext behind the signature.
+- If a coprocessor quorum ever needs to carry more than a few signatures alongside a deep-lineage
+  public-decrypt proof, the transaction may exceed one packet — see the DD-041 fit table and the
+  fhevm-internal#1704 scratch-account two-tx fallback.
 
 ## 2. Canonicalize the compute-authority-PDA binding convention
 

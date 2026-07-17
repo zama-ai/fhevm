@@ -31,7 +31,7 @@ pub use user_decryption_delegation::*;
 pub use crate::constants::*;
 
 /// Initialization arguments for the singleton [`HostConfig`] account.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct InitializeHostConfigArgs {
     /// Host-chain id encoded into newly derived handles.
     pub chain_id: u64,
@@ -39,8 +39,13 @@ pub struct InitializeHostConfigArgs {
     pub gateway_chain_id: u64,
     /// EVM `InputVerification` contract address (EIP-712 verifying contract).
     pub input_verification_contract: [u8; 20],
-    /// Authorized coprocessor EVM signer for input attestations (v0: single signer).
-    pub coprocessor_signer: [u8; 20],
+    /// Registered coprocessor EVM signer set for input attestations (EVM `InputVerifier`
+    /// parity). Must be non-empty, distinct, and free of the zero address; bounded by
+    /// [`HostConfig::MAX_COPROCESSOR_SIGNERS`].
+    pub coprocessor_signers: Vec<[u8; 20]>,
+    /// Minimum distinct valid signatures (n-of-m) required over an input attestation;
+    /// `1 <= coprocessor_threshold <= coprocessor_signers.len()`.
+    pub coprocessor_threshold: u8,
     /// EVM `Decryption` contract address (EIP-712 verifying contract for KMS certs).
     pub decryption_contract: [u8; 20],
     /// Whether persistent grants must include a deny-list witness.

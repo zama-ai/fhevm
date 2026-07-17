@@ -256,4 +256,26 @@ pub enum ZamaHostError {
     /// lineage's current peaks.
     #[msg("public-decrypt inclusion proof is invalid")]
     PublicDecryptProofInvalid,
+
+    /// The coprocessor signer set is empty. Input verification requires at least one registered
+    /// signer (analog of `EmptyKmsContext` for the coprocessor path).
+    #[msg("coprocessor signer set must not be empty")]
+    EmptyCoprocessorSignerSet,
+    /// The coprocessor signer set exceeds `HostConfig::MAX_COPROCESSOR_SIGNERS` (analog of
+    /// `TooManyKmsSigners`).
+    #[msg("coprocessor signer set exceeds the maximum size")]
+    TooManyCoprocessorSigners,
+    /// The coprocessor threshold is zero or greater than the signer count; a valid n-of-m needs
+    /// `1 <= threshold <= set.len()` (analog of `InvalidKmsThreshold`).
+    #[msg("coprocessor threshold must be between 1 and the signer count")]
+    InvalidCoprocessorThreshold,
+    /// The coprocessor signer set contains a duplicate address. Threshold verification counts
+    /// DISTINCT recovered signers, so a duplicate would silently raise the effective quorum
+    /// (analog of `DuplicateKmsSigner`).
+    #[msg("coprocessor signer set contains a duplicate signer")]
+    DuplicateCoprocessorSigner,
+    /// The coprocessor signer set contains the zero address, which can never be a valid recovered
+    /// EVM signer.
+    #[msg("coprocessor signer set contains the zero address")]
+    ZeroCoprocessorSigner,
 }

@@ -35,6 +35,10 @@ pub fn initialize_host_config(
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_valid_host_config_args(&args)?;
+    let (coprocessor_signers, coprocessor_signer_count) = validate_and_pack_coprocessor_signers(
+        &args.coprocessor_signers,
+        args.coprocessor_threshold,
+    )?;
     let updated_slot = Clock::get()?.slot;
     #[cfg(feature = "emit-events")]
     let config_key = ctx.accounts.host_config.key();
@@ -43,7 +47,9 @@ pub fn initialize_host_config(
     config.chain_id = args.chain_id;
     config.gateway_chain_id = args.gateway_chain_id;
     config.input_verification_contract = args.input_verification_contract;
-    config.coprocessor_signer = args.coprocessor_signer;
+    config.coprocessor_signers = coprocessor_signers;
+    config.coprocessor_signer_count = coprocessor_signer_count;
+    config.coprocessor_threshold = args.coprocessor_threshold;
     config.decryption_contract = args.decryption_contract;
     config.current_kms_context_id = 0;
     config.paused = false;
@@ -89,7 +95,8 @@ mod tests {
             chain_id: SOLANA_CHAIN_TYPE_BIT | 42,
             gateway_chain_id: 0,
             input_verification_contract: [0u8; 20],
-            coprocessor_signer: [0u8; 20],
+            coprocessor_signers: vec![[0x11u8; 20]],
+            coprocessor_threshold: 1,
             decryption_contract: [0u8; 20],
             grant_deny_list_enabled: false,
         }
