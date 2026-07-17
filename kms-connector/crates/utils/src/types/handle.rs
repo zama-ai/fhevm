@@ -1,3 +1,4 @@
+use alloy::primitives::FixedBytes;
 use anyhow::anyhow;
 use tfhe::FheTypes;
 
@@ -21,18 +22,9 @@ pub fn extract_fhe_type_from_handle(handle: &[u8]) -> anyhow::Result<FheTypes> {
 }
 
 /// Extracts the chain id from a ciphertext's handle.
-pub fn extract_chain_id_from_handle(handle: &[u8]) -> anyhow::Result<u64> {
-    let err_prefix = "Failed to extract chain_id from handle.";
-    if handle.len() >= 32 {
-        let chain_id_bytes = handle[22..30]
-            .try_into()
-            .map_err(|e| anyhow!("{err_prefix} {e}"))?;
-        Ok(u64::from_be_bytes(chain_id_bytes))
-    } else {
-        Err(anyhow!(
-            "{} Handle too short: {} bytes, expected 32 bytes",
-            err_prefix,
-            handle.len()
-        ))
-    }
+pub fn extract_chain_id_from_handle(handle: FixedBytes<32>) -> anyhow::Result<u64> {
+    let chain_id_bytes = handle[22..30]
+        .try_into()
+        .map_err(|e| anyhow!("Failed to extract chain_id from handle: {e}"))?;
+    Ok(u64::from_be_bytes(chain_id_bytes))
 }
