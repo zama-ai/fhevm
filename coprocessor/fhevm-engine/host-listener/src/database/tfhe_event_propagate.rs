@@ -57,6 +57,13 @@ const BRANCH_CLEANUP_BATCH_SIZE: i64 = 10;
 const BRANCH_CLEANUP_MAX_ATTEMPTS: i32 = 10;
 const BRANCH_CLEANUP_RECHECK_INTERVAL: Duration = Duration::from_secs(5);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BranchCleanupOutcome {
+    Processed,
+    NoJob,
+    WritesDisabled,
+}
+
 static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
         register_int_counter_vec!(
@@ -1499,30 +1506,12 @@ impl Database {
         let mut processed = 0_u64;
 
         loop {
-            let Some((finalized_block_hash, orphaned_hashes)) =
-                self.claim_orphaned_branch_cleanup_job().await?
-            else {
-                break;
-            };
-
-            match self
-                .process_orphaned_branch_cleanup_job(
-                    &finalized_block_hash,
-                    &orphaned_hashes,
-                )
-                .await
-            {
-                Ok(()) => {
+            match self.process_orphaned_branch_cleanup_job().await? {
+                BranchCleanupOutcome::Processed => {
                     processed += 1;
                 }
-                Err(err) => {
-                    self.record_orphaned_branch_cleanup_error(
-                        &finalized_block_hash,
-                        &err.to_string(),
-                    )
-                    .await?;
-                    return Err(err);
-                }
+                BranchCleanupOutcome::NoJob
+                | BranchCleanupOutcome::WritesDisabled => break,
             }
 
             if processed >= BRANCH_CLEANUP_BATCH_SIZE as u64 {
@@ -1535,8 +1524,8 @@ impl Database {
 
     async fn claim_orphaned_branch_cleanup_job(
         &self,
+        tx: &mut Transaction<'_>,
     ) -> Result<Option<(Vec<u8>, Vec<Vec<u8>>)>, SqlxError> {
-        let pool = self.pool().await;
         let row = sqlx::query!(
             r#"
             WITH selected AS (
@@ -1565,7 +1554,7 @@ impl Database {
             "#,
             self.chain_id.as_i64(),
         )
-        .fetch_optional(&pool)
+        .fetch_optional(tx.deref_mut())
         .await?;
 
         Ok(
@@ -1577,15 +1566,71 @@ impl Database {
 
     async fn process_orphaned_branch_cleanup_job(
         &self,
+    ) -> Result<BranchCleanupOutcome, SqlxError> {
+        let Some(mut tx) = self.new_transaction().await? else {
+            // Cutover retired this stack while the guarded transaction was
+            // starting. No job was claimed, so stop this sweep without
+            // consuming an attempt or reporting work as completed.
+            return Ok(BranchCleanupOutcome::WritesDisabled);
+        };
+
+        let Some((finalized_block_hash, orphaned_hashes)) =
+            self.claim_orphaned_branch_cleanup_job(&mut tx).await?
+        else {
+            tx.rollback().await?;
+            return Ok(BranchCleanupOutcome::NoJob);
+        };
+
+        // Keep the claim locked in the outer guarded transaction. The
+        // savepoint lets us roll back a failed cleanup statement, record the
+        // bounded retry in the same transaction, and never expose an
+        // unguarded claim/error write during cutover.
+        let mut cleanup_tx = tx.begin().await?;
+        let cleanup_result = self
+            .complete_orphaned_branch_cleanup_job(
+                &mut cleanup_tx,
+                &finalized_block_hash,
+                &orphaned_hashes,
+            )
+            .await;
+
+        if let Err(err) = cleanup_result {
+            cleanup_tx.rollback().await?;
+            let recorded = self
+                .record_orphaned_branch_cleanup_error_in_tx(
+                    &mut tx,
+                    &finalized_block_hash,
+                    &err.to_string(),
+                )
+                .await?;
+            tx.commit().await?;
+            self.report_orphaned_branch_cleanup_error(
+                &finalized_block_hash,
+                &err.to_string(),
+                recorded,
+            );
+            return Err(err);
+        }
+
+        cleanup_tx.commit().await?;
+        tx.commit().await?;
+
+        info!(
+            finalized_block_hash = %to_hex(&finalized_block_hash),
+            orphaned_blocks = orphaned_hashes.len(),
+            "Completed orphaned branch cleanup job"
+        );
+
+        Ok(BranchCleanupOutcome::Processed)
+    }
+
+    async fn complete_orphaned_branch_cleanup_job(
+        &self,
+        tx: &mut Transaction<'_>,
         finalized_block_hash: &[u8],
         orphaned_hashes: &[Vec<u8>],
     ) -> Result<(), SqlxError> {
-        let Some(mut tx) = self.new_transaction().await? else {
-            // Write-guarded (GCS drain): leave the job pending; the poller
-            // retries it once writes are allowed again.
-            return Ok(());
-        };
-        self.cleanup_orphaned_branch_state(&mut tx, orphaned_hashes)
+        self.cleanup_orphaned_branch_state(tx, orphaned_hashes)
             .await?;
         sqlx::query!(
             r#"
@@ -1602,13 +1647,6 @@ impl Database {
         )
         .execute(tx.deref_mut())
         .await?;
-        tx.commit().await?;
-
-        info!(
-            finalized_block_hash = %to_hex(finalized_block_hash),
-            orphaned_blocks = orphaned_hashes.len(),
-            "Completed orphaned branch cleanup job"
-        );
 
         Ok(())
     }
@@ -1618,7 +1656,31 @@ impl Database {
         finalized_block_hash: &[u8],
         error: &str,
     ) -> Result<(), SqlxError> {
-        let pool = self.pool().await;
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(());
+        };
+        let recorded = self
+            .record_orphaned_branch_cleanup_error_in_tx(
+                &mut tx,
+                finalized_block_hash,
+                error,
+            )
+            .await?;
+        tx.commit().await?;
+        self.report_orphaned_branch_cleanup_error(
+            finalized_block_hash,
+            error,
+            recorded,
+        );
+        Ok(())
+    }
+
+    async fn record_orphaned_branch_cleanup_error_in_tx(
+        &self,
+        tx: &mut Transaction<'_>,
+        finalized_block_hash: &[u8],
+        error: &str,
+    ) -> Result<Option<(String, i32)>, SqlxError> {
         let row = sqlx::query!(
             r#"
             UPDATE branch_cleanup_jobs
@@ -1639,11 +1701,20 @@ impl Database {
             error,
             BRANCH_CLEANUP_MAX_ATTEMPTS,
         )
-        .fetch_optional(&pool)
+        .fetch_optional(tx.deref_mut())
         .await?;
 
-        if let Some(row) = row {
-            if row.status == "quarantined" {
+        Ok(row.map(|row| (row.status, row.attempts)))
+    }
+
+    fn report_orphaned_branch_cleanup_error(
+        &self,
+        finalized_block_hash: &[u8],
+        cleanup_error: &str,
+        recorded: Option<(String, i32)>,
+    ) {
+        if let Some((status, attempts)) = recorded {
+            if status == "quarantined" {
                 let chain_id_label = self.chain_id.as_i64().to_string();
                 BRANCH_CLEANUP_QUARANTINED_TOTAL
                     .with_label_values(&[chain_id_label.as_str()])
@@ -1651,14 +1722,12 @@ impl Database {
                 error!(
                     chain_id = self.chain_id.as_i64(),
                     finalized_block_hash = %to_hex(finalized_block_hash),
-                    attempts = row.attempts,
-                    cleanup_error = error,
+                    attempts,
+                    cleanup_error,
                     "Quarantined orphaned branch cleanup job after bounded retries"
                 );
             }
         }
-
-        Ok(())
     }
 
     pub async fn cleanup_orphaned_branch_state(
