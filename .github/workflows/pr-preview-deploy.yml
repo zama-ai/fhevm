@@ -66,6 +66,10 @@ on:
         description: "Git ref of zama-ai/kms to check out for deploy scripts + tkms-infra/kms-core charts"
         required: true
         default: "v0.13.20"
+      nb_kms_core:
+        description: "Number of kms-core parties to deploy (1:1 with kms-connector + dedicated Postgres releases) - e.g. 4 or 13"
+        required: true
+        default: "4"
       relayer_version:
         description: "Image tag for the relayer/relayer-migrate images (same override rule as host_contracts_version above)"
         required: true
@@ -192,6 +196,7 @@ env:
   #=====KMS==================================================================
   KMS_REPO_REF: "v0.13.20"
   KMS_CORE_TAG: "v0.13.20"
+  NB_KMS_CORE: "4"
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
 
@@ -354,6 +359,7 @@ jobs:
       common_chart_version: ${{ steps.resolve.outputs.common_chart_version }}
       kms_repo_ref: ${{ steps.resolve.outputs.kms_repo_ref }}
       kms_core_tag: ${{ steps.resolve.outputs.kms_core_tag }}
+      nb_kms_core: ${{ steps.resolve.outputs.nb_kms_core }}
     steps:
       - id: resolve
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -440,6 +446,13 @@ jobs:
               common_chart_version: isDispatch ? inputs.common_chart_version : env.COMMON_CHART_VERSION,
               kms_repo_ref: isDispatch ? inputs.kms_repo_ref : env.KMS_REPO_REF,
               kms_core_tag: isDispatch ? inputs.kms_core_version : env.KMS_CORE_TAG,
+              // Number of kms-core parties (and, 1:1, of kms-connector + Postgres
+              // releases the deploy job creates - see its "Deploy kms-connector"
+              // step). NOT previously wired through at all: the nb_kms_core
+              // workflow_dispatch input existed but nothing ever read it, so manual
+              // dispatches silently always got the env.NB_KMS_CORE default
+              // regardless of what was typed into the form.
+              nb_kms_core: isDispatch ? inputs.nb_kms_core : env.NB_KMS_CORE,
             };
 
             core.info(`Resolved tags: ${JSON.stringify(tags, null, 2)}`);
@@ -477,6 +490,7 @@ jobs:
                 [{data: 'Component', header: true}, {data: 'Ref / tag', header: true}],
                 ['kms repo ref (deploy scripts + tkms-infra/kms-core charts)', chartVersions.kms_repo_ref],
                 ['kms-core image tag', chartVersions.kms_core_tag],
+                ['number of parties (kms-core / kms-connector / Postgres, 1:1)', chartVersions.nb_kms_core],
               ])
               .addHeading('Images', 3)
               .addRaw(
@@ -530,6 +544,7 @@ jobs:
       COMMON_CHART_VERSION: ${{ needs.resolve-tags.outputs.common_chart_version }}
       KMS_REPO_REF: ${{ needs.resolve-tags.outputs.kms_repo_ref }}
       KMS_CORE_TAG: ${{ needs.resolve-tags.outputs.kms_core_tag }}
+      NB_KMS_CORE: ${{ needs.resolve-tags.outputs.nb_kms_core }}
     steps:
       - name: Checkout fhevm
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -661,9 +676,21 @@ jobs:
             -n "${NAMESPACE}" -f ci/preview-env/coprocessor-infra/values-postgres-coprocessor-e2e.yaml --wait
 
       - name: Deploy in-cluster Postgres for kms-connector
+        # One dedicated instance PER PARTY (postgres-connector-<i>), not one shared
+        # instance - see "Deploy kms-connector" below for why: one kms-connector
+        # release per kms-core party, each needing its own DB. fullnameOverride is
+        # overridden per release so each gets its own Service/StatefulSet name (the
+        # values file's own fullnameOverride: postgres-connector is just the base
+        # values file's documented single-instance default, unused here). Launched
+        # in parallel (`&`+`wait`) since each takes only seconds and they're fully
+        # independent of each other.
         run: |
-          helm upgrade --install postgres-connector "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-postgres-connector-e2e.yaml --wait
+          for i in $(seq 1 "${NB_KMS_CORE}"); do
+            helm upgrade --install "postgres-connector-${i}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+              -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-postgres-connector-e2e.yaml \
+              --set-string "fullnameOverride=postgres-connector-${i}" --wait &
+          done
+          wait
 
       - name: Deploy in-cluster Postgres for relayer + relayer-migrate
         run: |
@@ -686,7 +713,7 @@ jobs:
             --namespace "${NAMESPACE}" \
             --deployment-type thresholdWithEnclave \
             --tag "${KMS_CORE_TAG}" \
-            --num-parties 4 \
+            --num-parties "${NB_KMS_CORE}" \
             --pcr0 "${PCR0}" --pcr1 "${PCR1}" --pcr2 "${PCR2}"
 
       - name: Discover KMS party signer addresses (S3 public vault)
@@ -699,7 +726,7 @@ jobs:
         # Nitro attestation it can lag pod-readiness by a couple of minutes and parties
         # don't all finish at the same time.
         #
-        # All 4 parties share one bucket (see any party's own
+        # All NB_KMS_CORE parties share one bucket (see any party's own
         # KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET configmap value), segmented by
         # each party's own "PUB-p<i>/" prefix (kms_deployment.sh's per-party helm loop
         # sets kmsCore.publicVault.s3.prefix="PUB-p${i}" using this same index). The
@@ -711,6 +738,12 @@ jobs:
         # then reuse it for the rest instead of re-listing per party. Locally,
         # fhevm-cli's discoverKmsSigners() (test-suite/fhevm/src/flow/readiness.ts)
         # reads this same VerfAddress/<handle> object from MinIO.
+        #
+        # Emits s3_endpoint (reused as-is for KMS_NODE_STORAGE_URL_x below - each
+        # party's own registered storage URL is "${s3_endpoint}/PUB-p<i>", the exact
+        # same base this step already fetches VerfAddress from) and signers_json - a
+        # single JSON blob (not NB_KMS_CORE separate named outputs) since step outputs
+        # can't be addressed by a computed/looped name from a later step.
         run: |
           s3_endpoint=$(kubectl get configmap "${NAMESPACE}-1" -n "${NAMESPACE}" \
             -o jsonpath='{.data.CORE_CLIENT__S3_ENDPOINT}' 2>/dev/null || echo "")
@@ -718,26 +751,63 @@ jobs:
             echo "::error::could not read public vault bucket from configmap ${NAMESPACE}-1"
             exit 1
           fi
+          echo "s3_endpoint=${s3_endpoint}" >> "$GITHUB_OUTPUT"
 
           handle="60b7070add74be3827160aa635fb255eeeeb88586c4debf7ab1134ddceb4beee"
-          for i in 1 2 3 4; do
-            signer=""
+          signers_json="[]"
+          for i in $(seq 1 "${NB_KMS_CORE}"); do
             wget -O /tmp/signer "${s3_endpoint}/PUB-p${i}/VerfAddress/${handle}"
             signer=$(cat /tmp/signer)
-            echo "party_${i}_signer=${signer}" >> "$GITHUB_OUTPUT"
             echo "Party ${i}: s3_endpoint=${s3_endpoint} handle=${handle} signer=${signer}"
+            signers_json=$(jq -c --argjson party "${i}" --arg signer "${signer}" '. + [{"party": $party, "signer": $signer}]' <<<"${signers_json}")
           done
+          echo "signers_json=${signers_json}" >> "$GITHUB_OUTPUT"
 
-      # TODO(kms-tx-sender): KMS_TX_SENDER_ADDRESS_x below is still a placeholder.
-      # Unlike the signer address (an identity kms-core generates itself, discovered
-      # above), the per-party "tx sender" is fhevm's OWN wallet for submitting KMS
-      # responses on-chain - locally, fhevm-cli generates and funds one wallet per
-      # party itself (test-suite/fhevm/src/generate/env.ts, up-flow.ts's "base" step).
-      # kms's own deploy.sh/charts have no equivalent per-party connector/wallet concept
-      # to discover (confirmed: no "connector"/"tx-sender" hits anywhere in zama-ai/kms),
-      # and this workflow only deploys a single kms-connector release (not one per party)
-      # unlike fhevm-cli's local N-connector simulation, so the real per-party mapping
-      # still needs design. KMS_SIGNER_ADDRESS_x is wired for real below.
+      ######################################################################
+      # Unlike the signer address (an identity kms-core generates itself,
+      # discovered above), the per-party "tx sender" is fhevm's OWN wallet for
+      # submitting KMS responses on-chain (host-side KMSGeneration/ProtocolConfig
+      # AND gateway-side Decryption/InputVerification) - locally, fhevm-cli
+      # generates and funds one wallet per party itself (test-suite/fhevm/src/
+      # generate/env.ts, up-flow.ts's "base" step). kms's own deploy.sh/charts have
+      # no equivalent per-party connector/wallet concept to discover (confirmed: no
+      # "connector"/"tx-sender" hits anywhere in zama-ai/kms), so NB_KMS_CORE
+      # wallets are derived here instead, straight from the SAME well-known
+      # Foundry/Hardhat mnemonic both anvil chains use (see values-anvil-*-e2e.yaml
+      # / values-gateway-contracts-e2e.yaml's DEPLOYER_PRIVATE_KEY comment), at HD
+      # path indices 10..10+NB_KMS_CORE-1 - offset by 10 to stay clear of every
+      # other index already hand-picked from this mnemonic elsewhere in this
+      # namespace (0: both chains' contract deployer; 1-8: various
+      # KMS_SIGNER/COPROCESSOR/CUSTODIAN placeholder addresses baked into the
+      # contracts values files; 3 additionally reused as the gateway relayer tx
+      # sender - see git blame). Both anvil-host and anvil-gateway pre-fund well
+      # past 10+13 accounts (see accounts: "120" in both values-anvil-*-e2e.yaml),
+      # so this comfortably covers up to 13 parties with no chain config change.
+      #
+      # ethers (not cast/foundry) because it's the one HD-wallet-capable tool this
+      # job doesn't already need to install for something else - a plain npm
+      # install is simpler than adding a whole foundry setup step just for this.
+      ######################################################################
+      - name: Derive KMS tx-sender wallets
+        id: kms-wallets
+        run: |
+          mkdir -p /tmp/kms-wallets && cd /tmp/kms-wallets
+          npm install --silent --no-save ethers@6
+          node -e "
+          const { ethers } = require('ethers');
+          const fs = require('fs');
+          const mnemonic = ethers.Mnemonic.fromPhrase('test test test test test test test test test test test junk');
+          const n = parseInt(process.env.NB_KMS_CORE, 10);
+          const wallets = [];
+          for (let i = 0; i < n; i++) {
+            const party = i + 1;
+            const path = \`m/44'/60'/0'/0/\${10 + i}\`;
+            const wallet = ethers.HDNodeWallet.fromMnemonic(mnemonic, path);
+            wallets.push({ party, address: wallet.address, privateKey: wallet.privateKey });
+          }
+          console.log('Derived', n, 'KMS tx-sender wallets:', wallets.map((w) => \`party \${w.party}: \${w.address}\`).join(', '));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'wallets_json=' + JSON.stringify(wallets) + '\n');
+          "
 
       ######################################################################
       # BLOCKCHAIN: per-PR anvil host + gateway chains, fully isolated.
@@ -757,24 +827,62 @@ jobs:
       # InputVerification addresses), then register the host chain back into
       # the gateway's GatewayConfig.
       ######################################################################
-      - name: Wire real KMS signer addresses into gateway-contracts values
+      - name: Wire real KMS node info into gateway-contracts values
         id: gateway-contracts-values
         env:
-          PARTY_1_SIGNER: ${{ steps.kms-identity.outputs.party_1_signer }}
-          PARTY_2_SIGNER: ${{ steps.kms-identity.outputs.party_2_signer }}
-          PARTY_3_SIGNER: ${{ steps.kms-identity.outputs.party_3_signer }}
-          PARTY_4_SIGNER: ${{ steps.kms-identity.outputs.party_4_signer }}
+          SIGNERS_JSON: ${{ steps.kms-identity.outputs.signers_json }}
+          WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
+          S3_ENDPOINT: ${{ steps.kms-identity.outputs.s3_endpoint }}
         run: |
-          # Patched by env-var *name* (not array index) so reordering/adding entries in the
-          # checked-in values file can never silently wire an address into the wrong field.
+          # NB_KMS_CORE real parties, not a fixed 4 - see values-gateway-contracts-e2e.yaml's
+          # header. Threshold formulas mirror kms's own N=4 pr-preview default (t=1,
+          # majority=2, reconstruct=3 - see kms/.github/workflows/pr-preview-deploy.yml's
+          # "Set Deployment Parameters"): t = floor((N-1)/3) is the standard BFT-MPC
+          # corruption threshold, majority = t+1, reconstruct = N-t. TODO: reconfirm this
+          # scaling matches kms's own real formula once a live keygen ceremony has run at
+          # N > 4 (kept best-effort like the N=4 defaults it replaces).
+          n="${NB_KMS_CORE}"
+          t=$(( (n - 1) / 3 ))
+          majority=$(( t + 1 ))
+          reconstruct=$(( n - t ))
+
           generated=/tmp/values-gateway-contracts-e2e.generated.yaml
           cp ci/preview-env/gateway-chain/values-gateway-contracts-e2e.yaml "${generated}"
-          yq -i '
-            (.scDeploy.env[] | select(.name == "KMS_SIGNER_ADDRESS_0")).value = strenv(PARTY_1_SIGNER) |
-            (.scDeploy.env[] | select(.name == "KMS_SIGNER_ADDRESS_1")).value = strenv(PARTY_2_SIGNER) |
-            (.scDeploy.env[] | select(.name == "KMS_SIGNER_ADDRESS_2")).value = strenv(PARTY_3_SIGNER) |
-            (.scDeploy.env[] | select(.name == "KMS_SIGNER_ADDRESS_3")).value = strenv(PARTY_4_SIGNER)
-          ' "${generated}"
+          yq -i "
+            .scDeploy.env += [
+              {\"name\": \"NUM_KMS_NODES\", \"value\": \"${n}\"},
+              {\"name\": \"PUBLIC_DECRYPTION_THRESHOLD\", \"value\": \"${reconstruct}\"},
+              {\"name\": \"USER_DECRYPTION_THRESHOLD\", \"value\": \"${reconstruct}\"},
+              {\"name\": \"KMS_GENERATION_THRESHOLD\", \"value\": \"${majority}\"},
+              {\"name\": \"MPC_THRESHOLD\", \"value\": \"${t}\"}
+            ]
+          " "${generated}"
+
+          for i in $(seq 1 "${n}"); do
+            idx=$((i - 1))
+            signer=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .signer' <<<"${SIGNERS_JSON}")
+            tx_sender=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${WALLETS_JSON}")
+            if [[ -z "${signer}" || "${signer}" == "null" ]]; then
+              echo "::error::no discovered signer for party ${i} in signers_json=${SIGNERS_JSON}"; exit 1
+            fi
+            if [[ -z "${tx_sender}" || "${tx_sender}" == "null" ]]; then
+              echo "::error::no derived tx-sender wallet for party ${i} in wallets_json=${WALLETS_JSON}"; exit 1
+            fi
+            yq -i "
+              .scDeploy.env += [
+                {\"name\": \"KMS_TX_SENDER_ADDRESS_${idx}\", \"value\": \"${tx_sender}\"},
+                {\"name\": \"KMS_SIGNER_ADDRESS_${idx}\", \"value\": \"${signer}\"},
+                {\"name\": \"KMS_NODE_IP_ADDRESS_${idx}\", \"value\": \"kms-core-${i}-core-${i}\"},
+                {\"name\": \"KMS_NODE_STORAGE_URL_${idx}\", \"value\": \"${S3_ENDPOINT}/PUB-p${i}\"}
+              ]
+            " "${generated}"
+          done
+          # Force every scDeploy.env[].value back to an explicit double-quoted YAML
+          # string: yq's default emitter drops quotes on "safe-looking" plain scalars,
+          # and a bare 40-hex-char address (e.g. 0x1CBd...C9Ec) is EXACTLY YAML 1.1's
+          # hex-int syntax - go-yaml happens to fall back to string on the int64
+          # overflow today, but that's an implementation accident, not a guarantee.
+          yq -i '(.scDeploy.env[] | select(has("value")) | .value) style="double"' "${generated}"
           echo "values_file=${generated}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy gateway-contracts
@@ -784,10 +892,68 @@ jobs:
             --set-string "scDeploy.image.tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")" \
             --wait --wait-for-jobs --timeout=10m
 
+      - name: Wire real KMS node info into host-contracts values
+        id: host-contracts-values
+        env:
+          SIGNERS_JSON: ${{ steps.kms-identity.outputs.signers_json }}
+          WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
+          S3_ENDPOINT: ${{ steps.kms-identity.outputs.s3_endpoint }}
+        run: |
+          # Mirrors "Wire real KMS node info into gateway-contracts values" above - same
+          # source data (real discovered signers + derived tx-sender wallets), just
+          # host-contracts' own field-naming scheme (see values-host-contracts-e2e.yaml's
+          # header for the cross-repo naming inconsistencies: KMS_NODE_IP_x here vs.
+          # KMS_NODE_IP_ADDRESS_x on gateway, KMS_GEN_THRESHOLD here vs.
+          # KMS_GENERATION_THRESHOLD on gateway).
+          n="${NB_KMS_CORE}"
+          t=$(( (n - 1) / 3 ))
+          majority=$(( t + 1 ))
+          reconstruct=$(( n - t ))
+
+          generated=/tmp/values-host-contracts-e2e.generated.yaml
+          cp ci/preview-env/host-chain/values-host-contracts-e2e.yaml "${generated}"
+          yq -i "
+            .scDeploy.env += [
+              {\"name\": \"NUM_KMS_NODES\", \"value\": \"${n}\"},
+              {\"name\": \"PUBLIC_DECRYPTION_THRESHOLD\", \"value\": \"${reconstruct}\"},
+              {\"name\": \"USER_DECRYPTION_THRESHOLD\", \"value\": \"${reconstruct}\"},
+              {\"name\": \"KMS_GEN_THRESHOLD\", \"value\": \"${majority}\"},
+              {\"name\": \"MPC_THRESHOLD\", \"value\": \"${t}\"}
+            ]
+          " "${generated}"
+
+          for i in $(seq 1 "${n}"); do
+            idx=$((i - 1))
+            signer=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .signer' <<<"${SIGNERS_JSON}")
+            tx_sender=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${WALLETS_JSON}")
+            if [[ -z "${signer}" || "${signer}" == "null" ]]; then
+              echo "::error::no discovered signer for party ${i} in signers_json=${SIGNERS_JSON}"; exit 1
+            fi
+            if [[ -z "${tx_sender}" || "${tx_sender}" == "null" ]]; then
+              echo "::error::no derived tx-sender wallet for party ${i} in wallets_json=${WALLETS_JSON}"; exit 1
+            fi
+            yq -i "
+              .scDeploy.env += [
+                {\"name\": \"KMS_TX_SENDER_ADDRESS_${idx}\", \"value\": \"${tx_sender}\"},
+                {\"name\": \"KMS_SIGNER_ADDRESS_${idx}\", \"value\": \"${signer}\"},
+                {\"name\": \"KMS_NODE_IP_${idx}\", \"value\": \"kms-core-${i}-core-${i}\"},
+                {\"name\": \"KMS_NODE_STORAGE_URL_${idx}\", \"value\": \"${S3_ENDPOINT}/PUB-p${i}\"},
+                {\"name\": \"KMS_NODE_PARTY_ID_${idx}\", \"value\": \"${i}\"},
+                {\"name\": \"KMS_NODE_MPC_IDENTITY_${idx}\", \"value\": \"kms-core-${i}\"},
+                {\"name\": \"KMS_NODE_CA_CERT_${idx}\", \"value\": \"0x706c616365686f6c6465722d63612d636572742d6532652d7370696b65\"},
+                {\"name\": \"KMS_NODE_STORAGE_PREFIX_${idx}\", \"value\": \"PUB-p${i}\"}
+              ]
+            " "${generated}"
+          done
+          # See the matching gateway-contracts step above for why this is needed
+          # (hex-address values must stay explicitly double-quoted strings).
+          yq -i '(.scDeploy.env[] | select(has("value")) | .value) style="double"' "${generated}"
+          echo "values_file=${generated}" >> "$GITHUB_OUTPUT"
+
       - name: Deploy host-contracts
         run: |
           helm upgrade --install host-contracts "${CONTRACTS_CHART}" --version "${CONTRACTS_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-host-contracts-e2e.yaml \
+            -n "${NAMESPACE}" -f "${{ steps.host-contracts-values.outputs.values_file }}" \
             --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
             --wait --wait-for-jobs --timeout=10m
 
@@ -853,26 +1019,41 @@ jobs:
             --set-string "zkProofWorker.image.tag=$(jq -r .coprocessor_zkproof_worker <<<"${TAGS_JSON}")"
           sleep 60
 
-      - name: Create kms-connector-tx-sender secret
+      - name: Create kms-connector-tx-sender secrets
+        env:
+          WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
         run: |
-          # kms-connector's chart has no wallet.secret.value literal option
-          # (unlike coprocessor's txSender) - the Secret must exist before
-          # install. Anvil test account #7 - deterministic, ephemeral-testing
-          # only, never used for anything real.
-          kubectl create secret generic kms-connector-tx-sender -n "${NAMESPACE}" \
-            --from-literal=kms-wallet=0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356 \
-            --dry-run=client -o yaml | kubectl apply -f -
+          # One Secret PER PARTY (kms-connector-tx-sender-<i>), matching the one
+          # kms-connector release per kms-core party below - kms-connector's chart has
+          # no wallet.secret.value literal option (unlike coprocessor's txSender), so
+          # the Secret must exist before install.
+          for i in $(seq 1 "${NB_KMS_CORE}"); do
+            private_key=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${WALLETS_JSON}")
+            if [[ -z "${private_key}" || "${private_key}" == "null" ]]; then
+              echo "::error::no derived tx-sender wallet for party ${i} in wallets_json=${WALLETS_JSON}"
+              exit 1
+            fi
+            kubectl create secret generic "kms-connector-tx-sender-${i}" -n "${NAMESPACE}" \
+              --from-literal=kms-wallet="${private_key}" \
+              --dry-run=client -o yaml | kubectl apply -f -
+          done
 
       - name: Deploy kms-connector
         run: |
-          # kms-connector's commonConfig.*ContractAddresses fields are plain
-          # strings (no configMapKeyRef support in this chart - see
-          # values-kms-connector-e2e.yaml header note), so real contract
-          # addresses are discovered here and injected via --set-string
-          # instead of being hardcoded (and going stale on every contracts
-          # redeploy) in the values file. The DB endpoint is NOT discovered
-          # here - it's already real/static in the values file itself
-          # (dedicated in-cluster Postgres, deployed earlier above).
+          # One kms-connector release PER kms-core party (kms-connector-<i>), each
+          # wired to only its own co-located kms-core instance (kmsCoreEndpoints -
+          # see values-kms-connector-e2e.yaml, and kms's own production
+          # values-kms-connector-mpc-testnet.yaml: kmsCoreEndpoints is a single
+          # "http://kms-core:50100" per party namespace there too, not a list of
+          # every party - the single "http://kms-core:50051" endpoint this file used
+          # to hardcode as a shared placeholder before that fix was never real to
+          # begin with), its own DB (postgres-connector-<i>), and its own tx-sender
+          # wallet Secret (kms-connector-tx-sender-<i>, created above). Contract
+          # addresses are shared across every party (same GatewayConfig/KMSGeneration/
+          # ACL for the whole namespace) - discovered once here and reused for all N
+          # --set-string calls below; kms-connector's commonConfig.*ContractAddresses
+          # fields are plain strings with no configMapKeyRef support in this chart
+          # (see values-kms-connector-e2e.yaml header note).
           require_nonempty() {
             if [[ -z "${2}" ]]; then
               echo "::error::${1} is empty - refusing to deploy kms-connector with a broken config (see the step that should have populated it above)"
@@ -899,21 +1080,26 @@ jobs:
           else
             echo "::warning::host-sc-addresses[kms_verifier.address] is empty - leaving kms-connector's kmsVerifier at the chart's zero-address default"
           fi
-          helm upgrade --install kms-connector "${KMS_CONNECTOR_CHART}" --version "${KMS_CONNECTOR_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-kms-connector-e2e.yaml \
-            --set-string "commonConfig.gatewayContractAddresses.decryption=${decryption}" \
-            --set-string "commonConfig.gatewayContractAddresses.gatewayConfig=${gateway_config}" \
-            --set-string "commonConfig.gatewayContractAddresses.kmsGeneration=${kms_generation}" \
-            --set-string "commonConfig.ethereumContractAddresses.acl=${acl}" \
-            "${kms_verifier_args[@]}" \
-            --set-string "kmsConnectorDbMigration.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/db-migration" \
-            --set-string "kmsConnectorDbMigration.image.tag=$(jq -r .kms_connector_db_migration <<<"${TAGS_JSON}")" \
-            --set-string "kmsConnectorGwListener.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/gw-listener" \
-            --set-string "kmsConnectorGwListener.image.tag=$(jq -r .kms_connector_gw_listener <<<"${TAGS_JSON}")" \
-            --set-string "kmsConnectorKmsWorker.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/kms-worker" \
-            --set-string "kmsConnectorKmsWorker.image.tag=$(jq -r .kms_connector_kms_worker <<<"${TAGS_JSON}")" \
-            --set-string "kmsConnectorTxSender.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/tx-sender" \
-            --set-string "kmsConnectorTxSender.image.tag=$(jq -r .kms_connector_tx_sender <<<"${TAGS_JSON}")"
+          for i in $(seq 1 "${NB_KMS_CORE}"); do
+            helm upgrade --install "kms-connector-${i}" "${KMS_CONNECTOR_CHART}" --version "${KMS_CONNECTOR_CHART_VERSION}" \
+              -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-kms-connector-e2e.yaml \
+              --set-string "commonConfig.gatewayContractAddresses.decryption=${decryption}" \
+              --set-string "commonConfig.gatewayContractAddresses.gatewayConfig=${gateway_config}" \
+              --set-string "commonConfig.gatewayContractAddresses.kmsGeneration=${kms_generation}" \
+              --set-string "commonConfig.ethereumContractAddresses.acl=${acl}" \
+              "${kms_verifier_args[@]}" \
+              --set-string "commonConfig.databaseUrl=postgresql://zama:zama@postgres-connector-${i}:5432/connector" \
+              --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=http://kms-core-${i}-core-${i}:50100" \
+              --set-string "kmsConnectorTxSender.wallet.secret.name=kms-connector-tx-sender-${i}" \
+              --set-string "kmsConnectorDbMigration.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/db-migration" \
+              --set-string "kmsConnectorDbMigration.image.tag=$(jq -r .kms_connector_db_migration <<<"${TAGS_JSON}")" \
+              --set-string "kmsConnectorGwListener.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/gw-listener" \
+              --set-string "kmsConnectorGwListener.image.tag=$(jq -r .kms_connector_gw_listener <<<"${TAGS_JSON}")" \
+              --set-string "kmsConnectorKmsWorker.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/kms-worker" \
+              --set-string "kmsConnectorKmsWorker.image.tag=$(jq -r .kms_connector_kms_worker <<<"${TAGS_JSON}")" \
+              --set-string "kmsConnectorTxSender.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/tx-sender" \
+              --set-string "kmsConnectorTxSender.image.tag=$(jq -r .kms_connector_tx_sender <<<"${TAGS_JSON}")"
+          done
           sleep 60
 
       ######################################################################
@@ -924,22 +1110,21 @@ jobs:
       # targets host-contracts, not gateway-contracts: our images are built at
       # each PR's HEAD/`latest`, well past the v0.13 KMSGeneration migration to
       # the canonical host chain - gateway-contracts no longer even ships
-      # task:triggerKeygen at this version). No --wait: a real 4-party enclave
-      # DKG can take several minutes and the contracts chart's Job here only
-      # submits the trigger tx, it doesn't poll for on-chain completion.
+      # task:triggerKeygen at this version).
       #
-      # TODO(kms-keygen-wait): nothing downstream yet blocks on the ceremony
-      # actually finishing (fhevm-cli's waitForBootstrap polls MinIO for key
-      # material; the AWS equivalent - polling each party's S3 vault, or the
-      # KMSGeneration contract's state - isn't implemented here). test-suite
-      # below may run before decryption/keygen-dependent flows are ready.
+      # The job's own deployCommands (see values-host-trigger-keygen-e2e.yaml)
+      # trigger the request AND then poll on-chain for ActivateKey/ActivateCrs
+      # (real 4-party enclave DKG consensus, which lags the request tx by
+      # several minutes) before the Job exits - so --wait --wait-for-jobs here
+      # really does mean "key + CRS material exists", not just "request sent".
+      # Timeout is sized for up to ~8m per event, sequentially.
       ######################################################################
       - name: Trigger KMS keygen + CRS generation
         run: |
           helm upgrade --install host-trigger-keygen "${CONTRACTS_CHART}" --version "${CONTRACTS_CHART_VERSION}" \
             -n "${NAMESPACE}" -f ci/preview-env/host-chain/values-host-trigger-keygen-e2e.yaml \
             --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
-            --wait --wait-for-jobs --timeout=10m
+            --wait --wait-for-jobs --timeout=20m
 
       ######################################################################
       # RELAYER + TEST-SUITE: generic `common` chart + published images,

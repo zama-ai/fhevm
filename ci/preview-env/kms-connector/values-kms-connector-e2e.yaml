@@ -1,5 +1,15 @@
 # kms-connector chart values overlay for the fhevm e2e preview namespace.
 #
+# ONE RELEASE PER kms-core PARTY: pr-preview-deploy.yml's "Deploy kms-connector"
+# step installs this file NB_KMS_CORE times (kms-connector-<i>, i=1..N), each
+# --set-string-overriding the 3 per-party fields below (databaseUrl,
+# kmsCoreEndpoints, wallet.secret.name) to point at that party's own DB/kms-core/
+# wallet - mirrors kms's own real per-mpc-party-namespace topology (see
+# zama-zws/gitops's values-kms-connector-mpc-testnet.yaml: kmsCoreEndpoints is a
+# single "http://kms-core:50100" there too, not a list of every party). The
+# static defaults below are party 1's (harmless placeholders if this file is
+# ever helm-templated standalone without the workflow's --set-string calls).
+#
 # Unlike coprocessor's chart, this chart's per-address fields under
 # commonConfig are plain strings (no `value`/`valueFrom` object support -
 # see `kmsConnector.contracts` helper in templates/_helpers.tpl), so they
@@ -10,34 +20,25 @@
 # to fill in here.
 #
 # kmsWorker's config.kmsCoreEndpoints (below) points at the dedicated per-PR
-# KMS's 4 parties. Confirmed live via `kubectl get svc` against a running
+# KMS's parties. Confirmed live via `kubectl get svc` against a running
 # deploy: each party is its own StatefulSet/Service pair named
-# kms-core-<i>-core-<i> (not the single "kms-core-<i>" mpc-testnet's
-# per-party kms-connector releases use - zama-zws/gitops's
-# values-kms-connector-6-mpc-testnet.yaml's "http://kms-core-6:50100" is
-# per-party there because each party gets its OWN kms-connector release; ours
-# is one release talking to all 4), exposing 3 named ports: client (50100,
-# what connector/kms-worker's gRPC client uses - scheme "http://", not
-# "https://": kms-connector/crates/utils/src/conn.rs's shared
-# connect_to_rpc_node_inner always uses connect_http, and the chart's own
-# default confirms this: charts/kms-connector/values.yaml's kmsCoreEndpoints:
-# "http://kms-core:50051"), peer (50001, inter-party MPC - not for the
-# connector) and metrics (9646). kmsCoreEndpoints deserializes to
-# Vec<String> via a comma-separated list (kms-connector/crates/utils/src/
-# config/deserialize.rs's `.list_separator(",")`), hence the single
-# comma-joined string below rather than a YAML list.
+# kms-core-<i>-core-<i>, exposing 3 named ports: client (50100, what
+# connector/kms-worker's gRPC client uses - scheme "http://", not "https://":
+# kms-connector/crates/utils/src/conn.rs's shared connect_to_rpc_node_inner
+# always uses connect_http, and the chart's own default confirms this:
+# charts/kms-connector/values.yaml's kmsCoreEndpoints: "http://kms-core:50051"),
+# peer (50001, inter-party MPC - not for the connector) and metrics (9646).
 #
 # Deployed as:
-#   helm upgrade --install kms-connector oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector \
-#     -n <namespace> -f this-file
+#   helm upgrade --install kms-connector-<i> oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector \
+#     -n <namespace> -f this-file --set-string commonConfig.databaseUrl=... --set-string ...
 commonConfig:
-  # Dedicated in-cluster Postgres release (../kms-connector/values-postgres-
-  # connector-e2e.yaml) - NOT shared with coprocessor/relayer-migrate's
-  # instance: kms-connector's data has nothing to do with theirs. Service
-  # name + fixed ephemeral test credentials are known ahead of deploy time
-  # (see that file's header), so this is already real, not a placeholder -
-  # no --set-string/secret discovery needed for the DB.
-  databaseUrl: "postgresql://zama:zama@postgres-connector:5432/connector"
+  # Dedicated in-cluster Postgres release PER PARTY (../kms-connector/values-
+  # postgres-connector-e2e.yaml, deployed as postgres-connector-<i>) - NOT
+  # shared with coprocessor/relayer-migrate's instance, nor across parties.
+  # Overridden per-release by the workflow to postgres-connector-<i>; this is
+  # just party 1's value as a standalone-template-safe default.
+  databaseUrl: "postgresql://zama:zama@postgres-connector-1:5432/connector"
   gatewayUrl: "http://anvil-gateway-anvil-node:8546"
   ethereumUrl: "http://anvil-host-anvil-node:8545"
   gatewayChainId: "54321"
@@ -50,14 +51,17 @@ commonConfig:
 # just the host chain so args still render cleanly.
 kmsConnectorKmsWorker:
   config:
-    kmsCoreEndpoints: "http://kms-core-1-core-1:50100,http://kms-core-2-core-2:50100,http://kms-core-3-core-3:50100,http://kms-core-4-core-4:50100"
+    # Overridden per-release to this party's own kms-core-<i>-core-<i> - see
+    # header note. Party 1's endpoint is the standalone-template-safe default.
+    kmsCoreEndpoints: "http://kms-core-1-core-1:50100"
     hostChains:
       - url: "$(KMS_CONNECTOR_ETHEREUM_URL)"
         chainId: "$(KMS_CONNECTOR_ETHEREUM_CHAIN_ID)"
         aclAddress: "$(KMS_CONNECTOR_ETHEREUM_ACL_ADDRESS)"
 
 # kmsConnectorTxSender.wallet.secret defaults to {name: kms-connector-tx-sender, key: kms-wallet}
-# - no override needed here. The Secret itself is created out-of-band by
-# pr-preview-deploy.yml's "Create kms-connector-tx-sender secret" step
-# (must run before this chart installs, unlike coprocessor's txSender which
-# has a wallet.secret.value literal option and needs no such out-of-band step).
+# - overridden per-release by the workflow to kms-connector-tx-sender-<i>. The
+# Secret itself is created out-of-band by pr-preview-deploy.yml's "Create
+# kms-connector-tx-sender secrets" step (must run before this chart installs,
+# unlike coprocessor's txSender which has a wallet.secret.value literal option
+# and needs no such out-of-band step).

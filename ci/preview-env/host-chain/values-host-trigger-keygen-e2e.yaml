@@ -45,6 +45,63 @@ scDeploy:
     # smoke check. Matches ../../../charts/contracts/values-kmsgen.yaml's own recommendation.
     - npx hardhat task:triggerKeygen --params-type 1 --use-internal-proxy-address true
     - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-proxy-address true
+    # (kms-keygen-wait) The two triggers above only wait for their *request* tx to be
+    # mined (task:triggerKeygen/triggerCrsgen just call keygenTx.wait()) - the actual
+    # 4-party enclave DKG consensus (ActivateKey/ActivateCrs on KMSGeneration.sol) can
+    # take several more minutes. Poll for both here so nothing downstream (relayer's
+    # /v2/keyurl material, test-suite) starts before real key/CRS material exists.
+    # kmsNodeStorageUrls[i] comes straight from KMSGeneration.sol's
+    # _buildConsensusStorageUrls -> ProtocolConfig.getKmsNodeForContext(...).storageUrl -
+    # i.e. each party's own registered public-vault base URL (same one discovered per
+    # party in "Discover KMS party signer addresses" above), NOT re-derived here.
+    # Party index 0 is used as the one source of truth for /v2/keyurl - all 4 parties
+    # publish the same key/CRS blob to their own PUB-p<i>/ prefix, so any one works.
+    # Written to addresses/.env.keymaterial so the loop below (which promotes every
+    # addresses/.env.* line into ${CONFIGMAP_NAME}, i.e. host-sc-addresses) picks it up
+    # automatically as kms_active_key_id / kms_active_crs_id / ..._storage_url - no
+    # separate kubectl call needed.
+    - |
+      echo "Waiting for KMS keygen + CRS generation ceremony to reach on-chain consensus..."
+      node -e "
+      const { ethers } = require('ethers');
+      const fs = require('fs');
+      const ABI = [
+        'event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, tuple(uint8 keyType, bytes digest)[] keyDigests)',
+        'event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest)',
+      ];
+      async function waitForEvent(contract, eventName, timeoutMs) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          const events = await contract.queryFilter(eventName, 0, 'latest');
+          if (events.length > 0) return events[events.length - 1];
+          console.log('  still waiting for ' + eventName + '...');
+          await new Promise((r) => setTimeout(r, 10000));
+        }
+        throw new Error('Timed out waiting for ' + eventName);
+      }
+      (async () => {
+        const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+        const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
+        const keyEvent = await waitForEvent(contract, 'ActivateKey', 8 * 60 * 1000);
+        const crsEvent = await waitForEvent(contract, 'ActivateCrs', 8 * 60 * 1000);
+        const keyId = keyEvent.args.keyId.toString();
+        const crsId = crsEvent.args.crsId.toString();
+        const keyStorageUrl = keyEvent.args.kmsNodeStorageUrls[0];
+        const crsStorageUrl = crsEvent.args.kmsNodeStorageUrls[0];
+        if (!keyStorageUrl || !crsStorageUrl) {
+          throw new Error('kmsNodeStorageUrls[0] is empty - party 0 never registered a storage URL in ProtocolConfig');
+        }
+        console.log('Discovered active key_id=' + keyId + ' crs_id=' + crsId);
+        console.log('key storage url: ' + keyStorageUrl);
+        console.log('crs storage url: ' + crsStorageUrl);
+        fs.writeFileSync('addresses/.env.keymaterial',
+          'KMS_ACTIVE_KEY_ID=' + keyId + '\n' +
+          'KMS_ACTIVE_CRS_ID=' + crsId + '\n' +
+          'KMS_ACTIVE_KEY_STORAGE_URL=' + keyStorageUrl + '\n' +
+          'KMS_ACTIVE_CRS_STORAGE_URL=' + crsStorageUrl + '\n'
+        );
+      })().catch((e) => { console.error(e); process.exit(1); });
+      "
   verifyContracts: false
 persistence:
   enabled: true

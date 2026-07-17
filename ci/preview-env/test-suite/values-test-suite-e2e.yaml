@@ -35,6 +35,23 @@ job:
   # Give the full e2e suite (keygen/decryption round trips, etc.) enough
   # headroom against a real dedicated 4-party threshold+enclave KMS.
   activeDeadlineSeconds: 3600
+  # test-suite/e2e's Dockerfile ENTRYPOINT is just ["/bin/bash", "-c"] with no
+  # default CMD (confirmed via `git show v0.13.0:test-suite/e2e/Dockerfile`) -
+  # without this, the container runs bare "/bin/bash -c" with no script
+  # argument at all: "/bin/bash: -c: option requires an argument". command/
+  # args must be nested under `job.*` here, not top-level - the common
+  # chart's templates/job.yaml only reads .Values.job.command/.Values.job.args
+  # (top-level command/args are deployment.yaml-only, confirmed via the
+  # vendored chart at /tmp/common-chart/common/templates/job.yaml).
+  # "staging" is the hardhat network name matching our topology (chainId
+  # 12345, reads RPC_URL - see hardhat.config.ts's getChainConfig('staging'),
+  # same env var already set below). No --grep filter, so this runs the full
+  # suite, not run-tests.sh's single-test default.
+  command: ["/bin/bash", "-c"]
+  args:
+    - |
+      npx hardhat compile
+      npx hardhat test --network staging
 
 env:
   # Same well-known Foundry/Hardhat test mnemonic used to fund every anvil
