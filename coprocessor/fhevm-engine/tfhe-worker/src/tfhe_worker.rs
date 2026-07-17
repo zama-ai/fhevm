@@ -1029,16 +1029,22 @@ async fn query_dependency_metadata<'a>(
         return Ok(HashMap::new());
     }
 
-    let mut computation_rows = Vec::new();
+    let mut computation_dependency_rows = Vec::new();
     let rows = sqlx::query!(
         r#"
         SELECT output_handle AS "handle!", producer_block_hash AS "producer_block_hash!", block_number
         FROM computations_branch
         WHERE host_chain_id = $2
         AND output_handle = ANY($1::BYTEA[])
+        AND (
+            $3::BIGINT IS NULL
+            OR block_number IS NULL
+            OR block_number <= $3
+        )
         "#,
         cts_to_query as _,
         batch_context.host_chain_id,
+        batch_context.block_number,
     )
     .fetch_all(trx.as_mut())
     .await
@@ -1047,29 +1053,49 @@ async fn query_dependency_metadata<'a>(
         err
     })?;
     for row in rows {
-        computation_rows.push(DependencyRow {
+        computation_dependency_rows.push(DependencyRow {
             handle: row.handle,
             producer_block_hash: row.producer_block_hash,
             block_number: row.block_number,
         });
     }
 
-    let mut allowed_handle_rows = Vec::new();
+    let mut allowed_handle_dependency_rows = Vec::new();
     let rows = sqlx::query!(
         r#"
+        WITH visible_branch_allowed_handles AS (
+            SELECT
+                a.handle,
+                a.account_address,
+                a.event_type,
+                a.host_chain_id,
+                a.producer_block_hash,
+                CASE
+                    WHEN a.producer_block_hash = ''::BYTEA THEN a.block_number
+                    ELSE producer.block_number
+                END AS block_number
+            FROM allowed_handles_branch a
+            LEFT JOIN host_chain_blocks_valid producer
+              ON producer.chain_id = a.host_chain_id
+             AND producer.block_hash = a.producer_block_hash
+            WHERE (a.host_chain_id = $2 OR a.host_chain_id IS NULL)
+              AND a.handle = ANY($1::BYTEA[])
+              AND (
+                  $3::BIGINT IS NULL
+                  OR a.block_number IS NULL
+                  OR a.block_number <= $3
+              )
+              AND (
+                  $3::BIGINT IS NULL
+                  OR producer.block_number IS NULL
+                  OR producer.block_number <= $3
+              )
+        )
         SELECT
             a.handle AS "handle!",
             a.producer_block_hash AS "producer_block_hash!",
-            CASE
-                WHEN a.producer_block_hash = ''::BYTEA THEN a.block_number
-                ELSE producer.block_number
-            END AS block_number
-        FROM allowed_handles_branch a
-        LEFT JOIN host_chain_blocks_valid producer
-          ON producer.chain_id = a.host_chain_id
-         AND producer.block_hash = a.producer_block_hash
-        WHERE (a.host_chain_id = $2 OR a.host_chain_id IS NULL)
-        AND a.handle = ANY($1::BYTEA[])
+            a.block_number
+        FROM visible_branch_allowed_handles a
         UNION ALL
         SELECT
             a.handle AS "handle!",
@@ -1078,9 +1104,14 @@ async fn query_dependency_metadata<'a>(
         FROM allowed_handles a
         WHERE (a.host_chain_id = $2 OR a.host_chain_id IS NULL)
         AND a.handle = ANY($1::BYTEA[])
+        AND (
+            $3::BIGINT IS NULL
+            OR a.block_number IS NULL
+            OR a.block_number <= $3
+        )
         AND NOT EXISTS (
             SELECT 1
-            FROM allowed_handles_branch b
+            FROM visible_branch_allowed_handles b
             WHERE b.host_chain_id = a.host_chain_id
               AND b.handle = a.handle
               AND b.account_address = a.account_address
@@ -1089,6 +1120,7 @@ async fn query_dependency_metadata<'a>(
         "#,
         cts_to_query as _,
         batch_context.host_chain_id,
+        batch_context.block_number,
     )
     .fetch_all(trx.as_mut())
     .await
@@ -1097,13 +1129,13 @@ async fn query_dependency_metadata<'a>(
         err
     })?;
     for row in rows {
-        allowed_handle_rows.push(DependencyRow {
+        allowed_handle_dependency_rows.push(DependencyRow {
             handle: row.handle,
             producer_block_hash: row.producer_block_hash,
             block_number: row.block_number,
         });
     }
-    for row in &allowed_handle_rows {
+    for row in &allowed_handle_dependency_rows {
         if !row.producer_block_hash.is_empty() && row.block_number.is_none() {
             UNRESOLVED_DEPENDENCY_PRODUCER_BLOCK_COUNTER.inc();
             warn!(
@@ -1121,12 +1153,12 @@ async fn query_dependency_metadata<'a>(
     // ancestry. Candidates at or below settled_height are trusted through the
     // settlement invariant, so only recent post-cutover candidates need the
     // current-branch ancestry walk.
-    let candidate_block_numbers = computation_rows
+    let candidate_block_numbers = computation_dependency_rows
         .iter()
         .filter(|row| !row.producer_block_hash.is_empty())
         .filter_map(|row| row.block_number)
         .chain(
-            allowed_handle_rows
+            allowed_handle_dependency_rows
                 .iter()
                 .filter(|row| !row.producer_block_hash.is_empty())
                 .filter_map(|row| row.block_number),
@@ -1139,9 +1171,10 @@ async fn query_dependency_metadata<'a>(
         load_current_branch_ancestry(batch_context, &candidate_block_numbers, trx).await?;
 
     let mut metadata = HashMap::with_capacity(cts_to_query.len());
-    let mut computation_candidates: HashMap<Handle, Vec<ProducerCandidate>> = HashMap::new();
-    for row in computation_rows {
-        computation_candidates
+    let mut computation_candidates_by_handle: HashMap<Handle, Vec<ProducerCandidate>> =
+        HashMap::new();
+    for row in computation_dependency_rows {
+        computation_candidates_by_handle
             .entry(row.handle)
             .or_default()
             .push(ProducerCandidate {
@@ -1150,7 +1183,7 @@ async fn query_dependency_metadata<'a>(
             });
     }
     for handle in cts_to_query {
-        let Some(candidates) = computation_candidates.get(handle) else {
+        let Some(candidates) = computation_candidates_by_handle.get(handle) else {
             continue;
         };
         let resolved = resolve_dependency_metadata(
@@ -1173,9 +1206,10 @@ async fn query_dependency_metadata<'a>(
         }
     }
 
-    let mut allowed_handle_candidates: HashMap<Handle, Vec<ProducerCandidate>> = HashMap::new();
-    for row in allowed_handle_rows {
-        allowed_handle_candidates
+    let mut allowed_handle_candidates_by_handle: HashMap<Handle, Vec<ProducerCandidate>> =
+        HashMap::new();
+    for row in allowed_handle_dependency_rows {
+        allowed_handle_candidates_by_handle
             .entry(row.handle)
             .or_default()
             .push(ProducerCandidate {
@@ -1187,7 +1221,7 @@ async fn query_dependency_metadata<'a>(
         if metadata.contains_key(handle) {
             continue;
         }
-        let Some(candidates) = allowed_handle_candidates.get(handle) else {
+        let Some(candidates) = allowed_handle_candidates_by_handle.get(handle) else {
             continue;
         };
         let resolved = resolve_dependency_metadata(
@@ -1213,9 +1247,9 @@ async fn query_dependency_metadata<'a>(
     let branchless_ciphertext_rows =
         query_branchless_ciphertext_handles(cts_to_query, current_ciphertext_version(), trx)
             .await?;
-    let handles_with_candidate_metadata = computation_candidates
+    let handles_with_candidate_metadata = computation_candidates_by_handle
         .keys()
-        .chain(allowed_handle_candidates.keys())
+        .chain(allowed_handle_candidates_by_handle.keys())
         .cloned()
         .collect::<HashSet<_>>();
     add_branchless_ciphertext_metadata_fallback(
@@ -3899,6 +3933,167 @@ mod tests {
         let resolved = metadata.get(&handle).expect("resolved ACL dependency");
         assert_eq!(resolved.producer_block_hash, producer_hash);
         assert_eq!(resolved.block_number, Some(10));
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn dependency_metadata_ignores_future_computation_before_branchless_fallback() {
+        let db = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db.db_url())
+            .await
+            .expect("connect db");
+
+        let host_chain_id = 42_i64;
+        let handle = vec![0xA2_u8; 32];
+        let current_hash = vec![0x20_u8; 32];
+        let future_hash = vec![0x21_u8; 32];
+
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+                (chain_id, block_hash, parent_hash, block_number, block_status)
+             VALUES
+                ($1, $2::bytea, NULL, 10, 'pending'),
+                ($1, $3::bytea, $2::bytea, 11, 'pending')",
+        )
+        .bind(host_chain_id)
+        .bind(&current_hash)
+        .bind(&future_hash)
+        .execute(&pool)
+        .await
+        .expect("insert host chain blocks");
+
+        sqlx::query(
+            "INSERT INTO computations_branch(
+                tenant_id, output_handle, dependencies, fhe_operation, is_scalar,
+                is_completed, transaction_id, host_chain_id, block_number,
+                producer_block_hash
+             )
+             VALUES (0, $1, ARRAY[]::BYTEA[], 1, false, true, $2, $3, 11, $4)",
+        )
+        .bind(&handle)
+        .bind(vec![0x31_u8; 32])
+        .bind(host_chain_id)
+        .bind(&future_hash)
+        .execute(&pool)
+        .await
+        .expect("insert future computation candidate");
+
+        sqlx::query(
+            "INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
+             VALUES ($1, $2, $3, 0)",
+        )
+        .bind(&handle)
+        .bind(vec![0x41_u8])
+        .bind(fhevm_engine_common::tfhe_ops::current_ciphertext_version())
+        .execute(&pool)
+        .await
+        .expect("insert branchless ciphertext");
+
+        let mut tx = pool.begin().await.expect("begin tx");
+        let metadata = query_dependency_metadata(
+            std::slice::from_ref(&handle),
+            &BatchExecutionContext {
+                host_chain_id,
+                block_number: Some(10),
+                producer_block_hash: current_hash,
+            },
+            0,
+            &mut tx,
+        )
+        .await
+        .expect("metadata query");
+        tx.rollback().await.expect("rollback");
+
+        let resolved = metadata
+            .get(&handle)
+            .expect("branchless ciphertext fallback should resolve");
+        assert!(resolved.producer_block_hash.is_empty());
+        assert_eq!(resolved.block_number, None);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn future_acl_rows_do_not_shadow_visible_legacy_metadata() {
+        let db = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db.db_url())
+            .await
+            .expect("connect db");
+
+        let host_chain_id = 42_i64;
+        let handle = vec![0xA3_u8; 32];
+        let producer_hash = vec![0x50_u8; 32];
+        let current_hash = vec![0x51_u8; 32];
+        let future_hash = vec![0x52_u8; 32];
+
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+                (chain_id, block_hash, parent_hash, block_number, block_status)
+             VALUES
+                ($1, $2::bytea, NULL, 9, 'pending'),
+                ($1, $3::bytea, $2::bytea, 10, 'pending'),
+                ($1, $4::bytea, $3::bytea, 12, 'pending')",
+        )
+        .bind(host_chain_id)
+        .bind(&producer_hash)
+        .bind(&current_hash)
+        .bind(&future_hash)
+        .execute(&pool)
+        .await
+        .expect("insert host chain blocks");
+
+        sqlx::query(
+            "INSERT INTO allowed_handles
+                (handle, account_address, event_type, host_chain_id, block_number)
+             VALUES ($1, '0xAccount', 0, $2, 8)",
+        )
+        .bind(&handle)
+        .bind(host_chain_id)
+        .execute(&pool)
+        .await
+        .expect("insert visible legacy ACL row");
+
+        // Neither branch row is visible at block 10: the first ACL event is
+        // in the future, while the second points to a future producer.
+        sqlx::query(
+            "INSERT INTO allowed_handles_branch
+                (handle, account_address, event_type, host_chain_id, block_number,
+                 producer_block_hash, block_hash)
+             VALUES
+                ($1, '0xAccount', 0, $2, 12, $3, $4),
+                ($1, '0xAccount', 0, $2, 10, $4, $3)",
+        )
+        .bind(&handle)
+        .bind(host_chain_id)
+        .bind(&producer_hash)
+        .bind(&future_hash)
+        .execute(&pool)
+        .await
+        .expect("insert future branch ACL rows");
+
+        let mut tx = pool.begin().await.expect("begin tx");
+        let metadata = query_dependency_metadata(
+            std::slice::from_ref(&handle),
+            &BatchExecutionContext {
+                host_chain_id,
+                block_number: Some(10),
+                producer_block_hash: current_hash,
+            },
+            0,
+            &mut tx,
+        )
+        .await
+        .expect("metadata query");
+        tx.rollback().await.expect("rollback");
+
+        let resolved = metadata
+            .get(&handle)
+            .expect("visible legacy ACL row should remain available");
+        assert!(resolved.producer_block_hash.is_empty());
+        assert_eq!(resolved.block_number, None);
     }
 
     #[tokio::test]

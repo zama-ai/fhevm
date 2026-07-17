@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT output_handle AS \"handle!\", producer_block_hash AS \"producer_block_hash!\", block_number\n        FROM computations_branch\n        WHERE host_chain_id = $2\n        AND output_handle = ANY($1::BYTEA[])\n        ",
+  "query": "\n        SELECT output_handle AS \"handle!\", producer_block_hash AS \"producer_block_hash!\", block_number\n        FROM computations_branch\n        WHERE host_chain_id = $2\n        AND output_handle = ANY($1::BYTEA[])\n        AND (\n            $3::BIGINT IS NULL\n            OR block_number IS NULL\n            OR block_number <= $3\n        )\n        ",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,7 @@
     "parameters": {
       "Left": [
         "ByteaArray",
+        "Int8",
         "Int8"
       ]
     },
@@ -31,5 +32,5 @@
       true
     ]
   },
-  "hash": "9c4a6ea6ae3a7aeb4a1341a15de8e12136b557a6b90fb444c85d42c29d8374ae"
+  "hash": "4368acca0c820974f7402206b8330046718582dbebe522bd203f1cb8189bc810"
 }
