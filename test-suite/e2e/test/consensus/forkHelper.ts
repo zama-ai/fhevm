@@ -99,6 +99,18 @@ export function getForkProvider(config?: ForkConfig): ethers.JsonRpcProvider {
   return new ethers.JsonRpcProvider(c.forkRpcUrl);
 }
 
+/** Enable or pause the fork's one-second interval mining without enabling automine. */
+export async function setForkMining(enabled: boolean, config?: ForkConfig): Promise<void> {
+  const fork = getForkProvider(config);
+  if (!enabled) {
+    await fork.send('evm_setIntervalMining', [0]);
+  }
+  await fork.send('evm_setAutomine', [false]);
+  if (enabled) {
+    await fork.send('evm_setIntervalMining', [1]);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Fork orchestration
 // ---------------------------------------------------------------------------
@@ -248,11 +260,18 @@ export async function syncAnvilState(
   const source = new ethers.JsonRpcProvider(sourceRpcUrl);
   const target = new ethers.JsonRpcProvider(targetRpcUrl);
 
+  // Stop the target while replacing its history. Resume interval mining only
+  // after the new canonical snapshot is fully installed.
+  await target.send('evm_setIntervalMining', [0]);
+  await target.send('evm_setAutomine', [false]);
+
   // Dump state from the source Anvil (returns hex-encoded state blob).
   const stateHex: string = await source.send('anvil_dumpState', []);
 
   // Load state into the target Anvil.
   await target.send('anvil_loadState', [stateHex]);
+  await target.send('evm_setAutomine', [false]);
+  await target.send('evm_setIntervalMining', [1]);
 }
 
 /**

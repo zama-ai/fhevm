@@ -11,7 +11,9 @@
 ## Attach to the fhevm stack's default network so coprocessor containers
 ## can resolve "fork-anvil" by container name.
 ## Managed automatically by fhevm-cli for scenarios that route a coprocessor
-## to the `fork-anvil` hostname.
+## to the `fork-anvil` hostname. It starts paused; fhevm-cli initializes it
+## from the canonical tip before starting the coprocessors, and the fork tests
+## resume mining only while exercising a divergent branch.
 networks:
   default:
     name: fhevm_default
@@ -28,7 +30,7 @@ services:
       - -ec
       - |
         exec anvil \
-          --block-time 1 \
+          --no-mining \
           --host 0.0.0.0 \
           --port 8546 \
           --chain-id "$${HOST_NODE_CHAIN_ID:-12345}" \

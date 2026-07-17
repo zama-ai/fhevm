@@ -226,6 +226,37 @@ export const scenarioUsesForkAnvil = (scenario: State["scenario"]) =>
     }),
   );
 
+/** Starts the managed fork from the canonical tip, paused until the fork test creates divergence. */
+const initializeManagedForkAnvil = async (state: State, canonicalRpcUrl: string) => {
+  await stepComposeUp("fork-anvil", state);
+  const forkRpcUrl = `http://localhost:${DEFAULT_EXTRA_HOST_RPC_PORT}`;
+  await waitForRpc(forkRpcUrl);
+
+  const anvilRpc = async <T>(url: string, method: string, params: unknown[] = []): Promise<T> => {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    });
+    if (!response.ok) {
+      throw new PreflightError(`${method} failed: ${response.status} ${response.statusText}`);
+    }
+    const payload = (await response.json()) as { result?: T; error?: { message?: string } };
+    if (payload.error || payload.result === undefined) {
+      throw new PreflightError(`${method} failed: ${payload.error?.message ?? "missing result"}`);
+    }
+    return payload.result;
+  };
+
+  const stateDump = await anvilRpc<string>(canonicalRpcUrl, "anvil_dumpState");
+  if (!stateDump) {
+    throw new PreflightError("Canonical Anvil returned an empty state dump while initializing fork-anvil");
+  }
+  if (!(await anvilRpc<boolean>(forkRpcUrl, "anvil_loadState", [stateDump]))) {
+    throw new PreflightError("fork-anvil rejected the canonical state dump");
+  }
+};
+
 const postgresExecOptions = () => ({
   user: process.env.POSTGRES_USER ?? DEFAULT_POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD ?? DEFAULT_POSTGRES_PASSWORD,
@@ -609,10 +640,6 @@ export const runStep = async (state: State, step: StepName) => {
         throw new PreflightError("Missing default host chain");
       }
       await waitForRpc(`http://localhost:${defaultChain.rpcPort}`);
-      if (scenarioUsesForkAnvil(state.scenario)) {
-        await stepComposeUp("fork-anvil", state);
-        await waitForRpc(`http://localhost:${DEFAULT_EXTRA_HOST_RPC_PORT}`);
-      }
       // Fund each KMS party's connector tx-sender on the host chain. The wallets are
       // derived from the gateway mnemonic so anvil pre-funds them there, but not on the
       // host chain (different mnemonic). A threshold-mode KMS runs one connector (and tx-sender)
@@ -847,6 +874,13 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForContainer("listener-publisher-for-anvil", "running");
       break;
     case "coprocessor": {
+      if (scenarioUsesForkAnvil(state.scenario)) {
+        const defaultChain = defaultHostChain(state);
+        if (!defaultChain) {
+          throw new PreflightError("Missing default host chain");
+        }
+        await initializeManagedForkAnvil(state, `http://localhost:${defaultChain.rpcPort}`);
+      }
       const skipMigration = await coprocessorDbsSeeded(state);
       if (skipMigration) {
         await stepComposeUp("coprocessor", state, coprocessorHealthContainers(state), { noDeps: true });

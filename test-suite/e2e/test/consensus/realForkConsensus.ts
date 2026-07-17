@@ -27,6 +27,7 @@ import {
   getCanonicalProvider,
   getForkProvider,
   getSignerForProvider,
+  setForkMining,
   syncAnvilState,
   verifyForkDivergence,
 } from './forkHelper';
@@ -194,13 +195,25 @@ async function waitForSubmissionCount(
 }
 
 async function waitForForkBranchSubmissions(label: string, forkWork: DivergentForkWork): Promise<void> {
-  if (forkWork.balanceHandle === forkWork.forkBalanceHandle) {
-    await waitForDivergentSubmissions(label, forkWork.balanceHandle);
-    return;
-  }
+  try {
+    if (forkWork.balanceHandle === forkWork.forkBalanceHandle) {
+      await waitForDivergentSubmissions(label, forkWork.balanceHandle);
+      return;
+    }
 
-  await waitForSubmissionCount(`${label} canonical branch`, forkWork.balanceHandle, 2);
-  await waitForSubmissionCount(`${label} fork branch`, forkWork.forkBalanceHandle, 1);
+    const canonicalSubmissions = waitForSubmissionCount(`${label} canonical branch`, forkWork.balanceHandle, 2);
+    const forkSubmissions = waitForSubmissionCount(`${label} fork branch`, forkWork.forkBalanceHandle, 1).then(
+      async (submissions) => {
+        // Submission proves the fork block is finalized. Freeze it immediately
+        // so it cannot become settled before the recovery phase replaces it.
+        await setForkMining(false);
+        return submissions;
+      },
+    );
+    await Promise.all([canonicalSubmissions, forkSubmissions]);
+  } finally {
+    await setForkMining(false);
+  }
 }
 
 async function expectNoConsensusForForkWork(label: string, forkWork: DivergentForkWork): Promise<void> {
