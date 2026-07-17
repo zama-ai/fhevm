@@ -87,6 +87,8 @@ pub struct KeySet {
     pub server_key: ServerKey,
 }
 
+pub(crate) type KeySetCache = Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>;
+
 #[derive(Clone)]
 pub struct DBConfig {
     pub url: DatabaseURL,
@@ -836,6 +838,7 @@ pub async fn run_uploader_loop(
     mode: Arc<StackMode>,
     token: CancellationToken,
     signer: CoproSigner,
+    keys_cache: KeySetCache,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Park until uploads are enabled. A blue (live) worker has `gcs_mode == false`
     // and proceeds immediately; a green worker parks for the whole dry-run
@@ -861,6 +864,7 @@ pub async fn run_uploader_loop(
         client.clone(),
         is_ready.clone(),
         signer.clone(),
+        keys_cache,
     )
     .await?;
 
@@ -1067,6 +1071,7 @@ pub async fn run_all(
         )
         .await?,
     );
+    let keys_cache = service.keys_cache();
 
     // Start health check BEFORE drift_revert::init so the orchestrator sees us as alive.
     let healthz = healthz_server::HttpServer::new(
@@ -1171,6 +1176,7 @@ pub async fn run_all(
             uploader_mode,
             uploader_token,
             signer,
+            keys_cache,
         )
         .await
     });
