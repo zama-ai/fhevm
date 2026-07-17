@@ -19,8 +19,6 @@ library ZamaConfig {
             config = _getEthereumConfig();
         } else if (block.chainid == 11155111) {
             config = _getSepoliaConfig();
-        } else if (block.chainid == 80002) {
-            config = _getPolygonAmoyConfig();
         } else if (block.chainid == 31337) {
             config = _getLocalConfig();
         } else {
@@ -33,8 +31,6 @@ library ZamaConfig {
             return _getEthereumProtocolId();
         } else if (block.chainid == 11155111) {
             return _getSepoliaProtocolId();
-        } else if (block.chainid == 80002) {
-            return _getPolygonAmoyProtocolId();
         } else if (block.chainid == 31337) {
             return _getLocalProtocolId();
         }
@@ -75,21 +71,6 @@ library ZamaConfig {
             });
     }
 
-    /// @dev chainid == 80002
-    function _getPolygonAmoyProtocolId() private pure returns (uint256) {
-        return 80002;
-    }
-
-    /// @dev chainid == 80002
-    function _getPolygonAmoyConfig() private pure returns (CoprocessorConfig memory) {
-        return
-            CoprocessorConfig({
-                ACLAddress: 0xD99Cb9Fc3c42c87f2A4A12e8Fd60318d6bDdf985,
-                CoprocessorAddress: 0x89420269f61e4db00545cd99da0aEcA7fF0912f9,
-                KMSVerifierAddress: 0xCD1D89E311bce4C8DEa9a0857a0c9A4E153D4041
-            });
-    }
-
     /// @dev chainid == 31337
     function _getLocalProtocolId() private pure returns (uint256) {
         return type(uint256).max;
@@ -108,8 +89,7 @@ library ZamaConfig {
 /**
  * @title   ZamaEthereumConfig.
  * @dev     This contract can be inherited by a contract wishing to use the FHEVM contracts provided by Zama
- *          on the Ethereum (mainnet) network (chainId = 1), the Sepolia (testnet) network (chainId = 11155111),
- *          or the Polygon Amoy (testnet) network (chainId = 80002).
+ *          on the Ethereum (mainnet) network (chainId = 1) or Sepolia (testnet) network (chainId = 11155111).
  *          Other providers may offer similar contracts deployed at different addresses.
  *          If you wish to use them, you should rely on the instructions from these providers.
  */
