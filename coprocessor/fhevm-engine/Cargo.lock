@@ -2651,6 +2651,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "consensus-detector"
+version = "0.7.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "aws-config",
+ "aws-sdk-s3",
+ "clap",
+ "dashmap",
+ "fhevm-engine-common",
+ "fhevm_gateway_bindings",
+ "futures",
+ "hex",
+ "humantime",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.16",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "const-hex"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2868,9 +2895,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-epoch"
-version = "0.9.18"
+version = "0.9.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e"
+checksum = "2d6914041f254d6e9176c01941b21115dcfb7089e55135a35411081bd106ef3f"
 dependencies = [
  "crossbeam-utils",
 ]
@@ -3547,7 +3574,7 @@ dependencies = [
 
 [[package]]
 name = "fhevm_gateway_bindings"
-version = "0.1.0-rc14"
+version = "0.15.0"
 dependencies = [
  "alloy",
  "serde",
@@ -7382,7 +7409,7 @@ dependencies = [
  "solar-config",
  "solar-data-structures",
  "solar-macros",
- "thiserror 1.0.69",
+ "thiserror 2.0.16",
  "tracing",
  "unicode-width",
 ]
@@ -7851,7 +7878,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.16",
  "url",
  "zip",
 ]
@@ -8037,9 +8064,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.6.2"
+version = "1.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12600f0ef012f68dffa8adf9a254407366a8bffcbdcc277e5edbaec49192e8cc"
+checksum = "65191ecd03bb34ac41df98958a8445d5e062de19843cde95ccad8deff2e22194"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -8853,6 +8880,24 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
+
+[[package]]
+name = "upgrade-controller"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fhevm-engine-common",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "test-harness",
+ "thiserror 2.0.16",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "url"

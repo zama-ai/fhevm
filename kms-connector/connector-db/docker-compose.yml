@@ -1,8 +1,29 @@
+# TESTING ONLY — this compose file runs the shared Postgres server used by the
+# kms-connector test suite (see the Makefile). It must never back a real
+# deployment: crash-safety is deliberately traded for speed, so any crash or
+# restart loses all data.
 services:
   kms-connector-db:
     container_name: kms-connector-db
     image: postgres:17.5
     restart: always
+    # Postgres's durability guarantees only add disk I/O to every tests, so
+    # we disable them:
+    #   - fsync=off: don't force WAL/data writes to physical storage
+    #   - synchronous_commit=off: don't make commits wait for a WAL flush
+    #   - full_page_writes=off: skip page images only needed for crash recovery
+    command:
+      [
+        "postgres",
+        "-c",
+        "max_connections=500",
+        "-c",
+        "fsync=off",
+        "-c",
+        "synchronous_commit=off",
+        "-c",
+        "full_page_writes=off",
+      ]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -13,8 +34,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-    volumes:
-      - db:/var/lib/postgresql/data
+    # Keep the data directory in RAM: the remaining writes (checkpoints, WAL,
+    # data files) never touch disk, and test databases vanish with the
+    # container instead of accumulating in a volume.
+    tmpfs:
+      - /var/lib/postgresql/data
 
   kms-connector-db-migration:
     container_name: kms-connector-db-migration
@@ -28,6 +52,3 @@ services:
     depends_on:
       kms-connector-db:
         condition: service_healthy
-
-volumes:
-  db:

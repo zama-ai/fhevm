@@ -1,4 +1,10 @@
-import { bootstrapUsesHostKmsGeneration, kmsConnectorUsesHostKmsGeneration, supportsHostListenerConsumer } from "../compat/compat";
+import {
+  bootstrapUsesHostKmsGeneration,
+  kmsConnectorUsesHostKmsGeneration,
+  supportsConsensusDetector,
+  supportsHostListenerConsumer,
+  supportsUpgradeController,
+} from "../compat/compat";
 import { BootstrapTimeout, ContainerCrashed, MinioError, PreflightError, ProbeTimeout, RpcError } from "../errors";
 import {
   COPROCESSOR_DB_CONTAINER,
@@ -12,6 +18,7 @@ import {
   defaultHostChainKey,
   hostChainSuffix,
 } from "../layout";
+import { blueGreenServiceNames } from "../generate/compose";
 import { kmsConnectorPrefix, kmsPublicPrefix } from "../kms-party";
 import { topologyForState } from "../stack-spec/stack-spec";
 import type { State } from "../types";
@@ -173,12 +180,17 @@ export const postBootHealthGate = async (containers: string[], delayMs = POST_BO
 
 /** Lists the coprocessor containers whose health determines coprocessor readiness. */
 export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "versions">) => {
-  const topology = topologyForState(state);
+  if (state.scenario.kind === "blue-green") {
+    return blueGreenServiceNames(state, { includeMigration: false });
+  }
   const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (suffix) =>
       !suffix.includes("migration") &&
-      (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)),
+      (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
+      (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
+      (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
   );
+  const topology = topologyForState(state);
   const names: string[] = [];
   for (let index = 0; index < topology.count; index += 1) {
     for (const suffix of suffixes) {
@@ -190,26 +202,43 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
 
 /** Waits for all coprocessor runtime services to reach their expected states. */
 export const waitForCoprocessorServices = async (state: State, skipMigration: boolean) => {
-  const topology = topologyForState(state);
-  for (let index = 0; index < topology.count; index += 1) {
-    if (!skipMigration) {
-      await waitForContainer(toServiceName("db-migration", index), "complete");
+  const waitCoreFleet = async (prefix: string, withMigration: boolean) => {
+    if (withMigration && !skipMigration) {
+      await waitForContainer(`${prefix}db-migration`, "complete");
     }
-    await waitForContainer(toServiceName("host-listener", index), "running");
-    await waitForContainer(toServiceName("host-listener-poller", index), "running");
+    await waitForContainer(`${prefix}host-listener`, "running");
+    await waitForContainer(`${prefix}host-listener-poller`, "running");
     if (supportsHostListenerConsumer(state)) {
-      await waitForContainer(toServiceName("host-listener-consumer", index), "running");
+      await waitForContainer(`${prefix}host-listener-consumer`, "running");
     }
-    await waitForContainer(toServiceName("gw-listener", index), "running");
-    await waitForContainer(toServiceName("tfhe-worker", index), "running");
-    await waitForContainer(toServiceName("zkproof-worker", index), "running");
-    await waitForContainer(toServiceName("sns-worker", index), "running");
-    await waitForContainer(toServiceName("transaction-sender", index), "running");
+    await waitForContainer(`${prefix}gw-listener`, "running");
+    await waitForContainer(`${prefix}tfhe-worker`, "running");
+    await waitForContainer(`${prefix}zkproof-worker`, "running");
+    await waitForContainer(`${prefix}sns-worker`, "running");
+    await waitForContainer(`${prefix}transaction-sender`, "running");
+  };
+  const count = topologyForState(state).count;
+  for (let index = 0; index < count; index += 1) {
+    const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
+    await waitCoreFleet(prefix, true);
+    if (state.scenario.kind === "blue-green") {
+      await waitCoreFleet(`${prefix}gcs-`, false);
+      await waitForContainer(`${prefix}gcs-upgrade-controller`, "running");
+      await waitForContainer(`${prefix}gcs-consensus-detector`, "running");
+    }
   }
 };
 
 /** Waits for the full coprocessor stack, including migrations, to become ready. */
 export const waitForCoprocessor = async (state: State) => waitForCoprocessorServices(state, false);
+
+/** Waits for db-migration containers (one per operator) to exit successfully. */
+export const waitForCoprocessorDbMigrations = async (state: Pick<State, "scenario" | "versions">) => {
+  const count = topologyForState(state).count;
+  for (let index = 0; index < count; index += 1) {
+    await waitForContainer(toServiceName("db-migration", index), "complete");
+  }
+};
 
 /** Waits for extra-chain host listeners to reach running state. */
 const waitForExtraChainCoprocessorListeners = async (state: Pick<State, "scenario">, chainKey: string) => {

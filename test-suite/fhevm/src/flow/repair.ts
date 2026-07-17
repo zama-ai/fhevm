@@ -1,5 +1,5 @@
-import { supportsHostListenerConsumer } from "../compat/compat";
-import { hasLocalCoprocessorInstance } from "../scenario/resolve";
+import { supportsConsensusDetector, supportsHostListenerConsumer, supportsUpgradeController } from "../compat/compat";
+import { assertCoprocessorConsensus, hasLocalCoprocessorInstance } from "../scenario/resolve";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   GROUP_BUILD_COMPONENTS,
@@ -53,17 +53,26 @@ type UpgradeComponentPlan = {
 };
 const supportsConsumerForState = (state: { versions?: State["versions"] }) =>
   !state.versions || supportsHostListenerConsumer({ versions: state.versions });
+const supportsConsensusDetectorForState = (state: { versions?: State["versions"] }) =>
+  !state.versions || supportsConsensusDetector({ versions: state.versions });
+const supportsUpgradeControllerForState = (state: { versions?: State["versions"] }) =>
+  !state.versions || supportsUpgradeController({ versions: state.versions });
 const coprocessorRuntimeSuffixes = (state: { versions?: State["versions"] }) =>
   GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (service) =>
       service !== "db-migration" &&
-      (service !== "host-listener-consumer" || supportsConsumerForState(state)),
+      (service !== "host-listener-consumer" || supportsConsumerForState(state)) &&
+      (service !== "consensus-detector" || supportsConsensusDetectorForState(state)) &&
+      (service !== "upgrade-controller" || supportsUpgradeControllerForState(state)),
   );
 const coprocessorListenerSuffixes = (state: { versions?: State["versions"] }) =>
   coprocessorRuntimeSuffixes(state).filter((service) => /^host-listener(?:-poller)?$/.test(service));
 const coprocessorServices = (state: { versions?: State["versions"] }) =>
   GROUP_BUILD_SERVICES.coprocessor.filter(
-    (service) => service !== "coprocessor-host-listener-consumer" || supportsConsumerForState(state),
+    (service) =>
+      (service !== "coprocessor-host-listener-consumer" || supportsConsumerForState(state)) &&
+      (service !== "coprocessor-consensus-detector" || supportsConsensusDetectorForState(state)) &&
+      (service !== "coprocessor-upgrade-controller" || supportsUpgradeControllerForState(state)),
   );
 
 /** Lists steady-state services expected for each resumable lifecycle step. */
@@ -202,7 +211,7 @@ export const resolveUpgradePlan = (
     : [];
   const overrideServices = selectedServices.length ? [...new Set(selectedServices)] : fullGroupServices;
   const releaseServices = lockFileMode ? GROUP_BUILD_SERVICES[group] : overrideServices;
-  const scenario = state.scenario;
+  const scenario = assertCoprocessorConsensus(state.scenario, "repair.upgradePlan");
   const instances: ResolvedCoprocessorScenarioInstance[] = scenario.instances.length
     ? scenario.instances
     : Array.from({ length: topologyForState(state).count }, (_, index) => ({

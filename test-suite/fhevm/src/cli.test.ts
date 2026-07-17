@@ -18,12 +18,15 @@ import {
   DEFAULT_HOST_RPC_PORT,
   MINIO_PORT,
   ROLLOUT_STANDARD_TEST_PROFILES,
+  STANDARD_SHARD_COMPUTE_TEST_PROFILES,
+  STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
+  STANDARD_SHARD_STATEFUL_TEST_PROFILES,
   STANDARD_TEST_PROFILES,
   TEST_SUITE_CONTAINER,
 } from "./layout";
 import { testDefaultScenario } from "./test-fixtures";
 import { withTempStateDir } from "./test-state";
-import { OVERRIDE_GROUPS, type State } from "./types";
+import { OVERRIDE_GROUPS, type ResolvedCoprocessorScenario, type State } from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
 
@@ -56,7 +59,9 @@ const withState = (state: State, run: (env: Record<string, string>) => Promise<v
     await run({ FHEVM_STATE_DIR: stateDir });
   });
 
-const persistedState = (target: State["target"] = "latest-main"): State => ({
+const persistedState = (
+  target: State["target"] = "latest-main",
+): State & { scenario: ResolvedCoprocessorScenario } => ({
   target,
   lockPath: "/tmp/latest-main.json",
   requiresGitHub: true,
@@ -72,7 +77,9 @@ const persistedState = (target: State["target"] = "latest-main"): State => ({
   updatedAt: "2026-03-19T00:00:00.000Z",
 });
 
-const bootstrappedState = (target: State["target"] = "latest-main"): State => ({
+const bootstrappedState = (
+  target: State["target"] = "latest-main",
+): State & { scenario: ResolvedCoprocessorScenario } => ({
   ...persistedState(target),
   discovery: {
     gateway: {} as NonNullable<State["discovery"]>["gateway"],
@@ -154,6 +161,16 @@ describe("cli", () => {
 
   test("standard suite includes multi-chain isolation coverage", () => {
     expect(STANDARD_TEST_PROFILES).toContain("multi-chain-isolation");
+  });
+
+  test("CI shards partition the standard suite exactly", () => {
+    const sharded = [
+      ...STANDARD_SHARD_STATEFUL_TEST_PROFILES,
+      ...STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
+      ...STANDARD_SHARD_COMPUTE_TEST_PROFILES,
+    ];
+    expect(new Set(sharded).size).toBe(sharded.length);
+    expect([...sharded].sort()).toEqual([...STANDARD_TEST_PROFILES].sort());
   });
 
   test("rollout-standard keeps write coverage but excludes disruptive profiles", () => {

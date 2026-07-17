@@ -175,7 +175,7 @@ async fn main() -> anyhow::Result<()> {
 
     if matches!(args.protocol_config.chain_id, Some(0)) {
         return Err(anyhow::anyhow!(
-            "--ethereum-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
+            "--canonical-protocol-config-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
         ));
     }
     let protocol_config_address = args.protocol_config.parsed_address()?;
@@ -225,7 +225,7 @@ async fn main() -> anyhow::Result<()> {
         dependence_cross_block: args.dependence_cross_block,
         dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         gcs_mode,
-        ethereum_chain_id: args.protocol_config.chain_id,
+        canonical_protocol_config_chain_id: args.protocol_config.chain_id,
     };
 
     run_poller(config).await

@@ -24,7 +24,7 @@ queue_rules:
     queue_conditions:
       - base = main
       - label!=do-not-merge
-      - -files~=^(?!\.mergify\.yml$|\.github/)
+      - -files~=^(?!\.mergify\.yml$)
 
   - name: charts-only
     batch_size: 1
@@ -39,9 +39,9 @@ queue_rules:
       - -files~=^(?!charts/)
 
   - name: main
-    batch_size: 1
-    batch_max_wait_time: 1m
-    checks_timeout: 12h
+    batch_size: 3
+    batch_max_wait_time: 1h
+    checks_timeout: 5h
     merge_method: squash
     update_method: rebase
     merge_conditions:
@@ -51,7 +51,13 @@ queue_rules:
       - or:
         - check-success = create-e2e-tests-input
         - check-skipped = create-e2e-tests-input
+      # The standard e2e suite runs as three parallel shards that together cover
+      # exactly the former single-leg suite (the partition is enforced by a
+      # fhevm-cli unit test), so all three must pass. `run-e2e-tests` is the
+      # compute shard, keeping the historical check name.
       - check-success = run-e2e-tests / fhevm-e2e-test
+      - check-success = run-e2e-tests-shard-decryption / fhevm-e2e-test
+      - check-success = run-e2e-tests-shard-stateful / fhevm-e2e-test
     queue_conditions:
       - base = main
       - label!=do-not-merge

@@ -180,8 +180,8 @@ export async function buildControllableKmsCommittee(): Promise<ControllableKmsCo
   });
   return {
     nodes: [node(txSender0, signer0, 0), node(txSender1, signer1, 1)],
-    // mpc threshold 1 keeps the previous-signer creation quorum at the full set, satisfied by reusing
-    // the same committee for the rotated context.
+    // Reusing the same committee for the rotated context satisfies both creation-quorum sides
+    // (all new tx-senders + n - t previous) with the same two confirmations.
     thresholds: { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 },
     signerSigners: [signer0, signer1],
     txSenderSigners: [txSender0, txSender1],

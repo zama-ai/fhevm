@@ -10,6 +10,8 @@ members = [
     "zkproof-worker",
     "test-harness",
     "stress-test-generator",
+    "upgrade-controller",
+    "consensus-detector",
 ]
 
 [workspace.package]
@@ -80,7 +82,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 ] }
 testcontainers = "0.24.0"
 thiserror = "2.0.12"
-tfhe = { version = "=1.6.2", features = [
+tfhe = { version = "=1.6.3", features = [
     "boolean",
     "shortint",
     "integer",

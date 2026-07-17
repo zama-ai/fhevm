@@ -4,15 +4,13 @@ use crate::{
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
 };
 use alloy::{
+    node_bindings::{Anvil, AnvilInstance},
     primitives::{Address, ChainId},
     providers::ProviderBuilder,
     transports::http::reqwest::Url,
 };
 use anyhow::anyhow;
-use fhevm_gateway_bindings::{
-    decryption::Decryption::{self, DecryptionInstance},
-    gateway_config::GatewayConfig::{self, GatewayConfigInstance},
-};
+use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{self, KMSGenerationInstance},
     protocol_config::ProtocolConfig::ProtocolConfigInstance,
@@ -24,11 +22,6 @@ use std::{
     sync::LazyLock,
     time::Duration,
 };
-use testcontainers::{
-    ContainerAsync, GenericImage, ImageExt,
-    core::{ContainerPort, WaitFor},
-    runners::AsyncRunner,
-};
 use tracing::info;
 
 pub const TEST_MNEMONIC: &str =
@@ -39,33 +32,25 @@ pub static CHAIN_ID: LazyLock<u32> = LazyLock::new(rand::random::<u32>);
 pub const DEPLOYER_PRIVATE_KEY: &str =
     "0xe746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c";
 
-const ANVIL_PORT: u16 = 8545;
-
 pub struct BlockchainInstance {
     pub provider: WalletProvider,
     pub decryption_contract: DecryptionInstance<WalletProvider>,
-    pub gateway_config_contract: GatewayConfigInstance<WalletProvider>,
     pub kms_generation_contract: KMSGenerationInstance<WalletProvider>,
     pub protocol_config_contract: ProtocolConfigInstance<WalletProvider>,
-    pub anvil: ContainerAsync<GenericImage>,
-    pub anvil_host_port: u16,
+    pub anvil: AnvilInstance,
     pub block_time: u64,
 }
 
 impl BlockchainInstance {
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
-        anvil: ContainerAsync<GenericImage>,
-        anvil_host_port: u16,
+        anvil: AnvilInstance,
         provider: WalletProvider,
         decryption_address: Address,
-        gateway_config_address: Address,
         kms_generation_address: Address,
         protocol_config_address: Address,
         block_time: u64,
     ) -> Self {
         let decryption_contract = Decryption::new(decryption_address, provider.clone());
-        let gateway_config_contract = GatewayConfig::new(gateway_config_address, provider.clone());
         let kms_generation_contract = KMSGeneration::new(kms_generation_address, provider.clone());
         let protocol_config_contract =
             ProtocolConfigInstance::new(protocol_config_address, provider.clone());
@@ -73,11 +58,9 @@ impl BlockchainInstance {
         BlockchainInstance {
             provider,
             decryption_contract,
-            gateway_config_contract,
             kms_generation_contract,
             protocol_config_contract,
             anvil,
-            anvil_host_port,
             block_time,
         }
     }
@@ -85,8 +68,8 @@ impl BlockchainInstance {
     pub async fn setup() -> anyhow::Result<Self> {
         let block_time = 1;
 
-        let anvil = setup_anvil(block_time).await?;
-        let anvil_host_port = anvil.get_host_port_ipv4(ANVIL_PORT).await?;
+        let anvil = setup_anvil(block_time)?;
+        let anvil_endpoint = anvil.endpoint_url();
 
         let wallet = KmsWallet::from_private_key_str(
             DEPLOYER_PRIVATE_KEY,
@@ -99,26 +82,21 @@ impl BlockchainInstance {
             .with_chain_id(*CHAIN_ID as u64)
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet)
-            .connect_http(Self::anvil_http_endpoint_impl(anvil_host_port));
+            .connect_http(anvil_endpoint.clone());
         let provider = NonceManagedProvider::new(inner_provider, wallet_addr);
 
         // Deploy mock contracts via forge create
         info!("Deploying Gateway mock contracts via forge...");
-
-        let gateway_contracts_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../gateway-contracts")
-            .canonicalize()
-            .map_err(|e| anyhow::anyhow!("Could not find gateway-contracts directory: {e}"))?;
 
         let kms_connector_tests_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests")
             .canonicalize()
             .map_err(|e| anyhow::anyhow!("Could not find kms-connector tests: {e}"))?;
 
-        let rpc_url = Self::anvil_http_endpoint_impl(anvil_host_port).to_string();
+        let rpc_url = anvil_endpoint.to_string();
         let private_key = DEPLOYER_PRIVATE_KEY.to_string();
 
-        let (decryption_addr, gateway_config_addr, kms_generation_addr, protocol_config_addr) =
+        let (decryption_addr, kms_generation_addr, protocol_config_addr) =
             tokio::task::spawn_blocking(move || {
                 let decryption = deploy_contract(
                     "contracts/DecryptionMock.sol",
@@ -126,14 +104,6 @@ impl BlockchainInstance {
                     &rpc_url,
                     &private_key,
                     &kms_connector_tests_path,
-                )?;
-
-                let gateway_config = deploy_contract(
-                    "contracts/mocks/GatewayConfigMock.sol",
-                    "GatewayConfigMock",
-                    &rpc_url,
-                    &private_key,
-                    &gateway_contracts_path,
                 )?;
 
                 let kms_generation = deploy_contract(
@@ -152,26 +122,18 @@ impl BlockchainInstance {
                     &kms_connector_tests_path,
                 )?;
 
-                Ok::<_, anyhow::Error>((
-                    decryption,
-                    gateway_config,
-                    kms_generation,
-                    protocol_config,
-                ))
+                Ok::<_, anyhow::Error>((decryption, kms_generation, protocol_config))
             })
             .await??;
 
         info!("DecryptionMock deployed at: {}", decryption_addr);
-        info!("GatewayConfigMock deployed at: {}", gateway_config_addr);
         info!("KMSGenerationMock deployed at: {}", kms_generation_addr);
         info!("ProtocolConfigMock deployed at: {}", protocol_config_addr);
 
         Ok(BlockchainInstance::new(
             anvil,
-            anvil_host_port,
             provider,
             decryption_addr,
-            gateway_config_addr,
             kms_generation_addr,
             protocol_config_addr,
             block_time,
@@ -182,41 +144,49 @@ impl BlockchainInstance {
         Duration::from_secs(self.block_time)
     }
 
-    fn anvil_http_endpoint_impl(anvil_host_port: u16) -> Url {
-        format!("http://localhost:{anvil_host_port}")
-            .parse()
-            .unwrap()
+    pub fn anvil_http_endpoint(&self) -> Url {
+        self.anvil.endpoint_url()
     }
 
-    pub fn anvil_http_endpoint(&self) -> Url {
-        Self::anvil_http_endpoint_impl(self.anvil_host_port)
+    /// Freezes the Anvil process via `SIGSTOP`.
+    pub fn pause_anvil(&self) -> anyhow::Result<()> {
+        signal_anvil(&self.anvil, "-STOP")
+    }
+
+    /// Resumes a previously paused Anvil process via `SIGCONT`.
+    pub fn unpause_anvil(&self) -> anyhow::Result<()> {
+        signal_anvil(&self.anvil, "-CONT")
     }
 }
 
-async fn setup_anvil(block_time: u64) -> anyhow::Result<ContainerAsync<GenericImage>> {
+fn setup_anvil(block_time: u64) -> anyhow::Result<AnvilInstance> {
     info!("Starting Anvil...");
-    let anvil = GenericImage::new("ghcr.io/foundry-rs/foundry", "v1.3.5")
-        .with_exposed_port(ContainerPort::Tcp(ANVIL_PORT))
-        .with_wait_for(WaitFor::message_on_stdout("Listening"))
-        .with_entrypoint("anvil")
-        .with_cmd([
-            "--host",
-            "0.0.0.0",
-            "--chain-id",
-            CHAIN_ID.to_string().as_str(),
-            "--mnemonic",
-            TEST_MNEMONIC,
-            "--block-time",
-            &format!("{block_time}"),
-            // Reduce number of slots in an epoch to consider transaction as finalized ASAP.
-            // A tx is generally considered finalized after two epochs.
-            "--slots-in-an-epoch",
-            "1",
-        ])
-        .start()
-        .await?;
+    // The port is left unset so Anvil binds a random free port, avoiding collisions between
+    // concurrently running tests.
+    let anvil = Anvil::new()
+        .chain_id(*CHAIN_ID as u64)
+        .mnemonic(TEST_MNEMONIC)
+        .block_time(block_time)
+        // Reduce number of slots in an epoch to consider transaction as finalized ASAP.
+        // A tx is generally considered finalized after two epochs.
+        .args(["--slots-in-an-epoch", "1"])
+        .try_spawn()?;
 
     Ok(anvil)
+}
+
+fn signal_anvil(anvil: &AnvilInstance, signal_flag: &str) -> anyhow::Result<()> {
+    let pid = anvil.child().id();
+    let kill_status = Command::new("kill")
+        .args([signal_flag, &pid.to_string()])
+        .status()
+        .map_err(|e| anyhow!("Failed to run `kill {signal_flag}` on Anvil (pid {pid}): {e}"))?;
+    if !kill_status.success() {
+        return Err(anyhow!(
+            "`kill {signal_flag}` on Anvil (pid {pid}) failed with status: {kill_status}"
+        ));
+    }
+    Ok(())
 }
 
 fn deploy_contract(

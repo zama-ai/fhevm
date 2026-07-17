@@ -14,12 +14,14 @@ use connector_utils::{
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-use serde::{Deserialize, Deserializer, Serialize};
+#[cfg(test)]
+use serde::Serialize;
+use serde::{Deserialize, Deserializer};
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
+#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
     pub database_url: String,
@@ -104,7 +106,7 @@ pub struct Config {
 
 /// Configuration of the off-chain ciphertext-attestation verifier.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
+#[cfg_attr(test, derive(Serialize))]
 #[serde(default)]
 pub struct CtAttestationConfig {
     /// Whether the verifier runs at all. Defaults to `true`.
@@ -138,7 +140,7 @@ impl Default for CtAttestationConfig {
 
 /// Configuration of a single Host Chain.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
+#[cfg_attr(test, derive(Serialize))]
 pub struct HostChainConfig {
     /// The Host Chain RPC endpoint.
     pub url: Url,

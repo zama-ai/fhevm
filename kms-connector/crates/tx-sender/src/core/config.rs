@@ -1,25 +1,29 @@
 use alloy::transports::http::reqwest::Url;
+#[cfg(test)]
+use connector_utils::config::serialize_pg_interval;
 use connector_utils::{
     config::{
-        AwsKmsConfig, ContractConfig, DeserializeConfig, Error, KmsWallet,
+        AwsKmsConfig, ContractConfig, DeserializeConfig, Error, KmsWallet, TestingPrivateKey,
         contract::{
             default_decryption_contract_config, default_kms_generation_contract_config,
             default_protocol_config_contract_config, deserialize_decryption_contract_config,
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size, deserialize_pg_interval, serialize_pg_interval,
+        default_database_pool_size, deserialize_pg_interval,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-use serde::{Deserialize, Deserializer, Serialize};
+#[cfg(test)]
+use serde::Serialize;
+use serde::{Deserialize, Deserializer};
 use sqlx::postgres::types::PgInterval;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 /// Configuration of the `TransactionSender`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
+#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
     pub database_url: String,
@@ -59,7 +63,10 @@ pub struct Config {
     pub protocol_config_contract: ContractConfig,
 
     /// The private key of the `TransactionSender`'s wallet.
-    pub private_key: Option<String>,
+    ///
+    /// Intended for **testing purposes only** — production deployments should configure
+    /// `aws_kms_config` instead.
+    pub private_key: Option<TestingPrivateKey>,
     /// The AWS KMS configuration of the `TransactionSender`'s wallet.
     pub aws_kms_config: Option<AwsKmsConfig>,
 
@@ -143,7 +150,7 @@ impl Config {
     pub async fn build_wallet(&self, chain_id: u64) -> Result<KmsWallet, Error> {
         let chain_id = Some(chain_id);
         if let Some(private_key) = &self.private_key {
-            KmsWallet::from_private_key_str(private_key, chain_id)
+            KmsWallet::from_private_key_str(private_key.as_str(), chain_id)
         } else if let Some(aws_kms_config) = self.aws_kms_config.clone() {
             KmsWallet::from_aws_kms(aws_kms_config, chain_id).await
         } else {
@@ -231,7 +238,7 @@ impl Default for Config {
             protocol_config_contract: default_protocol_config_contract_config(),
             service_name: default_service_name(),
             private_key: Some(
-                "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774".to_string(),
+                "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774".into(),
             ),
             aws_kms_config: None,
             tx_retries: default_tx_retries(),

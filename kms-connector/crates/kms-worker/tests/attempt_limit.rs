@@ -43,12 +43,14 @@ use tracing::{info, warn};
 #[case::new_kms_epoch_processing_not_removed_on_error(TestEventType::NewKmsEpoch)]
 #[case::abort_keygen_processing_not_removed_on_error(TestEventType::AbortKeygen)]
 #[case::abort_crsgen_processing_not_removed_on_error(TestEventType::AbortCrsgen)]
+#[case::kms_context_destroyed_processing_not_removed_on_error(TestEventType::KmsContextDestroyed)]
+#[case::kms_epoch_destroyed_processing_not_removed_on_error(TestEventType::KmsEpochDestroyed)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::Result<()> {
     // Setup real DB and S3 instance
     let test_instance = TestInstanceBuilder::default()
-        .with_db(DbInstance::setup().await?)
+        .with_db(DbInstance::setup_external().await?)
         .with_s3(S3Instance::setup().await?)
         .build();
 
@@ -203,6 +205,22 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
         ProtocolEventKind::AbortCrsgen(_) => {
             kms_mocks.mock(|when, then| {
                 when.path("/kms_service.v1.CoreServiceEndpoint/AbortCrsGen");
+                then.error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            });
+            return kms_mocks;
+        }
+        // Like aborts, destruction events have no result-polling endpoint, so the error is
+        // mocked at request time.
+        ProtocolEventKind::KmsContextDestroyed(_) => {
+            kms_mocks.mock(|when, then| {
+                when.path("/kms_service.v1.CoreServiceEndpoint/DestroyMpcContext");
+                then.error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
+            });
+            return kms_mocks;
+        }
+        ProtocolEventKind::KmsEpochDestroyed(_) => {
+            kms_mocks.mock(|when, then| {
+                when.path("/kms_service.v1.CoreServiceEndpoint/DestroyMpcEpoch");
                 then.error(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
             });
             return kms_mocks;

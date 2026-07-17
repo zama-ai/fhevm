@@ -360,9 +360,11 @@ async function pollOnce(cfg: UnifiedConfig, jobId: string): Promise<PollResult> 
 /**
  * Poll GET until the job is terminal (`succeeded`/`failed`) or the timeout
  * elapses. On timeout the last observed status (typically `pending`) is
- * returned — for a correctly-rejected async request this is the expected
- * non-`succeeded` outcome (the relayer only marks it `failed` after its own
- * ~300s user-decrypt timeout).
+ * returned. A KMS-Connector-only rejection (allowedContracts, invalidation,
+ * extraData context/epoch) is never surfaced to the relayer, so such a job
+ * stays `pending` indefinitely — the suites' observation windows are chosen
+ * shorter than any relayer-side timeout and longer than a real success would
+ * take, so a `pending` result at the window end is a genuine rejection.
  */
 export async function pollJob(
   cfg: UnifiedConfig,

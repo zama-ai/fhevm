@@ -100,11 +100,10 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     }
 
     function _activatePendingSingleSignerContext(uint256 contextId, uint256 epochId, uint256 pk) internal {
-        // Previous committee has 3 nodes (tx-senders 0xA1/0xA2/0xA3); the single new node reuses 0xA1,
-        // so confirming all three previous tx-senders covers the new-signer side via 0xA1 too.
+        // Previous committee has 3 nodes with mpc=1, so the previous-side quorum is n - t = 2. The
+        // single new node reuses 0xA1, whose confirmation also covers the new-signer side.
         _confirmContextCreation(contextId, address(0xA1));
         _confirmContextCreation(contextId, address(0xA2));
-        _confirmContextCreation(contextId, address(0xA3));
         _confirmEpochActivation(contextId, epochId, pk, address(0xA1), 0, 0);
     }
 
