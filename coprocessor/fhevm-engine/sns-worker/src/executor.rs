@@ -9,6 +9,7 @@ use crate::Ciphertext128Format;
 use crate::HandleItem;
 use crate::InternalEvents;
 use crate::KeySet;
+use crate::KeySetCache;
 use crate::SchedulePolicy;
 use crate::UploadJob;
 use crate::{Config, ExecutionError};
@@ -142,6 +143,9 @@ pub struct SwitchNSquashService {
     /// GCS dry-run pause flag, re-checked every iteration so a rollback re-pauses
     /// the loop. `GCS_NOT_ACTIVATED` parks; a real `start_block` runs.
     start_block_state: Arc<AtomicI64>,
+
+    /// Shared with canonical S3 repair so recovery can reuse the loaded SNS key.
+    keys_cache: KeySetCache,
 }
 impl HealthCheckService for SwitchNSquashService {
     async fn health_check(&self) -> HealthStatus {
@@ -248,19 +252,22 @@ impl SwitchNSquashService {
             events_tx,
             mode,
             start_block_state,
+            keys_cache: Arc::new(RwLock::new(lru::LruCache::new(
+                NonZeroUsize::new(10).unwrap(),
+            ))),
         })
     }
 
-    pub async fn run(&self, pool_mngr: &PostgresPoolManager) -> Result<(), ServiceError> {
-        let keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>> = Arc::new(RwLock::new(
-            lru::LruCache::new(NonZeroUsize::new(10).unwrap()),
-        ));
+    pub(crate) fn keys_cache(&self) -> KeySetCache {
+        self.keys_cache.clone()
+    }
 
+    pub async fn run(&self, pool_mngr: &PostgresPoolManager) -> Result<(), ServiceError> {
         let op = |pool: Pool<Postgres>, token: CancellationToken| {
             let conf = self.conf.clone();
             let tx = self.tx.clone();
             let last_active_at = self.last_active_at.clone();
-            let keys_cache = keys_cache.clone();
+            let keys_cache = self.keys_cache.clone();
             let events_tx = self.events_tx.clone();
             let mode = self.mode.clone();
             let start_block_state = self.start_block_state.clone();
@@ -1041,6 +1048,33 @@ fn compute_task(
             Some(format!("failed to convert ciphertext: {err}"))
         }
     }
+}
+
+/// Rebuilds a persisted ct128 from its canonical ct64 material.
+///
+/// The caller must verify the resulting digest against the digest already
+/// committed for the canonical branch before publishing these bytes.
+pub(crate) fn recompute_ct128(
+    handle: &[u8],
+    ct64_compressed: &[u8],
+    keys: &KeySet,
+    format: Ciphertext128Format,
+) -> Result<BigCiphertext, ExecutionError> {
+    let enable_compression = match format {
+        Ciphertext128Format::CompressedOnCpu | Ciphertext128Format::CompressedOnGpu => true,
+        Ciphertext128Format::UncompressedOnCpu | Ciphertext128Format::UncompressedOnGpu => false,
+        Ciphertext128Format::Unknown => {
+            return Err(ExecutionError::InvalidCiphertext128Format(format!(
+                "cannot recompute ct128 for handle {} with unknown format",
+                to_hex(handle),
+            )))
+        }
+    };
+
+    set_server_key(keys.server_key.clone());
+    let ct = decompress_ct(handle, ct64_compressed)?;
+    let bytes = ct.squash_noise_and_serialize(enable_compression)?;
+    Ok(BigCiphertext::new(bytes, format))
 }
 
 fn check_ct128_write_above_settled(

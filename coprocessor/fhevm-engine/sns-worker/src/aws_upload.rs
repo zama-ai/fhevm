@@ -5,9 +5,10 @@ use crate::metrics::{
     S3_CANONICAL_REPAIR_QUARANTINED_COUNTER, S3_PUBLICATION_BLOCKS_SETTLEMENT_COUNTER,
     STALE_S3_UPLOAD_AFTER_CLEANUP_COUNTER,
 };
+use crate::{executor::recompute_ct128, keyset::fetch_latest_keyset};
 use crate::{
-    BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, UploadJob,
-    CURRENT_S3_FORMAT_VERSION, S3_FORMAT_VERSION_LEGACY,
+    BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, KeySetCache, S3Config,
+    UploadJob, CURRENT_S3_FORMAT_VERSION, S3_FORMAT_VERSION_LEGACY,
 };
 use alloy_primitives::{Address, B256, U256};
 use aws_sdk_s3::error::SdkError;
@@ -72,6 +73,7 @@ pub(crate) async fn spawn_resubmit_task(
     client: Arc<aws_sdk_s3::Client>,
     is_ready: Arc<AtomicBool>,
     signer: CoproSigner,
+    keys_cache: KeySetCache,
 ) -> Result<JoinHandle<Result<(), ServiceError>>, ExecutionError> {
     let op = move |pool, token| {
         let client = client.clone();
@@ -79,11 +81,14 @@ pub(crate) async fn spawn_resubmit_task(
         let conf = conf.clone();
         let jobs_tx = jobs_tx.clone();
         let signer = signer.clone();
+        let keys_cache = keys_cache.clone();
 
         async move {
-            do_resubmits_loop(client, pool, conf, jobs_tx, token, is_ready, signer)
-                .await
-                .map_err(ServiceError::from)
+            do_resubmits_loop(
+                client, pool, conf, jobs_tx, token, is_ready, signer, keys_cache,
+            )
+            .await
+            .map_err(ServiceError::from)
         }
     };
 
@@ -527,6 +532,7 @@ async fn preserve_upload_task_for_retry(
             &task.producer_block_hash,
             &task.block_hash,
             &upload_error.to_string(),
+            false,
         )
         .await?;
         trx.commit().await?;
@@ -549,6 +555,7 @@ async fn record_canonical_repair_failure<'e, E>(
     producer_block_hash: &[u8],
     block_hash: &[u8],
     repair_error: &str,
+    quarantine_immediately: bool,
 ) -> Result<(), ExecutionError>
 where
     E: Executor<'e, Database = Postgres>,
@@ -557,7 +564,7 @@ where
         r#"
         UPDATE s3_canonical_repair_queue
            SET status = CASE
-                   WHEN attempts >= $6 THEN 'quarantined'
+                   WHEN $7 OR attempts >= $6 THEN 'quarantined'
                    ELSE 'pending'
                END,
                locked_at = NULL,
@@ -578,6 +585,7 @@ where
     .bind(block_hash)
     .bind(repair_error)
     .bind(S3_CANONICAL_REPAIR_MAX_ATTEMPTS)
+    .bind(quarantine_immediately)
     .fetch_optional(executor)
     .await?;
 
@@ -585,15 +593,27 @@ where
         S3_CANONICAL_REPAIR_FAILED_COUNTER.inc();
         if status == "quarantined" {
             S3_CANONICAL_REPAIR_QUARANTINED_COUNTER.inc();
-            error!(
-                host_chain_id,
-                handle = %to_hex(handle),
-                producer_block_hash = %to_hex(producer_block_hash),
-                block_hash = %to_hex(block_hash),
-                attempts,
-                repair_error,
-                "Quarantined canonical S3 repair after bounded retries"
-            );
+            if quarantine_immediately {
+                error!(
+                    host_chain_id,
+                    handle = %to_hex(handle),
+                    producer_block_hash = %to_hex(producer_block_hash),
+                    block_hash = %to_hex(block_hash),
+                    attempts,
+                    repair_error,
+                    "Quarantined canonical S3 repair after terminal validation failure"
+                );
+            } else {
+                error!(
+                    host_chain_id,
+                    handle = %to_hex(handle),
+                    producer_block_hash = %to_hex(producer_block_hash),
+                    block_hash = %to_hex(block_hash),
+                    attempts,
+                    repair_error,
+                    "Quarantined canonical S3 repair after bounded retries"
+                );
+            }
         }
     }
 
@@ -1225,6 +1245,26 @@ pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
     hasher.finalize().to_vec()
 }
 
+async fn recompute_missing_ct128(
+    db_pool: &PgPool,
+    keys_cache: &KeySetCache,
+    handle: Vec<u8>,
+    ct64_compressed: Vec<u8>,
+    format: Ciphertext128Format,
+) -> Result<BigCiphertext, ExecutionError> {
+    let Some((_, keys)) = fetch_latest_keyset(keys_cache, db_pool).await? else {
+        return Err(ExecutionError::InternalError(
+            "cannot recompute ct128: SNS keyset is unavailable".to_owned(),
+        ));
+    };
+
+    tokio::task::spawn_blocking(move || recompute_ct128(&handle, &ct64_compressed, &keys, format))
+        .await
+        .map_err(|err| {
+            ExecutionError::InternalError(format!("ct128 repair computation task failed: {err}"))
+        })?
+}
+
 fn sha256_checksum_header(ct: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(Sha256::digest(ct))
 }
@@ -1233,10 +1273,29 @@ fn sha256_checksum_header(ct: &[u8]) -> String {
 ///
 /// An incomplete upload task is defined as a task missing its ct64 digest, or
 /// missing its ct128 digest while ct128 ciphertext material exists.
+#[cfg(test)]
 pub(crate) async fn fetch_pending_uploads(
     db_pool: &Pool<Postgres>,
     limit: i64,
     expected_ct128_format: Ciphertext128Format,
+) -> Result<Vec<UploadJob>, ExecutionError> {
+    fetch_pending_uploads_impl(db_pool, limit, expected_ct128_format, None).await
+}
+
+async fn fetch_pending_uploads_with_repair_key(
+    db_pool: &Pool<Postgres>,
+    limit: i64,
+    expected_ct128_format: Ciphertext128Format,
+    keys_cache: &KeySetCache,
+) -> Result<Vec<UploadJob>, ExecutionError> {
+    fetch_pending_uploads_impl(db_pool, limit, expected_ct128_format, Some(keys_cache)).await
+}
+
+async fn fetch_pending_uploads_impl(
+    db_pool: &Pool<Postgres>,
+    limit: i64,
+    expected_ct128_format: Ciphertext128Format,
+    keys_cache: Option<&KeySetCache>,
 ) -> Result<Vec<UploadJob>, ExecutionError> {
     let rows = sqlx::query!(
         r#"
@@ -1499,15 +1558,27 @@ pub(crate) async fn fetch_pending_uploads(
     }
 
     if jobs.len() < limit as usize {
-        jobs.extend(fetch_pending_canonical_repairs(db_pool, limit - jobs.len() as i64).await?);
+        jobs.extend(
+            fetch_pending_canonical_repairs_impl(db_pool, limit - jobs.len() as i64, keys_cache)
+                .await?,
+        );
     }
 
     Ok(jobs)
 }
 
+#[cfg(test)]
 async fn fetch_pending_canonical_repairs(
     db_pool: &Pool<Postgres>,
     limit: i64,
+) -> Result<Vec<UploadJob>, ExecutionError> {
+    fetch_pending_canonical_repairs_impl(db_pool, limit, None).await
+}
+
+async fn fetch_pending_canonical_repairs_impl(
+    db_pool: &Pool<Postgres>,
+    limit: i64,
+    keys_cache: Option<&KeySetCache>,
 ) -> Result<Vec<UploadJob>, ExecutionError> {
     if limit <= 0 {
         return Ok(vec![]);
@@ -1692,6 +1763,7 @@ async fn fetch_pending_canonical_repairs(
                 &producer_block_hash,
                 &block_hash,
                 repair_error,
+                false,
             )
             .await?;
             continue;
@@ -1714,22 +1786,11 @@ async fn fetch_pending_canonical_repairs(
             .await?
             .unwrap_or_default();
             if ct128.is_empty() {
-                let repair_error = "missing ct128 bytes for S3 canonical repair";
-                error!(
+                warn!(
                     handle = hex::encode(&handle),
                     producer_block_hash = %to_hex(&producer_block_hash),
-                    "{repair_error}"
+                    "Canonical repair will recompute missing ct128 from ct64"
                 );
-                record_canonical_repair_failure(
-                    db_pool,
-                    host_chain_id_raw,
-                    &handle,
-                    &producer_block_hash,
-                    &block_hash,
-                    repair_error,
-                )
-                .await?;
-                continue;
             }
         }
 
@@ -1752,6 +1813,7 @@ async fn fetch_pending_canonical_repairs(
                     &producer_block_hash,
                     &block_hash,
                     repair_error,
+                    false,
                 )
                 .await?;
                 continue;
@@ -1773,11 +1835,101 @@ async fn fetch_pending_canonical_repairs(
                     &producer_block_hash,
                     &block_hash,
                     repair_error,
+                    false,
                 )
                 .await?;
                 continue;
             }
         };
+
+        if let (true, Some(keys_cache)) = (ct128.is_empty() && has_committed_ct128, keys_cache) {
+            // Production resubmission always supplies the shared key cache;
+            // test-only row inspection deliberately leaves it absent.
+            if let Some(expected_ct64_digest) = ciphertext_digest.as_deref() {
+                let actual_ct64_digest = compute_digest(&ct64_compressed);
+                if actual_ct64_digest != expected_ct64_digest {
+                    let repair_error = format!(
+                        "canonical ct64 digest mismatch while recomputing ct128: expected {}, got {}",
+                        hex::encode(expected_ct64_digest),
+                        hex::encode(actual_ct64_digest),
+                    );
+                    record_canonical_repair_failure(
+                        db_pool,
+                        host_chain_id_raw,
+                        &handle,
+                        &producer_block_hash,
+                        &block_hash,
+                        &repair_error,
+                        true,
+                    )
+                    .await?;
+                    continue;
+                }
+            }
+
+            let recomputed = match recompute_missing_ct128(
+                db_pool,
+                keys_cache,
+                handle.clone(),
+                ct64_compressed.clone(),
+                ct128_format,
+            )
+            .await
+            {
+                Ok(recomputed) => recomputed,
+                Err(err) => {
+                    let repair_error = format!("failed to recompute ct128 from ct64: {err}");
+                    error!(
+                        handle = %to_hex(&handle),
+                        producer_block_hash = %to_hex(&producer_block_hash),
+                        error = %err,
+                        "Canonical S3 repair could not recompute ct128"
+                    );
+                    record_canonical_repair_failure(
+                        db_pool,
+                        host_chain_id_raw,
+                        &handle,
+                        &producer_block_hash,
+                        &block_hash,
+                        &repair_error,
+                        false,
+                    )
+                    .await?;
+                    continue;
+                }
+            };
+
+            let actual_ct128_digest = compute_digest(recomputed.bytes());
+            let expected_ct128_digest = ciphertext128_digest
+                .as_deref()
+                .expect("has_committed_ct128 requires a digest");
+            if actual_ct128_digest != expected_ct128_digest {
+                let repair_error = format!(
+                    "recomputed ct128 digest mismatch: expected {}, got {}",
+                    hex::encode(expected_ct128_digest),
+                    hex::encode(actual_ct128_digest),
+                );
+                record_canonical_repair_failure(
+                    db_pool,
+                    host_chain_id_raw,
+                    &handle,
+                    &producer_block_hash,
+                    &block_hash,
+                    &repair_error,
+                    true,
+                )
+                .await?;
+                continue;
+            }
+
+            info!(
+                handle = %to_hex(&handle),
+                producer_block_hash = %to_hex(&producer_block_hash),
+                format = %ct128_format,
+                "Recomputed missing ct128 from canonical ct64"
+            );
+            ct128 = recomputed.bytes().to_vec();
+        }
 
         let repair_span = tracing::info_span!(
             "s3_canonical_repair_task",
@@ -2184,6 +2336,7 @@ async fn enqueue_exact_s3_canonical_repair(
 /// Resubmit for uploading ciphertexts.
 /// If a handle has a missing digest in ciphertext_digest table then
 /// retry uploading the actual ciphertext.
+#[allow(clippy::too_many_arguments)]
 async fn do_resubmits_loop(
     client: Arc<aws_sdk_s3::Client>,
     pool: Pool<Postgres>,
@@ -2192,6 +2345,7 @@ async fn do_resubmits_loop(
     token: CancellationToken,
     is_ready: Arc<AtomicBool>,
     signer: CoproSigner,
+    keys_cache: KeySetCache,
 ) -> Result<(), ExecutionError> {
     let expected_ct128_format = if conf.enable_compression {
         Ciphertext128Format::CompressedOnCpu
@@ -2220,6 +2374,7 @@ async fn do_resubmits_loop(
         token.clone(),
         DEFAULT_BATCH_SIZE,
         expected_ct128_format,
+        &keys_cache,
     )
     .await
     .unwrap_or_else(|err| {
@@ -2248,7 +2403,7 @@ async fn do_resubmits_loop(
                             .unwrap_or_else(|err| {
                                 error!(error = %err, "Failed to reconcile S3 canonical publications");
                             });
-                        try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE, expected_ct128_format).await
+                        try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE, expected_ct128_format, &keys_cache).await
                             .unwrap_or_else(|err| {
                                 error!(error = %err, "Failed to resubmit tasks");
                             });
@@ -2264,7 +2419,7 @@ async fn do_resubmits_loop(
                             error!(error = %err, "Failed to reconcile S3 canonical publications");
                         });
                 }
-                try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE, expected_ct128_format).await
+                try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE, expected_ct128_format, &keys_cache).await
                     .unwrap_or_else(|err| {
                         error!(error = %err, "Failed to resubmit tasks");
                 });
@@ -2285,6 +2440,7 @@ async fn try_resubmit(
     token: CancellationToken,
     batch_size: usize,
     expected_ct128_format: Ciphertext128Format,
+    keys_cache: &KeySetCache,
 ) -> Result<(), ExecutionError> {
     loop {
         if !is_ready.load(Ordering::SeqCst) {
@@ -2292,7 +2448,14 @@ async fn try_resubmit(
             return Ok(());
         }
 
-        match fetch_pending_uploads(pool, batch_size as i64, expected_ct128_format).await {
+        match fetch_pending_uploads_with_repair_key(
+            pool,
+            batch_size as i64,
+            expected_ct128_format,
+            keys_cache,
+        )
+        .await
+        {
             Ok(jobs) => {
                 info!(
                     pending_uploads = jobs.len(),
@@ -2879,7 +3042,7 @@ mod tests {
 
     #[tokio::test]
     #[serial(db)]
-    async fn canonical_repair_quarantines_and_only_new_target_requeues() -> anyhow::Result<()> {
+    async fn canonical_repair_terminal_failure_quarantines_immediately() -> anyhow::Result<()> {
         let db = setup_test_db(ImportMode::None)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
@@ -2900,7 +3063,7 @@ mod tests {
         .bind(&task.producer_block_hash)
         .bind(&task.block_hash)
         .bind(task.block_number)
-        .bind(S3_CANONICAL_REPAIR_MAX_ATTEMPTS)
+        .bind(1_i32)
         .execute(&pool)
         .await?;
 
@@ -2911,6 +3074,7 @@ mod tests {
             &task.producer_block_hash,
             &task.block_hash,
             "permanent repair failure",
+            true,
         )
         .await?;
 
@@ -2924,7 +3088,7 @@ mod tests {
         .fetch_one(&pool)
         .await?;
         assert_eq!(state.0, "quarantined");
-        assert_eq!(state.1, S3_CANONICAL_REPAIR_MAX_ATTEMPTS);
+        assert_eq!(state.1, 1);
         assert!(state.2);
         assert_eq!(state.3.as_deref(), Some("permanent repair failure"));
 
@@ -2938,7 +3102,7 @@ mod tests {
         .fetch_one(&pool)
         .await?;
         assert_eq!(same_target.0, "quarantined");
-        assert_eq!(same_target.1, S3_CANONICAL_REPAIR_MAX_ATTEMPTS);
+        assert_eq!(same_target.1, 1);
 
         let mut replacement = task.clone();
         replacement.producer_block_hash = vec![0xA1; 32];
