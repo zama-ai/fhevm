@@ -14,7 +14,7 @@
 #
 # The kms-core image carrying `compute_link_solana` is pinned in the lock; its tag is the
 # single source of truth in test-suite/fhevm/solana-images.env (kms-core is not an fhevm
-# override group). The five source-built groups are passed as --override so they build from
+# override group). The six source-built groups are passed as --override so they build from
 # THIS worktree (by default — CI narrows the set via SOLANA_E2E_OVERRIDES/SOLANA_E2E_LOCK_PINS,
 # substituting branch-published images for groups the PR does not touch, see select-overrides.sh):
 #   - gateway-contracts : userDecryptionRequestSolana + verifyProofRequestSolana
@@ -27,6 +27,7 @@
 #                         DB schema and ALL coprocessor binaries are one consistent version
 #                         (a per-service subset leaves stock services expecting newer columns)
 #   - relayer           : bytes32 host identity, Solana user-decrypt calldata + ed25519 seam
+#   - solana-proof-service : standalone MMR proof API (own override group; not piggybacked on relayer)
 #   - kms-connector     : Solana user-decrypt vertical (gw-listener + kms-worker)
 #
 # Because `kms-signer` discovers the kms-core's ACTUAL signer and registers it on-chain,
@@ -38,11 +39,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 FHEVM="$ROOT/test-suite/fhevm"
 
-# CI seam (#1766): which of the five source-built groups build from THIS worktree (--override),
+# CI seam (#1766): which of the six source-built groups build from THIS worktree (--override),
 # and optional KEY=TAG lock-env pins pointing the remaining groups at branch-published images
 # (select-overrides.sh computes both in CI). Local runs keep the build-everything default; set
 # SOLANA_E2E_OVERRIDES to "none" for an explicit empty override list.
-SOLANA_E2E_OVERRIDES="${SOLANA_E2E_OVERRIDES:-gateway-contracts host-contracts coprocessor relayer kms-connector}"
+SOLANA_E2E_OVERRIDES="${SOLANA_E2E_OVERRIDES:-gateway-contracts host-contracts coprocessor relayer solana-proof-service kms-connector}"
 SOLANA_E2E_LOCK_PINS="${SOLANA_E2E_LOCK_PINS:-}"
 if [ "$SOLANA_E2E_OVERRIDES" = "none" ]; then
   SOLANA_E2E_OVERRIDES=""
@@ -86,8 +87,8 @@ PY
 #    The `solana` scenario declares the RFC-021 Solana host alongside the default EVM host, so
 #    fhevm-cli generates the Solana relayer + kms-connector config and boots solana-proof-service
 #    (the solana-side bring-up below no longer patches those — single config writer).
-#    `--override relayer` also rebuilds solana-proof-service from this worktree (same override
-#    group) so a stale `solana-proof-service:local` / `:fhevm-local` image cannot outlive HEAD.
+#    `--override solana-proof-service` rebuilds the standalone proof image from this worktree so a
+#    stale `solana-proof-service:local` / `:fhevm-local` image cannot outlive HEAD.
 ( cd "$FHEVM" && ./fhevm-cli up \
     --scenario solana \
     --lock-file "$LOCK" \
@@ -100,8 +101,8 @@ PY
 # optional-acl_address change the config generator (src/generate/solana.ts)
 # assumes. Dropping these --overrides breaks clean-e2e unless
 # SOLANA_E2E_LOCK_PINS points them at branch-published feature/solana images
-# instead. `--override relayer` also rebuilds solana-proof-service so a stale
-# `:local` / `:fhevm-local` image cannot outlive HEAD.
+# instead. `--override solana-proof-service` rebuilds the standalone proof
+# image so a stale `:local` / `:fhevm-local` tag cannot outlive HEAD.
 
 # 3. Bring the Solana side-stack online against the freshly-deployed live backend.
 #    Reads gateway addresses + KMS/coprocessor signer set live, so it tracks the new signer.
