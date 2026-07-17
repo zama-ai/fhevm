@@ -2037,6 +2037,76 @@ async fn test_quarantined_cleanup_job_blocks_settlement(
 
 #[tokio::test]
 #[serial(db)]
+async fn test_retired_stack_does_not_claim_cleanup_job(
+) -> Result<(), anyhow::Error> {
+    let db_instance = test_harness::instance::setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let chain_id = ChainId::try_from(140_u64).unwrap();
+    let db = Database::new(&db_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+    let finalized_hash = vec![0x4A_u8; 32];
+    let orphaned_hash = vec![0x4B_u8; 32];
+
+    // These are test-fixture/control-plane writes rather than application
+    // queries: seed one pending job, then retire this binary before its cleanup
+    // sweep starts.
+    sqlx::query(
+        "INSERT INTO branch_cleanup_jobs(
+            chain_id,
+            finalized_block_hash,
+            finalized_block_number,
+            orphaned_block_hashes,
+            status
+         )
+         VALUES ($1, $2, 1, $3, 'pending')",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&finalized_hash)
+    .bind(vec![orphaned_hash])
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "UPDATE versioning
+            SET stack_version = 'v999.0.0', updated_at = NOW()
+          WHERE singleton = TRUE",
+    )
+    .execute(&pool)
+    .await?;
+
+    let error = db
+        .process_orphaned_branch_cleanup_jobs()
+        .await
+        .expect_err("retired stack must be rejected by the write guard");
+    assert!(
+        error.to_string().contains("access denied (retired stack)"),
+        "unexpected cleanup error: {error}"
+    );
+
+    let untouched_jobs = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+           FROM branch_cleanup_jobs
+          WHERE chain_id = $1
+            AND finalized_block_hash = $2
+            AND status = 'pending'
+            AND attempts = 0
+            AND locked_at IS NULL
+            AND last_error IS NULL",
+    )
+    .bind(chain_id.as_i64())
+    .bind(&finalized_hash)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        untouched_jobs, 1,
+        "a retired cleanup worker must not claim, unlock, or penalize the job"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_finalization_cleanup_removes_orphaned_branch_rows_locally(
 ) -> Result<(), anyhow::Error> {
     let setup = setup_with_block_time(None, 1.0).await?;
