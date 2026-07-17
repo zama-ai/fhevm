@@ -22,6 +22,10 @@ zama-host = { path = "../programs/zama-host", features = ["no-entrypoint"] }
 zama-solana-acl = { path = "../crates/zama-solana-acl" }
 
 [dev-dependencies]
+# Serializes a full legacy `Transaction` to its wire bytes for the packet-size regression tests.
+bincode = "1.3"
+# `PACKET_DATA_SIZE` (1232) — the wire-size ceiling asserted by the packet-size regression tests.
+solana-packet = "3.0.0"
 # Signs coprocessor EIP-712 input attestations in the secp256k1 input-bind test.
 k256 = { version = "0.13.4", features = ["ecdsa"] }
 num-bigint = "0.4.6"

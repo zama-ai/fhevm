@@ -17,9 +17,15 @@ pub struct HostConfig {
     /// EVM `InputVerification` contract address: the EIP-712 verifying contract for
     /// coprocessor `CiphertextVerification` input attestations.
     pub input_verification_contract: [u8; 20],
-    /// Authorized coprocessor EVM signer for input attestations (v0: single signer,
-    /// threshold 1).
-    pub coprocessor_signer: [u8; 20],
+    /// Registered coprocessor EVM signer set for input attestations (EVM `InputVerifier`
+    /// parity). Fixed-capacity so `HostConfig` keeps a pinned byte layout; only the first
+    /// `coprocessor_signer_count` entries are active, the rest are zero padding.
+    pub coprocessor_signers: [[u8; 20]; Self::MAX_COPROCESSOR_SIGNERS],
+    /// Number of active entries in `coprocessor_signers`.
+    pub coprocessor_signer_count: u8,
+    /// Minimum distinct valid signatures (n-of-m) required over an input attestation;
+    /// `1 <= coprocessor_threshold <= coprocessor_signer_count`.
+    pub coprocessor_threshold: u8,
     /// EVM `Decryption` contract address: the EIP-712 verifying contract for KMS
     /// `PublicDecryptVerification` certificates (disclose/redeem).
     pub decryption_contract: [u8; 20],
@@ -46,7 +52,43 @@ pub struct HostConfig {
 }
 
 impl HostConfig {
-    pub const SPACE: usize = 32 + 8 + 8 + 20 + 20 + 20 + 8 + 1 + 1 + 8 + 8 + 8 + 8 + 1;
+    /// Upper bound on registered coprocessor signers. A hard cap keeps the singleton's byte
+    /// layout pinned (the array serializes to `MAX_COPROCESSOR_SIGNERS * 20` bytes regardless of
+    /// how many signers are active) and bounds the per-attestation recovery cost.
+    pub const MAX_COPROCESSOR_SIGNERS: usize = 8;
+    pub const SPACE: usize = 32
+        + 8
+        + 8
+        + 20
+        + (Self::MAX_COPROCESSOR_SIGNERS * 20)
+        + 1
+        + 1
+        + 20
+        + 8
+        + 1
+        + 1
+        + 8
+        + 8
+        + 8
+        + 8
+        + 1;
+
+    /// Active coprocessor signer set (the first `coprocessor_signer_count` entries).
+    pub fn active_coprocessor_signers(&self) -> &[[u8; 20]] {
+        &self.coprocessor_signers[..self.coprocessor_signer_count as usize]
+    }
+}
+
+/// Zero-pads a coprocessor signer slice into the fixed-capacity array stored in `HostConfig`.
+/// Entries beyond `MAX_COPROCESSOR_SIGNERS` are ignored; callers validate the length first.
+pub fn pack_coprocessor_signers(
+    signers: &[[u8; 20]],
+) -> [[u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS] {
+    let mut out = [[0u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS];
+    for (slot, signer) in out.iter_mut().zip(signers.iter()) {
+        *slot = *signer;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -54,20 +96,24 @@ mod tests {
     use super::*;
     use anchor_lang::AccountSerialize;
 
-    // Removing the two inert authority pubkeys shrinks the account by 64 bytes. A serialized
-    // account must be exactly `8 + SPACE`; a short SPACE would truncate the singleton.
+    // The serialized account must be exactly `8 + SPACE`; a short SPACE would truncate the
+    // singleton. The coprocessor signer set is a fixed-cap array (`MAX_COPROCESSOR_SIGNERS * 20`
+    // bytes) plus a `count` and a `threshold` byte, so the layout stays pinned regardless of how
+    // many signers are registered.
     #[test]
-    fn host_config_space_is_151_after_dead_authority_removal() {
-        const PRIOR_SPACE: usize = 215;
-        assert_eq!(HostConfig::SPACE, PRIOR_SPACE - 64);
-        assert_eq!(HostConfig::SPACE, 151);
+    fn host_config_space_matches_serialized_len() {
+        // 151 (single-signer layout) - 20 (old `coprocessor_signer`) + 160 (8 * 20 signer array)
+        // + 1 (count) + 1 (threshold) = 293.
+        assert_eq!(HostConfig::SPACE, 293);
 
         let cfg = HostConfig {
             admin: Pubkey::new_unique(),
             chain_id: 1,
             gateway_chain_id: 0,
             input_verification_contract: [0u8; 20],
-            coprocessor_signer: [0u8; 20],
+            coprocessor_signers: [[0u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS],
+            coprocessor_signer_count: 0,
+            coprocessor_threshold: 0,
             decryption_contract: [0u8; 20],
             current_kms_context_id: 0,
             paused: false,

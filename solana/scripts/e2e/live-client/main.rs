@@ -591,7 +591,16 @@ fn bootstrap(
     let chain_id: u64 = std::env::var("SOLANA_HOST_CHAIN_ID")?.parse()?;
     let gateway_chain_id: u64 = std::env::var("GATEWAY_CHAIN_ID")?.parse()?;
     let input_verification_contract = addr20(&std::env::var("INPUT_VERIFICATION_ADDRESS")?);
-    let coprocessor_signer = addr20(&std::env::var("COPROCESSOR_SIGNER")?);
+    let coprocessor_signers: Vec<[u8; 20]> = std::env::var("COPROCESSOR_SIGNERS")?
+        .split(',')
+        .map(|s| addr20(s.trim()))
+        .collect();
+    // The PoC coprocessor produces a single attestation signature, so a 1-of-m threshold keeps the
+    // live flow green while the full registered set is stored (EVM `InputVerifier` parity).
+    let coprocessor_threshold: u8 = std::env::var("COPROCESSOR_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
     let decryption_contract = addr20(&std::env::var("DECRYPTION_ADDRESS")?);
     let kms_signers: Vec<[u8; 20]> = std::env::var("KMS_SIGNERS")?
         .split(',')
@@ -612,7 +621,8 @@ fn bootstrap(
                     chain_id,
                     gateway_chain_id,
                     input_verification_contract,
-                    coprocessor_signer,
+                    coprocessor_signers,
+                    coprocessor_threshold,
                     decryption_contract,
                     grant_deny_list_enabled: false,
                 },
@@ -1748,7 +1758,8 @@ fn ensure_host_config(
                 chain_id: zama_host::SOLANA_POC_CHAIN_ID,
                 gateway_chain_id: 0,
                 input_verification_contract: [0u8; 20],
-                coprocessor_signer: [0u8; 20],
+                coprocessor_signers: vec![[0x11u8; 20]],
+                coprocessor_threshold: 1,
                 decryption_contract: [0u8; 20],
                 grant_deny_list_enabled: false,
             },

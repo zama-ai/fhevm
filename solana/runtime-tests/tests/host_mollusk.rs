@@ -160,7 +160,9 @@ fn host_config_account_with_flags(
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 gateway_chain_id: GATEWAY_CHAIN_ID,
                 input_verification_contract: INPUT_VERIFICATION_CONTRACT,
-                coprocessor_signer: [0u8; 20],
+                coprocessor_signers: host::pack_coprocessor_signers(&[[0x11u8; 20]]),
+                coprocessor_signer_count: 1,
+                coprocessor_threshold: 1,
                 decryption_contract: DECRYPTION_CONTRACT,
                 current_kms_context_id: 0,
                 paused,
@@ -2749,6 +2751,58 @@ fn set_hcu_block_cap_per_app_ix(
     )
 }
 
+fn set_coprocessor_signers_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    signers: Vec<[u8; 20]>,
+    threshold: u8,
+) -> Instruction {
+    anchor_ix(
+        program_id,
+        host::accounts::HostAdmin { admin, host_config },
+        host::instruction::SetCoprocessorSigners { signers, threshold },
+    )
+}
+
+fn define_kms_context_ix(
+    program_id: Pubkey,
+    admin: Pubkey,
+    host_config: Pubkey,
+    context_id: u64,
+    signers: Vec<[u8; 20]>,
+    thresholds: host::KmsThresholds,
+) -> Instruction {
+    let kms_context = host::kms_context_address(context_id).0;
+    anchor_ix(
+        program_id,
+        host::accounts::DefineKmsContext {
+            admin,
+            host_config,
+            kms_context,
+            system_program: system_program::ID,
+        },
+        host::instruction::DefineKmsContext {
+            context_id,
+            signers,
+            thresholds,
+        },
+    )
+}
+
+fn read_kms_context(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    address: Pubkey,
+) -> Option<host::KmsContext> {
+    let store = context.account_store.borrow();
+    let account = store.get(&address)?;
+    if account.owner != host::id() {
+        return None;
+    }
+    let mut data = account.data.as_slice();
+    host::KmsContext::try_deserialize(&mut data).ok()
+}
+
 fn set_hcu_app_trusted_ix(
     program_id: Pubkey,
     payer: Pubkey,
@@ -3239,7 +3293,8 @@ fn mollusk_initialize_host_config_defaults_block_cap_to_unrestricted() {
         chain_id: host::SOLANA_POC_CHAIN_ID,
         gateway_chain_id: 0,
         input_verification_contract: [0u8; 20],
-        coprocessor_signer: [0u8; 20],
+        coprocessor_signers: vec![[0x11u8; 20]],
+        coprocessor_threshold: 1,
         decryption_contract: [0u8; 20],
         grant_deny_list_enabled: false,
     };
@@ -3255,6 +3310,213 @@ fn mollusk_initialize_host_config_defaults_block_cap_to_unrestricted() {
             .hcu_block_cap_per_app,
         u64::MAX
     );
+}
+
+// ---- coprocessor signer set + threshold (EVM InputVerifier parity) ----
+
+/// Args that initialize a config with the given coprocessor signer set + threshold, valid in every
+/// other respect. Callers vary only the set/threshold to exercise the registration invariants.
+fn init_args_with_coprocessor_set(
+    signers: Vec<[u8; 20]>,
+    threshold: u8,
+) -> host::InitializeHostConfigArgs {
+    host::InitializeHostConfigArgs {
+        chain_id: host::SOLANA_POC_CHAIN_ID,
+        gateway_chain_id: 0,
+        input_verification_contract: [0xCDu8; 20],
+        coprocessor_signers: signers,
+        coprocessor_threshold: threshold,
+        decryption_contract: [0u8; 20],
+        grant_deny_list_enabled: false,
+    }
+}
+
+#[test]
+fn mollusk_initialize_host_config_stores_registered_signer_set_and_threshold() {
+    // A valid n-of-m set round-trips into the stored config: distinct signers packed, count and
+    // threshold recorded.
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    let signers = vec![[0x11u8; 20], [0x22u8; 20], [0x33u8; 20]];
+    let args = init_args_with_coprocessor_set(signers.clone(), 2);
+    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+
+    context.process_and_validate_instruction(
+        &initialize_host_config_ix(program_id, payer, admin, host_config, args),
+        &[Check::success()],
+    );
+
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.coprocessor_signer_count, 3);
+    assert_eq!(config.coprocessor_threshold, 2);
+    assert_eq!(config.active_coprocessor_signers(), signers.as_slice());
+}
+
+#[test]
+fn mollusk_initialize_host_config_rejects_duplicate_coprocessor_signer() {
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    // A duplicate would silently raise the effective quorum (distinct-signer counting).
+    let args = init_args_with_coprocessor_set(vec![[0x11u8; 20], [0x11u8; 20]], 1);
+    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+
+    context.process_and_validate_instruction(
+        &initialize_host_config_ix(program_id, payer, admin, host_config, args),
+        &[custom_error(
+            host::errors::ZamaHostError::DuplicateCoprocessorSigner,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_initialize_host_config_rejects_threshold_above_signer_count() {
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    // threshold 3 > 2 signers: unsatisfiable, must be rejected.
+    let args = init_args_with_coprocessor_set(vec![[0x11u8; 20], [0x22u8; 20]], 3);
+    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+
+    context.process_and_validate_instruction(
+        &initialize_host_config_ix(program_id, payer, admin, host_config, args),
+        &[custom_error(
+            host::errors::ZamaHostError::InvalidCoprocessorThreshold,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_initialize_host_config_rejects_zero_threshold() {
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    let args = init_args_with_coprocessor_set(vec![[0x11u8; 20]], 0);
+    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+
+    context.process_and_validate_instruction(
+        &initialize_host_config_ix(program_id, payer, admin, host_config, args),
+        &[custom_error(
+            host::errors::ZamaHostError::InvalidCoprocessorThreshold,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_initialize_host_config_rejects_empty_coprocessor_set() {
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    let args = init_args_with_coprocessor_set(vec![], 1);
+    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+
+    context.process_and_validate_instruction(
+        &initialize_host_config_ix(program_id, payer, admin, host_config, args),
+        &[custom_error(
+            host::errors::ZamaHostError::EmptyCoprocessorSignerSet,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_set_coprocessor_signers_rotates_the_set_and_threshold() {
+    // The admin setter replaces the registered set + threshold in place.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    let signers = vec![[0xAAu8; 20], [0xBBu8; 20], [0xCCu8; 20]];
+    context.process_and_validate_instruction(
+        &set_coprocessor_signers_ix(program_id, admin, host_config, signers.clone(), 2),
+        &[Check::success()],
+    );
+
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.active_coprocessor_signers(), signers.as_slice());
+    assert_eq!(config.coprocessor_threshold, 2);
+}
+
+#[test]
+fn mollusk_set_coprocessor_signers_rejects_non_admin() {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let intruder = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let context = mollusk_eval_context(intruder, vec![(host_config, account)]);
+
+    context.process_and_validate_instruction(
+        &set_coprocessor_signers_ix(program_id, intruder, host_config, vec![[0xAAu8; 20]], 1),
+        &[custom_error(
+            host::errors::ZamaHostError::HostConfigAdminMismatch,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_set_coprocessor_signers_rejects_invalid_set() {
+    // The setter enforces the same invariants as init (duplicate signer here).
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let context = mollusk_eval_context(admin, vec![(host_config, account)]);
+
+    context.process_and_validate_instruction(
+        &set_coprocessor_signers_ix(
+            program_id,
+            admin,
+            host_config,
+            vec![[0xAAu8; 20], [0xAAu8; 20]],
+            1,
+        ),
+        &[custom_error(
+            host::errors::ZamaHostError::DuplicateCoprocessorSigner,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_define_kms_context_at_realistic_signer_count() {
+    // Exercises the KMS-context definition path at a realistic mainnet-ish size (n=13 signers,
+    // public-decrypt threshold 7). `KmsContext::MAX_SIGNERS` (16) bounds the account, so 13 fits.
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let context_id = 1; // current_kms_context_id starts at 0, so the next context is 1.
+    let kms_context = host::kms_context_address(context_id).0;
+    let context = mollusk_eval_context(
+        admin,
+        vec![(host_config, account), (kms_context, system_account(0))],
+    );
+
+    let signers: Vec<[u8; 20]> = (0..13u8).map(|i| [0x30 + i; 20]).collect();
+    let thresholds = host::KmsThresholds {
+        public_decryption: 7,
+        user_decryption: 7,
+        kms_gen: 1,
+        mpc: 1,
+    };
+    context.process_and_validate_instruction(
+        &define_kms_context_ix(
+            program_id,
+            admin,
+            host_config,
+            context_id,
+            signers.clone(),
+            thresholds,
+        ),
+        &[Check::success()],
+    );
+
+    let stored = read_kms_context(&context, kms_context).expect("kms context");
+    assert_eq!(stored.signers, signers);
+    assert_eq!(stored.thresholds.public_decryption, 7);
 }
 
 // ---- EvalFixture: a durable-output frame for block-cap enforcement ----
@@ -4434,7 +4696,9 @@ fn host_config_with_context(admin: Pubkey, context_id: u64) -> (Pubkey, Account)
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 gateway_chain_id: GATEWAY_CHAIN_ID,
                 input_verification_contract: INPUT_VERIFICATION_CONTRACT,
-                coprocessor_signer: [0u8; 20],
+                coprocessor_signers: host::pack_coprocessor_signers(&[[0x11u8; 20]]),
+                coprocessor_signer_count: 1,
+                coprocessor_threshold: 1,
                 decryption_contract: DECRYPTION_CONTRACT,
                 current_kms_context_id: context_id,
                 paused: false,

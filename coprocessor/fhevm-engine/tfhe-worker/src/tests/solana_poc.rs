@@ -184,7 +184,11 @@ fn seed_host_config(svm: &mut LiteSVM, program_id: Pubkey, admin: Pubkey) -> Pub
                 // secp256k1 EIP-712 attestation that fhe_eval re-verifies in-frame.
                 gateway_chain_id: SECP_GATEWAY_CHAIN_ID,
                 input_verification_contract: INPUT_VERIFICATION_CONTRACT,
-                coprocessor_signer: secp_evm_address(&coprocessor_signing_key()),
+                coprocessor_signers: host::pack_coprocessor_signers(&[secp_evm_address(
+                    &coprocessor_signing_key(),
+                )]),
+                coprocessor_signer_count: 1,
+                coprocessor_threshold: 1,
                 decryption_contract: [0u8; 20],
                 current_kms_context_id: 0,
                 paused: false,
@@ -437,7 +441,7 @@ fn transfer_ix(
 }
 
 /// Coprocessor signing key backing the `fromExternal` amount attestations; its EVM address is the
-/// `coprocessor_signer` configured on the fixture's `host_config`.
+/// registered coprocessor signer set configured on the fixture's `host_config`.
 fn coprocessor_signing_key() -> k256::ecdsa::SigningKey {
     k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap()
 }

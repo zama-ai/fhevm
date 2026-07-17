@@ -46,11 +46,37 @@ pub fn kms_public_decrypt_cert(
     decryption_contract: &[u8; 20],
     extra_data: &[u8],
 ) -> Vec<[u8; 65]> {
+    kms_public_decrypt_cert_signed_by(
+        handle,
+        cleartext,
+        gateway_chain_id,
+        decryption_contract,
+        extra_data,
+        &[kms_signing_key()],
+    )
+}
+
+/// A distinct KMS signing key derived from a seed byte (for t-of-n KMS-context tests).
+pub fn kms_signing_key_n(seed: u8) -> SigningKey {
+    SigningKey::from_bytes(&[seed; 32].into()).unwrap()
+}
+
+/// Like [`kms_public_decrypt_cert`], but produces one signature per key in `keys` — a t-of-n cert.
+/// The carried signature payload scales with the threshold t (t x 65 bytes), independent of how many
+/// signers are registered in the context.
+pub fn kms_public_decrypt_cert_signed_by(
+    handle: [u8; 32],
+    cleartext: [u8; 32],
+    gateway_chain_id: u64,
+    decryption_contract: &[u8; 20],
+    extra_data: &[u8],
+    keys: &[SigningKey],
+) -> Vec<[u8; 65]> {
     let digest = host::eip712::typed_data_digest(
         &host::eip712::domain_separator(b"Decryption", b"1", gateway_chain_id, decryption_contract),
         &host::eip712::public_decrypt_struct_hash(&[handle], &cleartext, extra_data),
     );
-    vec![secp_sign(&kms_signing_key(), &digest)]
+    keys.iter().map(|key| secp_sign(key, &digest)).collect()
 }
 
 /// Version-1 `extra_data` committing an explicit KMS context id in `[1..33]` (EVM `_extractContextId`

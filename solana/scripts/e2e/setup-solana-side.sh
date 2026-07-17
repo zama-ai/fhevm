@@ -60,10 +60,13 @@ echo "==> [1/5] gathering live gateway addresses + ProtocolConfig signer set"
 # shellcheck disable=SC1091
 source "$ROOT/.fhevm/runtime/addresses/gateway/.env.gateway"  # GATEWAY_CONFIG_ADDRESS, INPUT_VERIFICATION_ADDRESS, DECRYPTION_ADDRESS, ...
 GATEWAY_CHAIN_ID="$(cast chain-id --rpc-url "$GW_RPC")"
-COPROCESSOR_SIGNER="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getCoprocessorSigners()(address[])' --rpc-url "$GW_RPC" | tr -d '[]' | tr ',' '\n' | head -1 | tr -d ' ')"
+# Register the full coprocessor signer set (EVM `InputVerifier` parity). The PoC coprocessor emits a
+# single attestation signature, so COPROCESSOR_THRESHOLD stays 1 (1-of-m) to keep the live flow green.
+COPROCESSOR_SIGNERS="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getCoprocessorSigners()(address[])' --rpc-url "$GW_RPC" | tr -d '[] ')"
+COPROCESSOR_THRESHOLD="${COPROCESSOR_THRESHOLD:-1}"
 KMS_SIGNERS="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getKmsSigners()(address[])' --rpc-url "$GW_RPC" | tr -d '[] ')"
 echo "    gateway_chain_id=$GATEWAY_CHAIN_ID input_verification=$INPUT_VERIFICATION_ADDRESS"
-echo "    decryption=$DECRYPTION_ADDRESS coprocessor_signer=$COPROCESSOR_SIGNER kms_signers=$KMS_SIGNERS"
+echo "    decryption=$DECRYPTION_ADDRESS coprocessor_signers=$COPROCESSOR_SIGNERS threshold=$COPROCESSOR_THRESHOLD kms_signers=$KMS_SIGNERS"
 
 echo "==> [2/5] fresh validator (Yellowstone geyser) + reconstruction-first program deploy"
 # Seed the committed well-known PoC program keypairs so the build reuses them and the deployed
@@ -139,7 +142,8 @@ LC="$SOLANA/scripts/e2e/live-client"
 BOOTSTRAP=1 \
   GATEWAY_CHAIN_ID="$GATEWAY_CHAIN_ID" \
   INPUT_VERIFICATION_ADDRESS="$INPUT_VERIFICATION_ADDRESS" \
-  COPROCESSOR_SIGNER="$COPROCESSOR_SIGNER" \
+  COPROCESSOR_SIGNERS="$COPROCESSOR_SIGNERS" \
+  COPROCESSOR_THRESHOLD="$COPROCESSOR_THRESHOLD" \
   DECRYPTION_ADDRESS="$DECRYPTION_ADDRESS" \
   KMS_SIGNERS="$KMS_SIGNERS" \
   SOLANA_HOST_CHAIN_ID="$SID_U64" \

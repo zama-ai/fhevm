@@ -153,10 +153,13 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
 
 **Fragile / attention for a security pass (PoC shortcuts, not correctness bugs):**
 
-1. **Input verification trusts a single coprocessor signer at threshold 1** (`HostConfig::coprocessor_signer`),
-   not yet a registered n-of-m set — the threshold machinery (`eip712::verify_threshold`) exists but
-   input verification uses the single-signer path. Remaining work is the registered signer set
-   (FUTURE_DESIGN §1) and the real proof/transciphering service behind the attestation.
+1. **Input verification against a registered n-of-m coprocessor signer set — CLOSED (DD-041).**
+   `HostConfig` now stores a registered coprocessor signer set + configurable threshold
+   (`coprocessor_signers` / `coprocessor_signer_count` / `coprocessor_threshold`), verified via
+   `eip712::verify_threshold` — EVM `InputVerifier` parity, replacing the former single-signer /
+   threshold-1 path. Admin-gated rotation via `set_coprocessor_signers`. Remaining forward work is the
+   gateway-sync authority + the real proof/transciphering service behind the attestation
+   (FUTURE_DESIGN §1), not the trust model.
 2. **No host-side test/mock bypass remains.** The former `mock_input_verified_and_bind` input
    short-circuit, admin toggles, zero birth-entropy fallback, and event-only `test_emit_*`
    instructions were removed entirely (DD-014).

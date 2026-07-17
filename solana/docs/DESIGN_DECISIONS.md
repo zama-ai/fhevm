@@ -1375,8 +1375,9 @@ mint/token-account/owner accounts used for the SPL vault transfer.) The producti
 Not settled by the decisions above. Forward requirements and remaining reorg questions are detailed
 in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 
-- Coprocessor input trust: single `coprocessor_signer` at threshold 1 → registered n-of-m set
-  (FUTURE_DESIGN §1).
+- Coprocessor input trust: RESOLVED — registered n-of-m coprocessor signer set + configurable
+  threshold in `HostConfig` (DD-041). Remaining forward work is the gateway-sync authority + the real
+  proof/transciphering service behind the attestation (FUTURE_DESIGN §1).
 - Whether resource-recovery reorg unwind should be added after confirmed eager scheduling
   (DD-024/DD-025/DD-028).
 - Handle birth entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
@@ -1600,3 +1601,49 @@ Scope: this PR adds the host verifier additively. Dissolving the confidential-to
 lifecycle (`request_disclose_*`, `disclose_*_secp`, `close_*_disclosure_request`,
 `state/disclosure_request.rs`) and re-expressing token disclosure as a thin consumer of this verifier
 lands separately (fhevm-internal#1704, PR 2). Net code deletion arrives there.
+
+## DD-041: Coprocessor Input Trust Is A Registered n-of-m Signer Set In `HostConfig`
+
+Input `CiphertextVerification` attestations are now verified against a **registered coprocessor
+signer set + configurable threshold**, matching EVM `InputVerifier`'s trust model, instead of the
+prior single hardcoded `coprocessor_signer` at threshold 1. The n-of-m recovery machinery already
+existed (`eip712::verify_threshold`, distinct-signer counting + high-s rejection, shared with the KMS
+cert path); this wires it into input verification.
+
+The set lives **inline in `HostConfig`**, not in a dedicated PDA (the `KmsContext` shape was the other
+option). `HostConfig` gains `coprocessor_signers: [[u8; 20]; MAX_COPROCESSOR_SIGNERS]` (cap 8) +
+`coprocessor_signer_count: u8` + `coprocessor_threshold: u8`, replacing the single `[u8; 20]`. A
+fixed-capacity array keeps the singleton's byte layout **pinned** (the account serializes to the same
+size regardless of how many signers are active), and avoids threading a second account through
+`fhe_eval`, which is byte-tight. The cap is 8: comfortably above realistic coprocessor-quorum sizes
+while bounding both the account size (+142 bytes vs the single-signer layout, SPACE 151 -> 293) and
+the worst-case per-attestation recovery cost. Rotation is admin-driven for the PoC via the new
+admin-gated `set_coprocessor_signers` instruction (same admin/pause-neutral pattern as the other
+`set_*` config setters); a gateway-sync authority would drive it from the EVM `GatewayConfig`
+coprocessor registry in production.
+
+Registration invariants (mirroring the KMS-context rules): non-empty set, within the cap,
+`1 <= threshold <= len`, no duplicate signer (distinct-signer counting would otherwise silently raise
+the effective quorum), no zero-address signer. Enforced identically by `initialize_host_config` and
+`set_coprocessor_signers` via one shared validator. `InitializeHostConfigArgs` now carries
+`coprocessor_signers: Vec<[u8; 20]>` + `coprocessor_threshold` (no legacy single-signer field — this
+is a no-compat PoC branch); the pinned `HostConfig` layout change is resynced across the IDL, the ABI
+golden manifest, and every mirrored fixture.
+
+**Signatures carried equal the threshold, not the party count.** A verifier needs `t` valid distinct
+signatures over the attestation; the coprocessor sends `t`, not `n`. This holds for **both** EIP-712
+attestation families — coprocessor `CiphertextVerification` inputs and KMS `PublicDecryptVerification`
+certs — so the carried EIP-712 signature payload scales with `t` (t x 65 bytes), independent of how
+many signers are registered. A threshold-4 `confidential_transfer` transaction (4 x 65B sigs over the
+real token account list) serializes to **989 bytes**, well inside the 1232-byte
+(`solana_packet::PACKET_DATA_SIZE`) single-packet limit.
+
+Public-decrypt **consume** transactions additionally carry an MMR inclusion proof whose size scales
+with lineage depth (depth x 32B), so high threshold x deep lineage is the binding corner. Measured
+`disclose_amount_secp` wire sizes: `t=7`/depth-10 = 1213B (fits), but `t=9`/depth-10 = 1343B and
+`t=7`/depth-20 = 1533B both **overflow** one packet. Deep-lineage x high-threshold public-decrypt
+consumes therefore may need the scratch-account two-transaction fallback reserved in
+fhevm-internal#1704; the single-packet envelope for consumes is `t<=7` with proof depth `<=10`.
+
+Relates to DD-007 (input verification model) and closes the FUTURE_DESIGN §1 / EVM_PARITY "single
+coprocessor signer at threshold 1" fragile item.

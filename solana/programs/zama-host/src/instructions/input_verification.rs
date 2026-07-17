@@ -1,8 +1,9 @@
 //! Coprocessor EIP-712 `CiphertextVerification` attestation verification (RFC-021).
 //!
 //! The coprocessor signs the attested handles + binding context as an EVM EIP-712 message; the host
-//! recovers the signer via `secp256k1_recover` and checks it against the configured coprocessor
-//! signer. This is the shared verifier used by the `fhe_eval` `VerifiedInput` operand (the Solana
+//! recovers each signer via `secp256k1_recover` and requires at least `coprocessor_threshold`
+//! distinct signatures from the registered coprocessor signer set (n-of-m, EVM `InputVerifier`
+//! parity). This is the shared verifier used by the `fhe_eval` `VerifiedInput` operand (the Solana
 //! `FHE.fromExternal` analog): verification creates no persistent ACL — the input is transient-
 //! allowed for the consuming `fhe_eval` only, and the caller-is-contract check + any durable output
 //! ACL are enforced where the input is consumed.
@@ -22,7 +23,12 @@ pub(crate) struct InputVerifierParams {
     pub chain_id: u64,
     pub gateway_chain_id: u64,
     pub input_verification_contract: [u8; 20],
-    pub coprocessor_signer: [u8; 20],
+    /// Registered coprocessor signer set (fixed-cap; only the first `coprocessor_signer_count`
+    /// entries are active). Carried by value so the `fhe_eval` operand resolver, which does not
+    /// hold a `&HostConfig`, can verify attestations against the whole set.
+    pub coprocessor_signers: [[u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS],
+    pub coprocessor_signer_count: u8,
+    pub coprocessor_threshold: u8,
 }
 
 impl InputVerifierParams {
@@ -31,14 +37,22 @@ impl InputVerifierParams {
             chain_id: config.chain_id,
             gateway_chain_id: config.gateway_chain_id,
             input_verification_contract: config.input_verification_contract,
-            coprocessor_signer: config.coprocessor_signer,
+            coprocessor_signers: config.coprocessor_signers,
+            coprocessor_signer_count: config.coprocessor_signer_count,
+            coprocessor_threshold: config.coprocessor_threshold,
         }
+    }
+
+    /// Active coprocessor signer set (the first `coprocessor_signer_count` entries).
+    fn active_signers(&self) -> &[[u8; 20]] {
+        &self.coprocessor_signers[..self.coprocessor_signer_count as usize]
     }
 }
 
 /// Verifies the coprocessor's EIP-712 `CiphertextVerification` attestation for an encrypted input:
 /// config sanity, per-handle metadata, selected-handle match, and `secp256k1_recover` of the
-/// signer against the configured coprocessor signer. Used by the `fhe_eval` `VerifiedInput` operand.
+/// signers against the registered coprocessor signer set at the configured threshold. Used by the
+/// `fhe_eval` `VerifiedInput` operand.
 /// The attested `contract_address` is the input's natural ACL domain (EVM parity with the
 /// verifyInput contract); the caller-is-contract gate is enforced by the operand resolver.
 #[allow(clippy::too_many_arguments)]
@@ -54,7 +68,7 @@ pub(crate) fn verify_input_attestation(
     signatures: &[[u8; 65]],
 ) -> Result<()> {
     require!(
-        params.coprocessor_signer != [0u8; 20] && params.input_verification_contract != [0u8; 20],
+        params.coprocessor_signer_count > 0 && params.input_verification_contract != [0u8; 20],
         ZamaHostError::GatewayVerifierConfigUnset
     );
     require!(
@@ -82,8 +96,8 @@ pub(crate) fn verify_input_attestation(
     let verifier = Eip712VerifierConfig {
         gateway_chain_id: params.gateway_chain_id,
         verifying_contract: params.input_verification_contract,
-        signers: std::slice::from_ref(&params.coprocessor_signer),
-        threshold: 1,
+        signers: params.active_signers(),
+        threshold: params.coprocessor_threshold,
     };
     require!(
         verify_coprocessor_attestation(

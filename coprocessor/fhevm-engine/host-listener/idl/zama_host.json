@@ -851,6 +851,76 @@
       "args": []
     },
     {
+      "name": "set_coprocessor_signers",
+      "docs": [
+        "Replaces the registered coprocessor signer set + threshold for input attestations",
+        "(EVM `InputVerifier` parity)."
+      ],
+      "discriminator": [
+        38,
+        30,
+        59,
+        44,
+        233,
+        1,
+        194,
+        177
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "signers",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          }
+        },
+        {
+          "name": "threshold",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "set_deny_subject",
       "discriminator": [
         138,
@@ -2110,6 +2180,31 @@
       "code": 6073,
       "name": "PublicDecryptProofInvalid",
       "msg": "public-decrypt inclusion proof is invalid"
+    },
+    {
+      "code": 6074,
+      "name": "EmptyCoprocessorSignerSet",
+      "msg": "coprocessor signer set must not be empty"
+    },
+    {
+      "code": 6075,
+      "name": "TooManyCoprocessorSigners",
+      "msg": "coprocessor signer set exceeds the maximum size"
+    },
+    {
+      "code": 6076,
+      "name": "InvalidCoprocessorThreshold",
+      "msg": "coprocessor threshold must be between 1 and the signer count"
+    },
+    {
+      "code": 6077,
+      "name": "DuplicateCoprocessorSigner",
+      "msg": "coprocessor signer set contains a duplicate signer"
+    },
+    {
+      "code": 6078,
+      "name": "ZeroCoprocessorSigner",
+      "msg": "coprocessor signer set contains the zero address"
     }
   ],
   "types": [
@@ -3728,17 +3823,38 @@
             }
           },
           {
-            "name": "coprocessor_signer",
+            "name": "coprocessor_signers",
             "docs": [
-              "Authorized coprocessor EVM signer for input attestations (v0: single signer,",
-              "threshold 1)."
+              "Registered coprocessor EVM signer set for input attestations (EVM `InputVerifier`",
+              "parity). Fixed-capacity so `HostConfig` keeps a pinned byte layout; only the first",
+              "`coprocessor_signer_count` entries are active, the rest are zero padding."
             ],
             "type": {
               "array": [
-                "u8",
-                20
+                {
+                  "array": [
+                    "u8",
+                    20
+                  ]
+                },
+                8
               ]
             }
+          },
+          {
+            "name": "coprocessor_signer_count",
+            "docs": [
+              "Number of active entries in `coprocessor_signers`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "coprocessor_threshold",
+            "docs": [
+              "Minimum distinct valid signatures (n-of-m) required over an input attestation;",
+              "`1 <= coprocessor_threshold <= coprocessor_signer_count`."
+            ],
+            "type": "u8"
           },
           {
             "name": "decryption_contract",
@@ -3964,16 +4080,28 @@
             }
           },
           {
-            "name": "coprocessor_signer",
+            "name": "coprocessor_signers",
             "docs": [
-              "Authorized coprocessor EVM signer for input attestations (v0: single signer)."
+              "Registered coprocessor EVM signer set for input attestations (EVM `InputVerifier`",
+              "parity). Must be non-empty, distinct, and free of the zero address; bounded by",
+              "[`HostConfig::MAX_COPROCESSOR_SIGNERS`]."
             ],
             "type": {
-              "array": [
-                "u8",
-                20
-              ]
+              "vec": {
+                "array": [
+                  "u8",
+                  20
+                ]
+              }
             }
+          },
+          {
+            "name": "coprocessor_threshold",
+            "docs": [
+              "Minimum distinct valid signatures (n-of-m) required over an input attestation;",
+              "`1 <= coprocessor_threshold <= coprocessor_signers.len()`."
+            ],
+            "type": "u8"
           },
           {
             "name": "decryption_contract",

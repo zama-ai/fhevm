@@ -17,6 +17,45 @@ use crate::{
 #[cfg(any(feature = "emit-events", test))]
 use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
 
+/// Validates a coprocessor signer set + threshold and packs it into the fixed-capacity array
+/// stored in `HostConfig`. Enforces the EVM `InputVerifier`-parity invariants: non-empty set,
+/// within the capacity bound, `1 <= threshold <= len`, no zero-address signer, and no duplicate
+/// signer (threshold verification counts DISTINCT recovered addresses, so a duplicate would
+/// silently raise the effective quorum). Shared by `initialize_host_config` and the admin setter.
+pub(super) fn validate_and_pack_coprocessor_signers(
+    signers: &[[u8; 20]],
+    threshold: u8,
+) -> Result<([[u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS], u8)> {
+    require!(
+        !signers.is_empty(),
+        ZamaHostError::EmptyCoprocessorSignerSet
+    );
+    require!(
+        signers.len() <= HostConfig::MAX_COPROCESSOR_SIGNERS,
+        ZamaHostError::TooManyCoprocessorSigners
+    );
+    require!(
+        threshold >= 1 && threshold as usize <= signers.len(),
+        ZamaHostError::InvalidCoprocessorThreshold
+    );
+    require!(
+        signers.iter().all(|signer| *signer != [0u8; 20]),
+        ZamaHostError::ZeroCoprocessorSigner
+    );
+    for i in 0..signers.len() {
+        for j in (i + 1)..signers.len() {
+            require!(
+                signers[i] != signers[j],
+                ZamaHostError::DuplicateCoprocessorSigner
+            );
+        }
+    }
+    Ok((
+        crate::state::pack_coprocessor_signers(signers),
+        signers.len() as u8,
+    ))
+}
+
 pub(super) fn assert_no_remaining_accounts(remaining_accounts: &[AccountInfo]) -> Result<()> {
     require!(
         remaining_accounts.is_empty(),
