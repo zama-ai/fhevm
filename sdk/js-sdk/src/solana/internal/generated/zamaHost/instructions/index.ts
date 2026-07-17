@@ -6,5 +6,4 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './confidentialTransfer.js';
-export * from './discloseSecp.js';
+export * from './verifyPublicDecrypt.js';

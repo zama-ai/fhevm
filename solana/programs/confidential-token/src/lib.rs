@@ -37,11 +37,9 @@ pub use instructions::CreateRandomAmount;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
-    CloseConsumedBurnRedemptionRequest, CloseConsumedDisclosureRequest,
-    CloseExpiredBurnRedemptionRequest, CloseExpiredDisclosureRequest, ConfidentialBurn,
-    ConfidentialTransfer, DiscloseAmountSecp, DiscloseBalanceSecp, InitializeMint,
-    InitializeTokenAccount, RedeemBurnedAmountSecp, RequestBurnRedemption, RequestDiscloseAmount,
-    RequestDiscloseBalance, WrapUsdc,
+    CloseConsumedBurnRedemptionRequest, CloseExpiredBurnRedemptionRequest, ConfidentialBurn,
+    ConfidentialTransfer, DiscloseSecp, InitializeMint, InitializeTokenAccount,
+    RedeemBurnedAmountSecp, RequestBurnRedemption, WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
@@ -109,25 +107,6 @@ pub mod confidential_token {
         instructions::confidential_transfer(ctx, amount_attestation)
     }
 
-    /// Requests public disclosure for the current confidential balance handle.
-    pub fn request_disclose_balance(
-        ctx: Context<RequestDiscloseBalance>,
-        request_nonce: [u8; 32],
-        expires_slot: u64,
-    ) -> Result<()> {
-        instructions::request_disclose_balance(ctx, request_nonce, expires_slot)
-    }
-
-    /// Requests public disclosure for any token-scoped encrypted amount handle.
-    pub fn request_disclose_amount(
-        ctx: Context<RequestDiscloseAmount>,
-        amount_handle: [u8; 32],
-        request_nonce: [u8; 32],
-        expires_slot: u64,
-    ) -> Result<()> {
-        instructions::request_disclose_amount(ctx, amount_handle, request_nonce, expires_slot)
-    }
-
     /// Requests KMS certification for redeeming a burned encrypted amount.
     pub fn request_burn_redemption(
         ctx: Context<RequestBurnRedemption>,
@@ -138,36 +117,18 @@ pub mod confidential_token {
         instructions::request_burn_redemption(ctx, burned_handle, request_nonce, expires_slot)
     }
 
-    /// Gateway-compatible balance disclosure: verifies the KMS `PublicDecryptVerification`
-    /// EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer.
-    pub fn disclose_balance_secp(
-        ctx: Context<DiscloseBalanceSecp>,
-        cleartext_amount: u64,
+    /// Consumes a KMS public-decrypt certificate through the stateless host verifier and emits a
+    /// token-scoped disclosed event. See `instructions::disclose_secp` for the act-once semantics
+    /// (idempotent by design — no on-chain replay marker).
+    pub fn disclose_secp(
+        ctx: Context<DiscloseSecp>,
+        handle: [u8; 32],
+        cleartext: [u8; 32],
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
-        proof: MmrInclusionProof,
+        proof: zama_host::instructions::MmrInclusionProof,
     ) -> Result<()> {
-        instructions::disclose_balance_secp(ctx, cleartext_amount, signatures, extra_data, proof)
-    }
-
-    /// Gateway-compatible amount disclosure: verifies the KMS `PublicDecryptVerification`
-    /// EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer.
-    pub fn disclose_amount_secp(
-        ctx: Context<DiscloseAmountSecp>,
-        amount_handle: [u8; 32],
-        cleartext_amount: u64,
-        signatures: Vec<[u8; 65]>,
-        extra_data: Vec<u8>,
-        proof: MmrInclusionProof,
-    ) -> Result<()> {
-        instructions::disclose_amount_secp(
-            ctx,
-            amount_handle,
-            cleartext_amount,
-            signatures,
-            extra_data,
-            proof,
-        )
+        instructions::disclose_secp(ctx, handle, cleartext, signatures, extra_data, proof)
     }
 
     /// Gateway-compatible redemption: verifies the KMS `PublicDecryptVerification`
@@ -190,25 +151,11 @@ pub mod confidential_token {
         )
     }
 
-    /// Closes a consumed disclosure request witness.
-    pub fn close_consumed_disclosure_request(
-        ctx: Context<CloseConsumedDisclosureRequest>,
-    ) -> Result<()> {
-        instructions::close_consumed_disclosure_request(ctx)
-    }
-
     /// Closes a consumed burn-redemption request witness.
     pub fn close_consumed_burn_redemption_request(
         ctx: Context<CloseConsumedBurnRedemptionRequest>,
     ) -> Result<()> {
         instructions::close_consumed_burn_redemption_request(ctx)
-    }
-
-    /// Closes an expired, unconsumed disclosure request witness.
-    pub fn close_expired_disclosure_request(
-        ctx: Context<CloseExpiredDisclosureRequest>,
-    ) -> Result<()> {
-        instructions::close_expired_disclosure_request(ctx)
     }
 
     /// Closes an expired, unconsumed burn-redemption request witness.

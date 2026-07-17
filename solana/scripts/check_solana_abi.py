@@ -64,24 +64,21 @@ PINNED_SCHEMAS = [
     ("zama_host", "instruction_args", "make_handle_public", True),
     ("confidential_token", "account", "ConfidentialMint", True),
     ("confidential_token", "account", "ConfidentialTokenAccount", True),
-    ("confidential_token", "account", "DisclosureRequest", True),
+    # The DisclosureRequest account and its request/disclose/close instruction lifecycle were
+    # dissolved (fhevm-internal#1704): token disclosure is now the thin `disclose_secp` consumer of
+    # the stateless host `verify_public_decrypt`. Only the burn-redemption witness remains.
     ("confidential_token", "account", "BurnRedemptionRequest", True),
     ("confidential_token", "account", "BurnRedemption", True),
     ("confidential_token", "instruction_args", "close_consumed_burn_redemption_request", True),
-    ("confidential_token", "instruction_args", "close_consumed_disclosure_request", True),
     ("confidential_token", "instruction_args", "close_expired_burn_redemption_request", True),
-    ("confidential_token", "instruction_args", "close_expired_disclosure_request", True),
     ("confidential_token", "instruction_args", "confidential_burn", True),
     ("confidential_token", "instruction_args", "confidential_transfer", True),
     # create_random_amount / create_random_bounded_amount are `poc`-gated demo helpers and are
     # intentionally absent from the production IDL, so they are not pinned here.
-    ("confidential_token", "instruction_args", "disclose_amount_secp", True),
-    ("confidential_token", "instruction_args", "disclose_balance_secp", True),
+    ("confidential_token", "instruction_args", "disclose_secp", True),
     ("confidential_token", "instruction_args", "initialize_mint", True),
     ("confidential_token", "instruction_args", "initialize_token_account", True),
     ("confidential_token", "instruction_args", "request_burn_redemption", True),
-    ("confidential_token", "instruction_args", "request_disclose_amount", True),
-    ("confidential_token", "instruction_args", "request_disclose_balance", True),
     ("confidential_token", "instruction_args", "redeem_burned_amount_secp", True),
     ("confidential_token", "instruction_args", "wrap_usdc", True),
 ]

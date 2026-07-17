@@ -320,57 +320,6 @@ pub(crate) fn assert_amount_attestation_binding(
     Ok(())
 }
 
-/// Verifies a token-scoped amount `EncryptedValue` lineage: canonical address,
-/// correct domain, a recognized amount label, and membership for the mint's
-/// compute signer.
-pub(crate) fn assert_token_amount_encrypted_value(
-    amount_value: &Account<zama_host::EncryptedValue>,
-    amount_handle: [u8; 32],
-    mint: Pubkey,
-    compute_signer: Pubkey,
-) -> Result<()> {
-    require!(
-        zama_host::handle_fhe_type(amount_handle) == BALANCE_FHE_TYPE,
-        ConfidentialTokenError::AmountHandleTypeMismatch
-    );
-    require!(
-        amount_value.current_handle == amount_handle,
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require_keys_eq!(
-        amount_value.acl_domain_key,
-        mint,
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        is_token_amount_label(amount_value.encrypted_value_label),
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require_keys_eq!(
-        amount_value.key(),
-        encrypted_value_address(
-            mint,
-            amount_value.app_account,
-            amount_value.encrypted_value_label
-        )
-        .0,
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    require!(
-        amount_value.has_subject(compute_signer),
-        ConfidentialTokenError::AmountAclMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn is_token_amount_label(encrypted_value_label: [u8; 32]) -> bool {
-    encrypted_value_label == wrap_amount_label()
-        || encrypted_value_label == burn_amount_label()
-        || encrypted_value_label == transfer_amount_label()
-        || encrypted_value_label == burned_amount_label()
-        || encrypted_value_label == transferred_amount_label()
-}
-
 /// Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction
 /// argument. The shared ACL crate is deliberately Anchor-free (pure `borsh`), so
 /// it cannot derive Anchor's IDL metadata; this local type carries the identical
@@ -467,31 +416,6 @@ pub(crate) fn authorize_burned_amount_redeem(
         encrypted_value_account.to_bytes(),
         &amount_value.to_shared(),
         burned_handle,
-        proof,
-    )
-    .map_err(|_| ConfidentialTokenError::PublicDecryptProofInvalid)?;
-    Ok(())
-}
-
-/// Disclose (consume) path twin of `authorize_burned_amount_redeem`: authorize the
-/// witness-pinned handle by an MMR public-decrypt proof instead of requiring it to
-/// still be the live handle, so a disclosure survives its lineage being superseded
-/// during the KMS round-trip. Unlike the redeem path this needs no lineage-binding
-/// assert: the disclosure request witness — a canonical PDA whose `request_hash` is
-/// recomputed and matched — froze the canonical lineage and handle validated at
-/// request time, and `assert_disclosure_request_witness` binds the passed
-/// `EncryptedValue` account to `request.encrypted_value`. Disclosure moves no funds,
-/// so that witness binding plus this proof is the complete authorization.
-pub(crate) fn authorize_disclosed_handle(
-    encrypted_value: &Account<zama_host::EncryptedValue>,
-    encrypted_value_account: Pubkey,
-    pinned_handle: [u8; 32],
-    proof: &zama_solana_acl::MmrProof,
-) -> Result<()> {
-    zama_solana_acl::authorize_public(
-        encrypted_value_account.to_bytes(),
-        &encrypted_value.to_shared(),
-        pinned_handle,
         proof,
     )
     .map_err(|_| ConfidentialTokenError::PublicDecryptProofInvalid)?;
@@ -596,97 +520,6 @@ pub(crate) fn assert_confidential_token_account_shape(
         token_account.owner,
         owner,
         ConfidentialTokenError::OwnerMismatch
-    );
-    Ok(())
-}
-
-/// Verifies a token account's current balance `EncryptedValue` lineage against its stored pointer.
-pub(crate) fn assert_current_balance_encrypted_value(
-    balance_value: &Account<zama_host::EncryptedValue>,
-    token_account: &Account<ConfidentialTokenAccount>,
-    mint: Pubkey,
-) -> Result<()> {
-    require_keys_eq!(
-        balance_value.key(),
-        token_account.balance_encrypted_value,
-        ConfidentialTokenError::CurrentEncryptedValueMismatch
-    );
-    require_keys_eq!(
-        balance_value.acl_domain_key,
-        mint,
-        ConfidentialTokenError::CurrentEncryptedValueMismatch
-    );
-    require_keys_eq!(
-        balance_value.app_account,
-        token_account.key(),
-        ConfidentialTokenError::CurrentEncryptedValueMismatch
-    );
-    require!(
-        balance_value.encrypted_value_label == balance_label(),
-        ConfidentialTokenError::CurrentEncryptedValueMismatch
-    );
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn assert_disclosure_request_witness(
-    request: &Account<DisclosureRequest>,
-    request_key: Pubkey,
-    mode: u8,
-    mint: Pubkey,
-    token_account: Pubkey,
-    app_account: Pubkey,
-    handle: [u8; 32],
-    encrypted_value: Pubkey,
-    host_config: Pubkey,
-) -> Result<()> {
-    let (expected_key, expected_bump) =
-        disclosure_request_address(mint, request.requester, handle, request.request_nonce);
-    require_keys_eq!(
-        request_key,
-        expected_key,
-        ConfidentialTokenError::RequestWitnessMismatch
-    );
-    require!(
-        request.to_account_info().data_len() == 8 + DisclosureRequest::SPACE
-            && request.bump == expected_bump,
-        ConfidentialTokenError::RequestWitnessMismatch
-    );
-    require!(
-        request.status == REQUEST_STATUS_PENDING && request.expires_slot >= Clock::get()?.slot,
-        ConfidentialTokenError::RequestWitnessUnavailable
-    );
-    require!(
-        request.mode == mode
-            && request.mint == mint
-            && request.token_account == token_account
-            && request.app_account == app_account
-            && request.handle == handle
-            && request.encrypted_value == encrypted_value
-            && request.host_config == host_config
-            && request.kms_context_id != 0
-            && request.chain_id != 0,
-        ConfidentialTokenError::RequestWitnessMismatch
-    );
-    let recomputed_hash = disclosure_request_hash(
-        crate::ID,
-        request_key,
-        request.mint,
-        request.requester,
-        request.token_account,
-        request.app_account,
-        request.handle,
-        request.encrypted_value,
-        request.host_config,
-        request.kms_context_id,
-        request.request_nonce,
-        request.chain_id,
-        request.expires_slot,
-        request.mode,
-    );
-    require!(
-        request.request_hash == recomputed_hash,
-        ConfidentialTokenError::RequestWitnessMismatch
     );
     Ok(())
 }

@@ -12,7 +12,7 @@ Every decrypt authorizes through exactly one of these, and each has dedicated co
 |---|---|---|
 | **current** | `handle == current_handle && subject ∈ subjects` (no proof) | `zama-solana-acl` unit (`authorize_current`); `host_mollusk` current-decrypt cases |
 | **historical** | MMR proof of `HistoricalAccessLeaf(handle, subject)` vs live peaks | `zama-solana-acl` (`authorize_historical`, `mmr_verify`); `host_mollusk` supersede-then-prove; relayer `solana_proof` reconstruction |
-| **public** | MMR proof of `PublicDecryptLeaf(handle)` vs live peaks | `zama-solana-acl` (`authorize_public`); `token_mollusk` burn→redeem and disclose after-supersession |
+| **public** | MMR proof of `PublicDecryptLeaf(handle)` vs live peaks | `zama-solana-acl` (`authorize_public`); `token_mollusk` burn→redeem and `disclose_secp` after-supersession; `host_mollusk` `verify_public_decrypt` negatives (DD-040) |
 
 Negative coverage for each: wrong subject, wrong handle, foreign-lineage proof, invalid/forged proof —
 all fail closed (see the `*_rejects_*` mollusk tests).
@@ -26,8 +26,14 @@ all fail closed (see the `*_rejects_*` mollusk tests).
 2. **On-chain integration — Mollusk** (`solana/runtime-tests/tests/{host,token}_mollusk.rs`): runs the
    **real compiled `.so`** (built `--features poc`) against Mollusk. Covers all three auth paths, the
    full token flows (wrap / transfer / burn→redeem / disclose), the produced-public lifecycle batch
-   (zero/one/multiple/max-size/fail-closed), consume-once replay markers, expired-request rejection,
-   and handle supersession. Because Mollusk
+   (zero/one/multiple/max-size/fail-closed), the burn-redemption consume-once replay marker and
+   expired-request rejection, and handle supersession. Token disclosure is now the thin `disclose_secp`
+   consumer of the host `verify_public_decrypt` verifier (DD-040); `token_mollusk` covers its happy path
+   (amount + balance), after-supersession consume, idempotency / no-replay-marker, foreign-proof
+   rejection surfaced from the host, and mint-domain binding. The verifier's own negatives (rotated
+   context, sub-threshold cert, handle/proof mismatch, non-canonical context, survives-supersede) live
+   in `host_mollusk` (#3220). There are no more `request_disclose_*` / `disclose_*_secp` witness-bound
+   disclosure tests. Because Mollusk
    enforces the 1.4M CU budget, every passing test is also an implicit CU-fits assertion.
 3. **Handle-derivation / lifecycle transport** (`zama-host` lib unit): the maximum 16-record batch's
     exact 1,077-byte CPI envelope and signer/readonly event-authority metadata, plus handle-derivation
@@ -54,8 +60,8 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    bounded randomness, and each distinct composite encoding (`Sum`, `IsIn`, `MulDiv`). Exhaustive
    operator contract belongs to pure conformance; Mollusk and direct real-TFHE add representative SBF
    and cryptographic evidence. The live vertical also retains token composition through wrap → burn →
-   public release → redeem and disclose with witness-bound KMS certificates. `token_mollusk` owns the
-   broader negative matrix (including after-supersession, consume-once, and foreign-proof rejection).
+   public release → redeem (witness-bound KMS certificate) and `disclose_secp` (stateless host `verify_public_decrypt`, DD-040). `token_mollusk` owns the
+   broader negative matrix (including after-supersession, redeem consume-once, disclosure idempotency, and foreign-proof rejection).
 
 ## Reconstruction parity strategy
 

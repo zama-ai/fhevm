@@ -116,7 +116,7 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         "confidential_transfer amount is an attested external input, not a durable amount_compute_acl account"
     );
 
-    // There is no per-mint verifier-set rotation surface; disclosure/redemption requests pin a
+    // There is no per-mint verifier-set rotation surface; the burn-redemption request pins a
     // KMS context id and the response verifies a secp256k1 cert against that context.
     for removed in ["update_mint_verifier_sets", "migrate_mint_verifier_sets"] {
         assert!(
@@ -131,18 +131,41 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
             "ConfidentialMint must not retain verifier-set field `{removed}`"
         );
     }
-    let disclosure_fields = type_field_names(&idl, "DisclosureRequest");
+    // The DisclosureRequest lifecycle was dissolved (fhevm-internal#1704): token disclosure is now a
+    // thin `disclose_secp` consumer of the stateless host `verify_public_decrypt`, with no witness
+    // account and no per-request instructions.
     assert!(
-        disclosure_fields
+        !names(&idl, "accounts")
+            .iter()
+            .any(|name| name == "DisclosureRequest")
+            && !names(&idl, "types")
+                .iter()
+                .any(|name| name == "DisclosureRequest"),
+        "DisclosureRequest account must be removed from the token IDL"
+    );
+    for removed in [
+        "request_disclose_balance",
+        "request_disclose_amount",
+        "disclose_balance_secp",
+        "disclose_amount_secp",
+        "close_consumed_disclosure_request",
+        "close_expired_disclosure_request",
+    ] {
+        assert!(
+            !instructions.iter().any(|name| name == removed),
+            "production token IDL must not expose dissolved disclosure instruction `{removed}`"
+        );
+    }
+    assert!(
+        instructions.iter().any(|name| name == "disclose_secp"),
+        "token IDL must expose the thin `disclose_secp` consumer"
+    );
+    // The burn-redemption witness still pins a KMS context id (its migration is deferred).
+    assert!(
+        type_field_names(&idl, "BurnRedemptionRequest")
             .iter()
             .any(|field| field == "kms_context_id"),
-        "DisclosureRequest must pin a kms_context_id"
-    );
-    assert!(
-        !disclosure_fields
-            .iter()
-            .any(|field| field == "verifier_set" || field == "verifier_set_version"),
-        "DisclosureRequest must not retain verifier-set fields"
+        "BurnRedemptionRequest must pin a kms_context_id"
     );
 
     let source = format!("{TOKEN_LIB}\n{TOKEN_COMMON}");
@@ -210,15 +233,16 @@ fn token_idl_drops_transfer_and_call_callback_surface() {
 #[test]
 fn token_request_witnesses_bind_handle_lineage_and_secp_kms_context() {
     let source = TOKEN_COMMON;
-    // The request witness binds the request to its accounts, the handle and its
-    // `EncryptedValue` lineage account (which replaced the deleted
-    // `HandleMaterialCommitment` material_* fields), host config, chain id, and
-    // the pinned KMS context id; the response then verifies a secp256k1 KMS cert.
+    // The surviving burn-redemption request witness binds the request to its accounts, the burned
+    // handle and its `EncryptedValue` lineage account (which replaced the deleted
+    // `HandleMaterialCommitment` material_* fields), host config, chain id, and the pinned KMS
+    // context id; the response then verifies a secp256k1 KMS cert. (The DisclosureRequest witness was
+    // dissolved in fhevm-internal#1704; disclosure now consumes the stateless host verifier directly.)
     for required in [
         "request_hash",
         "kms_context_id",
-        "request.handle == handle",
-        "request.encrypted_value == encrypted_value",
+        "request.burned_handle == burned_handle",
+        "request.burned_encrypted_value == burned_encrypted_value",
         "host_config",
         "chain_id",
         "assert_kms_public_decrypt_cert_for_request",
@@ -334,7 +358,7 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         .get("schemas")
         .and_then(Value::as_array)
         .expect("ABI golden schemas should be an array");
-    for required in ["KmsContext", "DisclosureRequest", "BurnRedemptionRequest"] {
+    for required in ["KmsContext", "BurnRedemptionRequest"] {
         assert!(
             schemas
                 .iter()
@@ -349,6 +373,12 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         // Deleted by the EncryptedValue ACL rewrite.
         "AclRecord",
         "HandleMaterialCommitment",
+        // Dissolved by fhevm-internal#1704 (DisclosureRequest lifecycle -> thin host verifier).
+        "DisclosureRequest",
+        "AmountDisclosedEvent",
+        "AmountDisclosureRequestedEvent",
+        "BalanceDisclosedEvent",
+        "BalanceDisclosureRequestedEvent",
     ] {
         assert!(
             !schemas

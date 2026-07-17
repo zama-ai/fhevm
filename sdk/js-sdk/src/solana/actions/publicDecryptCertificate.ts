@@ -36,8 +36,8 @@ export type SolanaPublicDecryptCertificateParameters = {
 
 /**
  * An untrusted public-decrypt certificate claim returned by the relayer. Authority exists only
- * after a `disclose_*_secp` instruction verifies this certificate on-chain against the
- * witness-pinned `KmsContext`.
+ * after the stateless host `verify_public_decrypt` verifies this certificate on-chain against the
+ * current `KmsContext` (directly, or via the token `disclose_secp` wrapper).
  */
 export type SolanaPublicDecryptCertificateClaim = {
   readonly handle: string;

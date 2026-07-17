@@ -118,89 +118,23 @@ pub struct RandomAmountCreatedEvent {
     pub encrypted_value: Pubkey,
 }
 
-/// Emitted when the owner requests public disclosure of the current balance.
+/// Emitted when `disclose_secp` publishes a KMS-certified cleartext for a token-scoped handle.
+///
+/// This is the single app-level disclosure event after the `DisclosureRequest` lifecycle was
+/// dissolved (fhevm-internal#1704): it covers both former balance and amount disclosures. It carries
+/// no request witness or `request_hash` — there is no per-request PDA anymore. The request side is
+/// the owner sealing a public-decrypt leaf via the host `make_handle_public` instruction directly.
 #[event]
-pub struct BalanceDisclosureRequestedEvent {
+pub struct HandleDisclosedEvent {
     /// Event schema version.
     pub version: u8,
-    /// Confidential mint.
+    /// Confidential mint whose ACL domain scopes the disclosed lineage.
     pub mint: Pubkey,
-    /// Token account owner.
-    pub owner: Pubkey,
-    /// Confidential token account.
-    pub token_account: Pubkey,
-    /// Publicly decryptable balance handle.
+    /// Disclosed handle, proven public by the host verifier.
     pub handle: [u8; 32],
-    /// ZamaHost ACL record updated by the request.
+    /// ZamaHost `EncryptedValue` lineage the handle belongs to.
     pub encrypted_value: Pubkey,
-    /// Account-backed request witness.
-    pub request: Pubkey,
-    /// Canonical request hash stored in the witness.
-    pub request_hash: [u8; 32],
-    /// KMS context id the response cert must verify against.
-    pub kms_context_id: u64,
-    /// Last slot in which this request can be consumed.
-    pub expires_slot: u64,
-}
-
-/// Emitted when a requester asks to publicly disclose a token-scoped amount.
-#[event]
-pub struct AmountDisclosureRequestedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Confidential mint.
-    pub mint: Pubkey,
-    /// Requester authorized on the amount ACL.
-    pub requester: Pubkey,
-    /// Publicly decryptable amount handle.
-    pub handle: [u8; 32],
-    /// ZamaHost ACL record updated by the request.
-    pub encrypted_value: Pubkey,
-    /// Account-backed request witness.
-    pub request: Pubkey,
-    /// Canonical request hash stored in the witness.
-    pub request_hash: [u8; 32],
-    /// KMS context id the response cert must verify against.
-    pub kms_context_id: u64,
-    /// Last slot in which this request can be consumed.
-    pub expires_slot: u64,
-}
-
-/// Emitted when a KMS certificate discloses the current balance cleartext.
-#[event]
-pub struct BalanceDisclosedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Confidential mint.
-    pub mint: Pubkey,
-    /// Token account owner.
-    pub owner: Pubkey,
-    /// Confidential token account.
-    pub token_account: Pubkey,
-    /// Disclosed balance handle.
-    pub handle: [u8; 32],
-    /// Consumed request witness.
-    pub request: Pubkey,
-    /// Canonical request hash stored in the witness.
-    pub request_hash: [u8; 32],
-    /// KMS-certified cleartext amount.
-    pub cleartext_amount: u64,
-}
-
-/// Emitted when a KMS certificate discloses a token-scoped amount cleartext.
-#[event]
-pub struct AmountDisclosedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Confidential mint.
-    pub mint: Pubkey,
-    /// Disclosed encrypted amount handle.
-    pub handle: [u8; 32],
-    /// Consumed request witness.
-    pub request: Pubkey,
-    /// Canonical request hash stored in the witness.
-    pub request_hash: [u8; 32],
-    /// KMS-certified cleartext amount.
+    /// KMS-certified cleartext amount (low 64 bits of the certified `uint256`).
     pub cleartext_amount: u64,
 }
 

@@ -114,4 +114,12 @@ pub enum ConfidentialTokenError {
     /// The FHE eval plan requires an output authority that was not provided.
     #[msg("FHE eval plan is missing a required output authority")]
     MissingFheOutputAuthority,
+    /// The host public-decrypt verifier CPI did not return well-formed `(handle, cleartext)`
+    /// data, was not produced by the ZamaHost program, or certified a cleartext that does not fit
+    /// the token's euint64 width (nonzero high bytes in the 32-byte `uint256`).
+    #[msg("public-decrypt verifier return data is invalid")]
+    VerifierReturnDataInvalid,
+    /// The handle proven public by the host verifier did not equal the caller-pinned handle.
+    #[msg("disclosed handle does not match the pinned handle")]
+    DisclosedHandleMismatch,
 }
