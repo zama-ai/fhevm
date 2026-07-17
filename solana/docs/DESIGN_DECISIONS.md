@@ -1472,3 +1472,48 @@ avoiding the old one-CPI-per-step heap growth. The event is unconditional when o
 `emit-events` features are disabled. Consumers must still validate the host program, its canonical
 event-authority PDA, transaction success, record ordering, and one-to-one agreement with durable
 `make_public` outputs; the event grants no authority by itself.
+
+## DD-039: HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority
+
+Status: adopted
+
+The per-slot HCU block cap keys its meter and trust-registry PDAs (`["hcu-block-meter", subject]`,
+`["hcu-trusted", subject]`) on the frame's `compute_subject` — the mandatory signed caller identity
+already used for durable-input ACL admission (the `msg.sender` analog). The earlier design metered a
+dedicated `hcu_authority` signer supplied alongside `compute_subject`. That extra account bound the
+meter to nothing the frame otherwise required: a direct caller could hand a fresh `hcu_authority`
+keypair on every call and receive a fresh per-slot meter each time, so any finite
+`hcu_block_cap_per_app` was bypassable by signer rotation. The gap was dormant only because
+`initialize_host_config` ships the cap at `u64::MAX` (unrestricted), which short-circuits before the
+meter is consulted.
+
+Metering the `compute_subject` closes the rotation bypass wherever the frame binds that identity to
+something the caller cannot freely re-pick:
+
+- The confidential-token program: `compute_subject` is the mint's `["fhe-compute", mint]` PDA, signed
+  only via the program's CPI seeds, so a caller cannot swap it for a fresh key — the per-mint meter is
+  unforgeable.
+- Any frame consuming a durable or verified input: the subject must be an allowed member of the input
+  lineage's ACL (durable), or match the attestation's bound contract (verified), so substituting an
+  unrelated key loses input access. No other account the caller controls (`payer`,
+  `app_account_authority`, output authorities) yields a fresh meter.
+
+It does NOT, by itself, constrain an **input-free frame** — `Rand` / `TrivialEncrypt` / scalar-only
+work with a transient (non-durable) output — submitted by a direct caller: there `compute_subject` is
+an unconstrained signer, so such a caller can still rotate it for a fresh per-slot meter. Closing that
+residual case (e.g. requiring input-free direct frames to meter a stable caller identity) is tracked
+as a follow-up; it does not affect the token program, whose compute subject is always the mint PDA.
+
+`hcu_authority` is removed everywhere: the host `fhe_eval` account list (an intended ABI break,
+resynced in the host-listener IDL), the `zama-fhe` CPI account struct, the confidential-token
+`HcuAuthority` PDA and the account slot on all six token instructions, and the deposit app's
+forwarded account. The token program now meters per mint automatically: `compute_subject` is that
+mint's `["fhe-compute", mint]` compute-signer PDA, so the budget stays one-per-mint with one fewer
+account threaded through every instruction.
+
+Granularity note: because the meter keys on the compute subject, an application that spreads work
+across several distinct compute subjects gets a separate per-slot budget per subject. Aggregating a
+finite cap across many subjects under one logical app would need an on-chain app→subject registry;
+that is rejected here as speculative (see #1708 Option B) until a concrete multi-subject app requires
+it. The trust registry (`set_hcu_app_trusted`) already lets an admin bypass the cap for a specific
+subject, which covers the known trusted-app cases without a registry.

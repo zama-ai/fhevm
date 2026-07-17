@@ -390,7 +390,6 @@ impl EvalFlow {
                 app_account_authority: self.authority,
                 host_config: self.host_config,
                 system_program: system_program::ID,
-                hcu_authority: self.authority,
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
                 event_authority: event_authority(host::id()),

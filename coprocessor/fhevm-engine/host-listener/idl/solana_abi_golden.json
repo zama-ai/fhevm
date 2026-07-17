@@ -173,7 +173,7 @@
       "fixture_len": 225,
       "name": "confidential_burn",
       "program": "confidential_token",
-      "schema_hash": "4de543a8cf28e1b3dc78700ec898573318175bb35fa3434e7729e329c3bac85e"
+      "schema_hash": "5062d02f9b0dfcc51883add499c8b1615a7fef8024f711730a8c7c738bc0324f"
     },
     {
       "category": "instruction_args",
@@ -181,7 +181,7 @@
       "fixture_len": 225,
       "name": "confidential_transfer",
       "program": "confidential_token",
-      "schema_hash": "358c8114595bb757f374bffe5ecc67428c1f19c5cc910041913f9cbc40a4bc7c"
+      "schema_hash": "4d2f88b28cb5f6f3e2cfbe9c4c325caa8a5305d8a2b45ff07703238306da0a6c"
     },
     {
       "category": "instruction_args",
@@ -205,7 +205,7 @@
       "fixture_len": 8,
       "name": "initialize_mint",
       "program": "confidential_token",
-      "schema_hash": "28ad2c2496edc485c1224d5d39cd2fcfc1734f685de064a61c8c32bb20c5888e"
+      "schema_hash": "227b8aacee3f42e274e6216c27cad99430ef9ac08df0527d11463162d80842d2"
     },
     {
       "category": "instruction_args",
@@ -213,7 +213,7 @@
       "fixture_len": 16,
       "name": "initialize_token_account",
       "program": "confidential_token",
-      "schema_hash": "3480cb720179c701975815a3152b1e2acb99f946ec7dbb90d84853feb173a9a9"
+      "schema_hash": "b26742e5ded405756ffe42ea6fbb0c711b85fe91fd53c4846cbf5cbb2aa0dc85"
     },
     {
       "category": "instruction_args",
@@ -253,7 +253,7 @@
       "fixture_len": 16,
       "name": "wrap_usdc",
       "program": "confidential_token",
-      "schema_hash": "6d8a122cc3e8b2d72f89e9133f9a7a1a1f88c44c6cd14fb0d606d2285003fe53"
+      "schema_hash": "cec8a1396ac2289a9579576a38812e64a06a942bacaab9f95b692b73d1420b12"
     },
     {
       "category": "account",
@@ -429,7 +429,7 @@
       "fixture_len": 118,
       "name": "fhe_eval",
       "program": "zama_host",
-      "schema_hash": "d868a58bcd2c2072d3016d4b7f3f3911bacc97e9644cd021031ebd9eecc7d0f3"
+      "schema_hash": "db061ac2c87ceee3dec03f4cff92cf87ad868fb41211b8bc036800acc9e54498"
     },
     {
       "category": "instruction_args",

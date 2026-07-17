@@ -2,16 +2,16 @@
 
 use super::*;
 
-/// Per-app running HCU total for the current slot.
+/// Per-`compute_subject` running HCU total for the current slot.
 ///
-/// One meter per app (keyed by the `hcu_authority` signer), reused across slots via a lazy
-/// reset: when `last_seen_slot != clock.slot` the accumulated `used_hcu` is treated as `0`
+/// One meter per compute subject (keyed by the frame's `compute_subject`), reused across slots via
+/// a lazy reset: when `last_seen_slot != clock.slot` the accumulated `used_hcu` is treated as `0`
 /// for the new slot rather than carried over. Program-authority; lazy-created on the first
 /// metered frame; permanent (no close / reclamation in v1, so close+reopen cannot reset the
 /// counter mid-slot).
 #[account]
 pub struct HcuBlockMeter {
-    /// The `hcu_authority` this meter counts.
+    /// The `compute_subject` this meter counts.
     pub app: Pubkey,
     /// Slot in which `used_hcu` was last written; a different current slot resets usage to 0.
     pub last_seen_slot: u64,

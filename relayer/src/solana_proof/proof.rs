@@ -217,7 +217,7 @@ mod tests {
         }
     }
 
-    /// The 10 named `fhe_eval` accounts followed by `remaining_accounts`, matching
+    /// The 9 named `fhe_eval` accounts followed by `remaining_accounts`, matching
     /// the real anchor layout (see `decode::FHE_EVAL_REMAINING_BASE`).
     fn fhe_eval_accounts(program_id: [u8; 32], remaining: &[[u8; 32]]) -> Vec<[u8; 32]> {
         let mut accounts = vec![
@@ -226,11 +226,10 @@ mod tests {
             pk(0xA2),   // 2 app_account_authority
             pk(0xA3),   // 3 host_config
             pk(0xA4),   // 4 system_program
-            pk(0xA5),   // 5 hcu_authority
-            program_id, // 6 hcu_block_meter (None placeholder)
-            program_id, // 7 hcu_trusted_app_record (None placeholder)
-            pk(0xA8),   // 8 event_authority
-            program_id, // 9 program (event_cpi)
+            program_id, // 5 hcu_block_meter (None placeholder)
+            program_id, // 6 hcu_trusted_app_record (None placeholder)
+            pk(0xA8),   // 7 event_authority
+            program_id, // 8 program (event_cpi)
         ];
         accounts.extend_from_slice(remaining);
         accounts

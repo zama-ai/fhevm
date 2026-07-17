@@ -15,9 +15,11 @@
 //! Cap sentinels: `u64::MAX` = unrestricted (short-circuit, touch nothing), `0` = ban untrusted
 //! apps (trusted still bypass), otherwise the metering band.
 //!
-//! The metered identity is the dedicated, mandatory `hcu_authority` signer — never `payer` and
-//! never `app_account_authority` (an output-ACL role that degenerates to a per-user key). The
-//! account layer enforces its presence and signature on every frame, active cap or not.
+//! The metered identity is the `compute_subject` — the mandatory signed caller identity already
+//! used for ACL admission (the `msg.sender` analog), never `payer` and never `app_account_authority`
+//! (an output-ACL role that degenerates to a per-user key). Metering the already-signed
+//! `compute_subject` means no caller can rotate a fresh signer to mint a fresh per-slot meter: the
+//! same subject that authorizes the frame's encrypted inputs is the one whose usage accumulates.
 
 use anchor_lang::prelude::*;
 
@@ -40,7 +42,7 @@ pub(super) fn check<'info>(
     if cap == u64::MAX {
         return Ok(());
     }
-    let app = ctx.accounts.hcu_authority.key();
+    let app = ctx.accounts.compute_subject.key();
     // A well-formed trusted witness bypasses the cap entirely — even under a ban.
     if resolve_trusted(ctx, app)? {
         return Ok(());
@@ -74,7 +76,7 @@ pub(super) fn charge<'info>(
     if cap == u64::MAX {
         return Ok(());
     }
-    let app = ctx.accounts.hcu_authority.key();
+    let app = ctx.accounts.compute_subject.key();
     if resolve_trusted(ctx, app)? {
         return Ok(());
     }

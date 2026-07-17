@@ -1,8 +1,9 @@
-//! Creates and updates HCU trust-registry records (per-app block-cap bypass).
+//! Creates and updates HCU trust-registry records (per-`compute_subject` block-cap bypass).
 //!
 //! Mirrors `set_deny_subject`, but inverted: absence means "untrusted" (metered), and only an
-//! admin-created, program-owned record with `trusted == true` bypasses the cap. An app cannot
-//! self-trust — the write is admin-gated.
+//! admin-created, program-owned record with `trusted == true` bypasses the cap. The `app` key is a
+//! `compute_subject` — the signed caller identity the block cap meters. A subject cannot self-trust
+//! — the write is admin-gated.
 
 use anchor_lang::prelude::*;
 

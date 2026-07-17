@@ -706,7 +706,6 @@ fn initialize_mint_ix(
             zama_program: host::id(),
             host_config,
             system_program: system_program::ID,
-            hcu_authority: token::hcu_authority_address(mint).0,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
@@ -737,7 +736,6 @@ fn initialize_token_account_ix(
             zama_program: host::id(),
             host_config,
             system_program: system_program::ID,
-            hcu_authority: token::hcu_authority_address(mint).0,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
@@ -785,14 +783,13 @@ fn confidential_transfer_ix_with_remaining(
         remaining,
         None,
         None,
-        token::hcu_authority_address(fixture.mint).0,
     )
 }
 
 /// Block-cap optional accounts threaded through the transfer CPI explicitly; used by the HCU
-/// block-cap tests to vary the meter / trust witness / HCU authority. The default unrestricted
-/// cap means `confidential_transfer_ix_with_remaining` passes `None`/`None`/the canonical mint
-/// authority.
+/// block-cap tests to vary the meter / trust witness. The default unrestricted cap means
+/// `confidential_transfer_ix_with_remaining` passes `None`/`None`. Metering keys on the mint's
+/// compute signer PDA — there is no separate HCU authority account.
 #[allow(clippy::too_many_arguments)]
 fn confidential_transfer_ix_with_block_cap_accounts(
     fixture: &TokenFixture,
@@ -804,7 +801,6 @@ fn confidential_transfer_ix_with_block_cap_accounts(
     remaining: Vec<Pubkey>,
     hcu_block_meter: Option<Pubkey>,
     hcu_trusted_app_record: Option<Pubkey>,
-    hcu_authority: Pubkey,
 ) -> Instruction {
     let mut ix = anchor_ix(
         token::id(),
@@ -824,7 +820,6 @@ fn confidential_transfer_ix_with_block_cap_accounts(
             system_program: system_program::ID,
             hcu_block_meter,
             hcu_trusted_app_record,
-            hcu_authority,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -1912,7 +1907,6 @@ fn confidential_burn_ix(
             zama_program: host::id(),
             host_config: fixture.host_config,
             system_program: system_program::ID,
-            hcu_authority: token::hcu_authority_address(fixture.mint).0,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
@@ -3227,49 +3221,14 @@ fn mollusk_confidential_transfer_block_cap_ban_is_enforced_through_cpi() {
 }
 
 #[test]
-fn mollusk_confidential_transfer_rejects_non_canonical_hcu_authority() {
-    // The token program pins the mandatory HCU authority to the canonical
-    // ["hcu-authority", mint] PDA before signing it into the CPI — an arbitrary account in
-    // that slot (e.g. another mint's authority, to spend its budget) is rejected up front,
-    // even while the host cap is unrestricted.
-    let fixture = TokenFixture::new();
-    let context = mollusk().with_context(fixture.base_accounts());
-    let amount_handle = handle_for_chain(201, BALANCE_FHE_TYPE);
-    let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
-    let ix = confidential_transfer_ix_with_block_cap_accounts(
-        &fixture,
-        fixture.alice_token,
-        fixture.bob_token,
-        fixture.alice_balance_value,
-        fixture.bob_balance_value,
-        attestation,
-        Vec::new(),
-        None,
-        None,
-        token::hcu_authority_address(Pubkey::new_unique()).0,
-    );
-
-    context.process_and_validate_instruction(
-        &ix,
-        &[token_error(
-            token::ConfidentialTokenError::HcuAuthorityMismatch,
-        )],
-    );
-    assert_eq!(
-        read_encrypted_value(&context, fixture.alice_balance_value).current_handle,
-        fixture.alice_initial
-    );
-}
-
-#[test]
 fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     // The Some(meter) CPI shape — the production account set once the cap drops below
-    // u64::MAX. With a metering-band cap, the mint's HCU authority signed in, and the meter
-    // threaded through ConfidentialTransfer, the transfer must succeed and the meter must be
-    // lazy-created and charged with exactly the frame's HCU, proving the three optional
-    // accounts survive the token -> zama-fhe -> fhe_eval CPI encoding end to end. The metering
-    // identity is the mint's ["hcu-authority", mint] PDA — one budget per mint, NOT per sender
-    // token account.
+    // u64::MAX. With a metering-band cap and the meter threaded through ConfidentialTransfer, the
+    // transfer must succeed and the meter must be lazy-created and charged with exactly the frame's
+    // HCU, proving the optional accounts survive the token -> zama-fhe -> fhe_eval CPI encoding end
+    // to end. The metering identity is the frame's `compute_subject` — here the mint's
+    // ["fhe-compute", mint] compute-signer PDA — one budget per mint, NOT per sender token account,
+    // and with no separate HCU authority account.
     let fixture = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
     accounts.insert(
@@ -3283,8 +3242,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     let context = mollusk().with_context(accounts);
     let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
     let attestation = amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer);
-    let hcu_authority = token::hcu_authority_address(fixture.mint).0;
-    let meter_pda = host::hcu_block_meter_address(hcu_authority).0;
+    let meter_pda = host::hcu_block_meter_address(fixture.compute_signer).0;
     let ix = confidential_transfer_ix_with_block_cap_accounts(
         &fixture,
         fixture.alice_token,
@@ -3295,7 +3253,6 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
         Vec::new(),
         Some(meter_pda),
         None,
-        hcu_authority,
     );
 
     context.process_and_validate_instruction(&ix, &[Check::success()]);
@@ -3303,10 +3260,10 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     // The transfer completed: the sender's balance lineage moved off its initial handle.
     let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
     assert_ne!(alice_balance.current_handle, fixture.alice_initial);
-    // The meter was lazy-created through the CPI, keyed on the mint's HCU authority, and
+    // The meter was lazy-created through the CPI, keyed on the mint's compute signer, and
     // charged exactly the transfer frame's HCU at the current slot.
     let meter = read_hcu_block_meter(&context, meter_pda).expect("meter created through CPI");
-    assert_eq!(meter.app, hcu_authority);
+    assert_eq!(meter.app, fixture.compute_signer);
     assert_eq!(meter.used_hcu, TRANSFER_FRAME_HCU);
     assert_eq!(meter.last_seen_slot, context.mollusk.sysvars.clock.slot);
     // Regression guard on the metering granularity: nothing accrues to the sender token

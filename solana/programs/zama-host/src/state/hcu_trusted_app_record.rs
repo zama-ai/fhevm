@@ -10,7 +10,7 @@ use super::*;
 /// Admin-only writer; long-lived. The direct analog of EVM's `blockHCUWhitelist`.
 #[account]
 pub struct HcuTrustedAppRecord {
-    /// The `hcu_authority` this record governs.
+    /// The `compute_subject` this record governs.
     pub app: Pubkey,
     /// When true, `app` bypasses the per-app block cap entirely (no meter, no charge).
     pub trusted: bool,

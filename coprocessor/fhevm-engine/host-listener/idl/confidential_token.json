@@ -287,15 +287,9 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_authority",
-          "docs": [
-            "into the host CPI as this mint's HCU metering identity."
-          ]
-        },
-        {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", hcu_authority]` PDA. Supplied by an untrusted mint under a",
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
             "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
           ],
           "writable": true,
@@ -304,7 +298,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "canonical `[\"hcu-trusted\", hcu_authority]` PDA. Present + valid bypasses the cap; absent",
+            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
             "means the mint is metered."
           ],
           "optional": true
@@ -450,7 +444,8 @@
         {
           "name": "hcu_block_meter",
           "docs": [
-            "HCU block meter — supplied by an untrusted app under a metering-band cap, omitted otherwise."
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter — supplied",
+            "by an untrusted mint under a metering-band cap, omitted otherwise."
           ],
           "writable": true,
           "optional": true
@@ -461,13 +456,6 @@
             "trust witness — present + valid bypasses the cap; absent means untrusted (metered)."
           ],
           "optional": true
-        },
-        {
-          "name": "hcu_authority",
-          "docs": [
-            "into the CPI. The mint-scoped identity the host block cap meters and trusts — mandatory",
-            "on every eval, matching the host account shape."
-          ]
         },
         {
           "name": "event_authority"
@@ -911,15 +899,9 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_authority",
-          "docs": [
-            "into the host CPI as this mint's HCU metering identity."
-          ]
-        },
-        {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", hcu_authority]` PDA. Supplied by an untrusted mint under a",
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
             "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
           ],
           "writable": true,
@@ -928,7 +910,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "canonical `[\"hcu-trusted\", hcu_authority]` PDA. Present + valid bypasses the cap; absent",
+            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
             "means the mint is metered."
           ],
           "optional": true
@@ -1061,15 +1043,9 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_authority",
-          "docs": [
-            "into the host CPI as this mint's HCU metering identity."
-          ]
-        },
-        {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", hcu_authority]` PDA. Supplied by an untrusted mint under a",
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
             "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
           ],
           "writable": true,
@@ -1078,7 +1054,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "canonical `[\"hcu-trusted\", hcu_authority]` PDA. Present + valid bypasses the cap; absent",
+            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
             "means the mint is metered."
           ],
           "optional": true
@@ -2012,15 +1988,9 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_authority",
-          "docs": [
-            "into the host CPI as this mint's HCU metering identity."
-          ]
-        },
-        {
           "name": "hcu_block_meter",
           "docs": [
-            "canonical `[\"hcu-block-meter\", hcu_authority]` PDA. Supplied by an untrusted mint under a",
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
             "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
           ],
           "writable": true,
@@ -2029,7 +1999,7 @@
         {
           "name": "hcu_trusted_app_record",
           "docs": [
-            "canonical `[\"hcu-trusted\", hcu_authority]` PDA. Present + valid bypasses the cap; absent",
+            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
             "means the mint is metered."
           ],
           "optional": true

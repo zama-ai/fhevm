@@ -228,8 +228,8 @@ pub async fn run(
 /// instruction's accounts.
 ///
 /// `remaining_index` (the program's `output_encrypted_value_index`) is relative to
-/// `remaining_accounts`, which follow the 10 named `fhe_eval` accounts — payer,
-/// compute_subject, app_account_authority, host_config, system_program, hcu_authority,
+/// `remaining_accounts`, which follow the 9 named `fhe_eval` accounts — payer,
+/// compute_subject, app_account_authority, host_config, system_program,
 /// hcu_block_meter, hcu_trusted_app_record, then `#[event_cpi]`'s event_authority +
 /// program (see `FheEval` in fhe_eval.rs). The two optional HCU accounts are always
 /// present in the account list (as program-id placeholders when `None`): the event_cpi
@@ -240,7 +240,7 @@ fn fhe_eval_durable_encrypted_value(
     accounts: &[[u8; 32]],
     remaining_index: u16,
 ) -> Option<[u8; 32]> {
-    const FHE_EVAL_REMAINING_BASE: usize = 10;
+    const FHE_EVAL_REMAINING_BASE: usize = 9;
     accounts
         .get(FHE_EVAL_REMAINING_BASE + remaining_index as usize)
         .copied()
@@ -1038,22 +1038,22 @@ mod fhe_eval_acl_tests {
     }
 
     fn fhe_eval_accounts() -> Vec<[u8; 32]> {
-        // 10 named FheEval accounts (0..=9, incl. the three HCU accounts and the
+        // 9 named FheEval accounts (0..=8, incl. the two optional HCU accounts and the
         // event-cpi pair); the durable output EncryptedValue is remaining_accounts[0]
-        // at absolute index 10 (FHE_EVAL_REMAINING_BASE).
-        let mut accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
+        // at absolute index 9 (FHE_EVAL_REMAINING_BASE).
+        let mut accounts: Vec<[u8; 32]> = (0..10).map(acct).collect();
         accounts[1] = SUBJECT;
-        accounts[10] = ENCRYPTED_VALUE;
+        accounts[9] = ENCRYPTED_VALUE;
         accounts
     }
 
     fn fhe_eval_accounts_with_deny_record() -> Vec<[u8; 32]> {
-        // 10 named FheEval accounts plus Anchor event-cpi accounts (0..=9). The
-        // optional deny record is remaining_accounts[0] (index 10), and the durable
-        // output is remaining_accounts[1] (index 11).
-        let mut accounts: Vec<[u8; 32]> = (0..12).map(acct).collect();
+        // 9 named FheEval accounts plus Anchor event-cpi accounts (0..=8). The
+        // optional deny record is remaining_accounts[0] (index 9), and the durable
+        // output is remaining_accounts[1] (index 10).
+        let mut accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
         accounts[1] = SUBJECT;
-        accounts[11] = ENCRYPTED_VALUE;
+        accounts[10] = ENCRYPTED_VALUE;
         accounts
     }
 
@@ -1095,27 +1095,27 @@ mod fhe_eval_acl_tests {
 
     #[test]
     fn durable_output_as_sole_remaining_account_resolves() {
-        // The trivial-encrypt-eval shape: 10 named accounts (0..=9, including the three
-        // HCU accounts and the event_cpi pair) + exactly one remaining account, the
-        // durable output EncryptedValue account, at absolute index 10 (remaining_index 0).
+        // The trivial-encrypt-eval shape: 9 named accounts (0..=8, including the two
+        // optional HCU accounts and the event_cpi pair) + exactly one remaining account,
+        // the durable output EncryptedValue account, at absolute index 9 (remaining_index 0).
         // A stale base (7, the pre-HCU count) read accounts.get(7) here — the
         // trusted-app-record placeholder, not the durable EncryptedValue account. This
-        // pins the base at 10.
-        let accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
+        // pins the base at 9.
+        let accounts: Vec<[u8; 32]> = (0..10).map(acct).collect();
         assert_eq!(
             fhe_eval_durable_encrypted_value(&accounts, 0),
-            Some(acct(10))
+            Some(acct(9))
         );
     }
 
     #[test]
     fn output_after_input_acl_records_resolves() {
-        // A durable input EncryptedValue account at 10 and the durable output at 11
+        // A durable input EncryptedValue account at 9 and the durable output at 10
         // (remaining_index 1).
-        let accounts: Vec<[u8; 32]> = (0..12).map(acct).collect();
+        let accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
         assert_eq!(
             fhe_eval_durable_encrypted_value(&accounts, 1),
-            Some(acct(11))
+            Some(acct(10))
         );
     }
 
@@ -1130,9 +1130,9 @@ mod fhe_eval_acl_tests {
 
     #[test]
     fn missing_remaining_account_returns_none() {
-        // Only the 10 named accounts, no remaining: a durable bind here is a layout drift
+        // Only the 9 named accounts, no remaining: a durable bind here is a layout drift
         // the caller must surface, not silently drop.
-        let accounts: Vec<[u8; 32]> = (0..10).map(acct).collect();
+        let accounts: Vec<[u8; 32]> = (0..9).map(acct).collect();
         assert_eq!(fhe_eval_durable_encrypted_value(&accounts, 0), None);
     }
 

@@ -650,9 +650,8 @@ fn fhe_eval_ix_with_deny_records(
             host_config,
             system_program: system_program::ID,
             // Unrestricted block cap (u64::MAX) in every existing fixture: block_cap
-            // short-circuits before touching the optional accounts, so any signer works
-            // and the two HCU witnesses stay absent.
-            hcu_authority: app_account_authority,
+            // short-circuits before touching the optional accounts, so the two HCU
+            // witnesses stay absent.
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             event_authority: event_authority(host::id()),
@@ -3107,6 +3106,11 @@ struct EvalFixture {
     program_id: Pubkey,
     authority: Pubkey,
     app_account: Pubkey,
+    /// The metered identity: the frame's signed `compute_subject`, which must be a member of the
+    /// durable input ACL (it authorizes the inputs). Deliberately distinct from `app_account` /
+    /// `app_account_authority` so block-cap tests prove the meter keys on the compute subject and
+    /// never on the output-ACL authority.
+    compute_subject: Pubkey,
     host_config: Pubkey,
     balance_handle: [u8; 32],
     amount_handle: [u8; 32],
@@ -3114,9 +3118,6 @@ struct EvalFixture {
     amount_value: Pubkey,
     output_value: Pubkey,
     output_label: [u8; 32],
-    /// Dedicated HCU metering identity — deliberately distinct from `app_account` /
-    /// `app_account_authority` so block-cap tests prove the meter never keys on those.
-    hcu_authority: Pubkey,
     context: mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
 }
 
@@ -3128,7 +3129,7 @@ impl EvalFixture {
 
     /// Fixed-key variant for cost snapshots: PDA bump searches are part of the
     /// measured compute, so profile addresses must not change between runs.
-    fn with_block_cap_keys(cap: u64, authority: Pubkey, hcu_authority: Pubkey) -> Self {
+    fn with_block_cap_keys(cap: u64, authority: Pubkey, compute_subject: Pubkey) -> Self {
         let program_id = host::id();
         let app_account = authority;
         let (host_config, host_config_account) = host_config_account_with_block_cap(authority, cap);
@@ -3137,19 +3138,21 @@ impl EvalFixture {
         let output_label = label("output-hcu-fixture");
         let balance_handle = handle_for_chain(151, 5);
         let amount_handle = handle_for_chain(152, 5);
+        // The compute subject is the durable inputs' allowed member, so admission passes and the
+        // same identity is what the block cap meters.
         let (balance_value, balance_ev) = new_lineage(
             authority,
             app_account,
             balance_label,
             balance_handle,
-            &[authority],
+            &[compute_subject],
         );
         let (amount_value, amount_ev) = new_lineage(
             authority,
             app_account,
             amount_label,
             amount_handle,
-            &[authority],
+            &[compute_subject],
         );
         let output_value_key = zama_solana_acl::derive_value_key(
             authority.to_bytes(),
@@ -3163,12 +3166,14 @@ impl EvalFixture {
                 (host_config, host_config_account),
                 (balance_value, encrypted_value_account(&balance_ev)),
                 (amount_value, encrypted_value_account(&amount_ev)),
+                (compute_subject, funded_system_account()),
             ],
         );
         Self {
             program_id,
             authority,
             app_account,
+            compute_subject,
             host_config,
             balance_handle,
             amount_handle,
@@ -3176,23 +3181,22 @@ impl EvalFixture {
             amount_value,
             output_value,
             output_label,
-            hcu_authority,
             context,
         }
     }
 
-    /// The app identity both new PDAs are keyed on (the frame's `hcu_authority` signer) —
+    /// The identity both HCU PDAs are keyed on: the frame's signed `compute_subject` —
     /// deliberately NOT `app_account_authority`.
     fn block_cap_app(&self) -> Pubkey {
-        self.hcu_authority
+        self.compute_subject
     }
 
     fn meter_pda(&self) -> Pubkey {
-        host::hcu_block_meter_address(self.hcu_authority).0
+        host::hcu_block_meter_address(self.compute_subject).0
     }
 
     fn trust_pda(&self) -> Pubkey {
-        host::hcu_trusted_app_address(self.hcu_authority).0
+        host::hcu_trusted_app_address(self.compute_subject).0
     }
 
     fn seed_account(&self, key: Pubkey, account: Account) {
@@ -3254,18 +3258,17 @@ impl EvalFixture {
         ]
     }
 
-    /// The standard durable-output frame with the fixture's `hcu_authority` signed in,
+    /// The standard durable-output frame with the fixture's `compute_subject` signed in,
     /// threading the two optional block-cap accounts.
     fn block_cap_instruction(&self, meter: Option<Pubkey>, trust: Option<Pubkey>) -> Instruction {
         let mut ix = anchor_ix(
             self.program_id,
             host::accounts::FheEval {
                 payer: self.authority,
-                compute_subject: self.authority,
+                compute_subject: self.compute_subject,
                 app_account_authority: self.app_account,
                 host_config: self.host_config,
                 system_program: system_program::ID,
-                hcu_authority: self.hcu_authority,
                 hcu_block_meter: meter,
                 hcu_trusted_app_record: trust,
                 event_authority: event_authority(self.program_id),
@@ -3348,11 +3351,10 @@ impl EvalFixture {
             self.program_id,
             host::accounts::FheEval {
                 payer: self.authority,
-                compute_subject: self.authority,
+                compute_subject: self.compute_subject,
                 app_account_authority: self.app_account,
                 host_config: self.host_config,
                 system_program: system_program::ID,
-                hcu_authority: self.hcu_authority,
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
                 event_authority: event_authority(self.program_id),
@@ -3372,7 +3374,7 @@ impl EvalFixture {
     }
 
     /// A transient-only frame (single step, `AllowedLocal` output) — produces no durable
-    /// output; the block-cap identity comes solely from the `hcu_authority` signer.
+    /// output; the block-cap identity comes solely from the `compute_subject` signer.
     fn transient_only_instruction(
         &self,
         meter: Option<Pubkey>,
@@ -3389,11 +3391,10 @@ impl EvalFixture {
             self.program_id,
             host::accounts::FheEval {
                 payer: self.authority,
-                compute_subject: self.authority,
+                compute_subject: self.compute_subject,
                 app_account_authority: self.app_account,
                 host_config: self.host_config,
                 system_program: system_program::ID,
-                hcu_authority: self.hcu_authority,
                 hcu_block_meter: meter,
                 hcu_trusted_app_record: trust,
                 event_authority: event_authority(self.program_id),
@@ -3409,6 +3410,86 @@ impl EvalFixture {
         ix.accounts.push(writable(self.balance_value));
         ix.accounts.push(writable(self.amount_value));
         ix
+    }
+
+    /// A durable-output frame that reuses the fixture's `compute_subject` (and thus its meter) but
+    /// with a caller-chosen `payer` and `app_account_authority`, binding its own fresh output
+    /// lineage under that authority. Everything a caller controls is varied except the ACL-bound
+    /// compute subject, so this drives the #1708 regression: proving no account rotation yields a
+    /// fresh per-slot meter. Returns the output lineage address and the instruction.
+    fn frame_for_authority(
+        &self,
+        payer: Pubkey,
+        app_authority: Pubkey,
+        output_label: [u8; 32],
+        meter: Option<Pubkey>,
+    ) -> (Pubkey, Instruction) {
+        let output_value_key = zama_solana_acl::derive_value_key(
+            app_authority.to_bytes(),
+            app_authority.to_bytes(),
+            output_label,
+        );
+        let (output_value, _bump) = host::encrypted_value_address(output_value_key);
+        let steps = vec![
+            FheEvalStep::Binary {
+                op: FheBinaryOpCode::Ge,
+                lhs: self.balance_operand(),
+                rhs: self.amount_operand(),
+                output_fhe_type: 0,
+                output: FheEvalOutput::AllowedLocal,
+            },
+            FheEvalStep::Binary {
+                op: FheBinaryOpCode::Sub,
+                lhs: self.balance_operand(),
+                rhs: self.amount_operand(),
+                output_fhe_type: 5,
+                output: FheEvalOutput::AllowedLocal,
+            },
+            FheEvalStep::Ternary {
+                op: FheTernaryOpCode::IfThenElse,
+                control: FheEvalOperand::AllowedLocal { producer_index: 0 },
+                if_true: FheEvalOperand::AllowedLocal { producer_index: 1 },
+                if_false: self.balance_operand(),
+                output_fhe_type: 5,
+                output: FheEvalOutput::AllowedDurable {
+                    output_encrypted_value_index: 2,
+                    output_app_account_authority_index: None,
+                    output_acl_domain_key: app_authority,
+                    output_app_account: app_authority,
+                    output_encrypted_value_label: output_label,
+                    output_subjects: vec![host::AclSubjectEntry {
+                        pubkey: app_authority,
+                    }],
+                    previous_handle: None,
+                    previous_subjects: None,
+                    make_public: false,
+                },
+            },
+        ];
+        let mut ix = anchor_ix(
+            self.program_id,
+            host::accounts::FheEval {
+                payer,
+                compute_subject: self.compute_subject,
+                app_account_authority: app_authority,
+                host_config: self.host_config,
+                system_program: system_program::ID,
+                hcu_block_meter: meter,
+                hcu_trusted_app_record: None,
+                event_authority: event_authority(self.program_id),
+                program: self.program_id,
+            },
+            host::instruction::FheEval {
+                args: FheEvalArgs {
+                    context_id: output_label,
+                    steps,
+                },
+            },
+        );
+        ix.accounts.push(writable(self.balance_value));
+        ix.accounts.push(writable(self.amount_value));
+        ix.accounts.push(writable(output_value));
+        (output_value, ix)
     }
 
     /// Asserts the durable output was never created, from a returned `InstructionResult`
@@ -3431,7 +3512,7 @@ impl EvalFixture {
 
 #[test]
 fn mollusk_fhe_eval_unrestricted_cap_none_none_succeeds() {
-    // The default (u64::MAX) short-circuits: with the mandatory hcu_authority signed in but
+    // The default (u64::MAX) short-circuits: with the mandatory compute_subject signed in but
     // neither optional account supplied, the frame binds its durable output and no meter is
     // ever created or touched.
     let fixture = EvalFixture::with_block_cap(u64::MAX);
@@ -3444,29 +3525,15 @@ fn mollusk_fhe_eval_unrestricted_cap_none_none_succeeds() {
 }
 
 #[test]
-fn mollusk_fhe_eval_missing_hcu_authority_account_fails_structurally() {
-    // The hcu_authority is a mandatory account, not program logic: a frame missing it never
-    // reaches the handler — the account layer rejects the shape outright, even under the
-    // unrestricted default. There is no account shape that evals without an HCU identity.
-    let fixture = EvalFixture::with_block_cap(u64::MAX);
-    let mut ix = fixture.block_cap_instruction(None, None);
-    let authority = fixture.block_cap_app();
-    ix.accounts.retain(|meta| meta.pubkey != authority);
-    let result = fixture.context.process_instruction(&ix);
-    assert!(result.raw_result.is_err());
-    fixture.assert_no_output(&result);
-}
-
-#[test]
-fn mollusk_fhe_eval_unsigned_hcu_authority_is_rejected() {
-    // The hcu_authority must SIGN. A supplied-but-unsigned authority is rejected by the
-    // account layer — otherwise any caller could name a trusted app's authority to steal its
-    // bypass, or a victim's authority to drain its in-slot budget.
+fn mollusk_fhe_eval_unsigned_compute_subject_is_rejected() {
+    // The `compute_subject` must SIGN — it is the mandatory signed caller identity the cap meters.
+    // A supplied-but-unsigned subject is rejected by the account layer, so no caller can name a
+    // victim's compute subject to drain its in-slot budget without holding its key.
     let fixture = EvalFixture::with_block_cap(500_000);
     let mut ix = fixture.block_cap_instruction(Some(fixture.meter_pda()), None);
-    let authority = fixture.block_cap_app();
+    let subject = fixture.compute_subject;
     for meta in ix.accounts.iter_mut() {
-        if meta.pubkey == authority {
+        if meta.pubkey == subject {
             meta.is_signer = false;
         }
     }
@@ -3894,8 +3961,8 @@ fn mollusk_fhe_eval_clean_first_call_lazy_creates_meter_at_frame_cost() {
         fixture.context.mollusk.sysvars.clock.slot
     );
     read_encrypted_value_from_context(&fixture.context, fixture.output_value);
-    // Metering keys on the dedicated hcu_authority, never on app_account_authority: the two
-    // identities differ in this fixture and nothing accrued under the latter's key.
+    // Metering keys on the compute_subject, never on app_account_authority: the two identities
+    // differ in this fixture and nothing accrued under the latter's key.
     assert_ne!(fixture.block_cap_app(), fixture.app_account);
     assert!(read_hcu_block_meter(
         &fixture.context,
@@ -3906,11 +3973,11 @@ fn mollusk_fhe_eval_clean_first_call_lazy_creates_meter_at_frame_cost() {
 
 #[test]
 fn mollusk_fhe_eval_per_app_meters_are_isolated_under_uniform_cap() {
-    // The cap is uniform, but each app has its own meter: one app being maxed out this slot
-    // does not throttle a different app, and does not draw down its budget.
+    // The cap is uniform, but each compute subject has its own meter: one subject being maxed out
+    // this slot does not throttle a different compute subject, and does not draw down its budget.
     let fixture = EvalFixture::with_block_cap(150_000);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
-    // A different app is maxed out for the slot.
+    // A different compute subject is maxed out for the slot.
     let (other_meter_pda, other_meter_account) =
         hcu_block_meter_account(Pubkey::new_unique(), slot, 150_000);
     fixture.seed_account(other_meter_pda, other_meter_account);
@@ -3936,6 +4003,63 @@ fn mollusk_fhe_eval_per_app_meters_are_isolated_under_uniform_cap() {
 }
 
 #[test]
+fn mollusk_fhe_eval_same_compute_subject_accumulates_across_varied_accounts_and_trips_cap() {
+    // #1708 regression: the block cap keys on the ACL-bound `compute_subject`, so a caller cannot
+    // mint a fresh per-slot meter by rotating any account it controls. Two frames in the same slot
+    // share the SAME compute subject (hence the SAME meter) but vary everything else a caller could
+    // vary — a different payer AND a different app_account_authority, each binding its own fresh
+    // output lineage. The cap fits exactly one frame, so the second frame accumulates onto the same
+    // meter and trips the cap rather than getting a fresh budget.
+    let fixture = EvalFixture::with_block_cap(FIXTURE_FRAME_HCU);
+    let meter_pda = fixture.meter_pda();
+
+    // Frame 1: its own payer and output authority.
+    let payer1 = Pubkey::new_unique();
+    let authority1 = Pubkey::new_unique();
+    fixture.seed_account(payer1, funded_system_account());
+    fixture.seed_account(authority1, funded_system_account());
+    let (_out1, ix1) =
+        fixture.frame_for_authority(payer1, authority1, label("frame-1-out"), Some(meter_pda));
+    fixture
+        .context
+        .process_and_validate_instruction(&ix1, &[Check::success()]);
+    assert_eq!(
+        read_hcu_block_meter(&fixture.context, meter_pda)
+            .expect("meter created")
+            .used_hcu,
+        FIXTURE_FRAME_HCU
+    );
+
+    // Frame 2: a different payer and a different output authority, same slot, same compute subject.
+    let payer2 = Pubkey::new_unique();
+    let authority2 = Pubkey::new_unique();
+    fixture.seed_account(payer2, funded_system_account());
+    fixture.seed_account(authority2, funded_system_account());
+    let (out2, ix2) =
+        fixture.frame_for_authority(payer2, authority2, label("frame-2-out"), Some(meter_pda));
+    let result = fixture.context.process_and_validate_instruction(
+        &ix2,
+        &[custom_error(
+            host::errors::ZamaHostError::HcuBlockLimitExceeded,
+        )],
+    );
+    // The tripped frame accumulated onto the SAME meter (no fresh budget) and, breaching in the
+    // read-only admission pass, left it unchanged and created no output lineage.
+    assert_eq!(
+        read_hcu_block_meter(&fixture.context, meter_pda)
+            .expect("meter")
+            .used_hcu,
+        FIXTURE_FRAME_HCU
+    );
+    let out2_owner = result
+        .resulting_accounts
+        .iter()
+        .find(|(key, _)| *key == out2)
+        .map(|(_, account)| account.owner);
+    assert_ne!(out2_owner, Some(host::id()));
+}
+
+#[test]
 fn mollusk_fhe_eval_extra_remaining_account_still_rejected_with_block_cap() {
     // The two block-cap accounts are named context accounts, not remaining_accounts, so the
     // "every remaining account is used" invariant is preserved: a trailing extra account is
@@ -3953,12 +4077,12 @@ fn mollusk_fhe_eval_extra_remaining_account_still_rejected_with_block_cap() {
 }
 
 #[test]
-fn mollusk_fhe_eval_transient_only_frame_is_metered_via_hcu_authority() {
+fn mollusk_fhe_eval_transient_only_frame_is_metered_via_compute_subject() {
     // A transient-only frame (all AllowedLocal outputs) creates no durable ACL record, so
-    // nothing welds `app_account_authority` on-chain — but the metering identity is the
-    // dedicated `hcu_authority` signer, independent of the frame's output shape, so the
-    // frame is still charged in full. (Under a signer-less design this work would escape the
-    // cap entirely; this is the regression guard for that gap.)
+    // nothing welds `app_account_authority` on-chain — but the metering identity is the signed
+    // `compute_subject`, independent of the frame's output shape, so the frame is still charged
+    // in full. (A frame with no durable output would otherwise escape a per-output-authority
+    // meter entirely; this is the regression guard for that gap.)
     let fixture = EvalFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
     let result = fixture.context.process_and_validate_instruction(

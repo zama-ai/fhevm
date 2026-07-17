@@ -40,7 +40,6 @@ import {
 } from '../internal/generated/confidentialToken/programAddress.js';
 
 const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
-const HCU_AUTHORITY_SEED = new TextEncoder().encode('hcu-authority');
 const ENCRYPTED_VALUE_SEED = new TextEncoder().encode('encrypted-value');
 const TRANSFERRED_AMOUNT_LABEL = new TextEncoder().encode('transferred_amount______________');
 
@@ -126,7 +125,6 @@ export async function confidentialTransfer(
 
   const tokenEventAuthority = await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [EVENT_AUTHORITY_SEED]);
   const zamaEventAuthority = await pda(zamaHostProgramAddress, [EVENT_AUTHORITY_SEED]);
-  const hcuAuthority = await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [HCU_AUTHORITY_SEED, base58.decode(mint)]);
   const transferInstruction = await getConfidentialTransferInstructionAsync({
     owner,
     payer: feePayer,
@@ -141,7 +139,6 @@ export async function confidentialTransfer(
     hostConfig: parameters.hostConfig,
     ...(parameters.hcuBlockMeter !== undefined ? { hcuBlockMeter: parameters.hcuBlockMeter } : {}),
     ...(parameters.hcuTrustedAppRecord !== undefined ? { hcuTrustedAppRecord: parameters.hcuTrustedAppRecord } : {}),
-    hcuAuthority,
     eventAuthority: tokenEventAuthority,
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     amountAttestation: {

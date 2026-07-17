@@ -30,12 +30,6 @@ pub fn total_supply_authority_address(mint: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"total-supply", mint.as_ref()], &crate::ID)
 }
 
-/// Returns the mint-scoped HCU authority PDA — the identity the host's HCU block cap meters
-/// (and the admin trusts) for this mint's FHE evals.
-pub fn hcu_authority_address(mint: Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[b"hcu-authority", mint.as_ref()], &crate::ID)
-}
-
 /// Returns the canonical confidential token account PDA for one owner and mint.
 pub fn token_account_address(mint: Pubkey, owner: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(

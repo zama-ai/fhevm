@@ -24,7 +24,6 @@ describe('generated confidentialTransfer instruction', () => {
     const transferred = key(6);
     const zamaEvent = key(7);
     const hostConfig = key(8);
-    const hcuAuthority = key(9);
     const tokenEvent = key(10);
     const instruction = await getConfidentialTransferInstructionAsync({
       owner,
@@ -37,7 +36,6 @@ describe('generated confidentialTransfer instruction', () => {
       transferredAmountValue: transferred,
       zamaEventAuthority: zamaEvent,
       hostConfig,
-      hcuAuthority,
       eventAuthority: tokenEvent,
       program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
       amountAttestation: {
@@ -68,7 +66,6 @@ describe('generated confidentialTransfer instruction', () => {
       ['11111111111111111111111111111111', AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
-      [hcuAuthority, AccountRole.READONLY],
       [tokenEvent, AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
     ]);
