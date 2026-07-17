@@ -23,7 +23,11 @@
 #
 # Reuses host-contracts' own PVC (create: false): --use-internal-proxy-address true reads
 # KMS_GENERATION_CONTRACT_ADDRESS straight from the addresses/.env.host file
-# host-contracts' own deploy already wrote there - no address needs injecting by hand.
+# host-contracts' own deploy already wrote there - no address needs passing as a Hardhat
+# task flag. That said, the Hardhat tasks read it via direct file access inside their own
+# process, which does NOT populate the shell's actual environment - the consensus-polling
+# step below still needs it explicitly exported into the shell env for its own separate
+# `node -e` process to see (see that step's own comment for the confirmed failure mode).
 scDeploy:
   enabled: true
   image:
@@ -45,6 +49,22 @@ scDeploy:
     # smoke check. Matches ../../../charts/contracts/values-kmsgen.yaml's own recommendation.
     - npx hardhat task:triggerKeygen --params-type 1 --use-internal-proxy-address true
     - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-proxy-address true
+    # task:triggerKeygen/triggerCrsgen above resolve KMS_GENERATION_CONTRACT_ADDRESS by
+    # reading addresses/.env.host directly inside their own Hardhat/Node process (see
+    # host-contracts/tasks/taskDeploy.ts's readExistingHostEnv()) - that never touches the
+    # actual shell environment of this deployCommands script. The polling script below runs
+    # as its own separate `node -e` process afterward and only sees real OS env vars, so
+    # without this explicit export it reads KMS_GENERATION_CONTRACT_ADDRESS as undefined
+    # (confirmed via runtime debug logging: address was present and correct on disk in
+    # addresses/.env.host, but undefined in process.env at the point the script needed it -
+    # same gap values-gateway-contracts-e2e.yaml already works around for ZAMA_OFT_ADDRESS).
+    - |
+      export KMS_GENERATION_CONTRACT_ADDRESS=$(grep --color=never '^KMS_GENERATION_CONTRACT_ADDRESS=' addresses/.env.host | cut -d'=' -f2 | tr -d '[:space:]')
+      if [[ -z "${KMS_GENERATION_CONTRACT_ADDRESS}" ]]; then
+        echo "::error::KMS_GENERATION_CONTRACT_ADDRESS could not be extracted from addresses/.env.host - refusing to start the consensus poll with a broken address"
+        exit 1
+      fi
+      echo "Resolved KMS_GENERATION_CONTRACT_ADDRESS=${KMS_GENERATION_CONTRACT_ADDRESS}"
     # (kms-keygen-wait) The two triggers above only wait for their *request* tx to be
     # mined (task:triggerKeygen/triggerCrsgen just call keygenTx.wait()) - the actual
     # 4-party enclave DKG consensus (ActivateKey/ActivateCrs on KMSGeneration.sol) can
