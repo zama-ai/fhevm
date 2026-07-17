@@ -403,7 +403,7 @@ async fn query_ciphertexts<'a>(
             // Per-track start-block bounds for this GCS upgrade. `upgrade_state`
             // is a shared (non-duplicated) control-plane table; read it fully
             // qualified so the result is unambiguous regardless of search_path.
-            let gate: Option<(Option<i64>, Option<i64>, Option<i64>)> = sqlx::query_as(
+            let gate = sqlx::query!(
                 "SELECT start_block, gw_start_block, host_chain_id
                  FROM public.upgrade_state
                  WHERE stack_role = 'GCS'",
@@ -415,7 +415,8 @@ async fn query_ciphertexts<'a>(
                 err
             })?;
 
-            let (start_block, gw_start_block, host_chain_id) = match gate {
+            let bounds = gate.map(|r| (r.start_block, r.gw_start_block, r.host_chain_id));
+            let (start_block, gw_start_block, host_chain_id) = match bounds {
                 Some((Some(sb), Some(gw), Some(hc))) => (sb, gw, hc),
                 other => {
                     // Fail safe: without complete bounds we cannot prove a
@@ -442,7 +443,7 @@ async fn query_ciphertexts<'a>(
             // Inputs never have a `computations` row and outputs never have an
             // `input_handles` row, so the two guards route by source without an
             // explicit `is_input` branch.
-            let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = sqlx::query_as(
+            let rows = sqlx::query!(
                 "SELECT c.handle, c.ciphertext, c.ciphertext_type
                  FROM public.ciphertexts c
                  WHERE c.handle = ANY($1::BYTEA[])
@@ -450,24 +451,24 @@ async fn query_ciphertexts<'a>(
                        SELECT 1 FROM public.computations comp
                        WHERE comp.output_handle = c.handle
                          AND comp.host_chain_id = $2
-                         AND comp.block_number > $3)
+                         AND comp.block_number >= $3)
                    AND NOT EXISTS (
                        SELECT 1 FROM public.input_handles ih
                        WHERE ih.handle = c.handle
-                         AND ih.block_number > $4)",
+                         AND ih.block_number >= $4)",
+                &missing,
+                host_chain_id,
+                start_block,
+                gw_start_block,
             )
-            .bind(&missing)
-            .bind(host_chain_id)
-            .bind(start_block)
-            .bind(gw_start_block)
             .fetch_all(trx.as_mut())
             .await
             .map_err(|err| {
                 error!(target: "tfhe_worker", { error = %err }, "error while querying public.ciphertexts for pre-snapshot handles");
                 err
             })?;
-            for (handle, ciphertext, ciphertext_type) in rows {
-                let _ = ciphertext_map.insert(handle, (ciphertext_type, ciphertext));
+            for row in rows {
+                let _ = ciphertext_map.insert(row.handle, (row.ciphertext_type, row.ciphertext));
             }
         }
     }
