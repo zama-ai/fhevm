@@ -63,6 +63,7 @@ function requireEnv(): void {
 }
 
 interface DivergentForkWork {
+  contractAddress: string;
   balanceHandle: string;
   forkBalanceHandle: string;
   canonicalBlockHash: string;
@@ -147,6 +148,7 @@ async function createDivergentForkWork(
   expect(diverged, 'fork must have diverged: block hashes should differ').to.be.true;
 
   return {
+    contractAddress,
     balanceHandle,
     forkBalanceHandle,
     canonicalBlockHash: canonicalReceipt!.blockHash!,
@@ -242,6 +244,47 @@ async function waitForSettledHeight(
   }
   throw new Error(
     `[${label}] timed out waiting for settlement >= ${targetHeight}; current heights: ${settledHeights.join(', ')}`,
+  );
+}
+
+async function queryBlockStatus(
+  databaseUrl: string,
+  blockHash: Buffer,
+  blockNumber: number,
+): Promise<string | undefined> {
+  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  try {
+    const result = await pool.query(
+      `SELECT block_status
+         FROM host_chain_blocks_valid
+        WHERE block_hash = $1
+          AND block_number = $2
+        LIMIT 1`,
+      [blockHash, blockNumber],
+    );
+    return result.rows[0]?.block_status;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function waitForFinalizedBlock(
+  label: string,
+  databaseUrls: string[],
+  blockHash: Buffer,
+  blockNumber: number,
+  timeoutMs: number = 180_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let statuses: Array<string | undefined> = [];
+  while (Date.now() < deadline) {
+    statuses = await Promise.all(databaseUrls.map((url) => queryBlockStatus(url, blockHash, blockNumber)));
+    if (statuses.every((status) => status === 'finalized')) return;
+    await sleep(2_000);
+  }
+  throw new Error(
+    `[${label}] timed out waiting for canonical block ${blockNumber} (${blockHash.toString('hex')}) to be finalized; ` +
+      `current statuses: ${statuses.map((status) => status ?? 'missing').join(', ')}`,
   );
 }
 
@@ -403,10 +446,17 @@ describe('Real-Fork Consensus (E3)', function () {
       await waitForForkBranchSubmissions('C3', divergentWork);
       await expectNoConsensusForForkWork('C3 setup', divergentWork);
       const c3ForkBlockHash = Buffer.from(divergentWork.forkBlockHash.replace('0x', ''), 'hex');
+      const c3CanonicalBlockHash = Buffer.from(divergentWork.canonicalBlockHash.replace('0x', ''), 'hex');
 
       // Step 1: Advance canonical Anvil past finality.
       console.log(`[C3] Advancing canonical Anvil past finality (${FINALITY_LAG} blocks)...`);
       await advancePastFinality(FINALITY_LAG, forkConfig);
+      await waitForFinalizedBlock(
+        'C3 canonical coprocessors',
+        dbUrls.slice(0, 2),
+        c3CanonicalBlockHash,
+        divergentWork.canonicalBlockNumber,
+      );
 
       // Step 2: Make the fork Anvil present the canonical chain.
       // Coprocessor 2 stays connected to fork-anvil, but now observes
@@ -444,6 +494,12 @@ describe('Real-Fork Consensus (E3)', function () {
       }
       console.log(`[C3] Coprocessor 2 orphaned block hash: ${divergentWork.forkBlockHash}`);
       expect(c3Orphan, 'coprocessor 2 must orphan the fork block created by C3').to.not.be.undefined;
+      await waitForFinalizedBlock(
+        'C3 recovered coprocessor',
+        [dbUrls[2]],
+        c3CanonicalBlockHash,
+        divergentWork.canonicalBlockNumber,
+      );
 
       // Step 4: Verify orphan cleanup removed branch-B rows.
       // Wait for cleanup_orphaned_branch_state to run (triggered by finalization).
@@ -671,6 +727,37 @@ describe('Real-Fork Consensus (E3)', function () {
           true,
           'settled canonical sns digest must not change during fork recovery',
         );
+
+        const recoveredConsensus = await waitForConsensus(
+          GATEWAY_RPC_URL,
+          CIPHERTEXT_COMMITS_ADDRESS,
+          divergentWork.balanceHandle,
+          120_000,
+        );
+        expect(recoveredConsensus, 'pre-reorg canonical ciphertext must reach consensus after recovery').to.not.be.null;
+        expect(recoveredConsensus!.senders.length).to.eq(
+          COPROCESSOR_COUNT,
+          'all 3 coprocessors must agree on the pre-reorg canonical ciphertext after recovery',
+        );
+        expect(
+          Buffer.from(recoveredConsensus!.ciphertextDigest.replace('0x', ''), 'hex').equals(
+            canonicalDigestBefore!.ciphertext!,
+          ),
+          'recovered consensus must use the pre-reorg canonical ciphertext digest',
+        ).to.eq(true);
+        expect(
+          Buffer.from(recoveredConsensus!.snsCiphertextDigest.replace('0x', ''), 'hex').equals(
+            canonicalDigestBefore!.ciphertext128!,
+          ),
+          'recovered consensus must use the pre-reorg canonical sns digest',
+        ).to.eq(true);
+
+        const recoveredBalance = await this.instances.alice.userDecryptSingleHandle({
+          handle: divergentWork.balanceHandle,
+          contractAddress: divergentWork.contractAddress,
+          signer: this.signers.alice,
+        });
+        expect(recoveredBalance, 'pre-reorg canonical ciphertext must decrypt after recovery').to.eq(5000n);
 
         const contract = await deployEncryptedERC20Fixture();
         const tx = await contract.mint(7777);
