@@ -30,11 +30,29 @@ export const createProgram = (): Command => {
   return command;
 };
 
+/**
+ * Flattens an error into printable lines, following AggregateError.errors and
+ * Error.cause chains so compound failures surface every underlying message.
+ */
+export const describeError = (error: unknown, depth = 0): string[] => {
+  const indent = "  ".repeat(depth);
+  if (!(error instanceof Error)) return [`${indent}${String(error)}`];
+  const lines = [`${indent}${error.message}`];
+  if (error instanceof AggregateError) {
+    for (const inner of error.errors) lines.push(...describeError(inner, depth + 1));
+  }
+  if (error.cause !== undefined) {
+    lines.push(`${indent}  caused by:`);
+    lines.push(...describeError(error.cause, depth + 2));
+  }
+  return lines;
+};
+
 export const runProgram = async (argv: readonly string[]): Promise<void> => {
   const program = createProgram();
   await program.parseAsync(argv as string[]).catch(async (error: unknown) => {
     const { logger } = await import("../shared/logger");
-    logger.error(error instanceof Error ? error.message : error);
+    logger.error(describeError(error).join("\n"));
     process.exitCode = 1;
   });
 };
