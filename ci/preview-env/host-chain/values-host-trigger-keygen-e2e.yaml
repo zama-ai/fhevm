@@ -80,6 +80,28 @@ scDeploy:
         throw new Error('Timed out waiting for ' + eventName);
       }
       (async () => {
+        // #region agent log
+        try {
+          const fs2 = require('fs');
+          const cwd = process.cwd();
+          let envHostContent = null;
+          try { envHostContent = fs2.readFileSync('addresses/.env.host', 'utf8'); } catch (e) { envHostContent = 'READ_ERROR: ' + String(e); }
+          fetch('http://127.0.0.1:7902/ingest/867b8c25-280d-41de-8e93-fbbfef8275e8', {method:'POST', headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1803f7'}, body: JSON.stringify({sessionId:'1803f7', location:'values-host-trigger-keygen-e2e.yaml:node-script', message:'pre-contract-construction state', data:{cwd, RPC_URL: process.env.RPC_URL, KMS_GENERATION_CONTRACT_ADDRESS: process.env.KMS_GENERATION_CONTRACT_ADDRESS, envHostContent}, timestamp: Date.now(), hypothesisId:'H1-H4'})}).catch(() => {});
+        } catch (e) {}
+        console.log('[DEBUG] cwd=' + process.cwd());
+        console.log('[DEBUG] process.env.RPC_URL=' + JSON.stringify(process.env.RPC_URL));
+        console.log('[DEBUG] process.env.KMS_GENERATION_CONTRACT_ADDRESS=' + JSON.stringify(process.env.KMS_GENERATION_CONTRACT_ADDRESS));
+        try {
+          console.log('[DEBUG] addresses/.env.host contents:\n' + require('fs').readFileSync('addresses/.env.host', 'utf8'));
+        } catch (e) {
+          console.log('[DEBUG] failed to read addresses/.env.host: ' + String(e));
+        }
+        try {
+          console.log('[DEBUG] addresses/ dir listing: ' + JSON.stringify(require('fs').readdirSync('addresses')));
+        } catch (e) {
+          console.log('[DEBUG] failed to list addresses/: ' + String(e));
+        }
+        // #endregion agent log
         const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
         const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
         const keyEvent = await waitForEvent(contract, 'ActivateKey', 8 * 60 * 1000);
