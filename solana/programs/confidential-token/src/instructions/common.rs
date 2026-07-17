@@ -159,24 +159,19 @@ fn execute_transfer_eval<'info>(
     let from_balance = uint64_from_value(old_from_handle, mint_key, from_key, balance_label())?;
     let to_balance = uint64_from_value(old_to_handle, mint_key, to_key, balance_label())?;
     let compute_signer = accounts.compute_signer.key();
-    let balance_access = |owner| {
-        zama_fhe::AccessPolicy::for_owner_and_compute(owner, compute_signer)
-            .map_err(invalid_eval_plan)
-    };
+    let balance_access = |owner| fhe::DurableAudience::for_owner(owner, compute_signer);
     let transferred_access = {
-        let mut access =
-            zama_fhe::AccessPolicy::for_owner(from_owner).map_err(invalid_eval_plan)?;
+        let access = fhe::DurableAudience::for_owner(from_owner, compute_signer);
         if to_owner != from_owner {
-            access = access.with_owner(to_owner).map_err(invalid_eval_plan)?;
+            access.with_owner(to_owner)
+        } else {
+            access
         }
-        access
-            .with_compute(compute_signer)
-            .map_err(invalid_eval_plan)?
     };
     let from_output = fhe::DurableOutput::new(
         accounts.from_balance_value.clone(),
         durable_slot(mint_key, from_key, balance_label()),
-        balance_access(from_owner)?,
+        balance_access(from_owner),
     )?;
     let transferred_output = fhe::DurableOutput::new(
         accounts.transferred_amount_value.clone(),
@@ -186,7 +181,7 @@ fn execute_transfer_eval<'info>(
     let to_output = fhe::DurableOutput::new(
         accounts.to_balance_value.clone(),
         durable_slot(mint_key, to_key, balance_label()),
-        balance_access(to_owner)?,
+        balance_access(to_owner),
     )?;
     let mut builder =
         zama_fhe::EvalBuilder::new(context_id, zama_fhe::EvalAppAuthority::new(from_key));
@@ -277,12 +272,6 @@ pub(crate) fn uint64_from_value(
         durable_slot(acl_domain_key, app_account, encrypted_value_label),
     )
     .map_err(invalid_eval_plan)
-}
-
-pub(crate) fn access_policy_from_subjects(
-    subjects: Vec<zama_fhe::AccessSubject>,
-) -> Result<zama_fhe::AccessPolicy> {
-    zama_fhe::AccessPolicy::from_subjects(subjects).map_err(invalid_eval_plan)
 }
 
 pub(crate) fn transfer_eval_context(
@@ -829,21 +818,4 @@ pub(crate) fn assert_kms_public_decrypt_cert_for_request(
         ConfidentialTokenError::InvalidKmsCertificate
     );
     Ok(())
-}
-
-pub(crate) fn balance_acl_subjects(
-    owner: Pubkey,
-    compute_signer: Pubkey,
-) -> Vec<zama_fhe::AccessSubject> {
-    vec![
-        zama_fhe::AccessSubject::owner(owner),
-        zama_fhe::AccessSubject::compute(compute_signer),
-    ]
-}
-
-pub(crate) fn burned_amount_acl_subjects(
-    owner: Pubkey,
-    compute_signer: Pubkey,
-) -> Vec<zama_fhe::AccessSubject> {
-    balance_acl_subjects(owner, compute_signer)
 }

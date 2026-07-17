@@ -85,8 +85,7 @@ fn create_random_amount_inner<'info>(
     let amount_output = fhe::DurableOutput::new(
         ctx.accounts.amount_value.to_account_info(),
         durable_slot(mint_key, owner, encrypted_value_label),
-        zama_fhe::AccessPolicy::for_compute(ctx.accounts.compute_signer.key())
-            .map_err(invalid_eval_plan)?,
+        fhe::DurableAudience::compute_only(ctx.accounts.compute_signer.key()),
     )?;
     let context_tag = if upper_bound.is_some() {
         b"random-bounded-amount".as_slice()

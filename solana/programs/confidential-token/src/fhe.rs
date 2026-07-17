@@ -12,6 +12,68 @@ use crate::{
     ConfidentialTokenAccount, ConfidentialTokenError,
 };
 
+/// Audience for a confidential-token durable output.
+///
+/// Holder-scoped lineages (balances, `transferred_amount`, `burned_amount`) must
+/// always grant the holder's owner key and the mint compute-signer PDA: the owner
+/// keeps decrypt access to their own value, and the compute signer gates the next
+/// eval that reads it. [`DurableAudience::for_owner`] takes both as required
+/// parameters, so a holder output can never be built missing either; extra owners
+/// (the recipient leg of a `transferred_amount` rotation) are additive via
+/// [`DurableAudience::with_owner`]. Mint-scoped lineages with no single holder
+/// (total supply, freshly minted random amounts) use
+/// [`DurableAudience::compute_only`], the one owner-less path.
+///
+/// This is the only way token instructions produce durable-output policies:
+/// [`DurableOutput::new`]/[`DurableOutput::new_public`] accept a `DurableAudience`
+/// and not a raw [`zama_fhe::AccessPolicy`], so the owner+compute invariant holds
+/// by construction rather than by convention at each call site.
+pub(crate) struct DurableAudience {
+    owner: Option<Pubkey>,
+    extra_owners: Vec<Pubkey>,
+    compute: Pubkey,
+}
+
+impl DurableAudience {
+    /// Holder-scoped audience granting `owner` and the mint `compute` signer.
+    pub(crate) fn for_owner(owner: Pubkey, compute: Pubkey) -> Self {
+        Self {
+            owner: Some(owner),
+            extra_owners: Vec::new(),
+            compute,
+        }
+    }
+
+    /// Mint-scoped audience with no holder, granting only the `compute` signer.
+    pub(crate) fn compute_only(compute: Pubkey) -> Self {
+        Self {
+            owner: None,
+            extra_owners: Vec::new(),
+            compute,
+        }
+    }
+
+    /// Adds an extra owner subject (the recipient of a `transferred_amount` leg).
+    pub(crate) fn with_owner(mut self, owner: Pubkey) -> Self {
+        self.extra_owners.push(owner);
+        self
+    }
+
+    /// Renders the audience into host output subjects, ordered owner(s) then
+    /// compute signer.
+    fn into_policy(self) -> zama_fhe::Result<zama_fhe::AccessPolicy> {
+        let mut subjects = Vec::with_capacity(2 + self.extra_owners.len());
+        subjects.extend(self.owner.map(zama_fhe::AccessSubject::owner));
+        subjects.extend(
+            self.extra_owners
+                .into_iter()
+                .map(zama_fhe::AccessSubject::owner),
+        );
+        subjects.push(zama_fhe::AccessSubject::compute(self.compute));
+        zama_fhe::AccessPolicy::from_subjects(subjects)
+    }
+}
+
 /// A durable eval output account bound to the exact `EncryptedValue` lineage
 /// it is allowed to create or supersede.
 pub(crate) struct DurableOutput<'info> {
@@ -28,9 +90,9 @@ impl<'info> DurableOutput<'info> {
     pub(crate) fn new(
         encrypted_value: AccountInfo<'info>,
         slot: zama_fhe::DurableSlot,
-        access: zama_fhe::AccessPolicy,
+        audience: DurableAudience,
     ) -> Result<Self> {
-        Self::new_inner(encrypted_value, slot, access, false)
+        Self::new_inner(encrypted_value, slot, audience, false)
     }
 
     /// Like [`new`], but binds the output born publicly decryptable: the host
@@ -40,15 +102,15 @@ impl<'info> DurableOutput<'info> {
     pub(crate) fn new_public(
         encrypted_value: AccountInfo<'info>,
         slot: zama_fhe::DurableSlot,
-        access: zama_fhe::AccessPolicy,
+        audience: DurableAudience,
     ) -> Result<Self> {
-        Self::new_inner(encrypted_value, slot, access, true)
+        Self::new_inner(encrypted_value, slot, audience, true)
     }
 
     fn new_inner(
         encrypted_value: AccountInfo<'info>,
         slot: zama_fhe::DurableSlot,
-        access: zama_fhe::AccessPolicy,
+        audience: DurableAudience,
         make_public: bool,
     ) -> Result<Self> {
         require_keys_eq!(
@@ -56,6 +118,10 @@ impl<'info> DurableOutput<'info> {
             slot.address(),
             ConfidentialTokenError::AmountAclMismatch
         );
+        let access = audience.into_policy().map_err(|error| {
+            msg!("invalid durable FHE output audience: {:?}", error);
+            error!(ConfidentialTokenError::InvalidFheEvalPlan)
+        })?;
         let output = if *encrypted_value.owner == System::id() {
             require!(
                 encrypted_value.data_is_empty() && !encrypted_value.executable,
@@ -595,6 +661,58 @@ pub(crate) fn allow_subjects<'info>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn audience_subjects(audience: DurableAudience) -> Vec<Pubkey> {
+        audience
+            .into_policy()
+            .unwrap()
+            .subjects()
+            .iter()
+            .map(|subject| subject.pubkey())
+            .collect()
+    }
+
+    #[test]
+    fn holder_audience_grants_owner_then_compute() {
+        let owner = Pubkey::new_unique();
+        let compute = Pubkey::new_unique();
+        assert_eq!(
+            audience_subjects(DurableAudience::for_owner(owner, compute)),
+            vec![owner, compute]
+        );
+    }
+
+    #[test]
+    fn holder_audience_appends_extra_owner_before_compute() {
+        let owner = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+        let compute = Pubkey::new_unique();
+        assert_eq!(
+            audience_subjects(DurableAudience::for_owner(owner, compute).with_owner(recipient)),
+            vec![owner, recipient, compute]
+        );
+    }
+
+    #[test]
+    fn compute_only_audience_grants_compute_and_no_owner() {
+        let compute = Pubkey::new_unique();
+        assert_eq!(
+            audience_subjects(DurableAudience::compute_only(compute)),
+            vec![compute]
+        );
+    }
+
+    #[test]
+    fn duplicate_owner_and_compute_are_rejected() {
+        let owner = Pubkey::new_unique();
+        let compute = Pubkey::new_unique();
+        // A holder audience whose extra owner repeats the compute signer would
+        // render a duplicate subject; `into_policy` must reject it.
+        assert!(DurableAudience::for_owner(owner, compute)
+            .with_owner(compute)
+            .into_policy()
+            .is_err());
+    }
 
     fn handle(tag: u8) -> [u8; 32] {
         [tag; 32]

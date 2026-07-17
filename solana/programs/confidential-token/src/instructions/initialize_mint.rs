@@ -61,7 +61,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     let total_supply_output = fhe::DurableOutput::new(
         ctx.accounts.total_supply_encrypted_value.to_account_info(),
         durable_slot(mint_key, total_supply_authority, total_supply_label()),
-        zama_fhe::AccessPolicy::for_compute(compute_signer).map_err(invalid_eval_plan)?,
+        fhe::DurableAudience::compute_only(compute_signer),
     )?;
     let context_id = transfer_eval_context(
         b"initialize-total-supply",
