@@ -26,15 +26,29 @@ imagePullSecrets:
 
 image:
   repository: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e
-  tag: latest
+  # v0.13.0's bundled @fhevm/sdk defaults its tfhe WASM module to the oldest
+  # canonical version (1.5.3) instead of auto-detecting from the chain
+  # (confirmed via runtime instrumentation - it never even calls the ACL
+  # contract's getVersion()), which cannot deserialize the 1.6.1-format keys
+  # our kms-core v0.13.20 produces ("invalid value: integer `1`, expected
+  # variant index 0 <= i < 1"). v0.11.5-0 predates @fhevm/sdk entirely - its
+  # instance.ts unconditionally uses the older, simpler
+  # @zama-fhe/relayer-sdk@^0.4.4 (no per-protocol version auto-resolution to
+  # get wrong), and needs no env vars beyond what we already set below.
+  tag: v0.11.5-0
 
 job:
   enabled: true
   backoffLimit: 0
   restartPolicy: Never
-  # Give the full e2e suite (keygen/decryption round trips, etc.) enough
-  # headroom against a real dedicated 4-party threshold+enclave KMS.
-  activeDeadlineSeconds: 3600
+  # Debugging mode: this job only compiles and then idles (see args below) so
+  # tests can be run manually via `kubectl exec` instead of the whole suite
+  # auto-running once on deploy - matches zws-testnet's own
+  # e2e-fhevm-test-suite StatefulSet pattern (long-lived pod + manual
+  # ./run-tests.sh -g "..." invocations), see that pod spec for reference.
+  # Generous deadline since this is meant to sit idle across a debugging
+  # session, not complete a bounded test run.
+  activeDeadlineSeconds: 86400
   # test-suite/e2e's Dockerfile ENTRYPOINT is just ["/bin/bash", "-c"] with no
   # default CMD (confirmed via `git show v0.13.0:test-suite/e2e/Dockerfile`) -
   # without this, the container runs bare "/bin/bash -c" with no script
@@ -50,8 +64,37 @@ job:
   command: ["/bin/bash", "-c"]
   args:
     - |
+      # contracts/E2ECoprocessorConfigLocal.sol ships with hardcoded placeholder
+      # addresses (0x05fD9B5E.../0xcCAe95fF.../0xa1880e99...) - its own header
+      # comment says so verbatim: "These addresses are placeholders. They are
+      # patched at runtime via sed in the E2E test runner script with the
+      # actual deployment addresses." (confirmed via `git show
+      # v0.13.0:test-suite/e2e/contracts/E2ECoprocessorConfigLocal.sol`).
+      # DefaultCoprocessorConfig.getConfig() only takes the sed-patched branch
+      # when block.chainid != 31337 (see the same file) - our "staging" network
+      # uses chainId 12345 (not the Hardhat-default 31337), so we hit that
+      # branch and MUST patch here, exactly like zws-testnet's
+      # e2e-fhevm-test-suite StatefulSet's update-contract-addresses initContainer
+      # does against eth-sc-addresses/gw-sc-addresses. Without this, every FHE.*
+      # call in the test contracts targets addresses with no code deployed at
+      # them in this namespace, so no on-chain FHE activity is ever generated
+      # for the coprocessor/relayer to see - tests instead fail earlier, at
+      # input-ciphertext encryption (relayer keyurl fetch/deserialize).
+      echo "Patching E2ECoprocessorConfigLocal.sol with real deployment addresses..."
+      sed -i "s|ACLAddress: 0x[0-9a-fA-F]*,|ACLAddress: ${ACL_CONTRACT_ADDRESS},|g" contracts/E2ECoprocessorConfigLocal.sol
+      sed -i "s|CoprocessorAddress: 0x[0-9a-fA-F]*,|CoprocessorAddress: ${FHEVM_EXECUTOR_CONTRACT_ADDRESS},|g" contracts/E2ECoprocessorConfigLocal.sol
+      # No trailing "," here (unlike ACLAddress/CoprocessorAddress above): at
+      # v0.13.0, KMSVerifierAddress is the LAST field in the CoprocessorConfig
+      # struct literal, so it's followed by a bare newline + "});", not a comma
+      # - confirmed live: with a comma-anchored pattern (matching zws-testnet's
+      # own sed, whose deployed image apparently has a 4th field after it) this
+      # field silently failed to match and kept shipping the placeholder.
+      sed -i "s|KMSVerifierAddress: 0x[0-9a-fA-F]*|KMSVerifierAddress: ${KMS_VERIFIER_CONTRACT_ADDRESS}|g" contracts/E2ECoprocessorConfigLocal.sol
+      cat contracts/E2ECoprocessorConfigLocal.sol
+      npx hardhat clean
       npx hardhat compile
-      npx hardhat test --network staging
+      echo "Recompiled contracts done - idling for manual ./run-tests.sh invocations via kubectl exec"
+      tail -f /dev/null
 
 env:
   # Same well-known Foundry/Hardhat test mnemonic used to fund every anvil

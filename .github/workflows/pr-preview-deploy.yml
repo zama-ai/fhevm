@@ -77,7 +77,7 @@ on:
       test_suite_version:
         description: "Image tag for the test-suite image (same override rule as host_contracts_version above)"
         required: true
-        default: "v0.13.0"
+        default: "v0.11.5-0"
       common_chart_version:
         description: "Version of the generic `common` Helm chart, used for postgres-*, relayer-migrate, relayer and test-suite alike"
         required: true
@@ -190,7 +190,7 @@ env:
   # values-relayer-testnet.yaml (job.image.tag) and fhevm-test-suite/
   # values-relayer-dev.yaml both pin exactly this tag in production.
   RELAYER_VERSION: "v0.13.0"
-  TEST_SUITE_VERSION: "v0.13.0"
+  TEST_SUITE_VERSION: "v0.11.5-0"
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================

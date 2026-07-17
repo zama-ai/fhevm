@@ -15,10 +15,20 @@ network:
 port: 8545
 storage:
   size: 1Gi
+# 512Mi confirmed OOMKilled (exit code 137, 5 restarts within ~2h) under
+# sustained e2e load - anvil keeps every block/tx/receipt/trace in memory for
+# the life of the process, and this chain accumulates state across contract
+# deploys, keygen/crsgen polling, and hundreds of FHEVM-operation test-suite
+# runs. Each OOM kill drops every live WS subscription (host-listener,
+# coprocessor, relayer, test-suite), surfacing as unrelated-looking
+# "Connection reset without closing handshake" / "Connection refused" errors
+# downstream. Bumped well above observed usage rather than just past the
+# last OOM point, since the failure mode (silent reconnect-storm, not a
+# scheduling failure) is expensive to diagnose from the consumer side.
 resources:
   requests:
-    cpu: 100m
-    memory: 256Mi
-  limits:
-    cpu: 500m
+    cpu: 250m
     memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 2Gi

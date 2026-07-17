@@ -17,10 +17,15 @@ network:
 port: 8546
 storage:
   size: 1Gi
+# See ../host-chain/values-anvil-host-e2e.yaml's matching comment - anvil-host
+# was confirmed OOMKilled at this same 512Mi limit under sustained e2e load,
+# dropping every live WS subscription across the stack. Bumped identically
+# here as a preventive measure (gateway chain sees less traffic than host but
+# shares the same unbounded in-memory accumulation).
 resources:
   requests:
-    cpu: 100m
-    memory: 256Mi
-  limits:
-    cpu: 500m
+    cpu: 250m
     memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 2Gi

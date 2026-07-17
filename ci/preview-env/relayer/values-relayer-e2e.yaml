@@ -44,14 +44,18 @@ service:
 
 # relayer's own binary defaults to config/local.yaml relative to CWD with no
 # --config-file flag needed (Settings::new(None) already does
-# File::with_name("config/local").required(false)) - the image's own
-# WORKDIR + this mount path line up, so no command/args override needed
-# here (unlike test-suite/relayer-migrate, whose images have no default
-# entrypoint command at all).
+# File::with_name("config/local").required(false)). The image's own WORKDIR
+# is "/app/config" though (not "/app"), so config-rs actually resolves
+# "config/local.yaml" to "/app/config/config/local.yaml" - mounting this
+# ConfigMap at "/app/config" directly (matching the WORKDIR itself) hides
+# local.yaml from config-rs entirely (confirmed live: local.yaml file
+# present on disk at /app/config/local.yaml, but config-rs silently treats
+# it as "not found" - required(false) - and every field only set in
+# local.yaml, e.g. storage.app_pool, then errors as missing).
 configmapFiles:
   enabled: true
   volumeMount:
-    mountPath: "/app/config"
+    mountPath: "/app/config/config"
     subPath: ""
     readOnly: true
   files:
@@ -193,20 +197,39 @@ env:
   # once the real 4-party DKG ceremony reaches consensus. data_id here is
   # just a label the relayer echoes back in /v2/keyurl responses (not looked
   # up anywhere), so the raw on-chain key/CRS id doubles as it.
+  #
+  # NB: every key below needs the ".address" suffix - charts/contracts'
+  # sc-deploy-config.yaml unconditionally appends ".address" to every key
+  # promoted from addresses/.env.* into this ConfigMap (confirmed live:
+  # `kubectl get configmap host-sc-addresses -o yaml` shows
+  # "kms_active_key_id.address", not "kms_active_key_id" - a bare key here
+  # 404s the pod with CreateContainerConfigError: "couldn't find key
+  # kms_active_key_id in ConfigMap ... host-sc-addresses").
   - name: APP_KEYURL__FHE_PUBLIC_KEY__DATA_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_id}}
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_id.address}}
   - name: KMS_ACTIVE_KEY_STORAGE_URL
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_storage_url}}
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_storage_url.address}}
   - name: KMS_ACTIVE_KEY_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_id}}
-  - {name: APP_KEYURL__FHE_PUBLIC_KEY__URL, value: "$(KMS_ACTIVE_KEY_STORAGE_URL)/PublicKey/$(KMS_ACTIVE_KEY_ID)"}
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_key_id.address}}
+  # /PUB-p1/ is hardcoded here (not derived), matching
+  # zama-zws/gitops/values/relayer/relayer/values-relayer-dev.yaml's own
+  # "$(KMS_BUCKET_URL)/PUB-p1/PublicKey/$(KMS_KEY_ID)" pattern exactly: unlike
+  # KMS_NODE_STORAGE_URL_x (the on-chain ProtocolConfig registration
+  # host-listener reads - deliberately kept prefix-less above, see that
+  # comment), the relayer has no per-party fallback/search logic of its own -
+  # it needs the *exact* object key path, and since every party publishes
+  # identical public content under its own PUB-p<i>/ prefix, party 1's is
+  # picked as the one arbitrary source of truth, same as production.
+  - {name: APP_KEYURL__FHE_PUBLIC_KEY__URL, value: "$(KMS_ACTIVE_KEY_STORAGE_URL)/PUB-p1/PublicKey/$(KMS_ACTIVE_KEY_ID)"}
   - name: APP_KEYURL__CRS__DATA_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_id}}
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_id.address}}
   - name: KMS_ACTIVE_CRS_STORAGE_URL
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_storage_url}}
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_storage_url.address}}
   - name: KMS_ACTIVE_CRS_ID
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_id}}
-  - {name: APP_KEYURL__CRS__URL, value: "$(KMS_ACTIVE_CRS_STORAGE_URL)/CRS/$(KMS_ACTIVE_CRS_ID)"}
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_active_crs_id.address}}
+  # See the matching comment on APP_KEYURL__FHE_PUBLIC_KEY__URL above - same
+  # hardcoded /PUB-p1/ requirement applies here.
+  - {name: APP_KEYURL__CRS__URL, value: "$(KMS_ACTIVE_CRS_STORAGE_URL)/PUB-p1/CRS/$(KMS_ACTIVE_CRS_ID)"}
 
   # --- storage (dedicated in-cluster Postgres release, values-postgres-relayer-e2e.yaml) ---
   - {name: APP_STORAGE__SQL_DATABASE_URL, value: "postgresql://zama:zama@postgres-relayer:5432/relayer"}
