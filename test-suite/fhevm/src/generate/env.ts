@@ -9,7 +9,6 @@ import {
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
 } from "../compat/compat";
-import { driftDatabaseName } from "../drift";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_WALLET_INDICES,
@@ -17,6 +16,7 @@ import {
   KMS_NODE_WALLET_INDICES,
   MINIO_INTERNAL_URL,
   POSTGRES_HOST,
+  coprocessorDatabaseName,
   hostChainRuntimes,
   realLzEndpointFor,
 } from "../layout";
@@ -427,6 +427,9 @@ const buildInstanceEnvs = async (
   deriveWallet: (mnemonic: string, index: number) => Promise<WalletMaterial>,
 ) => {
   const instanceEnvs: Record<string, Record<string, string>> = {};
+  if (!plan.coprocessor) {
+    return instanceEnvs;
+  }
   const baseInstance = plan.coprocessor.instances.find((instance) => instance.index === 0);
   if (plan.topology.count === 1) {
     if (baseInstance) {
@@ -443,23 +446,25 @@ const buildInstanceEnvs = async (
   }
   for (let index = 0; index < plan.topology.count; index += 1) {
     const wallet = await deriveWallet(mnemonic, COPROCESSOR_WALLET_INDICES[index]);
-    const ctBucket = `coproc-${index}-ct128`;
+    const opBucket = `coproc-${index}-ct128`;
     envs["gateway-sc"][`COPROCESSOR_TX_SENDER_ADDRESS_${index}`] = wallet.address;
     envs["gateway-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
-    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/${ctBucket}`;
+    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/${opBucket}`;
     envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
       Object.assign(envs["coprocessor"], baseInstance?.env ?? {});
-      envs["coprocessor"].BUCKET_NAME_CT128 = ctBucket;
+      envs["coprocessor"].BUCKET_NAME_CT128 = opBucket;
       continue;
     }
     const next = { ...envs["coprocessor"] };
-    next.DATABASE_URL = `postgresql://${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}@${POSTGRES_HOST}/${driftDatabaseName(index)}`;
+    const dbName = coprocessorDatabaseName(index);
+    const dbCreds = `${envs.database.POSTGRES_USER}:${envs.database.POSTGRES_PASSWORD}`;
+    next.DATABASE_URL = `postgresql://${dbCreds}@${POSTGRES_HOST}/${dbName}`;
     next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
+    next.BUCKET_NAME_CT128 = opBucket;
     const instance = plan.coprocessor.instances.find((item) => item.index === index);
     Object.assign(next, instance?.env ?? {});
-    next.BUCKET_NAME_CT128 = ctBucket;
     instanceEnvs[`coprocessor.${index}`] = next;
   }
   return instanceEnvs;
@@ -506,6 +511,12 @@ export const renderEnvMaps = async (
   envs["host-sc"].HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = "";
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
+  envs["coprocessor"].CANONICAL_PROTOCOL_CONFIG_CHAIN_ID = defaultChain.chainId;
+  // TODO: drop once RFC-023 lands — the post-cutover backfill rewrites
+  // digests away from the immutable on-chain consensus, so drift auto-revert loops forever.
+  if (plan.blueGreen) {
+    envs["coprocessor"].DRIFT_AUTO_REVERT_ENABLED = "false";
+  }
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;

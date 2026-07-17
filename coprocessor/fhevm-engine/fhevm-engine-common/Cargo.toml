@@ -56,6 +56,9 @@ gpu = ["tfhe/gpu"]
 latency = []
 throughput = []
 compact-hex = []
+# Gates the build-time stack version: with the feature `stack_version!()` reads
+# BUILD_STACK_VERSION; without it the version is the hard-coded baseline.
+stack-version-override = []
 
 [build-dependencies]
 tonic-build = { workspace = true }

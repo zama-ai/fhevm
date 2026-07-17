@@ -1,6 +1,6 @@
 # This workflow verifies that:
 # - The Rust bindings crate version and files are up-to-date
-# - Contract mocks and selectors are current
+# - Contract selectors are current
 # - Dependency licenses compliance
 name: gateway-contracts-integrity-checks
 
@@ -77,10 +77,6 @@ jobs:
       - name: Check contract selectors are up-to-date
         working-directory: gateway-contracts
         run: make check-selectors
-
-      - name: Check mock contracts are up-to-date
-        working-directory: gateway-contracts
-        run: make check-mocks
 
       - name: Check SPDX license headers
         working-directory: gateway-contracts

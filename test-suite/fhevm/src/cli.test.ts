@@ -26,7 +26,7 @@ import {
 } from "./layout";
 import { testDefaultScenario } from "./test-fixtures";
 import { withTempStateDir } from "./test-state";
-import { OVERRIDE_GROUPS, type State } from "./types";
+import { OVERRIDE_GROUPS, type ResolvedCoprocessorScenario, type State } from "./types";
 
 const CLI_DIR = path.resolve(import.meta.dir, "..");
 
@@ -59,7 +59,9 @@ const withState = (state: State, run: (env: Record<string, string>) => Promise<v
     await run({ FHEVM_STATE_DIR: stateDir });
   });
 
-const persistedState = (target: State["target"] = "latest-main"): State => ({
+const persistedState = (
+  target: State["target"] = "latest-main",
+): State & { scenario: ResolvedCoprocessorScenario } => ({
   target,
   lockPath: "/tmp/latest-main.json",
   requiresGitHub: true,
@@ -75,7 +77,9 @@ const persistedState = (target: State["target"] = "latest-main"): State => ({
   updatedAt: "2026-03-19T00:00:00.000Z",
 });
 
-const bootstrappedState = (target: State["target"] = "latest-main"): State => ({
+const bootstrappedState = (
+  target: State["target"] = "latest-main",
+): State & { scenario: ResolvedCoprocessorScenario } => ({
   ...persistedState(target),
   discovery: {
     gateway: {} as NonNullable<State["discovery"]>["gateway"],

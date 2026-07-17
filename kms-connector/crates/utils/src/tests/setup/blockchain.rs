@@ -10,10 +10,7 @@ use alloy::{
     transports::http::reqwest::Url,
 };
 use anyhow::anyhow;
-use fhevm_gateway_bindings::{
-    decryption::Decryption::{self, DecryptionInstance},
-    gateway_config::GatewayConfig::{self, GatewayConfigInstance},
-};
+use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{self, KMSGenerationInstance},
     protocol_config::ProtocolConfig::ProtocolConfigInstance,
@@ -38,7 +35,6 @@ pub const DEPLOYER_PRIVATE_KEY: &str =
 pub struct BlockchainInstance {
     pub provider: WalletProvider,
     pub decryption_contract: DecryptionInstance<WalletProvider>,
-    pub gateway_config_contract: GatewayConfigInstance<WalletProvider>,
     pub kms_generation_contract: KMSGenerationInstance<WalletProvider>,
     pub protocol_config_contract: ProtocolConfigInstance<WalletProvider>,
     pub anvil: AnvilInstance,
@@ -50,13 +46,11 @@ impl BlockchainInstance {
         anvil: AnvilInstance,
         provider: WalletProvider,
         decryption_address: Address,
-        gateway_config_address: Address,
         kms_generation_address: Address,
         protocol_config_address: Address,
         block_time: u64,
     ) -> Self {
         let decryption_contract = Decryption::new(decryption_address, provider.clone());
-        let gateway_config_contract = GatewayConfig::new(gateway_config_address, provider.clone());
         let kms_generation_contract = KMSGeneration::new(kms_generation_address, provider.clone());
         let protocol_config_contract =
             ProtocolConfigInstance::new(protocol_config_address, provider.clone());
@@ -64,7 +58,6 @@ impl BlockchainInstance {
         BlockchainInstance {
             provider,
             decryption_contract,
-            gateway_config_contract,
             kms_generation_contract,
             protocol_config_contract,
             anvil,
@@ -95,11 +88,6 @@ impl BlockchainInstance {
         // Deploy mock contracts via forge create
         info!("Deploying Gateway mock contracts via forge...");
 
-        let gateway_contracts_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../gateway-contracts")
-            .canonicalize()
-            .map_err(|e| anyhow::anyhow!("Could not find gateway-contracts directory: {e}"))?;
-
         let kms_connector_tests_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../tests")
             .canonicalize()
@@ -108,7 +96,7 @@ impl BlockchainInstance {
         let rpc_url = anvil_endpoint.to_string();
         let private_key = DEPLOYER_PRIVATE_KEY.to_string();
 
-        let (decryption_addr, gateway_config_addr, kms_generation_addr, protocol_config_addr) =
+        let (decryption_addr, kms_generation_addr, protocol_config_addr) =
             tokio::task::spawn_blocking(move || {
                 let decryption = deploy_contract(
                     "contracts/DecryptionMock.sol",
@@ -116,14 +104,6 @@ impl BlockchainInstance {
                     &rpc_url,
                     &private_key,
                     &kms_connector_tests_path,
-                )?;
-
-                let gateway_config = deploy_contract(
-                    "contracts/mocks/GatewayConfigMock.sol",
-                    "GatewayConfigMock",
-                    &rpc_url,
-                    &private_key,
-                    &gateway_contracts_path,
                 )?;
 
                 let kms_generation = deploy_contract(
@@ -142,17 +122,11 @@ impl BlockchainInstance {
                     &kms_connector_tests_path,
                 )?;
 
-                Ok::<_, anyhow::Error>((
-                    decryption,
-                    gateway_config,
-                    kms_generation,
-                    protocol_config,
-                ))
+                Ok::<_, anyhow::Error>((decryption, kms_generation, protocol_config))
             })
             .await??;
 
         info!("DecryptionMock deployed at: {}", decryption_addr);
-        info!("GatewayConfigMock deployed at: {}", gateway_config_addr);
         info!("KMSGenerationMock deployed at: {}", kms_generation_addr);
         info!("ProtocolConfigMock deployed at: {}", protocol_config_addr);
 
@@ -160,7 +134,6 @@ impl BlockchainInstance {
             anvil,
             provider,
             decryption_addr,
-            gateway_config_addr,
             kms_generation_addr,
             protocol_config_addr,
             block_time,
