@@ -121,14 +121,14 @@ export function assertIsSignedDecryptionPermit(
   }
 }
 
-export type SignDecryptionPermitContext = {
+export type KmsSignDecryptionPermitContext = {
   readonly chain: FhevmChain;
   readonly runtime: FhevmRuntime;
   readonly client: NonNullable<object>;
   readonly options: { readonly batchRpcCalls: boolean };
 };
 
-export type SignDecryptionPermitParameters = {
+export type KmsSignDecryptionPermitParameters = {
   readonly contractAddresses: readonly string[];
   readonly startTimestamp: number;
   readonly durationSeconds: number;
@@ -153,8 +153,8 @@ export type SignDecryptionPermitParameters = {
  * @throws If the signature verification fails.
  */
 export async function signDecryptionPermit(
-  context: SignDecryptionPermitContext,
-  parameters: SignDecryptionPermitParameters,
+  context: KmsSignDecryptionPermitContext,
+  parameters: KmsSignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
   const protocolVersion = getResolvedProtocolVersion(context);
   if (protocolVersion === undefined) {
@@ -224,7 +224,7 @@ function _normalizeSerializedPermitDomainChainId(permit: unknown): unknown {
 }
 
 export async function parseSignedDecryptionPermit(
-  context: SignDecryptionPermitContext,
+  context: KmsSignDecryptionPermitContext,
   transportKeyPair: TransportKeyPair,
   permit: unknown,
 ): Promise<SignedDecryptionPermit> {

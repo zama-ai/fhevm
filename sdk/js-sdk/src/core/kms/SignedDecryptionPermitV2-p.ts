@@ -3,7 +3,7 @@ import type { KmsUserDecryptEip712V2 } from '../types/kms.js';
 import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import type { SignDecryptionPermitContext, SignDecryptionPermitParameters } from './SignedDecryptionPermit-p.js';
+import type { KmsSignDecryptionPermitContext, KmsSignDecryptionPermitParameters } from './SignedDecryptionPermit-p.js';
 import type { KmsExtraData } from '../types/kms-p.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
 import { assertRecordBytes65HexProperty } from '../base/bytes.js';
@@ -16,37 +16,12 @@ import { assertIsKmsUserDecryptEip712V2, createKmsUserDecryptEip712V2 } from './
 import { verifyKmsUserDecryptEip712V2 } from '../utils-p/decrypt/verifyKmsUserDecryptEip712V2.js';
 import { assert } from '../base/errors/InternalError.js';
 import { EXTRA_DATA_V2 } from './kmsExtraData-p.js';
+import { assertIsUintNumber } from '../base/uint.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const PRIVATE_TOKEN = Symbol('SignedDecryptionPermitV2.token');
 const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10 as Uint8Number;
-
-////////////////////////////////////////////////////////////////////////////////
-
-function assertKmsEip712V2DeadlineValidity({
-  startTimestamp,
-  durationSeconds,
-}: {
-  startTimestamp: bigint | number | string;
-  durationSeconds: bigint | number | string;
-}): void {
-  if (durationSeconds === 0) {
-    throw Error('durationSeconds is zero');
-  }
-
-  const durationSecBigInt = BigInt(durationSeconds);
-  const startTimestampBigInt = BigInt(startTimestamp);
-
-  const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
-  if (startTimestampBigInt > currentTimestamp) {
-    throw Error('startTimestamp is set in the future');
-  }
-
-  if (startTimestampBigInt + durationSecBigInt < currentTimestamp) {
-    throw Error('request has expired');
-  }
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 // SignedDecryptionPermitV2Impl
@@ -104,7 +79,7 @@ class SignedDecryptionPermitV2Impl implements SignedDecryptionPermitV2 {
 
   public assertNotExpired(): void {
     const { startTimestamp, durationSeconds } = this.#eip712.message;
-    assertKmsEip712V2DeadlineValidity({ startTimestamp, durationSeconds });
+    _assertKmsEip712V2DeadlineValidity({ startTimestamp, durationSeconds });
   }
 }
 
@@ -120,106 +95,30 @@ export function isSignedDecryptionPermitV2(value: unknown): value is SignedDecry
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// _createSignedDecryptionPermitV2
-////////////////////////////////////////////////////////////////////////////////
-
-async function _createSignedDecryptionPermitV2(
-  context: { readonly chain: FhevmChain; readonly runtime: FhevmRuntime },
-  parameters: {
-    readonly signerAddress: ChecksummedAddress;
-    readonly eip712: KmsUserDecryptEip712V2;
-    readonly signature: Bytes65Hex;
-    readonly delegatorAddress?: ChecksummedAddress | undefined;
-  },
-): Promise<SignedDecryptionPermitV2> {
-  const { signerAddress, eip712, signature } = parameters;
-
-  if (eip712.message.allowedContracts.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-    throw Error(`allowedContracts max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`);
-  }
-
-  await verifyKmsUserDecryptEip712V2(context, { signer: signerAddress, message: eip712.message, signature });
-
-  return new SignedDecryptionPermitV2Impl(PRIVATE_TOKEN, parameters);
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // signDecryptionPermitV2
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function signDecryptionPermitV2(
-  context: SignDecryptionPermitContext,
-  parameters: SignDecryptionPermitParameters,
+  context: KmsSignDecryptionPermitContext,
+  parameters: KmsSignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
-  const kmsSignersContext = await readCurrentKmsSignersContext(context, {
-    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-  });
+  const { signerAddress: signerAddressArg, signer, delegatorAddress: delegatorAddressArg } = parameters;
 
-  const extraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
-
-  // For debug purpose only:
-  // -----------------------
-  // In theory, it should not be possible to produce a unified eip712 (protocol v14+)
-  // with an extraData coming from an old protocol v11/12/13
-  assert(
-    extraData.version >= EXTRA_DATA_V2,
-    `signDecryptionPermitV2 error: Invalid extraData version extraData=${extraData.toBytesHex()}`,
-  );
-
-  const {
-    contractAddresses,
-    startTimestamp,
-    durationSeconds: durationSecondsParam,
-    signerAddress: signerAddressArg,
-    transportKeyPair: transportKeyPair,
-    signer,
-    delegatorAddress: delegatorAddressArg,
-  } = parameters;
-
-  if (durationSecondsParam <= 0) {
-    throw new RangeError(`durationSeconds must be positive, got ${durationSecondsParam}`);
-  }
-
-  const MAX_DURATION_SECONDS = 604_800n; // 7 days in seconds
-  const durationSeconds = BigInt(durationSecondsParam);
-
-  // RFC-016: warn when permissive mode (allowedContracts=[]) is combined with a long-lived permit —
-  // a stolen signature can decrypt anything the user owns until it expires or is invalidated.
-  if (contractAddresses.length === 0 && durationSeconds > MAX_DURATION_SECONDS) {
-    const msg = `permissive mode (allowedContracts=[]) with durationSeconds ${durationSeconds} exceeds the recommended maximum of ${MAX_DURATION_SECONDS}s — consider using a shorter window or app-bounded allowedContracts`;
-    const logger = context.runtime.config.logger;
-    logger?.warn?.(msg);
-  }
-
-  assertIsTransportKeyPair(transportKeyPair, {});
   assertIsAddress(signerAddressArg, {});
-
   const signerAddress = addressToChecksummedAddress(signerAddressArg);
 
+  // Delegation is post-sign metadata (it is not part of the signed V2 message);
+  // checksum it here for the resulting SignedDecryptionPermitV2 instance.
   let delegatorAddress: ChecksummedAddress | undefined;
   if (delegatorAddressArg !== undefined) {
     assertIsAddress(delegatorAddressArg, {});
     delegatorAddress = addressToChecksummedAddress(delegatorAddressArg);
   }
 
-  // RFC-016: round startTimestamp down to the nearest minute. This absorbs small clock skew
-  // and prevents a future-dated startTimestamp from bypassing signature invalidation
-  // (a future start would survive an invalidateDecryptionSignaturesBefore(block.timestamp) call).
-  const roundedStartTimestamp = Math.floor(startTimestamp / 60) * 60;
-
-  const commonMessage = {
-    verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address as ChecksummedAddress,
-    chainId: context.chain.id,
-    userAddress: signerAddress, // identity asserting authorization
-    allowedContracts: contractAddresses, // [] = permissive, [...] = specific
-    durationSeconds,
-    startTimestamp: roundedStartTimestamp,
-    extraData,
-    publicKey: transportKeyPair.publicKey,
-  };
-
-  const eip712 = createKmsUserDecryptEip712V2(commonMessage);
+  // All message construction (KMS context read + extraData version assert, duration
+  // and permissive-mode validation, startTimestamp rounding) lives in the unsigned
+  // builder, so the locally-signed and externally-signed paths stay identical.
+  const eip712 = await createUnsignedDecryptionPermitEip712V2(context, parameters);
 
   const signature = await context.runtime.ethereum.signTypedData(signer, {
     account: signerAddress,
@@ -239,13 +138,13 @@ export async function signDecryptionPermitV2(
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function parseSignedDecryptionPermitV2(
-  context: SignDecryptionPermitContext,
+  context: KmsSignDecryptionPermitContext,
   transportKeyPair: TransportKeyPair,
   permit: unknown,
 ): Promise<SignedDecryptionPermitV2> {
   assertIsTransportKeyPair(transportKeyPair, {});
 
-  const permitName = 'permit';
+  const permitName = 'permit-v2';
   const options = {};
 
   assertRecordNonNullableProperty(permit, 'eip712', permitName, options);
@@ -272,4 +171,152 @@ export async function parseSignedDecryptionPermitV2(
   }
 
   return await _createSignedDecryptionPermitV2(context, { signature: permit.signature, eip712, signerAddress });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// createUnsignedDecryptionPermitEip712V2
+////////////////////////////////////////////////////////////////////////////////
+
+export async function createUnsignedDecryptionPermitEip712V2(
+  context: KmsSignDecryptionPermitContext,
+  // Unlike the V1 unsigned builder, only `signer` is omitted: the V2 (unified)
+  // permit embeds `userAddress` in the signed message, so the signer's address
+  // is required to build it (the V1 message never carries the signer address).
+  parameters: Omit<KmsSignDecryptionPermitParameters, 'signer'>,
+): Promise<KmsUserDecryptEip712V2> {
+  const {
+    contractAddresses,
+    startTimestamp,
+    durationSeconds: durationSecondsParam,
+    signerAddress: signerAddressArg,
+    transportKeyPair,
+    delegatorAddress: delegatorAddressArg,
+  } = parameters;
+
+  assertIsUintNumber(durationSecondsParam, { subject: 'durationSeconds' });
+
+  if (durationSecondsParam <= 0) {
+    throw new RangeError(`durationSeconds must be positive, got ${durationSecondsParam}`);
+  }
+
+  const MAX_DURATION_SECONDS = 604_800n; // 7 days in seconds
+  const durationSeconds = BigInt(durationSecondsParam);
+
+  // RFC-016: warn when permissive mode (allowedContracts=[]) is combined with a long-lived permit —
+  // a stolen signature can decrypt anything the user owns until it expires or is invalidated.
+  if (contractAddresses.length === 0 && durationSeconds > MAX_DURATION_SECONDS) {
+    const msg = `permissive mode (allowedContracts=[]) with durationSeconds ${durationSeconds} exceeds the recommended maximum of ${MAX_DURATION_SECONDS}s — consider using a shorter window or app-bounded allowedContracts`;
+    context.runtime.config.logger?.warn?.(msg);
+  }
+
+  // Validate before returning so an externally-signed permit can never be built
+  // over out-of-range data (mirrors the check in `_createSignedDecryptionPermitV2`).
+  if (contractAddresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+    throw Error(`allowedContracts max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`);
+  }
+
+  assertIsTransportKeyPair(transportKeyPair, {});
+  assertIsAddress(signerAddressArg, {});
+  const signerAddress = addressToChecksummedAddress(signerAddressArg);
+
+  // Delegation is not part of the signed V2 message (it is post-sign metadata on
+  // the SignedDecryptionPermitV2), so it does not affect this eip712 — but a
+  // provided delegator is validated early to fail fast, mirroring V1.
+  if (delegatorAddressArg !== undefined) {
+    assertIsAddress(delegatorAddressArg, {});
+  }
+
+  const kmsSignersContext = await readCurrentKmsSignersContext(context, {
+    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+  });
+
+  const extraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
+
+  // A unified (v2) permit requires protocol v14+ extraData (context id + epoch id).
+  assert(
+    extraData.version >= EXTRA_DATA_V2,
+    `createUnsignedDecryptionPermitEip712V2 error: Invalid extraData version extraData=${extraData.toBytesHex()}`,
+  );
+
+  // RFC-016: round startTimestamp down to the nearest minute. This absorbs small clock skew
+  // and prevents a future-dated startTimestamp from bypassing signature invalidation
+  // (a future start would survive an invalidateDecryptionSignaturesBefore(block.timestamp) call).
+  const roundedStartTimestamp = Math.floor(startTimestamp / 60) * 60;
+
+  const commonMessage = {
+    verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address as ChecksummedAddress,
+    chainId: context.chain.id,
+    userAddress: signerAddress, // identity asserting authorization
+    allowedContracts: contractAddresses, // [] = permissive, [...] = specific
+    durationSeconds,
+    startTimestamp: roundedStartTimestamp,
+    extraData,
+    publicKey: transportKeyPair.publicKey,
+  };
+
+  const eip712 = createKmsUserDecryptEip712V2(commonMessage);
+
+  // no need to validate as it has already been validated
+
+  return eip712;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// _createSignedDecryptionPermitV2
+////////////////////////////////////////////////////////////////////////////////
+
+async function _createSignedDecryptionPermitV2(
+  context: { readonly chain: FhevmChain; readonly runtime: FhevmRuntime },
+  parameters: {
+    readonly signerAddress: ChecksummedAddress;
+    readonly eip712: KmsUserDecryptEip712V2;
+    readonly signature: Bytes65Hex;
+    readonly delegatorAddress?: ChecksummedAddress | undefined;
+  },
+): Promise<SignedDecryptionPermitV2> {
+  const { signerAddress, eip712, signature } = parameters;
+
+  // Enforced here (the choke point shared by signDecryptionPermitV2 and
+  // parseSignedDecryptionPermitV2). The message field is a validated uint256
+  // string, so `BigInt` is safe; a uint can only be non-positive when it is 0.
+  if (BigInt(eip712.message.durationSeconds) <= 0n) {
+    throw new RangeError(`durationSeconds must be positive, got ${eip712.message.durationSeconds}`);
+  }
+
+  if (eip712.message.allowedContracts.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+    throw Error(`allowedContracts max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`);
+  }
+
+  await verifyKmsUserDecryptEip712V2(context, { signer: signerAddress, message: eip712.message, signature });
+
+  return new SignedDecryptionPermitV2Impl(PRIVATE_TOKEN, parameters);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// _assertKmsEip712V2DeadlineValidity
+////////////////////////////////////////////////////////////////////////////////
+
+function _assertKmsEip712V2DeadlineValidity({
+  startTimestamp,
+  durationSeconds,
+}: {
+  startTimestamp: bigint | number | string;
+  durationSeconds: bigint | number | string;
+}): void {
+  const durationSecBigInt = BigInt(durationSeconds);
+  if (durationSecBigInt === 0n) {
+    throw Error('durationSeconds is zero');
+  }
+
+  const startTimestampBigInt = BigInt(startTimestamp);
+
+  const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
+  if (startTimestampBigInt > currentTimestamp) {
+    throw Error('startTimestamp is set in the future');
+  }
+
+  if (startTimestampBigInt + durationSecBigInt < currentTimestamp) {
+    throw Error('request has expired');
+  }
 }

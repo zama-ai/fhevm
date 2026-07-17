@@ -84,7 +84,9 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
     options: relayerOptions,
   });
 
-  // 6. Reconcile KMS signer context using 'loose' mode
+  // 6. Reconcile the relayer's KMS context against the one we requested.
+  //    Pins on contextId (mirrors gateway Decryption.sol DecryptionContextMismatch);
+  //    rejects a substituted context, epoch deliberately ignored.
   const reconciledKmsSignersContext: KmsSignersContext = await reconcileKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
