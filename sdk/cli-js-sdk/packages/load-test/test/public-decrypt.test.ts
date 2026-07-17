@@ -97,9 +97,14 @@ describe("publicValuesMatch", () => {
       },
     );
     mocks.createClientContext.mockReturnValue({
-      fhevm: { decryptPublicValuesWithSignatures },
+      fhevm: {
+        decryptPublicValuesWithSignatures,
+        generateTransportKeyPair: vi.fn().mockResolvedValue({ key: Symbol("key") }),
+        signDecryptionPermit: vi.fn().mockResolvedValue({ permit: Symbol("permit") }),
+      },
     });
     mocks.openIfExists.mockResolvedValue({
+      meta: { contractAddress: `0x${"33".repeat(20)}` },
       loadItems: vi.fn().mockResolvedValue([{
         index: 0,
         type: "uint64",
@@ -134,5 +139,56 @@ describe("publicValuesMatch", () => {
       ...(errorLabel ? { errorLabel } : {}),
       verified,
     });
+  });
+
+  it("fails prepare before any relayer submission when the SDK preflight fails", async () => {
+    const protocolError = new Error(
+      "ProtocolConfig.getCurrentKmsContextAndEpoch() requires ProtocolConfig >= v0.2.0",
+    );
+    const decryptPublicValuesWithSignatures = vi.fn();
+    mocks.createClientContext.mockReturnValue({
+      fhevm: {
+        decryptPublicValuesWithSignatures,
+        generateTransportKeyPair: vi.fn().mockResolvedValue({ key: Symbol("key") }),
+        signDecryptionPermit: vi.fn().mockRejectedValue(protocolError),
+      },
+    });
+    mocks.openIfExists.mockResolvedValue({
+      meta: { contractAddress: `0x${"33".repeat(20)}` },
+      loadItems: vi.fn().mockResolvedValue([{
+        index: 0,
+        type: "uint64",
+        value: "42",
+        handle: `0x${"11".repeat(32)}`,
+        ownerIndex: 0,
+        ownerAddress: "0x0000000000000000000000000000000000000001",
+        isPublic: true,
+        transactionHash: `0x${"22".repeat(32)}`,
+      }]),
+      cursor: vi.fn().mockReturnValue({ position: 0n, claim: vi.fn().mockReturnValue(0n) }),
+    });
+    const executor = new PublicDecryptExecutor(
+      {
+        network: "devnet",
+        relayerUrl: "https://relayer.example",
+        contractChainId: 9_000,
+        dataDir: "/tmp/load-test-public-preflight",
+      },
+      {} as never,
+      undefined,
+      5_000,
+      1,
+    );
+
+    await expect(executor.prepare(1)).rejects.toMatchObject({
+      message: expect.stringContaining(
+        "public-decrypt SDK preflight failed for target A",
+      ),
+      cause: protocolError,
+    });
+    await expect(
+      executor.execute(0, new AbortController().signal),
+    ).rejects.toThrow("Executor not prepared");
+    expect(decryptPublicValuesWithSignatures).not.toHaveBeenCalled();
   });
 });

@@ -186,7 +186,8 @@ describe("UserDecryptExecutor", () => {
     expect(targetA.signDecryptionPermit).toHaveBeenCalledWith(
       expect.not.objectContaining({ delegatorAddress: expect.anything() }),
     );
-    expect(targetB.signDecryptionPermit).toHaveBeenCalledTimes(1);
+    // One preflight call at prepare() plus one per executed request.
+    expect(targetB.signDecryptionPermit).toHaveBeenCalledTimes(2);
     expect(targetA.decryptValues).toHaveBeenCalledWith(
       expect.objectContaining({
         options: expect.objectContaining({ signal: controller.signal }),
@@ -245,8 +246,40 @@ describe("UserDecryptExecutor", () => {
     await preparing;
 
     await executor.execute(0, new AbortController().signal);
-    expect(targetA.generateTransportKeyPair).toHaveBeenCalledTimes(1);
-    expect(targetB.generateTransportKeyPair).toHaveBeenCalledTimes(1);
+    // One preflight call at prepare() plus one per executed request.
+    expect(targetA.generateTransportKeyPair).toHaveBeenCalledTimes(2);
+    expect(targetB.generateTransportKeyPair).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails prepare before any relayer submission when the SDK preflight fails", async () => {
+    mocks.openIfExists.mockResolvedValue({
+      meta: meta(),
+      loadItems: vi.fn().mockResolvedValue([item()]),
+    });
+    const protocolError = new Error(
+      "ProtocolConfig.getCurrentKmsContextAndEpoch() requires ProtocolConfig >= v0.2.0",
+    );
+    const target = {
+      ...sdkClient(),
+      signDecryptionPermit: vi.fn().mockRejectedValue(protocolError),
+    };
+    const executor = new UserDecryptExecutor(
+      env(),
+      client("https://a.example"),
+      undefined,
+      5_000,
+      false,
+      { createSdkClient: vi.fn().mockReturnValue(target) },
+    );
+
+    await expect(executor.prepare(1)).rejects.toMatchObject({
+      message: expect.stringContaining("SDK preflight failed for target A"),
+      cause: protocolError,
+    });
+    await expect(
+      executor.execute(0, new AbortController().signal),
+    ).rejects.toThrow("Executor not prepared");
+    expect(target.decryptValues).not.toHaveBeenCalled();
   });
 
   it("fails prepare without starting user-decrypt actions when SDK readiness fails", async () => {

@@ -20,6 +20,7 @@ import type { FheHandlePoolItem, PoolMeta } from "../pool/types";
 import type { RelayerClient } from "../relayer/client";
 import { epochNowMs, monotonicNowMs } from "../shared/time";
 import { interruptedLeg } from "./interruption";
+import { assertSdkPreflight } from "./preflight";
 import {
   captureInitialPostIdentity,
   sdkTerminalIdentityError,
@@ -303,6 +304,26 @@ export class UserDecryptExecutor implements FlowExecutor {
     }
     await Promise.all([targetA.ready, targetB?.ready]);
     signal?.throwIfAborted();
+
+    const probeItem = this.items[0];
+    if (!probeItem) throw new Error("User-decrypt handle pool is empty.");
+    const probeSigner = this.delegated
+      ? this.account(this.meta.delegateIndex!)
+      : this.account(probeItem.ownerIndex);
+    for (const [target, client] of [["A", targetA], ["B", targetB]] as const) {
+      if (!client) continue;
+      await assertSdkPreflight({
+        flow: this.flow,
+        target,
+        client,
+        contractAddress: this.meta.contractAddress,
+        durationSeconds: permitDurationSeconds(this.requestTimeoutMs),
+        signer: probeSigner,
+        ...(this.delegated ? { delegatorAddress: probeItem.ownerAddress } : {}),
+      });
+      signal?.throwIfAborted();
+    }
+
     this.targetA = targetA;
     this.targetB = targetB;
   }

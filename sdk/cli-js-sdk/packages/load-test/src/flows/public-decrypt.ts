@@ -5,6 +5,7 @@ import {
 import type { RelayerPublicDecryptProgressArgs } from "@fhevm/sdk/actions/base";
 import { randomUUID } from "node:crypto";
 import type { Hex } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 import { poolDir, type LoadTestEnv } from "../env";
 import {
@@ -18,6 +19,7 @@ import type { FheHandlePoolItem } from "../pool/types";
 import type { RelayerClient } from "../relayer/client";
 import { epochNowMs, monotonicNowMs } from "../shared/time";
 import { interruptedLeg } from "./interruption";
+import { assertSdkPreflight, type PreflightSdkClient } from "./preflight";
 import {
   captureInitialPostIdentity,
   sdkTerminalIdentityError,
@@ -106,10 +108,31 @@ export class PublicDecryptExecutor implements FlowExecutor {
       rpcUrl: this.env.rpcUrl,
       contractAddress: this.env.contractAddress,
     };
-    this.context = createClientContext({ ...options, relayerUrl: this.env.relayerUrl });
-    this.contextB = this.env.relayerBUrl
+    const context = createClientContext({ ...options, relayerUrl: this.env.relayerUrl });
+    const contextB = this.env.relayerBUrl
       ? createClientContext({ ...options, relayerUrl: this.env.relayerBUrl })
       : undefined;
+
+    // The public journey performs the same host-chain protocol reads as
+    // permit signing before it submits (readCurrentKmsSignersContext), so an
+    // ephemeral throwaway signer probes SDK/environment compatibility without
+    // touching the relayer or needing a funded account.
+    const probeSigner = privateKeyToAccount(generatePrivateKey());
+    for (const [target, probed] of [["A", context], ["B", contextB]] as const) {
+      if (!probed) continue;
+      await assertSdkPreflight({
+        flow: this.flow,
+        target,
+        client: probed.fhevm as unknown as PreflightSdkClient,
+        contractAddress: store.meta.contractAddress,
+        durationSeconds: 86_400,
+        signer: probeSigner,
+      });
+      signal?.throwIfAborted();
+    }
+
+    this.context = context;
+    this.contextB = contextB;
   }
 
   private claimCombination(): FheHandlePoolItem[] {
