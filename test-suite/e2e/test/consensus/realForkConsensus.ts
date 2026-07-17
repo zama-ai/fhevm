@@ -27,6 +27,7 @@ import {
   getCanonicalProvider,
   getForkProvider,
   getSignerForProvider,
+  mineBlocks,
   setForkMining,
   syncAnvilState,
   verifyForkDivergence,
@@ -87,7 +88,7 @@ async function createDivergentForkWork(
   const contractAddress = await contract.getAddress();
 
   console.log(`[${label}] Syncing fork Anvil state after contract deployment...`);
-  await syncAnvilState(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl);
+  await syncAnvilState(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl, false);
 
   const canonicalSigner = getSignerForProvider(canonicalProvider, 0);
   const forkSigner = getSignerForProvider(forkProvider, 0);
@@ -122,11 +123,19 @@ async function createDivergentForkWork(
     canonicalProvider.broadcastTransaction(signedMintTx),
     forkProvider.broadcastTransaction(signedMintTx),
   ]);
+  // fork-anvil is deliberately paused so its branch depth cannot grow while
+  // TFHE execution and Gateway submission run. Mine the transaction and only
+  // enough descendants for operational finality, staying below settlement.
+  await forkProvider.send('evm_mine', []);
   const [canonicalReceipt, forkReceipt] = await Promise.all([canonicalTx.wait(), forkTx.wait()]);
   expect(canonicalReceipt, `[${label}] canonical mint receipt`).to.not.be.null;
   expect(canonicalReceipt!.blockHash, `[${label}] canonical mint block hash`).to.not.be.null;
   expect(forkReceipt, `[${label}] fork mint receipt`).to.not.be.null;
   expect(forkReceipt!.blockHash, `[${label}] fork mint block hash`).to.not.be.null;
+
+  const forkConfirmationBlocks = Math.min(FINALITY_LAG, RFC11_SETTLEMENT_LAG - 1);
+  expect(forkConfirmationBlocks, `[${label}] fork must have a non-empty pre-settlement finality window`).to.be.gte(1);
+  await mineBlocks(forkProvider, forkConfirmationBlocks);
 
   const balanceHandle = handleToHex(await contract.balanceOf(aliceAddress));
   const forkBalanceHandle = handleToHex(await contractOnFork.balanceOf(aliceAddress));

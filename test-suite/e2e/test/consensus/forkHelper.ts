@@ -249,6 +249,7 @@ export async function advancePastFinality(
  * Copy the full state from one Anvil to another using anvil_dumpState/anvil_loadState.
  * This is used to ensure the fork Anvil has the same deployed contracts and
  * chain state as the primary before the fork point.
+ * Set resumeTargetMining=false when the caller will mine the fork explicitly.
  *
  * Must be called AFTER the main stack is fully deployed and BEFORE submitting
  * divergent transactions.
@@ -256,6 +257,7 @@ export async function advancePastFinality(
 export async function syncAnvilState(
   sourceRpcUrl: string,
   targetRpcUrl: string,
+  resumeTargetMining: boolean = true,
 ): Promise<void> {
   const source = new ethers.JsonRpcProvider(sourceRpcUrl);
   const target = new ethers.JsonRpcProvider(targetRpcUrl);
@@ -271,7 +273,9 @@ export async function syncAnvilState(
   // Load state into the target Anvil.
   await target.send('anvil_loadState', [stateHex]);
   await target.send('evm_setAutomine', [false]);
-  await target.send('evm_setIntervalMining', [1]);
+  if (resumeTargetMining) {
+    await target.send('evm_setIntervalMining', [1]);
+  }
 }
 
 /**
