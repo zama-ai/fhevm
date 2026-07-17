@@ -96,7 +96,7 @@ where
         res
     }
 
-    // Not used but overriden for consistency with other send_transaction methods.
+    // Not used but overridden for consistency with other send_transaction methods.
     async fn send_transaction_sync_internal(
         &self,
         tx: SendableTx<N>,
@@ -123,7 +123,7 @@ where
         res
     }
 
-    // Not used but overriden for consistency with other send_transaction methods.
+    // Not used but overridden for consistency with other send_transaction methods.
     async fn send_transaction_internal(
         &self,
         tx: SendableTx<N>,
