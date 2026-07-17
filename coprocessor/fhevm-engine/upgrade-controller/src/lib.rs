@@ -23,6 +23,8 @@ pub const UPGRADE_ACTIVATED_CHANNEL: &str =
     fhevm_engine_common::gcs_activation::EVENT_UPGRADE_ACTIVATED;
 /// Must stay in sync with `consensus_detector::UNANIMITY_CONSENSUS_CHANNEL`.
 pub const UNANIMITY_CONSENSUS_CHANNEL: &str = "event_unanimity_consensus";
+/// Sent when a dry-run never reached agreement; triggers the rollback.
+pub const UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL: &str = "event_unanimity_consensus_timeout";
 /// Re-triggers the GCS dry-run readiness check. Must stay in sync with the
 /// names emitted by `host-listener::ingest_block_logs` and the FHE workers.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
@@ -329,16 +331,11 @@ pub async fn handle_upgrade_activated(
     Ok(())
 }
 
-/// Create the versioned GCS schema (e.g. `"gcs-0.14.0"`) and a
-/// `CREATE TABLE <schema>.X (LIKE public.X INCLUDING ALL)` for every
-/// [`COPROCESSOR_TABLES`] entry with `duplicated = true`. The schema name is
-/// [`GCS_SCHEMA_QUOTED`] so it stays in lockstep with the GCS services'
-/// `search_path`. Idempotent.
-pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
-    let mut tx = pool.begin().await?;
-
+/// Create the GCS schema with an empty copy of each duplicated table. Returns
+/// their names.
+async fn create_gcs_tables(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<&'static str>, Error> {
     let create_schema = format!("CREATE SCHEMA IF NOT EXISTS {GCS_SCHEMA_QUOTED}");
-    sqlx::query(&create_schema).execute(&mut *tx).await?;
+    sqlx::query(&create_schema).execute(&mut **tx).await?;
 
     let duplicated: Vec<&str> = COPROCESSOR_TABLES
         .iter()
@@ -351,14 +348,37 @@ pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
             "CREATE TABLE IF NOT EXISTS {GCS_SCHEMA_QUOTED}.{name} \
              (LIKE public.{name} INCLUDING ALL)"
         );
-        sqlx::query(&sql).execute(&mut *tx).await?;
+        sqlx::query(&sql).execute(&mut **tx).await?;
     }
 
+    Ok(duplicated)
+}
+
+/// Idempotently create the versioned GCS schema ([`GCS_SCHEMA_QUOTED`]) and clone every
+/// `duplicated = true` [`COPROCESSOR_TABLES`] table into it with `LIKE public.X INCLUDING ALL`.
+pub async fn create_gcs_schema(pool: &Pool<Postgres>) -> Result<(), Error> {
+    let mut tx = pool.begin().await?;
+    let duplicated = create_gcs_tables(&mut tx).await?;
     tx.commit().await?;
     info!(
         schema = GCS_SCHEMA_QUOTED,
         tables = ?duplicated,
         "GCS schema created with empty table duplicates"
+    );
+    Ok(())
+}
+
+/// Drop the GCS schema and recreate it empty, on `tx` — discards the dry-run's
+/// writes while leaving the still-tailing GCS listeners a valid write target, so
+/// the upgrade can be rerun without restarting the GCS stack.
+async fn reset_gcs_schema(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    let drop_sql = format!("DROP SCHEMA IF EXISTS {GCS_SCHEMA_QUOTED} CASCADE");
+    sqlx::query(&drop_sql).execute(&mut **tx).await?;
+    let duplicated = create_gcs_tables(tx).await?;
+    info!(
+        schema = GCS_SCHEMA_QUOTED,
+        tables = ?duplicated,
+        "GCS schema dropped and recreated empty (rollback)"
     );
     Ok(())
 }
@@ -1152,6 +1172,67 @@ pub async fn handle_unanimity_consensus(
     Ok(())
 }
 
+/// The dry-run timed out without agreement: reset the GCS stack so the upgrade
+/// can be rerun. Rolls back the failed dry-run and wipes its schema. Only acts
+/// while still dry-running, so a late timeout can't undo a cutover. BCS is
+/// untouched.
+pub async fn handle_unanimity_consensus_timeout(
+    pool: &Pool<Postgres>,
+    gcs_mode: bool,
+    raw_payload: &str,
+) -> Result<(), Error> {
+    info!("event_unanimity_consensus_timeout received — evaluating rollback");
+
+    if !gcs_mode {
+        debug!("event_unanimity_consensus_timeout: service not in gcs mode, ignoring");
+        return Ok(());
+    }
+
+    let payload: UnanimityConsensusPayload =
+        serde_json::from_str(raw_payload).map_err(|e| Error::Payload(e.to_string()))?;
+
+    let mut tx = pool.begin().await?;
+
+    // Only roll back while still dry-running; skips duplicates and won't undo a cutover.
+    let claimed = sqlx::query(
+        r#"
+        UPDATE upgrade_state
+           SET state                  = 'PAUSED',
+               status                 = 'failed',
+               last_error             = 'unanimity_consensus_timeout',
+               host_consensus_reached = FALSE,
+               gw_consensus_reached   = FALSE,
+               gw_dry_run_started     = FALSE,
+               updated_at             = NOW()
+         WHERE stack_role = 'GCS'
+           AND state IN ('UpgradeActivated', 'DryRunStarted')
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    if claimed.rows_affected() == 0 {
+        info!(
+            chain_id = payload.chain_id,
+            block_height = payload.block_height,
+            "event_unanimity_consensus_timeout: GCS row not in a rollback-eligible state — skipping rollback"
+        );
+        tx.rollback().await?;
+        return Ok(());
+    }
+
+    reset_gcs_schema(&mut tx).await?;
+
+    tx.commit().await?;
+    warn!(
+        chain_id = payload.chain_id,
+        block_height = payload.block_height,
+        "event_unanimity_consensus_timeout: rolled back GCS dry-run — schema reset, upgrade may be rerun"
+    );
+
+    Ok(())
+}
+
 /// Lowercase hex without `0x` prefix; only used for log lines, kept private
 /// to avoid pulling in another crate for a few bytes' worth of formatting.
 fn hex_encode(bytes: &[u8]) -> String {
@@ -1189,13 +1270,13 @@ pub async fn run(
     }
 
     let mut listener = PgListener::connect_with(&pool).await?;
-    listener
-        .listen_all([UPGRADE_ACTIVATED_CHANNEL, UNANIMITY_CONSENSUS_CHANNEL])
-        .await?;
-    info!(
-        channels = ?[UPGRADE_ACTIVATED_CHANNEL, UNANIMITY_CONSENSUS_CHANNEL],
-        "Listening for notifications"
-    );
+    let channels = [
+        UPGRADE_ACTIVATED_CHANNEL,
+        UNANIMITY_CONSENSUS_CHANNEL,
+        UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
+    ];
+    listener.listen_all(channels).await?;
+    info!(?channels, "Listening for notifications");
 
     let mut poll = tokio::time::interval(config.poll_interval);
     // First tick fires immediately; skip it so we don't double-trigger on startup.
@@ -1222,6 +1303,11 @@ pub async fn run(
                                 // Emitted by consensus-detector when every operator publishes
                                 // the same state commitment at the upgrade's end_block.
                                 handle_unanimity_consensus(&pool, config.gcs_mode, payload).await
+                            }
+                            UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL => {
+                                // Window never reached unanimity — roll back the dry-run.
+                                handle_unanimity_consensus_timeout(&pool, config.gcs_mode, payload)
+                                    .await
                             }
                             other => {
                                 warn!(channel = other, "ignoring notification on unexpected channel");
@@ -1294,18 +1380,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn handle_upgrade_activated_accepts_new_proposal_after_paused_cutover() {
-        use sqlx::postgres::PgPoolOptions;
         use sqlx::Row;
-        use test_harness::instance::{setup_test_db, ImportMode};
 
-        let instance = setup_test_db(ImportMode::WithKeysNoSns)
-            .await
-            .expect("test db");
-        let pool = PgPoolOptions::new()
-            .max_connections(4)
-            .connect(instance.db_url())
-            .await
-            .expect("pool");
+        let (_instance, pool) = test_pool().await;
 
         sqlx::query(
             r#"
@@ -1368,18 +1445,9 @@ mod tests {
     /// also keeps the test stable as the merged tables' columns evolve).
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn execute_cutover_merges_match_live_unique_keys() {
-        use sqlx::postgres::PgPoolOptions;
         use sqlx::Row;
-        use test_harness::instance::{setup_test_db, ImportMode};
 
-        let instance = setup_test_db(ImportMode::WithKeysNoSns)
-            .await
-            .expect("test db");
-        let pool = PgPoolOptions::new()
-            .max_connections(4)
-            .connect(instance.db_url())
-            .await
-            .expect("pool");
+        let (_instance, pool) = test_pool().await;
 
         // The GCS row's `version` drives the cutover's stack_version bump.
         sqlx::query(
@@ -1428,5 +1496,195 @@ mod tests {
         .await
         .expect("schema lookup");
         assert!(!schema_exists, "cutover should drop the gcs schema");
+    }
+
+    async fn test_pool() -> (test_harness::instance::DBInstance, Pool<Postgres>) {
+        use sqlx::postgres::PgPoolOptions;
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+        (instance, pool)
+    }
+
+    fn timeout_payload() -> String {
+        serde_json::json!({ "chain_id": 1_i64, "block_height": 200_i64, "block_hash": "0x00" })
+            .to_string()
+    }
+
+    /// Seed a GCS row with all latches + `gw_dry_run_started`.
+    async fn seed_gcs_row(pool: &Pool<Postgres>, state: &str, status: &str) {
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, host_chain_id,
+                host_consensus_reached, gw_consensus_reached, gw_dry_run_started,
+                updated_at
+            )
+            VALUES ('GCS', $1, $2, $3, 'v0.15', 100, 200, 1, 1,
+                    TRUE, TRUE, TRUE, NOW())
+            ON CONFLICT (stack_role) DO UPDATE
+            SET state = EXCLUDED.state, status = EXCLUDED.status,
+                host_consensus_reached = EXCLUDED.host_consensus_reached,
+                gw_consensus_reached   = EXCLUDED.gw_consensus_reached,
+                gw_dry_run_started     = EXCLUDED.gw_dry_run_started,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(state)
+        .bind(status)
+        .bind(&[0x02u8][..])
+        .execute(pool)
+        .await
+        .expect("seed GCS row");
+    }
+
+    /// A `gcs` table NOT in `COPROCESSOR_TABLES`: only `DROP SCHEMA … CASCADE`
+    /// removes it (the recreate won't restore it), so it proves the reset ran.
+    async fn create_marker(pool: &Pool<Postgres>) {
+        sqlx::query(&format!(
+            "CREATE TABLE {GCS_SCHEMA_QUOTED}.rollback_marker (x int)"
+        ))
+        .execute(pool)
+        .await
+        .expect("create marker");
+    }
+
+    async fn marker_exists(pool: &Pool<Postgres>) -> bool {
+        let (exists,): (bool,) = sqlx::query_as(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                             WHERE table_schema = $1 AND table_name = 'rollback_marker')",
+        )
+        .bind(fhevm_engine_common::database::GCS_SCHEMA)
+        .fetch_one(pool)
+        .await
+        .expect("marker lookup");
+        exists
+    }
+
+    /// A timeout mid dry-run resets the schema and flips the GCS row to PAUSED/failed; a second timeout is a no-op.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_timeout_rolls_back_dry_run_and_is_idempotent() {
+        use sqlx::Row;
+
+        let (_instance, pool) = test_pool().await;
+
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+        assert!(marker_exists(&pool).await, "marker present before rollback");
+
+        let payload = timeout_payload();
+
+        handle_unanimity_consensus_timeout(&pool, true, &payload)
+            .await
+            .expect("rollback ok");
+
+        // Marker gone and schema dropped
+        assert!(
+            !marker_exists(&pool).await,
+            "rollback should DROP SCHEMA CASCADE, removing the marker"
+        );
+        // the duplicated tables recreated empty
+        let (ct_exists,): (bool,) = sqlx::query_as(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables
+                             WHERE table_schema = $1 AND table_name = 'computations')",
+        )
+        .bind(fhevm_engine_common::database::GCS_SCHEMA)
+        .fetch_one(&pool)
+        .await
+        .expect("computations lookup");
+        assert!(ct_exists, "rollback should recreate the empty gcs schema");
+
+        // Rerunnable state: PAUSED/failed.
+        let row = sqlx::query(
+            "SELECT state, status, last_error, host_consensus_reached,
+                    gw_consensus_reached, gw_dry_run_started
+               FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("GCS row");
+        assert_eq!(row.try_get::<String, _>("state").unwrap(), "PAUSED");
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "failed");
+        assert_eq!(
+            row.try_get::<String, _>("last_error").unwrap(),
+            "unanimity_consensus_timeout"
+        );
+        assert!(!row.try_get::<bool, _>("host_consensus_reached").unwrap());
+        assert!(!row.try_get::<bool, _>("gw_consensus_reached").unwrap());
+        assert!(!row.try_get::<bool, _>("gw_dry_run_started").unwrap());
+
+        // Second timeout is a no-op: the marker survives (no second reset).
+        create_marker(&pool).await;
+        handle_unanimity_consensus_timeout(&pool, true, &payload)
+            .await
+            .expect("second timeout no-op");
+        assert!(
+            marker_exists(&pool).await,
+            "a duplicate timeout must not reset the schema again"
+        );
+    }
+
+    /// A late timeout must never undo a cutover: rollback is refused once the row is `UpgradeAuthorized`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_timeout_does_not_undo_authorized_cutover() {
+        use sqlx::Row;
+
+        let (_instance, pool) = test_pool().await;
+
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+
+        let payload = timeout_payload();
+
+        handle_unanimity_consensus_timeout(&pool, true, &payload)
+            .await
+            .expect("handler ok");
+
+        assert!(
+            marker_exists(&pool).await,
+            "a timeout must not reset the schema once the row is UpgradeAuthorized"
+        );
+        let row = sqlx::query("SELECT state, status FROM upgrade_state WHERE stack_role = 'GCS'")
+            .fetch_one(&pool)
+            .await
+            .expect("GCS row");
+        assert_eq!(
+            row.try_get::<String, _>("state").unwrap(),
+            "UpgradeAuthorized",
+            "the FSM state must be left intact"
+        );
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+    }
+
+    /// A timeout on a BCS-mode controller is ignored (BCS never left LIVE).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_timeout_bcs_mode_is_noop() {
+        let (_instance, pool) = test_pool().await;
+
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        let payload = timeout_payload();
+
+        handle_unanimity_consensus_timeout(&pool, false, &payload)
+            .await
+            .expect("bcs no-op");
+
+        let (state,): (String,) =
+            sqlx::query_as("SELECT state FROM upgrade_state WHERE stack_role = 'GCS'")
+                .fetch_one(&pool)
+                .await
+                .expect("GCS row");
+        assert_eq!(
+            state, "DryRunStarted",
+            "BCS-mode timeout must not mutate state"
+        );
     }
 }

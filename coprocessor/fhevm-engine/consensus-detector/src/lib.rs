@@ -25,12 +25,14 @@
 //! (RFC 021).
 //!
 //! `unanimity_consensus` is consumed only by the upgrade-controller, which
-//! authorizes cutover once BOTH tracks have anchored. A timeout/abort path is
-//! intentionally not implemented yet.
+//! authorizes cutover once BOTH tracks have anchored.
+//!
+//! **Timeout.** If a track is still un-anchored `commitment_timeout` after `end_block`,
+//! `unanimity_consensus_timeout` is emitted once and the upgrade-controller rolls the dry-run back.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use alloy::network::Ethereum;
 use alloy::primitives::Address;
@@ -63,7 +65,8 @@ pub const GW_NEW_BLOCK_CHANNEL: &str = fhevm_engine_common::gcs_activation::EVEN
 /// `unanimity_consensus` is consumed only by the upgrade procedure — no other
 /// service should treat it as a generic "agreement" signal.
 pub const UNANIMITY_CONSENSUS_CHANNEL: &str = "event_unanimity_consensus";
-/// Reserved channel for a future timeout/abort path — not emitted today.
+/// Emitted once per window when the host reaches `end_block` without both tracks
+/// anchoring within `commitment_timeout`. Consumed by the upgrade-controller.
 pub const UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL: &str = "event_unanimity_consensus_timeout";
 
 /// `SupportedFheOperations::FheTrivialEncrypt` opcode (fhevm-engine-common
@@ -389,6 +392,26 @@ async fn host_consensus_candidates(
     Ok(rows.into_iter().map(|(b,)| b).collect())
 }
 
+/// True once blocks up to `end_block` have been stored. Starts the timeout clock.
+async fn host_reached_end_block(
+    pool: &Pool<Postgres>,
+    host_chain_id: i64,
+    end_block: i64,
+) -> Result<bool, Error> {
+    let sql = format!(
+        "SELECT COALESCE(
+                  (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid WHERE chain_id = $1),
+                  -1
+                ) >= $2"
+    );
+    let (reached,): (bool,) = sqlx::query_as(&sql)
+        .bind(host_chain_id)
+        .bind(end_block)
+        .fetch_one(pool)
+        .await?;
+    Ok(reached)
+}
+
 /// Host chain id of the active GCS upgrade (set by upgrade-controller on
 /// activation). `None` when unset — host consensus is skipped until it appears.
 async fn active_host_chain_id(pool: &Pool<Postgres>) -> Result<Option<i64>, Error> {
@@ -401,23 +424,34 @@ async fn active_host_chain_id(pool: &Pool<Postgres>) -> Result<Option<i64>, Erro
     Ok(row.and_then(|(v,)| v))
 }
 
+struct WindowState {
+    window: Option<(i64, i64)>,
+    timeout_deadline: Option<Instant>,
+    timeout_emitted: bool,
+}
+
 /// One consensus pass over both tracks. Reads the active window, resets track
 /// state when the window changes or closes (so a prior upgrade's anchors never
 /// carry over), then polls the host and Gateway candidates. Emits at most one
-/// anchor per track per window.
+/// anchor per track per window, and at most one `unanimity_consensus_timeout` per
+/// window if the deadline elapses before both tracks anchor.
 async fn consensus_pass(
     pool: &Pool<Postgres>,
     http: &reqwest::Client,
     s3_urls: &Arc<RwLock<Vec<String>>>,
     host: &mut ConsensusTrack,
     gateway: &mut ConsensusTrack,
-    current_window: &mut Option<(i64, i64)>,
+    ws: &mut WindowState,
+    commitment_timeout: Duration,
 ) -> Result<(), Error> {
     let window = active_upgrade_window(pool).await?;
-    if *current_window != window {
+    if ws.window != window {
         host.reset();
         gateway.reset();
-        *current_window = window;
+        // The upgrade window changed, so reset the timeout for the new one.
+        ws.timeout_deadline = None;
+        ws.timeout_emitted = false;
+        ws.window = window;
     }
     let Some((start, end)) = window else {
         return Ok(());
@@ -446,6 +480,48 @@ async fn consensus_pass(
             poll_track(pool, http, &urls, gateway, &candidates).await?;
         }
     }
+
+    // If we reached the last block but didn't agree in time, give up so the
+    // upgrade can be rerun.
+    let both_anchored = host.anchor_emitted && gateway.anchor_emitted;
+    if !ws.timeout_emitted && !both_anchored {
+        // Start the clock once we reach the last block (chain_id is 0 until then).
+        if ws.timeout_deadline.is_none()
+            && host.chain_id != 0
+            && host_reached_end_block(pool, host.chain_id, end).await?
+        {
+            ws.timeout_deadline = Some(Instant::now() + commitment_timeout);
+            info!(
+                host_chain_id = host.chain_id,
+                end_block = end,
+                timeout_secs = commitment_timeout.as_secs(),
+                "host chain reached end_block without unanimity — arming consensus timeout"
+            );
+        }
+
+        if ws.timeout_deadline.is_some_and(|d| Instant::now() >= d) {
+            warn!(
+                host_chain_id = host.chain_id,
+                start_block = start,
+                end_block = end,
+                host_anchored = host.anchor_emitted,
+                gateway_anchored = gateway.anchor_emitted,
+                "consensus timeout elapsed without both-track unanimity — emitting event_unanimity_consensus_timeout"
+            );
+            notify_unanimity(
+                pool,
+                UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
+                &NewBlockPayload {
+                    chain_id: host.chain_id,
+                    block_height: end,
+                    block_hash: String::new(),
+                },
+            )
+            .await?;
+            ws.timeout_emitted = true;
+        }
+    }
+
     Ok(())
 }
 
@@ -627,7 +703,12 @@ where
     let mut host_track = ConsensusTrack::new(0);
     let mut gateway_track = ConsensusTrack::new(gw_chain_id);
     // Last-seen upgrade window; a change (incl. close) resets both tracks.
-    let mut current_window: Option<(i64, i64)> = None;
+    // Timeout tracking: when the clock started, and whether we already gave up.
+    let mut window_state = WindowState {
+        window: None,
+        timeout_deadline: None,
+        timeout_emitted: false,
+    };
 
     // The consensus poll cadence: re-attempt S3 every commitment_poll_interval,
     // caching partial per-operator responses so slow operators fill in later.
@@ -645,7 +726,8 @@ where
                     &s3_urls,
                     &mut host_track,
                     &mut gateway_track,
-                    &mut current_window,
+                    &mut window_state,
+                    config.commitment_timeout,
                 )
                 .await
                 {
