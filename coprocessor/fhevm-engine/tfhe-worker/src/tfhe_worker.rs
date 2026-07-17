@@ -470,6 +470,21 @@ async fn query_ciphertexts<'a>(
             for row in rows {
                 let _ = ciphertext_map.insert(row.handle, (row.ciphertext_type, row.ciphertext));
             }
+
+            // Trace every handle the gate withheld — either absent from
+            // `public.ciphertexts` or block-gated as post-snapshot. Without this
+            // a stalled dry-run (the dependent computation never reaches
+            // consensus) gives no hint which handle could not be resolved.
+            let withheld: Vec<String> = missing
+                .iter()
+                .filter(|h| !ciphertext_map.contains_key(*h))
+                .map(|h| format!("0x{}", hex::encode(h)))
+                .collect();
+            if !withheld.is_empty() {
+                debug!(target: "tfhe_worker",
+                    { host_chain_id, start_block, gw_start_block, withheld = ?withheld },
+                    "GCS public.ciphertexts fallback withheld handles (absent or block-gated as post-snapshot)");
+            }
         }
     }
 
