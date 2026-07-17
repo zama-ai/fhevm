@@ -476,28 +476,12 @@ fn anchor_error(error: anchor_lang::error::ErrorCode) -> Check<'static> {
 // Coprocessor `fromExternal` attestation signing
 // ---------------------------------------------------------------------------
 
+use support::kms_cert::{secp_evm_address, secp_sign};
+
 /// Coprocessor signing key backing the `fromExternal` attestations; its EVM address is the
 /// `coprocessor_signer` configured on the fixture's `host_config`.
 fn coprocessor_signing_key() -> k256::ecdsa::SigningKey {
     k256::ecdsa::SigningKey::from_bytes(&[0x44u8; 32].into()).unwrap()
-}
-
-/// Recovers the EVM address (keccak(pubkey)[12..]) for a signing key.
-fn secp_evm_address(key: &k256::ecdsa::SigningKey) -> [u8; 20] {
-    let encoded = key.verifying_key().to_encoded_point(false);
-    let hash = solana_program::keccak::hash(&encoded.as_bytes()[1..]).to_bytes();
-    let mut address = [0u8; 20];
-    address.copy_from_slice(&hash[12..]);
-    address
-}
-
-/// 65-byte `[r || s || v]` recoverable signature over an EIP-712 digest.
-fn secp_sign(key: &k256::ecdsa::SigningKey, digest: &[u8; 32]) -> [u8; 65] {
-    let (signature, recovery_id) = key.sign_prehash_recoverable(digest).unwrap();
-    let mut out = [0u8; 65];
-    out[..64].copy_from_slice(&signature.to_bytes());
-    out[64] = 27 + recovery_id.to_byte();
-    out
 }
 
 /// Builds a coprocessor-signed `fromExternal` attestation over `amount_handle`, binding it to
@@ -2025,29 +2009,21 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
 use anchor_spl::token::spl_token;
 use solana_sdk::program_option::COption;
 
-/// KMS signing key backing `PublicDecryptVerification` certs; its EVM address is
-/// the sole signer of the fixture's pinned KMS context.
-fn kms_signing_key() -> k256::ecdsa::SigningKey {
-    k256::ecdsa::SigningKey::from_bytes(&[0x55u8; 32].into()).unwrap()
-}
+use support::kms_cert::{cleartext_u256, kms_signing_key};
 
 /// Builds a KMS `PublicDecryptVerification` secp256k1 cert (`signatures`, `extra_data`)
 /// over `handle`/`cleartext_amount`, matching `assert_kms_public_decrypt_cert_for_request`.
 /// `extra_data == [0x00]` binds the cert to the request's current KMS context.
 fn kms_public_decrypt_cert(handle: [u8; 32], cleartext_amount: u64) -> (Vec<[u8; 65]>, Vec<u8>) {
     let extra_data = vec![0x00u8];
-    let mut decrypted = [0u8; 32];
-    decrypted[24..].copy_from_slice(&cleartext_amount.to_be_bytes());
-    let digest = host::eip712::typed_data_digest(
-        &host::eip712::domain_separator(
-            b"Decryption",
-            b"1",
-            GATEWAY_CHAIN_ID,
-            &DECRYPTION_CONTRACT,
-        ),
-        &host::eip712::public_decrypt_struct_hash(&[handle], &decrypted, &extra_data),
+    let signatures = support::kms_cert::kms_public_decrypt_cert(
+        handle,
+        cleartext_u256(cleartext_amount),
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
     );
-    (vec![secp_sign(&kms_signing_key(), &digest)], extra_data)
+    (signatures, extra_data)
 }
 
 fn kms_context_account(context_id: u64) -> Account {

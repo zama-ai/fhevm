@@ -26,6 +26,11 @@
 #[path = "support/cost_snapshot.rs"]
 mod cost_snapshot;
 
+// Deliberate `#[path]` include (not via `support/mod.rs`, which this binary skips): shared
+// secp256k1/KMS-cert helpers used by the `verify_public_decrypt` tests below.
+#[path = "support/kms_cert.rs"]
+mod kms_cert;
+
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AccountSerialize, AnchorDeserialize,
     Discriminator, InstructionData, ToAccountMetas,
@@ -4408,10 +4413,702 @@ fn mollusk_fhe_eval_meter_accumulation_overflow_fails_closed() {
 }
 
 // ---------------------------------------------------------------------------
+// verify_public_decrypt: stateless pull-oracle verifier (fhevm-internal#1704)
+// ---------------------------------------------------------------------------
+
+const KMS_CONTEXT_ID: u64 = 1;
+
+fn kms_context_signers() -> Vec<[u8; 20]> {
+    vec![kms_cert::secp_evm_address(&kms_cert::kms_signing_key())]
+}
+
+/// Host config with an active KMS context id and the fixtures' gateway EIP-712 domain.
+fn host_config_with_context(admin: Pubkey, context_id: u64) -> (Pubkey, Account) {
+    let (host_config, bump) = host::host_config_address();
+    (
+        host_config,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(HostConfig {
+                admin,
+                chain_id: host::SOLANA_POC_CHAIN_ID,
+                gateway_chain_id: GATEWAY_CHAIN_ID,
+                input_verification_contract: INPUT_VERIFICATION_CONTRACT,
+                coprocessor_signer: [0u8; 20],
+                decryption_contract: DECRYPTION_CONTRACT,
+                current_kms_context_id: context_id,
+                paused: false,
+                grant_deny_list_enabled: false,
+                max_hcu_per_tx: 0,
+                max_hcu_depth_per_tx: 0,
+                hcu_block_cap_per_app: u64::MAX,
+                updated_slot: 0,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
+/// Canonical `KmsContext` PDA for `context_id`, with the given signer set / public-decrypt threshold.
+fn kms_context_account_with(
+    context_id: u64,
+    signers: Vec<[u8; 20]>,
+    public_decryption: u8,
+    destroyed: bool,
+) -> (Pubkey, Account) {
+    let (address, bump) = host::kms_context_address(context_id);
+    (
+        address,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(host::KmsContext {
+                context_id,
+                signers,
+                thresholds: host::KmsThresholds {
+                    public_decryption,
+                    user_decryption: 1,
+                    kms_gen: 1,
+                    mpc: 1,
+                },
+                destroyed,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
+/// The canonical single-signer, threshold-1 KMS context the fixtures pin.
+fn kms_context_account(context_id: u64) -> (Pubkey, Account) {
+    kms_context_account_with(context_id, kms_context_signers(), 1, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_public_decrypt_ix(
+    host_config: Pubkey,
+    kms_context: Pubkey,
+    encrypted_value: Pubkey,
+    handle: [u8; 32],
+    cleartext: [u8; 32],
+    signatures: Vec<[u8; 65]>,
+    extra_data: Vec<u8>,
+    proof: host::instructions::MmrInclusionProof,
+) -> Instruction {
+    anchor_ix(
+        host::id(),
+        host::accounts::VerifyPublicDecrypt {
+            host_config,
+            kms_context,
+            encrypted_value,
+        },
+        host::instruction::VerifyPublicDecrypt {
+            handle,
+            cleartext,
+            signatures,
+            extra_data,
+            proof,
+        },
+    )
+}
+
+fn mmr_inclusion_proof(proof: zama_solana_acl::MmrProof) -> host::instructions::MmrInclusionProof {
+    host::instructions::MmrInclusionProof {
+        leaf_index: proof.leaf_index,
+        siblings: proof.siblings,
+    }
+}
+
+/// Seals `handle` public on a fresh single-subject lineage via `make_handle_public`, returning the
+/// lineage address, the resulting on-chain value, and a verified inclusion proof for the sealed leaf.
+fn seal_public_leaf(
+    admin: Pubkey,
+    subject: Pubkey,
+    acl_domain_key: Pubkey,
+    host_config: Pubkey,
+    host_config_account: &Account,
+    handle: [u8; 32],
+) -> (
+    Pubkey,
+    EncryptedValue,
+    host::instructions::MmrInclusionProof,
+) {
+    let (address, value) = new_lineage(acl_domain_key, admin, label("balance"), handle, &[subject]);
+    let seal_ix = make_handle_public_ix(admin, subject, address, host_config, handle);
+    let seal_accounts = vec![
+        (system_program::ID, system_program_account()),
+        (admin, funded_system_account()),
+        (subject, funded_system_account()),
+        (address, encrypted_value_account(&value)),
+        (host_config, host_config_account.clone()),
+    ];
+    let sealed = read_encrypted_value(
+        &mollusk().process_and_validate_instruction(&seal_ix, &seal_accounts, &[Check::success()]),
+        address,
+    );
+    let events = [zama_solana_acl::lineage::LineageEvent::MarkedPublic { handle }];
+    let proof = mmr_inclusion_proof(
+        zama_solana_acl::lineage::build_verified_proof_from_events(
+            address.to_bytes(),
+            &events,
+            &sealed.peaks,
+            sealed.leaf_count,
+            0,
+        )
+        .unwrap(),
+    );
+    (address, sealed, proof)
+}
+
+#[test]
+fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
+    let admin = Pubkey::new_unique();
+    let subject = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
+    let handle = handle_for_chain(5, 5);
+    let (address, sealed, proof) = seal_public_leaf(
+        admin,
+        subject,
+        Pubkey::new_unique(),
+        host_config,
+        &host_config_account,
+        handle,
+    );
+
+    let cleartext = kms_cert::cleartext_u256(4242);
+    let extra_data = vec![0x00u8]; // v0: bind to the current context
+    let signatures = kms_cert::kms_public_decrypt_cert(
+        handle,
+        cleartext,
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
+    );
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        kms_context,
+        address,
+        handle,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    );
+    let accounts = vec![
+        (host_config, host_config_account),
+        (kms_context, kms_context_acct),
+        (address, encrypted_value_account(&sealed)),
+    ];
+    let mut expected = handle.to_vec();
+    expected.extend_from_slice(&cleartext);
+    let result = mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[Check::success(), Check::return_data(&expected)],
+    );
+    // return_data is exactly handle ++ cleartext, and nothing was written back.
+    assert_eq!(result.return_data, expected);
+    let unchanged = read_encrypted_value(&result, address);
+    assert_eq!(unchanged.current_handle, sealed.current_handle);
+    assert_eq!(unchanged.leaf_count, sealed.leaf_count);
+    assert_eq!(unchanged.peaks, sealed.peaks);
+}
+
+#[test]
+fn mollusk_verify_public_decrypt_rejects_rotated_out_context() {
+    let admin = Pubkey::new_unique();
+    let subject = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let handle = handle_for_chain(5, 5);
+    let (address, sealed, proof) = seal_public_leaf(
+        admin,
+        subject,
+        Pubkey::new_unique(),
+        host_config,
+        &host_config_account,
+        handle,
+    );
+
+    // Rotate the current context 1 -> 2 through the real `define_kms_context`.
+    let next_context_id = KMS_CONTEXT_ID + 1;
+    let (next_kms_context, _) = host::kms_context_address(next_context_id);
+    let define_ix = anchor_ix(
+        host::id(),
+        host::accounts::DefineKmsContext {
+            admin,
+            host_config,
+            kms_context: next_kms_context,
+            system_program: system_program::ID,
+        },
+        host::instruction::DefineKmsContext {
+            context_id: next_context_id,
+            signers: kms_context_signers(),
+            thresholds: host::KmsThresholds {
+                public_decryption: 1,
+                user_decryption: 1,
+                kms_gen: 1,
+                mpc: 1,
+            },
+        },
+    );
+    let define_accounts = vec![
+        (system_program::ID, system_program_account()),
+        (admin, funded_system_account()),
+        (host_config, host_config_account),
+        (next_kms_context, empty_system_account()),
+    ];
+    let define_result = mollusk().process_and_validate_instruction(
+        &define_ix,
+        &define_accounts,
+        &[Check::success()],
+    );
+    let rotated_host_config = define_result
+        .resulting_accounts
+        .iter()
+        .find(|(key, _)| *key == host_config)
+        .map(|(_, account)| account.clone())
+        .expect("rotated host config");
+    let next_kms_context_acct = define_result
+        .resulting_accounts
+        .iter()
+        .find(|(key, _)| *key == next_kms_context)
+        .map(|(_, account)| account.clone())
+        .expect("new kms context");
+
+    // A cert committing the rotated-out context id (1) against the now-current context (2).
+    let cleartext = kms_cert::cleartext_u256(4242);
+    let extra_data = kms_cert::context_extra_data_v1(KMS_CONTEXT_ID);
+    let signatures = kms_cert::kms_public_decrypt_cert(
+        handle,
+        cleartext,
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
+    );
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        next_kms_context,
+        address,
+        handle,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    );
+    let accounts = vec![
+        (host_config, rotated_host_config),
+        (next_kms_context, next_kms_context_acct),
+        (address, encrypted_value_account(&sealed)),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::InvalidKmsContext)],
+    );
+}
+
+#[test]
+fn mollusk_verify_public_decrypt_rejects_sub_threshold_signatures() {
+    let admin = Pubkey::new_unique();
+    let subject = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    // Context requires two distinct signers; the cert carries only one.
+    let (kms_context, kms_context_acct) = kms_context_account_with(
+        KMS_CONTEXT_ID,
+        vec![
+            kms_cert::secp_evm_address(&kms_cert::kms_signing_key()),
+            [0xABu8; 20],
+        ],
+        2,
+        false,
+    );
+    let handle = handle_for_chain(5, 5);
+    let (address, sealed, proof) = seal_public_leaf(
+        admin,
+        subject,
+        Pubkey::new_unique(),
+        host_config,
+        &host_config_account,
+        handle,
+    );
+
+    let cleartext = kms_cert::cleartext_u256(4242);
+    let extra_data = vec![0x00u8];
+    let signatures = kms_cert::kms_public_decrypt_cert(
+        handle,
+        cleartext,
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
+    );
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        kms_context,
+        address,
+        handle,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    );
+    let accounts = vec![
+        (host_config, host_config_account),
+        (kms_context, kms_context_acct),
+        (address, encrypted_value_account(&sealed)),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::InvalidKmsCertificate,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_verify_public_decrypt_rejects_handle_proof_mismatch() {
+    let admin = Pubkey::new_unique();
+    let subject = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
+    let sealed_handle = handle_for_chain(5, 5);
+    let (address, sealed, proof) = seal_public_leaf(
+        admin,
+        subject,
+        Pubkey::new_unique(),
+        host_config,
+        &host_config_account,
+        sealed_handle,
+    );
+
+    // A cert valid over a DIFFERENT handle, presented with the sealed handle's proof: the cert check
+    // passes but the exact-handle inclusion proof does not authorize the unsealed handle.
+    let other_handle = handle_for_chain(6, 5);
+    let cleartext = kms_cert::cleartext_u256(4242);
+    let extra_data = vec![0x00u8];
+    let signatures = kms_cert::kms_public_decrypt_cert(
+        other_handle,
+        cleartext,
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
+    );
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        kms_context,
+        address,
+        other_handle,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    );
+    let accounts = vec![
+        (host_config, host_config_account),
+        (kms_context, kms_context_acct),
+        (address, encrypted_value_account(&sealed)),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::PublicDecryptProofInvalid,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_verify_public_decrypt_rejects_non_canonical_kms_context() {
+    let admin = Pubkey::new_unique();
+    let subject = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    // Canonical context data, placed at a non-canonical address.
+    let (_, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
+    let wrong_kms_context = Pubkey::new_unique();
+    let handle = handle_for_chain(5, 5);
+    let (address, sealed, proof) = seal_public_leaf(
+        admin,
+        subject,
+        Pubkey::new_unique(),
+        host_config,
+        &host_config_account,
+        handle,
+    );
+
+    let cleartext = kms_cert::cleartext_u256(4242);
+    let extra_data = vec![0x00u8];
+    let signatures = kms_cert::kms_public_decrypt_cert(
+        handle,
+        cleartext,
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
+    );
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        wrong_kms_context,
+        address,
+        handle,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    );
+    let accounts = vec![
+        (host_config, host_config_account),
+        (wrong_kms_context, kms_context_acct),
+        (address, encrypted_value_account(&sealed)),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::InvalidKmsContext)],
+    );
+}
+
+#[test]
+fn mollusk_verify_public_decrypt_survives_supersede_after_seal() {
+    // The dust-race claim: a supersede between seal and consume moves the MMR peaks but can neither
+    // invalidate nor retarget the sealed leaf. The OLD handle still verifies with a proof rebuilt
+    // against the updated peaks.
+    let admin = Pubkey::new_unique();
+    let subject = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
+    let handle0 = handle_for_chain(30, 5);
+    let (address, sealed, _) = seal_public_leaf(
+        admin,
+        subject,
+        Pubkey::new_unique(),
+        host_config,
+        &host_config_account,
+        handle0,
+    );
+
+    // Supersede the lineage (dust transfer analog) after the seal.
+    let final_value = supersede_with_fhe_eval(
+        admin,
+        subject,
+        host_config,
+        host_config_account.clone(),
+        address,
+        &sealed,
+        31,
+    );
+    assert_ne!(final_value.current_handle, handle0);
+
+    // Rebuild the proof for the sealed leaf 0 against the post-supersede peaks.
+    let events = [
+        zama_solana_acl::lineage::LineageEvent::MarkedPublic { handle: handle0 },
+        zama_solana_acl::lineage::LineageEvent::handle_superseded(
+            handle0,
+            &sealed
+                .subjects
+                .iter()
+                .map(|p| p.to_bytes())
+                .collect::<Vec<_>>(),
+        ),
+    ];
+    let proof = mmr_inclusion_proof(
+        zama_solana_acl::lineage::build_verified_proof_from_events(
+            address.to_bytes(),
+            &events,
+            &final_value.peaks,
+            final_value.leaf_count,
+            0,
+        )
+        .unwrap(),
+    );
+
+    let cleartext = kms_cert::cleartext_u256(4242);
+    let extra_data = vec![0x00u8];
+    let signatures = kms_cert::kms_public_decrypt_cert(
+        handle0,
+        cleartext,
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
+    );
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        kms_context,
+        address,
+        handle0,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    );
+    let accounts = vec![
+        (host_config, host_config_account),
+        (kms_context, kms_context_acct),
+        (address, encrypted_value_account(&final_value)),
+    ];
+    let mut expected = handle0.to_vec();
+    expected.extend_from_slice(&cleartext);
+    let result = mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[Check::success(), Check::return_data(&expected)],
+    );
+    assert_eq!(result.return_data, expected);
+}
+
+#[test]
+fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
+    // Public-vs-historical leaf domain separation: a lineage superseded WITHOUT make_handle_public
+    // has only historical-access leaves. A proof for such a leaf must not authorize a public decrypt,
+    // even though the leaf genuinely exists — the two use distinct leaf commitments.
+    let admin = Pubkey::new_unique();
+    let subject = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
+    let handle0 = handle_for_chain(40, 5);
+    let (address, value0) = new_lineage(
+        Pubkey::new_unique(),
+        admin,
+        label("balance"),
+        handle0,
+        &[subject],
+    );
+
+    // Supersede (durable output) seals a historical-access leaf for handle0; no public-decrypt leaf.
+    let final_value = supersede_with_fhe_eval(
+        admin,
+        subject,
+        host_config,
+        host_config_account.clone(),
+        address,
+        &value0,
+        41,
+    );
+
+    let events = [zama_solana_acl::lineage::LineageEvent::handle_superseded(
+        handle0,
+        &value0
+            .subjects
+            .iter()
+            .map(|p| p.to_bytes())
+            .collect::<Vec<_>>(),
+    )];
+    let shared_proof = zama_solana_acl::lineage::build_verified_proof_from_events(
+        address.to_bytes(),
+        &events,
+        &final_value.peaks,
+        final_value.leaf_count,
+        0,
+    )
+    .unwrap();
+    // The leaf really exists (it authorizes historically), but the public-decrypt domain rejects it.
+    let shared = final_value.to_shared();
+    assert!(zama_solana_acl::authorize_historical(
+        address.to_bytes(),
+        &shared,
+        handle0,
+        subject.to_bytes(),
+        &shared_proof,
+    )
+    .is_ok());
+    assert!(
+        zama_solana_acl::authorize_public(address.to_bytes(), &shared, handle0, &shared_proof)
+            .is_err()
+    );
+
+    let cleartext = kms_cert::cleartext_u256(4242);
+    let extra_data = vec![0x00u8];
+    let signatures = kms_cert::kms_public_decrypt_cert(
+        handle0,
+        cleartext,
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
+    );
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        kms_context,
+        address,
+        handle0,
+        cleartext,
+        signatures,
+        extra_data,
+        mmr_inclusion_proof(shared_proof),
+    );
+    let accounts = vec![
+        (host_config, host_config_account),
+        (kms_context, kms_context_acct),
+        (address, encrypted_value_account(&final_value)),
+    ];
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::PublicDecryptProofInvalid,
+        )],
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Cost snapshots (tests/support/cost_snapshot.rs). Dedicated tests so cost
 // drift never fails a behavior test; regenerate with
 // `bash scripts/update-cost-snapshots.sh`.
 // ---------------------------------------------------------------------------
+
+#[test]
+fn cost_snapshot_verify_public_decrypt() {
+    // Happy-path stateless verify with fixed fixture keys: three read-only accounts, one secp
+    // recovery, one MMR inclusion check. Per-consume CU is the price of statelessness (#1704).
+    let admin = Pubkey::new_from_array([0x31; 32]);
+    let subject = Pubkey::new_from_array([0x32; 32]);
+    let acl_domain_key = Pubkey::new_from_array([0x33; 32]);
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
+    let handle = handle_for_chain(5, 5);
+    let (address, sealed, proof) = seal_public_leaf(
+        admin,
+        subject,
+        acl_domain_key,
+        host_config,
+        &host_config_account,
+        handle,
+    );
+
+    let cleartext = kms_cert::cleartext_u256(4242);
+    let extra_data = vec![0x00u8];
+    let signatures = kms_cert::kms_public_decrypt_cert(
+        handle,
+        cleartext,
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
+    );
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        kms_context,
+        address,
+        handle,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    );
+    let accounts = vec![
+        (host_config, host_config_account),
+        (kms_context, kms_context_acct),
+        (address, encrypted_value_account(&sealed)),
+    ];
+    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+    cost_snapshot::assert_cost_snapshot(
+        "host_mollusk",
+        "verify_public_decrypt/happy",
+        &ix,
+        &result,
+    );
+}
 
 #[test]
 fn cost_snapshot_fhe_eval_three_op_frame() {

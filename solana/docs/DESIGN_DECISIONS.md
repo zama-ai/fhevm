@@ -1543,3 +1543,60 @@ finite cap across many subjects under one logical app would need an on-chain app
 that is rejected here as speculative (see #1708 Option B) until a concrete multi-subject app requires
 it. The trust registry (`set_hcu_app_trusted`) already lets an admin bypass the cap for a specific
 subject, which covers the known trusted-app cases without a registry.
+
+## DD-040: App Public-Decrypt Is A Stateless Pull-Oracle Verifier, Not A Request Lifecycle
+
+Status: adopted
+
+Context:
+
+App-usable public decrypt on EVM is a relayer-paid callback into a passive contract, so the gateway
+keeps a requestID registry to route the callback and to not deliver twice. Solana has no callbacks, so
+a request-witness account would only simulate one. The idiomatic Solana shape for "consume an
+off-chain-signed fact on-chain" is the pull oracle (Pyth pull, Switchboard on-demand): the consumer
+brings the signed attestation in its own transaction, verifies it statelessly, and uses it in the same
+instruction.
+
+Decision:
+
+A new host instruction `verify_public_decrypt` is a CPI-able, stateless verifier. It verifies a KMS
+`PublicDecryptVerification` secp256k1 threshold certificate plus an MMR public-leaf inclusion proof
+(`zama_solana_acl::authorize_public`, exact-handle, no roll-forward) and returns the proven
+`(handle, cleartext)` via `set_return_data` (64 bytes: `handle ++ cleartext`, well under the 1024-byte
+limit). It creates nothing, mutates nothing, emits nothing, and takes no signer — all three accounts
+(`host_config`, `kms_context`, `encrypted_value`) are read-only. An app CPIs it, asserts the returned
+handle equals the handle it pinned at request time, then applies its own state transition; act-once
+and timeout live in the app's own state machine (a settled flag + deadline), which it needs anyway.
+This generalizes the DD-036 precedent (burn-redemption already authorizes by MMR public-decrypt proof
++ cert rather than live state) instead of the token's witness pattern.
+
+Current-context, not request-time pin:
+
+The cert is verified against the CURRENT `KmsContext` (`host_config.current_kms_context_id`), not a
+witness-pinned id. This is strictly safer — a rotated-out, possibly compromised context can produce no
+accepted cert — at the cost of a liveness hiccup: in-flight certs die on rotation and the KMS re-signs
+under the new context. Fail closed. The certificate commits its own context id via signed `extra_data`
+(EVM `_extractContextId` parity), and that committed id must equal the current id, so a cert minted
+under context N cannot be presented after a rotation to N+1. This preserves the adversarial-l4
+context-rotation-rejection property one layer below the app. A v0 / empty `extra_data` cert commits
+no context id, so it binds to whatever context is current only through that context's signer set;
+explicit context pinning requires v1 / v3 `extra_data` carrying the id (EVM `_extractContextId`
+parity). This is sound because rotation exists precisely to change the signer set, so the current
+set is the authoritative one to verify against.
+
+The verifier is deliberately NOT pause-gated: `make_handle_public` is the pause-gated boundary that
+seals a leaf, and an already-sealed leaf is already-public information, so re-proving it later reveals
+nothing new. If a decrypt-path kill-switch is ever wanted, gate `host_config.paused` here.
+
+Return-data-only to start: today's KMS cleartexts are ≤32 bytes; if larger types are ever revealed the
+fallback is a caller-provided scratch account. The proof-freshness (stale-proof) retry race is the
+known bounded-retry surface (#1687): a supersede between proof generation and consume moves the MMR
+peaks and fails the inclusion proof; the victim regenerates the proof and retries. The one wrong app
+pattern is binding consume logic to the live `current_handle` instead of the sealed handle — the
+sealed leaf is append-only, so the OLD sealed handle stays verifiable after a supersede (covered by
+`mollusk_verify_public_decrypt_survives_supersede_after_seal`).
+
+Scope: this PR adds the host verifier additively. Dissolving the confidential-token `DisclosureRequest`
+lifecycle (`request_disclose_*`, `disclose_*_secp`, `close_*_disclosure_request`,
+`state/disclosure_request.rs`) and re-expressing token disclosure as a thin consumer of this verifier
+lands separately (fhevm-internal#1704, PR 2). Net code deletion arrives there.
