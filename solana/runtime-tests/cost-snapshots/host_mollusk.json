@@ -1,6 +1,6 @@
 {
   "fhe_eval/max_op_frame": {
-    "compute_units": 151136,
+    "compute_units": 150997,
     "unique_accounts": 9,
     "instruction_data_bytes": 921,
     "cpi_instructions": 3,
@@ -8,7 +8,7 @@
     "max_cpi_instruction_data_bytes": 36
   },
   "fhe_eval/three_op_frame": {
-    "compute_units": 61438,
+    "compute_units": 61299,
     "unique_accounts": 9,
     "instruction_data_bytes": 375,
     "cpi_instructions": 3,
