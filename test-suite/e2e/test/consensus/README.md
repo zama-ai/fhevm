@@ -97,9 +97,6 @@ cd test-suite/fhevm
 # Boot with the fork scenario (routes coprocessor 2 to fork-anvil)
 ./fhevm-cli up --scenario three-of-three-fork --build
 
-# Start the secondary fork Anvil (not auto-managed by fhevm-cli)
-docker compose -p fhevm -f docker-compose/fork-anvil-docker-compose.yml up -d
-
 # Verify both Anvils are running
 curl -s http://localhost:8545 -X POST -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
@@ -128,7 +125,7 @@ FORK_RPC_URL=http://fork-anvil:8546 \
 | `advancePastFinality(lag)` | Mine blocks on canonical Anvil to trigger finalization |
 | `mineBlocks(provider, count)` | Mine empty blocks on a specific Anvil |
 
-## E3: Real-Fork Consensus Tests (C2b, C3)
+## E3: Real-Fork Consensus Tests (C2b, C3, C3b)
 
 ### Running the fork tests
 
@@ -138,14 +135,8 @@ cd test-suite/fhevm
 # Boot the fork scenario (coprocessor 2 → fork Anvil)
 ./fhevm-cli up --scenario three-of-three-fork --build
 
-# Start the secondary fork Anvil (joins the fhevm_default network)
-docker compose -p fhevm -f docker-compose/fork-anvil-docker-compose.yml up -d
-
 # Run the real-fork tests
-CANONICAL_RPC_URL=http://host-node:8545 \
-FORK_RPC_URL=http://fork-anvil:8546 \
-FINALITY_LAG=5 \
-./fhevm-cli test --grep "Real-Fork Consensus"
+./fhevm-cli test real-fork-consensus
 ```
 
 ### What the tests do
@@ -153,18 +144,25 @@ FINALITY_LAG=5 \
 **C2b (Full-fork equivocation):**
 1. Deploys an ERC20 contract on the canonical chain
 2. Syncs the fork Anvil's state so it has the same contract
-3. Mints 1000 on canonical, mints 2000 on fork (creating divergent ciphertexts)
-4. Verifies block hashes diverged
+3. Broadcasts the same signed mint transaction on both branches
+4. Verifies the block hashes and resulting ciphertext digests diverged
 5. Waits for submissions — coprocessors 0,1 agree; coprocessor 2 diverges
 6. Asserts no consensus + drift detected
 
 **C3 (Recovery after finalization):**
-1. Advances canonical past finality
-2. Updates coprocessor 2's env file to point to the canonical chain
-3. Restarts coprocessor 2's services
-4. Asserts orphaned blocks appear in coprocessor 2's DB
-5. Submits a new computation — all 3 reach consensus
-6. Asserts all 3 databases agree on the new digest
+1. Creates independent divergent work and advances the canonical branch past finality
+2. Asserts the exact winning block hash is finalized on the canonical coprocessors
+3. Resyncs the fork Anvil to canonical state and restarts coprocessor 2's chain-facing services
+4. Asserts the losing block is orphaned and all branch-specific rows are cleaned up
+5. Asserts the winning block is finalized on the recovered coprocessor
+6. Submits new work and verifies all 3 coprocessors agree on its digest
+
+**C3b (Settled reorg recovery):**
+1. Creates divergent work and advances the canonical branch through the RFC-011 settlement boundary
+2. Resyncs the fork Anvil and verifies settlement never regresses during recovery
+3. Asserts the losing branch is orphaned while the canonical CT64 and CT128 digests survive unchanged
+4. Verifies the pre-reorg canonical ciphertext reaches 3-of-3 consensus and decrypts successfully
+5. Submits new work and verifies consensus remains healthy after recovery
 
 ## Troubleshooting
 

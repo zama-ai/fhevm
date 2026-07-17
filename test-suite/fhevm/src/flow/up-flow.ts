@@ -44,6 +44,7 @@ import {
   COMPONENTS,
   COPROCESSOR_DB_CONTAINER,
   DEFAULT_CHAIN_ID,
+  DEFAULT_EXTRA_HOST_RPC_PORT,
   CRSGEN_ID_SELECTOR,
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_HOST_RPC_PORT,
@@ -210,6 +211,19 @@ export const assertDockerMemory = async (scenario: State["scenario"]) => {
   );
 };
 const NETWORK_TARGETS: ReadonlySet<string> = new Set(["devnet", "testnet", "mainnet"]);
+
+/** Whether the scenario routes a coprocessor to the managed secondary Anvil. */
+export const scenarioUsesForkAnvil = (scenario: Pick<State["scenario"], "instances">) =>
+  scenario.instances.some((instance) =>
+    [instance.env.RPC_HTTP_URL, instance.env.RPC_WS_URL].some((value) => {
+      if (!value) return false;
+      try {
+        return new URL(value).hostname === "fork-anvil";
+      } catch {
+        return false;
+      }
+    }),
+  );
 
 const postgresExecOptions = () => ({
   user: process.env.POSTGRES_USER ?? DEFAULT_POSTGRES_USER,
@@ -594,6 +608,10 @@ export const runStep = async (state: State, step: StepName) => {
         throw new PreflightError("Missing default host chain");
       }
       await waitForRpc(`http://localhost:${defaultChain.rpcPort}`);
+      if (scenarioUsesForkAnvil(state.scenario)) {
+        await stepComposeUp("fork-anvil", state);
+        await waitForRpc(`http://localhost:${DEFAULT_EXTRA_HOST_RPC_PORT}`);
+      }
       // Fund each KMS party's connector tx-sender on the host chain. The wallets are
       // derived from the gateway mnemonic so anvil pre-funds them there, but not on the
       // host chain (different mnemonic). A threshold-mode KMS runs one connector (and tx-sender)

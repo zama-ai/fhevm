@@ -304,6 +304,7 @@ export const TEST_GREP: Record<string, string> = {
   "negative-acl": "negative-acl",
   "multi-chain-isolation": "Multi-Chain State Isolation",
   "confidential-bridge": "Confidential Bridge",
+  "real-fork-consensus": "Real-Fork Consensus",
 };
 
 export const TEST_PARALLEL: Record<string, boolean> = {

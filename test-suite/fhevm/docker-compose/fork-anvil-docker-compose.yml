@@ -10,7 +10,8 @@
 ## different block hashes and computation results for the same handles.
 ## Attach to the fhevm stack's default network so coprocessor containers
 ## can resolve "fork-anvil" by container name.
-## Start with: docker compose -p fhevm -f docker-compose/fork-anvil-docker-compose.yml up -d
+## Managed automatically by fhevm-cli for scenarios that route a coprocessor
+## to the `fork-anvil` hostname.
 networks:
   default:
     name: fhevm_default
