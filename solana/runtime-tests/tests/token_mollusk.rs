@@ -1242,6 +1242,8 @@ fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_lineage
 
     let first_receipt = read_encrypted_value(&context, transferred_value_address);
     assert_eq!(first_receipt.leaf_count, 0);
+    // fhevm-internal#1745: the transferred-amount audience must always contain the sender's owner
+    // key and the mint compute signer; this exact-equality assertion pins both membership and order.
     assert_eq!(
         first_receipt.subjects,
         vec![fixture.owner, fixture.bob_owner, fixture.compute_signer]
@@ -1261,7 +1263,8 @@ fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_lineage
     context.process_and_validate_instruction(&second, &[Check::success()]);
 
     let receipt = read_encrypted_value(&context, transferred_value_address);
-    // Audience rotated to the new recipient.
+    // Audience rotated to the new recipient, still keeping the sender's owner key and the mint
+    // compute signer after rotation across two recipients (fhevm-internal#1745).
     assert_eq!(
         receipt.subjects,
         vec![fixture.owner, charlie_owner, fixture.compute_signer]

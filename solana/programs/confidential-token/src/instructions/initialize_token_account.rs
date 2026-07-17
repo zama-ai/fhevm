@@ -79,8 +79,7 @@ pub fn initialize_token_account<'info>(
     let balance_output = fhe::DurableOutput::new(
         ctx.accounts.balance_encrypted_value.to_account_info(),
         durable_slot(mint_key, token_account_key, balance_label()),
-        zama_fhe::AccessPolicy::for_owner_and_compute(owner, compute_signer)
-            .map_err(invalid_eval_plan)?,
+        fhe::DurableAudience::for_owner(owner, compute_signer),
     )?;
     let context_id = transfer_eval_context(
         b"initialize-balance",

@@ -96,8 +96,7 @@ pub fn confidential_burn<'info>(
     let balance_output = fhe::DurableOutput::new(
         ctx.accounts.balance_value.to_account_info(),
         durable_slot(mint_key, token_account_key, balance_label()),
-        zama_fhe::AccessPolicy::for_owner_and_compute(owner, compute_signer)
-            .map_err(invalid_eval_plan)?,
+        fhe::DurableAudience::for_owner(owner, compute_signer),
     )?;
     // ERC-7984 `unwrap` parity (`makePubliclyDecryptable(unwrapAmount)`): the burned delta is born
     // publicly decryptable inside this eval CPI, so the burn is permanently redeemable even after a
@@ -105,12 +104,12 @@ pub fn confidential_burn<'info>(
     let burned_output = fhe::DurableOutput::new_public(
         ctx.accounts.burned_amount_value.to_account_info(),
         durable_slot(mint_key, token_account_key, burned_amount_label()),
-        access_policy_from_subjects(burned_amount_acl_subjects(owner, compute_signer))?,
+        fhe::DurableAudience::for_owner(owner, compute_signer),
     )?;
     let total_supply_output = fhe::DurableOutput::new(
         ctx.accounts.total_supply_value.to_account_info(),
         durable_slot(mint_key, total_supply_authority, total_supply_label()),
-        zama_fhe::AccessPolicy::for_compute(compute_signer).map_err(invalid_eval_plan)?,
+        fhe::DurableAudience::compute_only(compute_signer),
     )?;
 
     let balance = uint64_from_value(

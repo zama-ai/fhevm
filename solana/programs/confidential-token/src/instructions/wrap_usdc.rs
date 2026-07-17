@@ -112,13 +112,12 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     let balance_output = fhe::DurableOutput::new(
         ctx.accounts.balance_value.to_account_info(),
         durable_slot(mint_key, token_account.key(), balance_label()),
-        zama_fhe::AccessPolicy::for_owner_and_compute(token_account.owner, compute_signer)
-            .map_err(invalid_eval_plan)?,
+        fhe::DurableAudience::for_owner(token_account.owner, compute_signer),
     )?;
     let total_supply_output = fhe::DurableOutput::new(
         ctx.accounts.total_supply_value.to_account_info(),
         durable_slot(mint_key, total_supply_authority, total_supply_label()),
-        zama_fhe::AccessPolicy::for_compute(compute_signer).map_err(invalid_eval_plan)?,
+        fhe::DurableAudience::compute_only(compute_signer),
     )?;
 
     spl_token::transfer_checked(
