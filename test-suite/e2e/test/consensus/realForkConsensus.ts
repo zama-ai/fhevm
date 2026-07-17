@@ -34,7 +34,6 @@ import {
 } from './forkHelper';
 import {
   containerName,
-  dockerRestart,
   dockerStart,
   dockerStop,
   findConsensusDigestRow,
@@ -69,6 +68,22 @@ interface DivergentForkWork {
   canonicalBlockNumber: number;
   forkBlockHash: string;
   forkBlockNumber: number;
+}
+
+async function syncForkWithServicesStopped(
+  forkConfig: ReturnType<typeof defaultForkConfig>,
+  services: string[],
+): Promise<void> {
+  // anvil_loadState replaces the target history atomically, but a live HTTP
+  // poller can observe the new tip first and advance its durable cursor beyond
+  // the fork point. Stop the services before the replacement so their restart
+  // replays from the pre-reorg cursor and sees both branch siblings.
+  await dockerStop(...services);
+  try {
+    await syncAnvilState(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl);
+  } finally {
+    await dockerStart(...services);
+  }
 }
 
 async function createDivergentForkWork(
@@ -480,16 +495,13 @@ describe('Real-Fork Consensus (E3)', function () {
       // Step 2: Make the fork Anvil present the canonical chain.
       // Coprocessor 2 stays connected to fork-anvil, but now observes
       // canonical block hashes at the fork height and should detect a reorg.
-      console.log('[C3] Resyncing fork Anvil to canonical chain state...');
-      await syncAnvilState(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl);
-
       const listener2 = containerName(2, 'host-listener');
       const poller2 = containerName(2, 'host-listener-poller');
       const worker2 = containerName(2, 'tfhe-worker');
       const sender2 = containerName(2, 'transaction-sender');
 
-      // Restart chain-facing services to force fresh polling against the now-canonical fork Anvil.
-      await dockerRestart(listener2, poller2, worker2, sender2);
+      console.log('[C3] Stopping coprocessor 2 services and resyncing fork Anvil to canonical chain state...');
+      await syncForkWithServicesStopped(forkConfig, [listener2, poller2, worker2, sender2]);
       console.log('[C3] Coprocessor 2 services restarted against canonicalized fork Anvil.');
 
       // Step 3: Poll for orphaned blocks on coprocessor 2's DB.
@@ -700,17 +712,16 @@ describe('Real-Fork Consensus (E3)', function () {
         );
         console.log(`[C3b] Canonical coprocessors settled at heights ${canonicalSettledBeforeRecovery.join(', ')}`);
 
-        console.log('[C3b] Resyncing fork Anvil to canonical chain state...');
-        await syncAnvilState(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl);
-        await forkProvider.send('evm_setAutomine', [true]);
-        await forkProvider.send('evm_setIntervalMining', [1]);
-        forkMiningPaused = false;
-
         const listener2 = containerName(2, 'host-listener');
         const poller2 = containerName(2, 'host-listener-poller');
         const worker2 = containerName(2, 'tfhe-worker');
         const sender2 = containerName(2, 'transaction-sender');
-        await dockerRestart(listener2, poller2, worker2, sender2);
+
+        console.log('[C3b] Stopping coprocessor 2 services and resyncing fork Anvil to canonical chain state...');
+        await syncForkWithServicesStopped(forkConfig, [listener2, poller2, worker2, sender2]);
+        await forkProvider.send('evm_setAutomine', [true]);
+        await forkProvider.send('evm_setIntervalMining', [1]);
+        forkMiningPaused = false;
 
         const c3bOrphan = await waitForOrphanedBlock('C3b', dbUrls[2], forkBlockHash);
         await waitForNoRowsReferencingProducer('C3b', dbUrls[2], c3bOrphan.chain_id, forkBlockHash);
