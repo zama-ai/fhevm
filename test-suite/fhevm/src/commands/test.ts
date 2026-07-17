@@ -884,6 +884,11 @@ const startContinuousErc20Traffic = (streams: number): TrafficStream => {
  * `./fhevm-cli up --scenario blue-green*`. Fires the on-chain proposal, sends
  * traffic via `./fhevm-cli test erc20`, waits for cutover, and asserts final
  * state in every operator's database.
+ *
+ * Runs a failed upgrade first: an empty window (no non-trivial FHE op) never
+ * anchors, so the detector's commitment_timeout forces a rollback; the phase
+ * asserts the reset (PAUSED/failed, latches cleared, schema recreated empty,
+ * versioning untouched) and the successful flow then reruns over the residue.
  */
 const runBlueGreenProfile = async (state: State): Promise<boolean> => {
   if (state.scenario.kind !== "blue-green") {
@@ -908,7 +913,7 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
 
   console.log(`\n==== blue-green E2E: ${opCount} operator(s) ====`);
 
-  console.log(`\n[1/8] verify initial state`);
+  console.log(`\n[1/11] verify initial state`);
   for (const db of operatorDatabases) {
     const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
     if (version !== "v0.14") {
@@ -928,11 +933,95 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
   }
   console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
 
+  const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
+  const hostRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.hosts[defaultHostKey]!.http);
+  const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+  const { deployerPk, protocolConfig } = await readBlueGreenOnChainCreds();
+
+  // An empty window carries no non-trivial FHE op, so no track can anchor and the
+  // detector's commitment_timeout forces the rollback this phase asserts.
+  console.log(`\n[2/11] failed upgrade: propose empty window (no traffic → no anchor)`);
+  const failHostBlock = Number((await run(
+    ["cast", "block-number", "--rpc-url", hostRpcUrl],
+  )).stdout.trim());
+  const failGwBlock = Number((await run(
+    ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
+  )).stdout.trim());
+  const failStartBlock = failHostBlock + 15;
+  const failEndBlock = failHostBlock + 45;
+  const failGwStartBlock = failGwBlock + 10;
+  await run([
+    "cast", "send", protocolConfig,
+    "--rpc-url", hostRpcUrl,
+    "--private-key", deployerPk,
+    "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
+    "1", gcsVersionLive,
+    `[(${chainId},${failStartBlock},${failEndBlock})]`,
+    String(failGwStartBlock),
+  ]);
+  console.log(
+    `OK:   activation emitted (start=${failStartBlock} end=${failEndBlock} gw_start=${failGwStartBlock})`,
+  );
+
+  console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted per operator`);
+  for (const db of operatorDatabases) {
+    await waitUntil({
+      label: `${db}  GCS DryRunStarted`,
+      timeoutSecs: 120,
+      check: async () =>
+        (await psqlQuery(db, "SELECT state FROM upgrade_state WHERE stack_role='GCS';")) ===
+        "DryRunStarted",
+    });
+  }
+
+  console.log(`\n[4/11] failed upgrade: wait for unanimity timeout rollback + verify reset`);
+  for (const db of operatorDatabases) {
+    await waitUntil({
+      label: `${db}  GCS rolled back to PAUSED/failed`,
+      timeoutSecs: 300,
+      check: async () =>
+        (await psqlQuery(db, "SELECT state||' '||status FROM upgrade_state WHERE stack_role='GCS';")) ===
+        "PAUSED failed",
+    });
+  }
+  for (const db of operatorDatabases) {
+    const flags = await psqlQuery(
+      db,
+      "SELECT last_error||'|'||host_consensus_reached||'|'||gw_consensus_reached||'|'||gw_dry_run_started " +
+        "FROM upgrade_state WHERE stack_role='GCS';",
+    );
+    if (flags !== "unanimity_consensus_timeout|false|false|false") {
+      throw new Error(
+        `${db} rollback left unexpected flags "${flags}", expected "unanimity_consensus_timeout|false|false|false"`,
+      );
+    }
+    const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
+    if (version !== "v0.14") {
+      throw new Error(`${db}.versioning = "${version}" after failed upgrade, expected "v0.14"`);
+    }
+    const schema = await psqlQuery(
+      db,
+      `SELECT nspname FROM pg_namespace WHERE nspname='gcs-${gcsStackVersion}';`,
+    );
+    if (schema !== `gcs-${gcsStackVersion}`) {
+      throw new Error(`${db} missing schema "gcs-${gcsStackVersion}" after rollback`);
+    }
+    const residue = await psqlQuery(
+      db,
+      `SELECT (SELECT count(*) FROM "gcs-${gcsStackVersion}".computations) + ` +
+        `(SELECT count(*) FROM "gcs-${gcsStackVersion}".state_hash);`,
+    );
+    if (residue !== "0") {
+      throw new Error(`${db} gcs schema not reset: ${residue} residual computations/state_hash rows`);
+    }
+    console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
+  }
+
   // Deploy ERC20 + mint before the proposal so the balance handle lands in
   // public.ciphertexts with block_number < start_block. Transfers during the
   // dry-run window will force GCS's tfhe-worker to fall back to
   // public.ciphertexts for this handle.
-  console.log(`\n[2/8] cross-cutover setup: deploy ERC20 + mint (pre-cutover)`);
+  console.log(`\n[5/11] cross-cutover setup: deploy ERC20 + mint (pre-cutover)`);
   const setupResult = await run(["./fhevm-cli", "test", "cross-cutover-setup"], { allowFailure: true });
   if (setupResult.code !== 0) {
     throw new Error("cross-cutover setup failed — see log above");
@@ -960,10 +1049,7 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
     console.log(`OK:   ${db}  pre-cutover ciphertexts=${count} (sample handle recorded)`);
   }
 
-  console.log(`\n[3/8] propose upgrade on-chain (ProtocolConfig.proposeCoprocessorUpgrade)`);
-  const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
-  const hostRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.hosts[defaultHostKey]!.http);
-  const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+  console.log(`\n[6/11] propose upgrade on-chain (ProtocolConfig.proposeCoprocessorUpgrade)`);
   const hostBlock = Number((await run(
     ["cast", "block-number", "--rpc-url", hostRpcUrl],
   )).stdout.trim());
@@ -973,19 +1059,18 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
   const startBlock = hostBlock + 30;
   const endBlock = hostBlock + 230;
   const gwStartBlock = gwBlock + 10;
-  const { deployerPk, protocolConfig } = await readBlueGreenOnChainCreds();
   await run([
     "cast", "send", protocolConfig,
     "--rpc-url", hostRpcUrl,
     "--private-key", deployerPk,
     "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "1", gcsVersionLive,
+    "2", gcsVersionLive,
     `[(${chainId},${startBlock},${endBlock})]`,
     String(gwStartBlock),
   ]);
   console.log(`OK:   activation emitted (start=${startBlock} end=${endBlock} gw_start=${gwStartBlock})`);
 
-  console.log(`\n[4/8] wait for GCS DryRunStarted per operator`);
+  console.log(`\n[7/11] wait for GCS DryRunStarted per operator`);
   for (const db of operatorDatabases) {
     await waitUntil({
       label: `${db}  GCS DryRunStarted`,
@@ -997,13 +1082,13 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
   }
 
   console.log(
-    `\n[5/8] start ${BLUE_GREEN_TRAFFIC_STREAMS} background stream(s) ` +
+    `\n[8/11] start ${BLUE_GREEN_TRAFFIC_STREAMS} background stream(s) ` +
       `+ cross-cutover chain (depth ${CROSS_CUTOVER_CHAIN_DEPTH})`,
   );
   const traffic = startContinuousErc20Traffic(BLUE_GREEN_TRAFFIC_STREAMS);
   let trafficStats: { iterations: number; retries: number; failures: number };
   try {
-    // The chain is a stress signal — a fence hit mid-transfer is expected; [8/8] verifies actual transferCount.
+    // The chain is a stress signal — a fence hit mid-transfer is expected; [11/11] verifies actual transferCount.
     const chainPromise = (async () => {
       for (let step = 1; step <= CROSS_CUTOVER_CHAIN_DEPTH; step += 1) {
         console.log(`  cross-cutover transfer ${step}/${CROSS_CUTOVER_CHAIN_DEPTH}`);
@@ -1034,7 +1119,7 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
     })();
     await Promise.race([chainPromise, traffic.errored]);
 
-    console.log(`\n[6/8] wait for cutover (versioning=${gcsVersionLive} per operator)`);
+    console.log(`\n[9/11] wait for cutover (versioning=${gcsVersionLive} per operator)`);
     for (const db of operatorDatabases) {
       await Promise.race([
         waitUntil({
@@ -1048,7 +1133,7 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
     }
 
     // BCS has no upgrade_state row — retires implicitly via `resolve_gcs_mode`.
-    console.log(`\n[7/8] verify FSM final state`);
+    console.log(`\n[10/11] verify FSM final state`);
     for (const db of operatorDatabases) {
       const gcsState = await psqlQuery(
         db,
@@ -1070,7 +1155,7 @@ const runBlueGreenProfile = async (state: State): Promise<boolean> => {
     trafficStats = await traffic.stop();
   }
 
-  console.log(`\n[8/8] stop background traffic + cross-cutover verify + continuity check`);
+  console.log(`\n[11/11] stop background traffic + cross-cutover verify + continuity check`);
   console.log(
     `  traffic stopped: ${trafficStats.iterations} iterations across ${BLUE_GREEN_TRAFFIC_STREAMS} stream(s), ` +
       `${trafficStats.retries} retried, ${trafficStats.failures} failed after retry`,

@@ -56,10 +56,14 @@ export const resolveScenarioForOptions = async (
     const sourcePath = await resolveScenarioReference(options.scenarioPath);
     const kind = await peekScenarioKind(sourcePath);
     if (kind === "blue-green") {
-      // --build's implicit all-group overrides are fine (GCS builds from HEAD); only explicit --override conflicts.
-      if (!options.build && options.overrides.some((override) => override.group === "coprocessor")) {
+      // GCS always builds from the local tree, so a full-group --override coprocessor is accepted
+      // as an explicit alias; per-service selections have no GCS granularity and BCS stays pinned.
+      if (
+        !options.build &&
+        options.overrides.some((override) => override.group === "coprocessor" && override.services?.length)
+      ) {
         throw new PreflightError(
-          "--override coprocessor is not supported with blue-green scenarios (BCS/GCS sources are scenario-defined)",
+          "--override coprocessor:<service> is not supported with blue-green scenarios; use --override coprocessor — the GCS fleet builds from the local tree",
         );
       }
       const loaded = await loadBlueGreenScenario(sourcePath);
