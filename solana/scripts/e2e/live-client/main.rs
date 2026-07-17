@@ -851,7 +851,9 @@ fn fetch_mmr_proof_once(
         .iter()
         .map(|h| {
             hexdec(h).try_into().map_err(|_| {
-                Box::<dyn std::error::Error>::from(format!("relayer sibling {h} is not 32 bytes"))
+                Box::<dyn std::error::Error>::from(format!(
+                    "solana-proof-service sibling {h} is not 32 bytes"
+                ))
             })
         })
         .collect::<Result<Vec<[u8; 32]>, _>>()?;
