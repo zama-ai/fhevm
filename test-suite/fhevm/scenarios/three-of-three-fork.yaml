@@ -11,10 +11,8 @@
 ## Usage:
 ##   ./fhevm-cli up --scenario three-of-three-fork --build
 ##
-## Requires: fork-anvil-docker-compose.yml to be included in the compose stack.
-## The fork-anvil service must be started manually or via a compose override
-## since fhevm-cli does not auto-include it:
-##   docker compose -p fhevm -f docker-compose/fork-anvil-docker-compose.yml up -d
+## fhevm-cli starts the secondary fork Anvil automatically when this scenario
+## routes an instance to the `fork-anvil` hostname.
 version: 1
 kind: coprocessor-consensus
 name: Three Of Three Fork

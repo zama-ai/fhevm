@@ -8,7 +8,7 @@ import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
-import { pause, shellEscape, unpause } from "../flow/up-flow";
+import { pause, scenarioUsesForkAnvil, shellEscape, unpause } from "../flow/up-flow";
 import { hostReachableRpcUrl, readEnvFile, withHexPrefix } from "../utils/fs";
 import { run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
@@ -127,6 +127,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "blue-green":
     "Run the Blue-Green upgrade end-to-end (fires proposeCoprocessorUpgrade on-chain, waits for cutover, " +
     "asserts final state). Requires `--scenario blue-green*`.",
+  "real-fork-consensus":
+    "Run the heavy dual-Anvil equivocation, finalization, settlement, and recovery suite (three-of-three-fork).",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
@@ -1319,6 +1321,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       : "priority-coprocessor requires a multi-coprocessor topology; rerun `fhevm-cli up --scenario two-of-three-multi-chain` first";
   };
 
+  const realForkConsensusRequirement = () => {
+    const topology = topologyForState(state);
+    return topology.count === 3 && topology.threshold === 3 && scenarioUsesForkAnvil(state.scenario)
+      ? undefined
+      : "real-fork-consensus requires the three-of-three-fork topology; rerun `fhevm-cli up --scenario three-of-three-fork` first";
+  };
+
   const multiChainIsolationSkipReason = () =>
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
@@ -1638,6 +1647,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "priority-coprocessor") {
       const precondition = priorityCoprocessorRequirement();
+      if (precondition) {
+        throw new PreflightError(precondition);
+      }
+    }
+    if (name === "real-fork-consensus") {
+      const precondition = realForkConsensusRequirement();
       if (precondition) {
         throw new PreflightError(precondition);
       }

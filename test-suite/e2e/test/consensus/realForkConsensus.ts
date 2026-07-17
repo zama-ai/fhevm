@@ -9,12 +9,9 @@
  *
  * Prerequisites:
  *   - Stack running via: ./fhevm-cli up --scenario three-of-three-fork
- *   - Fork Anvil running: docker compose -p fhevm -f docker-compose/fork-anvil-docker-compose.yml up -d
  *
  * Run:
- *   CANONICAL_RPC_URL=http://host-node:8545 \
- *   FORK_RPC_URL=http://fork-anvil:8546 \
- *   ./fhevm-cli test --grep "Real-Fork Consensus"
+ *   ./fhevm-cli test real-fork-consensus
  */
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
