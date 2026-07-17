@@ -3564,6 +3564,92 @@ impl EvalFixture {
         ix
     }
 
+    /// A persist-nothing frame: a single `TrivialEncrypt` with an `AllowedLocal` output — no
+    /// durable input, no verified input, no durable output. Binds no metering identity, so under a
+    /// finite cap `compute_subject` would be a free variable (fhevm-internal#1744). No
+    /// remaining accounts.
+    fn persist_nothing_instruction(
+        &self,
+        meter: Option<Pubkey>,
+        trust: Option<Pubkey>,
+    ) -> Instruction {
+        anchor_ix(
+            self.program_id,
+            host::accounts::FheEval {
+                payer: self.authority,
+                compute_subject: self.compute_subject,
+                app_account_authority: self.app_account,
+                host_config: self.host_config,
+                system_program: system_program::ID,
+                hcu_block_meter: meter,
+                hcu_trusted_app_record: trust,
+                event_authority: event_authority(self.program_id),
+                program: self.program_id,
+            },
+            host::instruction::FheEval {
+                args: FheEvalArgs {
+                    context_id: label("persist-nothing"),
+                    steps: vec![FheEvalStep::TrivialEncrypt {
+                        plaintext: [7; 32],
+                        fhe_type: 5,
+                        output: FheEvalOutput::AllowedLocal,
+                    }],
+                },
+            },
+        )
+    }
+
+    /// An input-free frame that DOES persist: a single `TrivialEncrypt` bound into a fresh durable
+    /// output lineage — the legitimate bootstrap/mint path. Anchored by its durable output, so it
+    /// survives the persist-nothing rejection. Returns the output lineage address and instruction.
+    fn input_free_durable_instruction(&self, meter: Option<Pubkey>) -> (Pubkey, Instruction) {
+        let output_label = label("input-free-bootstrap");
+        let output_value_key = zama_solana_acl::derive_value_key(
+            self.authority.to_bytes(),
+            self.app_account.to_bytes(),
+            output_label,
+        );
+        let (output_value, _bump) = host::encrypted_value_address(output_value_key);
+        let mut ix = anchor_ix(
+            self.program_id,
+            host::accounts::FheEval {
+                payer: self.authority,
+                compute_subject: self.compute_subject,
+                app_account_authority: self.app_account,
+                host_config: self.host_config,
+                system_program: system_program::ID,
+                hcu_block_meter: meter,
+                hcu_trusted_app_record: None,
+                event_authority: event_authority(self.program_id),
+                program: self.program_id,
+            },
+            host::instruction::FheEval {
+                args: FheEvalArgs {
+                    context_id: output_label,
+                    steps: vec![FheEvalStep::TrivialEncrypt {
+                        plaintext: [7; 32],
+                        fhe_type: 5,
+                        output: FheEvalOutput::AllowedDurable {
+                            output_encrypted_value_index: 0,
+                            output_app_account_authority_index: None,
+                            output_acl_domain_key: self.authority,
+                            output_app_account: self.app_account,
+                            output_encrypted_value_label: output_label,
+                            output_subjects: vec![host::AclSubjectEntry {
+                                pubkey: self.authority,
+                            }],
+                            previous_handle: None,
+                            previous_subjects: None,
+                            make_public: false,
+                        },
+                    }],
+                },
+            },
+        );
+        ix.accounts.push(writable(output_value));
+        (output_value, ix)
+    }
+
     /// A durable-output frame that reuses the fixture's `compute_subject` (and thus its meter) but
     /// with a caller-chosen `payer` and `app_account_authority`, binding its own fresh output
     /// lineage under that authority. Everything a caller controls is varied except the ACL-bound
@@ -4247,6 +4333,52 @@ fn mollusk_fhe_eval_transient_only_frame_is_metered_via_compute_subject() {
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.app, fixture.block_cap_app());
     assert_eq!(meter.used_hcu, TRANSIENT_FRAME_HCU);
+}
+
+#[test]
+fn mollusk_fhe_eval_finite_cap_rejects_persist_nothing_frame() {
+    // fhevm-internal#1744: under a finite cap, a frame that binds no durable input, no verified
+    // input, and no durable output leaves `compute_subject` a free variable — the caller could
+    // rotate fresh subjects to mint fresh per-slot meters. Rejected in preflight, before compute,
+    // so no meter is created even though one is supplied.
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let meter_pda = fixture.meter_pda();
+    fixture.context.process_and_validate_instruction(
+        &fixture.persist_nothing_instruction(Some(meter_pda), None),
+        &[custom_error(
+            host::errors::ZamaHostError::FheEvalUnanchoredUnderBlockCap,
+        )],
+    );
+    assert!(read_hcu_block_meter(&fixture.context, meter_pda).is_none());
+}
+
+#[test]
+fn mollusk_fhe_eval_finite_cap_allows_input_free_durable_output_bootstrap() {
+    // The bootstrap/mint path (trivial-encrypt -> durable output) is input-free but persists an
+    // ACL record, so it anchors the frame and stays legal under a finite cap.
+    let fixture = EvalFixture::with_block_cap(500_000);
+    let meter_pda = fixture.meter_pda();
+    let (output_value, ix) = fixture.input_free_durable_instruction(Some(meter_pda));
+    fixture
+        .context
+        .process_and_validate_instruction(&ix, &[Check::success()]);
+    read_encrypted_value_from_context(&fixture.context, output_value);
+    // The durable frame WAS metered onto the compute subject (a single euint64 TrivialEncrypt).
+    const TRIVIAL_ENCRYPT_EUINT64_HCU: u64 = 900;
+    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
+    assert_eq!(meter.app, fixture.block_cap_app());
+    assert_eq!(meter.used_hcu, TRIVIAL_ENCRYPT_EUINT64_HCU);
+}
+
+#[test]
+fn mollusk_fhe_eval_deactivated_cap_allows_persist_nothing_frame() {
+    // Under the ship default (u64::MAX) the persist-nothing rejection short-circuits, so behavior
+    // is unchanged wherever a finite cap is not deployed.
+    let fixture = EvalFixture::with_block_cap(u64::MAX);
+    fixture.context.process_and_validate_instruction(
+        &fixture.persist_nothing_instruction(None, None),
+        &[Check::success()],
+    );
 }
 
 #[test]
