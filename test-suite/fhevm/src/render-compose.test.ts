@@ -289,7 +289,9 @@ describe("render-compose", () => {
       const proofDoc = YAML.parse(await readFile(composePath("solana-proof-service"), "utf8")) as {
         services: Record<string, { image?: string; build?: { context?: string; dockerfile?: string } }>;
       };
-      expect(proofDoc.services["solana-proof-service"]?.image).toContain(":fhevm-local");
+      expect(proofDoc.services["solana-proof-service"]?.image).toBe(
+        "${SOLANA_PROOF_SERVICE_IMAGE_REPOSITORY:-solana-proof-service}:fhevm-local",
+      );
       expect(proofDoc.services["solana-proof-service"]?.build?.dockerfile).toContain(
         "solana-proof-service/Dockerfile",
       );
