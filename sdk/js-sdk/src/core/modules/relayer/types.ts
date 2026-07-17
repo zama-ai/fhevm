@@ -125,6 +125,7 @@ export type FetchPublicDecryptModuleFunction = {
 ////////////////////////////////////////////////////////////////////////////////
 
 export type FetchUserDecryptParametersV1 = {
+  readonly version: 1;
   readonly payload: {
     readonly handleContractPairs: ReadonlyArray<{
       readonly handle: Handle;
@@ -138,12 +139,14 @@ export type FetchUserDecryptParametersV1 = {
 };
 
 export type FetchUserDecryptParametersV2 = {
+  readonly version: 2;
   readonly payload: {
     readonly handleContractPairs: ReadonlyArray<{
       readonly handle: Handle;
       readonly contractAddress: ChecksummedAddress;
       readonly ownerAddress: ChecksummedAddress;
     }>;
+    readonly kmsDecryptEip712Signer: ChecksummedAddress;
     readonly kmsDecryptEip712Message: KmsUserDecryptEip712V2Message;
     readonly kmsDecryptEip712Signature: Bytes65Hex;
   };
@@ -166,6 +169,7 @@ export type FetchUserDecryptModuleFunction = {
 ////////////////////////////////////////////////////////////////////////////////
 
 export type FetchDelegatedUserDecryptParameters = {
+  readonly version: 1;
   readonly payload: {
     readonly handleContractPairs: ReadonlyArray<{
       readonly handle: Handle;
