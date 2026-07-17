@@ -33,8 +33,8 @@ Design rationale for the divergences below is recorded in
 | `confidentialTransferAndCall(...)` ×4 | transfer then call `onConfidentialTransferReceived`; refund `select(success,0,sent)`; `transferred = sent - refund`; transient-allow to sender | not ported; a receiving app exposes its own instruction that CPIs `confidential_transfer` with the user as sole signer (see `confidential-deposit-app`) | **INTENTIONAL GAP** (DD-011) — the callback is an EVM workaround for contracts not observing incoming transfers; Solana propagates signer authority through CPI. Token-2022 transfer hooks are rejected as a substitute (veto-only, not receiver callbacks) |
 | `setOperator(operator, until)` | time-bounded operator approval (`uint48` deadline); `OperatorSet` event | no Solana production equivalent | **INTENTIONAL GAP** — no operator rows or operator events |
 | `isOperator(holder, spender)` | `holder==spender \|\| now <= until` | no Solana production equivalent | **INTENTIONAL GAP** — holder self-authority is handled by owner-signed paths |
-| `requestDiscloseEncryptedAmount(euint64)` | `makePubliclyDecryptable` + event; `require isAllowed(amount, sender)` | `request_disclose_balance` / `request_disclose_amount` → host `make_handle_public` (seals a `PublicDecryptLeaf` into the `EncryptedValue` MMR, DD-032); emits `*DisclosureRequestedEvent` | **MET** (DD-010: label-scoped — balance vs amount paths distinct) |
-| `discloseEncryptedAmount(euint64, cleartext, proof)` | `FHE.checkSignatures` + `AmountDisclosed` event | `disclose_balance_secp` / `disclose_amount_secp(cleartext, proof)` — authorize the **witness-pinned** handle by its `EncryptedValue` public-decrypt MMR proof (the sealed leaf is permanent, so a disclosure survives its lineage being superseded during the KMS round-trip — never reads the live handle, DD-036) + gateway `CiphertextCommits` materiality (DD-031) + on-chain secp256k1 KMS-cert verification against the witness-pinned `kms_context` (consume-once) | **MET** (DD-021/DD-022: mirrors EVM `KMSVerifier` — same threshold cert verifies on both sides) |
+| `requestDiscloseEncryptedAmount(euint64)` | `makePubliclyDecryptable` + event; `require isAllowed(amount, sender)` | request is no longer a token instruction (DD-040, dissolved in fhevm-internal#1704): an allowed subject (balance owner / amount subject) seals the public-decrypt leaf by calling host `make_handle_public` directly (exact-handle `PublicDecryptLeaf` into the `EncryptedValue` MMR, DD-032; no per-request PDA, no `kms_context_id` pin, no expiry) | **MET** (DD-040) |
+| `discloseEncryptedAmount(euint64, cleartext, proof)` | `FHE.checkSignatures` + `AmountDisclosed` event | token `disclose_secp(handle, cleartext, signatures, extra_data, proof)` (DD-040) CPIs the stateless host `verify_public_decrypt`, which authorizes the caller-pinned exact handle by its `EncryptedValue` public-decrypt MMR proof (the sealed leaf is permanent, so a disclosure survives its lineage being superseded during the KMS round-trip — never reads the live handle, DD-036) + on-chain secp256k1 KMS-cert verification against the CURRENT `KmsContext` (rotation fails closed); binds the disclosed lineage to the mint ACL domain and emits `HandleDisclosedEvent`; idempotent — act-once is the app's concern, no on-chain replay marker | **MET** (DD-021/DD-040: mirrors EVM `KMSVerifier` — same threshold cert verifies on both sides) |
 | `confidentialTotalSupply()` view | encrypted total supply handle | one stable total-supply `EncryptedValue` lineage (born in `initialize_mint`; superseded by `confidential_burn`, DD-032) — read off-chain | **MET** (DIVERGENCE: account read, not a view call) |
 | `confidentialBalanceOf(account)` view | encrypted balance handle | `ConfidentialTokenAccount.balance_encrypted_value` points to the stable `EncryptedValue` lineage whose `current_handle` is read off-chain | **MET** (DIVERGENCE: account read) |
 | `name/symbol/decimals(=6)/contractURI` views | metadata | mint/app config; `wrap_usdc` ties decimals to the underlying SPL mint | **DIVERGENCE** (app config / off-chain reads) |
@@ -87,7 +87,7 @@ fromExternal** — all implemented. The confidential token is therefore **op-com
 
 | EVM gateway capability | Semantics | Solana equivalent | Status |
 |---|---|---|---|
-| `Decryption.publicDecryptionRequest/Response` | request + threshold-consensus public decrypt | token `request_disclose_*` (sets `public_decrypt`, creates a `DisclosureRequest` witness PDA); on-chain `disclose_*_secp` consumes a secp256k1 KMS cert verified against the witness-pinned `KmsContext` | **MET** (DD-012/DD-021/DD-022: same EVM KMS trust model, verified on-chain) |
+| `Decryption.publicDecryptionRequest/Response` | request + threshold-consensus public decrypt | request = host `make_handle_public` (allowed subject seals the public-decrypt leaf directly); consume = token `disclose_secp` CPIing the stateless host `verify_public_decrypt`, which checks a secp256k1 KMS cert against the CURRENT `KmsContext` (rotation fails closed); idempotent, no request witness (DD-040, dissolved in fhevm-internal#1704) | **MET** (DD-012/DD-040: same EVM KMS trust model, verified on-chain) |
 | `Decryption.userDecryptionRequest` + EIP-712 | user-signed, contract-scoped, validity window | routed through the unified Gateway V2 path via the typed `userDecryptionRequestSolana(HandleEntry[], UserDecryptionRequestSolanaPayload)` entrypoint; chain-aware validator branches on `contracts_chain_id` | **MET** (DD-012/DD-026/DD-027: reuses the Gateway/EVM stack, typed Solana fields) |
 | `Decryption.delegatedUserDecryptionRequest` + RFC-017 wildcard | delegate-signed; wildcard contract scope | `UserDecryptionDelegation` PDA per `(delegator,delegate,app)`, slot expiry, wildcard = `[0xff;32]` app-context sentinel; carried in the same Gateway V2 Solana user-decrypt payload | **MET** (semantics) / **DIVERGENCE** (PDA mechanism) |
 | `Decryption.userDecryptionResponse` (per-share sigs → threshold) | threshold response | Gateway V2 response path; connector verifies the KMS threshold response | **MET** (DD-012) |
@@ -147,7 +147,9 @@ flag), delegation lifecycle (slot expiry, same-slot guard, wildcard-delegate rej
 transient capabilities with same-tx creation proof, preserved handle byte-layout,
 operand-ACL discipline + scalar-RHS rule, ABI/account-meta exactness (DD-004, extensive negative
 tests), the confidential-token flows (owner-authorized transfer/transfer-and-call split/wrap/burn/redeem/
-disclose) with separate payer semantics and label-scoped disclosure (DD-010), and the
+disclose) with separate payer semantics and disclosure now a thin `disclose_secp` consumer of the
+stateless host `verify_public_decrypt` verifier (DD-040, binds the disclosed lineage to the mint ACL
+domain rather than label-scoping per-instruction), and the
 connector's canonical-PDA + MMR-proof verification (DD-032; materiality now lives in the gateway's
 `CiphertextCommits`, DD-031).
 
@@ -166,9 +168,10 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
 3. **No per-block HCU / complexity metering.** The host caps total and critical-path HCU per
    `fhe_eval` plan (`HostConfig::max_hcu_per_tx` / `max_hcu_depth_per_tx`, `0` = off) plus the Solana
    compute budget, but there is no EVM-style per-block `HCULimit` plane. Relevant to DoS/cost-bounding.
-4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification + request accounts.**
-   The deleted coprocessor request-witness store had no consumer. The residual risk is off-chain
-   integration of KMS certificate publication before the flow is end-to-end production ready.
+4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification.** Disclosure is now the
+   stateless `disclose_secp` → host `verify_public_decrypt` path (no request accounts, DD-040);
+   burn-redemption still uses a `BurnRedemptionRequest` witness account. The residual risk is
+   off-chain integration of KMS certificate publication before the flow is end-to-end production ready.
 5. **The confirmed Yellowstone listener is not wired into the EVM reorg substrate**
    (DD-025/DD-028): it reconstructs instruction effects and inserts directly, bypassing the
    block-status machine. This is accepted for authorization because KMS revalidates confirmed live

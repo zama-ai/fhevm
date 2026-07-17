@@ -133,14 +133,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         consume_wrap(&token, &payer, host_config)?;
         return Ok(());
     }
-    // CONSUME_SEAL: seal a token amount's ciphertext material on-chain and request public
-    // disclosure (releases the amount for public decrypt) — the precondition for disclose.
+    // CONSUME_SEAL: seal a token amount's current handle public via the host make_handle_public
+    // instruction (releases the handle for public decrypt) — the precondition for disclose. There is
+    // no token witness / per-request PDA anymore (fhevm-internal#1704 / DD-040).
     if std::env::var("CONSUME_SEAL").is_ok() {
         consume_seal(&host, &token, &payer, host_config)?;
         return Ok(());
     }
-    // CONSUME_DISCLOSE: verify the KMS PublicDecryptVerification cert on-chain via secp256k1
-    // (disclose_amount_secp) — the Consume seam against the ProtocolConfig-mirrored KMS context.
+    // CONSUME_DISCLOSE: consume the KMS PublicDecryptVerification cert via the thin token
+    // `disclose_secp`, which CPIs the stateless host `verify_public_decrypt` (verified against the
+    // CURRENT KMS context) and emits the disclosed cleartext.
     if std::env::var("CONSUME_DISCLOSE").is_ok() {
         consume_disclose(&token, &payer, host_config)?;
         return Ok(());
@@ -1169,57 +1171,58 @@ fn fhe_eval_verified_input_add(
     Ok(())
 }
 
-/// Consume step 1: create the disclosure request witness for a token amount lineage
-/// (request_disclose_amount → CPIs zama-host allow_subjects + make_handle_public, pins the host's
-/// current KMS context id + expires_slot + request_hash into a DisclosureRequest PDA the
-/// disclose_amount_secp consume step then binds to). Inputs via env: MINT, TS_ACL, TS_HANDLE;
-/// optional REQUEST_NONCE (32-byte hex), REQUEST_TTL_SLOTS.
+/// Consume step 1: seal a token amount's current handle publicly decryptable by calling the host
+/// `make_handle_public` instruction directly (fhevm-internal#1704 / DD-040). The DisclosureRequest
+/// witness is gone: the sealed public-decrypt leaf IS the request, there is no per-request PDA, no
+/// KMS-context pin, and no expiry. The caller is re-added idempotently first so it is a currently
+/// allowed subject (make_handle_public requires that). Inputs via env: TS_ACL, TS_HANDLE.
 fn consume_seal(
-    _host: &Program<Rc<Keypair>>,
-    token: &Program<Rc<Keypair>>,
+    host: &Program<Rc<Keypair>>,
+    _token: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
     let ts_acl = Pubkey::from_str(&std::env::var("TS_ACL")?)?;
     let handle: [u8; 32] = hexdec(&std::env::var("TS_HANDLE")?)
         .try_into()
         .expect("TS_HANDLE");
 
-    let nonce = request_nonce_from_env();
-    let expires_slot = request_expires_slot(token)?;
-    let (disclosure_request, _) =
-        confidential_token::disclosure_request_address(mint, payer.pubkey(), handle, nonce);
-
-    let (token_evt, _) =
-        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
-    let sig2 = token
+    let grant_sig = host
         .request()
-        .accounts(confidential_token::accounts::RequestDiscloseAmount {
-            requester: payer.pubkey(),
-            mint,
-            amount_value: ts_acl,
-            disclosure_request,
-            deny_subject_record: None,
-            zama_program: zama_host::ID,
+        .accounts(zama_host::accounts::AllowEncryptedValueSubjects {
+            payer: payer.pubkey(),
+            authority: payer.pubkey(),
+            encrypted_value: ts_acl,
             host_config,
+            deny_subject_record: None,
             system_program: system_program::ID,
-            event_authority: token_evt,
-            program: confidential_token::ID,
         })
-        .args(confidential_token::instruction::RequestDiscloseAmount {
-            amount_handle: handle,
-            request_nonce: nonce,
-            expires_slot,
+        .args(zama_host::instruction::AllowSubjects {
+            subjects: vec![zama_host::instructions::EncryptedValueSubjectGrant {
+                subject: payer.pubkey(),
+            }],
         })
         .send()?;
-    println!("OK request_disclose_amount: {sig2}  (handle released for public decrypt)");
-    println!("  disclosure request witness {disclosure_request}  (kms_context pinned, expires_slot {expires_slot})");
+    println!("OK allow_subjects (idempotent membership): {grant_sig}");
+
+    let sig2 = host
+        .request()
+        .accounts(zama_host::accounts::MakeEncryptedValueHandlePublic {
+            payer: payer.pubkey(),
+            authority: payer.pubkey(),
+            encrypted_value: ts_acl,
+            host_config,
+            deny_subject_record: None,
+            system_program: system_program::ID,
+        })
+        .args(zama_host::instruction::MakeHandlePublic { handle })
+        .send()?;
+    println!("OK make_handle_public: {sig2}  (handle released for public decrypt)");
     Ok(())
 }
 
-/// Returns the 32-byte request nonce from REQUEST_NONCE (hex) or a default fixed nonce so the
-/// witness PDA is deterministic within one e2e run.
+/// Returns the 32-byte request nonce from REQUEST_NONCE (hex) or a default fixed nonce so a
+/// witness PDA is deterministic within one e2e run. Used by the burn-redemption request path.
 fn request_nonce_from_env() -> [u8; 32] {
     match std::env::var("REQUEST_NONCE") {
         Ok(s) => hexdec(&s)
@@ -1229,8 +1232,8 @@ fn request_nonce_from_env() -> [u8; 32] {
     }
 }
 
-/// Computes the witness expiry slot: current slot + REQUEST_TTL_SLOTS (default 5000), giving the
-/// public-decrypt + consume steps ample time before the witness expires.
+/// Computes a witness expiry slot: current slot + REQUEST_TTL_SLOTS (default 5000). Used by the
+/// burn-redemption request path.
 fn request_expires_slot(program: &Program<Rc<Keypair>>) -> Result<u64, Box<dyn std::error::Error>> {
     let ttl: u64 = std::env::var("REQUEST_TTL_SLOTS")
         .ok()
@@ -1240,13 +1243,14 @@ fn request_expires_slot(program: &Program<Rc<Keypair>>) -> Result<u64, Box<dyn s
     Ok(slot + ttl)
 }
 
-/// Consume step 2: publish a KMS-certified cleartext by verifying the KMS PublicDecryptVerification
-/// EIP-712 cert on-chain via secp256k1 (disclose_amount_secp) against the active KMS context's
-/// ProtocolConfig-mirrored signer set. Inputs via env: MINT, TS_ACL, TS_HANDLE, CLEARTEXT, KMS_SIG,
-/// EXTRA, KMS_CTX_ID.
+/// Consume step 2: publish a KMS-certified cleartext via the thin token `disclose_secp`, which CPIs
+/// the stateless host `verify_public_decrypt` (KMS `PublicDecryptVerification` EIP-712 cert verified
+/// against the CURRENT KMS context + an MMR public-leaf inclusion proof), asserts the proven handle
+/// equals the pinned handle, and emits the disclosed cleartext. Idempotent by design (no replay
+/// marker). Inputs via env: MINT, TS_ACL, TS_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, KMS_CTX_ID, PROOF.
 fn consume_disclose(
     token: &Program<Rc<Keypair>>,
-    payer: &Rc<Keypair>,
+    _payer: &Rc<Keypair>,
     host_config: Pubkey,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
@@ -1254,16 +1258,17 @@ fn consume_disclose(
     let handle: [u8; 32] = hexdec(&std::env::var("TS_HANDLE")?)
         .try_into()
         .expect("TS_HANDLE");
-    let cleartext: u64 = std::env::var("CLEARTEXT")?.parse()?;
+    let cleartext_amount: u64 = std::env::var("CLEARTEXT")?.parse()?;
+    // The KMS signs over the 32-byte big-endian uint256 encoding of the cleartext.
+    let mut cleartext = [0u8; 32];
+    cleartext[24..].copy_from_slice(&cleartext_amount.to_be_bytes());
     let kms_sig: [u8; 65] = hexdec(&std::env::var("KMS_SIG")?)
         .try_into()
         .expect("KMS_SIG 65 bytes");
     let extra = hexdec(&std::env::var("EXTRA")?);
-    // Borsh-serialized MmrInclusionProof for the witness-pinned handle's
-    // public-decrypt leaf, produced by the relayer proof service (same shape as
-    // the redeem path). Empty env yields an empty proof, which fails on-chain
-    // authorization by design.
-    let proof = confidential_token::MmrInclusionProof::try_from_slice(&hexdec(
+    // Borsh-serialized host MmrInclusionProof for the handle's public-decrypt leaf, produced by the
+    // relayer proof service. Empty env yields an empty proof, which fails on-chain by design.
+    let proof = zama_host::instructions::MmrInclusionProof::try_from_slice(&hexdec(
         &std::env::var("PROOF").unwrap_or_default(),
     ))
     .unwrap_or_default();
@@ -1271,9 +1276,6 @@ fn consume_disclose(
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
-    let nonce = request_nonce_from_env();
-    let (disclosure_request, _) =
-        confidential_token::disclosure_request_address(mint, payer.pubkey(), handle, nonce);
     let (kms_context, _) = Pubkey::find_program_address(
         &[zama_host::KMS_CONTEXT_SEED, &ctx_id.to_le_bytes()],
         &zama_host::ID,
@@ -1283,26 +1285,26 @@ fn consume_disclose(
 
     let sig = token
         .request()
-        .accounts(confidential_token::accounts::DiscloseAmountSecp {
+        .accounts(confidential_token::accounts::DiscloseSecp {
             mint,
-            amount_value: ts_acl,
-            disclosure_request,
+            encrypted_value: ts_acl,
             host_config,
             kms_context,
+            zama_program: zama_host::ID,
             event_authority: token_evt,
             program: confidential_token::ID,
         })
-        .args(confidential_token::instruction::DiscloseAmountSecp {
-            amount_handle: handle,
-            cleartext_amount: cleartext,
+        .args(confidential_token::instruction::DiscloseSecp {
+            handle,
+            cleartext,
             signatures: vec![kms_sig],
             extra_data: extra,
             proof,
         })
         .send()?;
-    println!("OK disclose_amount_secp: {sig}");
+    println!("OK disclose_secp: {sig}");
     println!(
-        "  KMS PublicDecryptVerification cert verified on-chain (secp256k1); cleartext {cleartext}"
+        "  KMS PublicDecryptVerification cert verified on-chain via host verify_public_decrypt; cleartext {cleartext_amount}"
     );
     Ok(())
 }

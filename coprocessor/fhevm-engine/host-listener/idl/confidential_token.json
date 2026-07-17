@@ -45,40 +45,6 @@
       "args": []
     },
     {
-      "name": "close_consumed_disclosure_request",
-      "docs": [
-        "Closes a consumed disclosure request witness."
-      ],
-      "discriminator": [
-        176,
-        68,
-        80,
-        2,
-        77,
-        234,
-        206,
-        213
-      ],
-      "accounts": [
-        {
-          "name": "requester",
-          "docs": [
-            "Requester and rent recipient."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "disclosure_request",
-          "docs": [
-            "Consumed request witness to close."
-          ],
-          "writable": true
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "close_expired_burn_redemption_request",
       "docs": [
         "Closes an expired, unconsumed burn-redemption request witness."
@@ -104,40 +70,6 @@
         },
         {
           "name": "redemption_request",
-          "docs": [
-            "Expired request witness to close."
-          ],
-          "writable": true
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "close_expired_disclosure_request",
-      "docs": [
-        "Closes an expired, unconsumed disclosure request witness."
-      ],
-      "discriminator": [
-        198,
-        93,
-        219,
-        236,
-        214,
-        143,
-        76,
-        12
-      ],
-      "accounts": [
-        {
-          "name": "requester",
-          "docs": [
-            "Requester and rent recipient."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "disclosure_request",
           "docs": [
             "Expired request witness to close."
           ],
@@ -476,45 +408,40 @@
       ]
     },
     {
-      "name": "disclose_amount_secp",
+      "name": "disclose_secp",
       "docs": [
-        "Gateway-compatible amount disclosure: verifies the KMS `PublicDecryptVerification`",
-        "EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer."
+        "Consumes a KMS public-decrypt certificate through the stateless host verifier and emits a",
+        "token-scoped disclosed event. See `instructions::disclose_secp` for the act-once semantics",
+        "(idempotent by design — no on-chain replay marker)."
       ],
       "discriminator": [
-        181,
+        151,
+        135,
+        187,
+        69,
+        92,
+        159,
         136,
-        88,
-        90,
-        248,
-        153,
-        53,
-        143
+        128
       ],
       "accounts": [
         {
           "name": "mint",
           "docs": [
-            "Confidential mint the disclosed amount belongs to."
+            "Confidential mint whose ACL domain scopes the disclosed lineage and event."
           ]
         },
         {
-          "name": "amount_value",
+          "name": "encrypted_value",
           "docs": [
-            "Token-scoped amount `EncryptedValue` lineage for the disclosed handle."
+            "The `EncryptedValue` lineage the disclosed handle belongs to.",
+            "CPI; this handler additionally binds its `acl_domain_key` to `mint`."
           ]
-        },
-        {
-          "name": "disclosure_request",
-          "docs": [
-            "Account-backed disclosure request witness consumed by this instruction."
-          ],
-          "writable": true
         },
         {
           "name": "host_config",
           "docs": [
-            "Host config carrying the gateway KMS verifier params."
+            "Host config carrying the current KMS context id and gateway EIP-712 domain."
           ],
           "pda": {
             "seeds": [
@@ -577,10 +504,15 @@
         {
           "name": "kms_context",
           "docs": [
-            "KMS context the request was pinned to. Verified in-handler against the witness's",
-            "`kms_context_id` (not the current context), so a cert minted under one context cannot be",
-            "presented against a request pinned to another after rotation."
+            "KMS context PDA for the host's current context id (validated by the verifier CPI)."
           ]
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used for the stateless verifier CPI."
+          ],
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "event_authority"
@@ -591,7 +523,7 @@
       ],
       "args": [
         {
-          "name": "amount_handle",
+          "name": "handle",
           "type": {
             "array": [
               "u8",
@@ -600,8 +532,13 @@
           }
         },
         {
-          "name": "cleartext_amount",
-          "type": "u64"
+          "name": "cleartext",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         },
         {
           "name": "signatures",
@@ -622,157 +559,7 @@
           "name": "proof",
           "type": {
             "defined": {
-              "name": "MmrInclusionProof"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "disclose_balance_secp",
-      "docs": [
-        "Gateway-compatible balance disclosure: verifies the KMS `PublicDecryptVerification`",
-        "EIP-712 certificate on-chain via secp256k1_recover against the HostConfig KMS signer."
-      ],
-      "discriminator": [
-        218,
-        219,
-        112,
-        210,
-        88,
-        169,
-        228,
-        105
-      ],
-      "accounts": [
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint the disclosed balance belongs to."
-          ]
-        },
-        {
-          "name": "token_account",
-          "docs": [
-            "Confidential token account whose current balance is disclosed."
-          ]
-        },
-        {
-          "name": "balance_value",
-          "docs": [
-            "Current balance `EncryptedValue` lineage for the disclosed handle."
-          ]
-        },
-        {
-          "name": "disclosure_request",
-          "docs": [
-            "Account-backed disclosure request witness consumed by this instruction."
-          ],
-          "writable": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Host config carrying the gateway KMS verifier params."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                76,
-                211,
-                2,
-                45,
-                255,
-                80,
-                74,
-                103,
-                92,
-                175,
-                45,
-                155,
-                79,
-                64,
-                20,
-                208,
-                179,
-                220,
-                62,
-                161,
-                127,
-                251,
-                151,
-                186,
-                53,
-                92,
-                236,
-                90,
-                147,
-                58,
-                48,
-                238
-              ]
-            }
-          }
-        },
-        {
-          "name": "kms_context",
-          "docs": [
-            "KMS context the request was pinned to. Verified in-handler against the witness's",
-            "`kms_context_id` (not the current context), so a cert minted under one context cannot be",
-            "presented against a request pinned to another after rotation."
-          ]
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "cleartext_amount",
-          "type": "u64"
-        },
-        {
-          "name": "signatures",
-          "type": {
-            "vec": {
-              "array": [
-                "u8",
-                65
-              ]
-            }
-          }
-        },
-        {
-          "name": "extra_data",
-          "type": "bytes"
-        },
-        {
-          "name": "proof",
-          "type": {
-            "defined": {
-              "name": "MmrInclusionProof"
+              "name": "zama_host::instructions::verify_public_decrypt::MmrInclusionProof"
             }
           }
         }
@@ -1338,7 +1125,7 @@
           "name": "proof",
           "type": {
             "defined": {
-              "name": "MmrInclusionProof"
+              "name": "confidential_token::instructions::common::MmrInclusionProof"
             }
           }
         }
@@ -1498,292 +1285,6 @@
             ]
           }
         },
-        {
-          "name": "request_nonce",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "expires_slot",
-          "type": "u64"
-        }
-      ]
-    },
-    {
-      "name": "request_disclose_amount",
-      "docs": [
-        "Requests public disclosure for any token-scoped encrypted amount handle."
-      ],
-      "discriminator": [
-        188,
-        53,
-        163,
-        215,
-        212,
-        213,
-        230,
-        174
-      ],
-      "accounts": [
-        {
-          "name": "requester",
-          "docs": [
-            "Requester that must be allowed on the amount lineage."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint that scopes the encrypted amount."
-          ]
-        },
-        {
-          "name": "amount_value",
-          "docs": [
-            "Token-scoped amount `EncryptedValue` lineage. The requester must be",
-            "allowed so this instruction can append a public-decrypt MMR leaf."
-          ],
-          "writable": true
-        },
-        {
-          "name": "disclosure_request",
-          "docs": [
-            "Account-backed request witness consumed by the KMS response path."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  105,
-                  115,
-                  99,
-                  108,
-                  111,
-                  115,
-                  117,
-                  114,
-                  101,
-                  45,
-                  114,
-                  101,
-                  113,
-                  117,
-                  101,
-                  115,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              },
-              {
-                "kind": "account",
-                "path": "requester"
-              },
-              {
-                "kind": "arg",
-                "path": "amount_handle"
-              },
-              {
-                "kind": "arg",
-                "path": "request_nonce"
-              }
-            ]
-          }
-        },
-        {
-          "name": "deny_subject_record",
-          "optional": true
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used to update the amount lineage."
-          ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for pause and deny-list checks."
-          ]
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for request witness creation and lineage growth."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "amount_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "request_nonce",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "expires_slot",
-          "type": "u64"
-        }
-      ]
-    },
-    {
-      "name": "request_disclose_balance",
-      "docs": [
-        "Requests public disclosure for the current confidential balance handle."
-      ],
-      "discriminator": [
-        185,
-        54,
-        155,
-        207,
-        27,
-        89,
-        166,
-        230
-      ],
-      "accounts": [
-        {
-          "name": "owner",
-          "docs": [
-            "Token account owner and disclosure authority."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint."
-          ]
-        },
-        {
-          "name": "token_account",
-          "docs": [
-            "Confidential token account whose current balance is disclosed."
-          ]
-        },
-        {
-          "name": "balance_value",
-          "docs": [
-            "Stable balance lineage. The owner must be allowed so this instruction",
-            "can append a public-decrypt MMR leaf."
-          ],
-          "writable": true
-        },
-        {
-          "name": "disclosure_request",
-          "docs": [
-            "Account-backed request witness consumed by the KMS response path."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  105,
-                  115,
-                  99,
-                  108,
-                  111,
-                  115,
-                  117,
-                  114,
-                  101,
-                  45,
-                  114,
-                  101,
-                  113,
-                  117,
-                  101,
-                  115,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              },
-              {
-                "kind": "account",
-                "path": "owner"
-              },
-              {
-                "kind": "account",
-                "path": "balance_value.current_handle",
-                "account": "EncryptedValue"
-              },
-              {
-                "kind": "arg",
-                "path": "request_nonce"
-              }
-            ]
-          }
-        },
-        {
-          "name": "deny_subject_record",
-          "optional": true
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used to update the balance lineage."
-          ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for pause and deny-list checks."
-          ]
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for request witness creation and lineage growth."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
         {
           "name": "request_nonce",
           "type": {
@@ -2071,74 +1572,9 @@
         103,
         199
       ]
-    },
-    {
-      "name": "DisclosureRequest",
-      "discriminator": [
-        54,
-        30,
-        228,
-        141,
-        105,
-        30,
-        153,
-        227
-      ]
     }
   ],
   "events": [
-    {
-      "name": "AmountDisclosedEvent",
-      "discriminator": [
-        133,
-        166,
-        200,
-        249,
-        252,
-        169,
-        212,
-        14
-      ]
-    },
-    {
-      "name": "AmountDisclosureRequestedEvent",
-      "discriminator": [
-        217,
-        177,
-        208,
-        84,
-        242,
-        195,
-        251,
-        68
-      ]
-    },
-    {
-      "name": "BalanceDisclosedEvent",
-      "discriminator": [
-        67,
-        181,
-        92,
-        233,
-        239,
-        7,
-        86,
-        84
-      ]
-    },
-    {
-      "name": "BalanceDisclosureRequestedEvent",
-      "discriminator": [
-        94,
-        196,
-        252,
-        154,
-        178,
-        26,
-        177,
-        169
-      ]
-    },
     {
       "name": "BalanceHandleUpdatedEvent",
       "discriminator": [
@@ -2202,6 +1638,19 @@
         78,
         35,
         85
+      ]
+    },
+    {
+      "name": "HandleDisclosedEvent",
+      "discriminator": [
+        134,
+        63,
+        113,
+        175,
+        107,
+        120,
+        122,
+        51
       ]
     },
     {
@@ -2411,324 +1860,19 @@
       "code": 6035,
       "name": "MissingFheOutputAuthority",
       "msg": "FHE eval plan is missing a required output authority"
+    },
+    {
+      "code": 6036,
+      "name": "VerifierReturnDataInvalid",
+      "msg": "public-decrypt verifier return data is invalid"
+    },
+    {
+      "code": 6037,
+      "name": "DisclosedHandleMismatch",
+      "msg": "disclosed handle does not match the pinned handle"
     }
   ],
   "types": [
-    {
-      "name": "AmountDisclosedEvent",
-      "docs": [
-        "Emitted when a KMS certificate discloses a token-scoped amount cleartext."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Disclosed encrypted amount handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "request",
-            "docs": [
-              "Consumed request witness."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request_hash",
-            "docs": [
-              "Canonical request hash stored in the witness."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "cleartext_amount",
-            "docs": [
-              "KMS-certified cleartext amount."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "AmountDisclosureRequestedEvent",
-      "docs": [
-        "Emitted when a requester asks to publicly disclose a token-scoped amount."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "requester",
-            "docs": [
-              "Requester authorized on the amount ACL."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Publicly decryptable amount handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "encrypted_value",
-            "docs": [
-              "ZamaHost ACL record updated by the request."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request",
-            "docs": [
-              "Account-backed request witness."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request_hash",
-            "docs": [
-              "Canonical request hash stored in the witness."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "kms_context_id",
-            "docs": [
-              "KMS context id the response cert must verify against."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "expires_slot",
-            "docs": [
-              "Last slot in which this request can be consumed."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "BalanceDisclosedEvent",
-      "docs": [
-        "Emitted when a KMS certificate discloses the current balance cleartext."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "owner",
-            "docs": [
-              "Token account owner."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "docs": [
-              "Confidential token account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Disclosed balance handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "request",
-            "docs": [
-              "Consumed request witness."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request_hash",
-            "docs": [
-              "Canonical request hash stored in the witness."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "cleartext_amount",
-            "docs": [
-              "KMS-certified cleartext amount."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "BalanceDisclosureRequestedEvent",
-      "docs": [
-        "Emitted when the owner requests public disclosure of the current balance."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "owner",
-            "docs": [
-              "Token account owner."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "docs": [
-              "Confidential token account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Publicly decryptable balance handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "encrypted_value",
-            "docs": [
-              "ZamaHost ACL record updated by the request."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request",
-            "docs": [
-              "Account-backed request witness."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request_hash",
-            "docs": [
-              "Canonical request hash stored in the witness."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "kms_context_id",
-            "docs": [
-              "KMS context id the response cert must verify against."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "expires_slot",
-            "docs": [
-              "Last slot in which this request can be consumed."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
     {
       "name": "BalanceHandleUpdateReason",
       "docs": [
@@ -3590,138 +2734,6 @@
       }
     },
     {
-      "name": "DisclosureRequest",
-      "docs": [
-        "Account-backed witness for a public disclosure request."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint whose ACL domain scopes the request."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "requester",
-            "docs": [
-              "User/app authority that requested disclosure."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "docs": [
-              "Balance token account for balance mode, or default for amount mode."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "app_account",
-            "docs": [
-              "ACL app account stored in the host `EncryptedValue` lineage."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "handle",
-            "docs": [
-              "Requested handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "encrypted_value",
-            "docs": [
-              "`EncryptedValue` lineage for the requested handle."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "host_config",
-            "docs": [
-              "Host config whose chain id and gates were validated."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "kms_context_id",
-            "docs": [
-              "KMS context id pinned at request time; the response cert must verify",
-              "against this context's signer set, not the current one."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "request_nonce",
-            "docs": [
-              "Caller-supplied nonce that makes the request PDA unique."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "request_hash",
-            "docs": [
-              "Canonical hash over this request witness."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "chain_id",
-            "docs": [
-              "Host chain id copied from the validated host config."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "expires_slot",
-            "docs": [
-              "Last slot in which this request can be consumed."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "mode",
-            "docs": [
-              "Disclosure request mode."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "status",
-            "docs": [
-              "Request lifecycle state."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for this request account."
-            ],
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
       "name": "EncryptedValue",
       "docs": [
         "Canonical ACL + history state for one encrypted-value lineage.",
@@ -3809,6 +2821,62 @@
               "PDA bump."
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HandleDisclosedEvent",
+      "docs": [
+        "Emitted when `disclose_secp` publishes a KMS-certified cleartext for a token-scoped handle.",
+        "",
+        "This is the single app-level disclosure event after the `DisclosureRequest` lifecycle was",
+        "dissolved (fhevm-internal#1704): it covers both former balance and amount disclosures. It carries",
+        "no request witness or `request_hash` — there is no per-request PDA anymore. The request side is",
+        "the owner sealing a public-decrypt leaf via the host `make_handle_public` instruction directly."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Confidential mint whose ACL domain scopes the disclosed lineage."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "handle",
+            "docs": [
+              "Disclosed handle, proven public by the host verifier."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "encrypted_value",
+            "docs": [
+              "ZamaHost `EncryptedValue` lineage the handle belongs to."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "cleartext_amount",
+            "docs": [
+              "KMS-certified cleartext amount (low 64 bits of the certified `uint256`)."
+            ],
+            "type": "u64"
           }
         ]
       }
@@ -4065,41 +3133,6 @@
       }
     },
     {
-      "name": "MmrInclusionProof",
-      "docs": [
-        "Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction",
-        "argument. The shared ACL crate is deliberately Anchor-free (pure `borsh`), so",
-        "it cannot derive Anchor's IDL metadata; this local type carries the identical",
-        "wire shape and converts into the shared proof for verification."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "leaf_index",
-            "docs": [
-              "Index of the proven leaf within the lineage's MMR."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "siblings",
-            "docs": [
-              "Authentication path from the leaf up to its mountain peak."
-            ],
-            "type": {
-              "vec": {
-                "array": [
-                  "u8",
-                  32
-                ]
-              }
-            }
-          }
-        ]
-      }
-    },
-    {
       "name": "RandomAmountCreatedEvent",
       "docs": [
         "Emitted when the token program creates a token-scoped random amount."
@@ -4262,6 +3295,76 @@
           },
           {
             "name": "Burn"
+          }
+        ]
+      }
+    },
+    {
+      "name": "confidential_token::instructions::common::MmrInclusionProof",
+      "docs": [
+        "Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction",
+        "argument. The shared ACL crate is deliberately Anchor-free (pure `borsh`), so",
+        "it cannot derive Anchor's IDL metadata; this local type carries the identical",
+        "wire shape and converts into the shared proof for verification."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "leaf_index",
+            "docs": [
+              "Index of the proven leaf within the lineage's MMR."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "siblings",
+            "docs": [
+              "Authentication path from the leaf up to its mountain peak."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "zama_host::instructions::verify_public_decrypt::MmrInclusionProof",
+      "docs": [
+        "Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction argument. The",
+        "shared ACL crate is deliberately Anchor-free (pure `borsh`) so it cannot derive Anchor IDL",
+        "metadata; this local type carries the identical wire shape and converts into the shared proof.",
+        "Defined in the host program so CPI callers depend only on the host IDL, never on token types."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "leaf_index",
+            "docs": [
+              "Index of the proven leaf within the lineage's MMR."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "siblings",
+            "docs": [
+              "Authentication path from the leaf up to its mountain peak."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
           }
         ]
       }

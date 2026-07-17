@@ -4,13 +4,11 @@ pub mod burn_redemption;
 pub mod burn_redemption_request;
 pub mod confidential_mint;
 pub mod confidential_token_account;
-pub mod disclosure_request;
 
 pub use burn_redemption::*;
 pub use burn_redemption_request::*;
 pub use confidential_mint::*;
 pub use confidential_token_account::*;
-pub use disclosure_request::*;
 
 pub use crate::constants::*;
 
@@ -167,6 +165,5 @@ mod space_invariants {
             ConfidentialTokenAccount::SPACE,
             ConfidentialTokenAccount::INIT_SPACE
         );
-        assert_eq!(DisclosureRequest::SPACE, DisclosureRequest::INIT_SPACE);
     }
 }

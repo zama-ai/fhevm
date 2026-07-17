@@ -4,7 +4,7 @@
 //! so business logic can build typed eval frames and receive host-verified
 //! output handles.
 
-use anchor_lang::{prelude::*, AccountDeserialize};
+use anchor_lang::{prelude::*, solana_program::program::get_return_data, AccountDeserialize};
 use zama_host::{cpi, program::ZamaHost, EncryptedValue, HostConfig};
 
 use crate::{
@@ -580,42 +580,71 @@ fn is_deny_record_for_authority(record: Pubkey, authority: Pubkey) -> bool {
     zama_host::deny_subject_address(authority).0 == record
 }
 
-/// Inputs required to mark a host handle publicly decryptable.
-pub struct AllowPublicDecrypt<'a, 'info> {
-    /// Subject that is allowed on the lineage.
-    pub authority: &'a Signer<'info>,
-    /// Rent payer for the account's growth, if any.
-    pub payer: &'a Signer<'info>,
-    /// Current handle expected on the lineage.
-    pub handle: [u8; 32],
-    /// `EncryptedValue` lineage whose current handle is marked public.
+/// Inputs required to consume the stateless host public-decrypt verifier.
+pub struct VerifyPublicDecrypt<'a, 'info> {
+    /// Handle the caller pinned; the handle the host proves public must equal this.
+    pub expected_handle: [u8; 32],
+    /// 32-byte big-endian `uint256` cleartext the KMS certificate signs over.
+    pub cleartext: [u8; 32],
+    /// KMS threshold signatures over the `PublicDecryptVerification` certificate.
+    pub signatures: Vec<[u8; 65]>,
+    /// Signed `extra_data` committing the KMS context id (EVM `_extractContextId` parity).
+    pub extra_data: Vec<u8>,
+    /// MMR public-leaf inclusion proof for `expected_handle` against the lineage's current peaks.
+    pub proof: zama_host::instructions::MmrInclusionProof,
+    /// Lineage whose peaks the inclusion proof is checked against.
     pub encrypted_value: AccountInfo<'info>,
-    /// ZamaHost config account.
+    /// Host config carrying the current KMS context id and gateway EIP-712 domain.
     pub host_config: &'a Account<'info, HostConfig>,
-    /// Optional deny-list witness when grant deny-lists are enabled.
-    pub deny_subject_record: Option<AccountInfo<'info>>,
+    /// KMS context PDA for the host's current context id.
+    pub kms_context: AccountInfo<'info>,
     /// ZamaHost program account.
     pub zama_program: &'a Program<'info, ZamaHost>,
-    /// System program used for the account's growth, if any.
-    pub system_program: &'a Program<'info, System>,
 }
 
-/// Delegates public-decrypt authorization to ZamaHost.
-pub fn allow_public_decrypt<'info>(request: AllowPublicDecrypt<'_, 'info>) -> Result<()> {
-    cpi::make_handle_public(
+/// CPIs the stateless host `verify_public_decrypt`, then reads the `(handle, cleartext)` it wrote to
+/// `return_data`, asserting the return came from ZamaHost and that the proven handle equals the
+/// caller-pinned `expected_handle`. Returns the certified 32-byte cleartext. The host verifies the
+/// KMS certificate against the CURRENT KMS context and the MMR proof against the lineage's peaks;
+/// this wrapper adds only the return-data integrity + pinned-handle checks.
+pub(crate) fn verify_public_decrypt(request: VerifyPublicDecrypt<'_, '_>) -> Result<[u8; 32]> {
+    let expected_handle = request.expected_handle;
+    cpi::verify_public_decrypt(
         CpiContext::new(
             request.zama_program.key(),
-            cpi::accounts::MakeEncryptedValueHandlePublic {
-                payer: request.payer.to_account_info(),
-                authority: request.authority.to_account_info(),
-                encrypted_value: request.encrypted_value,
+            cpi::accounts::VerifyPublicDecrypt {
                 host_config: request.host_config.to_account_info(),
-                deny_subject_record: request.deny_subject_record,
-                system_program: request.system_program.to_account_info(),
+                kms_context: request.kms_context,
+                encrypted_value: request.encrypted_value,
             },
         ),
-        request.handle,
-    )
+        expected_handle,
+        request.cleartext,
+        request.signatures,
+        request.extra_data,
+        request.proof,
+    )?;
+
+    let (program_id, data) =
+        get_return_data().ok_or(ConfidentialTokenError::VerifierReturnDataInvalid)?;
+    require_keys_eq!(
+        program_id,
+        zama_host::ID,
+        ConfidentialTokenError::VerifierReturnDataInvalid
+    );
+    require!(
+        data.len() == 64,
+        ConfidentialTokenError::VerifierReturnDataInvalid
+    );
+    let mut returned_handle = [0u8; 32];
+    returned_handle.copy_from_slice(&data[..32]);
+    require!(
+        returned_handle == expected_handle,
+        ConfidentialTokenError::DisclosedHandleMismatch
+    );
+    let mut returned_cleartext = [0u8; 32];
+    returned_cleartext.copy_from_slice(&data[32..]);
+    Ok(returned_cleartext)
 }
 
 /// Inputs required to add subjects to an existing lineage.

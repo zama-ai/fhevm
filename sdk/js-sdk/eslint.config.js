@@ -13,6 +13,7 @@ export default [
       'src/_types/**',
       'src/wasm/**',
       'src/solana/internal/generated/confidentialToken/**',
+      'src/solana/internal/generated/zamaHost/**',
       'node_modules/**',
       'coverage/**',
       '**/*.test.ts',

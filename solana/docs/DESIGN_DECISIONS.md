@@ -345,6 +345,12 @@ product design instead of relying on hidden operator compatibility in the Solana
 
 Status: adopted
 
+Note: the per-instruction label-scoping described here was dissolved in fhevm-internal#1704, PR 2 (see
+DD-040). The `request_disclose_amount` / `disclose_amount` (and balance) instructions no longer exist;
+disclosure is now the single generic `disclose_secp` consumer of the host `verify_public_decrypt`
+verifier. In place of per-instruction label-scoping, the token binds the disclosed `EncryptedValue`
+lineage to the mint's ACL domain.
+
 Context:
 
 Balances, total supply, transfer amounts, burn amounts, callback success flags, and refund amounts
@@ -791,6 +797,11 @@ The harness exercises the KMS connector decrypt, not full production KMS-connect
 ## DD-022: Witness PDAs Created Before The secp Consume (request → consume-once)
 
 Status: adopted (reconciliation)
+
+Note: the DISCLOSURE half of this DD (the `DisclosureRequest` witness lifecycle described below) is
+SUPERSEDED by DD-040 — it was dissolved in fhevm-internal#1704, PR 2. Token disclosure no longer uses
+a request witness; it is now the generic `disclose_secp` consumer of the stateless host
+`verify_public_decrypt`. The BURN-REDEMPTION witness this DD also describes REMAINS in force.
 
 Context:
 
@@ -1341,34 +1352,27 @@ gated by the same deny-list path as, the rest of the binding. This is the opt-in
 "created lineages cannot be born public-decryptable" invariant: it holds for all outputs except those
 that explicitly set `make_public`.
 
-Addendum (disclose consume mirrors redeem):
+Addendum (disclose consume — now the host verifier; superseded by DD-040):
 
-The same live-handle TOCTOU existed on the disclosure consume path and is closed the same way.
-`disclose_amount_secp` / `disclose_balance_secp` previously authorized by live-handle equality
-(`amount_value.current_handle == handle`, and a live `balance_value.current_handle` read), so a
-`DisclosureRequest` pinned to `H1` stranded the instant its lineage was superseded during the
-off-chain KMS round-trip. Balance mode was third-party griefable: any inbound transfer rotates the
-balance lineage, unilaterally breaking a pending disclosure. The public-decrypt leaf is sealed
-permanently at request time and the KMS honors historical public leaves, so the live gate bought no
-privacy — only breakage — and it contradicted EVM (public-decryptability is permanent).
+The same live-handle TOCTOU existed on the disclosure consume path. It described the old
+`disclose_amount_secp` / `disclose_balance_secp` instructions authorizing the witness-pinned handle
+via `authorize_disclosed_handle`. That whole disclosure lifecycle was dissolved in fhevm-internal#1704,
+PR 2 (DD-040): the disclose consume is now the single generic `disclose_secp`, which CPIs the stateless
+host `verify_public_decrypt` verifier; `authorize_disclosed_handle` is deleted along with the rest of
+the disclosure witness machinery.
 
-Both instructions now take a trailing `proof: MmrInclusionProof` and authorize the
-**witness-pinned** handle via `authorize_disclosed_handle` →
-`zama_solana_acl::authorize_public(encrypted_value_account, value, request.handle, proof)` — the
-disclose twin of `authorize_burned_amount_redeem`. The authorized handle is taken from the witness
-(`DisclosureRequest.handle`) and the lineage from `DisclosureRequest.encrypted_value`; the witness
-assert already binds the passed `EncryptedValue` account to `request.encrypted_value`, and all other
-witness validation (mode, requester, host_config/chain_id, expiry, PENDING status, `kms_context_id`,
-`request_hash` recompute, consume-once CONSUMED flip) is retained. Consume-once is unchanged (the
-witness status flip). Unlike the redeem path, the disclose consume needs **no** lineage-binding
-assert beyond `authorize_public`: the request witness is a canonical PDA whose recomputed
-`request_hash` froze the canonical lineage + handle validated at request time (by
-`assert_token_amount_encrypted_value` / `assert_current_balance_encrypted_value`), the request PDA is
-derived from `(mint, requester, handle, nonce)`, and disclosure moves no funds — so the witness
-binding plus the proof against the pinned handle is the complete authorization. (Redeem re-derives
-the canonical burned-amount address at consume only because it binds the lineage to the live
-mint/token-account/owner accounts used for the SPL vault transfer.) The production IDL gains the
-`proof` arg on both `disclose_*_secp` instructions; `zama_host` is unchanged.
+The survives-supersession property this addendum secured is preserved — now one layer down, by the
+host verifier itself. The public-decrypt leaf is sealed permanently (via `make_handle_public`) and the
+KMS honors historical public leaves, so `verify_public_decrypt` authorizes the caller-pinned exact
+handle by its MMR public-decrypt inclusion proof plus a KMS cert, never reading the live
+`current_handle`. An OLD sealed handle therefore stays disclosable after its lineage is superseded
+during the off-chain KMS round-trip, matching EVM's permanent public-decryptability. This closes the
+same TOCTOU (including balance mode's third-party griefability) without a witness.
+
+The BURN-REDEMPTION redeem path (`redeem_burned_amount_secp`) described above is UNCHANGED: it keeps
+its `proof: MmrInclusionProof` arg and `authorize_public` against the pinned burned handle, and remains
+on the `BurnRedemptionRequest` witness (its migration onto the verifier is a deferred open decision,
+DD-040).
 
 ## Open Product Decisions
 
@@ -1597,10 +1601,47 @@ pattern is binding consume logic to the live `current_handle` instead of the sea
 sealed leaf is append-only, so the OLD sealed handle stays verifiable after a supersede (covered by
 `mollusk_verify_public_decrypt_survives_supersede_after_seal`).
 
-Scope: this PR adds the host verifier additively. Dissolving the confidential-token `DisclosureRequest`
+Scope: this PR added the host verifier additively. Dissolving the confidential-token `DisclosureRequest`
 lifecycle (`request_disclose_*`, `disclose_*_secp`, `close_*_disclosure_request`,
 `state/disclosure_request.rs`) and re-expressing token disclosure as a thin consumer of this verifier
-lands separately (fhevm-internal#1704, PR 2). Net code deletion arrives there.
+landed in fhevm-internal#1704 (PR 2); the net code deletion is recorded in the Dissolution completed
+note below.
+
+Dissolution completed (fhevm-internal#1704, PR 2):
+
+PR 2 has landed. The confidential-token disclosure request lifecycle is deleted and re-expressed as a
+thin consumer of this verifier.
+
+Deleted from `confidential-token`: instructions `request_disclose_balance`, `request_disclose_amount`,
+`disclose_balance_secp`, `disclose_amount_secp`, `close_consumed_disclosure_request`,
+`close_expired_disclosure_request`; the `state/disclosure_request.rs` account (`DisclosureRequest`);
+the events `BalanceDisclosureRequestedEvent`, `AmountDisclosureRequestedEvent`, `BalanceDisclosedEvent`,
+`AmountDisclosedEvent`; and the helpers `assert_disclosure_request_witness`, `authorize_disclosed_handle`,
+`assert_current_balance_encrypted_value`, plus the now-orphaned `allow_public_decrypt` /
+`assert_token_amount_encrypted_value`.
+
+Added: ONE generic thin instruction `disclose_secp(handle, cleartext, signatures, extra_data, proof)`
+(`instructions/disclose_secp.rs`) that CPIs `zama_host::verify_public_decrypt`, reads its return_data
+via `get_return_data` (asserting the program id is `zama_host` and the returned handle equals the
+caller-pinned `handle`), binds the disclosed `EncryptedValue` lineage to the mint's ACL domain, and
+emits ONE new event `HandleDisclosedEvent { version, mint, handle, encrypted_value, cleartext_amount }`.
+
+Request side is no longer a token instruction: an allowed subject (balance owner / amount subject)
+seals the public-decrypt leaf by calling the host `make_handle_public` instruction directly. There is
+no per-request PDA, no `kms_context_id` pin, and no `expires_slot`.
+
+Verify against current context: the cert is verified by the host against the CURRENT `KmsContext`
+(context rotation fails closed one layer down), not a request-time pin.
+
+Idempotent by design: act-once is intentionally NOT enforced on-chain. Disclosure is idempotent
+information release with no replay marker; an app needing consume-once tracks it in its own state
+(the EVM-callback analogy).
+
+Burn-redemption is untouched: `request_burn_redemption`, `redeem_burned_amount_secp`, the
+`close_*_burn_redemption_request` instructions, the `BurnRedemptionRequest` witness and its replay
+marker PDA, and the shared helpers `assert_kms_public_decrypt_cert_for_request` +
+`assert_burn_redemption_request_witness` all remain on the witness pattern. Migrating burn-redemption
+onto the verifier is a DEFERRED open decision, not part of this PR.
 
 ## DD-041: Coprocessor Input Trust Is A Registered n-of-m Signer Set In `HostConfig`
 
@@ -1639,11 +1680,15 @@ real token account list) serializes to **989 bytes**, well inside the 1232-byte
 (`solana_packet::PACKET_DATA_SIZE`) single-packet limit.
 
 Public-decrypt **consume** transactions additionally carry an MMR inclusion proof whose size scales
-with lineage depth (depth x 32B), so high threshold x deep lineage is the binding corner. Measured
-`disclose_amount_secp` wire sizes: `t=7`/depth-10 = 1213B (fits), but `t=9`/depth-10 = 1343B and
-`t=7`/depth-20 = 1533B both **overflow** one packet. Deep-lineage x high-threshold public-decrypt
-consumes therefore may need the scratch-account two-transaction fallback reserved in
-fhevm-internal#1704; the single-packet envelope for consumes is `t<=7` with proof depth `<=10`.
+with lineage depth (depth x 32B), so high threshold x deep lineage is the binding corner. After
+fhevm-internal#1704 the consume path is the thin `disclose_secp` (CPIing the stateless
+`verify_public_decrypt`); its transaction is ~24B **larger** than the retired `disclose_amount_secp`
+(dropping the DisclosureRequest witness account is offset by the added `zama_program` account, and the
+cleartext widened from a `u64` to the raw 32-byte `uint256` the verifier signs over), so the envelope
+narrowed. Measured `disclose_secp` wire sizes: `t=7`/depth-0 = 917B (fits), while `t=7`/depth-10 =
+1237B, `t=9`/depth-10 = 1367B, and `t=7`/depth-20 = 1557B all **overflow** one packet. The
+single-packet envelope for consumes is therefore effectively `t=7` at depth 0 — any nonzero proof
+depth (or `t>=9`) needs the scratch-account two-transaction fallback reserved in fhevm-internal#1704.
 
 Relates to DD-007 (input verification model) and closes the FUTURE_DESIGN §1 / EVM_PARITY "single
 coprocessor signer at threshold 1" fragile item.

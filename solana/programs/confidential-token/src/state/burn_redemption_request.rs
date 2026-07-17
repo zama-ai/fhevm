@@ -3,6 +3,11 @@
 use super::*;
 use solana_sha256_hasher::hashv;
 
+/// Request is awaiting a KMS response certificate.
+pub const REQUEST_STATUS_PENDING: u8 = 1;
+/// Request has been consumed by a successful response instruction.
+pub const REQUEST_STATUS_CONSUMED: u8 = 2;
+
 /// Account-backed witness for a burned-amount redemption request.
 #[account]
 #[derive(InitSpace)]

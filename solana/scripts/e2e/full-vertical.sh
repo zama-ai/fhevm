@@ -464,21 +464,19 @@ for i in $(seq 1 40); do
   [ "$i" = 40 ] && fail "burned-handle SNS commit timed out"; sleep 6
 done
 
-# Real material digests for commit_handle_material (ProtocolConfig-mirrored coprocessor set).
-# Fetched BEFORE the request witnesses: request_disclose_amount/request_burn_redemption both
-# validate the material commitment, so it must be committed first.
+# Real material digests (ProtocolConfig-mirrored coprocessor set), retained for the burn-redemption
+# request path. Disclosure no longer commits material or creates a witness (fhevm-internal#1704).
 KEY_ID="0x$(ctdig "SELECT encode(key_id_gw,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
 CT64="0x$(ctdig "SELECT encode(ciphertext,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
 CT128="0x$(ctdig "SELECT encode(ciphertext128,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
 COPROC_SET_DIGEST="$(cast keccak "$(cast abi-encode 'f(address[])' "[$COPROCESSOR_SIGNER]")")"
 
-# Create the disclosure request witness: commit the burned handle's material, pin the host's
-# current KMS context id + expires_slot + request_hash into a DisclosureRequest PDA, and release
-# the handle for public decrypt (owner is an allowed subject in the burned ACL).
-relout="$(lc CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" \
-   KEY_ID="$KEY_ID" CT64_DIGEST="$CT64" CT128_DIGEST="$CT128" COPROC_SET_DIGEST="$COPROC_SET_DIGEST")" || true
-echo "$relout" | grep -q 'OK request_disclose_amount' || fail "request_disclose_amount witness: $(echo "$relout" | tail -3)"
-echo "    disclosure request witness created (KMS context pinned); handle released for public decrypt"
+# Seal the burned handle publicly decryptable via the host make_handle_public instruction (owner is
+# an allowed subject in the burned ACL). After fhevm-internal#1704 there is no DisclosureRequest
+# witness: the sealed public-decrypt leaf IS the request.
+relout="$(lc CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE")" || true
+echo "$relout" | grep -q 'OK make_handle_public' || fail "seal (make_handle_public): $(echo "$relout" | tail -3)"
+echo "    burned handle released for public decrypt (make_handle_public)"
 
 # Public-decrypt the burned handle -> cleartext + KMS PublicDecryptVerification cert. This lineage
 # must contain the produced-public lifecycle leaf followed by the explicit make_handle_public leaf; a
@@ -508,11 +506,12 @@ redout="$(lc CONSUME_REDEEM=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HA
 echo "$redout" | grep -q 'OK redeem_burned_amount_secp' || fail "redeem_burned_amount_secp: $(echo "$redout" | tail -3)"
 echo "    redeem_burned_amount_secp OK -- witness-bound secp256k1 KMS-cert verify released $CLEARTEXT USDC base units"
 
-# Disclose: bind the disclosure witness + on-chain secp256k1 verify of the same KMS cert against the
-# witness-pinned KMS context + emit the cleartext on-chain.
-disout="$(lc CONSUME_DISCLOSE=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
+# Disclose: the thin token disclose_secp CPIs the stateless host verify_public_decrypt (KMS cert
+# verified against the CURRENT KMS context + the burned handle's MMR public-leaf proof) and emits
+# the cleartext on-chain. Idempotent by design — no witness, no consume-once.
+disout="$(lc CONSUME_DISCLOSE=1 MINT="$MINT" TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
    KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 PROOF="$BURNED_PROOF_BYTES")" || true
-echo "$disout" | grep -q 'OK disclose_amount_secp' || fail "disclose_amount_secp: $(echo "$disout" | tail -3)"
-echo "    disclose_amount_secp OK -- witness-bound secp256k1 KMS-cert verify emitted cleartext $CLEARTEXT"
+echo "$disout" | grep -q 'OK disclose_secp' || fail "disclose_secp: $(echo "$disout" | tail -3)"
+echo "    disclose_secp OK -- host verify_public_decrypt verified the KMS cert and emitted cleartext $CLEARTEXT"
 
 echo "==> FULL VERTICAL GREEN: input(ZK+secp bind) -> compute -> public-decrypt($VALUE) + user-decrypt($VALUE) -> input-flow(VerifiedInput $IV+$ADD -> public-decrypt $EXPECT) -> representative eval wiring [binary enc/enc + enc/scalar, unary cast, ternary, bounded randomness, sum, isIn, mulDiv] -> consume redeem($CLEARTEXT)+disclose($CLEARTEXT) [secp256k1 KMS cert]"

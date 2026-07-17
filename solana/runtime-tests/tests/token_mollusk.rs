@@ -441,20 +441,6 @@ fn read_confidential_mint(
         .expect("mint account should deserialize")
 }
 
-fn read_disclosure_request(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> token::DisclosureRequest {
-    let account = context
-        .account_store
-        .borrow()
-        .get(&address)
-        .expect("missing disclosure request account")
-        .clone();
-    token::DisclosureRequest::try_deserialize(&mut account.data.as_slice())
-        .expect("disclosure request should deserialize")
-}
-
 fn expected_historical_peaks(
     encrypted_value: Pubkey,
     old_handle: [u8; 32],
@@ -880,34 +866,6 @@ fn deny_enabled_transfer_accounts(
     accounts.insert(from_deny, from_account);
     accounts.insert(to_deny, to_account);
     (accounts, vec![from_deny, to_deny])
-}
-
-fn request_disclose_balance_ix(
-    fixture: &TokenFixture,
-    request_nonce: [u8; 32],
-    expires_slot: u64,
-    disclosure_request: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::RequestDiscloseBalance {
-            owner: fixture.owner,
-            mint: fixture.mint,
-            token_account: fixture.alice_token,
-            balance_value: fixture.alice_balance_value,
-            disclosure_request,
-            deny_subject_record: None,
-            zama_program: host::id(),
-            host_config: fixture.host_config,
-            system_program: system_program::ID,
-            event_authority: event_authority(token::id()),
-            program: token::id(),
-        },
-        token::instruction::RequestDiscloseBalance {
-            request_nonce,
-            expires_slot,
-        },
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1708,97 +1666,6 @@ fn mollusk_confidential_transfer_with_deny_list_rejects_denied_to_authority() {
         &context,
         fixture.transferred_amount_value_address(fixture.alice_token)
     ));
-}
-
-#[test]
-fn mollusk_request_disclose_balance_after_transfer_marks_current_handle_public() {
-    let fixture = TokenFixture::new();
-    let kms_context_id = 7;
-    let mut accounts = fixture.base_accounts();
-    accounts.insert(
-        fixture.host_config,
-        host_config_account_with_kms_context(
-            fixture.owner,
-            secp_evm_address(&coprocessor_signing_key()),
-            kms_context_id,
-        ),
-    );
-    let context = mollusk().with_context(accounts);
-
-    let amount_handle = handle_for_chain(22, BALANCE_FHE_TYPE);
-    let transfer_ix = confidential_transfer_ix(
-        &fixture,
-        fixture.alice_token,
-        fixture.bob_token,
-        fixture.alice_balance_value,
-        fixture.bob_balance_value,
-        amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer),
-    );
-    context.process_and_validate_instruction(&transfer_ix, &[Check::success()]);
-
-    let before = read_encrypted_value(&context, fixture.alice_balance_value);
-    assert_ne!(before.current_handle, fixture.alice_initial);
-    assert_eq!(before.leaf_count, 2);
-
-    let request_nonce = [0x77; 32];
-    let expires_slot = 200;
-    let disclosure_request = token::disclosure_request_address(
-        fixture.mint,
-        fixture.owner,
-        before.current_handle,
-        request_nonce,
-    )
-    .0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(disclosure_request, system_account(0));
-
-    let disclose_ix =
-        request_disclose_balance_ix(&fixture, request_nonce, expires_slot, disclosure_request);
-    let result = context.process_and_validate_instruction(&disclose_ix, &[Check::success()]);
-
-    let after = read_encrypted_value(&context, fixture.alice_balance_value);
-    assert_eq!(after.current_handle, before.current_handle);
-    assert_eq!(after.leaf_count, 3);
-    let mut expected_peaks = before.peaks.clone();
-    let mut expected_count = before.leaf_count;
-    let public_leaf = zama_solana_acl::public_decrypt_leaf_commitment(
-        fixture.alice_balance_value.to_bytes(),
-        before.leaf_count,
-        before.current_handle,
-    );
-    zama_solana_acl::mmr_append(&mut expected_peaks, &mut expected_count, public_leaf).unwrap();
-    assert_eq!(expected_count, after.leaf_count);
-    assert_eq!(after.peaks, expected_peaks);
-
-    let request = read_disclosure_request(&context, disclosure_request);
-    assert_eq!(request.mint, fixture.mint);
-    assert_eq!(request.requester, fixture.owner);
-    assert_eq!(request.token_account, fixture.alice_token);
-    assert_eq!(request.app_account, fixture.alice_token);
-    assert_eq!(request.handle, before.current_handle);
-    assert_eq!(request.encrypted_value, fixture.alice_balance_value);
-    assert_eq!(request.host_config, fixture.host_config);
-    assert_eq!(request.kms_context_id, kms_context_id);
-    assert_eq!(request.request_nonce, request_nonce);
-    assert_eq!(request.chain_id, host::SOLANA_POC_CHAIN_ID);
-    assert_eq!(request.expires_slot, expires_slot);
-    assert_eq!(request.mode, token::DISCLOSURE_REQUEST_MODE_BALANCE);
-    assert_eq!(request.status, token::REQUEST_STATUS_PENDING);
-
-    let events: Vec<token::BalanceDisclosureRequestedEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].handle, before.current_handle);
-    assert_eq!(events[0].encrypted_value, fixture.alice_balance_value);
-    assert_eq!(events[0].request, disclosure_request);
-    assert_eq!(events[0].request_hash, request.request_hash);
-    assert_eq!(events[0].kms_context_id, kms_context_id);
-    assert_eq!(events[0].expires_slot, expires_slot);
 }
 
 // ---------------------------------------------------------------------------
@@ -2945,15 +2812,22 @@ fn mollusk_e2e_vector2_burn_supersede_request_redeem() {
 }
 
 // ---------------------------------------------------------------------------
-// disclose_*_secp consume: proof-authorized against the WITNESS-pinned handle
-// (DD-036 disclose twin of the burn->redeem consume path). These drive the
-// exact code path the fix changed: consume authorizes by an MMR public-decrypt
-// proof against the request-pinned handle, not the live lineage handle, so a
-// disclosure survives its lineage being superseded during the KMS round-trip.
+// disclose_secp consume: the whole disclosure "consume" path after the
+// DisclosureRequest lifecycle was dissolved (fhevm-internal#1704, DD-040). One
+// generic thin instruction CPIs the stateless host `verify_public_decrypt`,
+// asserts the proven handle equals the caller-pinned handle, and emits a
+// token-scoped `HandleDisclosedEvent`. The host verifier's own negatives
+// (rotated-out context, sub-threshold cert, handle/proof mismatch, non-canonical
+// context, survives-supersede) are covered directly in `host_mollusk.rs` and are
+// deliberately NOT duplicated here — the token tests cover only what the token
+// layer adds: the mint-domain binding, the disclosed event, the pinned-handle
+// pass-through, and the intentional absence of a replay marker (idempotence).
 // ---------------------------------------------------------------------------
 
 /// Self-contained fixture for the disclose consume vertical: one owner, one
 /// confidential mint, a balance lineage, and one token-scoped amount lineage.
+/// The cert is verified against the host's CURRENT KMS context, so the fixture's
+/// `current_kms_context_id` and seeded `kms_context` share `kms_context_id`.
 struct DiscloseFixture {
     owner: Pubkey,
     mint: Pubkey,
@@ -2974,7 +2848,7 @@ impl DiscloseFixture {
         let host_config = host::host_config_address().0;
         let token_account = token::token_account_address(mint, owner).0;
         let balance_value = token::balance_encrypted_value_address(mint, token_account).0;
-        // Amount mode discloses any token-scoped amount lineage; use the burned_amount slot.
+        // Any token-scoped amount lineage discloses the same way; use the burned_amount slot.
         let amount_value =
             token::encrypted_value_address(mint, token_account, token::burned_amount_label()).0;
         let kms_context_id = 9;
@@ -3034,8 +2908,8 @@ impl DiscloseFixture {
 /// Builds a lineage carrying a public-decrypt leaf (leaf 0) for `pinned`, and the inclusion
 /// proof for it. With `supersede_to = Some(h2)` the lineage is grown into a post-supersession
 /// state (public(pinned)@0, hist(pinned,subj0)@1, hist(pinned,subj1)@2, public(h2)@3, current
-/// handle h2), modeling the pinned handle becoming historical after the request. `subjects`
-/// must hold at least two entries when superseding.
+/// handle h2), modeling the pinned handle becoming historical after it was sealed public.
+/// `subjects` must hold at least two entries when superseding.
 fn public_leaf_lineage(
     account: Pubkey,
     app_account: Pubkey,
@@ -3044,7 +2918,7 @@ fn public_leaf_lineage(
     subjects: &[Pubkey],
     pinned: [u8; 32],
     supersede_to: Option<[u8; 32]>,
-) -> (host::EncryptedValue, token::MmrInclusionProof) {
+) -> (host::EncryptedValue, host::instructions::MmrInclusionProof) {
     let acct = account.to_bytes();
     let mut leaves = vec![zama_solana_acl::public_decrypt_leaf_commitment(
         acct, 0, pinned,
@@ -3075,141 +2949,155 @@ fn public_leaf_lineage(
     let proof = zama_solana_acl::mmr_build_proof(&leaves, 0).expect("proof for leaf 0");
     (
         value,
-        token::MmrInclusionProof {
+        host::instructions::MmrInclusionProof {
             leaf_index: proof.leaf_index,
             siblings: proof.siblings,
         },
     )
 }
 
-/// Seeds a fully-formed disclosure request witness (canonical PDA + recomputed request_hash).
 #[allow(clippy::too_many_arguments)]
-fn disclosure_request_account(
+fn disclose_secp_ix(
+    fixture: &DiscloseFixture,
+    encrypted_value: Pubkey,
+    handle: [u8; 32],
+    cleartext: [u8; 32],
+    signatures: Vec<[u8; 65]>,
+    extra_data: Vec<u8>,
+    proof: host::instructions::MmrInclusionProof,
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::DiscloseSecp {
+            mint: fixture.mint,
+            encrypted_value,
+            host_config: fixture.host_config,
+            kms_context: fixture.kms_context,
+            zama_program: host::id(),
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::DiscloseSecp {
+            handle,
+            cleartext,
+            signatures,
+            extra_data,
+            proof,
+        },
+    )
+}
+
+/// Asserts `disclose_secp` succeeds and emits exactly one `HandleDisclosedEvent` with the expected
+/// fields. (The host verifier's `return_data` — `handle ++ cleartext` — is asserted directly in
+/// `host_mollusk.rs`; it is consumed inside the token program and not re-surfaced at the top level.)
+fn assert_disclosed(
+    result: &InstructionResult,
     mint: Pubkey,
-    requester: Pubkey,
-    token_account: Pubkey,
-    app_account: Pubkey,
     handle: [u8; 32],
     encrypted_value: Pubkey,
-    host_config: Pubkey,
-    kms_context_id: u64,
-    request_nonce: [u8; 32],
-    expires_slot: u64,
-    mode: u8,
-    status: u8,
-) -> (Pubkey, Account) {
-    let (address, bump) = token::disclosure_request_address(mint, requester, handle, request_nonce);
-    let chain_id = host::SOLANA_POC_CHAIN_ID;
-    let request_hash = token::disclosure_request_hash(
-        token::id(),
-        address,
-        mint,
-        requester,
-        token_account,
-        app_account,
-        handle,
-        encrypted_value,
-        host_config,
-        kms_context_id,
-        request_nonce,
-        chain_id,
-        expires_slot,
-        mode,
-    );
-    let request = token::DisclosureRequest {
-        mint,
-        requester,
-        token_account,
-        app_account,
-        handle,
-        encrypted_value,
-        host_config,
-        kms_context_id,
-        request_nonce,
-        request_hash,
-        chain_id,
-        expires_slot,
-        mode,
-        status,
-        bump,
-    };
-    (
-        address,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(request),
-            owner: token::id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn disclose_amount_secp_ix(
-    fixture: &DiscloseFixture,
-    disclosure_request: Pubkey,
-    amount_handle: [u8; 32],
     cleartext_amount: u64,
-    signatures: Vec<[u8; 65]>,
-    extra_data: Vec<u8>,
-    proof: token::MmrInclusionProof,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::DiscloseAmountSecp {
-            mint: fixture.mint,
-            amount_value: fixture.amount_value,
-            disclosure_request,
-            host_config: fixture.host_config,
-            kms_context: fixture.kms_context,
-            event_authority: event_authority(token::id()),
-            program: token::id(),
-        },
-        token::instruction::DiscloseAmountSecp {
-            amount_handle,
-            cleartext_amount,
-            signatures,
-            extra_data,
-            proof,
-        },
-    )
-}
-
-fn disclose_balance_secp_ix(
-    fixture: &DiscloseFixture,
-    disclosure_request: Pubkey,
-    cleartext_amount: u64,
-    signatures: Vec<[u8; 65]>,
-    extra_data: Vec<u8>,
-    proof: token::MmrInclusionProof,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::DiscloseBalanceSecp {
-            mint: fixture.mint,
-            token_account: fixture.token_account,
-            balance_value: fixture.balance_value,
-            disclosure_request,
-            host_config: fixture.host_config,
-            kms_context: fixture.kms_context,
-            event_authority: event_authority(token::id()),
-            program: token::id(),
-        },
-        token::instruction::DiscloseBalanceSecp {
-            cleartext_amount,
-            signatures,
-            extra_data,
-            proof,
-        },
-    )
+) {
+    let events: Vec<token::HandleDisclosedEvent> = result
+        .inner_instructions
+        .iter()
+        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
+        .collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].mint, mint);
+    assert_eq!(events[0].handle, handle);
+    assert_eq!(events[0].encrypted_value, encrypted_value);
+    assert_eq!(events[0].cleartext_amount, cleartext_amount);
 }
 
 #[test]
-fn mollusk_disclose_amount_after_supersession_consumes_with_public_proof() {
-    // The bug case: request pins H1 while it is current; the amount lineage is then superseded
-    // to H2 during the KMS round-trip. Consume must still authorize H1 by its public-decrypt
-    // proof (sealed at request time), not by the live handle.
+fn mollusk_disclose_secp_amount_happy_path() {
+    let fixture = DiscloseFixture::new();
+    let pinned = handle_for_chain(43, BALANCE_FHE_TYPE);
+    let (lineage, proof) = public_leaf_lineage(
+        fixture.amount_value,
+        fixture.token_account,
+        fixture.mint,
+        token::burned_amount_label(),
+        &[fixture.owner, fixture.compute_signer],
+        pinned,
+        None,
+    );
+    assert_eq!(lineage.current_handle, pinned);
+
+    let mut accounts = fixture.base();
+    accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
+    let context = mollusk().with_context(accounts);
+
+    let cleartext_amount = 500;
+    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    let result = context.process_and_validate_instruction(
+        &disclose_secp_ix(
+            &fixture,
+            fixture.amount_value,
+            pinned,
+            cleartext_u256(cleartext_amount),
+            signatures,
+            extra_data,
+            proof,
+        ),
+        &[Check::success()],
+    );
+    assert_disclosed(
+        &result,
+        fixture.mint,
+        pinned,
+        fixture.amount_value,
+        cleartext_amount,
+    );
+}
+
+#[test]
+fn mollusk_disclose_secp_balance_happy_path() {
+    let fixture = DiscloseFixture::new();
+    let pinned = handle_for_chain(33, BALANCE_FHE_TYPE);
+    let (lineage, proof) = public_leaf_lineage(
+        fixture.balance_value,
+        fixture.token_account,
+        fixture.mint,
+        token::balance_label(),
+        &[fixture.owner, fixture.compute_signer],
+        pinned,
+        None,
+    );
+
+    let mut accounts = fixture.base();
+    accounts.insert(fixture.balance_value, encrypted_value_account(&lineage));
+    let context = mollusk().with_context(accounts);
+
+    let cleartext_amount = 700;
+    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    let result = context.process_and_validate_instruction(
+        &disclose_secp_ix(
+            &fixture,
+            fixture.balance_value,
+            pinned,
+            cleartext_u256(cleartext_amount),
+            signatures,
+            extra_data,
+            proof,
+        ),
+        &[Check::success()],
+    );
+    assert_disclosed(
+        &result,
+        fixture.mint,
+        pinned,
+        fixture.balance_value,
+        cleartext_amount,
+    );
+}
+
+#[test]
+fn mollusk_disclose_secp_after_supersession_consumes_with_public_proof() {
+    // The griefing case preserved end-to-end: the handle is sealed public while current, then the
+    // lineage is superseded to H2 (e.g. an inbound transfer) before the consume lands. The pinned
+    // handle must still disclose, authorized by its permanent public-decrypt leaf, not the live
+    // handle. This is the host verifier's survives-supersede property observed one layer up.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(41, BALANCE_FHE_TYPE);
     let superseded = handle_for_chain(42, BALANCE_FHE_TYPE);
@@ -3224,238 +3112,39 @@ fn mollusk_disclose_amount_after_supersession_consumes_with_public_proof() {
     );
     assert_ne!(lineage.current_handle, pinned);
 
-    let request_nonce = [0x51u8; 32];
-    let expires_slot = 200;
-    let (request_addr, request_account) = disclosure_request_account(
-        fixture.mint,
-        fixture.owner,
-        Pubkey::default(),
-        lineage.app_account,
-        pinned,
-        fixture.amount_value,
-        fixture.host_config,
-        fixture.kms_context_id,
-        request_nonce,
-        expires_slot,
-        token::DISCLOSURE_REQUEST_MODE_AMOUNT,
-        token::REQUEST_STATUS_PENDING,
-    );
-
     let mut accounts = fixture.base();
     accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
-    accounts.insert(request_addr, request_account);
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
     let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
     let result = context.process_and_validate_instruction(
-        &disclose_amount_secp_ix(
+        &disclose_secp_ix(
             &fixture,
-            request_addr,
+            fixture.amount_value,
             pinned,
-            cleartext_amount,
+            cleartext_u256(cleartext_amount),
             signatures,
             extra_data,
             proof,
         ),
         &[Check::success()],
     );
-
-    assert_eq!(
-        read_disclosure_request(&context, request_addr).status,
-        token::REQUEST_STATUS_CONSUMED
-    );
-    let events: Vec<token::AmountDisclosedEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].handle, pinned);
-    assert_eq!(events[0].cleartext_amount, cleartext_amount);
-}
-
-#[test]
-fn mollusk_disclose_balance_after_supersession_consumes_with_public_proof() {
-    // Balance mode is third-party griefable: any inbound transfer rotates the balance lineage.
-    // The pinned handle must still be disclosable by its public-decrypt proof after that.
-    let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(31, BALANCE_FHE_TYPE);
-    let superseded = handle_for_chain(32, BALANCE_FHE_TYPE);
-    let (lineage, proof) = public_leaf_lineage(
-        fixture.balance_value,
-        fixture.token_account,
+    assert_disclosed(
+        &result,
         fixture.mint,
-        token::balance_label(),
-        &[fixture.owner, fixture.compute_signer],
-        pinned,
-        Some(superseded),
-    );
-    assert_ne!(lineage.current_handle, pinned);
-
-    let request_nonce = [0x31u8; 32];
-    let expires_slot = 200;
-    let (request_addr, request_account) = disclosure_request_account(
-        fixture.mint,
-        fixture.owner,
-        fixture.token_account,
-        fixture.token_account,
-        pinned,
-        fixture.balance_value,
-        fixture.host_config,
-        fixture.kms_context_id,
-        request_nonce,
-        expires_slot,
-        token::DISCLOSURE_REQUEST_MODE_BALANCE,
-        token::REQUEST_STATUS_PENDING,
-    );
-
-    let mut accounts = fixture.base();
-    accounts.insert(
-        fixture.token_account,
-        token_account_account(fixture.mint, fixture.owner, fixture.balance_value),
-    );
-    accounts.insert(fixture.balance_value, encrypted_value_account(&lineage));
-    accounts.insert(request_addr, request_account);
-    let context = mollusk().with_context(accounts);
-
-    let cleartext_amount = 700;
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
-    let result = context.process_and_validate_instruction(
-        &disclose_balance_secp_ix(
-            &fixture,
-            request_addr,
-            cleartext_amount,
-            signatures,
-            extra_data,
-            proof,
-        ),
-        &[Check::success()],
-    );
-
-    assert_eq!(
-        read_disclosure_request(&context, request_addr).status,
-        token::REQUEST_STATUS_CONSUMED
-    );
-    let events: Vec<token::BalanceDisclosedEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].handle, pinned);
-    assert_eq!(events[0].owner, fixture.owner);
-    assert_eq!(events[0].cleartext_amount, cleartext_amount);
-}
-
-#[test]
-fn mollusk_disclose_amount_consume_happy_path() {
-    // Non-superseded: pinned handle is still the live current handle.
-    let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(43, BALANCE_FHE_TYPE);
-    let (lineage, proof) = public_leaf_lineage(
-        fixture.amount_value,
-        fixture.token_account,
-        fixture.mint,
-        token::burned_amount_label(),
-        &[fixture.owner, fixture.compute_signer],
-        pinned,
-        None,
-    );
-    assert_eq!(lineage.current_handle, pinned);
-
-    let request_nonce = [0x43u8; 32];
-    let (request_addr, request_account) = disclosure_request_account(
-        fixture.mint,
-        fixture.owner,
-        Pubkey::default(),
-        lineage.app_account,
         pinned,
         fixture.amount_value,
-        fixture.host_config,
-        fixture.kms_context_id,
-        request_nonce,
-        200,
-        token::DISCLOSURE_REQUEST_MODE_AMOUNT,
-        token::REQUEST_STATUS_PENDING,
-    );
-
-    let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
-    accounts.insert(request_addr, request_account);
-    let context = mollusk().with_context(accounts);
-
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, 500);
-    context.process_and_validate_instruction(
-        &disclose_amount_secp_ix(
-            &fixture,
-            request_addr,
-            pinned,
-            500,
-            signatures,
-            extra_data,
-            proof,
-        ),
-        &[Check::success()],
-    );
-    assert_eq!(
-        read_disclosure_request(&context, request_addr).status,
-        token::REQUEST_STATUS_CONSUMED
+        cleartext_amount,
     );
 }
 
 #[test]
-fn mollusk_disclose_balance_consume_happy_path() {
-    let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(33, BALANCE_FHE_TYPE);
-    let (lineage, proof) = public_leaf_lineage(
-        fixture.balance_value,
-        fixture.token_account,
-        fixture.mint,
-        token::balance_label(),
-        &[fixture.owner, fixture.compute_signer],
-        pinned,
-        None,
-    );
-
-    let request_nonce = [0x34u8; 32];
-    let (request_addr, request_account) = disclosure_request_account(
-        fixture.mint,
-        fixture.owner,
-        fixture.token_account,
-        fixture.token_account,
-        pinned,
-        fixture.balance_value,
-        fixture.host_config,
-        fixture.kms_context_id,
-        request_nonce,
-        200,
-        token::DISCLOSURE_REQUEST_MODE_BALANCE,
-        token::REQUEST_STATUS_PENDING,
-    );
-
-    let mut accounts = fixture.base();
-    accounts.insert(
-        fixture.token_account,
-        token_account_account(fixture.mint, fixture.owner, fixture.balance_value),
-    );
-    accounts.insert(fixture.balance_value, encrypted_value_account(&lineage));
-    accounts.insert(request_addr, request_account);
-    let context = mollusk().with_context(accounts);
-
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, 700);
-    context.process_and_validate_instruction(
-        &disclose_balance_secp_ix(&fixture, request_addr, 700, signatures, extra_data, proof),
-        &[Check::success()],
-    );
-    assert_eq!(
-        read_disclosure_request(&context, request_addr).status,
-        token::REQUEST_STATUS_CONSUMED
-    );
-}
-
-#[test]
-fn mollusk_disclose_amount_consume_once_rejects_second() {
+fn mollusk_disclose_secp_is_idempotent_no_replay_marker() {
+    // Act-once is intentionally NOT enforced on-chain: disclosure is idempotent information release,
+    // so re-running the same cert succeeds again and re-emits the same event. No replay marker PDA
+    // exists by design (contrast redeem_burned_amount_secp). Apps that need consume-once track it in
+    // their own state.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(44, BALANCE_FHE_TYPE);
     let (lineage, proof) = public_leaf_lineage(
@@ -3468,114 +3157,32 @@ fn mollusk_disclose_amount_consume_once_rejects_second() {
         None,
     );
 
-    let request_nonce = [0x44u8; 32];
-    let (request_addr, request_account) = disclosure_request_account(
-        fixture.mint,
-        fixture.owner,
-        Pubkey::default(),
-        lineage.app_account,
-        pinned,
-        fixture.amount_value,
-        fixture.host_config,
-        fixture.kms_context_id,
-        request_nonce,
-        200,
-        token::DISCLOSURE_REQUEST_MODE_AMOUNT,
-        token::REQUEST_STATUS_PENDING,
-    );
-
     let mut accounts = fixture.base();
     accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
-    accounts.insert(request_addr, request_account);
     let context = mollusk().with_context(accounts);
 
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, 500);
-    context.process_and_validate_instruction(
-        &disclose_amount_secp_ix(
-            &fixture,
-            request_addr,
-            pinned,
-            500,
-            signatures.clone(),
-            extra_data.clone(),
-            proof.clone(),
-        ),
-        &[Check::success()],
+    let cleartext_amount = 500;
+    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    let ix = disclose_secp_ix(
+        &fixture,
+        fixture.amount_value,
+        pinned,
+        cleartext_u256(cleartext_amount),
+        signatures,
+        extra_data,
+        proof,
     );
-    // Second consume of the same (now CONSUMED) witness is rejected.
-    context.process_and_validate_instruction(
-        &disclose_amount_secp_ix(
-            &fixture,
-            request_addr,
-            pinned,
-            500,
-            signatures,
-            extra_data,
-            proof,
-        ),
-        &[token_error(
-            token::ConfidentialTokenError::RequestWitnessUnavailable,
-        )],
-    );
+    context.process_and_validate_instruction(&ix, &[Check::success()]);
+    // Same cert, same accounts, run again: still succeeds (idempotent, no consume-once).
+    context.process_and_validate_instruction(&ix, &[Check::success()]);
 }
 
 #[test]
-fn mollusk_disclose_amount_rejects_expired_at_consume() {
-    let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(45, BALANCE_FHE_TYPE);
-    let (lineage, proof) = public_leaf_lineage(
-        fixture.amount_value,
-        fixture.token_account,
-        fixture.mint,
-        token::burned_amount_label(),
-        &[fixture.owner, fixture.compute_signer],
-        pinned,
-        None,
-    );
-
-    let request_nonce = [0x45u8; 32];
-    // Clock slot is 100; an expires_slot below it is past the consume window.
-    let (request_addr, request_account) = disclosure_request_account(
-        fixture.mint,
-        fixture.owner,
-        Pubkey::default(),
-        lineage.app_account,
-        pinned,
-        fixture.amount_value,
-        fixture.host_config,
-        fixture.kms_context_id,
-        request_nonce,
-        50,
-        token::DISCLOSURE_REQUEST_MODE_AMOUNT,
-        token::REQUEST_STATUS_PENDING,
-    );
-
-    let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
-    accounts.insert(request_addr, request_account);
-    let context = mollusk().with_context(accounts);
-
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, 500);
-    context.process_and_validate_instruction(
-        &disclose_amount_secp_ix(
-            &fixture,
-            request_addr,
-            pinned,
-            500,
-            signatures,
-            extra_data,
-            proof,
-        ),
-        &[token_error(
-            token::ConfidentialTokenError::RequestWitnessUnavailable,
-        )],
-    );
-}
-
-#[test]
-fn mollusk_disclose_amount_rejects_foreign_public_decrypt_proof() {
+fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
     // A structurally valid proof aimed at the WRONG leaf position (H2's public leaf, not H1's):
-    // authorize_public recomputes public(H1)@leaf_index against the peaks and rejects it.
+    // the host verifier recomputes public(H1)@leaf_index against the peaks and rejects it, so the
+    // consume fails closed and emits no cleartext. This is the token layer surfacing the host's
+    // proof check through the CPI — the wrong-handle rejection at the token boundary.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(46, BALANCE_FHE_TYPE);
     let superseded = handle_for_chain(47, BALANCE_FHE_TYPE);
@@ -3590,149 +3197,127 @@ fn mollusk_disclose_amount_rejects_foreign_public_decrypt_proof() {
     );
     proof.leaf_index = 3; // H2's public-decrypt leaf, not H1's.
 
-    let request_nonce = [0x46u8; 32];
-    let (request_addr, request_account) = disclosure_request_account(
-        fixture.mint,
-        fixture.owner,
-        Pubkey::default(),
-        lineage.app_account,
-        pinned,
-        fixture.amount_value,
-        fixture.host_config,
-        fixture.kms_context_id,
-        request_nonce,
-        200,
-        token::DISCLOSURE_REQUEST_MODE_AMOUNT,
-        token::REQUEST_STATUS_PENDING,
-    );
-
     let mut accounts = fixture.base();
     accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
-    accounts.insert(request_addr, request_account);
     let context = mollusk().with_context(accounts);
 
-    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, 500);
+    let cleartext_amount = 500;
+    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
     context.process_and_validate_instruction(
-        &disclose_amount_secp_ix(
+        &disclose_secp_ix(
             &fixture,
-            request_addr,
+            fixture.amount_value,
             pinned,
-            500,
+            cleartext_u256(cleartext_amount),
+            signatures,
+            extra_data,
+            proof,
+        ),
+        &[host_error(
+            host::errors::ZamaHostError::PublicDecryptProofInvalid,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_disclose_secp_rejects_foreign_mint_domain() {
+    // The disclosed lineage must belong to this mint's ACL domain: the token layer binds
+    // encrypted_value.acl_domain_key to the mint so the emitted event is genuinely token-scoped.
+    // A lineage under a different domain is rejected before the verifier CPI.
+    let fixture = DiscloseFixture::new();
+    let pinned = handle_for_chain(48, BALANCE_FHE_TYPE);
+    let foreign_mint = Pubkey::new_unique();
+    // A public lineage whose acl_domain_key is a different mint, but whose canonical address is
+    // computed under that foreign domain so the account still deserializes as a valid EncryptedValue.
+    let (foreign_value, proof) = public_leaf_lineage(
+        token::encrypted_value_address(
+            foreign_mint,
+            fixture.token_account,
+            token::burned_amount_label(),
+        )
+        .0,
+        fixture.token_account,
+        foreign_mint,
+        token::burned_amount_label(),
+        &[fixture.owner, fixture.compute_signer],
+        pinned,
+        None,
+    );
+    let foreign_value_addr = token::encrypted_value_address(
+        foreign_mint,
+        fixture.token_account,
+        token::burned_amount_label(),
+    )
+    .0;
+
+    let mut accounts = fixture.base();
+    accounts.insert(foreign_value_addr, encrypted_value_account(&foreign_value));
+    let context = mollusk().with_context(accounts);
+
+    let cleartext_amount = 500;
+    let (signatures, extra_data) = kms_public_decrypt_cert(pinned, cleartext_amount);
+    context.process_and_validate_instruction(
+        &disclose_secp_ix(
+            &fixture,
+            foreign_value_addr,
+            pinned,
+            cleartext_u256(cleartext_amount),
             signatures,
             extra_data,
             proof,
         ),
         &[token_error(
-            token::ConfidentialTokenError::PublicDecryptProofInvalid,
+            token::ConfidentialTokenError::AmountAclMismatch,
         )],
     );
-    assert_eq!(
-        read_disclosure_request(&context, request_addr).status,
-        token::REQUEST_STATUS_PENDING
-    );
 }
 
-fn close_expired_disclosure_request_ix(
-    requester: Pubkey,
-    disclosure_request: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::CloseExpiredDisclosureRequest {
-            requester,
-            disclosure_request,
-        },
-        token::instruction::CloseExpiredDisclosureRequest {},
-    )
-}
-
-fn close_consumed_disclosure_request_ix(
-    requester: Pubkey,
-    disclosure_request: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::CloseConsumedDisclosureRequest {
-            requester,
-            disclosure_request,
-        },
-        token::instruction::CloseConsumedDisclosureRequest {},
-    )
-}
-
-fn seeded_disclosure_witness(
-    fixture: &DiscloseFixture,
-    request_nonce: [u8; 32],
-    expires_slot: u64,
-    status: u8,
-) -> (Pubkey, Account) {
-    let pinned = handle_for_chain(48, BALANCE_FHE_TYPE);
-    disclosure_request_account(
-        fixture.mint,
-        fixture.owner,
-        Pubkey::default(),
-        fixture.token_account,
-        pinned,
+#[test]
+fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
+    // Token lineages are euint64, so the certified 32-byte uint256 cleartext must fit in 64 bits.
+    // The host verifier accepts any 32-byte cleartext its cert signs over; the token layer then
+    // rejects a value with nonzero high bytes rather than silently truncating it to the low 64 bits.
+    let fixture = DiscloseFixture::new();
+    let pinned = handle_for_chain(49, BALANCE_FHE_TYPE);
+    let (lineage, proof) = public_leaf_lineage(
         fixture.amount_value,
-        fixture.host_config,
-        fixture.kms_context_id,
-        request_nonce,
-        expires_slot,
-        token::DISCLOSURE_REQUEST_MODE_AMOUNT,
-        status,
-    )
-}
-
-#[test]
-fn mollusk_close_expired_disclosure_request_succeeds_after_expiry() {
-    let fixture = DiscloseFixture::new();
-    // Clock slot is 100; expires_slot below it means expired-and-unconsumed.
-    let (request_addr, request_account) =
-        seeded_disclosure_witness(&fixture, [0x61u8; 32], 50, token::REQUEST_STATUS_PENDING);
-    let mut accounts = fixture.base();
-    accounts.insert(request_addr, request_account);
-    let context = mollusk().with_context(accounts);
-
-    context.process_and_validate_instruction(
-        &close_expired_disclosure_request_ix(fixture.owner, request_addr),
-        &[Check::success()],
+        fixture.token_account,
+        fixture.mint,
+        token::burned_amount_label(),
+        &[fixture.owner, fixture.compute_signer],
+        pinned,
+        None,
     );
-    assert!(account_is_system_owned_and_empty(&context, request_addr));
-}
 
-#[test]
-fn mollusk_close_consumed_disclosure_request_succeeds_after_expiry() {
-    let fixture = DiscloseFixture::new();
-    let (request_addr, request_account) =
-        seeded_disclosure_witness(&fixture, [0x62u8; 32], 50, token::REQUEST_STATUS_CONSUMED);
     let mut accounts = fixture.base();
-    accounts.insert(request_addr, request_account);
+    accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
     let context = mollusk().with_context(accounts);
 
-    context.process_and_validate_instruction(
-        &close_consumed_disclosure_request_ix(fixture.owner, request_addr),
-        &[Check::success()],
+    // A cleartext whose value exceeds u64::MAX: a nonzero byte in the high 24 (here index 8).
+    let mut wide = [0u8; 32];
+    wide[8] = 1;
+    let extra_data = vec![0x00u8];
+    let signatures = support::kms_cert::kms_public_decrypt_cert(
+        pinned,
+        wide,
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
     );
-    assert!(account_is_system_owned_and_empty(&context, request_addr));
-}
-
-#[test]
-fn mollusk_close_disclosure_request_before_expiry_rejected() {
-    let fixture = DiscloseFixture::new();
-    // expires_slot at/after the clock slot (100) is still within the live window.
-    let (request_addr, request_account) =
-        seeded_disclosure_witness(&fixture, [0x63u8; 32], 200, token::REQUEST_STATUS_PENDING);
-    let mut accounts = fixture.base();
-    accounts.insert(request_addr, request_account);
-    let context = mollusk().with_context(accounts);
-
     context.process_and_validate_instruction(
-        &close_expired_disclosure_request_ix(fixture.owner, request_addr),
+        &disclose_secp_ix(
+            &fixture,
+            fixture.amount_value,
+            pinned,
+            wide,
+            signatures,
+            extra_data,
+            proof,
+        ),
         &[token_error(
-            token::ConfidentialTokenError::RequestWitnessUnavailable,
+            token::ConfidentialTokenError::VerifierReturnDataInvalid,
         )],
     );
-    assert!(!account_is_system_owned_and_empty(&context, request_addr));
 }
 
 // ===========================================================================
@@ -3978,28 +3563,27 @@ fn cost_snapshot_initialize_token_account() {
 //
 // Public-decrypt certificates carry t signatures (t = the context's public-decryption threshold)
 // and the consume transaction also carries an MMR inclusion proof whose size scales with the
-// lineage depth. Both grow the serialized `disclose_amount_secp` transaction. This table pins the
+// lineage depth. Both grow the serialized `disclose_secp` transaction. This table pins the
 // wire-size corner where high threshold meets deep lineage against the Solana packet limit.
 // ---------------------------------------------------------------------------
 
-/// Builds a `disclose_amount_secp` legacy transaction carrying `sig_count` signatures and an MMR
-/// proof of `sibling_count` siblings over the real disclose account list, and returns its
-/// bincode-serialized wire size. Validity is irrelevant: this measures serialization only.
-fn disclose_amount_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
+/// Builds a `disclose_secp` legacy transaction carrying `sig_count` signatures and an MMR proof of
+/// `sibling_count` siblings over the real disclose account list, and returns its bincode-serialized
+/// wire size. Validity is irrelevant: this measures serialization only.
+fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
     use solana_sdk::message::Message;
     use solana_sdk::transaction::Transaction;
 
     let fixture = DiscloseFixture::new();
-    let request = host::kms_context_address(999).0; // any pubkey; only its 32 bytes matter here
-    let proof = token::MmrInclusionProof {
+    let proof = host::instructions::MmrInclusionProof {
         leaf_index: 0,
         siblings: vec![[0u8; 32]; sibling_count],
     };
-    let ix = disclose_amount_secp_ix(
+    let ix = disclose_secp_ix(
         &fixture,
-        request,
+        fixture.amount_value,
         handle_for_chain(80, BALANCE_FHE_TYPE),
-        500,
+        cleartext_u256(500),
         vec![[0u8; 65]; sig_count],
         vec![0x00u8],
         proof,
@@ -4012,33 +3596,34 @@ fn disclose_amount_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize
 }
 
 #[test]
-fn disclose_amount_secp_threshold_fit_table() {
-    // Corner table: (threshold t, MMR proof sibling depth, expected-to-fit). Measured wire sizes
-    // for the full `disclose_amount_secp` legacy transaction against the 1232-byte packet limit.
+fn disclose_secp_threshold_fit_table() {
+    // Corner table: (threshold t, MMR proof sibling depth, expected-to-fit). Measured wire sizes for
+    // the full `disclose_secp` legacy transaction against the 1232-byte packet limit.
     //
-    // NOTE: this table measures the `disclose_amount_secp` DisclosureRequest-lifecycle transaction,
-    // the live consume path at this base. When fhevm-internal#1704 PR2 dissolves that lifecycle and
-    // re-expresses token disclosure as a thin consumer of the stateless `verify_public_decrypt`
-    // verifier, this table must move to (and be re-measured against) that thinner consume path.
+    // This table lives on the thin consume path introduced by fhevm-internal#1704, and the booleans
+    // are RE-MEASURED against it, not carried over from the old disclose_amount_secp table. Dropping
+    // the DisclosureRequest witness account did NOT shrink the transaction: it is offset by the added
+    // zama_program account (for the verifier CPI), and the cleartext widened from a u64 (8B) to the
+    // raw 32-byte uint256 the host verifier signs over (+24B). Net, disclose_secp is ~24B LARGER than
+    // disclose_amount_secp at the same (t, depth), so the single-packet envelope NARROWED: the only
+    // fitting corner is t=7 at depth 0 (917B); any MMR proof depth at t=7 already overflows
+    // (t=7/depth-10 = 1237B, over by 5), and t>=9 overflows even before the proof.
     //
-    // FINDING (fhevm-internal#1704): the single-packet envelope for public-decrypt consumes is
-    // NARROWER than a naive t<=9/depth<=10 assumption. Only t=7 up to depth 10 fits; a t=9 cert at
-    // depth 10 already overflows by ~111 bytes, and t=7 at depth 20 by ~301. The carried payload
-    // scales with the threshold t (t x 65B) plus the proof depth (depth x 32B), so deep-lineage x
-    // high-threshold consumes need the scratch-account two-tx fallback reserved in #1704. The
-    // `expected_fits` column pins the measured boundary so a regression (or a size shrink that
-    // widens the envelope) is caught here.
+    // The carried payload scales with the threshold t (t x 65B) plus the proof depth (depth x 32B),
+    // so deep-lineage x high-threshold consumes are the binding corner; anything that overflows needs
+    // the scratch-account two-tx fallback reserved in #1704. The `expected_fits` column pins the
+    // measured boundary so a regression (or a size shrink that widens the envelope) is caught here.
     let cases = [
         (7usize, 0usize, true),
-        (7, 10, true),
+        (7, 10, false),
         (7, 20, false),
         (9, 10, false),
         (13, 10, false),
     ];
     let limit = solana_packet::PACKET_DATA_SIZE;
-    eprintln!("disclose_amount_secp threshold fit table (packet limit = {limit} bytes):");
+    eprintln!("disclose_secp threshold fit table (packet limit = {limit} bytes):");
     for (t, depth, expected_fits) in cases {
-        let size = disclose_amount_secp_tx_size(t, depth);
+        let size = disclose_secp_tx_size(t, depth);
         let fits = size <= limit;
         eprintln!(
             "  t={t:>2} sigs, depth={depth:>2} siblings -> {size:>4} bytes  ({}{})",
@@ -4058,10 +3643,11 @@ fn disclose_amount_secp_threshold_fit_table() {
 }
 
 #[test]
-fn disclose_amount_secp_seven_of_thirteen_verifies_and_bounds_compute() {
-    // A realistic 7-of-13 KMS public-decrypt cert verifies on-chain and its compute stays well
-    // under budget. Cost is dominated by t secp256k1 recoveries (~25k CU each) on top of the
-    // single-sig baseline, so a 7-sig cert lands near ~40k + 6 * ~25k; assert a comfortable ceiling.
+fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
+    // A realistic 7-of-13 KMS public-decrypt cert verifies through the stateless host verifier (CPIed
+    // by disclose_secp) and its compute stays well under budget. Cost is dominated by t secp256k1
+    // recoveries (~25k CU each) on top of the single-sig baseline, so a 7-sig cert lands near
+    // ~40k + 6 * ~25k; assert a comfortable ceiling.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(85, BALANCE_FHE_TYPE);
     let superseded = handle_for_chain(86, BALANCE_FHE_TYPE);
@@ -4075,30 +3661,14 @@ fn disclose_amount_secp_seven_of_thirteen_verifies_and_bounds_compute() {
         Some(superseded),
     );
 
-    // 13 registered KMS signers, public-decrypt threshold 7; the cert is signed by 7 of them.
+    // 13 registered KMS signers, public-decrypt threshold 7; the cert is signed by 7 of them. The
+    // host verifier checks the cert against the CURRENT context (the fixture's), so override that
+    // context account with the 13-signer / threshold-7 set.
     let keys: Vec<k256::ecdsa::SigningKey> = (0..13).map(|i| kms_signing_key_n(0x60 + i)).collect();
     let registered: Vec<[u8; 20]> = keys.iter().map(secp_evm_address).collect();
 
-    let request_nonce = [0x77u8; 32];
-    let expires_slot = 200;
-    let (request_addr, request_account) = disclosure_request_account(
-        fixture.mint,
-        fixture.owner,
-        Pubkey::default(),
-        lineage.app_account,
-        pinned,
-        fixture.amount_value,
-        fixture.host_config,
-        fixture.kms_context_id,
-        request_nonce,
-        expires_slot,
-        token::DISCLOSURE_REQUEST_MODE_AMOUNT,
-        token::REQUEST_STATUS_PENDING,
-    );
-
     let mut accounts = fixture.base();
     accounts.insert(fixture.amount_value, encrypted_value_account(&lineage));
-    accounts.insert(request_addr, request_account);
     accounts.insert(
         fixture.kms_context,
         kms_context_account_with_signers(fixture.kms_context_id, &registered, 7),
@@ -4109,11 +3679,11 @@ fn disclose_amount_secp_seven_of_thirteen_verifies_and_bounds_compute() {
     let (signatures, extra_data) =
         kms_public_decrypt_cert_signed_by(pinned, cleartext_amount, &keys[..7]);
     let result = context.process_and_validate_instruction(
-        &disclose_amount_secp_ix(
+        &disclose_secp_ix(
             &fixture,
-            request_addr,
+            fixture.amount_value,
             pinned,
-            cleartext_amount,
+            cleartext_u256(cleartext_amount),
             signatures,
             extra_data,
             proof,
@@ -4122,7 +3692,7 @@ fn disclose_amount_secp_seven_of_thirteen_verifies_and_bounds_compute() {
     );
 
     eprintln!(
-        "disclose_amount_secp 7-of-13 compute units consumed: {}",
+        "disclose_secp 7-of-13 compute units consumed: {}",
         result.compute_units_consumed
     );
     assert!(
