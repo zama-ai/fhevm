@@ -23,7 +23,7 @@
   "dependencies": {
     "@cli-fhevm-sdk/toolkit": "workspace:*",
     "@commander-js/extra-typings": "^15.0.0",
-    "@fhevm/sdk": "1.1.0-alpha.8",
+    "@fhevm/sdk": "1.1.0-alpha.9",
     "@pnpm/tabtab": "^0.5.4",
     "commander": "^15.0.0",
     "consola": "^3.4.2",

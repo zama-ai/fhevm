@@ -24,8 +24,8 @@ importers:
         specifier: ^15.0.0
         version: 15.0.0(commander@15.0.0)
       '@fhevm/sdk':
-        specifier: 1.1.0-alpha.8
-        version: 1.1.0-alpha.8(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
+        specifier: 1.1.0-alpha.9
+        version: 1.1.0-alpha.9(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
       '@pnpm/tabtab':
         specifier: ^0.5.4
         version: 0.5.4
@@ -58,8 +58,8 @@ importers:
         specifier: ^15.0.0
         version: 15.0.0(commander@15.0.0)
       '@fhevm/sdk':
-        specifier: 1.1.0-alpha.8
-        version: 1.1.0-alpha.8(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
+        specifier: 1.1.0-alpha.9
+        version: 1.1.0-alpha.9(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -92,8 +92,8 @@ importers:
   packages/toolkit:
     dependencies:
       '@fhevm/sdk':
-        specifier: 1.1.0-alpha.8
-        version: 1.1.0-alpha.8(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
+        specifier: 1.1.0-alpha.9
+        version: 1.1.0-alpha.9(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))
       viem:
         specifier: ^2.50.4
         version: 2.50.4(typescript@5.9.3)(zod@4.4.3)
@@ -301,8 +301,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@fhevm/sdk@1.1.0-alpha.8':
-    resolution: {integrity: sha512-Wn6JL2iMXjg+s+JwaXIhWt9owOsWmcm9HnX9yrResoNbGYjC9nlQjhIds37naCVr/8/q1L/v9apLY13Gw4mWcw==}
+  '@fhevm/sdk@1.1.0-alpha.9':
+    resolution: {integrity: sha512-+Q08bQIJ3FlAJjIv5/g4Z90U2b8Nw5WZGjh+Zm695ikqhf5yxNBpq6Hji3o0Fmf5wjTHOxXq2oEgtUjZ62HHbg==}
     engines: {node: '>=22.0'}
     peerDependencies:
       ethers: '>=6.8.0'
@@ -1359,7 +1359,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.0':
     optional: true
 
-  '@fhevm/sdk@1.1.0-alpha.8(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))':
+  '@fhevm/sdk@1.1.0-alpha.9(typescript@5.9.3)(viem@2.50.4(typescript@5.9.3)(zod@4.4.3))':
     dependencies:
       '@noble/curves': 2.0.1
       '@noble/hashes': 2.0.1
