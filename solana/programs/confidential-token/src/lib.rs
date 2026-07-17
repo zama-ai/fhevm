@@ -38,8 +38,8 @@ use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
     CloseConsumedBurnRedemptionRequest, CloseExpiredBurnRedemptionRequest, ConfidentialBurn,
-    ConfidentialTransfer, DiscloseSecp, InitializeMint, InitializeTokenAccount,
-    RedeemBurnedAmountSecp, RequestBurnRedemption, WrapUsdc,
+    ConfidentialTransfer, ConfidentialTransferFromValue, DiscloseSecp, InitializeMint,
+    InitializeTokenAccount, RedeemBurnedAmountSecp, RequestBurnRedemption, WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
@@ -105,6 +105,16 @@ pub mod confidential_token {
         amount_attestation: zama_host::CoprocessorInputAttestation,
     ) -> Result<()> {
         instructions::confidential_transfer(ctx, amount_attestation)
+    }
+
+    /// Transfers an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
+    /// received handle) instead of a freshly attested client-side encryption — the path that lets a
+    /// contract be the sender of a computed amount (fhevm-internal#1680). The signing owner must be
+    /// in the amount value's subject set (the token spend gate); the amount is spent read-only.
+    pub fn confidential_transfer_from_value<'info>(
+        ctx: Context<'info, ConfidentialTransferFromValue<'info>>,
+    ) -> Result<()> {
+        instructions::confidential_transfer_from_value(ctx)
     }
 
     /// Requests KMS certification for redeeming a burned encrypted amount.

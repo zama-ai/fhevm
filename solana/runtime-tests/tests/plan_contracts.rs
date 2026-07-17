@@ -176,11 +176,25 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         "CloseOperator",
         "ConfidentialOperator",
     ] {
+        // Whole-identifier match: the new `ConfidentialTransferFromValue` (fhevm-internal#1680) must
+        // not be mistaken for the removed operator struct `ConfidentialTransferFrom`.
         assert!(
-            !source.contains(removed),
+            !contains_symbol(&source, removed),
             "operator symbol `{removed}` must be removed from production token source"
         );
     }
+}
+
+/// True when `symbol` appears in `source` as a standalone Rust identifier, not as a prefix or
+/// suffix of a longer one (so `ConfidentialTransferFrom` does not match inside
+/// `ConfidentialTransferFromValue`).
+fn contains_symbol(source: &str, symbol: &str) -> bool {
+    let is_ident_char = |c: char| c.is_alphanumeric() || c == '_';
+    source.match_indices(symbol).any(|(index, _)| {
+        let before = source[..index].chars().next_back();
+        let after = source[index + symbol.len()..].chars().next();
+        !before.is_some_and(is_ident_char) && !after.is_some_and(is_ident_char)
+    })
 }
 
 #[test]

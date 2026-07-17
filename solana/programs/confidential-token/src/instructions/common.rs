@@ -40,6 +40,43 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) hcu_trusted_app_record: Option<AccountInfo<'info>>,
 }
 
+/// Where a transfer's amount comes from. The `ge -> sub -> select` debit and `add` credit that
+/// move the two balance lineages are identical for both arms; only how the amount operand enters
+/// the eval frame differs.
+pub(crate) enum TransferAmountSource<'info> {
+    /// EVM `FHE.fromExternal` parity: a coprocessor-attested fresh client-side encryption,
+    /// verified in-frame and transient-allowed for this eval (no durable amount account).
+    Attested(zama_host::CoprocessorInputAttestation),
+    /// EVM computed/received `euint64` parity: an existing on-chain `EncryptedValue` lineage,
+    /// spent as a read-only durable operand at its current handle. It is never superseded and
+    /// never consumed — only the two balance lineages change. The token's spend gate (signing
+    /// owner in the value's subject set) and euint64 type check run in the instruction handler
+    /// before this reaches the eval builder; the host re-checks the handle is current and that the
+    /// mint's compute subject is allowed on the value, in-frame.
+    ExistingValue {
+        amount_value: AccountInfo<'info>,
+        amount_handle: [u8; 32],
+    },
+}
+
+impl TransferAmountSource<'_> {
+    fn amount_handle(&self) -> [u8; 32] {
+        match self {
+            Self::Attested(attestation) => attestation.input_handle,
+            Self::ExistingValue { amount_handle, .. } => *amount_handle,
+        }
+    }
+
+    /// Domain-separates the eval context id per arm so the two amount sources never derive
+    /// colliding handles for the same (mint, from, to, amount handle) tuple.
+    fn context_tag(&self) -> &'static [u8] {
+        match self {
+            Self::Attested(_) => b"combined",
+            Self::ExistingValue { .. } => b"from-value",
+        }
+    }
+}
+
 pub(crate) struct TransferOutcome {
     pub(crate) mint: Pubkey,
     pub(crate) from_owner: Pubkey,
@@ -59,7 +96,7 @@ pub(crate) struct TransferOutcome {
 pub(crate) fn execute_transfer<'info>(
     accounts: TransferAccounts<'_, 'info>,
     compute_signer_bump: u8,
-    amount_attestation: zama_host::CoprocessorInputAttestation,
+    amount_source: TransferAmountSource<'info>,
 ) -> Result<Option<TransferOutcome>> {
     assert_confidential_mint_shape(accounts.mint)?;
     let mint_key = accounts.mint.key();
@@ -67,14 +104,18 @@ pub(crate) fn execute_transfer<'info>(
     let from = accounts.from_account;
     let to = accounts.to_account;
 
-    // EVM `fromExternal` parity for the amount: the attested input must be authored by the sender
-    // (user) and bound to this mint's compute-signer PDA (the `msg.sender`/contract analog the host
-    // re-checks against `compute_subject`). The coprocessor signature over both is verified in-frame.
-    assert_amount_attestation_binding(
-        &amount_attestation,
-        accounts.transfer_authority,
-        compute_signer,
-    )?;
+    if let TransferAmountSource::Attested(amount_attestation) = &amount_source {
+        // EVM `fromExternal` parity for the amount: the attested input must be authored by the
+        // sender (user) and bound to this mint's compute-signer PDA (the `msg.sender`/contract
+        // analog the host re-checks against `compute_subject`). The coprocessor signature over both
+        // is verified in-frame. The `ExistingValue` arm is gated instead by the token spend gate and
+        // euint64 type check in its instruction handler.
+        assert_amount_attestation_binding(
+            amount_attestation,
+            accounts.transfer_authority,
+            compute_signer,
+        )?;
+    }
     require_keys_eq!(from.mint, mint_key, ConfidentialTokenError::MintMismatch);
     require_keys_eq!(to.mint, mint_key, ConfidentialTokenError::MintMismatch);
     assert_confidential_token_account_shape(from, mint_key, from.owner)?;
@@ -111,7 +152,7 @@ pub(crate) fn execute_transfer<'info>(
     let (new_from_handle, transferred_handle, new_to_handle) = execute_transfer_eval(
         &accounts,
         compute_signer_bump,
-        amount_attestation,
+        &amount_source,
         mint_key,
         old_from_handle,
         old_to_handle,
@@ -140,7 +181,7 @@ pub(crate) fn execute_transfer<'info>(
 fn execute_transfer_eval<'info>(
     accounts: &TransferAccounts<'_, 'info>,
     compute_signer_bump: u8,
-    amount_attestation: zama_host::CoprocessorInputAttestation,
+    amount_source: &TransferAmountSource<'info>,
     mint_key: Pubkey,
     old_from_handle: [u8; 32],
     old_to_handle: [u8; 32],
@@ -150,11 +191,11 @@ fn execute_transfer_eval<'info>(
     let from_owner = accounts.from_account.owner;
     let to_owner = accounts.to_account.owner;
     let context_id = transfer_eval_context(
-        b"combined",
+        amount_source.context_tag(),
         mint_key,
         from_key,
         to_key,
-        amount_attestation.input_handle,
+        amount_source.amount_handle(),
     )?;
     let from_balance = uint64_from_value(old_from_handle, mint_key, from_key, balance_label())?;
     let to_balance = uint64_from_value(old_to_handle, mint_key, to_key, balance_label())?;
@@ -185,11 +226,25 @@ fn execute_transfer_eval<'info>(
     )?;
     let mut builder =
         zama_fhe::EvalBuilder::new(context_id, zama_fhe::EvalAppAuthority::new(from_key));
-    // fromExternal: the amount is a coprocessor-attested external input, verified in-frame and
-    // transient-allowed for this eval (no durable amount handle / ACL account).
-    let amount: zama_fhe::Uint64Handle = builder
-        .verified_input(amount_attestation)
-        .map_err(invalid_eval_plan)?;
+    let amount: zama_fhe::Uint64Handle = match amount_source {
+        // fromExternal: the amount is a coprocessor-attested external input, verified in-frame and
+        // transient-allowed for this eval (no durable amount handle / ACL account).
+        TransferAmountSource::Attested(amount_attestation) => builder
+            .verified_input(amount_attestation.clone())
+            .map_err(invalid_eval_plan)?,
+        // Existing value: the amount is an on-chain lineage's current handle, read as a durable
+        // operand. The slot is derived from the value's own canonical fields, so its PDA equals the
+        // passed account; the host re-checks handle-is-current and compute-subject membership.
+        TransferAmountSource::ExistingValue { amount_value, .. } => {
+            let value = fhe::read_encrypted_value(amount_value)?;
+            uint64_from_value(
+                value.current_handle,
+                value.acl_domain_key,
+                value.app_account,
+                value.encrypted_value_label,
+            )?
+        }
+    };
     let success = builder
         .ge(from_balance, amount, zama_fhe::Output::transient())
         .map_err(invalid_eval_plan)?;
@@ -208,13 +263,19 @@ fn execute_transfer_eval<'info>(
     let plan = builder.finish().map_err(invalid_eval_plan)?;
     let compute_authority =
         fhe::ComputeAuthority::for_mint(accounts.compute_signer, mint_key, compute_signer_bump)?;
+    // Durable output accounts are the same for both arms; the existing-value arm adds the amount
+    // lineage as a read-only durable input operand the plan now requires.
+    let mut dynamic_accounts = vec![
+        from_output.account_info(),
+        transferred_output.account_info(),
+        to_output.account_info(),
+    ];
+    if let TransferAmountSource::ExistingValue { amount_value, .. } = amount_source {
+        dynamic_accounts.push(amount_value.clone());
+    }
     let eval_accounts = fhe::EvalAccountSet::for_plan(
         &plan,
-        [
-            from_output.account_info(),
-            transferred_output.account_info(),
-            to_output.account_info(),
-        ],
+        dynamic_accounts,
         [
             fhe::OutputAuthority::token_account(accounts.from_account)?,
             fhe::OutputAuthority::token_account(accounts.to_account)?,

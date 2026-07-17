@@ -838,6 +838,87 @@ fn confidential_transfer_ix_with_block_cap_accounts(
     ix
 }
 
+/// Builds a `confidential_transfer_from_value` instruction: the amount is taken from the existing
+/// on-chain `EncryptedValue` at `amount_value` (a computed or received handle) rather than a fresh
+/// attestation. `signer_owner` signs and pays; it must own `from_token` and be in the amount
+/// value's subject set.
+#[allow(clippy::too_many_arguments)]
+fn confidential_transfer_from_value_ix(
+    fixture: &TokenFixture,
+    signer_owner: Pubkey,
+    from_token: Pubkey,
+    to_token: Pubkey,
+    from_balance_value: Pubkey,
+    to_balance_value: Pubkey,
+    amount_value: Pubkey,
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::ConfidentialTransferFromValue {
+            owner: signer_owner,
+            payer: signer_owner,
+            mint: fixture.mint,
+            from_account: from_token,
+            to_account: to_token,
+            compute_signer: fixture.compute_signer,
+            from_balance_value,
+            to_balance_value,
+            transferred_amount_value: fixture.transferred_amount_value_address(from_token),
+            amount_value,
+            zama_event_authority: event_authority(host::id()),
+            zama_program: host::id(),
+            host_config: fixture.host_config,
+            system_program: system_program::ID,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::ConfidentialTransferFromValue {},
+    )
+}
+
+/// Seeds a spendable amount lineage (a stand-in for a computed/received `euint64` handle) at the
+/// canonical PDA `(mint, app_account, label)` with the given subjects and current handle, and
+/// returns its address.
+fn seed_amount_value(
+    fixture: &TokenFixture,
+    accounts: &mut HashMap<Pubkey, Account>,
+    app_account: Pubkey,
+    label: [u8; 32],
+    handle: [u8; 32],
+    subjects: &[Pubkey],
+) -> Pubkey {
+    let (address, value) = new_encrypted_value(fixture.mint, app_account, label, handle, subjects);
+    accounts.insert(address, encrypted_value_account(&value));
+    address
+}
+
+/// Host `allow_subjects` instruction granting `subject` on `encrypted_value`, authorized by a
+/// current subject `authority`. Mirrors the cross-app grant of the mint's compute subject.
+fn allow_subject_ix(
+    payer: Pubkey,
+    authority: Pubkey,
+    encrypted_value: Pubkey,
+    host_config: Pubkey,
+    subject: Pubkey,
+) -> Instruction {
+    anchor_ix(
+        host::id(),
+        host::accounts::AllowEncryptedValueSubjects {
+            payer,
+            authority,
+            encrypted_value,
+            host_config,
+            deny_subject_record: None,
+            system_program: system_program::ID,
+        },
+        host::instruction::AllowSubjects {
+            subjects: vec![host::instructions::EncryptedValueSubjectGrant { subject }],
+        },
+    )
+}
+
 fn deny_enabled_transfer_accounts(
     fixture: &TokenFixture,
     denied_authority: Option<Pubkey>,
@@ -3471,6 +3552,360 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
 }
 
 // ---------------------------------------------------------------------------
+// confidential_transfer_from_value (spend an existing encrypted amount, fhevm-internal#1680)
+// ---------------------------------------------------------------------------
+
+/// Done-when 1: a transfer spends a computed handle produced under the same mint, with no
+/// attestation attached. Here the amount is an existing lineage carrying the sender + compute
+/// subjects; the balances move through the same `ge -> sub -> select` debit and `add` credit, and
+/// the amount value itself is read-only (never superseded, never consumed).
+#[test]
+fn mollusk_transfer_from_value_spends_existing_amount() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let amount_value = seed_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.alice_token,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    let context = mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.alice_initial, 1_000);
+    cleartext.seed_amount(fixture.bob_initial, 100);
+    cleartext.seed_amount(amount_handle, 250);
+
+    let transfer = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_value,
+    );
+
+    let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
+
+    // Only the two balance lineages and the sender's transferred_amount rotate — the amount is not
+    // an output.
+    assert_eq!(durable_outputs, 3);
+    assert_eq!(cleartext.balance(&context, fixture.alice_token), 750);
+    assert_eq!(cleartext.balance(&context, fixture.bob_token), 350);
+
+    // The amount value is read-only: current handle, subjects, and history all unchanged.
+    let amount_after = read_encrypted_value(&context, amount_value);
+    assert_eq!(amount_after.current_handle, amount_handle);
+    assert_eq!(amount_after.leaf_count, 0);
+    assert_eq!(
+        amount_after.subjects,
+        vec![fixture.owner, fixture.compute_signer]
+    );
+}
+
+/// Done-when 1 (follow-up): the RECIPIENT of a transfer spends the received `transferred_amount`
+/// into a transfer to a third party — the exact forwarding flow — with no decryption anywhere.
+#[test]
+fn mollusk_transfer_from_value_recipient_forwards_received_amount() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    let carol_initial = handle_for_chain(3, BALANCE_FHE_TYPE);
+    let (_carol_owner, carol_token, carol_balance_value) =
+        seed_third_account(&fixture, &mut accounts, carol_initial);
+    let context = mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.alice_initial, 1_000);
+    cleartext.seed_amount(fixture.bob_initial, 0);
+    cleartext.seed_amount(carol_initial, 0);
+
+    // Alice -> Bob (fresh attested): produces Alice's transferred_amount lineage whose subjects
+    // include Bob, so Bob may now spend that received handle.
+    let alice_amount = handle_for_chain(50, BALANCE_FHE_TYPE);
+    cleartext.seed_amount(alice_amount, 300);
+    let first = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_attestation_for(alice_amount, fixture.owner, fixture.compute_signer),
+    );
+    let first_result = context.process_and_validate_instruction(&first, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &first_result);
+    assert_eq!(cleartext.balance(&context, fixture.bob_token), 300);
+
+    let received = fixture.transferred_amount_value_address(fixture.alice_token);
+    let received_before = read_encrypted_value(&context, received);
+    assert!(received_before.has_subject(fixture.bob_owner));
+
+    // Bob -> Carol, spending the received transferred_amount handle directly (no attestation, no
+    // decryption). Bob is a subject of the received amount, so the spend gate passes.
+    let forward = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.bob_owner,
+        fixture.bob_token,
+        carol_token,
+        fixture.bob_balance_value,
+        carol_balance_value,
+        received,
+    );
+    let forward_result = context.process_and_validate_instruction(&forward, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &forward_result);
+
+    assert_eq!(cleartext.balance(&context, fixture.bob_token), 0);
+    assert_eq!(cleartext.balance(&context, carol_token), 300);
+
+    // Alice's transferred_amount lineage — the forwarded amount — is untouched by Bob's spend.
+    let received_after = read_encrypted_value(&context, received);
+    assert_eq!(
+        received_after.current_handle,
+        received_before.current_handle
+    );
+    assert_eq!(received_after.leaf_count, received_before.leaf_count);
+    assert_eq!(received_after.subjects, received_before.subjects);
+}
+
+/// Done-when 5: the RFQ settlement shape — an amount computed via a `select(...)` eval producing a
+/// durable output, then transferred — proven end to end. A transfer's `transferred_amount` is
+/// exactly `sub(from_balance, if_then_else(ge, debit, from_balance))`, i.e. a select-computed
+/// durable `euint64`; spending it is the RFQ `eMoved` settlement move.
+#[test]
+fn mollusk_transfer_from_value_settles_select_computed_amount() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    let carol_initial = handle_for_chain(4, BALANCE_FHE_TYPE);
+    let (_carol_owner, carol_token, carol_balance_value) =
+        seed_third_account(&fixture, &mut accounts, carol_initial);
+    let context = mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.alice_initial, 900);
+    cleartext.seed_amount(fixture.bob_initial, 50);
+    cleartext.seed_amount(carol_initial, 0);
+
+    // Compute the amount: Alice -> Bob transfers 400. The select picks the full 400 (balance
+    // sufficient), yielding a durable transferred_amount = 400.
+    let alice_amount = handle_for_chain(51, BALANCE_FHE_TYPE);
+    cleartext.seed_amount(alice_amount, 400);
+    let compute = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_attestation_for(alice_amount, fixture.owner, fixture.compute_signer),
+    );
+    let compute_result = context.process_and_validate_instruction(&compute, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &compute_result);
+
+    let computed_amount = fixture.transferred_amount_value_address(fixture.alice_token);
+    assert_eq!(
+        cleartext.transferred_amount(&context, fixture.mint, fixture.alice_token),
+        400
+    );
+
+    // Settle: Bob transfers the select-computed 400 to Carol.
+    let settle = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.bob_owner,
+        fixture.bob_token,
+        carol_token,
+        fixture.bob_balance_value,
+        carol_balance_value,
+        computed_amount,
+    );
+    let settle_result = context.process_and_validate_instruction(&settle, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &settle_result);
+
+    // Bob had 50 + 400 = 450; settling 400 leaves 50; Carol receives 400.
+    assert_eq!(cleartext.balance(&context, fixture.bob_token), 50);
+    assert_eq!(cleartext.balance(&context, carol_token), 400);
+}
+
+/// Done-when 2: a handle whose subjects lack the mint's compute subject fails at the host's
+/// compute-read check; after a single `allow_subjects` grant of the compute subject it succeeds
+/// (the cross-app shape — EVM `FHE.allow(handle, token)`).
+#[test]
+fn mollusk_transfer_from_value_cross_app_requires_compute_subject_grant() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    let amount_handle = handle_for_chain(60, BALANCE_FHE_TYPE);
+    // A handle from another app: Alice is a subject (she may spend it), but the mint's compute
+    // subject is not yet allowed.
+    let amount_value = seed_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.alice_token,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner],
+    );
+    let context = mollusk().with_context(accounts);
+
+    let transfer = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_value,
+    );
+    // Without the grant, the host rejects the durable operand at its compute-read check.
+    context.process_and_validate_instruction(
+        &transfer,
+        &[host_error(host::errors::ZamaHostError::SubjectNotFound)],
+    );
+
+    // The handle's owner grants the mint's compute subject.
+    let grant = allow_subject_ix(
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        fixture.host_config,
+        fixture.compute_signer,
+    );
+    context.process_and_validate_instruction(&grant, &[Check::success()]);
+
+    // The same transfer now succeeds.
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.alice_initial, 1_000);
+    cleartext.seed_amount(fixture.bob_initial, 100);
+    cleartext.seed_amount(amount_handle, 200);
+    let transfer_again = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_value,
+    );
+    let result = context.process_and_validate_instruction(&transfer_again, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &result);
+    assert_eq!(cleartext.balance(&context, fixture.alice_token), 800);
+    assert_eq!(cleartext.balance(&context, fixture.bob_token), 300);
+}
+
+/// Done-when 3: a signer outside the amount handle's subject set is rejected by the token's spend
+/// gate with its own distinct error, before any host CPI.
+#[test]
+fn mollusk_transfer_from_value_rejects_non_subject_signer() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    let amount_handle = handle_for_chain(61, BALANCE_FHE_TYPE);
+    // The amount's subjects are Bob + compute; Alice (the from-account owner and signer) is NOT a
+    // subject, so she may not spend it even though she owns the debited balance.
+    let amount_value = seed_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.alice_token,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[fixture.bob_owner, fixture.compute_signer],
+    );
+    let context = mollusk().with_context(accounts);
+
+    let transfer = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_value,
+    );
+    context.process_and_validate_instruction(
+        &transfer,
+        &[token_error(
+            token::ConfidentialTokenError::AmountSpendSubjectMismatch,
+        )],
+    );
+
+    // Balances untouched.
+    let alice_balance = read_encrypted_value(&context, fixture.alice_balance_value);
+    assert_eq!(alice_balance.current_handle, fixture.alice_initial);
+}
+
+/// The amount handle must be euint64. A non-balance-typed amount is rejected early by the token for
+/// a clear error, before the host's binary type validation would reject the same handle deeper.
+#[test]
+fn mollusk_transfer_from_value_rejects_non_euint64_amount() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    // FHE type 0 (ebool), not euint64.
+    let amount_handle = handle_for_chain(62, 0);
+    let amount_value = seed_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.alice_token,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    let context = mollusk().with_context(accounts);
+
+    let transfer = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_value,
+    );
+    context.process_and_validate_instruction(
+        &transfer,
+        &[token_error(
+            token::ConfidentialTokenError::AmountHandleTypeMismatch,
+        )],
+    );
+}
+
+/// Done-when 4 (tx-size half): the new arm carries no 190-byte attestation, so its instruction data
+/// is strictly SMALLER than the fresh-attested arm's. This is the measured wire-size win that lets a
+/// contract-driven settlement pack more into a packet.
+#[test]
+fn transfer_from_value_instruction_is_smaller_than_attested_arm() {
+    let fixture = TokenFixture::new();
+    let amount_handle = handle_for_chain(70, BALANCE_FHE_TYPE);
+    let attested = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer),
+    );
+    let from_value = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        Pubkey::new_unique(),
+    );
+    eprintln!(
+        "confidential_transfer ix data: {} bytes; confidential_transfer_from_value ix data: {} bytes",
+        attested.data.len(),
+        from_value.data.len(),
+    );
+    assert!(
+        from_value.data.len() < attested.data.len(),
+        "from_value arm ({} bytes) must be smaller than the attested arm ({} bytes)",
+        from_value.data.len(),
+        attested.data.len(),
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Cost snapshots (tests/support/cost_snapshot.rs). Dedicated tests so cost
 // drift never fails a behavior test; regenerate with
 // `bash scripts/update-cost-snapshots.sh`.
@@ -3532,6 +3967,44 @@ fn cost_snapshot_confidential_transfer_direct() {
         "confidential_transfer/steady_state",
         &second_transfer,
         &second_result,
+    );
+}
+
+#[test]
+fn cost_snapshot_confidential_transfer_from_value() {
+    let fixture = TokenFixture::with_keys(
+        Pubkey::new_from_array([0x11; 32]),
+        Pubkey::new_from_array([0x12; 32]),
+        Pubkey::new_from_array([0x13; 32]),
+    );
+    let mut accounts = fixture.base_accounts();
+    let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
+    let amount_value = seed_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.alice_token,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    let context = mollusk().with_context(accounts);
+    let transfer = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_value,
+    );
+
+    let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+
+    cost_snapshot::assert_cost_snapshot(
+        "token_mollusk",
+        "confidential_transfer_from_value/direct",
+        &transfer,
+        &result,
     );
 }
 
