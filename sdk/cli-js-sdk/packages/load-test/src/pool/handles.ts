@@ -97,7 +97,10 @@ type PreparedHandle = Readonly<{
 
 type BroadcastHandle = Readonly<{
   prepared: PreparedHandle;
+  nonce: number;
   transactionHash: Hex;
+  /** Fee cap the transaction was signed with; used for stall diagnostics. */
+  maxFeePerGas?: bigint;
 }>;
 
 type ReceiptOutcome =
@@ -108,6 +111,10 @@ const RECEIPT_POLL_INTERVAL_MS = 2_000;
 const RECEIPT_TIMEOUT_MS = 30 * 60 * 1000;
 const SEND_RETRY_INTERVAL_MS = 2_000;
 const SEND_TIMEOUT_MS = 10 * 60 * 1000;
+/** Priority-fee floor; estimated tips near zero stall when base fee rises. */
+const MIN_PRIORITY_FEE_WEI = 1_000_000_000n;
+
+const maxBigInt = (a: bigint, b: bigint): bigint => (a > b ? a : b);
 
 const toTransactionRequest = (request: ContractWriteRequest): TransactionRequest => {
   const write = request as ContractWriteRequest & {
@@ -244,10 +251,24 @@ const broadcastPreparedHandle = async (options: {
     throw new Error("Handle pool creation requires a local account that can sign transactions.");
   }
   const transactionRequest = toTransactionRequest(options.prepared.request);
-  const request = await prepareTransactionRequest(options.context.walletClient, {
+  const request = (await prepareTransactionRequest(options.context.walletClient, {
     ...transactionRequest,
     nonce: options.nonce,
-  } as never);
+  } as never)) as TransactionRequest & {
+    maxFeePerGas?: bigint;
+    maxPriorityFeePerGas?: bigint;
+  };
+  // Fees are locked in at signing time and receipts are awaited in nonce
+  // order, so give the cap generous headroom: a base-fee rise past the cap
+  // wedges this nonce and every one behind it.
+  if (
+    typeof request.maxFeePerGas === "bigint" &&
+    typeof request.maxPriorityFeePerGas === "bigint"
+  ) {
+    const tip = maxBigInt(request.maxPriorityFeePerGas, MIN_PRIORITY_FEE_WEI);
+    request.maxFeePerGas = request.maxFeePerGas * 2n + (tip - request.maxPriorityFeePerGas);
+    request.maxPriorityFeePerGas = tip;
+  }
   const signedTransaction = await signTransaction(request as never);
   const transactionHash = keccak256(signedTransaction);
   options.onProgress?.(
@@ -262,13 +283,23 @@ const broadcastPreparedHandle = async (options: {
       options.onProgress?.(
         `[${options.prepared.index.toString()}] Broadcast transaction: ${transactionHash}`,
       );
-      return { prepared: options.prepared, transactionHash };
+      return {
+        prepared: options.prepared,
+        nonce: options.nonce,
+        transactionHash,
+        maxFeePerGas: request.maxFeePerGas,
+      };
     } catch (error) {
       if (isAlreadyKnown(error)) {
         options.onProgress?.(
           `[${options.prepared.index.toString()}] Transaction already known: ${transactionHash}`,
         );
-        return { prepared: options.prepared, transactionHash };
+        return {
+          prepared: options.prepared,
+          nonce: options.nonce,
+          transactionHash,
+          maxFeePerGas: request.maxFeePerGas,
+        };
       }
       if (!isRequestTimeout(error)) throw error;
       const receipt = await getReceiptIfAvailable(options.context, transactionHash);
@@ -276,7 +307,12 @@ const broadcastPreparedHandle = async (options: {
         options.onProgress?.(
           `[${options.prepared.index.toString()}] Transaction mined after send timeout: ${transactionHash}`,
         );
-        return { prepared: options.prepared, transactionHash };
+        return {
+          prepared: options.prepared,
+          nonce: options.nonce,
+          transactionHash,
+          maxFeePerGas: request.maxFeePerGas,
+        };
       }
       if (monotonicNowMs() - started > SEND_TIMEOUT_MS) {
         throw new Error(`Timed out broadcasting transaction: ${transactionHash}`);
@@ -324,6 +360,42 @@ const isReceiptNotFound = (error: unknown): boolean =>
     error.message.includes("Transaction receipt with hash") ||
     error.message.includes("could not be found"));
 
+/**
+ * Explains a receipt timeout: fees are locked in at signing time and mempools
+ * keep only one in-flight transaction per EIP-7702-delegated account, so both
+ * conditions are worth reporting when a nonce chain wedges.
+ */
+const describeReceiptTimeout = async (
+  context: WalletContext,
+  broadcast: BroadcastHandle,
+): Promise<string> => {
+  let message =
+    `Timed out waiting for transaction receipt: ${broadcast.transactionHash} ` +
+    `(nonce ${broadcast.nonce.toString()})`;
+  try {
+    const [block, code] = await Promise.all([
+      context.publicClient.getBlock({ blockTag: "latest" }),
+      context.publicClient.getCode({ address: context.account.address }),
+    ]);
+    if (broadcast.maxFeePerGas !== undefined && block.baseFeePerGas !== null) {
+      message +=
+        `. Signed maxFeePerGas ${broadcast.maxFeePerGas.toString()} wei vs current base fee ` +
+        `${block.baseFeePerGas.toString()} wei` +
+        (broadcast.maxFeePerGas <= block.baseFeePerGas
+          ? " — the fee cap is below base fee, so the transaction cannot mine until base fee drops"
+          : "");
+    }
+    if (code?.startsWith("0xef0100")) {
+      message +=
+        `. Account ${context.account.address} has an EIP-7702 delegation (${code}); mempools ` +
+        `keep only one in-flight transaction for delegated accounts, so pipelined nonces stall.`;
+    }
+  } catch {
+    // Diagnostics are best-effort; the plain timeout message stands alone.
+  }
+  return message;
+};
+
 const waitForStoredHandle = async (options: {
   context: WalletContext;
   broadcast: BroadcastHandle;
@@ -334,21 +406,26 @@ const waitForStoredHandle = async (options: {
     `[${options.broadcast.prepared.index.toString()}] Waiting for transaction receipt: ${options.broadcast.transactionHash}`,
   );
   let receipt;
+  let lastPollError: unknown;
   for (;;) {
+    // Transient RPC failures (rate limits, hiccups) must not fail the handle:
+    // the transaction is already broadcast and usually mines anyway. Keep
+    // polling until the receipt timeout, which reports the last poll error.
     try {
-      receipt = await options.context.publicClient.getTransactionReceipt({
-        hash: options.broadcast.transactionHash,
-      });
-      break;
+      receipt = await getReceiptIfAvailable(options.context, options.broadcast.transactionHash);
     } catch (error) {
-      if (!isReceiptNotFound(error)) throw error;
-      if (monotonicNowMs() - started > RECEIPT_TIMEOUT_MS) {
-        throw new Error(
-          `Timed out waiting for transaction receipt: ${options.broadcast.transactionHash}`,
-        );
-      }
-      await sleep(RECEIPT_POLL_INTERVAL_MS);
+      lastPollError = error;
+      options.onProgress?.(
+        `[${options.broadcast.prepared.index.toString()}] Receipt poll failed (retrying): ${errorText(error)}`,
+      );
     }
+    if (receipt) break;
+    if (monotonicNowMs() - started > RECEIPT_TIMEOUT_MS) {
+      throw new Error(await describeReceiptTimeout(options.context, options.broadcast), {
+        ...(lastPollError !== undefined ? { cause: lastPollError } : {}),
+      });
+    }
+    await sleep(RECEIPT_POLL_INTERVAL_MS);
   }
   if (receipt.status !== "success") {
     throw new Error(`Transaction reverted: ${options.broadcast.transactionHash}`);
@@ -428,6 +505,32 @@ const createLaneHandles = async (options: {
     address: options.context.account.address,
     blockTag: "pending",
   });
+  const nonceMined = await options.context.publicClient.getTransactionCount({
+    address: options.context.account.address,
+    blockTag: "latest",
+  });
+  const code = await options.context.publicClient.getCode({
+    address: options.context.account.address,
+  });
+  if (code?.startsWith("0xef0100")) {
+    // Mempools cap EIP-7702-delegated accounts at one in-flight transaction
+    // (pool-invalidation DoS guard), so this lane's pre-signed nonce sequence
+    // mines one tx per gossip round instead of pipelining.
+    options.onProgress?.(
+      `Lane ${options.ownerIndex.toString()} (${options.context.account.address}) has an ` +
+        `EIP-7702 delegation (${code}); nodes only keep ONE pending transaction for delegated ` +
+        `accounts, so broadcasts will crawl. Clear the delegation or use a plain EOA lane.`,
+    );
+  }
+  if (nonceStart > nonceMined) {
+    // In-flight txs from another process gate this lane's whole nonce
+    // sequence, and this run cannot fee-bump transactions it did not sign.
+    options.onProgress?.(
+      `Lane ${options.ownerIndex.toString()} (${options.context.account.address}) has ` +
+        `${(nonceStart - nonceMined).toString()} in-flight transaction(s) ahead of nonce ` +
+        `${nonceStart.toString()}; this run's transactions cannot mine until they do.`,
+    );
+  }
   const broadcasts: Array<Promise<ReceiptOutcome>> = [];
   let broadcastError: unknown;
   try {
