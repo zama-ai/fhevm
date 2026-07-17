@@ -3,7 +3,7 @@ import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
 import type { NativeSigner } from '../../modules/ethereum/types.js';
 import type { TransportKeyPair } from '../decrypt/index.js';
-import { signDecryptionPermitV2 as signDecryptionPermit_ } from '../../kms/SignedDecryptionPermitV2-p.js';
+import { signDecryptionPermit as signDecryptionPermit_ } from '../../kms/SignedDecryptionPermit-p.js';
 
 export type SignDecryptionPermitParameters = {
   readonly contractAddresses: readonly string[];
