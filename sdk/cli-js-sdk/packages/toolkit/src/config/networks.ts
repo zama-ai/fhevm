@@ -32,7 +32,7 @@ const devnet = defineFhevmChain({
         address: "0x3F3819BeBE4bD0EFEf8078Df6f9B574ADa80CCA4",
       },
       protocolConfig: {
-        address: "0x51f9AFBc89Ea792e1a21a12AB802ab58D4dbee83",
+        address: "0x1aa1E8f03E6aC23EEd65305fF6C89A3Fc55f13a0",
       },
     },
     relayerUrl: "https://relayer.dev.zama.cloud",
