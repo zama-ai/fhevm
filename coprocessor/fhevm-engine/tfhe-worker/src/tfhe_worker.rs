@@ -4151,7 +4151,7 @@ mod tests {
 
         for (producer_block_hash, block_number, transaction_id) in [
             (&settled_producer, 11_i64, vec![0x41_u8; 32]),
-            (&recent_non_current_producer, 25_i64, vec![0x42_u8; 32]),
+            (&future_producer, 35_i64, vec![0x42_u8; 32]),
         ] {
             sqlx::query(
                 "INSERT INTO computations_branch(

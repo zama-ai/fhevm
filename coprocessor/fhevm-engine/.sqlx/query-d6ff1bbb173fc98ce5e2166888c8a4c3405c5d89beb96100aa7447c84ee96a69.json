@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO block_consensus (\n            host_chain_id,\n            block_number,\n            block_hash,\n            parent_block_hash\n        )\n        SELECT child.chain_id,\n               child.block_number,\n               child.block_hash,\n               child.parent_hash\n          FROM host_chain_blocks_valid child\n          JOIN block_consensus parent\n            ON parent.host_chain_id = child.chain_id\n           AND parent.block_hash = child.parent_hash\n         WHERE child.parent_hash IS NOT NULL\n           AND OCTET_LENGTH(child.parent_hash) = 32\n           AND child.block_status <> 'orphaned'\n        ON CONFLICT (host_chain_id, block_hash) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d6ff1bbb173fc98ce5e2166888c8a4c3405c5d89beb96100aa7447c84ee96a69"
+}

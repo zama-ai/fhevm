@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT host_chain_id,\n               block_number,\n               block_hash,\n               parent_block_hash,\n               block_content_digest,\n               descriptor_count,\n               manifest_revision,\n               manifest_digest,\n               manifest_published\n          FROM block_consensus\n         WHERE host_chain_id = $1\n           AND block_hash = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "parent_block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "block_content_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "descriptor_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "manifest_revision",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "manifest_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "manifest_published",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "bf72fbbaf720335a397c7bcc0924c22cbd789ed1a7143d82648410b26bb50e00"
+}

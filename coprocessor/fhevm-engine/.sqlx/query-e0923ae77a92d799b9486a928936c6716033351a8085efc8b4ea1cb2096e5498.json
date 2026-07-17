@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT block_content_digest,\n                   descriptor_count,\n                   manifest_revision,\n                   manifest_published\n              FROM block_consensus\n             WHERE host_chain_id = $1\n               AND block_hash = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_content_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "descriptor_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "manifest_revision",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "manifest_published",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "e0923ae77a92d799b9486a928936c6716033351a8085efc8b4ea1cb2096e5498"
+}

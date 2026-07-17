@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_consensus\n           SET block_content_digest = NULL,\n               descriptor_count = NULL,\n               detailed_range_start = NULL,\n               detailed_range_digest = NULL,\n               manifest_revision = $4,\n               manifest_digest = NULL,\n               manifest_published = FALSE,\n               manifest_published_at = NULL,\n               updated_at = NOW()\n         WHERE host_chain_id = $1\n           AND block_hash = $2\n           AND manifest_revision = $3\n           AND manifest_digest IS NOT NULL\n           AND manifest_published = TRUE\n        RETURNING manifest_revision\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifest_revision",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5813c6b95123233707d335c6086105bd5a62ae307278b4ee8f543c80d18430a7"
+}

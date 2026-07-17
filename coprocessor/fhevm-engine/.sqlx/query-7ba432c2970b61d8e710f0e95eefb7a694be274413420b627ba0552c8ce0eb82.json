@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT manifest_digest, object_key, signed_manifest\n          FROM block_consensus_manifest\n         WHERE publisher = $1\n           AND version = $2\n           AND coprocessor_context_id = $3\n           AND host_chain_id = $4\n           AND publication_block_number = $5\n           AND publication_block_hash = $6\n         ORDER BY revision\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "manifest_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "signed_manifest",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7ba432c2970b61d8e710f0e95eefb7a694be274413420b627ba0552c8ce0eb82"
+}
