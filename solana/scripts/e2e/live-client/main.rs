@@ -892,7 +892,7 @@ fn public_decrypt_proof_step(
     let value_account = fetch_encrypted_value(host, encrypted_value)?;
     let value_key = value_account.value_key();
     // Chain facts (peaks/leaf_count/current handle) come from the live account; the proof itself
-    // comes from the relayer. The public-decrypt leaf is the lineage's last leaf.
+    // comes from solana-proof-service. The public-decrypt leaf is the lineage's last leaf.
     let leaf_index = value_account
         .leaf_count
         .checked_sub(1)
@@ -904,7 +904,7 @@ fn public_decrypt_proof_step(
     zama_solana_acl::authorize_public(encrypted_value.to_bytes(), &shared, handle, &proof)
         .map_err(|e| {
             Box::<dyn std::error::Error>::from(format!(
-                "relayer public-decrypt proof did not verify against live lineage: {e:?}"
+                "solana-proof-service public-decrypt proof did not verify against live lineage: {e:?}"
             ))
         })?;
     let proof_bytes = proof_blob(MMR_MODE_PUBLIC, &proof)?;
@@ -998,7 +998,7 @@ fn historical_supersede_step(
                 &proof,
             ) {
                 return Err(format!(
-                    "relayer historical proof did not verify against live leaf_count={}",
+                    "solana-proof-service historical proof did not verify against live leaf_count={}",
                     value_account.leaf_count
                 )
                 .into());
