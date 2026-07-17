@@ -198,9 +198,9 @@ pub async fn handle_upgrade_activated(
         r#"
         INSERT INTO upgrade_state (
             stack_role, state, status, proposal_id, version,
-            start_block, end_block, gw_start_block, updated_at
+            start_block, end_block, gw_start_block, host_chain_id, updated_at
         )
-        VALUES ($1, 'UpgradeActivated', 'in_progress', $2, $3, $4, $5, $6, NOW())
+        VALUES ($1, 'UpgradeActivated', 'in_progress', $2, $3, $4, $5, $6, $7, NOW())
         ON CONFLICT (stack_role) DO UPDATE
         SET state              = EXCLUDED.state,
             status             = EXCLUDED.status,
@@ -209,6 +209,7 @@ pub async fn handle_upgrade_activated(
             start_block        = EXCLUDED.start_block,
             end_block          = EXCLUDED.end_block,
             gw_start_block     = EXCLUDED.gw_start_block,
+            host_chain_id      = EXCLUDED.host_chain_id,
             last_error         = NULL,
             updated_at         = NOW()
         WHERE upgrade_state.state IN ('LIVE', 'PAUSED')
@@ -222,6 +223,7 @@ pub async fn handle_upgrade_activated(
     .bind(payload.start_block)
     .bind(payload.end_block)
     .bind(payload.gw_start_block)
+    .bind(payload.chain_id)
     .execute(pool)
     .await?;
 

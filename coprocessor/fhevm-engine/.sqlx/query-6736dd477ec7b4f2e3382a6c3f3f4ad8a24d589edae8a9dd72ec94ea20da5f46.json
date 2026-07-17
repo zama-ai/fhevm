@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.handle, c.ciphertext, c.ciphertext_type\n                 FROM public.ciphertexts c\n                 WHERE c.handle = ANY($1::BYTEA[])\n                   AND NOT EXISTS (\n                       SELECT 1 FROM public.computations comp\n                       WHERE comp.output_handle = c.handle\n                         AND comp.host_chain_id = $2\n                         AND comp.block_number >= $3)\n                   AND NOT EXISTS (\n                       SELECT 1 FROM public.input_handles ih\n                       WHERE ih.handle = c.handle\n                         AND ih.block_number >= $4)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext_type",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6736dd477ec7b4f2e3382a6c3f3f4ad8a24d589edae8a9dd72ec94ea20da5f46"
+}
