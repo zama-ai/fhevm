@@ -75,9 +75,9 @@ on:
         required: true
         default: "v0.13.0"
       test_suite_version:
-        description: "Image tag for the test-suite image (same override rule as host_contracts_version above)"
+        description: "Image tag for the test-suite image (same override rule as host_contracts_version above) - only matters when build_images=false, see env.TEST_SUITE_VERSION's comment"
         required: true
-        default: "v0.11.5-0"
+        default: "v0.13.0"
       common_chart_version:
         description: "Version of the generic `common` Helm chart, used for postgres-*, relayer-migrate, relayer and test-suite alike"
         required: true
@@ -190,12 +190,24 @@ env:
   # values-relayer-testnet.yaml (job.image.tag) and fhevm-test-suite/
   # values-relayer-dev.yaml both pin exactly this tag in production.
   RELAYER_VERSION: "v0.13.0"
-  TEST_SUITE_VERSION: "v0.11.5-0"
+  # Neither v0.13.0 nor v0.11.5-0 work as a *pinned* tag here - both bundle a
+  # tfhe/node-tfhe build that can't deserialize kms-core v0.13.20's
+  # tfhe-rs-1.6.1-format public keys ("invalid value: integer `1`, expected
+  # variant index 0 <= i < 1"), confirmed live under both
+  # @fhevm/sdk@*(v0.13.0, defaults to canonical tfhe wasm 1.5.3) and
+  # @zama-fhe/relayer-sdk@0.4.4 (v0.11.5-0, node-tfhe 1.4.0-alpha.3). The
+  # actual fix already exists on this branch's own sdk/js-sdk (commit
+  # 328709b7c hardcodes tfheVersion: '1.6.2' - confirmed via `git merge-base
+  # --is-ancestor` and reading the file directly), so build_images=true
+  # (build-test-suite job below) picks it up automatically via
+  # test-suite/e2e/package.json's "@fhevm/sdk": "*" workspace link - this
+  # pinned fallback only matters when build_images=false/skipped.
+  TEST_SUITE_VERSION: "v0.13.0"
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================
-  KMS_REPO_REF: "v0.13.20"
-  KMS_CORE_TAG: "v0.13.20"
+  KMS_REPO_REF: "v0.13.10"
+  KMS_CORE_TAG: "v0.13.10"
   NB_KMS_CORE: "4"
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net

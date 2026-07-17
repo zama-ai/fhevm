@@ -26,16 +26,16 @@ imagePullSecrets:
 
 image:
   repository: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e
-  # v0.13.0's bundled @fhevm/sdk defaults its tfhe WASM module to the oldest
-  # canonical version (1.5.3) instead of auto-detecting from the chain
-  # (confirmed via runtime instrumentation - it never even calls the ACL
-  # contract's getVersion()), which cannot deserialize the 1.6.1-format keys
-  # our kms-core v0.13.20 produces ("invalid value: integer `1`, expected
-  # variant index 0 <= i < 1"). v0.11.5-0 predates @fhevm/sdk entirely - its
-  # instance.ts unconditionally uses the older, simpler
-  # @zama-fhe/relayer-sdk@^0.4.4 (no per-protocol version auto-resolution to
-  # get wrong), and needs no env vars beyond what we already set below.
-  tag: v0.11.5-0
+  # This tag is only used when pr-preview-deploy.yml's build_images=false
+  # (or the workflow isn't run at all, e.g. a raw `helm upgrade` like this
+  # file's own header example) - see env.TEST_SUITE_VERSION's comment there
+  # for why NEITHER this pinned v0.13.0 NOR the older v0.11.5-0 actually work
+  # against kms-core v0.13.20 without a build from this branch (both bundle a
+  # tfhe/node-tfhe build that can't deserialize its tfhe-rs-1.6.1-format
+  # public keys - confirmed live under both SDKs). If deploying by hand like
+  # this against a real v0.13.20 KMS, either build+push your own test-suite
+  # image from this branch first, or downgrade KMS_CORE_TAG.
+  tag: v0.13.0
 
 job:
   enabled: true

@@ -79,3 +79,15 @@ The production Helm charts in `../../charts/` already support everything the sim
 scenario needs via values alone (see gap analysis in the feasibility plan). Keeping
 e2e-specific config as overlays here — rather than forking or templating the charts — means
 this path never drifts from what devnet/testnet/mainnet actually deploy.
+
+## TODO / remaining work
+
+- Add multi-coprocessor support (3 or 5 coprocessor instances, each with its own dedicated
+  Postgres, mirroring the per-party kms-connector/Postgres pattern above). This is intended for
+  the coprocessor *workers* (`snsWorker`/`zkProofWorker`/`tfheWorker`/`txSender`), not the
+  `*Listener` components, which stay singletons — to confirm against how devnet/testnet actually
+  scale this before implementing.
+- Add support for changing the dedicated KMS's instance type (currently whatever
+  `zama-ai/kms`'s own `ci/scripts/deploy.sh` defaults to).
+- Add support for changing the coprocessor's tfhe-worker instance type (e.g. GPU vs CPU nodepool
+  selection).
