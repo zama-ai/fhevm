@@ -90,7 +90,7 @@ pub async fn retrieve_verified_ciphertext(
     handle: B256,
     material: &ConsensusMaterial,
     winning_buckets: &[String],
-    retries: u8,
+    attempts: u8,
 ) -> Result<TypedCiphertext, ProcessingError> {
     // A handle that carries no valid FHE type is malformed; retrying cannot fix it.
     let fhe_type = extract_fhe_type_from_handle(handle.as_slice()).map_err(|e| {
@@ -106,7 +106,7 @@ pub async fn retrieve_verified_ciphertext(
 
     let mut last_error = "no retrieval attempt made".to_string();
     let mut digest_mismatch = false;
-    for attempt in 1..=retries {
+    for attempt in 1..=attempts {
         for bucket in winning_buckets {
             let url = rfc023_ciphertext_url(bucket, handle);
             let body = match retrieve_ciphertext_via_http(client, &url).await {

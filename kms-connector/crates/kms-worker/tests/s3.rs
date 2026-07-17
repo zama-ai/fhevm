@@ -46,7 +46,7 @@ async fn test_get_ciphertext_from_winning_bucket() -> anyhow::Result<()> {
         stored_handle()?,
         &stored_material()?,
         &[bucket_url],
-        Config::default().s3_ciphertext_retrieval_retries,
+        Config::default().s3_ciphertext_retrieval_attempts,
     )
     .await
     .unwrap();
@@ -77,7 +77,7 @@ async fn test_get_ciphertext_rejects_digest_mismatch() -> anyhow::Result<()> {
         stored_handle()?,
         &material,
         &[bucket_url],
-        Config::default().s3_ciphertext_retrieval_retries,
+        Config::default().s3_ciphertext_retrieval_attempts,
     )
     .await
     .unwrap_err();
@@ -109,7 +109,7 @@ async fn test_get_unstored_ciphertext_is_unavailable() -> anyhow::Result<()> {
         unstored_handle,
         &stored_material()?,
         &[bucket_url],
-        Config::default().s3_ciphertext_retrieval_retries,
+        Config::default().s3_ciphertext_retrieval_attempts,
     )
     .await
     .unwrap_err();

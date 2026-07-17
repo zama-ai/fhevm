@@ -64,9 +64,9 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_GRPC_POLL_INTERVAL (format: https://docs.rs/humantime/latest/humantime/)
 # grpc_poll_interval = "1s"
 
-# Number of retries for S3 ciphertext retrieval (optional, default: 3).
-# ENV: KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES
-# s3_ciphertext_retrieval_retries = 3
+# Number of attempts for S3 ciphertext retrieval (optional, default: 3).
+# ENV: KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS
+# s3_ciphertext_retrieval_attempts = 3
 
 # Timeout to connect to a S3 bucket (optional, defaults to 3s)
 # ENV: KMS_CONNECTOR_S3_CONNECT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)

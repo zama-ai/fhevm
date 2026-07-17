@@ -74,9 +74,9 @@ pub struct Config {
     #[serde(default = "default_max_decryption_attempts")]
     pub max_decryption_attempts: u16,
 
-    /// Number of retries for S3 ciphertext retrieval.
-    #[serde(default = "default_s3_ciphertext_retrieval_retries")]
-    pub s3_ciphertext_retrieval_retries: u8,
+    /// Number of attempts for S3 ciphertext retrieval.
+    #[serde(default = "default_s3_ciphertext_retrieval_attempts")]
+    pub s3_ciphertext_retrieval_attempts: u8,
     /// Timeout to connect to a S3 bucket.
     #[serde(with = "humantime_serde", default = "default_s3_connect_timeout")]
     pub s3_connect_timeout: Duration,
@@ -204,7 +204,7 @@ fn default_max_decryption_attempts() -> u16 {
     20
 }
 
-fn default_s3_ciphertext_retrieval_retries() -> u8 {
+fn default_s3_ciphertext_retrieval_attempts() -> u8 {
     3
 }
 
@@ -251,7 +251,7 @@ impl Default for Config {
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
             grpc_request_retries: default_grpc_request_retries(),
             max_decryption_attempts: default_max_decryption_attempts(),
-            s3_ciphertext_retrieval_retries: default_s3_ciphertext_retrieval_retries(),
+            s3_ciphertext_retrieval_attempts: default_s3_ciphertext_retrieval_attempts(),
             s3_connect_timeout: default_s3_connect_timeout(),
             erc1271_gas_limit: default_erc1271_gas_limit(),
             service_name: default_service_name(),
@@ -286,7 +286,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES");
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
-            env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES");
+            env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
         }
@@ -351,7 +351,7 @@ mod tests {
             );
             env::set_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES", "5");
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
-            env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES", "5");
+            env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4s");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
         }
@@ -402,7 +402,7 @@ mod tests {
         );
         assert_eq!(config.grpc_request_retries, 5);
         assert_eq!(config.max_decryption_attempts, 300);
-        assert_eq!(config.s3_ciphertext_retrieval_retries, 5);
+        assert_eq!(config.s3_ciphertext_retrieval_attempts, 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
         assert_eq!(config.service_name, "kms-connector-test");
 

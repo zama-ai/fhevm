@@ -40,8 +40,8 @@ pub struct CiphertextManager<P: Provider> {
     /// Off-chain ciphertext-attestation verification config.
     config: CtAttestationConfig,
 
-    /// Number of retries for S3 ciphertext retrieval.
-    s3_ciphertext_retrieval_retries: u8,
+    /// Number of attempts for S3 ciphertext retrieval.
+    s3_ciphertext_retrieval_attempts: u8,
 }
 
 impl<P> CiphertextManager<P>
@@ -60,7 +60,7 @@ where
             registry,
             client,
             config: config.ct_attestation.clone(),
-            s3_ciphertext_retrieval_retries: config.s3_ciphertext_retrieval_retries,
+            s3_ciphertext_retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
         })
     }
 
@@ -129,7 +129,7 @@ where
             handle,
             &consensus.material,
             &winning_buckets,
-            self.s3_ciphertext_retrieval_retries,
+            self.s3_ciphertext_retrieval_attempts,
         )
         .await?;
 
@@ -287,7 +287,7 @@ where
             registry: CoprocessorRegistry::empty(provider),
             client,
             config: CtAttestationConfig::default(),
-            s3_ciphertext_retrieval_retries: Config::default().s3_ciphertext_retrieval_retries,
+            s3_ciphertext_retrieval_attempts: Config::default().s3_ciphertext_retrieval_attempts,
         }
     }
 }
