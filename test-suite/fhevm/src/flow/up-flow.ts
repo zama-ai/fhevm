@@ -213,7 +213,8 @@ export const assertDockerMemory = async (scenario: State["scenario"]) => {
 const NETWORK_TARGETS: ReadonlySet<string> = new Set(["devnet", "testnet", "mainnet"]);
 
 /** Whether the scenario routes a coprocessor to the managed secondary Anvil. */
-export const scenarioUsesForkAnvil = (scenario: Pick<State["scenario"], "instances">) =>
+export const scenarioUsesForkAnvil = (scenario: State["scenario"]) =>
+  scenario.kind === "coprocessor-consensus" &&
   scenario.instances.some((instance) =>
     [instance.env.RPC_HTTP_URL, instance.env.RPC_WS_URL].some((value) => {
       if (!value) return false;

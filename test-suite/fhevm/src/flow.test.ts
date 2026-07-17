@@ -381,7 +381,21 @@ describe("resumeRepairStep", () => {
 
 describe("runtime helpers", () => {
   test("detects scenarios that require the managed fork Anvil", () => {
-    expect(scenarioUsesForkAnvil(completeState().scenario)).toBe(false);
+    const defaultScenario = completeState().scenario;
+    expect(scenarioUsesForkAnvil(defaultScenario)).toBe(false);
+
+    expect(
+      scenarioUsesForkAnvil({
+        version: 1,
+        kind: "blue-green",
+        origin: "file",
+        hostChains: defaultScenario.hostChains,
+        topology: defaultScenario.topology,
+        bcs: { source: { mode: "inherit" }, env: {}, args: {} },
+        gcs: { source: { mode: "local" }, stackVersion: "test", env: {}, args: {} },
+        kms: defaultScenario.kms,
+      }),
+    ).toBe(false);
 
     const forkScenario = completeState().scenario;
     forkScenario.instances.push({
