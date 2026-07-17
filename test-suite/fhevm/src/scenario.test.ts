@@ -312,11 +312,22 @@ gcs:
       ).rejects.toThrow("predates v0.14");
     });
 
-    test("--override coprocessor is rejected for blue-green scenarios", async () => {
+    test("--override coprocessor is accepted for blue-green scenarios (GCS builds locally)", async () => {
+      const resolved = await resolveScenarioForOptions({
+        scenarioPath: "blue-green",
+        overrides: [{ group: "coprocessor" }],
+      });
+      expect(resolved.kind).toBe("blue-green");
+      if (resolved.kind === "blue-green") {
+        expect(resolved.gcs.source.mode).toBe("local");
+      }
+    });
+
+    test("--override coprocessor:<service> is rejected for blue-green scenarios", async () => {
       await expect(
         resolveScenarioForOptions({
           scenarioPath: "blue-green",
-          overrides: [{ group: "coprocessor" }],
+          overrides: [{ group: "coprocessor", services: ["coprocessor-tfhe-worker"] }],
         }),
       ).rejects.toThrow("not supported with blue-green");
     });
