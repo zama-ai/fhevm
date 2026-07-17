@@ -35,3 +35,10 @@ export {
   type FetchEncryptedValuesReturnType,
   fetchEncryptedValues,
 } from './fetchEncryptedValues.js';
+
+// v13: Only the Legacy version is exported
+export {
+  type CreateUnsignedLegacyDecryptionPermitEip712Parameters,
+  type CreateUnsignedLegacyDecryptionPermitEip712ReturnType,
+  createUnsignedLegacyDecryptionPermitEip712,
+} from './createUnsignedLegacyDecryptionPermitEip712.js';

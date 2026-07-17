@@ -736,3 +736,34 @@ export function randomUniqueUints(n: number, count: number): number[] {
   }
   return pool.slice(0, count);
 }
+
+export function secondsToDays(
+  seconds: unknown,
+  options?: {
+    subject?: string;
+  } & ErrorMetadataParams,
+): UintNumber {
+  // Accept a decimal string, number, or bigint. Normalize to a validated
+  // non-negative integer (uint256 range) held as a bigint:
+  //  - strings are parsed with `tryParseUintBigIntString` (returns `undefined`
+  //    on any non-integer / out-of-range / malformed input);
+  //  - numbers/bigints go through `asUint`, which throws on anything that is not
+  //    a non-negative integer in range.
+  const subject = options?.subject ?? 'seconds';
+
+  const s =
+    typeof seconds === 'string'
+      ? tryParseUintBigIntString(seconds, MAX_UINT256)
+      : BigInt(asUint(seconds, { max: MAX_UINT256, ...options }));
+
+  if (s === undefined) {
+    throw new Error(`${subject} is not a valid non-negative integer number of seconds, got ${String(seconds)}`);
+  }
+
+  if (s % 86_400n !== 0n) {
+    throw new Error(`${subject} must be a whole number of days (a multiple of 86400 seconds), got ${s}`);
+  }
+
+  // `bigIntToNumber` safely narrows back to `number` (throws above Number.MAX_SAFE_INTEGER).
+  return bigIntToNumber(s / 86_400n, { subject }) as UintNumber;
+}
