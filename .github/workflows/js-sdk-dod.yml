@@ -22,7 +22,6 @@ on:
   pull_request:
     branches:
       - devex/js-sdk
-      - devex/js-sdk-v13
       - main
     paths:
       - 'sdk/js-sdk/**'
