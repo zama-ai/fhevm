@@ -1195,6 +1195,405 @@ fn mollusk_confidential_transfer_updates_lineages_and_cleartext_balances() {
 }
 
 #[test]
+fn mollusk_confidential_transfer_to_second_recipient_rotates_transferred_lineage_subjects() {
+    // Regression: a sender's second transfer to a DIFFERENT recipient must succeed. The
+    // per-sender transferred-amount lineage rotates its audience to the new recipient, sealing
+    // the first receipt's audience into historical leaves (previously reverted 6053).
+    let fixture = TokenFixture::new();
+    let charlie_owner = Pubkey::new_unique();
+    let charlie_token = token::token_account_address(fixture.mint, charlie_owner).0;
+    let charlie_balance_value =
+        token::balance_encrypted_value_address(fixture.mint, charlie_token).0;
+    let charlie_initial = handle_for_chain(3, BALANCE_FHE_TYPE);
+
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(charlie_owner, system_account(5_000_000_000));
+    accounts.insert(
+        charlie_token,
+        fixture.confidential_token_account(charlie_owner, charlie_balance_value),
+    );
+    let (_, charlie_value) = new_encrypted_value(
+        fixture.mint,
+        charlie_token,
+        token::balance_label(),
+        charlie_initial,
+        &[charlie_owner, fixture.compute_signer],
+    );
+    accounts.insert(
+        charlie_balance_value,
+        encrypted_value_account(&charlie_value),
+    );
+    let context = mollusk().with_context(accounts);
+
+    let transferred_value_address = fixture.transferred_amount_value_address(fixture.alice_token);
+
+    // First transfer Alice -> Bob: births the transferred lineage with audience
+    // {alice_owner, bob_owner, compute_signer}.
+    let first_amount = handle_for_chain(21, BALANCE_FHE_TYPE);
+    let first = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_attestation_for(first_amount, fixture.owner, fixture.compute_signer),
+    );
+    context.process_and_validate_instruction(&first, &[Check::success()]);
+
+    let first_receipt = read_encrypted_value(&context, transferred_value_address);
+    assert_eq!(first_receipt.leaf_count, 0);
+    assert_eq!(
+        first_receipt.subjects,
+        vec![fixture.owner, fixture.bob_owner, fixture.compute_signer]
+    );
+    let first_receipt_handle = first_receipt.current_handle;
+
+    // Second transfer Alice -> Charlie: must now SUCCEED and rotate the lineage audience.
+    let second_amount = handle_for_chain(22, BALANCE_FHE_TYPE);
+    let second = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        charlie_token,
+        fixture.alice_balance_value,
+        charlie_balance_value,
+        amount_attestation_for(second_amount, fixture.owner, fixture.compute_signer),
+    );
+    context.process_and_validate_instruction(&second, &[Check::success()]);
+
+    let receipt = read_encrypted_value(&context, transferred_value_address);
+    // Audience rotated to the new recipient.
+    assert_eq!(
+        receipt.subjects,
+        vec![fixture.owner, charlie_owner, fixture.compute_signer]
+    );
+    // Historical leaves seal the FIRST receipt's audience {alice_owner, bob_owner, compute_signer}.
+    assert_eq!(receipt.leaf_count, 3);
+    assert_eq!(
+        receipt.peaks,
+        expected_historical_peaks(
+            transferred_value_address,
+            first_receipt_handle,
+            &[fixture.owner, fixture.bob_owner, fixture.compute_signer],
+        )
+    );
+}
+
+/// Seeds Charlie's token account + balance lineage into `accounts` and returns
+/// (charlie_owner, charlie_token, charlie_balance_value).
+fn seed_third_account(
+    fixture: &TokenFixture,
+    accounts: &mut HashMap<Pubkey, Account>,
+    initial: [u8; 32],
+) -> (Pubkey, Pubkey, Pubkey) {
+    let charlie_owner = Pubkey::new_unique();
+    let charlie_token = token::token_account_address(fixture.mint, charlie_owner).0;
+    let charlie_balance_value =
+        token::balance_encrypted_value_address(fixture.mint, charlie_token).0;
+    accounts.insert(charlie_owner, system_account(5_000_000_000));
+    accounts.insert(
+        charlie_token,
+        fixture.confidential_token_account(charlie_owner, charlie_balance_value),
+    );
+    let (_, charlie_value) = new_encrypted_value(
+        fixture.mint,
+        charlie_token,
+        token::balance_label(),
+        initial,
+        &[charlie_owner, fixture.compute_signer],
+    );
+    accounts.insert(
+        charlie_balance_value,
+        encrypted_value_account(&charlie_value),
+    );
+    (charlie_owner, charlie_token, charlie_balance_value)
+}
+
+#[test]
+fn mollusk_confidential_transfer_rotates_back_to_previous_recipient() {
+    // Alice -> Bob, Alice -> Charlie, Alice -> Bob: the per-sender transferred lineage rotates its
+    // audience each time and seals every outgoing audience into historical leaves.
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    let (charlie_owner, charlie_token, charlie_balance_value) = seed_third_account(
+        &fixture,
+        &mut accounts,
+        handle_for_chain(3, BALANCE_FHE_TYPE),
+    );
+    let context = mollusk().with_context(accounts);
+    let receipt_address = fixture.transferred_amount_value_address(fixture.alice_token);
+
+    let transfer = |to_token, to_balance, tag| {
+        confidential_transfer_ix(
+            &fixture,
+            fixture.alice_token,
+            to_token,
+            fixture.alice_balance_value,
+            to_balance,
+            amount_attestation_for(
+                handle_for_chain(tag, BALANCE_FHE_TYPE),
+                fixture.owner,
+                fixture.compute_signer,
+            ),
+        )
+    };
+
+    context.process_and_validate_instruction(
+        &transfer(fixture.bob_token, fixture.bob_balance_value, 21),
+        &[Check::success()],
+    );
+    let handle_after_bob = read_encrypted_value(&context, receipt_address).current_handle;
+
+    context.process_and_validate_instruction(
+        &transfer(charlie_token, charlie_balance_value, 22),
+        &[Check::success()],
+    );
+    let after_charlie = read_encrypted_value(&context, receipt_address);
+    assert_eq!(after_charlie.leaf_count, 3);
+    assert_eq!(
+        after_charlie.subjects,
+        vec![fixture.owner, charlie_owner, fixture.compute_signer]
+    );
+    let handle_after_charlie = after_charlie.current_handle;
+
+    context.process_and_validate_instruction(
+        &transfer(fixture.bob_token, fixture.bob_balance_value, 23),
+        &[Check::success()],
+    );
+    let after_bob_again = read_encrypted_value(&context, receipt_address);
+
+    // Audience rotated back to Bob; both prior audiences are sealed in order.
+    assert_eq!(
+        after_bob_again.subjects,
+        vec![fixture.owner, fixture.bob_owner, fixture.compute_signer]
+    );
+    assert_eq!(after_bob_again.leaf_count, 6);
+    let mut expected_peaks = Vec::new();
+    let mut count = 0u64;
+    for (handle, audience) in [
+        (
+            handle_after_bob,
+            [fixture.owner, fixture.bob_owner, fixture.compute_signer],
+        ),
+        (
+            handle_after_charlie,
+            [fixture.owner, charlie_owner, fixture.compute_signer],
+        ),
+    ] {
+        for subject in audience {
+            let leaf = zama_solana_acl::historical_access_leaf_commitment(
+                receipt_address.to_bytes(),
+                count,
+                handle,
+                subject.to_bytes(),
+            );
+            zama_solana_acl::mmr_append(&mut expected_peaks, &mut count, leaf).unwrap();
+        }
+    }
+    assert_eq!(after_bob_again.peaks, expected_peaks);
+}
+
+#[test]
+fn mollusk_confidential_transfer_self_transfer_after_receipt_is_no_op() {
+    // A self-transfer short-circuits before the eval (execute_transfer returns early when
+    // from == to), so it never rotates the receipt. After a real transfer birthed the receipt,
+    // a subsequent A -> A succeeds and leaves that receipt untouched.
+    let fixture = TokenFixture::new();
+    let context = mollusk().with_context(fixture.base_accounts());
+    let receipt_address = fixture.transferred_amount_value_address(fixture.alice_token);
+
+    context.process_and_validate_instruction(
+        &confidential_transfer_ix(
+            &fixture,
+            fixture.alice_token,
+            fixture.bob_token,
+            fixture.alice_balance_value,
+            fixture.bob_balance_value,
+            amount_attestation_for(
+                handle_for_chain(21, BALANCE_FHE_TYPE),
+                fixture.owner,
+                fixture.compute_signer,
+            ),
+        ),
+        &[Check::success()],
+    );
+    let receipt_before = read_encrypted_value(&context, receipt_address);
+    assert_eq!(
+        receipt_before.subjects,
+        vec![fixture.owner, fixture.bob_owner, fixture.compute_signer]
+    );
+
+    // Self-transfer: succeeds as a no-op.
+    context.process_and_validate_instruction(
+        &confidential_transfer_ix(
+            &fixture,
+            fixture.alice_token,
+            fixture.alice_token,
+            fixture.alice_balance_value,
+            fixture.alice_balance_value,
+            amount_attestation_for(
+                handle_for_chain(22, BALANCE_FHE_TYPE),
+                fixture.owner,
+                fixture.compute_signer,
+            ),
+        ),
+        &[Check::success()],
+    );
+    let receipt_after = read_encrypted_value(&context, receipt_address);
+    assert_eq!(receipt_after.subjects, receipt_before.subjects);
+    assert_eq!(receipt_after.current_handle, receipt_before.current_handle);
+    assert_eq!(receipt_after.leaf_count, receipt_before.leaf_count);
+}
+
+#[test]
+fn mollusk_confidential_transfer_deny_list_enabled_rotation_to_new_recipient_succeeds() {
+    // Deny-list ENABLED + rotation: the second transfer to a new recipient adds that recipient's
+    // owner to the transferred audience, so its deny record must reach the host and clear.
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(
+        fixture.host_config,
+        deny_enabled_host_config_account(
+            fixture.owner,
+            secp_evm_address(&coprocessor_signing_key()),
+        ),
+    );
+    let (charlie_owner, charlie_token, charlie_balance_value) = seed_third_account(
+        &fixture,
+        &mut accounts,
+        handle_for_chain(3, BALANCE_FHE_TYPE),
+    );
+
+    let alice_deny = host::deny_subject_address(fixture.alice_token).0;
+    let bob_deny = host::deny_subject_address(fixture.bob_token).0;
+    let charlie_token_deny = host::deny_subject_address(charlie_token).0;
+    let charlie_owner_deny = host::deny_subject_address(charlie_owner).0;
+    for record in [alice_deny, bob_deny, charlie_token_deny, charlie_owner_deny] {
+        accounts.insert(record, system_account(0));
+    }
+    let context = mollusk().with_context(accounts);
+    let receipt_address = fixture.transferred_amount_value_address(fixture.alice_token);
+
+    // First transfer (create): only the two token-account authorities are deny-checked.
+    context.process_and_validate_instruction(
+        &confidential_transfer_ix_with_remaining(
+            &fixture,
+            fixture.alice_token,
+            fixture.bob_token,
+            fixture.alice_balance_value,
+            fixture.bob_balance_value,
+            amount_attestation_for(
+                handle_for_chain(21, BALANCE_FHE_TYPE),
+                fixture.owner,
+                fixture.compute_signer,
+            ),
+            vec![alice_deny, bob_deny],
+        ),
+        &[Check::success()],
+    );
+
+    // Second transfer (rotation): authorities alice_token + charlie_token, plus the rotation-added
+    // subject charlie_owner, each needs a (non-denied) deny witness.
+    context.process_and_validate_instruction(
+        &confidential_transfer_ix_with_remaining(
+            &fixture,
+            fixture.alice_token,
+            charlie_token,
+            fixture.alice_balance_value,
+            charlie_balance_value,
+            amount_attestation_for(
+                handle_for_chain(22, BALANCE_FHE_TYPE),
+                fixture.owner,
+                fixture.compute_signer,
+            ),
+            vec![alice_deny, charlie_token_deny, charlie_owner_deny],
+        ),
+        &[Check::success()],
+    );
+
+    let receipt = read_encrypted_value(&context, receipt_address);
+    assert_eq!(
+        receipt.subjects,
+        vec![fixture.owner, charlie_owner, fixture.compute_signer]
+    );
+}
+
+#[test]
+fn mollusk_confidential_transfer_deny_list_rejects_denied_rotation_added_subject() {
+    // Deny-list ENABLED + rotation where the added recipient's owner IS denied: the transfer must
+    // fail with the deny error (not InvalidFheEvalAccount from an unconsumed remaining account).
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(
+        fixture.host_config,
+        deny_enabled_host_config_account(
+            fixture.owner,
+            secp_evm_address(&coprocessor_signing_key()),
+        ),
+    );
+    let (charlie_owner, charlie_token, charlie_balance_value) = seed_third_account(
+        &fixture,
+        &mut accounts,
+        handle_for_chain(3, BALANCE_FHE_TYPE),
+    );
+
+    let alice_deny = host::deny_subject_address(fixture.alice_token).0;
+    let bob_deny = host::deny_subject_address(fixture.bob_token).0;
+    let charlie_token_deny = host::deny_subject_address(charlie_token).0;
+    let charlie_owner_deny = host::deny_subject_address(charlie_owner).0;
+    accounts.insert(alice_deny, system_account(0));
+    accounts.insert(bob_deny, system_account(0));
+    accounts.insert(charlie_token_deny, system_account(0));
+    // charlie_owner is denied.
+    accounts.insert(
+        charlie_owner_deny,
+        deny_subject_record_account(charlie_owner, true).1,
+    );
+    let context = mollusk().with_context(accounts);
+    let receipt_address = fixture.transferred_amount_value_address(fixture.alice_token);
+
+    context.process_and_validate_instruction(
+        &confidential_transfer_ix_with_remaining(
+            &fixture,
+            fixture.alice_token,
+            fixture.bob_token,
+            fixture.alice_balance_value,
+            fixture.bob_balance_value,
+            amount_attestation_for(
+                handle_for_chain(21, BALANCE_FHE_TYPE),
+                fixture.owner,
+                fixture.compute_signer,
+            ),
+            vec![alice_deny, bob_deny],
+        ),
+        &[Check::success()],
+    );
+
+    context.process_and_validate_instruction(
+        &confidential_transfer_ix_with_remaining(
+            &fixture,
+            fixture.alice_token,
+            charlie_token,
+            fixture.alice_balance_value,
+            charlie_balance_value,
+            amount_attestation_for(
+                handle_for_chain(22, BALANCE_FHE_TYPE),
+                fixture.owner,
+                fixture.compute_signer,
+            ),
+            vec![alice_deny, charlie_token_deny, charlie_owner_deny],
+        ),
+        &[host_error(host::errors::ZamaHostError::AclSubjectDenied)],
+    );
+
+    // The denied rotation left the receipt at its first-transfer audience.
+    let receipt = read_encrypted_value(&context, receipt_address);
+    assert_eq!(
+        receipt.subjects,
+        vec![fixture.owner, fixture.bob_owner, fixture.compute_signer]
+    );
+}
+
+#[test]
 fn mollusk_confidential_transfer_with_deny_list_succeeds_when_neither_authority_is_denied() {
     let fixture = TokenFixture::new();
     let (accounts, deny_records) = deny_enabled_transfer_accounts(&fixture, None);

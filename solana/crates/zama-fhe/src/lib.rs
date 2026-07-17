@@ -1234,6 +1234,46 @@ impl EvalPlan {
             })
             .map(|account| account.pubkey)
     }
+
+    /// Subjects this plan grants through a supersede that were not already on the
+    /// stored lineage — `output_subjects \ previous_subjects` for each durable
+    /// output that rotates its audience. The host deny-list-checks each of these
+    /// exactly like `allow_subjects`, so an app forwarding deny-record witnesses
+    /// must cover them alongside the output authorities.
+    pub fn rotation_added_subjects(&self) -> Vec<Pubkey> {
+        let mut added = Vec::new();
+        for step in &self.args.steps {
+            let FheEvalOutput::AllowedDurable {
+                output_subjects,
+                previous_subjects: Some(previous_subjects),
+                ..
+            } = fhe_eval_step_output(step)
+            else {
+                continue;
+            };
+            for entry in output_subjects {
+                if !previous_subjects.contains(&entry.pubkey) && !added.contains(&entry.pubkey) {
+                    added.push(entry.pubkey);
+                }
+            }
+        }
+        added
+    }
+}
+
+/// The output policy of an eval step, independent of step kind.
+fn fhe_eval_step_output(step: &FheEvalStep) -> &FheEvalOutput {
+    match step {
+        FheEvalStep::Binary { output, .. }
+        | FheEvalStep::Ternary { output, .. }
+        | FheEvalStep::TrivialEncrypt { output, .. }
+        | FheEvalStep::Rand { output, .. }
+        | FheEvalStep::Unary { output, .. }
+        | FheEvalStep::RandBounded { output, .. }
+        | FheEvalStep::Sum { output, .. }
+        | FheEvalStep::IsIn { output, .. }
+        | FheEvalStep::MulDiv { output, .. } => output,
+    }
 }
 
 #[cfg(feature = "cpi")]

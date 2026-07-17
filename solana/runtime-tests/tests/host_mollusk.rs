@@ -1228,6 +1228,158 @@ fn mollusk_fhe_eval_supersedes_and_appends_allowed_subject_leaves() {
 }
 
 #[test]
+fn mollusk_fhe_eval_supersede_rotates_subjects_and_seals_the_outgoing_audience() {
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let subject_a = Pubkey::new_unique();
+    let old_recipient = Pubkey::new_unique();
+    let new_recipient = Pubkey::new_unique();
+    let old_handle = handle_for_chain(3, 5);
+    let (address, value) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        old_handle,
+        &[subject_a, old_recipient],
+    );
+
+    let args = FheEvalArgs {
+        context_id: [7; 32],
+        steps: vec![FheEvalStep::TrivialEncrypt {
+            plaintext: [7; 32],
+            fhe_type: 5,
+            output: FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index: 0,
+                output_app_account_authority_index: None,
+                output_acl_domain_key: value.acl_domain_key,
+                output_app_account: value.app_account,
+                output_encrypted_value_label: value.encrypted_value_label,
+                // Rotate the audience: drop `old_recipient`, grant `new_recipient`.
+                output_subjects: vec![
+                    host::AclSubjectEntry { pubkey: subject_a },
+                    host::AclSubjectEntry {
+                        pubkey: new_recipient,
+                    },
+                ],
+                previous_handle: Some(old_handle),
+                previous_subjects: Some(value.subjects.clone()),
+                make_public: false,
+            },
+        }],
+    };
+    let ix = fhe_eval_ix(
+        authority,
+        subject_a,
+        value.app_account,
+        host_config,
+        args,
+        vec![writable(address)],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (subject_a, funded_system_account()),
+        (value.app_account, funded_system_account()),
+        (address, encrypted_value_account(&value)),
+        (host_config, host_config_account),
+        (event_authority(host::id()), Account::default()),
+    ];
+    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+    let updated = read_encrypted_value(&result, address);
+
+    // Historical leaves seal the OLD audience (subject_a, old_recipient) at the old handle.
+    assert_eq!(updated.leaf_count, 2);
+    let mut expected_peaks = Vec::new();
+    let mut expected_count = 0u64;
+    for (index, subject) in [subject_a, old_recipient].iter().enumerate() {
+        let expected_leaf = zama_solana_acl::historical_access_leaf_commitment(
+            address.to_bytes(),
+            index as u64,
+            old_handle,
+            subject.to_bytes(),
+        );
+        zama_solana_acl::mmr_append(&mut expected_peaks, &mut expected_count, expected_leaf)
+            .unwrap();
+    }
+    assert_eq!(updated.peaks, expected_peaks);
+    // Current membership rotated to the new audience.
+    assert_ne!(updated.current_handle, old_handle);
+    assert_eq!(updated.subjects, vec![subject_a, new_recipient]);
+}
+
+#[test]
+fn mollusk_fhe_eval_supersede_shrinks_audience_and_seals_the_outgoing_set() {
+    // A rotation that removes a subject (3 -> 2): the outgoing 3-subject audience is sealed, the
+    // new 2-subject set becomes current membership, and the account never shrinks.
+    let authority = Pubkey::new_unique();
+    let (host_config, host_config_account) = host_config_account(authority);
+    let subject_a = Pubkey::new_unique();
+    let subject_b = Pubkey::new_unique();
+    let subject_c = Pubkey::new_unique();
+    let old_handle = handle_for_chain(3, 5);
+    let (address, value) = new_lineage(
+        Pubkey::new_unique(),
+        authority,
+        label("balance"),
+        old_handle,
+        &[subject_a, subject_b, subject_c],
+    );
+    let bytes_before = encrypted_value_account(&value).data.len();
+
+    let args = FheEvalArgs {
+        context_id: [8; 32],
+        steps: vec![FheEvalStep::TrivialEncrypt {
+            plaintext: [8; 32],
+            fhe_type: 5,
+            output: FheEvalOutput::AllowedDurable {
+                output_encrypted_value_index: 0,
+                output_app_account_authority_index: None,
+                output_acl_domain_key: value.acl_domain_key,
+                output_app_account: value.app_account,
+                output_encrypted_value_label: value.encrypted_value_label,
+                output_subjects: vec![
+                    host::AclSubjectEntry { pubkey: subject_a },
+                    host::AclSubjectEntry { pubkey: subject_b },
+                ],
+                previous_handle: Some(old_handle),
+                previous_subjects: Some(value.subjects.clone()),
+                make_public: false,
+            },
+        }],
+    };
+    let ix = fhe_eval_ix(
+        authority,
+        subject_a,
+        value.app_account,
+        host_config,
+        args,
+        vec![writable(address)],
+    );
+    let accounts = vec![
+        (system_program::ID, system_program_account()),
+        (authority, funded_system_account()),
+        (subject_a, funded_system_account()),
+        (value.app_account, funded_system_account()),
+        (address, encrypted_value_account(&value)),
+        (host_config, host_config_account),
+        (event_authority(host::id()), Account::default()),
+    ];
+    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+    let updated = read_encrypted_value(&result, address);
+
+    assert_eq!(updated.leaf_count, 3);
+    assert_eq!(updated.subjects, vec![subject_a, subject_b]);
+    // Account bytes are never reduced by a shrinking rotation (realloc only grows).
+    let resulting_bytes = result
+        .resulting_accounts
+        .iter()
+        .find(|(key, _)| *key == address)
+        .map(|(_, account)| account.data.len())
+        .expect("encrypted value account present in result");
+    assert!(resulting_bytes >= bytes_before);
+}
+
+#[test]
 fn mollusk_update_encrypted_value_rejects_raw_handle_without_provenance() {
     let authority = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(authority);

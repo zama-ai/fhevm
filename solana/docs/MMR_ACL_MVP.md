@@ -44,6 +44,11 @@ this note records the operational model in one place.
   instead of relying on implicit vector or arithmetic limits.
 - Subject removal changes only current and future authorization. No new historical leaf is written for
   the removed subject after removal; access sealed before removal remains valid.
+- Audience membership is immutable by default, but a durable-output supersede may explicitly rotate the
+  subject set: `output_subjects` need not equal the stored set. The outgoing audience is sealed into
+  historical leaves first (below), then the new set replaces current membership, and every subject the
+  rotation adds passes the grant deny-list exactly as `allow_subjects` does. `previous_handle` and
+  `previous_subjects` still pin the outgoing state exactly.
 
 ## History And Decrypt
 
@@ -91,7 +96,7 @@ stateDiagram-v2
     [*] --> Live : fhe_eval durable output<br/>(≥1 subject, leaf_count=0)
     Live --> Live : allow_subjects<br/>(add subject, NO leaf)
     Live --> Live : make_handle_public<br/>(+1 PublicDecryptLeaf for current handle)
-    Live --> Live : fhe_eval durable output<br/>(supersede: +1 HistoricalAccessLeaf per then-subject,<br/>then rewrite current_handle)
+    Live --> Live : fhe_eval durable output<br/>(supersede: +1 HistoricalAccessLeaf per then-subject,<br/>rewrite current_handle, then optionally rotate subjects<br/>— added subjects pass the grant deny-list)
     Live --> Live : fhe_eval durable output with make_public=true<br/>(supersede leaves, rewrite handle,<br/>then +1 PublicDecryptLeaf for the NEW handle — DD-036)
     note right of Live
         Account ≤ 2457 bytes for all time

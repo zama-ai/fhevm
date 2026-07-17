@@ -173,6 +173,32 @@ fn recovered_already_applied_event(
             )])
         }
         (
+            DecodedInstruction::FheEvalUpdateEncryptedValue {
+                encrypted_value,
+                previous_handle,
+                previous_subjects,
+                output_subjects,
+                make_public_handle,
+            },
+            ReplayError::PreviousStateMismatch(error_lineage),
+        ) if error_lineage == encrypted_value
+            && state.current_handle == *make_public_handle
+            && state.subjects.as_slice() == output_subjects.as_slice() =>
+        {
+            // Already applied: the lineage is at this supersede's post-state (a rotation moved
+            // subjects to `output_subjects`, so a re-apply trips PreviousStateMismatch). Replay
+            // the same leaves the fresh apply would have — the outgoing audience sealed first,
+            // then the born-public leaf if any — mirroring the raw UpdateEncryptedValue arm.
+            let mut events = vec![LineageEvent::handle_superseded(
+                *previous_handle,
+                previous_subjects,
+            )];
+            if let Some(handle) = make_public_handle {
+                events.push(LineageEvent::MarkedPublic { handle: *handle });
+            }
+            Some(events)
+        }
+        (
             DecodedInstruction::RemoveSubject {
                 encrypted_value,
                 subject,
@@ -432,6 +458,38 @@ mod tests {
                 previous_subjects,
             },
         )
+    }
+
+    #[test]
+    fn recovers_already_applied_fhe_eval_rotation_idempotently() {
+        let ev = pk(0x40);
+        let owner = pk(0x30);
+        let old_recipient = pk(0x31);
+        let new_recipient = pk(0x32);
+        // State already advanced to the post-rotation audience by a prior application.
+        let mut state = Some(LineageReplayState {
+            current_handle: None,
+            subjects: vec![owner, new_recipient],
+        });
+        let instruction = DecodedInstruction::FheEvalUpdateEncryptedValue {
+            encrypted_value: ev,
+            previous_handle: pk(0x10),
+            previous_subjects: vec![owner, old_recipient],
+            output_subjects: vec![owner, new_recipient],
+            make_public_handle: None,
+        };
+
+        let events = apply_or_recover_instruction(&mut state, &instruction).unwrap();
+
+        // Replays the outgoing-audience leaves without double-advancing the state.
+        assert_eq!(
+            events,
+            vec![LineageEvent::handle_superseded(
+                pk(0x10),
+                &[owner, old_recipient]
+            )]
+        );
+        assert_eq!(state.unwrap().subjects, vec![owner, new_recipient]);
     }
 
     fn make_public_ix(program_id: [u8; 32], lineage: [u8; 32], handle: [u8; 32]) -> RawInstruction {

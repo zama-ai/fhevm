@@ -1,6 +1,6 @@
 {
   "confidential_transfer/direct": {
-    "compute_units": 329820,
+    "compute_units": 330361,
     "unique_accounts": 14,
     "instruction_data_bytes": 223,
     "cpi_instructions": 7,
@@ -8,7 +8,7 @@
     "max_cpi_instruction_data_bytes": 1427
   },
   "confidential_transfer/steady_state": {
-    "compute_units": 347289,
+    "compute_units": 348040,
     "unique_accounts": 14,
     "instruction_data_bytes": 223,
     "cpi_instructions": 5,
@@ -16,7 +16,7 @@
     "max_cpi_instruction_data_bytes": 1559
   },
   "initialize_token_account": {
-    "compute_units": 62273,
+    "compute_units": 62356,
     "unique_accounts": 11,
     "instruction_data_bytes": 16,
     "cpi_instructions": 6,

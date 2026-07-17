@@ -1173,6 +1173,15 @@ user-decrypt authorization in the KMS connector, delegation-mediated user decryp
 and public leaf creation. Historical authorization is the sealed `HistoricalAccessLeaf` for the
 subject at the time of supersession, not a later live-role lookup.
 
+Amendment (fhevm-internal#1741): current membership is immutable by default but not frozen — a
+durable-output supersede may explicitly rotate the subject set (`output_subjects` need not equal the
+stored set). Order is load-bearing: the outgoing audience is sealed into historical leaves first, then
+the new set replaces current membership, so past authorization stays exactly as sealed. Every subject a
+rotation adds passes the grant deny-list exactly as `allow_subjects` does (so rotation is not a
+deny-list bypass); `previous_handle`/`previous_subjects` still pin the outgoing state exactly, keeping
+supersedes stateless-replayable (DD-033). This lets a per-sender lineage (e.g. confidential-token's
+`transferred_amount`) re-target its audience across recipients instead of reverting.
+
 ## DD-033: No ACL-Lifecycle Events — Self-Describing Args + Instruction-Replay Indexing
 
 Status: adopted
