@@ -159,22 +159,11 @@ pub enum Error {
     Hex(String),
 }
 
-/// Decode a hex string (with or without `0x` prefix) into bytes.
-fn decode_hex(s: &str) -> Result<Vec<u8>, Error> {
-    let trimmed = s.strip_prefix("0x").unwrap_or(s);
-    // Minimal local hex decoder to avoid pulling in another crate; payloads are short.
-    if !trimmed.len().is_multiple_of(2) {
-        return Err(Error::Hex("odd-length hex string".into()));
-    }
-    (0..trimmed.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&trimmed[i..i + 2], 16).map_err(|e| Error::Hex(e.to_string())))
-        .collect()
-}
-
-/// Handle an `event_upgrade_activated` notification: parse payload and upsert
-/// the FSM row with `state='UpgradeActivated'`, `status='in_progress'`. For
-/// GCS, additionally spawns the dry-run readiness loop.
+/// Handle an `event_upgrade_activated` notification. The host-listener writes the
+/// `upgrade_state` row in the same transaction that decodes `CoprocessorUpgradeProposed`,
+/// so this notification is only a wake-up: drive the FSM from the persisted row
+/// (via `reconcile`), not from the payload. A missed notification is recovered by the
+/// boot/poll-tick reconcile in `run`.
 pub async fn handle_upgrade_activated(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
@@ -185,87 +174,13 @@ pub async fn handle_upgrade_activated(
     let payload: UpgradeActivatedPayload =
         serde_json::from_str(raw_payload).map_err(|e| Error::Payload(e.to_string()))?;
 
-    let proposal_id_bytes = decode_hex(&payload.proposal_id)?;
-    let stack_role = stack_role(gcs_mode);
-
     info!(
-        stack_role,
+        stack_role = stack_role(gcs_mode),
         proposal_id = %payload.proposal_id,
-        chain_id = payload.chain_id,
-        start_block = payload.start_block,
-        end_block = payload.end_block,
-        gw_start_block = payload.gw_start_block,
-        "event_upgrade_activated received — inserting upgrade_state row"
+        "event_upgrade_activated received — reconciling from persisted upgrade_state row"
     );
 
-    let result = sqlx::query(
-        r#"
-        INSERT INTO upgrade_state (
-            stack_role, state, status, proposal_id, version,
-            start_block, end_block, gw_start_block, host_chain_id,
-            host_consensus_reached, gw_consensus_reached, updated_at
-        )
-        VALUES ($1, 'UpgradeActivated', 'in_progress', $2, $3, $4, $5, $6, $7, FALSE, FALSE, NOW())
-        ON CONFLICT (stack_role) DO UPDATE
-        SET state              = EXCLUDED.state,
-            status             = EXCLUDED.status,
-            proposal_id        = EXCLUDED.proposal_id,
-            version            = EXCLUDED.version,
-            start_block        = EXCLUDED.start_block,
-            end_block          = EXCLUDED.end_block,
-            gw_start_block     = EXCLUDED.gw_start_block,
-            host_chain_id      = EXCLUDED.host_chain_id,
-            -- Fresh window: clear both consensus latches so a prior upgrade's
-            -- observations can't authorize this one's cutover.
-            host_consensus_reached = FALSE,
-            gw_consensus_reached   = FALSE,
-            last_error         = NULL,
-            updated_at         = NOW()
-        WHERE upgrade_state.state IN ('LIVE', 'PAUSED')
-           OR upgrade_state.status IN ('completed', 'failed')
-           OR upgrade_state.proposal_id = EXCLUDED.proposal_id
-        "#,
-    )
-    .bind(stack_role)
-    .bind(&proposal_id_bytes)
-    .bind(payload.version.as_deref())
-    .bind(payload.start_block)
-    .bind(payload.end_block)
-    .bind(payload.gw_start_block)
-    .bind(payload.chain_id)
-    .execute(pool)
-    .await?;
-
-    if result.rows_affected() == 0 {
-        warn!(
-            stack_role,
-            proposal_id = %payload.proposal_id,
-            "Rejected event_upgrade_activated: another upgrade is already in flight for this stack role"
-        );
-        return Ok(());
-    }
-
-    // Note: the `gcs` schema and its table duplicates are created once at
-    // upgrade-controller startup (see `run`), not here — the GCS services start
-    // tailing the chain before activation and need the write target to already
-    // exist so their `search_path = gcs,public` writes don't fall back to the
-    // live `public` schema.
-
-    // Only GCS gates on the pre-snapshot completeness check; BCS keeps
-    // serving live traffic untouched until cutover.
-    if gcs_mode {
-        spawn_gcs_dry_run_readiness(
-            pool,
-            cancel,
-            readiness,
-            proposal_id_bytes,
-            payload.chain_id,
-            payload.start_block,
-            payload.gw_start_block,
-        );
-    }
-
-    Ok(())
+    reconcile(pool, cancel, readiness, gcs_mode).await
 }
 
 /// Spawn the GCS readiness gates (gateway + host) that release the workers and flip
@@ -1509,67 +1424,9 @@ mod tests {
     }
 
     #[test]
-    fn hex_encode_round_trips() {
+    fn hex_encode_formats_bytes() {
         let bytes = vec![0x00, 0x01, 0xab, 0xff];
-        let s = hex_encode(&bytes);
-        assert_eq!(s, "0001abff");
-        assert_eq!(decode_hex(&s).unwrap(), bytes);
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn handle_upgrade_activated_accepts_new_proposal_after_paused_cutover() {
-        use sqlx::Row;
-
-        let (_instance, pool) = test_pool().await;
-
-        sqlx::query(
-            r#"
-            INSERT INTO upgrade_state (
-                stack_role, state, status, proposal_id, version,
-                start_block, end_block, gw_start_block, updated_at
-            )
-            VALUES ('BCS', 'PAUSED', 'completed', $1, 'v1', 100, 200, 1, NOW())
-            ON CONFLICT (stack_role) DO UPDATE
-            SET state = EXCLUDED.state, status = EXCLUDED.status,
-                proposal_id = EXCLUDED.proposal_id, updated_at = NOW()
-            "#,
-        )
-        .bind(&[0x01u8][..])
-        .execute(&pool)
-        .await
-        .expect("seed");
-
-        let payload = serde_json::json!({
-            "proposal_id":        "0x02",
-            "chain_id":           1_i64,
-            "start_block":        100_i64,
-            "end_block":          200_i64,
-            "gw_start_block":     1_i64,
-            "version":            "v2",
-        })
-        .to_string();
-
-        let cancel = CancellationToken::new();
-        let readiness = Arc::new(AtomicBool::new(false));
-        handle_upgrade_activated(&pool, &cancel, &readiness, false, &payload)
-            .await
-            .expect("handler ok");
-
-        let row = sqlx::query(
-            "SELECT proposal_id, state, status FROM upgrade_state WHERE stack_role = 'BCS'",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("row");
-        assert_eq!(
-            row.try_get::<Vec<u8>, _>("proposal_id").unwrap(),
-            vec![0x02u8]
-        );
-        assert_eq!(
-            row.try_get::<String, _>("state").unwrap(),
-            "UpgradeActivated"
-        );
-        assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+        assert_eq!(hex_encode(&bytes), "0001abff");
     }
 
     /// Regression test for the cutover merge `ON CONFLICT` targets drifting away

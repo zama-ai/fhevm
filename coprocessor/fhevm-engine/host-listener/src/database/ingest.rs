@@ -213,6 +213,7 @@ pub async fn ingest_block_logs(
     confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
+    let gcs_mode = db.gcs_mode();
     let Some(mut tx) = db.new_transaction().await? else {
         info!("cutover completed — host-listener skipping block ingest (retired stack)");
         return Ok(());
@@ -317,7 +318,8 @@ pub async fn ingest_block_logs(
                 .as_ref()
                 .is_some_and(|addr| &log.inner.address == addr);
         if is_protocol_config_address {
-            handle_protocol_config_log(&mut tx, chain_id, log).await?;
+            handle_protocol_config_log(&mut tx, chain_id, gcs_mode, log)
+                .await?;
             continue;
         }
 
@@ -610,12 +612,13 @@ const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
 async fn handle_protocol_config_log(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     chain_id: ChainId,
+    gcs_mode: bool,
     log: &Log,
 ) -> Result<(), sqlx::Error> {
     match ProtocolConfig::ProtocolConfigEvents::decode_log(&log.inner) {
         Ok(event) => match &event.data {
             ProtocolConfig::ProtocolConfigEvents::CoprocessorUpgradeProposed(proposed) => {
-                notify_coprocessor_upgrade_proposed(tx, chain_id, proposed).await?;
+                notify_coprocessor_upgrade_proposed(tx, chain_id, gcs_mode, proposed).await?;
             }
             other => {
                 warn!(
@@ -638,6 +641,7 @@ async fn handle_protocol_config_log(
 async fn notify_coprocessor_upgrade_proposed(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     chain_id: ChainId,
+    gcs_mode: bool,
     event: &ProtocolConfig::CoprocessorUpgradeProposed,
 ) -> Result<(), sqlx::Error> {
     let listener_chain_id = chain_id.as_u64();
@@ -667,6 +671,55 @@ async fn notify_coprocessor_upgrade_proposed(
         );
         return Ok(());
     };
+
+    // Guarded singleton upsert in the decode tx (durable); NOTIFY below fires only when a row applied.
+    let stack_role = if gcs_mode { "GCS" } else { "BCS" };
+    let result = sqlx::query(
+        r#"
+        INSERT INTO upgrade_state (
+            stack_role, state, status, proposal_id, version,
+            start_block, end_block, gw_start_block, host_chain_id,
+            host_consensus_reached, gw_consensus_reached, updated_at
+        )
+        VALUES ($1, 'UpgradeActivated', 'in_progress', $2, $3, $4, $5, $6, $7, FALSE, FALSE, NOW())
+        ON CONFLICT (stack_role) DO UPDATE
+        SET state              = EXCLUDED.state,
+            status             = EXCLUDED.status,
+            proposal_id        = EXCLUDED.proposal_id,
+            version            = EXCLUDED.version,
+            start_block        = EXCLUDED.start_block,
+            end_block          = EXCLUDED.end_block,
+            gw_start_block     = EXCLUDED.gw_start_block,
+            host_chain_id      = EXCLUDED.host_chain_id,
+            -- Fresh window: clear both consensus latches so a prior upgrade's
+            -- observations can't authorize this one's cutover.
+            host_consensus_reached = FALSE,
+            gw_consensus_reached   = FALSE,
+            last_error         = NULL,
+            updated_at         = NOW()
+        WHERE upgrade_state.state IN ('LIVE', 'PAUSED')
+           OR upgrade_state.status IN ('completed', 'failed')
+           OR upgrade_state.proposal_id = EXCLUDED.proposal_id
+        "#,
+    )
+    .bind(stack_role)
+    .bind(&proposal_id_bytes[..])
+    .bind(&event.softwareVersion)
+    .bind(window.startBlock as i64)
+    .bind(window.endBlock as i64)
+    .bind(event.gwStartBlock as i64)
+    .bind(listener_chain_id as i64)
+    .execute(&mut **tx)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        warn!(
+            stack_role,
+            proposal_id = %proposal_id_hex,
+            "Rejected event_upgrade_activated: another upgrade already in flight for this stack role"
+        );
+        return Ok(());
+    }
 
     info!(
         proposal_id = %proposal_id_hex,
@@ -1038,5 +1091,75 @@ mod tests {
         let bytes = proposal_id.to_be_bytes::<32>();
         let hex = format!("0x{}", alloy_primitives::hex::encode(bytes));
         assert_eq!(hex, format!("0x{}", "ff".repeat(32)));
+    }
+
+    // A new proposal overwrites a finished (PAUSED/completed) row from a prior cycle, without clobbering a different in-flight upgrade.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_upsert_accepts_new_proposal_after_paused_cutover() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use sqlx::Row;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        // Seed a finished BCS row from a prior upgrade cycle.
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, updated_at
+            )
+            VALUES ('BCS', 'PAUSED', 'completed', $1, 'v1', 100, 200, 1, NOW())
+            "#,
+        )
+        .bind(&U256::from(1u64).to_be_bytes::<32>()[..])
+        .execute(&pool)
+        .await
+        .expect("seed");
+
+        let event = ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::from(2u64),
+            softwareVersion: "v2".to_string(),
+            chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
+                chainId: 1,
+                startBlock: 100,
+                endBlock: 200,
+            }],
+            gwStartBlock: 1,
+        };
+
+        let mut tx = pool.begin().await.expect("tx");
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            false, // BCS listener
+            &event,
+        )
+        .await
+        .expect("upsert ok");
+        tx.commit().await.expect("commit");
+
+        let row =
+            sqlx::query("SELECT proposal_id, state, status FROM upgrade_state WHERE stack_role = 'BCS'")
+                .fetch_one(&pool)
+                .await
+                .expect("row");
+        assert_eq!(
+            row.try_get::<Vec<u8>, _>("proposal_id").unwrap(),
+            U256::from(2u64).to_be_bytes::<32>().to_vec()
+        );
+        assert_eq!(
+            row.try_get::<String, _>("state").unwrap(),
+            "UpgradeActivated"
+        );
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
     }
 }
