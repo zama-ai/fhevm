@@ -29,6 +29,7 @@ instances:
     # Default RPC — canonical Anvil on port 8545
     args:
       host-listener:
+        - --catchup-margin=8
         - --catchup-finalization-in-blocks=2
         - --settlement-finality-lag=8
         - --reorg-maximum-duration-in-blocks=8
@@ -42,6 +43,7 @@ instances:
     # Default RPC — canonical Anvil on port 8545
     args:
       host-listener:
+        - --catchup-margin=8
         - --catchup-finalization-in-blocks=2
         - --settlement-finality-lag=8
         - --reorg-maximum-duration-in-blocks=8
@@ -57,6 +59,7 @@ instances:
       RPC_WS_URL: "ws://fork-anvil:8546"
     args:
       host-listener:
+        - --catchup-margin=8
         - --catchup-finalization-in-blocks=2
         - --settlement-finality-lag=8
         - --reorg-maximum-duration-in-blocks=8
