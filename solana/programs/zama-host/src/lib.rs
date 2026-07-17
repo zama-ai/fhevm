@@ -175,4 +175,18 @@ pub mod zama_host {
     ) -> Result<()> {
         instructions::make_handle_public(ctx, handle)
     }
+
+    /// Stateless pull-oracle verifier (fhevm-internal#1704): verifies a KMS public-decrypt
+    /// certificate against the current `KmsContext` plus an MMR public-leaf inclusion proof, and
+    /// returns `(handle, cleartext)` via `return_data`. Creates and mutates nothing; emits nothing.
+    pub fn verify_public_decrypt(
+        ctx: Context<VerifyPublicDecrypt>,
+        handle: [u8; 32],
+        cleartext: [u8; 32],
+        signatures: Vec<[u8; 65]>,
+        extra_data: Vec<u8>,
+        proof: MmrInclusionProof,
+    ) -> Result<()> {
+        instructions::verify_public_decrypt(ctx, handle, cleartext, signatures, extra_data, proof)
+    }
 }

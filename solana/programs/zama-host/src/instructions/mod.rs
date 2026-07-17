@@ -21,6 +21,7 @@ pub mod set_hcu_block_cap_per_app;
 pub mod set_host_pause;
 pub mod set_max_hcu_depth_per_tx;
 pub mod set_max_hcu_per_tx;
+pub mod verify_public_decrypt;
 
 pub use define_kms_context::*;
 pub use delegate_for_user_decryption::*;
@@ -37,3 +38,4 @@ pub use set_hcu_block_cap_per_app::*;
 pub use set_host_pause::*;
 pub use set_max_hcu_depth_per_tx::*;
 pub use set_max_hcu_per_tx::*;
+pub use verify_public_decrypt::*;

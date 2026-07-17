@@ -1372,6 +1372,108 @@
           }
         }
       ]
+    },
+    {
+      "name": "verify_public_decrypt",
+      "docs": [
+        "Stateless pull-oracle verifier (fhevm-internal#1704): verifies a KMS public-decrypt",
+        "certificate against the current `KmsContext` plus an MMR public-leaf inclusion proof, and",
+        "returns `(handle, cleartext)` via `return_data`. Creates and mutates nothing; emits nothing."
+      ],
+      "discriminator": [
+        128,
+        196,
+        76,
+        98,
+        90,
+        3,
+        245,
+        119
+      ],
+      "accounts": [
+        {
+          "name": "host_config",
+          "docs": [
+            "Canonical singleton host config: source of the current KMS context id and the gateway",
+            "EIP-712 domain (chain id + `Decryption` verifying contract)."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "kms_context",
+          "docs": [
+            "KMS context PDA; must be the canonical PDA for `host_config.current_kms_context_id`."
+          ]
+        },
+        {
+          "name": "encrypted_value",
+          "docs": [
+            "The lineage whose peaks the inclusion proof is checked against."
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "handle",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "cleartext",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "signatures",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                65
+              ]
+            }
+          }
+        },
+        {
+          "name": "extra_data",
+          "type": "bytes"
+        },
+        {
+          "name": "proof",
+          "type": {
+            "defined": {
+              "name": "MmrInclusionProof"
+            }
+          }
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1993,6 +2095,21 @@
       "code": 6070,
       "name": "FheEvalUnanchoredUnderBlockCap",
       "msg": "FHE eval frame anchors no durable/verified binding under a finite HCU block cap"
+    },
+    {
+      "code": 6071,
+      "name": "InvalidKmsContext",
+      "msg": "KMS context is destroyed, not current, or does not match the certificate"
+    },
+    {
+      "code": 6072,
+      "name": "InvalidKmsCertificate",
+      "msg": "KMS public-decrypt certificate is invalid"
+    },
+    {
+      "code": 6073,
+      "name": "PublicDecryptProofInvalid",
+      "msg": "public-decrypt inclusion proof is invalid"
     }
   ],
   "types": [
@@ -3997,6 +4114,41 @@
               "Threshold for MPC (KMS-internal; stored for fidelity)."
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MmrInclusionProof",
+      "docs": [
+        "Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction argument. The",
+        "shared ACL crate is deliberately Anchor-free (pure `borsh`) so it cannot derive Anchor IDL",
+        "metadata; this local type carries the identical wire shape and converts into the shared proof.",
+        "Defined in the host program so CPI callers depend only on the host IDL, never on token types."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "leaf_index",
+            "docs": [
+              "Index of the proven leaf within the lineage's MMR."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "siblings",
+            "docs": [
+              "Authentication path from the leaf up to its mountain peak."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
           }
         ]
       }

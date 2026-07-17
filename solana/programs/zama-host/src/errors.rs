@@ -241,4 +241,19 @@ pub enum ZamaHostError {
     /// undecryptable — so it is rejected outright.
     #[msg("FHE eval frame anchors no durable/verified binding under a finite HCU block cap")]
     FheEvalUnanchoredUnderBlockCap,
+
+    // ---- stateless public-decrypt verifier (verify_public_decrypt, fhevm-internal#1704) ----
+    /// The KMS context is destroyed, is not the current canonical context, or is not the context
+    /// the certificate committed to via signed `extra_data`. Verification binds to the CURRENT
+    /// context, so a cert minted under a rotated-out context fails closed here.
+    #[msg("KMS context is destroyed, not current, or does not match the certificate")]
+    InvalidKmsContext,
+    /// The KMS `PublicDecryptVerification` certificate failed secp256k1 threshold verification
+    /// against the current context's signer set.
+    #[msg("KMS public-decrypt certificate is invalid")]
+    InvalidKmsCertificate,
+    /// The MMR public-decrypt inclusion proof does not prove the exact handle public against the
+    /// lineage's current peaks.
+    #[msg("public-decrypt inclusion proof is invalid")]
+    PublicDecryptProofInvalid,
 }
