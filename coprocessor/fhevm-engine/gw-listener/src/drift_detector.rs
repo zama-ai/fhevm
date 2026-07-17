@@ -277,11 +277,14 @@ impl DriftDetector {
             return Ok(());
         };
 
-        // Prefer local rows for finalized event blocks. In a fork scenario the
-        // same handle can exist under different producer/event block hashes; an
-        // off-branch row that happens to match consensus must not mask drift on
-        // the finalized branch. Fully branchless rows remain a compatibility
-        // fallback only when no event-scoped row exists for this handle.
+        // For handles with event scoped digest rows, compare only rows whose event
+        // block is finalized on the canonical branch. The same handle may also have
+        // digest rows from sibling/orphaned blocks; those must not satisfy the local
+        // comparison, because they could hide drift in the finalized branch's row.
+        //
+        // A fully branchless digest row (producer_block_hash = '' and block_hash = '')
+        // has no branch/event context, so use it only as a compatibility fallback when
+        // this handle has no event-scoped digest rows at all.
         let rows = sqlx::query!(
             r#"
             WITH event_scoped AS (
