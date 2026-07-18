@@ -28,7 +28,7 @@ test('published tarball can be consumed by a viem-backed TypeScript project', as
   };
   const EXPECTED_PAUSER_SET_ADDRESS = getContractAddressAtNonce({ privateKey, nonce: 9n });
 
-  const anvil = startAnvil({ port: 8545, mnemonic });
+  const anvil = startAnvil({ port: 8614, mnemonic });
   const { rpcUrl } = anvil;
 
   try {
