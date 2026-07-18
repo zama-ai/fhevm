@@ -14,6 +14,7 @@
  *   ./fhevm-cli test real-fork-consensus
  */
 import { expect } from 'chai';
+import type { TransactionReceipt } from 'ethers';
 import { ethers } from 'hardhat';
 import { Pool } from 'pg';
 
@@ -150,21 +151,42 @@ async function createDivergentForkWork(
 
   const latestCanonicalBlock = await canonicalProvider.getBlock('latest');
   expect(latestCanonicalBlock, `[${label}] canonical latest block`).to.not.be.null;
+
+  // Mine the transaction into deterministically different sibling blocks.
+  // Leaving canonical interval mining active makes its timestamp race the
+  // fork's explicit timestamp; both transactions can then land in an
+  // identical block and the later empty blocks are the only actual fork.
+  await canonicalProvider.send('evm_setIntervalMining', [0]);
+  await canonicalProvider.send('evm_setAutomine', [false]);
+  await forkProvider.send('evm_setIntervalMining', [0]);
+  await forkProvider.send('evm_setAutomine', [false]);
+  await canonicalProvider.send('evm_setNextBlockTimestamp', [latestCanonicalBlock!.timestamp + 1]);
   await forkProvider.send('evm_setNextBlockTimestamp', [latestCanonicalBlock!.timestamp + 2]);
 
-  const [canonicalTx, forkTx] = await Promise.all([
-    canonicalProvider.broadcastTransaction(signedMintTx),
-    forkProvider.broadcastTransaction(signedMintTx),
-  ]);
-  // fork-anvil is deliberately paused so its branch depth cannot grow while
-  // TFHE execution and Gateway submission run. Mine the transaction and only
-  // enough descendants for operational finality, staying below settlement.
-  await forkProvider.send('evm_mine', []);
-  const [canonicalReceipt, forkReceipt] = await Promise.all([canonicalTx.wait(), forkTx.wait()]);
+  let canonicalReceipt: TransactionReceipt | null = null;
+  let forkReceipt: TransactionReceipt | null = null;
+  try {
+    const [canonicalTx, forkTx] = await Promise.all([
+      canonicalProvider.broadcastTransaction(signedMintTx),
+      forkProvider.broadcastTransaction(signedMintTx),
+    ]);
+    await Promise.all([canonicalProvider.send('evm_mine', []), forkProvider.send('evm_mine', [])]);
+    [canonicalReceipt, forkReceipt] = await Promise.all([canonicalTx.wait(), forkTx.wait()]);
+  } finally {
+    // Restore the canonical node's normal one-second block production. The
+    // fork remains paused and is advanced only by the bounded mines below.
+    await canonicalProvider.send('evm_setAutomine', [false]);
+    await canonicalProvider.send('evm_setIntervalMining', [1]);
+  }
+
   expect(canonicalReceipt, `[${label}] canonical mint receipt`).to.not.be.null;
   expect(canonicalReceipt!.blockHash, `[${label}] canonical mint block hash`).to.not.be.null;
   expect(forkReceipt, `[${label}] fork mint receipt`).to.not.be.null;
   expect(forkReceipt!.blockHash, `[${label}] fork mint block hash`).to.not.be.null;
+  expect(forkReceipt!.blockNumber, `[${label}] fork mint sibling height`).to.eq(canonicalReceipt!.blockNumber);
+  expect(forkReceipt!.blockHash, `[${label}] mint transaction blocks must diverge`).to.not.eq(
+    canonicalReceipt!.blockHash,
+  );
 
   const forkConfirmationBlocks = Math.min(FINALITY_LAG, RFC11_SETTLEMENT_LAG - 1);
   expect(forkConfirmationBlocks, `[${label}] fork must have a non-empty pre-settlement finality window`).to.be.gte(1);
