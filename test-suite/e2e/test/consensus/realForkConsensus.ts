@@ -121,9 +121,6 @@ async function createDivergentForkWork(
   const contract = await deployEncryptedERC20Fixture();
   const contractAddress = await contract.getAddress();
 
-  console.log(`[${label}] Syncing fork Anvil state after contract deployment...`);
-  await syncForkWithServicesStopped(forkConfig, forkCoprocessorServices(), false);
-
   const canonicalSigner = getSignerForProvider(canonicalProvider, 0);
   const forkSigner = getSignerForProvider(forkProvider, 0);
   const signerAddress = await canonicalSigner.getAddress();
@@ -149,23 +146,34 @@ async function createDivergentForkWork(
     maxPriorityFeePerGas: ethers.parseUnits('1', 'gwei'),
   });
 
-  const latestCanonicalBlock = await canonicalProvider.getBlock('latest');
-  expect(latestCanonicalBlock, `[${label}] canonical latest block`).to.not.be.null;
-
   // Mine the transaction into deterministically different sibling blocks.
   // Leaving canonical interval mining active makes its timestamp race the
   // fork's explicit timestamp; both transactions can then land in an
   // identical block and the later empty blocks are the only actual fork.
   await canonicalProvider.send('evm_setIntervalMining', [0]);
   await canonicalProvider.send('evm_setAutomine', [false]);
-  await forkProvider.send('evm_setIntervalMining', [0]);
-  await forkProvider.send('evm_setAutomine', [false]);
-  await canonicalProvider.send('evm_setNextBlockTimestamp', [latestCanonicalBlock!.timestamp + 1]);
-  await forkProvider.send('evm_setNextBlockTimestamp', [latestCanonicalBlock!.timestamp + 2]);
 
   let canonicalReceipt: TransactionReceipt | null = null;
   let forkReceipt: TransactionReceipt | null = null;
   try {
+    // Copy only after canonical mining is frozen, otherwise the canonical
+    // parent can advance while fork-anvil is loading the preceding snapshot.
+    console.log(`[${label}] Syncing fork Anvil state after contract deployment...`);
+    await syncForkWithServicesStopped(forkConfig, forkCoprocessorServices(), false);
+
+    const [commonParent, forkParent] = await Promise.all([
+      canonicalProvider.getBlock('latest'),
+      forkProvider.getBlock('latest'),
+    ]);
+    expect(commonParent, `[${label}] canonical common parent`).to.not.be.null;
+    expect(forkParent, `[${label}] fork common parent`).to.not.be.null;
+    expect(forkParent!.number, `[${label}] common parent height`).to.eq(commonParent!.number);
+    expect(forkParent!.hash, `[${label}] common parent hash`).to.eq(commonParent!.hash);
+    await forkProvider.send('evm_setIntervalMining', [0]);
+    await forkProvider.send('evm_setAutomine', [false]);
+    await canonicalProvider.send('evm_setNextBlockTimestamp', [commonParent!.timestamp + 1]);
+    await forkProvider.send('evm_setNextBlockTimestamp', [commonParent!.timestamp + 2]);
+
     const [canonicalTx, forkTx] = await Promise.all([
       canonicalProvider.broadcastTransaction(signedMintTx),
       forkProvider.broadcastTransaction(signedMintTx),
