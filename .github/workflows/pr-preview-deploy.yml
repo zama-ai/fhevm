@@ -104,17 +104,17 @@ env:
   # (kms-connector wiring, keygen trigger) assumes the post-migration topology
   # (KMSGeneration + ProtocolConfig on the host chain). Older tags lack deploy
   # tasks/args these steps need.
-  GATEWAY_CONTRACTS_VERSION: "v0.12.1"
-  HOST_CONTRACTS_VERSION: "v0.12.1"
+  GATEWAY_CONTRACTS_VERSION: "v0.13.0"
+  HOST_CONTRACTS_VERSION: "v0.13.0"
   CONTRACTS_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts
-  CONTRACTS_CHART_VERSION: "0.7.3"
+  CONTRACTS_CHART_VERSION: "0.8.2"
   #=====COPROCESSOR==========================================================
   # Must be >= v0.13.0 to match contracts' RFC013 migration above (older
   # binaries lack the ciphertext-commits/kms-generation args and still require
   # since-removed ones). Pinned v0.13.0 to match the zws-testnet pairing.
-  COPROCESSOR_VERSION: "v0.12.0"
+  COPROCESSOR_VERSION: "v0.13.1"
   COPROCESSOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor
-  COPROCESSOR_CHART_VERSION: "0.7.12"
+  COPROCESSOR_CHART_VERSION: "0.13.0"
   #=====KMS CONNECTOR=========================================================
   # v0.13.1-hotfix.kmsconnector.1 + chart 1.5.2 is the known-good pairing
   # confirmed running in production (zama-zws/gitops's mpc-testnet). Deliberate
@@ -123,9 +123,9 @@ env:
   # 1.5.2, kmsGeneration lives under commonConfig.gatewayContractAddresses and
   # kmsVerifier under ethereumContractAddresses (see the --set-string calls
   # below); both route to the same env vars regardless of chain topology.
-  KMS_CONNECTOR_VERSION: "v0.11.0"
+  KMS_CONNECTOR_VERSION: "v0.13.1-hotfix-kmsconnector-1"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
-  KMS_CONNECTOR_CHART_VERSION: "1.5.1"
+  KMS_CONNECTOR_CHART_VERSION: "1.5.2"
   #=====COPROCESSOR INFRA======================================================
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
@@ -134,19 +134,19 @@ env:
   # test-suite images, both via the generic `common` chart. v0.13.0 is
   # confirmed present + running in production (zama-zws/gitops relayer values);
   # relayer's own v0.11.x tags 404 on pull.
-  RELAYER_VERSION: "v0.11.1"
+  RELAYER_VERSION: "v0.13.0"
   # The pinned test-suite tags (v0.13.0, v0.11.5-0) bundle a tfhe/node-tfhe
   # that can't deserialize kms-core v0.13.20's tfhe-rs-1.6.1 public keys
   # ("expected variant index 0 <= i < 1"). Test path uses @zama-fhe/relayer-sdk
   # (node-tfhe 1.5.4), so the key format must match: pair with a kms-core on
   # tfhe-rs 1.5.x (e.g. v0.13.10). This pinned fallback only matters when
   # build_images is off.
-  TEST_SUITE_VERSION: "v0.11.3"
+  TEST_SUITE_VERSION: "v0.13.0"
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================
-  KMS_REPO_REF: "v0.13.10"
-  KMS_CORE_TAG: "v0.13.10"
+  KMS_REPO_REF: "v0.13.22"
+  KMS_CORE_TAG: "v0.13.22"
   NB_KMS_CORE: "4"
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
