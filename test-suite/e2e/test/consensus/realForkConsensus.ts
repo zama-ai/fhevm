@@ -203,19 +203,10 @@ async function createDivergentForkWork(
   const balanceHandle = handleToHex(await contract.balanceOf(aliceAddress));
   const forkBalanceHandle = handleToHex(await contractOnFork.balanceOf(aliceAddress));
 
-  const canonicalBlock = await canonicalProvider.getBlockNumber();
-  let diverged = false;
-  for (let b = canonicalBlock; b >= Math.max(1, canonicalBlock - 3); b--) {
-    try {
-      await verifyForkDivergence(b, forkConfig);
-      diverged = true;
-      console.log(`[${label}] Fork divergence confirmed at block ${b}`);
-      break;
-    } catch {
-      // try earlier block
-    }
-  }
-  expect(diverged, 'fork must have diverged: block hashes should differ').to.be.true;
+  const divergence = await verifyForkDivergence(canonicalReceipt!.blockNumber, forkConfig);
+  expect(divergence.canonicalHash, `[${label}] canonical sibling hash`).to.eq(canonicalReceipt!.blockHash);
+  expect(divergence.forkHash, `[${label}] fork sibling hash`).to.eq(forkReceipt!.blockHash);
+  console.log(`[${label}] Fork divergence confirmed at block ${canonicalReceipt!.blockNumber}`);
 
   return {
     contractAddress,
