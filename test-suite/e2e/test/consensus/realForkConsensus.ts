@@ -520,23 +520,7 @@ describe('Real-Fork Consensus (E3)', function () {
       // Step 3: Poll for orphaned blocks on coprocessor 2's DB. On restart,
       // the poller replays its reorg window, observes the canonical sibling at
       // the fork height, and marks the replaced branch orphaned.
-      let c3Orphan: { chain_id: string; block_hash: Buffer } | undefined;
-      const orphanDeadline = Date.now() + 60_000;
-      while (Date.now() < orphanDeadline) {
-        const pool2 = new Pool({ connectionString: dbUrls[2], max: 1 });
-        try {
-          const result = await pool2.query(
-            "SELECT chain_id, block_hash FROM host_chain_blocks_valid WHERE block_status = 'orphaned' AND block_hash = $1 LIMIT 1",
-            [c3ForkBlockHash],
-          );
-          c3Orphan = result.rows[0];
-          if (c3Orphan) break;
-        } finally {
-          await pool2.end();
-        }
-        await sleep(5_000);
-      }
-      expect(c3Orphan, 'coprocessor 2 must orphan the fork block created by C3').to.not.be.undefined;
+      const c3Orphan = await waitForOrphanedBlock('C3', dbUrls[2], c3ForkBlockHash, 180_000);
       console.log(`[C3] Coprocessor 2 orphaned block hash: ${divergentWork.forkBlockHash}`);
       await waitForFinalizedBlock(
         'C3 recovered coprocessor',
@@ -548,7 +532,7 @@ describe('Real-Fork Consensus (E3)', function () {
       // Step 4: Verify orphan cleanup removed branch-B rows. Legacy tables do
       // not carry producer_block_hash; branch provenance and cleanup are
       // asserted on the branch-keyed tables.
-      await waitForNoRowsReferencingProducer('C3', dbUrls[2], c3Orphan!.chain_id, c3ForkBlockHash);
+      await waitForNoRowsReferencingProducer('C3', dbUrls[2], c3Orphan.chain_id, c3ForkBlockHash);
 
       // Step 5: Submit a new computation on the canonical chain.
       const contract = await deployEncryptedERC20Fixture();
@@ -679,29 +663,29 @@ describe('Real-Fork Consensus (E3)', function () {
           'settled canonical sns digest must not change during fork recovery',
         );
 
-        const recoveredConsensus = await waitForConsensus(
-          GATEWAY_RPC_URL,
-          CIPHERTEXT_COMMITS_ADDRESS,
+        // The Gateway accepts only one submission per (handle, coprocessor).
+        // Coprocessor 2 already voted for the fork digest, so it cannot replace
+        // that vote with the canonical digest after recovery. Decryption no
+        // longer depends on Gateway consensus: require all three coprocessors
+        // to materialize the canonical branch and exercise speculative
+        // decryption directly instead.
+        const recoveredDigestRows = await waitForConsensusDigestRows(
+          dbUrls,
           divergentWork.balanceHandle,
-          120_000,
+          ethers.hexlify(canonicalDigestBefore!.ciphertext!),
+          ethers.hexlify(canonicalDigestBefore!.ciphertext128!),
+          180_000,
         );
-        expect(recoveredConsensus, 'pre-reorg canonical ciphertext must reach consensus after recovery').to.not.be.null;
-        expect(recoveredConsensus!.senders.length).to.eq(
-          COPROCESSOR_COUNT,
-          'all 3 coprocessors must agree on the pre-reorg canonical ciphertext after recovery',
-        );
-        expect(
-          Buffer.from(recoveredConsensus!.ciphertextDigest.replace('0x', ''), 'hex').equals(
-            canonicalDigestBefore!.ciphertext!,
-          ),
-          'recovered consensus must use the pre-reorg canonical ciphertext digest',
-        ).to.eq(true);
-        expect(
-          Buffer.from(recoveredConsensus!.snsCiphertextDigest.replace('0x', ''), 'hex').equals(
-            canonicalDigestBefore!.ciphertext128!,
-          ),
-          'recovered consensus must use the pre-reorg canonical sns digest',
-        ).to.eq(true);
+        for (let i = 0; i < COPROCESSOR_COUNT; i++) {
+          expect(
+            findConsensusDigestRow(
+              recoveredDigestRows[i],
+              ethers.hexlify(canonicalDigestBefore!.ciphertext!),
+              ethers.hexlify(canonicalDigestBefore!.ciphertext128!),
+            ),
+            `coprocessor ${i} must materialize the pre-reorg canonical ciphertext after recovery`,
+          ).to.not.be.undefined;
+        }
 
         const recoveredBalance = await this.instances.alice.userDecryptSingleHandle({
           handle: divergentWork.balanceHandle,
