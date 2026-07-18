@@ -22,6 +22,7 @@ import type {
 import { buildHostAddressReplacementsV13, deployImplementations } from './utils.js';
 import { deployEmptyUUPSProxy, deployERC1967Proxy } from './proxies.js';
 import { toACLOwnerOps } from './aclOwner.js';
+import { generateFromExistingDefaultKmsNodes } from './constants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -54,9 +55,19 @@ export async function updateV12ToV13(parameters: {
   // bakes `cleartextArithmeticAdd`, so it must be patched with the real proxy address (not the
   // placeholder) or the post-upgrade cleartext round-trip would call a dead address.
   readonly cleartext: CleartextAddresses;
-  readonly migration: UpdateV12ToV13MigrationConfig;
+  readonly migration?: UpdateV12ToV13MigrationConfig | undefined;
 }): Promise<{ readonly protocolConfigAddress: string; readonly kmsGenerationAddress: string }> {
   const { pauserSetAddress, ...existingV12 } = parameters.existing;
+
+  // If no migration is supplied, assume the live v12 stack was deployed with the default values: read
+  // the current KMS context id + signer set off the live v12 `KMSVerifier`, then rebuild the full KMS
+  // node details (tx-sender/ip/storage) and thresholds from the package defaults.
+  const migration =
+    parameters.migration ??
+    (await resolveDefaultMigration({
+      ethProvider: parameters.ethProvider,
+      kmsVerifierAddress: existingV12.kmsVerifierAddress,
+    }));
 
   // 1. Deploy a fresh shared EmptyUUPSProxy impl (patched with the existing ACL address), then the two
   //    new v13 proxies pointing at it.
@@ -88,7 +99,7 @@ export async function updateV12ToV13(parameters: {
     fhevmAddresses: fhevmV13,
     cleartextAddresses: parameters.cleartext,
     pauserSetAddress,
-    migration: parameters.migration,
+    migration,
   });
 
   // 3. One atomic ACLOwner.upgrade: 2 materializations + 4 reinitializations.
@@ -102,6 +113,41 @@ export async function updateV12ToV13(parameters: {
   return {
     protocolConfigAddress: fhevmV13.protocolConfigAddress,
     kmsGenerationAddress: fhevmV13.kmsGenerationAddress,
+  };
+}
+
+/**
+ * Build the migration config for a v12 stack that was deployed with the package defaults. Preserves
+ * everything the live v12 `KMSVerifier` still exposes — the current context id, the signer set, and the
+ * threshold — so the migrated context matches the running stack. Only the per-node metadata v12 never
+ * stored (tx-sender/ip/storage) is reconstructed from the defaults via `generateFromExistingDefaultKmsNodes`.
+ * v12 held a single threshold; v13 splits it into four, so the one value is carried into all four.
+ * @internal — used by `updateV12ToV13` when no explicit `migration` is supplied.
+ */
+async function resolveDefaultMigration(parameters: {
+  readonly ethProvider: AbstractEthereumProvider;
+  readonly kmsVerifierAddress: string;
+}): Promise<UpdateV12ToV13MigrationConfig> {
+  const read = (functionName: string): Promise<unknown> =>
+    parameters.ethProvider.readContract({
+      address: parameters.kmsVerifierAddress,
+      abi: kmsVerifierAbi,
+      functionName,
+    });
+
+  const existingContextId = (await read('getCurrentKmsContextId')) as bigint;
+  const existingSigners = (await read('getKmsSigners')) as readonly string[];
+  const existingThreshold = (await read('getThreshold')) as bigint;
+
+  return {
+    existingContextId,
+    existingKmsNodes: generateFromExistingDefaultKmsNodes([...existingSigners]),
+    existingThresholds: {
+      publicDecryption: existingThreshold,
+      userDecryption: existingThreshold,
+      kmsGen: existingThreshold,
+      mpc: existingThreshold,
+    },
   };
 }
 

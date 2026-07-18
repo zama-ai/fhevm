@@ -12,6 +12,8 @@
     "./ts/tarball-consumer.test.ts",
     "./ts/acl-owner-upgrade.test.ts",
     "./ts/deploy-v13.test.ts",
+    "./ts/define-kms-context.test.ts",
+    "./ts/destroy-kms-context.test.ts",
     "./ts/upgrade-e2e.test.ts",
     "./ts/viemEthereumLib.ts",
     "./ts/ethUtils.ts"

@@ -216,12 +216,16 @@ test('transferACLOwnership hands the ACL owner role onward', async () => {
       privateKey: privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 7 }),
     });
 
-    await owner.writeContract({
+    const hash = await owner.writeContract({
       address: stack.aclOwnerAddress,
       abi: ACL_OWNER_ABI,
       functionName: 'transferACLOwnership',
       args: [successor],
     });
+    // `owner` is a raw viem walletClient (walletFor), NOT the SDK adapter — its writeContract resolves
+    // on submission, not mining (unlike adapters.signer.writeContract, which awaits the receipt). Wait
+    // for the receipt before reading `pendingOwner`, or the eth_call races block inclusion (flaky under load).
+    await stack.publicClient.waitForTransactionReceipt({ hash });
 
     const pending = await stack.publicClient.readContract({
       address: stack.aclAddress,

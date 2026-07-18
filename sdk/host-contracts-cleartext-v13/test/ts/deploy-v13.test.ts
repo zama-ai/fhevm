@@ -1,4 +1,10 @@
-import { deploy, precomputeAddresses, type BootstrapConfigV13 } from '@fhevm/host-contracts-cleartext/ts';
+import {
+  deploy,
+  pauseACL,
+  precomputeAddresses,
+  unpauseACL,
+  type BootstrapConfigV13,
+} from '@fhevm/host-contracts-cleartext/ts';
 import { createPublicClient, createWalletClient, http, parseEventLogs, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
@@ -40,6 +46,20 @@ const EXECUTOR_ABI = [
       { name: 'toType', type: 'uint8', indexed: false },
       { name: 'result', type: 'bytes32', indexed: false },
     ],
+  },
+] as const;
+
+const ACL_ABI = [
+  { type: 'function', name: 'paused', stateMutability: 'view', inputs: [], outputs: [{ type: 'bool' }] },
+] as const;
+
+const PAUSER_SET_ABI = [
+  {
+    type: 'function',
+    name: 'isPauser',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'bool' }],
   },
 ] as const;
 
@@ -189,6 +209,78 @@ test('full deploy of a brand-new v13 stack: all proxies materialize and cleartex
       args: [handle],
     });
     expect(viaExecutor).toBe(42n);
+
+    // (d) ACLOwner is a registered pauser and can pause/unpause the ACL through the admin.
+    const acl = deployed.fhevmAddresses.aclAddress as Address;
+    const paused = (): Promise<boolean> =>
+      publicClient.readContract({ address: acl, abi: ACL_ABI, functionName: 'paused' });
+
+    expect(
+      await publicClient.readContract({
+        address: deployed.pauserSetAddress as Address,
+        abi: PAUSER_SET_ABI,
+        functionName: 'isPauser',
+        args: [deployed.aclOwnerAddress as Address],
+      }),
+    ).toBe(true);
+
+    expect(await paused()).toBe(false);
+    await pauseACL({ admin: adapters.signer, aclOwnerAddress: deployed.aclOwnerAddress });
+    expect(await paused()).toBe(true);
+    await unpauseACL({ admin: adapters.signer, aclOwnerAddress: deployed.aclOwnerAddress });
+    expect(await paused()).toBe(false);
+  } finally {
+    await stopAnvil(anvil.process);
+  }
+}, 120_000);
+
+test('deploy without precomputed derives addresses from the deployer live nonce', async () => {
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 5 });
+  const deployerAddress = privateKeyToAddress({ privateKey: deployerKey });
+
+  const anvil = startAnvil({ port: 8611, mnemonic: MNEMONIC });
+  try {
+    await waitForAnvil(anvil.rpcUrl);
+
+    const adapters = createViemEthereumAdapters({ rpcUrl: anvil.rpcUrl, privateKey: deployerKey });
+    const publicClient = createPublicClient({ chain: foundry, transport: http(anvil.rpcUrl) });
+    const wallet = createWalletClient({
+      account: privateKeyToAccount(deployerKey),
+      chain: foundry,
+      transport: http(anvil.rpcUrl),
+    });
+
+    // Advance the deployer's nonce past 0 so the derivation is exercised at a non-trivial offset — a
+    // nonce-0 deploy would pass even if `getTransactionCount` were ignored.
+    for (let i = 0; i < 3; i++) {
+      const hash = await wallet.sendTransaction({ to: deployerAddress, value: 0n });
+      await publicClient.waitForTransactionReceipt({ hash });
+    }
+    const liveNonce = BigInt(await publicClient.getTransactionCount({ address: deployerAddress }));
+    expect(liveNonce).toBe(3n);
+
+    // Addresses the deploy SHOULD derive, computed independently from the live nonce.
+    const expected = precomputeAddresses({ ethUtils: adapters.utils, from: deployerAddress, startNonce: liveNonce });
+
+    // Deploy with NO precomputed (and no config): deploy reads the nonce and precomputes internally.
+    const deployed = await deploy({
+      ethProvider: adapters.provider,
+      ethUtils: adapters.utils,
+      deployer: adapters.signer,
+      admin: adapters.signer,
+    });
+
+    // (a) The internally-derived addresses match a nonce-based precompute exactly.
+    expect(deployed.fhevmAddresses).toEqual(expected.fhevmAddresses);
+    expect(deployed.cleartextAddresses).toEqual(expected.cleartextAddresses);
+    expect(deployed.pauserSetAddress).toBe(expected.pauserSetAddress);
+
+    // (b) The stack actually materialized at those addresses (wrong addresses would have reverted).
+    const impl = await publicClient.getStorageAt({
+      address: deployed.fhevmAddresses.aclAddress as Address,
+      slot: IMPL_SLOT,
+    });
+    expect(BigInt(impl ?? '0x0')).not.toBe(0n);
   } finally {
     await stopAnvil(anvil.process);
   }

@@ -3,6 +3,10 @@ export { updateV12ToV13 } from './upgrade.js';
 export { precomputeAddresses } from './addresses.js';
 // Installs a standing `ACLOwner` over an EOA-owned ACL — the prerequisite for `updateV12ToV13`.
 export { setupACLOwner } from './aclOwner.js';
+// Emergency pause / unpause of the ACL, driven through the standing `ACLOwner` by its admin.
+export { pauseACL, unpauseACL } from './aclOwner.js';
+// Rotate / retire KMS contexts via the standing `ACLOwner`.
+export { defineNewKmsContext, destroyKmsContext } from './kmsContext.js';
 
 export type {
   // Abstract adapter interfaces (consumers implement these over their web3 lib).

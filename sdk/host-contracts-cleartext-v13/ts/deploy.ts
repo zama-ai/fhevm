@@ -12,7 +12,6 @@ import {
   template as cleartextArithmeticTemplate,
 } from './artifacts/CleartextArithmetic.js';
 import { abi as cleartextDbAbi, template as cleartextDbTemplate } from './artifacts/CleartextDB.js';
-import { template as pauserSetTemplate } from './artifacts/PauserSet.js';
 import type {
   AbstractEthereumProvider,
   AbstractEthereumSigner,
@@ -33,10 +32,12 @@ import {
   assertNoCodeAtTargets,
   buildHostAddressReplacementsV13,
   deployImplementations,
-  patchTemplateBytecode,
 } from './utils.js';
 import { setupACLOwner, toACLOwnerOps } from './aclOwner.js';
 import type { ContractUpgradeSpec, DeployedImplementation, UpgradeTarget } from './types/private.js';
+import { deployPauserSet } from './pauserSet.js';
+import { precomputeAddresses } from './addresses.js';
+import { DEFAUT_BOOTSTRAP_CONFIG_V13 } from './constants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -53,14 +54,20 @@ export async function deploy(parameters: {
   readonly ethUtils: AbstractEthereumUtils;
   readonly deployer: AbstractEthereumSigner;
   readonly admin: AbstractEthereumSigner;
-  readonly precomputed: {
-    readonly fhevmAddresses: FhevmAddressesV13;
-    readonly cleartextAddresses: CleartextAddresses;
-    readonly pauserSetAddress: string;
-  };
-  readonly config: BootstrapConfigV13;
+  // Deterministic deploy addresses. If omitted, they are derived from `deployer`'s live nonce (read
+  // via a view call) — assuming `deployer` sends exactly this function's transactions, in order, next.
+  readonly precomputed?:
+    | {
+        readonly fhevmAddresses: FhevmAddressesV13;
+        readonly cleartextAddresses: CleartextAddresses;
+        readonly pauserSetAddress: string;
+      }
+    | undefined;
+  readonly config?: BootstrapConfigV13 | undefined;
 }): Promise<DeployedV13> {
-  const { fhevmAddresses, cleartextAddresses } = parameters.precomputed;
+  const precomputed = parameters.precomputed ?? (await precomputeFromDeployerNonce(parameters));
+  const { fhevmAddresses, cleartextAddresses } = precomputed;
+  const config = parameters.config ?? DEFAUT_BOOTSTRAP_CONFIG_V13;
 
   // 1. Deploy the 7 core empty proxies, then the 2 cleartext-infra proxies (on the shared impl).
   const { emptyUUPSProxyAddress } = await deployEmptyProxiesV13({
@@ -83,7 +90,7 @@ export async function deploy(parameters: {
     ethUtils: parameters.ethUtils,
     pauserSetDeployer: parameters.deployer,
     aclAddress: fhevmAddresses.aclAddress,
-    precomputedPauserSetAddress: parameters.precomputed.pauserSetAddress,
+    precomputedPauserSetAddress: precomputed.pauserSetAddress,
   });
 
   // 3. Install the standing ACLOwner (owned by `admin`) and hand it ACL ownership.
@@ -92,6 +99,7 @@ export async function deploy(parameters: {
     currentAclOwner: parameters.deployer,
     admin: parameters.admin,
     aclAddress: fhevmAddresses.aclAddress,
+    pauserSetAddress: precomputed.pauserSetAddress,
   });
 
   // 4. Deploy the 9 real implementations (permissionless) — bootstrap specs, empty→real.
@@ -101,9 +109,9 @@ export async function deploy(parameters: {
     precomputedAddresses: fhevmAddresses,
     cleartextAddresses,
     config: bootstrapUpgradeConfigV13({
-      pauserSetAddress: parameters.precomputed.pauserSetAddress,
+      pauserSetAddress: precomputed.pauserSetAddress,
       cleartextAddresses,
-      config: parameters.config,
+      config,
     }),
   });
 
@@ -118,9 +126,28 @@ export async function deploy(parameters: {
   return {
     fhevmAddresses,
     cleartextAddresses,
-    pauserSetAddress: parameters.precomputed.pauserSetAddress,
+    pauserSetAddress: precomputed.pauserSetAddress,
     aclOwnerAddress,
   };
+}
+
+/**
+ * Derive the deploy addresses from `deployer`'s live nonce, read via a view call (`getTransactionCount`
+ * at the latest block). Assumes `deployer` will send exactly `deploy`'s transactions, in order, with
+ * nothing else interleaved — the same contract that holds when a caller passes an explicit `startNonce`.
+ */
+async function precomputeFromDeployerNonce(parameters: {
+  readonly ethProvider: AbstractEthereumProvider;
+  readonly ethUtils: AbstractEthereumUtils;
+  readonly deployer: AbstractEthereumSigner;
+}): Promise<{
+  readonly fhevmAddresses: FhevmAddressesV13;
+  readonly cleartextAddresses: CleartextAddresses;
+  readonly pauserSetAddress: string;
+}> {
+  const from = (await parameters.deployer.getAddress()) as `0x${string}`;
+  const startNonce = BigInt(await parameters.ethProvider.getTransactionCount({ address: from }));
+  return precomputeAddresses({ ethUtils: parameters.ethUtils, from, startNonce });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -453,32 +480,6 @@ async function deployEmptyProxiesV12(parameters: {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-/*
-  PauserSet.sol
-*/
-/**
- * Deploys the `PauserSet` contract.
- *
- * `PauserSet` is a non-proxy (immutable) contract with no constructor args and no initializer. It
- * bakes in the ACL address (via `FHEVMHostAddresses.sol`) to gate `addPauser`/`removePauser` on the
- * ACL owner, so that address is patched into the bytecode before deployment. Deploy it before the
- * `upgrade(...)` step and feed the returned address in as `UpgradeConfig.pauserSetAddress`, since the
- * other host contracts reference it too.
- */
-async function deployPauserSet(parameters: {
-  readonly deployer: AbstractEthereumSigner;
-  readonly aclAddress: string;
-}): Promise<DeployReturnType> {
-  const bytecode = patchTemplateBytecode({
-    template: pauserSetTemplate,
-    field: 'bytecode',
-    replacements: [{ referenceName: 'ACL_ADDRESS', replacement: parameters.aclAddress }],
-  });
-  return await parameters.deployer.deploy({ bytecode });
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Upgrade step: materialize each empty proxy into its real implementation.
 //
 // For every proxy this performs exactly two on-chain actions:
@@ -525,7 +526,7 @@ function bootstrapUpgradeConfigV13(parameters: {
     acl: bootstrap([]),
     fhevmExecutor: bootstrap([]),
     kmsVerifier: bootstrap(kmsVerifierInitArgsV13(config.kmsVerifier)),
-    inputVerifier: bootstrap(eip712VerifierInitArgs(config.inputVerifier)),
+    inputVerifier: bootstrap(inputVerifierInitArgs(config.inputVerifier)),
     hcuLimit: bootstrap(hcuLimitInitArgs(config.hcuLimit)),
     protocolConfig: bootstrap([config.protocolConfig.initialKmsNodes, config.protocolConfig.initialThresholds]),
     kmsGeneration: bootstrap([]),
@@ -549,7 +550,7 @@ function kmsVerifierInitArgsV13(config: KMSVerifierInitConfig): readonly unknown
 ////////////////////////////////////////////////////////////////////////////////
 
 /** Builds the `initializeFromEmptyProxy` arguments for InputVerifier bootstrap, type-safely. */
-function eip712VerifierInitArgs(config: InputVerifierInitConfig): readonly unknown[] {
+function inputVerifierInitArgs(config: InputVerifierInitConfig): readonly unknown[] {
   return [config.verifyingContractSource, config.chainIDSource, config.initialSigners, config.initialThreshold];
 }
 

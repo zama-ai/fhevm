@@ -19,9 +19,10 @@ import type {
   CleartextAddresses,
   DeployedV12,
   DeployReturnType,
-  EIP712VerifierInitConfig,
+  InputVerifierInitConfig as InputVerifierInitConfig,
   FhevmAddressesV12,
   HCULimitInitConfig,
+  KMSVerifierInitConfig,
 } from './types/public.js';
 import {
   assertDeployedAddress,
@@ -33,6 +34,7 @@ import {
 } from './utils.js';
 import { setupACLOwner, toACLOwnerOps } from './aclOwner.js';
 import type { ContractUpgradeSpec, DeployedImplementation, UpgradeTarget } from './types/private.js';
+import { DEFAUT_BOOTSTRAP_CONFIG_V12 } from './constants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -54,9 +56,10 @@ export async function deploy(parameters: {
     readonly cleartextAddresses: CleartextAddresses;
     readonly pauserSetAddress: string;
   };
-  readonly config: BootstrapConfigV12;
+  readonly config?: BootstrapConfigV12 | undefined;
 }): Promise<DeployedV12> {
   const { fhevmAddresses, cleartextAddresses } = parameters.precomputed;
+  const config = parameters.config ?? DEFAUT_BOOTSTRAP_CONFIG_V12;
 
   // 1. Deploy the 5 core empty proxies, then the 2 cleartext-infra proxies (on the shared impl).
   const { emptyUUPSProxyAddress } = await deployEmptyProxiesV12({
@@ -99,7 +102,7 @@ export async function deploy(parameters: {
     config: bootstrapUpgradeConfigV12({
       pauserSetAddress: parameters.precomputed.pauserSetAddress,
       cleartextAddresses,
-      config: parameters.config,
+      config,
     }),
   });
 
@@ -439,8 +442,8 @@ function bootstrapUpgradeConfigV12(parameters: {
     pauserSetAddress: parameters.pauserSetAddress,
     acl: bootstrap([]),
     fhevmExecutor: bootstrap([]),
-    kmsVerifier: bootstrap(eip712VerifierInitArgs(config.kmsVerifier)),
-    inputVerifier: bootstrap(eip712VerifierInitArgs(config.inputVerifier)),
+    kmsVerifier: bootstrap(kmsVerifierInitArgs(config.kmsVerifier)),
+    inputVerifier: bootstrap(inputVerifierInitArgs(config.inputVerifier)),
     hcuLimit: bootstrap(hcuLimitInitArgs(config.hcuLimit)),
     cleartextArithmetic: bootstrap([]),
     // CleartextDB.initializeFromEmptyProxy(initialWriter) — seed CleartextArithmetic as the writer.
@@ -450,12 +453,18 @@ function bootstrapUpgradeConfigV12(parameters: {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/**
- * Builds the arguments for a v12 EIP-712 verifier `initializeFromEmptyProxy`
- * `(address verifyingContractSource, uint64 chainIDSource, address[] initialSigners, uint256 initialThreshold)`.
- * Used for both `KMSVerifier` and `InputVerifier` (identical signatures in v12).
- */
-function eip712VerifierInitArgs(config: EIP712VerifierInitConfig): readonly unknown[] {
+// In v12 both EIP-712 verifiers take the same `initializeFromEmptyProxy` signature
+// `(address verifyingContractSource, uint64 chainIDSource, address[] initialSigners, uint256 initialThreshold)` —
+// each carries its own signer set + threshold (v13 moved the KMS set to `ProtocolConfig`). They are kept
+// as two typed helpers so each proxy's init args stay bound to its own config type.
+
+/** Builds the `InputVerifier.initializeFromEmptyProxy` arguments, type-safely. */
+function inputVerifierInitArgs(config: InputVerifierInitConfig): readonly unknown[] {
+  return [config.verifyingContractSource, config.chainIDSource, config.initialSigners, config.initialThreshold];
+}
+
+/** Builds the `KMSVerifier.initializeFromEmptyProxy` arguments, type-safely. */
+function kmsVerifierInitArgs(config: KMSVerifierInitConfig): readonly unknown[] {
   return [config.verifyingContractSource, config.chainIDSource, config.initialSigners, config.initialThreshold];
 }
 
