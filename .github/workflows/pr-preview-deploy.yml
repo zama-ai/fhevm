@@ -800,15 +800,20 @@ jobs:
           # Register the real coprocessor S3 bucket (created by coprocessor-infra,
           # deployed above) as the on-chain ciphertext URL, replacing the
           # placeholder baked into the values file. The KMS worker reads
-          # COPROCESSOR_S3_BUCKET_URL_0 from GatewayConfig to fetch ct128 for
-          # user/public decryption; a stale placeholder host 404s. Region is
-          # fixed to eu-west-1 (see values-coprocessor-infra-e2e.yaml).
+          # COPROCESSOR_S3_BUCKET_URL_0 from GatewayConfig and fetches each
+          # ciphertext at <url>/<hex-digest> for user/public decryption. The
+          # sns-worker stores ct128 objects keyed by the bare hex digest at the
+          # bucket ROOT (no "ct128/" prefix - confirmed via the S3 listing), so
+          # this must be the bare bucket root, matching dev's registration which
+          # is also path-less (values-zws-dev.yaml). A stale placeholder host or
+          # a trailing /ct128 both 404. Region is fixed to eu-west-1 (see
+          # values-coprocessor-infra-e2e.yaml).
           bucket=$(kubectl get configmap coprocessor -n "${NAMESPACE}" -o jsonpath='{.data.S3_BUCKET_NAME}')
           if [[ -z "${bucket}" ]]; then
             echo "::error::coprocessor ConfigMap has no S3_BUCKET_NAME key - is coprocessor-infra reconciled? (kubectl get configmap coprocessor -n ${NAMESPACE})"
             exit 1
           fi
-          coproc_s3_url="https://${bucket}.s3.eu-west-1.amazonaws.com/ct128"
+          coproc_s3_url="https://${bucket}.s3.eu-west-1.amazonaws.com"
           yq -i "(.scDeploy.env[] | select(.name == \"COPROCESSOR_S3_BUCKET_URL_0\") | .value) = \"${coproc_s3_url}\"" "${generated}"
           echo "Registered coprocessor S3 bucket URL: ${coproc_s3_url}"
 

@@ -59,12 +59,14 @@ commonConfig:
     # no multichain_acl.address key - confirmed via `kubectl get configmap`.
     # txSender.disabledArgs below drops the corresponding legacy CLI arg.
 
+#=======================================================
 # Image tags below are placeholders - pr-preview-deploy.yml overrides
 # every one of them via --set-string with the real per-PR short-SHA tag
 # (or `latest` when this component didn't change in the PR).
 dbMigration:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/db-migration, tag: latest}
 
+#=======================================================
 hostListenerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
   # host-listener also downloads key material (ServerKey/PublicKey) straight
@@ -74,6 +76,8 @@ hostListenerShared:
   # below, just not caught until the KMS keygen ceremony actually fired an
   # ActivateKey event this far into the pipeline).
   serviceAccountName: coprocessor
+
+#=======================================================
 hostListenerPollerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
   # --seed-start-block was a v0.11.0-era flag ("no poller state for this
@@ -91,9 +95,12 @@ hostListenerConsumerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
   serviceAccountName: coprocessor
 
+#=======================================================
 gwListener:
   enabled: true
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/gw-listener, tag: latest}
+
+#=======================================================
 tfheWorker:
   enabled: true
   replicas: 1
@@ -133,6 +140,8 @@ tfheWorker:
               - {key: karpenter.sh/nodepool, operator: In, values: [coprocessor]}
   tolerations:
     - {key: karpenter.sh/nodepool, effect: NoSchedule, operator: Equal, value: coprocessor}
+
+#=======================================================
 zkProofWorker:
   enabled: true
   replicas: 1
@@ -146,6 +155,16 @@ zkProofWorker:
   extraArgs:
     - --pg-listen-channel=event_zkpok_new_work
     - --pg-notify-channel=event_zkpok_computed
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - {key: karpenter.sh/nodepool, operator: In, values: [coprocessor]}
+  tolerations:
+    - {key: karpenter.sh/nodepool, effect: NoSchedule, operator: Equal, value: coprocessor}
+
+#=======================================================
 snsWorker:
   enabled: true
   replicas: 1
@@ -191,6 +210,8 @@ snsWorker:
               - {key: karpenter.sh/nodepool, operator: In, values: [coprocessor]}
   tolerations:
     - {key: karpenter.sh/nodepool, effect: NoSchedule, operator: Equal, value: coprocessor}
+
+#=======================================================
 txSender:
   enabled: true
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/tx-sender, tag: latest}
@@ -211,7 +232,16 @@ txSender:
   # gw-sc-addresses` - no multichain_acl.address key) - caused
   # CreateContainerConfigError without this.
   disabledArgs: ["multichain-acl-address"]
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - {key: karpenter.sh/nodepool, operator: In, values: [coprocessor]}
+  tolerations:
+    - {key: karpenter.sh/nodepool, effect: NoSchedule, operator: Equal, value: coprocessor}
 
+#=======================================================
 chains:
   - name: host
     chainId: "12345"

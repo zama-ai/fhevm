@@ -77,12 +77,14 @@ scDeploy:
     - {name: COPROCESSOR_SIGNER_ADDRESS_0, value: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"}
     # OVERWRITTEN AT DEPLOY TIME: the "Wire real KMS node info into
     # gateway-contracts values" step in pr-preview-deploy.yml replaces this
-    # value with the real coprocessor-infra S3 bucket URL, read from the
+    # value with the real coprocessor-infra S3 bucket ROOT url, read from the
     # "coprocessor" ConfigMap's S3_BUCKET_NAME key (created by the
     # crossplane/coprocessor-infra chart, deployed just before the contracts).
-    # The KMS worker fetches ct128 from this URL during decryption, so a stale
-    # placeholder host 404s. This literal only matters for standalone validity.
-    - {name: COPROCESSOR_S3_BUCKET_URL_0, value: "https://placeholder-coprocessor-bucket.s3.eu-west-1.amazonaws.com/ct128"}
+    # The KMS worker fetches each ciphertext at <url>/<hex-digest> during
+    # decryption (ct128 objects are stored keyed by bare digest at the bucket
+    # root, no "ct128/" prefix), so a stale placeholder host - or a trailing
+    # path - 404s. This literal only matters for standalone validity.
+    - {name: COPROCESSOR_S3_BUCKET_URL_0, value: "https://placeholder-coprocessor-bucket.s3.eu-west-1.amazonaws.com"}
     - {name: NUM_CUSTODIANS, value: "1"}
     # PLACEHOLDER: mocked custodian identity + throwaway encryption key (test data only, taken
     # from fhevm-cli's own .env.gateway-sc template - not a real custodian key).
