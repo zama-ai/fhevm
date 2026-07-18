@@ -94,7 +94,7 @@ async function syncForkWithServicesStopped(
   }
 }
 
-async function syncCanonicalWorkToFork(forkConfig: ReturnType<typeof defaultForkConfig>): Promise<void> {
+async function syncCanonicalStateToFork(forkConfig: ReturnType<typeof defaultForkConfig>): Promise<void> {
   await syncForkWithServicesStopped(forkConfig, forkCoprocessorServices(), false);
   // The copied workload needs descendants before coprocessor 2 can finalize
   // it, but interval mining would create an unbounded divergent tail while
@@ -360,7 +360,34 @@ async function waitForOrphanedBlock(
     }
     await sleep(2_000);
   }
-  throw new Error(`[${label}] timed out waiting for orphaned block ${blockHash.toString('hex')}`);
+  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  try {
+    const [block, poller, pending, settlement] = await Promise.all([
+      pool.query('SELECT block_number, block_status FROM host_chain_blocks_valid WHERE block_hash = $1 LIMIT 1', [
+        blockHash,
+      ]),
+      pool.query('SELECT last_caught_up_block FROM host_listener_poller_state ORDER BY chain_id LIMIT 1'),
+      pool.query(
+        `SELECT count(*)::int AS count,
+                MIN(block_number)::int AS oldest,
+                MAX(block_number)::int AS newest
+           FROM host_chain_blocks_valid
+          WHERE block_status = 'pending'`,
+      ),
+      pool.query('SELECT MAX(settled_height)::int AS height FROM coprocessor_settlement'),
+    ]);
+    const observed = block.rows[0];
+    const pendingRange = pending.rows[0];
+    throw new Error(
+      `[${label}] timed out waiting for orphaned block ${blockHash.toString('hex')}; ` +
+        `status=${observed?.block_status ?? 'missing'} block=${observed?.block_number ?? 'unknown'} ` +
+        `poller=${poller.rows[0]?.last_caught_up_block ?? 'unknown'} ` +
+        `pending=${pendingRange?.count ?? 'unknown'}[${pendingRange?.oldest ?? '-'},${pendingRange?.newest ?? '-'}] ` +
+        `settled=${settlement.rows[0]?.height ?? 'unknown'}`,
+    );
+  } finally {
+    await pool.end();
+  }
 }
 
 async function countRowsReferencingProducer(
@@ -518,13 +545,8 @@ describe('Real-Fork Consensus (E3)', function () {
       // Step 2: Make the fork Anvil present the canonical chain.
       // Coprocessor 2 stays connected to fork-anvil, but now observes
       // canonical block hashes at the fork height and should detect a reorg.
-      const listener2 = containerName(2, 'host-listener');
-      const poller2 = containerName(2, 'host-listener-poller');
-      const worker2 = containerName(2, 'tfhe-worker');
-      const sender2 = containerName(2, 'transaction-sender');
-
       console.log('[C3] Stopping coprocessor 2 services and resyncing fork Anvil to canonical chain state...');
-      await syncForkWithServicesStopped(forkConfig, [listener2, poller2, worker2, sender2], false);
+      await syncCanonicalStateToFork(forkConfig);
       console.log('[C3] Coprocessor 2 services restarted against canonicalized fork Anvil.');
 
       // Step 3: Poll for orphaned blocks on coprocessor 2's DB. On restart,
@@ -551,7 +573,7 @@ describe('Real-Fork Consensus (E3)', function () {
 
       // Coprocessor 2 still reads from fork-anvil; copy the recovered canonical
       // workload there so all coprocessors observe the same post-reorg chain.
-      await syncCanonicalWorkToFork(forkConfig);
+      await syncCanonicalStateToFork(forkConfig);
 
       const balanceHandle = handleToHex(await contract.balanceOf(this.signers.alice));
 
@@ -627,13 +649,8 @@ describe('Real-Fork Consensus (E3)', function () {
         );
         console.log(`[C3b] Canonical coprocessors settled at heights ${canonicalSettledBeforeRecovery.join(', ')}`);
 
-        const listener2 = containerName(2, 'host-listener');
-        const poller2 = containerName(2, 'host-listener-poller');
-        const worker2 = containerName(2, 'tfhe-worker');
-        const sender2 = containerName(2, 'transaction-sender');
-
         console.log('[C3b] Stopping coprocessor 2 services and resyncing fork Anvil to canonical chain state...');
-        await syncForkWithServicesStopped(forkConfig, [listener2, poller2, worker2, sender2], false);
+        await syncCanonicalStateToFork(forkConfig);
 
         const c3bOrphan = await waitForOrphanedBlock('C3b', dbUrls[2], forkBlockHash);
         await waitForNoRowsReferencingProducer('C3b', dbUrls[2], c3bOrphan.chain_id, forkBlockHash);
@@ -704,7 +721,7 @@ describe('Real-Fork Consensus (E3)', function () {
         const contract = await deployEncryptedERC20Fixture();
         const tx = await contract.mint(7777);
         await tx.wait();
-        await syncCanonicalWorkToFork(forkConfig);
+        await syncCanonicalStateToFork(forkConfig);
 
         const balanceHandle = handleToHex(await contract.balanceOf(this.signers.alice));
         const consensus = await waitForConsensus(GATEWAY_RPC_URL, CIPHERTEXT_COMMITS_ADDRESS, balanceHandle, 120_000);
