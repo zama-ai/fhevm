@@ -124,3 +124,4 @@ env:
   # tests, matching the staging reference env file's own comment.
   - {name: DEPLOYER_PRIVATE_KEY, value: "0x2d24c36c57e6bfbf90c43173481cc00edcbd1a3922de5e5fdb9aba5fc4e0fafd"}
   - {name: RELAYER_URL, value: "http://relayer:3000/v2"}
+  - {name: RELAYER_SDK_VERSION, value: ""}

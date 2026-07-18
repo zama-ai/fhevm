@@ -25,6 +25,10 @@ on:
         description: "Build fresh images from the selected branch (the branch picked above via 'Use workflow from'). Uncheck to skip building entirely and deploy exactly the pinned versions below."
         required: true
         default: "true"
+      build_test_suite_only:
+        description: "When build_images=true, build ONLY the e2e test-suite image and skip every other component build (they fall back to the pinned versions below). Handy for iterating on the test-suite / @fhevm/sdk without a full rebuild."
+        required: false
+        default: "false"
       host_contracts_version:
         description: "Image tag for the host-contracts deployer image (ignored while build_images=true and it changed - see build_images above)"
         required: true
@@ -123,7 +127,7 @@ env:
   # 1.5.2, kmsGeneration lives under commonConfig.gatewayContractAddresses and
   # kmsVerifier under ethereumContractAddresses (see the --set-string calls
   # below); both route to the same env vars regardless of chain topology.
-  KMS_CONNECTOR_VERSION: "v0.13.1-hotfix-kmsconnector-1"
+  KMS_CONNECTOR_VERSION: "v0.13.1-hotfix.kmsconnector.1"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
   KMS_CONNECTOR_CHART_VERSION: "1.5.2"
   #=====COPROCESSOR INFRA======================================================
@@ -141,7 +145,7 @@ env:
   # (node-tfhe 1.5.4), so the key format must match: pair with a kms-core on
   # tfhe-rs 1.5.x (e.g. v0.13.10). This pinned fallback only matters when
   # build_images is off.
-  TEST_SUITE_VERSION: "v0.13.0"
+  TEST_SUITE_VERSION: "b858525"
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================
@@ -168,16 +172,22 @@ jobs:
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
       build_images: ${{ steps.check.outputs.build_images }}
+      build_test_suite_only: ${{ steps.check.outputs.build_test_suite_only }}
     steps:
       - id: check
         env:
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_BUILD_IMAGES: ${{ inputs.build_images }}
+          DISPATCH_BUILD_TEST_SUITE_ONLY: ${{ inputs.build_test_suite_only }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
+          # build_test_suite_only is a dispatch-only knob; label-triggered runs
+          # never set it (always build everything they're allowed to).
+          echo "build_test_suite_only=false" >> "$GITHUB_OUTPUT"
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "build_images=${DISPATCH_BUILD_IMAGES}" >> "$GITHUB_OUTPUT"
+            echo "build_test_suite_only=${DISPATCH_BUILD_TEST_SUITE_ONLY:-false}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "PR labels: $PR_LABELS"
@@ -201,9 +211,12 @@ jobs:
   build-host-contracts:
     name: build/host-contracts
     needs: check-labels
+    # Anchor covers every NON-test-suite build: skipped when build_test_suite_only
+    # is set (build-test-suite below has its own condition without that clause).
     if: &should_build_images >-
       needs.check-labels.outputs.should_deploy == 'true' &&
-      needs.check-labels.outputs.build_images == 'true'
+      needs.check-labels.outputs.build_images == 'true' &&
+      needs.check-labels.outputs.build_test_suite_only != 'true'
     uses: ./.github/workflows/host-contracts-docker-build.yml
     # Top-level `permissions: {}` caps every nested reusable-workflow call.
     permissions: &docker_permissions
@@ -250,7 +263,11 @@ jobs:
   build-test-suite:
     name: build/test-suite
     needs: check-labels
-    if: *should_build_images
+    # No build_test_suite_only clause: this is the one build that must still run
+    # when build_test_suite_only is set.
+    if: >-
+      needs.check-labels.outputs.should_deploy == 'true' &&
+      needs.check-labels.outputs.build_images == 'true'
     uses: ./.github/workflows/test-suite-docker-build.yml
     permissions: *docker_permissions
     secrets: inherit
