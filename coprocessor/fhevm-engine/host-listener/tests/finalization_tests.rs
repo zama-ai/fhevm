@@ -55,6 +55,19 @@ async fn block_status(db: &Database, hash: &[u8]) -> Option<String> {
     .expect("status query")
 }
 
+async fn seed_settled_height(db: &Database, height: i64) {
+    let pool = db.pool().await;
+    sqlx::query(
+        "INSERT INTO coprocessor_settlement(chain_id, settled_height) \
+         VALUES ($1, $2)",
+    )
+    .bind(CHAIN_ID as i64)
+    .bind(height)
+    .execute(&pool)
+    .await
+    .expect("seed coprocessor_settlement");
+}
+
 fn b32(seed: u8) -> Vec<u8> {
     vec![seed; 32]
 }
@@ -77,6 +90,7 @@ async fn finalization_refuses_mismatched_parent_and_stops_batch() {
     seed_block(&db, 2, &c2, &x0, "pending").await; // fork sibling
     seed_block(&db, 3, &b3, &b2, "pending").await; // true chain
     seed_block(&db, 3, &c3, &c2, "pending").await; // fork child
+    seed_settled_height(&db, 1).await;
 
     // The poisoned RPC serves the fork chain for both heights.
     let fork = [(2u64, c2.clone()), (3u64, c3.clone())];
@@ -122,6 +136,7 @@ async fn finalization_stops_batch_at_fetch_failure() {
     seed_block(&db, 3, &c3, &b32(0x0F), "pending").await; // fork sibling
     seed_block(&db, 4, &b4, &b3, "pending").await; // true chain
     seed_block(&db, 4, &c4, &c3, "pending").await; // fork child
+    seed_settled_height(&db, 1).await;
 
     // Height 2 answers honestly, height 3 errors, height 4 serves the fork.
     let served = [(2u64, b2.clone()), (4u64, c4.clone())];
@@ -228,6 +243,7 @@ async fn finalization_accepts_linked_chain_and_orphans_sibling() {
     seed_block(&db, 2, &b2, &a1, "pending").await;
     seed_block(&db, 2, &c2, &b32(0x0F), "pending").await;
     seed_block(&db, 3, &b3, &b2, "pending").await;
+    seed_settled_height(&db, 1).await;
 
     let chain = [(2u64, b2.clone()), (3u64, b3.clone())];
     update_finalized_blocks_aux(&mut db, 3, 0, 0, |n| {
