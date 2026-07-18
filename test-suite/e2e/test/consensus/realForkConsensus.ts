@@ -53,7 +53,6 @@ const GATEWAY_RPC_URL = process.env.GATEWAY_RPC_URL || '';
 const CIPHERTEXT_COMMITS_ADDRESS = process.env.CIPHERTEXT_COMMITS_ADDRESS || '';
 const COPROCESSOR_COUNT = 3;
 const FINALITY_LAG = parseInt(process.env.FINALITY_LAG || '5', 10);
-const POLLER_FINALITY_LAG = parseInt(process.env.POLLER_FINALITY_LAG || '2', 10);
 const RFC11_SETTLEMENT_LAG = parseInt(process.env.RFC11_SETTLEMENT_LAG || '8', 10);
 
 function requireEnv(): void {
@@ -70,6 +69,13 @@ interface DivergentForkWork {
   forkBlockHash: string;
   forkBlockNumber: number;
 }
+
+const forkCoprocessorServices = (): string[] => [
+  containerName(2, 'host-listener'),
+  containerName(2, 'host-listener-poller'),
+  containerName(2, 'tfhe-worker'),
+  containerName(2, 'transaction-sender'),
+];
 
 async function syncForkWithServicesStopped(
   forkConfig: ReturnType<typeof defaultForkConfig>,
@@ -105,29 +111,7 @@ async function createDivergentForkWork(
   const contractAddress = await contract.getAddress();
 
   console.log(`[${label}] Syncing fork Anvil state after contract deployment...`);
-  const forkServices = [
-    containerName(2, 'host-listener'),
-    containerName(2, 'host-listener-poller'),
-    containerName(2, 'tfhe-worker'),
-    containerName(2, 'transaction-sender'),
-  ];
-  await syncForkWithServicesStopped(forkConfig, forkServices, false);
-
-  // Every test starts from a canonicalized fork node, including when the
-  // preceding test deliberately left coprocessor 2 on a divergent branch.
-  // Waiting for a canonical finalized row proves startup replay has caught up
-  // and orphaned any old siblings before this test creates another fork.
-  const canonicalTip = await canonicalProvider.getBlockNumber();
-  const baselineBlockNumber = Math.max(1, canonicalTip - POLLER_FINALITY_LAG);
-  const baselineBlock = await canonicalProvider.getBlock(baselineBlockNumber);
-  expect(baselineBlock, `[${label}] canonical replay baseline block`).to.not.be.null;
-  expect(baselineBlock!.hash, `[${label}] canonical replay baseline hash`).to.not.be.null;
-  await waitForFinalizedBlock(
-    `${label} fork baseline`,
-    [getCoprocessorDbUrls(COPROCESSOR_COUNT)[2]],
-    Buffer.from(baselineBlock!.hash!.replace('0x', ''), 'hex'),
-    baselineBlockNumber,
-  );
+  await syncForkWithServicesStopped(forkConfig, forkCoprocessorServices(), false);
 
   const canonicalSigner = getSignerForProvider(canonicalProvider, 0);
   const forkSigner = getSignerForProvider(forkProvider, 0);
@@ -481,6 +465,17 @@ describe('Real-Fork Consensus (E3)', function () {
       const forkWork = await createDivergentForkWork('C2b', this.signers.alice.address, 1000, 1000);
       await waitForForkBranchSubmissions('C2b', forkWork);
       await expectNoConsensusForForkWork('C2b', forkWork);
+
+      // C2b intentionally creates an unresolved fork. Recover it before the
+      // next case so C3 exercises its own reorg rather than inheriting C2b's
+      // finalized predecessor and durable poller cursor.
+      console.log('[C2b] Recovering coprocessor 2 to the canonical chain...');
+      await syncForkWithServicesStopped(defaultForkConfig(), forkCoprocessorServices(), false);
+      await waitForOrphanedBlock(
+        'C2b cleanup',
+        dbUrls[2],
+        Buffer.from(forkWork.forkBlockHash.replace('0x', ''), 'hex'),
+      );
     });
   });
 
