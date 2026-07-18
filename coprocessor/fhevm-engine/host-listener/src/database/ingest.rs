@@ -4,7 +4,9 @@ use std::future::Future;
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
-use fhevm_engine_common::branch::advance_settled_height;
+use fhevm_engine_common::branch::{
+    advance_settled_height, read_settled_height,
+};
 use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::{
@@ -757,7 +759,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     // canonical hashes over RPC with NO transaction open: block fetches can
     // take seconds each, and holding the finalization transaction across the
     // round-trips kept its row locks pinned for the whole time.
-    let blocks_number = {
+    let (blocks_number, current_settled_height) = {
         let mut tx = match db.new_transaction().await {
             Ok(Some(tx)) => tx,
             Ok(None) => {
@@ -774,14 +776,28 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                 return;
             }
         };
-        match Database::get_finalized_blocks_number(
+        let current_settled_height =
+            match read_settled_height(&mut tx, db.chain_id.as_i64()).await {
+                Ok(height) => height,
+                Err(err) => {
+                    error!(?err, "Failed to read settlement frontier");
+                    return;
+                }
+            };
+        let first_post_cutover_block = settlement_cutover_block().max(0);
+        let first_unsettled_block = current_settled_height
+            .saturating_add(1)
+            .max(first_post_cutover_block);
+        match Database::get_blocks_to_finalize_or_revalidate(
             &mut tx,
             last_finalized_block as i64,
             db.chain_id,
+            first_unsettled_block,
+            settlement_candidate_height as i64,
         )
         .await
         {
-            Ok(numbers) => numbers,
+            Ok(numbers) => (numbers, current_settled_height),
             Err(err) => {
                 error!(
                     ?err,
@@ -837,6 +853,12 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             return;
         }
     };
+    let first_post_cutover_block = settlement_cutover_block().max(0);
+    let mut next_unverified_height = current_settled_height
+        .saturating_add(1)
+        .max(first_post_cutover_block);
+    let mut highest_revalidated_height =
+        next_unverified_height.saturating_sub(1);
     for (block_number, block_hash) in canonical {
         match db
             .update_block_as_finalized(&mut tx, block_number, &block_hash)
@@ -858,6 +880,11 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                         "Failed to enqueue orphaned branch cleanup during finalization"
                     );
                     return;
+                }
+                if block_number == next_unverified_height {
+                    highest_revalidated_height = block_number;
+                    next_unverified_height =
+                        next_unverified_height.saturating_add(1);
                 }
             }
             Ok(None) => {
@@ -883,10 +910,17 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             }
         }
     }
+    // Settlement is monotonic, so never let it cross a post-cutover height
+    // which this pass did not revalidate against the listener's current chain
+    // view. Pre-cutover heights carry no branch-scoped work and retain their
+    // existing implicit-drain behaviour.
+    let pre_cutover_ceiling = first_post_cutover_block.saturating_sub(1);
+    let verified_settlement_candidate = (settlement_candidate_height as i64)
+        .min(highest_revalidated_height.max(pre_cutover_ceiling));
     match advance_settled_height(
         &mut tx,
         db.chain_id.as_i64(),
-        settlement_candidate_height as i64,
+        verified_settlement_candidate,
         settlement_cutover_block(),
     )
     .await
@@ -1092,6 +1126,138 @@ mod tests {
             settled_height, 6,
             "settlement should use the stricter settlement_finality_lag"
         );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn settlement_waits_for_reingestion_after_finalized_branch_changes() {
+        let _cutover = EnvGuard::set("FHEVM_BRANCH_CUTOVER_BLOCK", "1");
+        let db_instance =
+            test_harness::instance::setup_test_db(ImportMode::None)
+                .await
+                .expect("valid db instance");
+        let chain_id = ChainId::try_from(44_u64).unwrap();
+        let mut db = Database::new(&db_instance.db_url, chain_id, 128)
+            .await
+            .expect("database");
+        let pool = db.pool.read().await.clone();
+
+        sqlx::query(
+            "INSERT INTO coprocessor_settlement(chain_id, settled_height) \
+             VALUES ($1, 1)",
+        )
+        .bind(chain_id.as_i64())
+        .execute(&pool)
+        .await
+        .expect("insert settlement frontier");
+
+        let mut parent_hash = Vec::new();
+        for block_number in 0_i64..=6 {
+            let block_hash = if block_number < 2 {
+                vec![block_number as u8; 32]
+            } else {
+                vec![0x40 + block_number as u8; 32]
+            };
+            sqlx::query(
+                "INSERT INTO host_chain_blocks_valid \
+                 (chain_id, block_hash, parent_hash, block_number, block_status) \
+                 VALUES ($1, $2, $3, $4, 'finalized')",
+            )
+            .bind(chain_id.as_i64())
+            .bind(&block_hash)
+            .bind(&parent_hash)
+            .bind(block_number)
+            .execute(&pool)
+            .await
+            .expect("insert old finalized branch");
+            parent_hash = block_hash;
+        }
+
+        update_finalized_blocks_aux(
+            &mut db,
+            10,
+            1,
+            4,
+            |block_number| async move {
+                // The listener now observes a different branch from height 2,
+                // but its canonical rows have not been replayed into the DB.
+                Ok(BlockHash::from([0x80 + block_number as u8; 32]))
+            },
+        )
+        .await;
+
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+
+        assert_eq!(
+            settled_height, 1,
+            "settlement must not trust finalized hashes from the listener's old branch"
+        );
+
+        let mut canonical_parent_hash = vec![1_u8; 32];
+        for block_number in 2_i64..=6 {
+            let canonical_hash = vec![0x80 + block_number as u8; 32];
+            sqlx::query(
+                "INSERT INTO host_chain_blocks_valid \
+                 (chain_id, block_hash, parent_hash, block_number, block_status) \
+                 VALUES ($1, $2, $3, $4, 'pending')",
+            )
+            .bind(chain_id.as_i64())
+            .bind(&canonical_hash)
+            .bind(&canonical_parent_hash)
+            .bind(block_number)
+            .execute(&pool)
+            .await
+            .expect("replay canonical block");
+            canonical_parent_hash = canonical_hash;
+        }
+
+        update_finalized_blocks_aux(
+            &mut db,
+            10,
+            1,
+            4,
+            |block_number| async move {
+                Ok(BlockHash::from([0x80 + block_number as u8; 32]))
+            },
+        )
+        .await;
+        assert_eq!(
+            db.process_orphaned_branch_cleanup_jobs()
+                .await
+                .expect("clean old branch"),
+            1
+        );
+
+        // Cleanup completion unblocks the same shared finalization path. Its
+        // bounded revalidation is idempotent and may now advance settlement.
+        update_finalized_blocks_aux(
+            &mut db,
+            10,
+            1,
+            4,
+            |block_number| async move {
+                Ok(BlockHash::from([0x80 + block_number as u8; 32]))
+            },
+        )
+        .await;
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read recovered settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+        assert_eq!(settled_height, 6);
     }
 
     #[tokio::test]

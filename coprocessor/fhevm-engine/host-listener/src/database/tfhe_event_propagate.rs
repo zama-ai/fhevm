@@ -1369,6 +1369,7 @@ impl Database {
             WHERE block_number = $2
               AND chain_id = $1
               AND block_hash <> $3
+              AND block_status <> 'orphaned'
             RETURNING block_hash
             "#,
             self.chain_id.as_i64(),
@@ -2533,24 +2534,39 @@ impl Database {
         })
     }
 
-    pub async fn get_finalized_blocks_number(
+    pub async fn get_blocks_to_finalize_or_revalidate(
         tx: &mut Transaction<'_>,
         last_block_max: i64,
         chain_id: ChainId,
+        first_unsettled_block: i64,
+        settlement_candidate_height: i64,
     ) -> Result<HashSet<i64>, SqlxError> {
-        // Most of the time there is only 1 block pending. Under a backlog,
-        // take the OLDEST pending blocks: finalization must progress
+        // Most of the time there is only one pending block. Under a backlog,
+        // take the OLDEST relevant blocks: finalization must progress
         // oldest-first so each block's parent-linkage check anchors on a
         // finalized predecessor instead of passing vacuously.
+        //
+        // Previously-finalized rows in the unsettled range are deliberately
+        // included. A listener may reconnect to a different branch after
+        // having finalized its old view. Settlement must not trust that stale
+        // status: every height it crosses is revalidated against the current
+        // by-number RPC result first.
         let blocks_number = sqlx::query!(
             r#"
-            SELECT block_number FROM host_chain_blocks_valid
-            WHERE block_status = 'pending' AND block_number <= $1 AND chain_id = $2
+            SELECT DISTINCT block_number FROM host_chain_blocks_valid
+            WHERE block_number <= $1
+              AND chain_id = $2
+              AND (
+                  block_status = 'pending'
+                  OR block_number BETWEEN $3 AND $4
+              )
             ORDER BY block_number ASC
             LIMIT 10
             "#,
             last_block_max,
             chain_id.as_i64(),
+            first_unsettled_block,
+            settlement_candidate_height,
         )
         .fetch_all(tx.deref_mut())
         .await?;
