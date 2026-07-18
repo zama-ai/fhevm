@@ -75,10 +75,13 @@ scDeploy:
     # PLACEHOLDER: single mocked coprocessor identity for this minimal scenario.
     - {name: COPROCESSOR_TX_SENDER_ADDRESS_0, value: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"}
     - {name: COPROCESSOR_SIGNER_ADDRESS_0, value: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"}
-    # Real coprocessor-infra S3 bucket - see the "coprocessor" ConfigMap's
-    # S3_URI_KEY key (crossplane/coprocessor-infra chart). TODO: wire via a
-    # discovery step + --set-string, same pattern as kms-connector's
-    # contract-address discovery, instead of this placeholder.
+    # OVERWRITTEN AT DEPLOY TIME: the "Wire real KMS node info into
+    # gateway-contracts values" step in pr-preview-deploy.yml replaces this
+    # value with the real coprocessor-infra S3 bucket URL, read from the
+    # "coprocessor" ConfigMap's S3_BUCKET_NAME key (created by the
+    # crossplane/coprocessor-infra chart, deployed just before the contracts).
+    # The KMS worker fetches ct128 from this URL during decryption, so a stale
+    # placeholder host 404s. This literal only matters for standalone validity.
     - {name: COPROCESSOR_S3_BUCKET_URL_0, value: "https://placeholder-coprocessor-bucket.s3.eu-west-1.amazonaws.com/ct128"}
     - {name: NUM_CUSTODIANS, value: "1"}
     # PLACEHOLDER: mocked custodian identity + throwaway encryption key (test data only, taken

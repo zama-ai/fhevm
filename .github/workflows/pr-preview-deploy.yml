@@ -742,6 +742,40 @@ jobs:
             -n "${NAMESPACE}" -f ci/preview-env/gateway-chain/values-anvil-gateway-e2e.yaml --wait
 
       ######################################################################
+      # COPROCESSOR INFRA: real S3 bucket via Crossplane (same chart as
+      # fhevm-dev). Deployed BEFORE the contracts so the gateway-contracts
+      # wiring step can read the real bucket name and register it on-chain as
+      # the coprocessor's ciphertext S3 URL (COPROCESSOR_S3_BUCKET_URL_0) -
+      # otherwise the KMS worker fetches ct128 from a placeholder bucket and
+      # user-decrypt 404s. The claim reconciles asynchronously, so we poll
+      # rather than rely on `helm --wait` alone.
+      ######################################################################
+      - name: Deploy coprocessor-infra (Crossplane S3)
+        run: |
+          helm upgrade --install coprocessor-infra "${COPROCESSOR_INFRA_CHART}" --version "${COPROCESSOR_INFRA_CHART_VERSION}" \
+            -n "${NAMESPACE}" -f ci/preview-env/coprocessor-infra/values-coprocessor-infra-e2e.yaml --wait
+
+      - name: Wait for coprocessor-infra to reconcile
+        run: |
+          max_wait=420; elapsed=0; interval=10
+          ready=false
+          while [[ $elapsed -lt $max_wait ]]; do
+            if kubectl get s3 -n "${NAMESPACE}" \
+                -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null \
+                | grep -qv True; then
+              echo "Still waiting for coprocessor-infra resources... (${elapsed}s/${max_wait}s)"
+              sleep "$interval"; elapsed=$((elapsed + interval)); continue
+            fi
+            ready=true; echo "coprocessor-infra resources ready"; break
+          done
+          kubectl get s3 -n "${NAMESPACE}" -o wide || true
+          if [[ "${ready}" != "true" ]]; then
+            echo "::error::coprocessor-infra resources not Ready after ${max_wait}s - see conditions/events above (or below via kubectl describe)"
+            kubectl describe s3 -n "${NAMESPACE}" || true
+            exit 1
+          fi
+
+      ######################################################################
       # CONTRACTS: gateway first, then host (needs gateway's Decryption /
       # InputVerification addresses), then register the host chain into gateway.
       ######################################################################
@@ -762,6 +796,22 @@ jobs:
 
           generated=/tmp/values-gateway-contracts-e2e.generated.yaml
           cp ci/preview-env/gateway-chain/values-gateway-contracts-e2e.yaml "${generated}"
+
+          # Register the real coprocessor S3 bucket (created by coprocessor-infra,
+          # deployed above) as the on-chain ciphertext URL, replacing the
+          # placeholder baked into the values file. The KMS worker reads
+          # COPROCESSOR_S3_BUCKET_URL_0 from GatewayConfig to fetch ct128 for
+          # user/public decryption; a stale placeholder host 404s. Region is
+          # fixed to eu-west-1 (see values-coprocessor-infra-e2e.yaml).
+          bucket=$(kubectl get configmap coprocessor -n "${NAMESPACE}" -o jsonpath='{.data.S3_BUCKET_NAME}')
+          if [[ -z "${bucket}" ]]; then
+            echo "::error::coprocessor ConfigMap has no S3_BUCKET_NAME key - is coprocessor-infra reconciled? (kubectl get configmap coprocessor -n ${NAMESPACE})"
+            exit 1
+          fi
+          coproc_s3_url="https://${bucket}.s3.eu-west-1.amazonaws.com/ct128"
+          yq -i "(.scDeploy.env[] | select(.name == \"COPROCESSOR_S3_BUCKET_URL_0\") | .value) = \"${coproc_s3_url}\"" "${generated}"
+          echo "Registered coprocessor S3 bucket URL: ${coproc_s3_url}"
+
           yq -i "
             .scDeploy.env += [
               {\"name\": \"NUM_KMS_NODES\", \"value\": \"${n}\"},
@@ -878,36 +928,6 @@ jobs:
             -n "${NAMESPACE}" -f ci/preview-env/gateway-chain/values-gateway-add-host-chains-e2e.yaml \
             --set-string "scDeploy.image.tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")" \
             --wait --wait-for-jobs --timeout=10m
-
-      ######################################################################
-      # COPROCESSOR INFRA: real S3 bucket via Crossplane (same chart as
-      # fhevm-dev). The claim reconciles asynchronously, so we poll rather
-      # than rely on `helm --wait` alone.
-      ######################################################################
-      - name: Deploy coprocessor-infra (Crossplane S3)
-        run: |
-          helm upgrade --install coprocessor-infra "${COPROCESSOR_INFRA_CHART}" --version "${COPROCESSOR_INFRA_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/coprocessor-infra/values-coprocessor-infra-e2e.yaml --wait
-
-      - name: Wait for coprocessor-infra to reconcile
-        run: |
-          max_wait=420; elapsed=0; interval=10
-          ready=false
-          while [[ $elapsed -lt $max_wait ]]; do
-            if kubectl get s3 -n "${NAMESPACE}" \
-                -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null \
-                | grep -qv True; then
-              echo "Still waiting for coprocessor-infra resources... (${elapsed}s/${max_wait}s)"
-              sleep "$interval"; elapsed=$((elapsed + interval)); continue
-            fi
-            ready=true; echo "coprocessor-infra resources ready"; break
-          done
-          kubectl get s3 -n "${NAMESPACE}" -o wide || true
-          if [[ "${ready}" != "true" ]]; then
-            echo "::error::coprocessor-infra resources not Ready after ${max_wait}s - see conditions/events above (or below via kubectl describe)"
-            kubectl describe s3 -n "${NAMESPACE}" || true
-            exit 1
-          fi
 
       ######################################################################
       # COPROCESSOR + KMS-CONNECTOR: real contract addresses (configMapKeyRef
