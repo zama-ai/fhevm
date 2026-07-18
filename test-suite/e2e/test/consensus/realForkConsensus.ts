@@ -53,6 +53,7 @@ const GATEWAY_RPC_URL = process.env.GATEWAY_RPC_URL || '';
 const CIPHERTEXT_COMMITS_ADDRESS = process.env.CIPHERTEXT_COMMITS_ADDRESS || '';
 const COPROCESSOR_COUNT = 3;
 const FINALITY_LAG = parseInt(process.env.FINALITY_LAG || '5', 10);
+const POLLER_FINALITY_LAG = parseInt(process.env.POLLER_FINALITY_LAG || '2', 10);
 const RFC11_SETTLEMENT_LAG = parseInt(process.env.RFC11_SETTLEMENT_LAG || '8', 10);
 
 function requireEnv(): void {
@@ -73,6 +74,7 @@ interface DivergentForkWork {
 async function syncForkWithServicesStopped(
   forkConfig: ReturnType<typeof defaultForkConfig>,
   services: string[],
+  resumeTargetMining: boolean = true,
 ): Promise<void> {
   // anvil_loadState replaces the target history atomically, but a live HTTP
   // poller can observe the new tip first and advance its durable cursor beyond
@@ -80,7 +82,7 @@ async function syncForkWithServicesStopped(
   // replays from the pre-reorg cursor and sees both branch siblings.
   await dockerStop(...services);
   try {
-    await syncAnvilState(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl);
+    await syncAnvilState(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl, resumeTargetMining);
   } finally {
     await dockerStart(...services);
   }
@@ -103,7 +105,29 @@ async function createDivergentForkWork(
   const contractAddress = await contract.getAddress();
 
   console.log(`[${label}] Syncing fork Anvil state after contract deployment...`);
-  await syncAnvilState(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl, false);
+  const forkServices = [
+    containerName(2, 'host-listener'),
+    containerName(2, 'host-listener-poller'),
+    containerName(2, 'tfhe-worker'),
+    containerName(2, 'transaction-sender'),
+  ];
+  await syncForkWithServicesStopped(forkConfig, forkServices, false);
+
+  // Every test starts from a canonicalized fork node, including when the
+  // preceding test deliberately left coprocessor 2 on a divergent branch.
+  // Waiting for a canonical finalized row proves startup replay has caught up
+  // and orphaned any old siblings before this test creates another fork.
+  const canonicalTip = await canonicalProvider.getBlockNumber();
+  const baselineBlockNumber = Math.max(1, canonicalTip - POLLER_FINALITY_LAG);
+  const baselineBlock = await canonicalProvider.getBlock(baselineBlockNumber);
+  expect(baselineBlock, `[${label}] canonical replay baseline block`).to.not.be.null;
+  expect(baselineBlock!.hash, `[${label}] canonical replay baseline hash`).to.not.be.null;
+  await waitForFinalizedBlock(
+    `${label} fork baseline`,
+    [getCoprocessorDbUrls(COPROCESSOR_COUNT)[2]],
+    Buffer.from(baselineBlock!.hash!.replace('0x', ''), 'hex'),
+    baselineBlockNumber,
+  );
 
   const canonicalSigner = getSignerForProvider(canonicalProvider, 0);
   const forkSigner = getSignerForProvider(forkProvider, 0);
@@ -498,9 +522,9 @@ describe('Real-Fork Consensus (E3)', function () {
       await syncForkWithServicesStopped(forkConfig, [listener2, poller2, worker2, sender2]);
       console.log('[C3] Coprocessor 2 services restarted against canonicalized fork Anvil.');
 
-      // Step 3: Poll for orphaned blocks on coprocessor 2's DB.
-      // The host-listener detects the reorg when it sees different
-      // block hashes at the fork height and marks them orphaned.
+      // Step 3: Poll for orphaned blocks on coprocessor 2's DB. On restart,
+      // the poller replays its reorg window, observes the canonical sibling at
+      // the fork height, and marks the replaced branch orphaned.
       let c3Orphan: { chain_id: string; block_hash: Buffer } | undefined;
       const orphanDeadline = Date.now() + 60_000;
       while (Date.now() < orphanDeadline) {
@@ -517,8 +541,8 @@ describe('Real-Fork Consensus (E3)', function () {
         }
         await sleep(5_000);
       }
-      console.log(`[C3] Coprocessor 2 orphaned block hash: ${divergentWork.forkBlockHash}`);
       expect(c3Orphan, 'coprocessor 2 must orphan the fork block created by C3').to.not.be.undefined;
+      console.log(`[C3] Coprocessor 2 orphaned block hash: ${divergentWork.forkBlockHash}`);
       await waitForFinalizedBlock(
         'C3 recovered coprocessor',
         [dbUrls[2]],
