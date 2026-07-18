@@ -94,6 +94,16 @@ async function syncForkWithServicesStopped(
   }
 }
 
+async function syncCanonicalWorkToFork(forkConfig: ReturnType<typeof defaultForkConfig>): Promise<void> {
+  await syncForkWithServicesStopped(forkConfig, forkCoprocessorServices(), false);
+  // The copied workload needs descendants before coprocessor 2 can finalize
+  // it, but interval mining would create an unbounded divergent tail while
+  // the test waits for TFHE/SNS/Gateway processing. Mine only the operational
+  // finality window and leave the fork paused for the next recovery case.
+  await mineBlocks(getForkProvider(forkConfig), FINALITY_LAG + 1);
+  await setForkMining(false);
+}
+
 async function createDivergentForkWork(
   label: string,
   aliceAddress: string,
@@ -514,7 +524,7 @@ describe('Real-Fork Consensus (E3)', function () {
       const sender2 = containerName(2, 'transaction-sender');
 
       console.log('[C3] Stopping coprocessor 2 services and resyncing fork Anvil to canonical chain state...');
-      await syncForkWithServicesStopped(forkConfig, [listener2, poller2, worker2, sender2]);
+      await syncForkWithServicesStopped(forkConfig, [listener2, poller2, worker2, sender2], false);
       console.log('[C3] Coprocessor 2 services restarted against canonicalized fork Anvil.');
 
       // Step 3: Poll for orphaned blocks on coprocessor 2's DB. On restart,
@@ -541,7 +551,7 @@ describe('Real-Fork Consensus (E3)', function () {
 
       // Coprocessor 2 still reads from fork-anvil; copy the recovered canonical
       // workload there so all coprocessors observe the same post-reorg chain.
-      await syncAnvilState(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl);
+      await syncCanonicalWorkToFork(forkConfig);
 
       const balanceHandle = handleToHex(await contract.balanceOf(this.signers.alice));
 
@@ -623,10 +633,7 @@ describe('Real-Fork Consensus (E3)', function () {
         const sender2 = containerName(2, 'transaction-sender');
 
         console.log('[C3b] Stopping coprocessor 2 services and resyncing fork Anvil to canonical chain state...');
-        await syncForkWithServicesStopped(forkConfig, [listener2, poller2, worker2, sender2]);
-        await forkProvider.send('evm_setAutomine', [true]);
-        await forkProvider.send('evm_setIntervalMining', [1]);
-        forkMiningPaused = false;
+        await syncForkWithServicesStopped(forkConfig, [listener2, poller2, worker2, sender2], false);
 
         const c3bOrphan = await waitForOrphanedBlock('C3b', dbUrls[2], forkBlockHash);
         await waitForNoRowsReferencingProducer('C3b', dbUrls[2], c3bOrphan.chain_id, forkBlockHash);
@@ -697,7 +704,7 @@ describe('Real-Fork Consensus (E3)', function () {
         const contract = await deployEncryptedERC20Fixture();
         const tx = await contract.mint(7777);
         await tx.wait();
-        await syncAnvilState(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl);
+        await syncCanonicalWorkToFork(forkConfig);
 
         const balanceHandle = handleToHex(await contract.balanceOf(this.signers.alice));
         const consensus = await waitForConsensus(GATEWAY_RPC_URL, CIPHERTEXT_COMMITS_ADDRESS, balanceHandle, 120_000);
