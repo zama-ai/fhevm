@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT DISTINCT block_number FROM host_chain_blocks_valid\n            WHERE block_number <= $1\n              AND chain_id = $2\n              AND (\n                  block_status = 'pending'\n                  OR block_number BETWEEN $3 AND $4\n              )\n            ORDER BY block_number ASC\n            LIMIT 10\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cd24e349a29f699a804fa1575dec8fa14428f90684f4ed17c2a256b7030462c5"
+}
