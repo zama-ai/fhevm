@@ -104,17 +104,17 @@ env:
   # (kms-connector wiring, keygen trigger) assumes the post-migration topology
   # (KMSGeneration + ProtocolConfig on the host chain). Older tags lack deploy
   # tasks/args these steps need.
-  GATEWAY_CONTRACTS_VERSION: "v0.13.0"
-  HOST_CONTRACTS_VERSION: "v0.13.0"
+  GATEWAY_CONTRACTS_VERSION: "v0.12.1"
+  HOST_CONTRACTS_VERSION: "v0.12.1"
   CONTRACTS_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts
-  CONTRACTS_CHART_VERSION: "0.8.2"
+  CONTRACTS_CHART_VERSION: "0.7.3"
   #=====COPROCESSOR==========================================================
   # Must be >= v0.13.0 to match contracts' RFC013 migration above (older
   # binaries lack the ciphertext-commits/kms-generation args and still require
   # since-removed ones). Pinned v0.13.0 to match the zws-testnet pairing.
-  COPROCESSOR_VERSION: "v0.13.0"
+  COPROCESSOR_VERSION: "v0.12.0"
   COPROCESSOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor
-  COPROCESSOR_CHART_VERSION: "0.13.0"
+  COPROCESSOR_CHART_VERSION: "0.7.12"
   #=====KMS CONNECTOR=========================================================
   # v0.13.1-hotfix.kmsconnector.1 + chart 1.5.2 is the known-good pairing
   # confirmed running in production (zama-zws/gitops's mpc-testnet). Deliberate
@@ -123,9 +123,9 @@ env:
   # 1.5.2, kmsGeneration lives under commonConfig.gatewayContractAddresses and
   # kmsVerifier under ethereumContractAddresses (see the --set-string calls
   # below); both route to the same env vars regardless of chain topology.
-  KMS_CONNECTOR_VERSION: "v0.13.1-hotfix.kmsconnector.1"
+  KMS_CONNECTOR_VERSION: "v0.11.0"
   KMS_CONNECTOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector
-  KMS_CONNECTOR_CHART_VERSION: "1.5.2"
+  KMS_CONNECTOR_CHART_VERSION: "1.5.1"
   #=====COPROCESSOR INFRA======================================================
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
@@ -134,14 +134,14 @@ env:
   # test-suite images, both via the generic `common` chart. v0.13.0 is
   # confirmed present + running in production (zama-zws/gitops relayer values);
   # relayer's own v0.11.x tags 404 on pull.
-  RELAYER_VERSION: "v0.13.0"
+  RELAYER_VERSION: "v0.11.1"
   # The pinned test-suite tags (v0.13.0, v0.11.5-0) bundle a tfhe/node-tfhe
   # that can't deserialize kms-core v0.13.20's tfhe-rs-1.6.1 public keys
   # ("expected variant index 0 <= i < 1"). Test path uses @zama-fhe/relayer-sdk
   # (node-tfhe 1.5.4), so the key format must match: pair with a kms-core on
   # tfhe-rs 1.5.x (e.g. v0.13.10). This pinned fallback only matters when
   # build_images is off.
-  TEST_SUITE_VERSION: "v0.13.0"
+  TEST_SUITE_VERSION: "v0.11.3"
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================
@@ -597,10 +597,20 @@ jobs:
         # separate from keygen. deploy.sh only waits for pod readiness, which
         # can precede identity generation by minutes under Nitro attestation.
         #
-        # All parties share one S3 bucket, segmented by a "PUB-p<i>/" prefix;
-        # the VerfAddress handle is identical across parties, so we discover it
-        # once and reuse it. Emits s3_endpoint and signers_json (one JSON blob,
-        # since step outputs can't be addressed by a looped name later).
+        # All parties share one S3 bucket, segmented by a "PUB-p<i>/" prefix.
+        # We resolve each party's VerfAddress OBJECT dynamically (newest key
+        # under its own PUB-p<i>/VerfAddress/ prefix) instead of assuming a
+        # single hardcoded handle: the handle drifts across kms-core versions,
+        # and a stale object left in the shared bucket would otherwise hand us a
+        # signer that no longer matches the running kms-core. A wrong signer here
+        # scrambles the on-chain signer<->tx-sender pairing and makes every
+        # prepKeygenResponse revert with KmsSignerDoesNotMatchTxSender, so keygen
+        # consensus is never reached and only preprocessing ever runs.
+        # FALLBACK_HANDLE is used only if anonymous bucket listing is disabled.
+        # Emits s3_endpoint and signers_json (one JSON blob, since step outputs
+        # can't be addressed by a looped name later).
+        env:
+          FALLBACK_HANDLE: "60b7070add74be3827160aa635fb255eeeeb88586c4debf7ab1134ddceb4beee"
         run: |
           s3_endpoint=$(kubectl get configmap "${NAMESPACE}-1" -n "${NAMESPACE}" \
             -o jsonpath='{.data.CORE_CLIENT__S3_ENDPOINT}' 2>/dev/null || echo "")
@@ -610,14 +620,64 @@ jobs:
           fi
           echo "s3_endpoint=${s3_endpoint}" >> "$GITHUB_OUTPUT"
 
-          handle="60b7070add74be3827160aa635fb255eeeeb88586c4debf7ab1134ddceb4beee"
-          signers_json="[]"
-          for i in $(seq 1 "${NB_KMS_CORE}"); do
-            wget -O /tmp/signer "${s3_endpoint}/PUB-p${i}/VerfAddress/${handle}"
-            signer=$(cat /tmp/signer)
-            echo "Party ${i}: s3_endpoint=${s3_endpoint} handle=${handle} signer=${signer}"
-            signers_json=$(jq -c --argjson party "${i}" --arg signer "${signer}" '. + [{"party": $party, "signer": $signer}]' <<<"${signers_json}")
-          done
+          signers_json=$(S3_ENDPOINT="${s3_endpoint}" node -e '
+            const n = parseInt(process.env.NB_KMS_CORE, 10);
+            const base = process.env.S3_ENDPOINT.replace(/\/+$/, "");
+            const fallback = process.env.FALLBACK_HANDLE;
+
+            // Newest object under PUB-p<i>/VerfAddress/, or the fallback handle
+            // when listing is not permitted (falls back to a plain GET).
+            async function resolveHandle(i) {
+              const url = `${base}?list-type=2&prefix=PUB-p${i}/VerfAddress/`;
+              try {
+                const res = await fetch(url);
+                if (!res.ok) return fallback;
+                const xml = await res.text();
+                const items = [...xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)]
+                  .map((m) => {
+                    const key = (m[1].match(/<Key>([^<]+)<\/Key>/) || [])[1];
+                    const lm = (m[1].match(/<LastModified>([^<]+)<\/LastModified>/) || [])[1];
+                    return { key, lm: lm ? Date.parse(lm) : 0 };
+                  })
+                  .filter((o) => o.key && /\/VerfAddress\/[^/]+$/.test(o.key));
+                if (!items.length) return fallback;
+                items.sort((a, b) => b.lm - a.lm);
+                return items[0].key.split("/").pop();
+              } catch (e) {
+                return fallback;
+              }
+            }
+
+            (async () => {
+              const out = [];
+              for (let i = 1; i <= n; i++) {
+                const handle = await resolveHandle(i);
+                const url = `${base}/PUB-p${i}/VerfAddress/${handle}`;
+                const res = await fetch(url);
+                if (!res.ok) {
+                  console.error(`::error::failed to fetch signer for party ${i} at ${url} (HTTP ${res.status})`);
+                  process.exit(1);
+                }
+                const signer = (await res.text()).trim();
+                if (!/^0x[0-9a-fA-F]{40}$/.test(signer)) {
+                  console.error(`::error::party ${i} VerfAddress at ${url} is not a valid address: "${signer}"`);
+                  process.exit(1);
+                }
+                console.error(`Party ${i}: handle=${handle} signer=${signer}`);
+                out.push({ party: i, signer });
+              }
+              // N parties must map to N DISTINCT signers. A duplicate means the
+              // shared bucket handed the same identity to multiple parties (stale
+              // or wrong handle) - registering that would scramble the on-chain
+              // signer<->tx-sender pairing and revert prepKeygenResponse.
+              const uniq = new Set(out.map((o) => o.signer.toLowerCase()));
+              if (uniq.size !== out.length) {
+                console.error(`::error::discovered signers are not distinct (stale/shared identity in the public vault): ${JSON.stringify(out)}`);
+                process.exit(1);
+              }
+              process.stdout.write(JSON.stringify(out));
+            })();
+          ')
           echo "signers_json=${signers_json}" >> "$GITHUB_OUTPUT"
 
       ######################################################################
