@@ -1,11 +1,11 @@
 # What we want
 
 - no direct dependency on viem or ethers
-- viem can be added as a devDepencency
+- viem can be added as a devDependency
 - all ethereum RPC calls should run through an abstract interface defined by module
 - we want a set of ts modules to enable anybody to deploy a cleartext stack in pure TS
 - as argument the caller will provide an abstract eth prodider that could work for std RPC calls or in-memory eth nodes like hardhat
-- the deployement should support either: setCodeAt(address, bytecode) or deploy(bytecode)
+- the deployment should support either: setCodeAt(address, bytecode) or deploy(bytecode)
 - obviously setCodeAt is only available on dev nodes like anvil, hardhat node, hardhat in-memory node, etc.
 - the typescript code should live in 'ts' folder
 

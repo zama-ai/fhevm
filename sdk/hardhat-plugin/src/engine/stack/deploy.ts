@@ -50,7 +50,7 @@ export async function assertEngineReady(node: FhevmNode, signers: EngineSigners)
     );
   }
 
-  // The executor persists plaintexts only through CleartextArithmetic; if the DB does not recognise it as a
+  // The executor persists plaintexts only through CleartextArithmetic; if the DB does not recognize it as a
   // writer, every FHE op silently records nothing and decryption returns zeros.
   const [isWriter] = await readCleartext(node, "CleartextDB", "isWriter", [ADDRESSES.CleartextArithmetic]);
   if (isWriter !== true) {
