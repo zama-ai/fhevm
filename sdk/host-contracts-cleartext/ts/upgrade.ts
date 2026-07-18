@@ -11,6 +11,7 @@ import {
 import { abi as aclOwnerAbi } from './artifacts/ACLOwner.js';
 import type { ContractUpgradeSpec, DeployedImplementation, UpgradeTarget } from './types/private.js';
 import type {
+  AbstractEthereumProvider,
   AbstractEthereumSigner,
   AbstractEthereumUtils,
   CleartextAddresses,
@@ -19,6 +20,7 @@ import type {
 } from './types/public.js';
 import { buildHostAddressReplacementsV14, deployImplementations } from './utils.js';
 import { toACLOwnerOps } from './aclOwner.js';
+import { DEFAULT_KMS_SOFTWARE_VERSION, DEFAULT_PCR_VALUES, generateFromExistingDefaultKmsNodes } from './constants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -43,6 +45,7 @@ import { toACLOwnerOps } from './aclOwner.js';
  *      (`setupACLOwner`).
  */
 export async function updateV13ToV14(parameters: {
+  readonly ethProvider: AbstractEthereumProvider;
   readonly ethUtils: AbstractEthereumUtils;
   readonly deployer: AbstractEthereumSigner;
   readonly admin: AbstractEthereumSigner;
@@ -52,9 +55,19 @@ export async function updateV13ToV14(parameters: {
   // bakes `cleartextArithmeticAdd`/`cleartextDbAdd`, so they must be patched with the real proxy
   // addresses (not the placeholders) or the post-upgrade cleartext round-trip would call a dead address.
   readonly cleartext: CleartextAddresses;
-  readonly migration: UpdateV13ToV14MigrationConfig;
+  readonly migration?: UpdateV13ToV14MigrationConfig | undefined;
 }): Promise<void> {
   const { pauserSetAddress, ...fhevmAddresses } = parameters.existing;
+
+  // If no migration is supplied, assume the live v13 stack was deployed with the default values: read
+  // the current KMS signer set off the live v13 `ProtocolConfig`, then rebuild the full v14 node params
+  // and take the software version / PCR values from the package defaults.
+  const migration =
+    parameters.migration ??
+    (await resolveDefaultMigration({
+      ethProvider: parameters.ethProvider,
+      protocolConfigAddress: fhevmAddresses.protocolConfigAddress,
+    }));
 
   // 1. Phase 1: deploy the v14 implementations (permissionless).
   const { implementations } = await buildUpdateV13ToV14Plan({
@@ -63,7 +76,7 @@ export async function updateV13ToV14(parameters: {
     fhevmAddresses,
     cleartextAddresses: parameters.cleartext,
     pauserSetAddress,
-    migration: parameters.migration,
+    migration,
   });
 
   // 2. One atomic ACLOwner.upgrade: 7 reinitializations.
@@ -73,6 +86,32 @@ export async function updateV13ToV14(parameters: {
     functionName: 'upgrade',
     args: [toACLOwnerOps(implementations)],
   });
+}
+
+/**
+ * Build the migration config for a v13 stack that was deployed with the package defaults. Reads the
+ * current KMS signer set off the live v13 `ProtocolConfig` (its `getKmsSigners()` selector is unchanged
+ * in v14, so the v14 ABI fragment decodes it) and re-expresses each node in the v14 `KmsNodeParams`
+ * shape via `generateFromExistingDefaultKmsNodes`. Unlike v12→v13, no context id or thresholds are
+ * needed — v13's `ProtocolConfig` storage carries them over; only the per-node MPC metadata, software
+ * version and PCR values are new in v14, and those come from the package defaults.
+ * @internal — used by `updateV13ToV14` when no explicit `migration` is supplied.
+ */
+async function resolveDefaultMigration(parameters: {
+  readonly ethProvider: AbstractEthereumProvider;
+  readonly protocolConfigAddress: string;
+}): Promise<UpdateV13ToV14MigrationConfig> {
+  const existingSigners = (await parameters.ethProvider.readContract({
+    address: parameters.protocolConfigAddress,
+    abi: protocolConfigAbi,
+    functionName: 'getKmsSigners',
+  })) as readonly string[];
+
+  return {
+    kmsNodeParams: generateFromExistingDefaultKmsNodes([...existingSigners]),
+    softwareVersion: DEFAULT_KMS_SOFTWARE_VERSION,
+    pcrValues: DEFAULT_PCR_VALUES,
+  };
 }
 
 /**

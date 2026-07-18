@@ -49,6 +49,19 @@ export function createViemEthereumAdapters(args: {
       async getCodeAt(parameters: { readonly address: string }): Promise<string> {
         return (await publicClient.getCode({ address: parameters.address as Address })) ?? '0x';
       },
+
+      readContract(parameters: {
+        readonly address: string;
+        readonly abi: readonly unknown[];
+        readonly functionName: string;
+        readonly args?: readonly unknown[];
+      }): Promise<unknown> {
+        return publicClient.readContract(parameters as Parameters<typeof publicClient.readContract>[0]);
+      },
+
+      getTransactionCount(parameters: { readonly address: string }): Promise<number> {
+        return publicClient.getTransactionCount({ address: parameters.address as Address });
+      },
     },
 
     signer: {
@@ -70,8 +83,17 @@ export function createViemEthereumAdapters(args: {
         return { contractAddress: receipt.contractAddress };
       },
 
-      writeContract(parameters: unknown): Promise<unknown> {
-        return walletClient.writeContract(parameters as Parameters<typeof walletClient.writeContract>[0]);
+      async writeContract(parameters: unknown): Promise<unknown> {
+        // Await the receipt (like `deploy` above) so the tx is mined — and its effects observable —
+        // by the time the call resolves. Without this, a caller that reads state right after (e.g.
+        // `updateV13ToV14` then a `getCurrentKmsContextId`) races the block inclusion.
+        const hash = await walletClient.writeContract(parameters as Parameters<typeof walletClient.writeContract>[0]);
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        if (receipt.status !== 'success') {
+          throw new Error(`writeContract transaction reverted: ${hash}`);
+        }
+
+        return receipt;
       },
     },
   };

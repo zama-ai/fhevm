@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {FheType} from "../contracts/shared/FheType.sol";
 import {FHEVMExecutor} from "../contracts/FHEVMExecutor.sol";
 import {FheTypeBitWidth} from "./FheTypeBitWidth.sol";
@@ -24,6 +25,18 @@ import {ACLOwnable} from "../contracts/shared/ACLOwnable.sol";
 contract CleartextArithmetic is ICleartextArithmetic, UUPSUpgradeableEmptyProxy, ACLOwnable {
     error UnsupportedBinaryOp(FHEVMExecutor.Operators op);
     error UnsupportedUnaryOp(FHEVMExecutor.Operators op);
+
+    /// @dev Name of the contract, used in `getVersion`.
+    string private constant CONTRACT_NAME = "CleartextArithmetic";
+
+    /// @dev Major version of the contract.
+    uint256 private constant MAJOR_VERSION = 0;
+
+    /// @dev Minor version of the contract.
+    uint256 private constant MINOR_VERSION = 5;
+
+    /// @dev Patch version of the contract.
+    uint256 private constant PATCH_VERSION = 0;
 
     /**
      * @dev Constant used for making sure the version number used in the `reinitializer` modifier is
@@ -49,6 +62,23 @@ contract CleartextArithmetic is ICleartextArithmetic, UUPSUpgradeableEmptyProxy,
     ///         selector the v13 implementation lacks). Stateless (pure math), so it only bumps the
     ///         version so the freshly deployed v14 implementation is marked initialized.
     function reinitializeV3() public virtual onlyACLOwner reinitializer(REINITIALIZER_VERSION) {}
+
+    /// @notice Getter for the name and version of the contract.
+    /// @return string Name and the version of the contract.
+    function getVersion() external pure virtual returns (string memory) {
+        return
+            string(
+                abi.encodePacked(
+                    CONTRACT_NAME,
+                    " v",
+                    Strings.toString(MAJOR_VERSION),
+                    ".",
+                    Strings.toString(MINOR_VERSION),
+                    ".",
+                    Strings.toString(PATCH_VERSION)
+                )
+            );
+    }
 
     /// @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}

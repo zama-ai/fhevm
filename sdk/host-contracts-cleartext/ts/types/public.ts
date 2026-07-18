@@ -56,6 +56,18 @@ export interface AbstractEthereumProvider {
 
   // Pure ABI encoding. No signer/caller/msg.sender.
   getCodeAt(parameters: { readonly address: string }): Promise<string>;
+
+  // Read-only contract call (eth_call). No signer/caller/msg.sender. Returns the decoded output.
+  readContract(parameters: {
+    readonly address: string;
+    readonly abi: readonly unknown[];
+    readonly functionName: string;
+    readonly args?: readonly unknown[];
+  }): Promise<unknown>;
+
+  // Number of transactions sent from `address` at the latest block (its next nonce). Used to
+  // precompute deterministic deploy addresses when the caller does not supply them.
+  getTransactionCount(parameters: { readonly address: string }): Promise<number>;
 }
 
 export type DeployReturnType = { contractAddress: string };
