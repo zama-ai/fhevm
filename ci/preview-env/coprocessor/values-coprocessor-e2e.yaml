@@ -103,6 +103,36 @@ tfheWorker:
   # coprocessorBucket.irsa block) - matches zama-zws/gitops's
   # values-zws-testnet.yaml pairing (all 3 S3-touching workers use it).
   serviceAccountName: coprocessor
+  # --run-bg-worker is what actually starts the background compute loop; without
+  # it the tfhe_worker process comes up idle and never polls the `computations`
+  # table, so FHE ops (incl. trivial encrypts) never produce ct64 -> no SnS ->
+  # ciphertexts never reach the gateway -> every decrypt readiness-check times
+  # out. Chart default extraArgs is [], so it must be set here. Mirrors
+  # zama-zws/gitops coproc-workers/values-zws-dev.yaml's tfheWorker.
+  extraArgs:
+    - --run-bg-worker
+    - --worker-polling-interval-ms=10000
+    - --work-items-batch-size=100
+    - --dependence-chains-per-batch=100
+    - --key-cache-size=32
+    - --coprocessor-fhe-threads=64
+    - --tokio-threads=16
+    - --pg-pool-max-connections=10
+    - --log-level=INFO
+  # Chart default (512Mi) OOMs once --run-bg-worker loads the FHE ServerKey
+  # (tfhe-rs 1.6.x). Pinned to the hpc7a `coprocessor` karpenter nodepool with
+  # dev-like sizing (see zama-zws/gitops coproc-workers/values-zws-dev.yaml).
+  resources:
+    requests: {cpu: "16", memory: 32Gi}
+    limits: {cpu: "16", memory: 32Gi}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - {key: karpenter.sh/nodepool, operator: In, values: [coprocessor]}
+  tolerations:
+    - {key: karpenter.sh/nodepool, effect: NoSchedule, operator: Equal, value: coprocessor}
 zkProofWorker:
   enabled: true
   replicas: 1
@@ -146,13 +176,33 @@ snsWorker:
     - event_ciphertext_computed
     - --pg-notify-channel
     - event_ciphertext128_computed
+  # SnS (switch-and-squash) is the most memory-heavy step - it loads the SnS key
+  # and squashes ct64 -> ct128 before commit to the gateway. Chart default 512Mi
+  # OOMs here. Pinned to the hpc7a `coprocessor` nodepool with dev-like sizing
+  # (see zama-zws/gitops coproc-workers/values-zws-dev.yaml's snsWorker).
+  resources:
+    requests: {cpu: "16", memory: 32Gi}
+    limits: {cpu: "16", memory: 32Gi}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - {key: karpenter.sh/nodepool, operator: In, values: [coprocessor]}
+  tolerations:
+    - {key: karpenter.sh/nodepool, effect: NoSchedule, operator: Equal, value: coprocessor}
 txSender:
   enabled: true
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/tx-sender, tag: latest}
-  # Hardhat/anvil account #6 - anvil auto-funds all well-known test-mnemonic
-  # accounts, so any unused index works; picked one not already used as a
-  # placeholder identity elsewhere.
-  wallet: {secret: {value: "0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e"}}
+  # Hardhat/anvil account #4 (addr 0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65).
+  # MUST match the coprocessor identity registered on-chain in GatewayConfig -
+  # see ../gateway-chain/values-gateway-contracts-e2e.yaml's
+  # COPROCESSOR_TX_SENDER_ADDRESS_0 / COPROCESSOR_SIGNER_ADDRESS_0. The tx-sender
+  # both signs the InputVerification EIP-712 response and sends the tx with this
+  # one key; if it differs, verifyProofResponse reverts with
+  # NotCoprocessorTxSender(<addr>) (non-retryable) and input proofs never verify,
+  # so the relayer polls forever and the e2e input test times out.
+  wallet: {secret: {value: "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"}}
   # --multichain-acl-address (see charts/coprocessor/values.yaml's
   # txSender.disabledArgs comment) would reference a nonexistent
   # gw-sc-addresses key: gateway-contracts still doesn't deploy a

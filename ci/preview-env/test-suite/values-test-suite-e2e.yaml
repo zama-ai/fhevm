@@ -120,6 +120,11 @@ env:
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
   - name: HCU_LIMIT_CONTRACT_ADDRESS
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: hcu_limit.address}}
+  # Required by the @fhevm/sdk code path (instance.ts requireEnv, no default):
+  # the SDK reads protocol/KMS context from ProtocolConfig on the host chain.
+  # Same host-sc-addresses key the coprocessor's host-listener uses.
+  - name: PROTOCOL_CONFIG_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
   # Hardhat account #9 - "deployer" role needed for HCU-limit owner-restricted
   # tests, matching the staging reference env file's own comment.
   - {name: DEPLOYER_PRIVATE_KEY, value: "0x2d24c36c57e6bfbf90c43173481cc00edcbd1a3922de5e5fdb9aba5fc4e0fafd"}
