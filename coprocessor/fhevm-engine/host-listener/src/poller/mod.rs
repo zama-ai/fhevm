@@ -28,7 +28,7 @@ use crate::cmd::block_history::BlockSummary;
 use crate::database::ingest::{
     ingest_block_logs, update_finalized_blocks_aux, BlockLogs, IngestOptions,
 };
-use crate::database::tfhe_event_propagate::Database;
+use crate::database::tfhe_event_propagate::{Database, BLOCKS_VALID_RETENTION};
 use crate::health_check::HealthCheck;
 use crate::kms_generation::aws_s3::AwsS3Client;
 use crate::kms_generation::process_kms_generation_activations;
@@ -46,8 +46,10 @@ const MAX_CONSECUTIVE_RPC_FAILURES: u64 = 3;
 /// settlement frontier. A frontier this far behind means settlement is wedged
 /// on something replay cannot fix (e.g. a quarantined cleanup job needing
 /// operator attention), so an unbounded re-ingestion would only burn RPC
-/// budget on every restart. Matches the finalized-block retention window.
-const MAX_SETTLEMENT_REPLAY_BLOCKS: u64 = 10_000;
+/// budget on every restart. Tied to the finalized-block retention window:
+/// rows at unsettled heights are never pruned, so a frontier within this
+/// bound always finds its revalidation evidence intact.
+const MAX_SETTLEMENT_REPLAY_BLOCKS: u64 = BLOCKS_VALID_RETENTION as u64;
 
 fn reorg_replay_anchor(
     last_caught_up_block: u64,
@@ -78,9 +80,19 @@ fn restart_replay_anchor(
     if settled_height < 0 {
         return window_anchor;
     }
-    let frontier_anchor = (settled_height as u64)
-        .max(last_caught_up_block.saturating_sub(MAX_SETTLEMENT_REPLAY_BLOCKS));
-    if frontier_anchor < window_anchor {
+    let replay_bound =
+        last_caught_up_block.saturating_sub(MAX_SETTLEMENT_REPLAY_BLOCKS);
+    let frontier_anchor = (settled_height as u64).max(replay_bound);
+    if (settled_height as u64) < replay_bound {
+        error!(
+            settled_height,
+            last_caught_up_block,
+            replay_from = frontier_anchor,
+            "Settlement frontier is beyond the bounded restart replay; \
+             replay cannot revalidate the whole unsettled range — settlement \
+             stays frozen until the blocking state is resolved by an operator"
+        );
+    } else if frontier_anchor < window_anchor {
         warn!(
             settled_height,
             last_caught_up_block,
@@ -428,9 +440,20 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
 
         let safe_tip = latest.saturating_sub(config.finality_lag);
         let client_ref = &client;
+        // The finalization/settlement pass must never look past what this
+        // poller has actually ingested: right after a restart with downtime,
+        // `latest` sits far above the replay cursor and the range in between
+        // has no stored rows yet, which sparse-tolerant settlement would read
+        // as fully drained and settle blindly — the tfhe-worker write guard
+        // then refuses that range's ciphertext writes forever. Capping the
+        // pass head at the cursor plus the finality lag it is derived with
+        // keeps the settlement candidate at or below the cursor while
+        // matching `latest` exactly once caught up.
+        let ingested_head = latest
+            .min(last_caught_up_block.saturating_add(config.finality_lag));
         update_finalized_blocks_aux(
             &mut db,
-            latest,
+            ingested_head,
             config.finality_lag,
             effective_settlement_finality_lag,
             |block_number| async move {

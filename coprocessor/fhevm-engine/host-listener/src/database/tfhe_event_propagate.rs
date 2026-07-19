@@ -127,8 +127,10 @@ const ANCESTRY_WALK_DEPTH: i64 = 1024;
 /// since reorgs cannot be deeper than finality.
 const BRANCH_ACTIVATION_STRADDLE_WINDOW: i64 = 128;
 /// Finalized `host_chain_blocks_valid` rows older than this many blocks
-/// below the finalized head are eligible for pruning (when unreferenced).
-const BLOCKS_VALID_RETENTION: i64 = 10_000;
+/// below the finalized head are eligible for pruning (when unreferenced and
+/// settled). Also bounds how far below its anchor a poller restart replays
+/// to reach the settlement frontier (`MAX_SETTLEMENT_REPLAY_BLOCKS`).
+pub(crate) const BLOCKS_VALID_RETENTION: i64 = 10_000;
 /// Upper bound of rows removed per pruning pass; keeps each pass short.
 const BLOCKS_VALID_PRUNE_BATCH: i64 = 1_000;
 const SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE: i64 = 1_907_000_000;
@@ -2538,6 +2540,7 @@ impl Database {
         tx: &mut Transaction<'_>,
         last_block_max: i64,
         chain_id: ChainId,
+        limit: i64,
     ) -> Result<HashSet<i64>, SqlxError> {
         // Most of the time there is only one pending block. Under a backlog,
         // take the OLDEST pending blocks: finalization must progress
@@ -2551,10 +2554,11 @@ impl Database {
               AND block_number <= $1
               AND chain_id = $2
             ORDER BY block_number ASC
-            LIMIT 11
+            LIMIT $3
             "#,
             last_block_max,
             chain_id.as_i64(),
+            limit,
         )
         .fetch_all(tx.deref_mut())
         .await?;
@@ -2569,6 +2573,7 @@ impl Database {
         chain_id: ChainId,
         first_unsettled_block: i64,
         settlement_candidate_height: i64,
+        limit: i64,
     ) -> Result<HashSet<i64>, SqlxError> {
         // Revalidation is independent from pending finalization so undrained
         // work at the settlement frontier cannot starve newer pending blocks.
@@ -2580,11 +2585,12 @@ impl Database {
               AND chain_id = $1
               AND block_number BETWEEN $2 AND $3
             ORDER BY block_number ASC
-            LIMIT 11
+            LIMIT $4
             "#,
             chain_id.as_i64(),
             first_unsettled_block,
             settlement_candidate_height,
+            limit,
         )
         .fetch_all(tx.deref_mut())
         .await?;
@@ -2610,12 +2616,31 @@ impl Database {
         &self,
         last_finalized_block: i64,
     ) -> Result<u64, SqlxError> {
-        let prune_below =
+        let mut prune_below =
             last_finalized_block.saturating_sub(BLOCKS_VALID_RETENTION);
+        let pool = self.pool.read().await.clone();
+        // Never prune above the settlement frontier: an unsettled finalized
+        // row is live revalidation evidence — a stale row that keeps refusing
+        // revalidation is the only thing holding settlement below a
+        // contradicted height, and deleting it would turn that height into a
+        // bare gap that sparse-tolerant settlement crosses silently. Chains
+        // without a settlement row keep the plain retention window.
+        let settled_height = sqlx::query_scalar!(
+            r#"
+            SELECT settled_height AS "settled_height!"
+             FROM coprocessor_settlement
+             WHERE chain_id = $1
+            "#,
+            self.chain_id.as_i64(),
+        )
+        .fetch_optional(&pool)
+        .await?;
+        if let Some(settled_height) = settled_height {
+            prune_below = prune_below.min(settled_height.saturating_add(1));
+        }
         if prune_below <= 0 {
             return Ok(0);
         }
-        let pool = self.pool.read().await.clone();
         let deleted = sqlx::query!(
             r#"
             DELETE FROM host_chain_blocks_valid b

@@ -2037,6 +2037,68 @@ async fn test_quarantined_cleanup_job_blocks_settlement(
 
 #[tokio::test]
 #[serial(db)]
+async fn test_cleanup_job_below_cutover_still_blocks_settlement(
+) -> Result<(), anyhow::Error> {
+    let db_instance = test_harness::instance::setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let chain_id = ChainId::try_from(141_u64).unwrap();
+    let db = Database::new(&db_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    // Post-cutover finalized, drained row: without the pre-cutover job the
+    // frontier would settle straight to the candidate.
+    sqlx::query!(
+        r#"
+        INSERT INTO host_chain_blocks_valid(
+            chain_id, block_hash, parent_hash, block_number, block_status
+         )
+         VALUES ($1, $2, NULL, 6, 'finalized')
+        "#,
+        chain_id.as_i64(),
+        &vec![0x66_u8; 32],
+    )
+    .execute(&pool)
+    .await?;
+
+    // A quarantined cleanup job below the cutover height must still hold the
+    // frontier at the cutover ceiling: discarding it because it sits outside
+    // the post-cutover range would fail open across every blocker.
+    sqlx::query!(
+        r#"
+        INSERT INTO branch_cleanup_jobs(
+            chain_id,
+            finalized_block_hash,
+            finalized_block_number,
+            orphaned_block_hashes,
+            status
+         )
+         VALUES ($1, $2, 2, $3, 'quarantined')
+        "#,
+        chain_id.as_i64(),
+        &vec![0x22_u8; 32],
+        &vec![vec![0x23_u8; 32]],
+    )
+    .execute(&pool)
+    .await?;
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    let settled_height =
+        advance_settled_height(&mut tx, chain_id.as_i64(), 7, 5).await?;
+    tx.rollback().await?;
+
+    assert_eq!(
+        settled_height, 4,
+        "a pre-cutover cleanup job keeps the frontier at the cutover ceiling"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_retired_stack_does_not_claim_cleanup_job(
 ) -> Result<(), anyhow::Error> {
     let db_instance = test_harness::instance::setup_test_db(ImportMode::None)

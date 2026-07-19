@@ -759,7 +759,11 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     // canonical hashes over RPC with NO transaction open: block fetches can
     // take seconds each, and holding the finalization transaction across the
     // round-trips kept its row locks pinned for the whole time.
-    let (pending_blocks, revalidation_blocks, current_settled_height) = {
+    // Bounded batch of 10 per queue; the 11th selected row is a lookahead
+    // marking where this pass's revalidation coverage ends.
+    const FINALIZATION_BATCH_SIZE: usize = 10;
+    const FINALIZATION_LOOKAHEAD: i64 = FINALIZATION_BATCH_SIZE as i64 + 1;
+    let (pending_blocks, revalidation_blocks) = {
         let mut tx = match db.new_transaction().await {
             Ok(Some(tx)) => tx,
             Ok(None) => {
@@ -792,6 +796,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             &mut tx,
             last_finalized_block as i64,
             db.chain_id,
+            FINALIZATION_LOOKAHEAD,
         )
         .await
         {
@@ -811,6 +816,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                 db.chain_id,
                 first_unsettled_block,
                 settlement_candidate_height as i64,
+                FINALIZATION_LOOKAHEAD,
             )
             .await
             {
@@ -824,49 +830,37 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                     return;
                 }
             };
-        (pending_blocks, revalidation_blocks, current_settled_height)
+        (pending_blocks, revalidation_blocks)
     };
     info!(?pending_blocks, ?revalidation_blocks, "Finalizing blocks");
 
     // Ascending: finalization verifies each block's parent linkage against
-    // its finalized predecessor, so within one batch the predecessor must be
+    // its finalized predecessor, so within one queue the predecessor must be
     // finalized first.
-    let first_unsettled_block = current_settled_height
-        .saturating_add(1)
-        .max(settlement_cutover_block().max(0));
-    // Catch-up persists blocks containing relevant logs, not every empty host
-    // block, so the valid-block table can be sparse after a restart. Validate
-    // every stored checkpoint before settlement crosses it, using the 11th
-    // selected row as lookahead for a bounded batch of 10. Gaps with no stored
-    // row are not themselves work and do not freeze settlement.
-    const FINALIZATION_BATCH_SIZE: usize = 10;
-    let settlement_cap_for_batch = |blocks: &mut Vec<i64>| {
-        blocks.sort_unstable();
-        let first_deferred_block = blocks.get(FINALIZATION_BATCH_SIZE).copied();
-        let cap = if first_deferred_block.is_some_and(|block_number| {
-            block_number <= settlement_candidate_height as i64
-        }) {
-            blocks[..FINALIZATION_BATCH_SIZE]
-                .iter()
-                .rev()
-                .copied()
-                .find(|block_number| {
-                    *block_number >= first_unsettled_block
-                        && *block_number <= settlement_candidate_height as i64
-                })
-                .unwrap_or(current_settled_height)
-        } else {
-            settlement_candidate_height as i64
-        };
-        blocks.truncate(FINALIZATION_BATCH_SIZE);
-        cap
-    };
     let mut pending_blocks: Vec<i64> = pending_blocks.into_iter().collect();
+    pending_blocks.sort_unstable();
     let mut revalidation_blocks: Vec<i64> =
         revalidation_blocks.into_iter().collect();
-    let pending_cap = settlement_cap_for_batch(&mut pending_blocks);
-    let revalidation_cap = settlement_cap_for_batch(&mut revalidation_blocks);
-    let mut verified_settlement_candidate = pending_cap.min(revalidation_cap);
+    revalidation_blocks.sort_unstable();
+    // Catch-up persists blocks containing relevant logs, not every empty host
+    // block, so the valid-block table can be sparse after a restart. Validate
+    // every stored finalized checkpoint before settlement crosses it, using
+    // the 11th selected row as lookahead for a bounded batch of 10: stored
+    // finalized rows past the batch are invisible to `advance_settled_height`
+    // (they look drained), so settlement may not cross them until a later
+    // pass revalidates them. Gaps with no stored row are not themselves work
+    // and do not freeze settlement. Pending rows need no such cap: any
+    // pending row left behind — beyond the batch or refused — still blocks
+    // `advance_settled_height` directly.
+    let mut verified_settlement_candidate = match revalidation_blocks
+        .get(FINALIZATION_BATCH_SIZE)
+        .copied()
+    {
+        Some(first_deferred_block) => first_deferred_block.saturating_sub(1),
+        None => settlement_candidate_height as i64,
+    };
+    pending_blocks.truncate(FINALIZATION_BATCH_SIZE);
+    revalidation_blocks.truncate(FINALIZATION_BATCH_SIZE);
 
     let mut fetch_heights: Vec<i64> = pending_blocks
         .iter()
@@ -928,11 +922,11 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     // shared stop: a block adjacent to a refused height still checks its own
     // parent linkage against the stale finalized row and refuses on
     // contradiction.
-    'queue: for queue in [&revalidation_blocks, &pending_blocks] {
+    for queue in [&revalidation_blocks, &pending_blocks] {
         for &block_number in queue.iter() {
             let Some(block_hash) = canonical.get(&block_number) else {
                 // The hash fetch stopped below this height; already clamped.
-                continue 'queue;
+                break;
             };
             match db
                 .update_block_as_finalized(&mut tx, block_number, block_hash)
@@ -975,7 +969,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                         block_number,
                         "Stopping finalization queue at refused block"
                     );
-                    continue 'queue;
+                    break;
                 }
                 Err(err) => {
                     error!(
