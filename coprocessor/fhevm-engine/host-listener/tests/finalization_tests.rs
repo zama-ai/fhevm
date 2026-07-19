@@ -216,6 +216,54 @@ async fn pending_block_above_refused_height_fails_its_own_linkage_check() {
     );
 }
 
+/// A height can transiently carry TWO finalized rows: a refused pass inserts
+/// the canonical row as finalized without orphaning the stale sibling. The
+/// stale sibling must not veto a child anchored on the matching finalized
+/// parent — otherwise every ancestor above the double height refuses forever
+/// (orphaning only runs on success, so the contradiction never clears).
+#[tokio::test]
+#[serial(db)]
+async fn stale_finalized_sibling_does_not_veto_anchored_child() {
+    let (mut db, _inst) = fresh_db(CHAIN_ID).await;
+    let (a1, a2, s2, a3) = (b32(0xA1), b32(0xA2), b32(0x52), b32(0xA3));
+
+    seed_block(&db, 1, &a1, &b32(0xA0), "finalized").await;
+    // Both the canonical block and a stale branch sibling are finalized at
+    // height 2 (the stale one from a pre-switch chain view).
+    seed_block(&db, 2, &a2, &a1, "finalized").await;
+    seed_block(&db, 2, &s2, &a1, "finalized").await;
+    // Canonical child anchored on the matching finalized parent a2.
+    seed_block(&db, 3, &a3, &a2, "pending").await;
+    seed_settled_height(&db, 1).await;
+
+    // Settlement lag 2 keeps height 2 out of the revalidation window, so the
+    // child at height 3 is finalized while BOTH height-2 rows are still
+    // finalized — the exact double-row state the veto exception is for.
+    let chain = [(2u64, a2.clone()), (3u64, a3.clone())];
+    update_finalized_blocks_aux(&mut db, 3, 0, 2, |n| {
+        let hash = chain
+            .iter()
+            .find(|(num, _)| *num == n)
+            .map(|(_, h)| alloy::primitives::FixedBytes::<32>::from_slice(h))
+            .expect("requested block");
+        async move { Ok(hash) }
+    })
+    .await;
+
+    assert_eq!(
+        block_status(&db, &a3).await.as_deref(),
+        Some("finalized"),
+        "a child anchored on the matching finalized parent must not be \
+         vetoed by the stale sibling"
+    );
+    assert_eq!(
+        block_status(&db, &s2).await.as_deref(),
+        Some("finalized"),
+        "the stale sibling is cleaned up when its height is revalidated, \
+         not by the child's pass"
+    );
+}
+
 /// Pruning removes only old finalized rows that nothing references: rows
 /// referenced by branch state, orphaned markers, and everything within the
 /// retention window stay.

@@ -1323,6 +1323,14 @@ impl Database {
         // chain. Rows with the '' parent sentinel (recorded before parent
         // tracking, not yet repaired) pass vacuously: only positive evidence
         // of a mismatch blocks finalization.
+        // A mismatching finalized predecessor only vetoes the block when its
+        // ACTUAL parent is not itself stored and finalized: anchoring on the
+        // matching parent is exactly what this check exists for. A height can
+        // transiently carry two finalized rows (a refused pass inserts the
+        // canonical row as finalized without orphaning the stale sibling);
+        // letting the stale sibling veto correctly-anchored children would
+        // then refuse every ancestor above it forever, since orphaning only
+        // runs on success and the contradiction could never clear itself.
         let finalized_result = sqlx::query!(
             r#"
             UPDATE host_chain_blocks_valid
@@ -1339,6 +1347,14 @@ impl Database {
                     AND prev.block_status = 'finalized'
                     AND host_chain_blocks_valid.parent_hash <> ''::BYTEA
                     AND host_chain_blocks_valid.parent_hash <> prev.block_hash
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM host_chain_blocks_valid par
+                        WHERE par.chain_id = $1
+                          AND par.block_number = $3 - 1
+                          AND par.block_status = 'finalized'
+                          AND par.block_hash = host_chain_blocks_valid.parent_hash
+                    )
               )
             "#,
             self.chain_id.as_i64(),
