@@ -12,7 +12,7 @@ topology:
 bcs:
   source:
     mode: registry
-    tag: v0.14.0-1
+    tag: v0.14.0-4
 
 gcs:
   source:

@@ -172,7 +172,7 @@ topology:
       const scenario = await loadBlueGreenScenario("blue-green");
       expect(scenario.kind).toBe("blue-green");
       expect(scenario.name).toBe("Blue-Green Upgrade");
-      expect(scenario.bcs.source).toEqual({ mode: "registry", tag: "v0.14.0-1" });
+      expect(scenario.bcs.source).toEqual({ mode: "registry", tag: "v0.14.0-4" });
       expect(scenario.gcs.source).toEqual({ mode: "local" });
       expect(scenario.gcs.stackVersion).toBe("0.15.0");
       expect(scenario.hostChains).toHaveLength(1);
