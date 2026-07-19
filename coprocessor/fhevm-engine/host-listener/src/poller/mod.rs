@@ -14,6 +14,9 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+use fhevm_engine_common::branch::{
+    read_settled_height, INITIAL_SETTLED_HEIGHT,
+};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_pool_with_options;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
@@ -39,11 +42,54 @@ const MAX_DB_RETRIES: u64 = 10;
 /// Orchestrator will restart with fresh state.
 const MAX_CONSECUTIVE_RPC_FAILURES: u64 = 3;
 
+/// Bound on how far below the durable anchor a restart replays to reach the
+/// settlement frontier. A frontier this far behind means settlement is wedged
+/// on something replay cannot fix (e.g. a quarantined cleanup job needing
+/// operator attention), so an unbounded re-ingestion would only burn RPC
+/// budget on every restart. Matches the finalized-block retention window.
+const MAX_SETTLEMENT_REPLAY_BLOCKS: u64 = 10_000;
+
 fn reorg_replay_anchor(
     last_caught_up_block: u64,
     reorg_maximum_duration_in_blocks: u64,
 ) -> u64 {
     last_caught_up_block.saturating_sub(reorg_maximum_duration_in_blocks)
+}
+
+/// Replay start for a poller restart: the configured reorg window below the
+/// durable anchor, extended down to the settlement frontier when that is
+/// older. The fixed window is enough for reorgs observed live, but a poller
+/// that reconnects after its node switched branches can hold contradicted
+/// rows at ANY unsettled height: settlement never crosses a stored checkpoint
+/// it has not revalidated against the current chain, and revalidation refuses
+/// heights whose canonical block was never ingested. Re-ingesting the whole
+/// unsettled range is what resolves those refusals (ingestion is idempotent,
+/// and finalizing the canonical block orphans the stale branch). A fresh
+/// stack without a settlement row keeps the plain reorg window.
+fn restart_replay_anchor(
+    last_caught_up_block: u64,
+    reorg_maximum_duration_in_blocks: u64,
+    settled_height: i64,
+) -> u64 {
+    let window_anchor = reorg_replay_anchor(
+        last_caught_up_block,
+        reorg_maximum_duration_in_blocks,
+    );
+    if settled_height < 0 {
+        return window_anchor;
+    }
+    let frontier_anchor = (settled_height as u64)
+        .max(last_caught_up_block.saturating_sub(MAX_SETTLEMENT_REPLAY_BLOCKS));
+    if frontier_anchor < window_anchor {
+        warn!(
+            settled_height,
+            last_caught_up_block,
+            replay_from = frontier_anchor,
+            "Settlement frontier is below the reorg replay window, extending \
+             restart replay to revalidate the unsettled range"
+        );
+    }
+    window_anchor.min(frontier_anchor)
 }
 
 fn handle_rpc_failure<E: std::fmt::Display>(
@@ -317,11 +363,23 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     // history. If it and the poller restart while the node switches branches,
     // that notification is lost and the durable forward-only poller anchor
     // would skip the rewritten blocks. Re-read the configured reorg window on
-    // every startup; ingestion is idempotent, and canonical finalization then
-    // marks any previously observed sibling branch orphaned.
-    let mut last_caught_up_block = reorg_replay_anchor(
+    // every startup — extended down to the settlement frontier when that is
+    // older; ingestion is idempotent, and canonical finalization then marks
+    // any previously observed sibling branch orphaned.
+    let startup_settled_height = match db.new_transaction().await? {
+        Some(mut tx) => {
+            let settled_height =
+                read_settled_height(&mut tx, chain_id.as_i64()).await?;
+            tx.rollback().await?;
+            settled_height
+        }
+        // Retired stack after cutover: the poll loop below no-ops anyway.
+        None => INITIAL_SETTLED_HEIGHT,
+    };
+    let mut last_caught_up_block = restart_replay_anchor(
         persisted_caught_up_block,
         config.reorg_maximum_duration_in_blocks,
+        startup_settled_height,
     );
     let mut durable_caught_up_block = persisted_caught_up_block;
 
@@ -600,7 +658,10 @@ async fn ingest_with_retry(
 
 #[cfg(test)]
 mod tests {
-    use super::reorg_replay_anchor;
+    use super::{
+        reorg_replay_anchor, restart_replay_anchor,
+        MAX_SETTLEMENT_REPLAY_BLOCKS,
+    };
 
     #[test]
     fn replay_anchor_rewinds_by_the_reorg_window() {
@@ -610,5 +671,29 @@ mod tests {
     #[test]
     fn replay_anchor_saturates_at_genesis() {
         assert_eq!(reorg_replay_anchor(5, 8), 0);
+    }
+
+    #[test]
+    fn restart_replay_keeps_window_when_frontier_is_ahead() {
+        assert_eq!(restart_replay_anchor(100, 8, 95), 92);
+    }
+
+    #[test]
+    fn restart_replay_extends_to_the_settlement_frontier() {
+        assert_eq!(restart_replay_anchor(100, 8, 40), 40);
+    }
+
+    #[test]
+    fn restart_replay_ignores_missing_settlement_row() {
+        assert_eq!(restart_replay_anchor(100, 8, -1), 92);
+    }
+
+    #[test]
+    fn restart_replay_bounds_wedged_frontiers() {
+        let anchor = MAX_SETTLEMENT_REPLAY_BLOCKS + 500;
+        assert_eq!(
+            restart_replay_anchor(anchor, 8, 3),
+            anchor - MAX_SETTLEMENT_REPLAY_BLOCKS
+        );
     }
 }
