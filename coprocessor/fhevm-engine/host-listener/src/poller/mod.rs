@@ -59,15 +59,21 @@ fn reorg_replay_anchor(
 }
 
 /// Replay start for a poller restart: the configured reorg window below the
-/// durable anchor, extended down to the settlement frontier when that is
-/// older. The fixed window is enough for reorgs observed live, but a poller
-/// that reconnects after its node switched branches can hold contradicted
-/// rows at ANY unsettled height: settlement never crosses a stored checkpoint
-/// it has not revalidated against the current chain, and revalidation refuses
-/// heights whose canonical block was never ingested. Re-ingesting the whole
-/// unsettled range is what resolves those refusals (ingestion is idempotent,
-/// and finalizing the canonical block orphans the stale branch). A fresh
-/// stack without a settlement row keeps the plain reorg window.
+/// durable anchor, extended down to one reorg window BELOW the settlement
+/// frontier when that is older. The fixed window is enough for reorgs
+/// observed live, but a poller that reconnects after its node switched
+/// branches can hold contradicted rows at ANY unsettled height: settlement
+/// never crosses a stored checkpoint it has not revalidated against the
+/// current chain, and revalidation refuses heights whose canonical block was
+/// never ingested. Re-ingesting the whole unsettled range is what resolves
+/// those refusals (ingestion is idempotent, and finalizing the canonical
+/// block orphans the stale branch). The replay reaches a reorg window below
+/// the frontier — not just the frontier — because a stale branch can
+/// straddle it: settlement legitimately crossed the branch's first blocks on
+/// the pre-switch chain view, and starting the replay above the branch root
+/// would leave every canonical block re-ingested without its finalized
+/// parent, refusing linkage forever. A fresh stack without a settlement row
+/// keeps the plain reorg window.
 fn restart_replay_anchor(
     last_caught_up_block: u64,
     reorg_maximum_duration_in_blocks: u64,
@@ -82,7 +88,9 @@ fn restart_replay_anchor(
     }
     let replay_bound =
         last_caught_up_block.saturating_sub(MAX_SETTLEMENT_REPLAY_BLOCKS);
-    let frontier_anchor = (settled_height as u64).max(replay_bound);
+    let frontier_anchor = (settled_height as u64)
+        .saturating_sub(reorg_maximum_duration_in_blocks)
+        .max(replay_bound);
     if (settled_height as u64) < replay_bound {
         error!(
             settled_height,
@@ -697,13 +705,20 @@ mod tests {
     }
 
     #[test]
-    fn restart_replay_keeps_window_when_frontier_is_ahead() {
-        assert_eq!(restart_replay_anchor(100, 8, 95), 92);
+    fn restart_replay_never_rewinds_less_than_the_window() {
+        assert_eq!(restart_replay_anchor(100, 8, 100), 92);
     }
 
     #[test]
-    fn restart_replay_extends_to_the_settlement_frontier() {
-        assert_eq!(restart_replay_anchor(100, 8, 40), 40);
+    fn restart_replay_rewinds_a_window_below_a_close_frontier() {
+        assert_eq!(restart_replay_anchor(100, 8, 99), 91);
+    }
+
+    #[test]
+    fn restart_replay_extends_below_the_settlement_frontier() {
+        // One reorg window below the frontier: a stale branch can straddle
+        // the frontier itself, and its root must be re-anchored.
+        assert_eq!(restart_replay_anchor(100, 8, 40), 32);
     }
 
     #[test]

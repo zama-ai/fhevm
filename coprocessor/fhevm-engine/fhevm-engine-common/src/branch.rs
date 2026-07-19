@@ -122,7 +122,20 @@ pub async fn advance_settled_height(
              OR (
                b.block_status = 'finalized'
                AND (
+                 -- Two finalized rows at one height (a refused pass inserts
+                 -- the canonical row as finalized without orphaning the stale
+                 -- sibling) must be resolved by revalidation before the
+                 -- frontier crosses: a stale finalized row left below the
+                 -- frontier would poison settled producer resolution.
                  EXISTS (
+               SELECT 1
+               FROM host_chain_blocks_valid sib
+               WHERE sib.chain_id = b.chain_id
+                 AND sib.block_number = b.block_number
+                 AND sib.block_status = 'finalized'
+                 AND sib.block_hash <> b.block_hash
+                 )
+                 OR EXISTS (
                SELECT 1
                FROM computations_branch c
                WHERE c.host_chain_id = b.chain_id
