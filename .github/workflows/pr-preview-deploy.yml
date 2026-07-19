@@ -29,6 +29,10 @@ on:
         description: "When build_images=true, build ONLY the e2e test-suite image and skip every other component build (they fall back to the pinned versions below). Handy for iterating on the test-suite / @fhevm/sdk without a full rebuild."
         required: false
         default: "false"
+      automated_tests:
+        description: "Deploy the Argo Workflow that auto-runs the e2e test DAG (in addition to the idle test-suite Job) and reports pass/fail back to the PR / run summary. Off by default."
+        required: false
+        default: "false"
       host_contracts_version:
         description: "Image tag for the host-contracts deployer image (ignored while build_images=true and it changed - see build_images above)"
         required: true
@@ -81,6 +85,7 @@ on:
         description: "Version of the generic `common` Helm chart, used for postgres-*, relayer-migrate, relayer and test-suite alike"
         required: true
         default: "0.3.3"
+
 concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
   # workflow_dispatch: keyed on run_id, so manual runs never cancel each other.
@@ -168,29 +173,41 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.action != 'labeled' ||
       github.event.label.name == 'pr-preview-e2e' ||
-      github.event.label.name == 'pr-preview-e2e-build'
+      github.event.label.name == 'pr-preview-e2e-build' ||
+      github.event.label.name == 'pr-preview-e2e-tests'
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
       build_images: ${{ steps.check.outputs.build_images }}
       build_test_suite_only: ${{ steps.check.outputs.build_test_suite_only }}
+      automated_tests: ${{ steps.check.outputs.automated_tests }}
     steps:
       - id: check
         env:
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_BUILD_IMAGES: ${{ inputs.build_images }}
           DISPATCH_BUILD_TEST_SUITE_ONLY: ${{ inputs.build_test_suite_only }}
+          DISPATCH_AUTOMATED_TESTS: ${{ inputs.automated_tests }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           # build_test_suite_only is a dispatch-only knob; label-triggered runs
           # never set it (always build everything they're allowed to).
           echo "build_test_suite_only=false" >> "$GITHUB_OUTPUT"
+          # automated_tests defaults off; dispatch reads its input, PR runs opt
+          # in via the pr-preview-e2e-tests label (handled below).
+          echo "automated_tests=false" >> "$GITHUB_OUTPUT"
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "build_images=${DISPATCH_BUILD_IMAGES}" >> "$GITHUB_OUTPUT"
             echo "build_test_suite_only=${DISPATCH_BUILD_TEST_SUITE_ONLY:-false}" >> "$GITHUB_OUTPUT"
+            echo "automated_tests=${DISPATCH_AUTOMATED_TESTS:-false}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "PR labels: $PR_LABELS"
+          # PR runs auto-run the e2e DAG only when explicitly labeled, so the
+          # PR-comment report path is reachable without a manual dispatch.
+          if echo "$PR_LABELS" | jq -e '.[] | select(. == "pr-preview-e2e-tests")' > /dev/null; then
+            echo "automated_tests=true" >> "$GITHUB_OUTPUT"
+          fi
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "pr-preview-e2e-build")' > /dev/null; then
             echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "build_images=true" >> "$GITHUB_OUTPUT"
@@ -449,7 +466,9 @@ jobs:
       needs.check-labels.outputs.should_deploy == 'true' &&
       needs.resolve-tags.result == 'success'
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
-    timeout-minutes: 90
+    # 90m covers a plain deploy; the automated_tests run adds the sequential
+    # e2e DAG (8 tests, each recompiling contracts), so allow headroom for it.
+    timeout-minutes: 150
     permissions:
       pull-requests: write # Required to comment on the PR with connection info
     env:
@@ -465,6 +484,9 @@ jobs:
       KMS_REPO_REF: ${{ needs.resolve-tags.outputs.kms_repo_ref }}
       KMS_CORE_TAG: ${{ needs.resolve-tags.outputs.kms_core_tag }}
       NB_KMS_CORE: ${{ needs.resolve-tags.outputs.nb_kms_core }}
+      # Gate for the automated e2e test workflow (see the test-suite-workflow
+      # deploy + report steps): dispatch input or the pr-preview-e2e-tests label.
+      AUTOMATED_TESTS: ${{ needs.check-labels.outputs.automated_tests }}
     steps:
       - name: Checkout fhevm
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -1060,6 +1082,121 @@ jobs:
           helm upgrade --install test-suite "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
             -n "${NAMESPACE}" -f ci/preview-env/test-suite/values-test-suite-e2e.yaml \
             --set-string "image.tag=$(jq -r .test_suite <<<"${TAGS_JSON}")"
+
+      ######################################################################
+      # AUTOMATED E2E TEST WORKFLOW (opt-in via automated_tests / label).
+      # Deploys an Argo Workflow that runs the e2e DAG unattended, alongside
+      # the idle test-suite Job above. The image tag and RoleBinding subject
+      # namespace are patched into the values file with yq before install
+      # (they are raw objects the common chart applies verbatim).
+      ######################################################################
+      - name: Deploy automated e2e test workflow
+        if: env.AUTOMATED_TESTS == 'true'
+        env:
+          E2E_IMAGE: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e:${{ fromJSON(needs.resolve-tags.outputs.tags_json).test_suite }}
+        run: |
+          values=$(mktemp --suffix=.yaml)
+          cp ci/preview-env/test-suite/values-test-suite-workflow-e2e.yaml "${values}"
+          NS="${NAMESPACE}" yq -i \
+            '(.additionalResources[] | select(.object.kind == "RoleBinding") | .object.subjects[0].namespace) = strenv(NS)' \
+            "${values}"
+          yq -i \
+            '(.additionalResources[] | select(.object.kind == "Workflow") | .object.spec.templates[] | select(.name == "run-test") | .script.image) = strenv(E2E_IMAGE)' \
+            "${values}"
+          echo "Patched run-test image to: ${E2E_IMAGE}"
+          # A prior run in a reused namespace may leave a completed Workflow of
+          # the same name; delete it so this install re-triggers a fresh run.
+          kubectl delete workflow e2e-test-suite-workflow -n "${NAMESPACE}" --ignore-not-found
+          helm upgrade --install test-suite-workflow "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+            -n "${NAMESPACE}" -f "${values}"
+
+      - name: Wait for e2e workflow and build report
+        id: e2e_report
+        if: env.AUTOMATED_TESTS == 'true'
+        env:
+          # Resolved versions surfaced in the report (the "fill in the version"
+          # piece). Image tags come from the resolved TAGS_JSON, the dedicated
+          # KMS tag + party count from the deploy job env.
+          TEST_SUITE_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).test_suite }}
+          HOST_CONTRACTS_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).host_contracts }}
+          GATEWAY_CONTRACTS_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).gateway_contracts }}
+          COPROCESSOR_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).coprocessor_host_listener }}
+          RELAYER_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).relayer }}
+          KMS_CONNECTOR_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).kms_connector_gw_listener }}
+        run: |
+          set -euo pipefail
+          wf=e2e-test-suite-workflow
+          # Poll the overall phase. continueOn.failed keeps failed tests from
+          # failing the DAG, so the terminal phase is (almost) always Succeeded;
+          # per-test pass/fail is read from the node statuses below.
+          max_wait=7200; elapsed=0; interval=30; phase=""
+          while [[ $elapsed -lt $max_wait ]]; do
+            phase=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            case "${phase}" in
+              Succeeded|Failed|Error) break ;;
+              *) echo "workflow phase='${phase:-<none>}' (${elapsed}s/${max_wait}s)"; sleep "${interval}"; elapsed=$((elapsed + interval)) ;;
+            esac
+          done
+          echo "Final workflow phase: ${phase:-<timed out>}"
+
+          wf_json=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o json 2>/dev/null || echo '{}')
+
+          # Per-test phase table from the run-test pod nodes.
+          rows=$(jq -r '
+            (.status.nodes // {}) | to_entries
+            | map(.value | select(.templateName == "run-test"))
+            | sort_by(.displayName)
+            | .[] | "| \(.displayName) | \(.phase) |"' <<<"${wf_json}")
+          failed=$(jq -r '
+            [(.status.nodes // {}) | to_entries[] | .value
+             | select(.templateName == "run-test")
+             | select(.phase != "Succeeded")] | length' <<<"${wf_json}")
+          total=$(jq -r '
+            [(.status.nodes // {}) | to_entries[] | .value
+             | select(.templateName == "run-test")] | length' <<<"${wf_json}")
+          if [[ -z "${rows}" ]]; then rows="| _(no test nodes found)_ | ${phase:-Unknown} |"; fi
+
+          if [[ "${phase}" != "Succeeded" && "${phase}" != "Failed" && "${phase}" != "Error" ]]; then
+            header="## :warning: Automated e2e tests: timed out after ${max_wait}s"
+          elif [[ "${failed}" -gt 0 ]]; then
+            header="## :x: Automated e2e tests: ${failed}/${total} failed"
+          else
+            header="## :white_check_mark: Automated e2e tests: all ${total} passed"
+          fi
+
+          report=$(mktemp --suffix=.md)
+          {
+            echo "${header}"
+            echo
+            echo "Namespace \`${NAMESPACE}\` on zws-dev - workflow \`${wf}\`."
+            echo
+            echo "| Test | Result |"
+            echo "| --- | --- |"
+            echo "${rows}"
+            echo
+            echo "<details><summary>Resolved component versions</summary>"
+            echo
+            echo "| Component | Version |"
+            echo "| --- | --- |"
+            echo "| test-suite | \`${TEST_SUITE_TAG}\` |"
+            echo "| host-contracts | \`${HOST_CONTRACTS_TAG}\` |"
+            echo "| gateway-contracts | \`${GATEWAY_CONTRACTS_TAG}\` |"
+            echo "| coprocessor | \`${COPROCESSOR_TAG}\` |"
+            echo "| relayer | \`${RELAYER_TAG}\` |"
+            echo "| kms-connector | \`${KMS_CONNECTOR_TAG}\` |"
+            echo "| kms-core | \`${KMS_CORE_TAG}\` (parties: ${NB_KMS_CORE}) |"
+            echo "</details>"
+          } > "${report}"
+
+          echo "report_path=${report}" >> "$GITHUB_OUTPUT"
+          cat "${report}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment e2e results on PR
+        if: env.AUTOMATED_TESTS == 'true' && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: ${{ steps.e2e_report.outputs.report_path }}
 
       ######################################################################
       # DIAGNOSTICS + PR COMMENT

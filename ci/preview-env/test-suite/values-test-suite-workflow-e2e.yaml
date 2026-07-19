@@ -1,0 +1,484 @@
+# common chart overlay for the AUTOMATED e2e test-suite run in the fhevm e2e
+# preview namespace. Unlike values-test-suite-e2e.yaml (a one-shot Job that
+# patches addresses then idles for manual `kubectl exec` runs), this deploys an
+# Argo Workflow that runs the whole e2e DAG unattended and reports results.
+#
+# Modeled on zama-zws/gitops's relayer e2e-test-suite-workflow-eth values, but
+# retargeted from that file's Sepolia/eth-sc-addresses topology to this
+# preview's local "staging" topology (anvil host+gateway, chainId 12345/54321,
+# gw-sc-addresses / host-sc-addresses configmaps, in-cluster relayer).
+#
+# Deployed only when pr-preview-deploy.yml is run with automated_tests=true, as:
+#   helm upgrade --install test-suite-workflow \
+#     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
+#     -n <namespace> -f this-file
+#
+# Two dynamic bits are patched with yq at deploy time (see pr-preview-deploy.yml):
+#   - the run-test image tag (per-PR short-SHA / pinned test_suite tag)
+#   - the RoleBinding subject namespace (the per-PR namespace)
+# Every additionalResources object omits metadata.namespace so helm places it in
+# the release namespace; only the RoleBinding *subject* needs it spelled out.
+#
+# Like the relayer reference, this release sets ONLY additionalResources (no
+# image/deployment/job): the common chart then renders just these raw objects
+# and no built-in workload. imagePullSecrets is declared on the Workflow spec
+# itself (not chart top-level) so its pods can pull the private test-suite image.
+fullnameOverride: test-suite-workflow
+
+# Raw K8s objects applied verbatim by the common chart (rendered through `tpl`,
+# hence the {{`{{...}}`}} escaping below to emit literal Argo placeholders).
+additionalResources:
+  # RBAC so the Workflow's controller-driven pods can create/read workflow
+  # task results and pod logs in this namespace.
+  - enabled: true
+    object:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: workflow-runner
+  - enabled: true
+    object:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: workflow-runner-role
+      rules:
+        - apiGroups:
+            - argoproj.io
+          resources:
+            - workflows
+            - workflows/finalizers
+            - workflowtasksets
+            - workflowtaskresults
+            - workflowtemplates
+            - workflowtemplates/finalizers
+          verbs:
+            - create
+            - delete
+            - get
+            - list
+            - patch
+            - update
+            - watch
+        - apiGroups:
+            - ""
+          resources:
+            - pods
+            - pods/log
+            - pods/exec
+          verbs:
+            - create
+            - delete
+            - get
+            - list
+            - patch
+            - update
+            - watch
+  - enabled: true
+    object:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: workflow-runner-binding
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: Role
+        name: workflow-runner-role
+      subjects:
+        - kind: ServiceAccount
+          name: workflow-runner
+          # Patched to the release namespace with yq at deploy time (a
+          # ServiceAccount subject on a namespaced RoleBinding must name it
+          # explicitly - it does not default to the binding's namespace).
+          namespace: PLACEHOLDER_NAMESPACE
+
+  - enabled: true
+    object:
+      apiVersion: argoproj.io/v1alpha1
+      kind: Workflow
+      metadata:
+        name: e2e-test-suite-workflow
+        labels:
+          app: fhevm-test-suite
+      spec:
+        serviceAccountName: workflow-runner
+        # Kept under the deploy job's own timeout budget (see pr-preview-deploy.yml):
+        # 8 tests run sequentially and each recompiles the contracts, so this is
+        # generous but bounded rather than the reference's 2h.
+        activeDeadlineSeconds: 7800  # 130m
+        ttlStrategy:
+          secondsAfterCompletion: 86400  # keep 1 day for post-mortem
+        # Pin to the coprocessor nodepool, same as the coprocessor workers - the
+        # only nodes tainted for this workload in the preview cluster.
+        tolerations:
+        - key: karpenter.sh/nodepool
+          effect: NoSchedule
+          operator: Equal
+          value: coprocessor
+
+        entrypoint: fhevm-test-suite
+
+        templates:
+          - name: fhevm-test-suite
+            dag:
+              tasks:
+                - name: user-input-uint64
+                  template: run-test
+                  continueOn:
+                    failed: true
+                  arguments:
+                    parameters:
+                      - name: test-name
+                        value: "user-input-uint64"
+                      - name: test-command
+                        value: "test user input uint64"
+
+                - name: user-decrypt
+                  dependencies: ["user-input-uint64"]
+                  template: run-test
+                  continueOn:
+                    failed: true
+                  arguments:
+                    parameters:
+                      - name: test-name
+                        value: "user-decrypt"
+                      - name: test-command
+                        value: "test user decrypt"
+
+                - name: public-decrypt-http
+                  dependencies: ["user-decrypt"]
+                  template: run-test
+                  continueOn:
+                    failed: true
+                  arguments:
+                    parameters:
+                      - name: test-name
+                        value: "public-decrypt-http"
+                      - name: test-command
+                        value: "test HTTPPublicDecrypt"
+
+                - name: erc20-token-transfer
+                  dependencies: ["public-decrypt-http"]
+                  template: run-test
+                  continueOn:
+                    failed: true
+                  arguments:
+                    parameters:
+                      - name: test-name
+                        value: "erc20-token-transfer"
+                      - name: test-command
+                        value: "should transfer tokens between two users."
+
+                - name: delegated-user-decrypt
+                  dependencies: ["erc20-token-transfer"]
+                  template: run-test
+                  continueOn:
+                    failed: true
+                  arguments:
+                    parameters:
+                      - name: test-name
+                        value: "delegated-user-decrypt"
+                      - name: test-command
+                        value: "test delegated user decryption"
+
+                - name: random-subset
+                  dependencies: ["delegated-user-decrypt"]
+                  template: run-test
+                  continueOn:
+                    failed: true
+                  arguments:
+                    parameters:
+                      - name: test-name
+                        value: "random-subset"
+                      - name: test-command
+                        value: "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt"
+
+                - name: hcu-block-cap
+                  dependencies: ["random-subset"]
+                  template: run-test
+                  continueOn:
+                    failed: true
+                  arguments:
+                    parameters:
+                      - name: test-name
+                        value: "hcu-block-cap"
+                      - name: test-command
+                        value: "block cap scenarios"
+
+                - name: negative-acl
+                  dependencies: ["hcu-block-cap"]
+                  template: run-test
+                  continueOn:
+                    failed: true
+                  arguments:
+                    parameters:
+                      - name: test-name
+                        value: "negative-acl"
+                      - name: test-command
+                        value: "negative-acl"
+
+                - name: generate-summary
+                  dependencies: [
+                    "user-input-uint64",
+                    "user-decrypt",
+                    "public-decrypt-http",
+                    "erc20-token-transfer",
+                    "delegated-user-decrypt",
+                    "random-subset",
+                    "hcu-block-cap",
+                    "negative-acl"
+                  ]
+                  template: summary-report
+                  continueOn:
+                    failed: true
+                  arguments:
+                    parameters:
+                    - name: test-result-1
+                      value: "{{`{{tasks.user-input-uint64.outputs.parameters.test-result}}`}}"
+                    - name: test-result-2
+                      value: "{{`{{tasks.user-decrypt.outputs.parameters.test-result}}`}}"
+                    - name: test-result-3
+                      value: "{{`{{tasks.public-decrypt-http.outputs.parameters.test-result}}`}}"
+                    - name: test-result-4
+                      value: "{{`{{tasks.erc20-token-transfer.outputs.parameters.test-result}}`}}"
+                    - name: test-result-5
+                      value: "{{`{{tasks.delegated-user-decrypt.outputs.parameters.test-result}}`}}"
+                    - name: test-result-6
+                      value: "{{`{{tasks.random-subset.outputs.parameters.test-result}}`}}"
+                    - name: test-result-7
+                      value: "{{`{{tasks.hcu-block-cap.outputs.parameters.test-result}}`}}"
+                    - name: test-result-8
+                      value: "{{`{{tasks.negative-acl.outputs.parameters.test-result}}`}}"
+
+          - name: run-test
+            inputs:
+              parameters:
+                - name: test-name
+                - name: test-command
+            outputs:
+              parameters:
+              - name: test-result
+                valueFrom:
+                  path: /tmp/artifacts/{{`{{inputs.parameters.test-name}}`}}.json
+            metadata:
+              labels:
+                test: "{{`{{inputs.parameters.test-name}}`}}"
+                app: fhevm-test-suite
+            script:
+              # Patched to the resolved per-PR test-suite tag with yq at deploy time.
+              image: PLACEHOLDER_E2E_IMAGE
+              command: ["/bin/bash", "-c"]
+              source: |
+
+                  # contracts/E2ECoprocessorConfigLocal.sol ships with placeholder
+                  # addresses that DefaultCoprocessorConfig.getConfig() only uses
+                  # off-chainid-31337 (our "staging" chain is 12345), so they MUST
+                  # be sed-patched to the real per-namespace deployment addresses,
+                  # exactly like values-test-suite-e2e.yaml does for the idle Job.
+                  CONFIG_SOL=/app/test-suite/e2e/contracts/E2ECoprocessorConfigLocal.sol
+                  echo "Patching E2ECoprocessorConfigLocal.sol with real deployment addresses..."
+                  sed -i "s|ACLAddress: 0x[0-9a-fA-F]*,|ACLAddress: ${ACL_CONTRACT_ADDRESS},|g" "$CONFIG_SOL"
+                  sed -i "s|CoprocessorAddress: 0x[0-9a-fA-F]*,|CoprocessorAddress: ${FHEVM_EXECUTOR_CONTRACT_ADDRESS},|g" "$CONFIG_SOL"
+                  # KMSVerifierAddress is the LAST field of the struct literal at
+                  # v0.13.0 (followed by a newline + "});", not a comma), so the
+                  # pattern must NOT anchor on a trailing comma or it silently keeps
+                  # the placeholder - see values-test-suite-e2e.yaml's note.
+                  sed -i "s|KMSVerifierAddress: 0x[0-9a-fA-F]*|KMSVerifierAddress: ${KMS_VERIFIER_CONTRACT_ADDRESS}|g" "$CONFIG_SOL"
+                  cat "$CONFIG_SOL"
+
+                  cd /app/test-suite/e2e
+                  npx hardhat clean
+                  npx hardhat compile
+                  echo "Recompiled contracts done"
+
+                  echo "=========================================="
+                  echo "Starting test: {{`{{inputs.parameters.test-command}}`}}"
+                  echo "=========================================="
+
+                  start_time=$(date +%s)
+                  ./run-tests.sh -g "{{`{{inputs.parameters.test-command}}`}}"
+                  test_exit=$?
+                  end_time=$(date +%s)
+                  duration=$((end_time - start_time))
+
+                  echo ""
+                  echo "=========================================="
+                  if [ $test_exit -eq 0 ]; then
+                    echo "PASS: test '{{`{{inputs.parameters.test-name}}`}}' (took ${duration}s)"
+                  else
+                    echo "FAIL: test '{{`{{inputs.parameters.test-name}}`}}' with exit code $test_exit (took ${duration}s)"
+                  fi
+                  echo "=========================================="
+
+                  # Result JSON for the summary-report step (read back by Argo via
+                  # the output parameter path above).
+                  mkdir -p /tmp/artifacts
+                  cat > /tmp/artifacts/{{`{{inputs.parameters.test-name}}`}}.json << EOF
+                  {
+                    "test_name": "{{`{{inputs.parameters.test-name}}`}}",
+                    "test_command": "{{`{{inputs.parameters.test-command}}`}}",
+                    "exit_code": $test_exit,
+                    "duration": $duration,
+                    "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+                  }
+                  EOF
+
+                  exit $test_exit
+              env:
+                # No HARDHAT_NETWORK/NETWORK: run-tests.sh and hardhat.config.ts
+                # both default to "staging" (chainId 12345), matching this preview.
+                - name: MNEMONIC
+                  value: "test test test test test test test test test test test junk"
+                - name: CHAIN_ID_GATEWAY
+                  value: "54321"
+                - name: CHAIN_ID_HOST
+                  value: "12345"
+                - name: RPC_URL
+                  value: "http://anvil-host-anvil-node:8545"
+                - name: GATEWAY_RPC_URL
+                  value: "http://anvil-gateway-anvil-node:8546"
+                # GATEWAY contracts (gw-sc-addresses configmap)
+                - name: DECRYPTION_ADDRESS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: gw-sc-addresses
+                      key: decryption.address
+                - name: INPUT_VERIFICATION_ADDRESS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: gw-sc-addresses
+                      key: input_verification.address
+                - name: CIPHERTEXT_COMMITS_ADDRESS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: gw-sc-addresses
+                      key: ciphertext_commits.address
+                # HOST contracts (host-sc-addresses configmap)
+                - name: KMS_VERIFIER_CONTRACT_ADDRESS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: host-sc-addresses
+                      key: kms_verifier.address
+                - name: ACL_CONTRACT_ADDRESS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: host-sc-addresses
+                      key: acl.address
+                - name: INPUT_VERIFIER_CONTRACT_ADDRESS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: host-sc-addresses
+                      key: input_verifier.address
+                - name: FHEVM_EXECUTOR_CONTRACT_ADDRESS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: host-sc-addresses
+                      key: fhevm_executor.address
+                - name: HCU_LIMIT_CONTRACT_ADDRESS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: host-sc-addresses
+                      key: hcu_limit.address
+                # Required by the @fhevm/sdk code path (instance.ts requireEnv).
+                - name: PROTOCOL_CONFIG_CONTRACT_ADDRESS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: host-sc-addresses
+                      key: protocol_config.address
+                # Hardhat account #9, "deployer" for HCU-limit owner-restricted tests.
+                - name: DEPLOYER_PRIVATE_KEY
+                  value: "0x2d24c36c57e6bfbf90c43173481cc00edcbd1a3922de5e5fdb9aba5fc4e0fafd"
+                - name: RELAYER_URL
+                  value: "http://relayer:3000/v2"
+                - name: RELAYER_SDK_VERSION
+                  value: ""
+              resources:
+                requests:
+                  memory: "1Gi"
+                  cpu: "1"
+                limits:
+                  memory: "2Gi"
+                  cpu: "2"
+
+          # In-cluster pass/fail summary (also surfaced to the PR comment by the
+          # deploy workflow). Slack posting from the reference is dropped: the
+          # preview namespace has no webhook secret, and reporting is done from
+          # GitHub Actions instead.
+          - name: summary-report
+            inputs:
+              parameters:
+              - name: test-result-1
+              - name: test-result-2
+              - name: test-result-3
+              - name: test-result-4
+              - name: test-result-5
+              - name: test-result-6
+              - name: test-result-7
+              - name: test-result-8
+            script:
+              image: alpine:3.16
+              command: ["/bin/sh", "-c"]
+              source: |
+                apk add --no-cache jq
+                mkdir -p /mnt/results
+                echo '{{`{{inputs.parameters.test-result-1}}`}}' > /mnt/results/user-input-uint64.json
+                echo '{{`{{inputs.parameters.test-result-2}}`}}' > /mnt/results/user-decrypt.json
+                echo '{{`{{inputs.parameters.test-result-3}}`}}' > /mnt/results/public-decrypt-http.json
+                echo '{{`{{inputs.parameters.test-result-4}}`}}' > /mnt/results/erc20-token-transfer.json
+                echo '{{`{{inputs.parameters.test-result-5}}`}}' > /mnt/results/delegated-user-decrypt.json
+                echo '{{`{{inputs.parameters.test-result-6}}`}}' > /mnt/results/random-subset.json
+                echo '{{`{{inputs.parameters.test-result-7}}`}}' > /mnt/results/hcu-block-cap.json
+                echo '{{`{{inputs.parameters.test-result-8}}`}}' > /mnt/results/negative-acl.json
+
+                echo "=========================================="
+                echo "FHEVM TEST SUITE SUMMARY REPORT"
+                echo "=========================================="
+                echo "Report generated: $(date -u)"
+                echo
+
+                total=0
+                passed=0
+                failed=0
+                total_time=0
+
+                echo "Test Results:"
+                echo "----------------------------------------"
+                for result in /mnt/results/*.json; do
+                  if [ -f "$result" ]; then
+                    total=$((total + 1))
+                    test_name=$(jq -r '.test_name' "$result")
+                    exit_code=$(jq -r '.exit_code' "$result")
+                    duration=$(jq -r '.duration' "$result")
+                    total_time=$((total_time + duration))
+                    if [ "$exit_code" -eq "0" ]; then
+                      passed=$((passed + 1))
+                      echo "PASS: $test_name ($duration sec)"
+                    else
+                      failed=$((failed + 1))
+                      echo "FAIL: $test_name ($duration sec) - exit code: $exit_code"
+                    fi
+                  fi
+                done
+
+                if [ $total -gt 0 ]; then
+                  success_rate=$(( (passed * 100) / total ))
+                else
+                  success_rate=0
+                fi
+
+                echo "----------------------------------------"
+                echo "Summary Stats:"
+                echo "- Total Tests: $total"
+                echo "- Passed: $passed"
+                echo "- Failed: $failed"
+                echo "- Success Rate: $success_rate%"
+                echo "- Total Execution Time: $total_time seconds"
+                echo "=========================================="
+
+                # Summary reporting always succeeds; per-test pass/fail is what
+                # the deploy workflow reads from the workflow node statuses.
+                exit 0
+
+        # Credentials for pulling the private test-suite image.
+        imagePullSecrets:
+        - name: registry-credentials
