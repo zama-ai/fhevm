@@ -205,6 +205,11 @@ additionalResources:
                         value: "random-subset"
                       - name: test-command
                         value: "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt"
+                      # Sign as Hardhat account #0 - the exact signer env under which
+                      # random-subset last passed (238b3dcd: owner #9, signer #0). All
+                      # other tests fall back to the #9 default so their owner-ops work.
+                      - name: deployer-key
+                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: hcu-block-cap
                   dependencies: ["random-subset"]
@@ -217,6 +222,11 @@ additionalResources:
                         value: "hcu-block-cap"
                       - name: test-command
                         value: "block cap scenarios"
+                      # Sign as #9, the ACL owner after the post-keygen transfer, so the
+                      # onlyACLOwner HCU setters succeed while alice (#0) stays a genuine
+                      # non-owner for the "reject setHCUPerBlock from non-owner" case.
+                      - name: deployer-key
+                        value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
 
                 - name: negative-acl
                   dependencies: ["hcu-block-cap"]
@@ -268,6 +278,13 @@ additionalResources:
               parameters:
                 - name: test-name
                 - name: test-command
+                # Per-test signer for this.deployer. Defaults to Hardhat account #9
+                # (0xa0Ee7A14...), the ACL owner after the post-keygen ownership
+                # transfer (see host-chain/values-host-trigger-keygen-e2e.yaml), so
+                # HCU's onlyACLOwner setters succeed. random-subset overrides this to
+                # #0 in the DAG (the signer/owner combo it last passed under).
+                - name: deployer-key
+                  default: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
             outputs:
               parameters:
               - name: test-result
@@ -398,14 +415,15 @@ additionalResources:
                     configMapKeyRef:
                       name: host-sc-addresses
                       key: protocol_config.address
-                # HCU-limit owner-restricted setters use onlyACLOwner, which checks
-                # msg.sender == ACL.owner(). In this preview the ACL/host contracts
-                # are deployed by Hardhat account #0 (see host-chain/values-host-
-                # contracts-e2e.yaml), so the deployer signer MUST be account #0 or
-                # the setters revert NotHostOwner(sender). Account #9 (the staging
-                # reference's choice) is NOT the owner here.
+                # Per-test signer (this.deployer). HCU-limit owner-restricted setters
+                # use onlyACLOwner (msg.sender == ACL.owner()). The host contracts are
+                # deployed by #0 but ACL ownership is transferred to #9 after keygen
+                # (host-chain/values-host-trigger-keygen-e2e.yaml), so owner-op tests
+                # (hcu-block-cap) must sign as #9 (the default). random-subset overrides
+                # this to #0 in the DAG - the signer/owner combo it last passed under
+                # (it never reads DEPLOYER_PRIVATE_KEY, but we keep its known-good env).
                 - name: DEPLOYER_PRIVATE_KEY
-                  value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                  value: "{{`{{inputs.parameters.deployer-key}}`}}"
                 - name: RELAYER_URL
                   value: "http://relayer:3000/v2"
                 - name: RELAYER_SDK_VERSION
