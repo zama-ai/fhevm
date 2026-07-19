@@ -104,17 +104,25 @@ pub async fn advance_settled_height(
 
     let first_post_cutover_block = branch_cutover_block.max(0);
     let first_block_to_check = current.saturating_add(1).max(first_post_cutover_block);
-    // Terminal PBS errors are settled just like terminal computation errors:
-    // they remain auditable and recoverable, but cannot freeze the frontier.
-    let rows = sqlx::query_scalar!(
+    // The block table is sparse after range catch-up: only blocks carrying
+    // relevant logs are necessarily materialized. Find the first *stored*
+    // checkpoint which is pending or has undrained work; absent empty heights
+    // do not freeze the frontier. Terminal PBS errors are settled just like
+    // terminal computation errors: they remain auditable and recoverable, but
+    // cannot freeze the frontier.
+    let first_blocked_height = sqlx::query_scalar!(
         r#"
-        SELECT b.block_number AS "block_number!"
+        SELECT MIN(b.block_number) AS "block_number?"
          FROM host_chain_blocks_valid b
          WHERE b.chain_id = $1
-           AND b.block_status = 'finalized'
            AND b.block_number >= $2
            AND b.block_number <= $3
-           AND NOT EXISTS (
+           AND (
+             b.block_status = 'pending'
+             OR (
+               b.block_status = 'finalized'
+               AND (
+                 EXISTS (
                SELECT 1
                FROM computations_branch c
                WHERE c.host_chain_id = b.chain_id
@@ -122,8 +130,8 @@ pub async fn advance_settled_height(
                  AND c.producer_block_hash = b.block_hash
                  AND c.is_completed = FALSE
                  AND c.is_error = FALSE
-           )
-           AND NOT EXISTS (
+                 )
+                 OR EXISTS (
                SELECT 1
                FROM pbs_computations_branch p
                WHERE p.host_chain_id = b.chain_id
@@ -139,8 +147,8 @@ pub async fn advance_settled_height(
                        AND pc.producer_block_hash = p.producer_block_hash
                        AND pc.is_error = TRUE
                  )
-           )
-           AND NOT EXISTS (
+                 )
+                 OR EXISTS (
                SELECT 1
                FROM s3_canonical_repair_queue q
                JOIN ciphertext_digest_branch d
@@ -150,17 +158,8 @@ pub async fn advance_settled_height(
                 AND d.block_hash = q.target_block_hash
                WHERE q.host_chain_id = b.chain_id
                  AND q.target_block_number = b.block_number
-           )
-           AND NOT EXISTS (
-               SELECT 1
-               FROM branch_cleanup_jobs j
-               WHERE j.chain_id = b.chain_id
-                 AND j.finalized_block_number <= b.block_number
-                 -- Quarantined cleanup has not removed orphan rows, and
-                 -- settled dependency resolution trusts cleanup completion.
-                 AND j.status IN ('pending', 'quarantined')
-           )
-           AND NOT EXISTS (
+                 )
+                 OR EXISTS (
                SELECT 1
                FROM ciphertext_digest_branch d
                WHERE d.host_chain_id = b.chain_id
@@ -182,17 +181,48 @@ pub async fn advance_settled_height(
                       OR d.s3_publication_verified_digest IS DISTINCT FROM d.ciphertext
                       OR d.s3_publication_verified_producer_block_hash IS DISTINCT FROM d.producer_block_hash
                  )
+                 )
+               )
+             )
            )
-         ORDER BY b.block_number ASC
         "#,
         chain_id,
         first_block_to_check,
         candidate_height,
     )
-    .fetch_all(tx.as_mut())
+    .fetch_one(tx.as_mut())
     .await?;
 
-    let settled_height = next_settled_height(current, candidate_height, branch_cutover_block, rows);
+    // Incomplete orphan cleanup blocks settlement on its own, NOT via a
+    // stored block row: settled dependency resolution trusts cleanup
+    // completion, and with a sparse block table there may be no stored
+    // finalized row at or above the job's height to carry the check.
+    // Quarantined cleanup has not removed orphan rows either, so it keeps
+    // blocking until an operator resolves it.
+    let first_pending_cleanup_height = sqlx::query_scalar!(
+        r#"
+        SELECT MIN(finalized_block_number) AS "block_number?"
+         FROM branch_cleanup_jobs
+         WHERE chain_id = $1
+           AND status IN ('pending', 'quarantined')
+        "#,
+        chain_id,
+    )
+    .fetch_one(tx.as_mut())
+    .await?;
+
+    let first_blocked_height = match (first_blocked_height, first_pending_cleanup_height) {
+        (Some(row), Some(job)) => Some(row.min(job)),
+        (row, None) => row,
+        (None, job) => job,
+    };
+
+    let settled_height = next_settled_height(
+        current,
+        candidate_height,
+        branch_cutover_block,
+        first_blocked_height,
+    );
 
     if settled_height > current {
         sqlx::query!(
@@ -366,7 +396,7 @@ fn next_settled_height(
     current: i64,
     candidate_height: i64,
     branch_cutover_block: i64,
-    drained_finalized_blocks: impl IntoIterator<Item = i64>,
+    first_blocked_height: Option<i64>,
 ) -> i64 {
     if candidate_height <= current {
         return current;
@@ -383,24 +413,14 @@ fn next_settled_height(
         return settled_height;
     }
 
-    let mut expected_block = settled_height
-        .saturating_add(1)
-        .max(first_post_cutover_block);
-    for block_number in drained_finalized_blocks {
-        if block_number < expected_block {
-            continue;
+    if let Some(blocked_height) = first_blocked_height {
+        if blocked_height >= first_post_cutover_block && blocked_height <= candidate_height {
+            return candidate_height
+                .min(blocked_height.saturating_sub(1))
+                .max(settled_height);
         }
-        if block_number > expected_block || block_number > candidate_height {
-            break;
-        }
-        settled_height = block_number;
-        if settled_height >= candidate_height {
-            break;
-        }
-        expected_block = expected_block.saturating_add(1);
     }
-
-    settled_height
+    candidate_height
 }
 
 #[cfg(test)]
@@ -465,31 +485,31 @@ mod tests {
 
     #[test]
     fn settlement_skips_pre_cutover_history_without_branch_work() {
-        let settled = next_settled_height(-1, 9, 10, []);
+        let settled = next_settled_height(-1, 9, 10, None);
         assert_eq!(settled, 9);
     }
 
     #[test]
-    fn settlement_does_not_leapfrog_first_post_cutover_gap() {
-        let settled = next_settled_height(-1, 15, 10, [12, 13, 14, 15]);
-        assert_eq!(settled, 9);
+    fn settlement_stops_before_first_stored_blocker() {
+        let settled = next_settled_height(-1, 15, 10, Some(12));
+        assert_eq!(settled, 11);
     }
 
     #[test]
-    fn settlement_advances_contiguously_after_cutover() {
-        let settled = next_settled_height(9, 13, 10, [10, 11, 12, 13]);
+    fn settlement_advances_across_sparse_drained_history() {
+        let settled = next_settled_height(9, 13, 10, None);
         assert_eq!(settled, 13);
     }
 
     #[test]
     fn settlement_stops_at_lowest_undrained_post_cutover_block() {
-        let settled = next_settled_height(9, 15, 10, [10, 11, 13, 14, 15]);
+        let settled = next_settled_height(9, 15, 10, Some(12));
         assert_eq!(settled, 11);
     }
 
     #[test]
-    fn settlement_cutover_zero_requires_contiguous_chain_from_zero() {
-        let settled = next_settled_height(-1, 2, 0, [1, 2]);
-        assert_eq!(settled, -1);
+    fn settlement_cutover_zero_allows_sparse_drained_history() {
+        let settled = next_settled_height(-1, 2, 0, None);
+        assert_eq!(settled, 2);
     }
 }

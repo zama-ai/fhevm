@@ -2534,36 +2534,54 @@ impl Database {
         })
     }
 
-    pub async fn get_blocks_to_finalize_or_revalidate(
+    pub async fn get_pending_blocks_to_finalize(
         tx: &mut Transaction<'_>,
         last_block_max: i64,
+        chain_id: ChainId,
+    ) -> Result<HashSet<i64>, SqlxError> {
+        // Most of the time there is only one pending block. Under a backlog,
+        // take the OLDEST pending blocks: finalization must progress
+        // oldest-first so each block's parent-linkage check anchors on a
+        // finalized predecessor instead of passing vacuously.
+        let blocks_number = sqlx::query!(
+            r#"
+            SELECT DISTINCT block_number
+            FROM host_chain_blocks_valid
+            WHERE block_status = 'pending'
+              AND block_number <= $1
+              AND chain_id = $2
+            ORDER BY block_number ASC
+            LIMIT 11
+            "#,
+            last_block_max,
+            chain_id.as_i64(),
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+        Ok(blocks_number
+            .into_iter()
+            .map(|record| record.block_number)
+            .collect())
+    }
+
+    pub async fn get_finalized_blocks_to_revalidate(
+        tx: &mut Transaction<'_>,
         chain_id: ChainId,
         first_unsettled_block: i64,
         settlement_candidate_height: i64,
     ) -> Result<HashSet<i64>, SqlxError> {
-        // Most of the time there is only one pending block. Under a backlog,
-        // take the OLDEST relevant blocks: finalization must progress
-        // oldest-first so each block's parent-linkage check anchors on a
-        // finalized predecessor instead of passing vacuously.
-        //
-        // Previously-finalized rows in the unsettled range are deliberately
-        // included. A listener may reconnect to a different branch after
-        // having finalized its old view. Settlement must not trust that stale
-        // status: every height it crosses is revalidated against the current
-        // by-number RPC result first.
+        // Revalidation is independent from pending finalization so undrained
+        // work at the settlement frontier cannot starve newer pending blocks.
         let blocks_number = sqlx::query!(
             r#"
-            SELECT DISTINCT block_number FROM host_chain_blocks_valid
-            WHERE block_number <= $1
-              AND chain_id = $2
-              AND (
-                  block_status = 'pending'
-                  OR block_number BETWEEN $3 AND $4
-              )
+            SELECT DISTINCT block_number
+            FROM host_chain_blocks_valid
+            WHERE block_status = 'finalized'
+              AND chain_id = $1
+              AND block_number BETWEEN $2 AND $3
             ORDER BY block_number ASC
-            LIMIT 10
+            LIMIT 11
             "#,
-            last_block_max,
             chain_id.as_i64(),
             first_unsettled_block,
             settlement_candidate_height,
