@@ -170,6 +170,52 @@ async fn finalization_stops_batch_at_fetch_failure() {
     }
 }
 
+/// The revalidation and pending finalization queues stop independently, and
+/// the safety of that split rests on stored statuses: a pending block
+/// immediately above a refused height anchors its parent-linkage check on the
+/// stale finalized row still sitting there, so it must refuse on the
+/// contradiction rather than finalize behind the refusal.
+#[tokio::test]
+#[serial(db)]
+async fn pending_block_above_refused_height_fails_its_own_linkage_check() {
+    let (mut db, _inst) = fresh_db(CHAIN_ID).await;
+    let (a1, f2, c2, c3) = (b32(0xA1), b32(0xF2), b32(0xC2), b32(0xC3));
+
+    seed_block(&db, 1, &a1, &b32(0xA0), "finalized").await;
+    // Stale fork row finalized on the old branch; its canonical sibling c2
+    // was never ingested (sparse catch-up skipped the empty canonical block).
+    seed_block(&db, 2, &f2, &a1, "finalized").await;
+    // Canonical child of the unstored c2, ingested pending.
+    seed_block(&db, 3, &c3, &c2, "pending").await;
+    seed_settled_height(&db, 1).await;
+
+    // The RPC serves the canonical chain: height 2 refuses in the
+    // revalidation queue (no stored row for c2), and height 3 sits in the
+    // pending queue right above the refusal.
+    let served = [(2u64, c2.clone()), (3u64, c3.clone())];
+    update_finalized_blocks_aux(&mut db, 3, 0, 0, |n| {
+        let hash = served
+            .iter()
+            .find(|(num, _)| *num == n)
+            .map(|(_, h)| alloy::primitives::FixedBytes::<32>::from_slice(h))
+            .expect("requested block");
+        async move { Ok(hash) }
+    })
+    .await;
+
+    assert_eq!(
+        block_status(&db, &f2).await.as_deref(),
+        Some("finalized"),
+        "the stale row stays until its canonical sibling is re-ingested"
+    );
+    assert_eq!(
+        block_status(&db, &c3).await.as_deref(),
+        Some("pending"),
+        "the pending block above the refusal must fail its own linkage \
+         check against the stale finalized predecessor"
+    );
+}
+
 /// Pruning removes only old finalized rows that nothing references: rows
 /// referenced by branch state, orphaned markers, and everything within the
 /// retention window stay.

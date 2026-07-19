@@ -414,7 +414,12 @@ fn next_settled_height(
     }
 
     if let Some(blocked_height) = first_blocked_height {
-        if blocked_height >= first_post_cutover_block && blocked_height <= candidate_height {
+        // A blocker below the post-cutover range (an unfinished cleanup job
+        // can sit at any height) must still hold the frontier: clamping to
+        // `settled_height` via `max` keeps the pre-cutover skip but forbids
+        // crossing the blocker. Dropping it instead would fail open past
+        // every higher blocker it shadowed through the MIN merge.
+        if blocked_height <= candidate_height {
             return candidate_height
                 .min(blocked_height.saturating_sub(1))
                 .max(settled_height);
@@ -511,5 +516,21 @@ mod tests {
     fn settlement_cutover_zero_allows_sparse_drained_history() {
         let settled = next_settled_height(-1, 2, 0, None);
         assert_eq!(settled, 2);
+    }
+
+    #[test]
+    fn settlement_freezes_on_blocker_below_cutover() {
+        // A pre-cutover blocker (an unfinished cleanup job) keeps the
+        // pre-cutover skip but must not be discarded: the frontier stays at
+        // the cutover ceiling instead of failing open to the candidate.
+        let settled = next_settled_height(-1, 15, 10, Some(4));
+        assert_eq!(settled, 9);
+    }
+
+    #[test]
+    fn settlement_freezes_on_blocker_below_current() {
+        // A re-activated cleanup job at or below the frontier holds it.
+        let settled = next_settled_height(7, 15, 0, Some(5));
+        assert_eq!(settled, 7);
     }
 }
