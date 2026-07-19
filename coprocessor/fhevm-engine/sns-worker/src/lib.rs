@@ -28,6 +28,10 @@ use anyhow::Context;
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
+    branch::{
+        enqueue_s3_canonical_repair, read_settled_height, resolve_s3_canonical_publication_target,
+        validate_branch_rollout_bounds,
+    },
     chain_id::ChainId,
     db_keys::DbKeyId,
     drift_revert,
@@ -83,6 +87,8 @@ pub struct KeySet {
     pub server_key: ServerKey,
 }
 
+pub(crate) type KeySetCache = Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>;
+
 #[derive(Clone)]
 pub struct DBConfig {
     pub url: DatabaseURL,
@@ -98,6 +104,10 @@ pub struct DBConfig {
     /// Enable LIFO (Last In, First Out) for processing tasks
     /// This is useful for prioritizing the most recent tasks
     pub lifo: bool,
+
+    /// Host-chain block number at which the block-scoped pipeline takes
+    /// over; PBS work below it is left to the legacy pipeline.
+    pub branch_cutover_block: i64,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -268,6 +278,9 @@ pub struct HandleItem {
     pub host_chain_id: ChainId,
     pub key_id_gw: DbKeyId,
     pub handle: Vec<u8>,
+    pub producer_block_hash: Vec<u8>,
+    pub block_hash: Vec<u8>,
+    pub block_number: Option<i64>,
 
     /// Compressed 64-bit ciphertext
     ///
@@ -291,6 +304,8 @@ impl std::fmt::Debug for HandleItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let handle = to_hex(&self.handle);
         let key_id_gw = to_hex(&self.key_id_gw);
+        let producer_block_hash = to_hex(&self.producer_block_hash);
+        let block_hash = to_hex(&self.block_hash);
         let ct64_digest = self.ct64_digest.as_deref().map(to_hex);
         let ct128_digest = self.ct128_digest.as_deref().map(to_hex);
         let transaction_id = self.transaction_id.as_deref().map(to_hex);
@@ -299,6 +314,8 @@ impl std::fmt::Debug for HandleItem {
             .field("host_chain_id", &self.host_chain_id.as_i64())
             .field("key_id_gw", &key_id_gw)
             .field("handle", &handle)
+            .field("producer_block_hash", &producer_block_hash)
+            .field("block_hash", &block_hash)
             .field("ct64_compressed_len", &self.ct64_compressed.len())
             .field("ct128", &self.ct128) // only superficial debug print
             .field("ct64_digest", &ct64_digest)
@@ -315,96 +332,112 @@ impl HandleItem {
     /// If inserted into the `ciphertext_digest` table means that the both (ct64 and ct128)
     /// ciphertexts are ready to be uploaded to S3.
     ///
-    /// Returns `false` (and inserts nothing) when the handle's provenance is
-    /// gone: reorg cleanup deletes the `pbs_computations` row of handles that
-    /// lived solely on an orphaned fork, and bridge retraction deletes the
-    /// copied `ciphertexts` row of a retracted bridged handle — both also
-    /// delete the digest row, so an unguarded insert here would resurrect it
-    /// and drive a phantom `addCiphertextMaterial` publication. Both witness
-    /// rows are locked FOR KEY SHARE, and both deleters remove their witness
-    /// BEFORE the digest row, so whichever transaction commits first, the
-    /// other observes it: the deleter's digest DELETE (a later statement)
-    /// removes a just-committed insert, and a later witness read sees the
-    /// deletion and skips. The mirror triggers' advisory stripe locks make a
-    /// deadlock between this transaction and a concurrent cleanup possible
-    /// instead of a clean block; that is safe — the victim rolls back whole
-    /// (an aborted finalization pass re-runs from scratch, an aborted sns
-    /// batch is re-fetched) and the retry converges. What can never happen
-    /// is a silent resurrection.
+    /// Returns `false` (and inserts nothing) unless SNS conversion completed
+    /// and the handle's provenance is still alive. Requiring `is_completed`
+    /// prevents a cancelled conversion from leaving an upload row that
+    /// recovery could mistake for a ct64-only ciphertext.
+    ///
+    /// Reorg cleanup deletes the `pbs_computations` row of handles that lived
+    /// solely on an orphaned fork, and bridge retraction deletes the copied
+    /// `ciphertexts` row of a retracted bridged handle. Both also delete the
+    /// digest row, so an unguarded insert here would resurrect it and drive a
+    /// phantom `addCiphertextMaterial` publication. Both witness rows are
+    /// locked `FOR KEY SHARE`, and both deleters remove their witness before
+    /// the digest row. Whichever transaction commits first, the other observes
+    /// it: a later witness read skips the insert, while the deleter's later
+    /// digest delete removes a just-committed insert. A deadlock is safe because
+    /// the victim rolls back the whole transaction and the retry converges.
     pub(crate) async fn enqueue_upload_task(
         &self,
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<bool, ExecutionError> {
-        let provenance_alive = sqlx::query_scalar::<_, i32>(
-            "SELECT 1 FROM pbs_computations
-             WHERE handle = $1 AND host_chain_id = $2
+        let conversion_completed = sqlx::query_scalar::<_, i32>(
+            "SELECT 1 FROM pbs_computations_branch
+             WHERE handle = $1
+               AND host_chain_id = $2
+               AND producer_block_hash = $3
+               AND block_hash = $4
+               AND is_completed = TRUE
              FOR KEY SHARE",
         )
         .bind(&self.handle)
         .bind(self.host_chain_id.as_i64())
+        .bind(&self.producer_block_hash)
+        .bind(&self.block_hash)
         .fetch_optional(db_txn.as_mut())
         .await?
         .is_some();
 
         let ciphertext_alive = sqlx::query_scalar::<_, i32>(
-            "SELECT 1 FROM ciphertexts
+            "SELECT 1 FROM ciphertexts_branch
              WHERE handle = $1
+               AND producer_block_hash = $2
              LIMIT 1
              FOR KEY SHARE",
         )
         .bind(&self.handle)
+        .bind(&self.producer_block_hash)
         .fetch_optional(db_txn.as_mut())
         .await?
         .is_some();
 
-        if !provenance_alive || !ciphertext_alive {
+        if !conversion_completed || !ciphertext_alive {
             warn!(
                 handle = %to_hex(&self.handle),
                 host_chain_id = self.host_chain_id.as_i64(),
-                provenance_alive,
+                conversion_completed,
                 ciphertext_alive,
-                "Skipping upload enqueue: provenance gone (reorg cleanup or bridge retraction)"
+                "Skipping upload enqueue: SNS conversion incomplete or provenance gone"
             );
             return Ok(false);
         }
 
-        if self.ct128.is_empty() {
-            sqlx::query(
-                "INSERT INTO ciphertext_digest
-                    (host_chain_id, key_id_gw, handle, transaction_id)
-                VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-            )
-            .bind(self.host_chain_id.as_i64())
-            .bind(&self.key_id_gw)
-            .bind(&self.handle)
-            .bind(&self.transaction_id)
-            .execute(db_txn.as_mut())
-            .await?;
-        } else if self.ct128.format() == Ciphertext128Format::Unknown {
+        // A non-empty ct128 with an unknown format means the producer wrote
+        // garbage; fail loudly instead of recording a digest row that can
+        // never be uploaded.
+        if !self.ct128.is_empty() && self.ct128.format() == Ciphertext128Format::Unknown {
             return Err(ExecutionError::InvalidCiphertext128Format(format!(
                 "non-empty ct128 has unknown format, host_chain_id: {}, handle: {}",
                 self.host_chain_id.as_i64(),
                 to_hex(&self.handle),
             )));
-        } else {
-            let ct128_format: i16 = self.ct128.format().into();
-            sqlx::query(
-                "INSERT INTO ciphertext_digest (
-                    host_chain_id, key_id_gw, handle, transaction_id, ciphertext128_format
-                )
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (handle) DO UPDATE
-                SET ciphertext128_format = EXCLUDED.ciphertext128_format
-                WHERE ciphertext_digest.ciphertext128 IS NULL",
-            )
-            .bind(self.host_chain_id.as_i64())
-            .bind(&self.key_id_gw)
-            .bind(&self.handle)
-            .bind(&self.transaction_id)
-            .bind(ct128_format)
-            .execute(db_txn.as_mut())
-            .await?;
         }
+
+        let ct128_format: Option<i16> = if self.ct128.is_empty() {
+            None
+        } else {
+            Some(self.ct128.format().into())
+        };
+
+        sqlx::query!(
+            r#"
+            INSERT INTO ciphertext_digest_branch (
+                host_chain_id,
+                key_id_gw,
+                handle,
+                producer_block_hash,
+                block_hash,
+                block_number,
+                transaction_id,
+                ciphertext128_format
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (handle, producer_block_hash, block_hash) DO UPDATE
+            SET ciphertext128_format = EXCLUDED.ciphertext128_format
+            WHERE ciphertext_digest_branch.ciphertext128_format IS NULL
+              AND EXCLUDED.ciphertext128_format IS NOT NULL
+            "#,
+            self.host_chain_id.as_i64(),
+            &self.key_id_gw,
+            &self.handle,
+            &self.producer_block_hash,
+            &self.block_hash,
+            self.block_number,
+            self.transaction_id.clone(),
+            ct128_format,
+        )
+        .execute(db_txn.as_mut())
+        .await?;
 
         Ok(true)
     }
@@ -415,43 +448,160 @@ impl HandleItem {
         ct64_digest: Vec<u8>,
         ct128_digest: Vec<u8>,
         s3_format_version: i16,
-    ) -> Result<(), ExecutionError> {
+    ) -> Result<bool, ExecutionError> {
         let format: i16 = self.ct128.format().into();
 
         let result = sqlx::query!(
-            "UPDATE ciphertext_digest
+            r#"
+            WITH canonical_target AS (
+                SELECT d2.producer_block_hash,
+                       d2.block_hash
+                  FROM ciphertext_digest_branch d2
+                  LEFT JOIN host_chain_blocks_valid producer
+                    ON producer.chain_id = d2.host_chain_id
+                   AND producer.block_hash = d2.producer_block_hash
+                   AND d2.producer_block_hash <> ''::BYTEA
+                  LEFT JOIN host_chain_blocks_valid event_block
+                    ON event_block.chain_id = d2.host_chain_id
+                   AND event_block.block_hash = d2.block_hash
+                   AND d2.block_hash <> ''::BYTEA
+                 WHERE d2.host_chain_id = $5
+                   AND d2.handle = $6
+                   AND (
+                        d2.producer_block_hash = ''::BYTEA
+                        OR COALESCE(producer.block_status, 'pending') <> 'orphaned'
+                   )
+                   AND (
+                        d2.block_hash = ''::BYTEA
+                        OR COALESCE(event_block.block_status, 'pending') <> 'orphaned'
+                   )
+                 ORDER BY COALESCE(d2.block_number, -1) DESC,
+                          CASE WHEN d2.producer_block_hash = ''::BYTEA THEN 1 ELSE 0 END ASC,
+                          d2.created_at DESC
+                 LIMIT 1
+            )
+            UPDATE ciphertext_digest_branch d
             SET ciphertext = $1,
                 ciphertext128 = $2,
                 ciphertext128_format = $3,
-                s3_format_version = $4
-            WHERE handle = $5",
+                s3_format_version = $4,
+                s3_publication_verified_at = NOW(),
+                s3_publication_verified_digest = $1,
+                s3_publication_verified_producer_block_hash = d.producer_block_hash
+            WHERE d.host_chain_id = $5
+              AND d.handle = $6
+              AND d.producer_block_hash = $7
+              AND d.block_hash = $8
+              AND (
+                    (
+                        $2 <> decode(repeat('00', 32), 'hex')
+                        AND EXISTS (
+                            SELECT 1
+                            FROM pbs_computations_branch p
+                            WHERE p.host_chain_id = d.host_chain_id
+                              AND p.handle = d.handle
+                              AND p.producer_block_hash = d.producer_block_hash
+                              AND p.block_hash = d.block_hash
+                              AND p.is_completed = TRUE
+                        )
+                    )
+                    OR (
+                        d.producer_block_hash = ''::BYTEA
+                        AND d.block_hash = ''::BYTEA
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM pbs_computations_branch p
+                            WHERE p.host_chain_id = d.host_chain_id
+                              AND p.handle = d.handle
+                              AND p.producer_block_hash = d.producer_block_hash
+                              AND p.block_hash = d.block_hash
+                        )
+                    )
+              )
+              AND (
+                    d.producer_block_hash = ''::BYTEA
+                    OR NOT EXISTS (
+                        SELECT 1
+                        FROM host_chain_blocks_valid b
+                        WHERE b.chain_id = d.host_chain_id
+                          AND b.block_hash = d.producer_block_hash
+                          AND b.block_status = 'orphaned'
+                    )
+              )
+              AND (
+                    d.block_hash = ''::BYTEA
+                    OR NOT EXISTS (
+                        SELECT 1
+                        FROM host_chain_blocks_valid b
+                        WHERE b.chain_id = d.host_chain_id
+                          AND b.block_hash = d.block_hash
+                          AND b.block_status = 'orphaned'
+                    )
+              )
+              AND (
+                    d.block_number IS NULL
+                    OR d.block_number > COALESCE(
+                        (
+                            SELECT settled_height
+                            FROM coprocessor_settlement s
+                            WHERE s.chain_id = d.host_chain_id
+                        ),
+                        -1
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM canonical_target t
+                        WHERE t.producer_block_hash = d.producer_block_hash
+                          AND t.block_hash = d.block_hash
+                    )
+              )
+            "#,
             &ct64_digest,
             &ct128_digest,
             format,
             s3_format_version,
+            self.host_chain_id.as_i64(),
             &self.handle,
+            &self.producer_block_hash,
+            &self.block_hash,
         )
         .execute(trx.as_mut())
         .await?;
 
         if result.rows_affected() == 0 {
-            // The digest row was deleted by reorg cleanup while the upload
-            // was in flight: the handle lived solely on an orphaned fork and
-            // its publication is cancelled. The uploaded S3 objects are
-            // unreferenced garbage, not a correctness problem.
-            warn!(
+            info!(
                 handle = %to_hex(&self.handle),
-                "ciphertext_digest row gone (reorg cleanup); publication cancelled"
+                producer_block_hash = %to_hex(&self.producer_block_hash),
+                block_hash = %to_hex(&self.block_hash),
+                "S3 upload completed but branch digest row is no longer publishable"
             );
-            return Ok(());
+            return Ok(false);
         }
         if result.rows_affected() != 1 {
             return Err(ExecutionError::InternalError(format!(
-                "expected to mark exactly one ciphertext_digest row as uploaded for handle {}, updated {}",
+                "expected to mark at most one ciphertext_digest_branch row as uploaded for handle {} producer {} block {}, updated {}",
                 to_hex(&self.handle),
+                to_hex(&self.producer_block_hash),
+                to_hex(&self.block_hash),
                 result.rows_affected(),
             )));
         }
+
+        sqlx::query!(
+            r#"
+            DELETE FROM s3_canonical_repair_queue
+             WHERE host_chain_id = $1
+               AND handle = $2
+               AND target_producer_block_hash = $3
+               AND target_block_hash = $4
+            "#,
+            self.host_chain_id.as_i64(),
+            &self.handle,
+            &self.producer_block_hash,
+            &self.block_hash,
+        )
+        .execute(trx.as_mut())
+        .await?;
 
         info!(
             "Mark ciphertexts as uploaded, handle: {}, ct64_digest: {}, ct128_digest: {}, format: {:?}, s3_format_version: {}",
@@ -462,7 +612,135 @@ impl HandleItem {
             s3_format_version,
         );
 
-        Ok(())
+        Ok(true)
+    }
+
+    pub(crate) async fn is_upload_publishable(
+        &self,
+        trx: &mut Transaction<'_, Postgres>,
+    ) -> Result<bool, ExecutionError> {
+        let publishable = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM ciphertext_digest_branch d
+                WHERE d.host_chain_id = $1
+                  AND d.handle = $2
+                  AND d.producer_block_hash = $3
+                  AND d.block_hash = $4
+                  AND (
+                        EXISTS (
+                            SELECT 1
+                            FROM pbs_computations_branch p
+                            WHERE p.host_chain_id = d.host_chain_id
+                              AND p.handle = d.handle
+                              AND p.producer_block_hash = d.producer_block_hash
+                              AND p.block_hash = d.block_hash
+                              AND p.is_completed = TRUE
+                        )
+                        OR (
+                            d.producer_block_hash = ''::BYTEA
+                            AND d.block_hash = ''::BYTEA
+                            AND NOT EXISTS (
+                                SELECT 1
+                                FROM pbs_computations_branch p
+                                WHERE p.host_chain_id = d.host_chain_id
+                                  AND p.handle = d.handle
+                                  AND p.producer_block_hash = d.producer_block_hash
+                                  AND p.block_hash = d.block_hash
+                            )
+                        )
+                  )
+                  AND (
+                        d.producer_block_hash = ''::BYTEA
+                        OR NOT EXISTS (
+                            SELECT 1
+                            FROM host_chain_blocks_valid b
+                            WHERE b.chain_id = d.host_chain_id
+                              AND b.block_hash = d.producer_block_hash
+                              AND b.block_status = 'orphaned'
+                        )
+                  )
+                  AND (
+                        d.block_hash = ''::BYTEA
+                        OR NOT EXISTS (
+                            SELECT 1
+                            FROM host_chain_blocks_valid b
+                            WHERE b.chain_id = d.host_chain_id
+                              AND b.block_hash = d.block_hash
+                              AND b.block_status = 'orphaned'
+                        )
+                  )
+            )
+            "#,
+        )
+        .bind(self.host_chain_id.as_i64())
+        .bind(&self.handle)
+        .bind(&self.producer_block_hash)
+        .bind(&self.block_hash)
+        .fetch_one(trx.as_mut())
+        .await?;
+
+        if !publishable {
+            return Ok(false);
+        }
+
+        if let Some(block_number) = self.block_number {
+            let settled_height = read_settled_height(trx, self.host_chain_id.as_i64()).await?;
+            if block_number <= settled_height {
+                let Some(target) = resolve_s3_canonical_publication_target(
+                    trx,
+                    self.host_chain_id.as_i64(),
+                    &self.handle,
+                )
+                .await?
+                else {
+                    return Ok(false);
+                };
+
+                return Ok(target.producer_block_hash == self.producer_block_hash
+                    && target.block_hash == self.block_hash);
+            }
+        }
+
+        Ok(publishable)
+    }
+
+    pub(crate) async fn enqueue_canonical_repair(
+        &self,
+        trx: &mut Transaction<'_, Postgres>,
+        reason: &str,
+    ) -> Result<bool, ExecutionError> {
+        Ok(
+            enqueue_s3_canonical_repair(trx, self.host_chain_id.as_i64(), &self.handle, reason)
+                .await?,
+        )
+    }
+
+    pub(crate) async fn is_canonical_repair_task(
+        &self,
+        trx: &mut Transaction<'_, Postgres>,
+    ) -> Result<bool, ExecutionError> {
+        let is_repair = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM s3_canonical_repair_queue
+                WHERE host_chain_id = $1
+                  AND handle = $2
+                  AND target_producer_block_hash = $3
+                  AND target_block_hash = $4
+            )
+            "#,
+        )
+        .bind(self.host_chain_id.as_i64())
+        .bind(&self.handle)
+        .bind(&self.producer_block_hash)
+        .bind(&self.block_hash)
+        .fetch_one(trx.as_mut())
+        .await?;
+
+        Ok(is_repair)
     }
 }
 
@@ -560,6 +838,7 @@ pub async fn run_uploader_loop(
     mode: Arc<StackMode>,
     token: CancellationToken,
     signer: CoproSigner,
+    keys_cache: KeySetCache,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Park until uploads are enabled. A blue (live) worker has `gcs_mode == false`
     // and proceeds immediately; a green worker parks for the whole dry-run
@@ -584,6 +863,8 @@ pub async fn run_uploader_loop(
         tx.clone(),
         client.clone(),
         is_ready.clone(),
+        signer.clone(),
+        keys_cache,
     )
     .await?;
 
@@ -641,6 +922,18 @@ pub async fn run_all(
     parent_token: CancellationToken,
     events_tx: InternalEvents,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let activation_block = match std::env::var("FHEVM_BRANCH_ACTIVATION_BLOCK") {
+        Ok(value) => value.parse::<u64>().map_err(|err| {
+            anyhow::anyhow!("Invalid FHEVM_BRANCH_ACTIVATION_BLOCK value {value:?}: {err}")
+        })?,
+        Err(std::env::VarError::NotPresent) => 0,
+        Err(err) => {
+            return Err(anyhow::anyhow!("Invalid FHEVM_BRANCH_ACTIVATION_BLOCK: {err}").into())
+        }
+    };
+    validate_branch_rollout_bounds(activation_block, config.db.branch_cutover_block)
+        .map_err(anyhow::Error::msg)?;
+
     // Queue of tasks to upload ciphertexts is 10 times the number of concurrent uploads
     // to avoid blocking the worker
     // and to allow for some burst of uploads
@@ -778,6 +1071,7 @@ pub async fn run_all(
         )
         .await?,
     );
+    let keys_cache = service.keys_cache();
 
     // Start health check BEFORE drift_revert::init so the orchestrator sees us as alive.
     let healthz = healthz_server::HttpServer::new(
@@ -882,6 +1176,7 @@ pub async fn run_all(
             uploader_mode,
             uploader_token,
             signer,
+            keys_cache,
         )
         .await
     });

@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                a.handle AS \"handle!\",\n                a.transaction_id,\n                a.host_chain_id AS \"host_chain_id!\",\n                a.producer_block_hash AS \"producer_block_hash!\",\n                a.block_hash AS \"block_hash!\",\n                a.block_number\n            FROM pbs_computations_branch a\n            WHERE a.is_completed = FALSE\n              AND a.is_error = FALSE\n              AND (\n                a.producer_block_hash = ''::BYTEA\n                OR a.block_number IS NULL\n                OR a.block_number > COALESCE(\n                    (\n                      SELECT s.settled_height\n                      FROM coprocessor_settlement s\n                      WHERE s.chain_id = a.host_chain_id\n                    ),\n                    -1\n                )\n              )\n              AND (\n                a.producer_block_hash = ''::BYTEA\n                OR NOT EXISTS (\n                    SELECT 1\n                    FROM host_chain_blocks_valid producer\n                    WHERE producer.chain_id = a.host_chain_id\n                      AND producer.block_hash = a.producer_block_hash\n                      AND producer.block_status = 'orphaned'\n                )\n              )\n              AND (\n                a.block_hash = ''::BYTEA\n                OR NOT EXISTS (\n                    SELECT 1\n                    FROM host_chain_blocks_valid event_block\n                    WHERE event_block.chain_id = a.host_chain_id\n                      AND event_block.block_hash = a.block_hash\n                      AND event_block.block_status = 'orphaned'\n                )\n              )\n              AND EXISTS (\n                  SELECT 1 FROM ciphertexts_branch c\n                   WHERE c.handle = a.handle\n                     AND c.producer_block_hash = a.producer_block_hash\n                     AND c.ciphertext IS NOT NULL\n                     AND c.ciphertext_version = $2\n              )\n            ORDER BY\n                CASE WHEN $3::BOOLEAN THEN a.created_at END ASC,\n                CASE WHEN NOT $3::BOOLEAN THEN a.created_at END DESC\n            FOR UPDATE OF a SKIP LOCKED\n            LIMIT $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "host_chain_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "producer_block_hash!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "block_hash!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "block_number",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int2",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "1e617d1b216bcc5f1dcbe5effda2410c0bd785ab9df47b910c13d91f4837c1d7"
+}

@@ -4,6 +4,9 @@ use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
+use fhevm_engine_common::branch::{
+    enqueue_s3_canonical_repairs, validate_branch_rollout_bounds,
+};
 use fhevm_engine_common::bridge::{chain_id_from_handle, derive_dst_handle};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::{
@@ -20,7 +23,7 @@ use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Acquire;
 use sqlx::Error as SqlxError;
-use sqlx::{PgPool, Postgres};
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use std::collections::HashSet;
 use std::ops::DerefMut;
 use std::sync::Arc;
@@ -28,6 +31,9 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
+use tokio::time::{interval, MissedTickBehavior};
+use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
@@ -47,6 +53,17 @@ pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
 pub type ChainHash = TransactionHash;
 
+const BRANCH_CLEANUP_BATCH_SIZE: i64 = 10;
+const BRANCH_CLEANUP_MAX_ATTEMPTS: i32 = 10;
+const BRANCH_CLEANUP_RECHECK_INTERVAL: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BranchCleanupOutcome {
+    Processed,
+    NoJob,
+    WritesDisabled,
+}
+
 static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
         register_int_counter_vec!(
@@ -61,7 +78,7 @@ static SLOW_LANE_MARKED_CHAINS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
 /// ACL events whose handle could not be resolved to a ciphertext-producer
 /// block on the current branch (nor to branchless/legacy state). These are
 /// keyed branchless rather than guessing the ACL-event block; a non-zero rate
-/// indicates branch metadata is missing or inconsistent, and should alert.
+/// indicates branch metadata is missing or an inconsistency, and should alert.
 static UNRESOLVED_PRODUCER_BLOCK_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     || {
         register_int_counter_vec!(
@@ -73,12 +90,22 @@ static UNRESOLVED_PRODUCER_BLOCK_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(
     },
 );
 
+static BRANCH_CLEANUP_QUARANTINED_TOTAL: LazyLock<IntCounterVec> =
+    LazyLock::new(|| {
+        register_int_counter_vec!(
+            "host_listener_branch_cleanup_quarantined_total",
+            "Async orphan branch cleanup jobs quarantined after bounded retries",
+            &["chain_id"]
+        )
+        .expect("host-listener branch-cleanup quarantine metric must register")
+    });
+
 #[derive(Clone, Debug)]
 pub struct Chain {
     pub hash: ChainHash,
     pub dependencies: Vec<ChainHash>,
-    // Ingest-only metadata for dependency links split by no_fork grouping.
-    // Not used by scheduler execution ordering.
+    // Ingest-only metadata for dependency links outside the same-block
+    // component. Not used by scheduler execution ordering.
     pub split_dependencies: Vec<ChainHash>,
     pub dependents: Vec<ChainHash>,
     pub allowed_handle: Vec<Handle>,
@@ -100,8 +127,10 @@ const ANCESTRY_WALK_DEPTH: i64 = 1024;
 /// since reorgs cannot be deeper than finality.
 const BRANCH_ACTIVATION_STRADDLE_WINDOW: i64 = 128;
 /// Finalized `host_chain_blocks_valid` rows older than this many blocks
-/// below the finalized head are eligible for pruning (when unreferenced).
-const BLOCKS_VALID_RETENTION: i64 = 10_000;
+/// below the finalized head are eligible for pruning (when unreferenced and
+/// settled). Also bounds how far below its anchor a poller restart replays
+/// to reach the settlement frontier (`MAX_SETTLEMENT_REPLAY_BLOCKS`).
+pub(crate) const BLOCKS_VALID_RETENTION: i64 = 10_000;
 /// Upper bound of rows removed per pruning pass; keeps each pass short.
 const BLOCKS_VALID_PRUNE_BATCH: i64 = 1_000;
 const SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE: i64 = 1_907_000_000;
@@ -111,6 +140,46 @@ const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 
 // short wait in case the database had a short issue
 const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
+
+/// Host-chain block number at which the block-scoped (wave-2) pipeline takes
+/// over. Blocks at or above it are no longer mirrored into the legacy work
+/// tables, so the legacy pipeline drains and idles. Defaults to "never"
+/// (always dual-write) when unset; operators set the agreed cutover block on
+/// all services when rolling out wave 2.
+fn configured_branch_cutover_block() -> Option<i64> {
+    const ENV_VAR: &str = "FHEVM_BRANCH_CUTOVER_BLOCK";
+    match std::env::var(ENV_VAR) {
+        Ok(value) => match value.parse::<i64>() {
+            Ok(block) => Some(block),
+            Err(err) => {
+                error!(
+                    env_var = ENV_VAR,
+                    value = %value,
+                    error = %err,
+                    "Invalid branch cutover block configuration"
+                );
+                std::process::exit(1);
+            }
+        },
+        Err(std::env::VarError::NotPresent) => None,
+        Err(err) => {
+            error!(
+                env_var = ENV_VAR,
+                error = %err,
+                "Invalid branch cutover block configuration"
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+fn legacy_mirror_cutoff() -> i64 {
+    configured_branch_cutover_block().unwrap_or(i64::MAX)
+}
+
+pub(crate) fn settlement_cutover_block() -> i64 {
+    configured_branch_cutover_block().unwrap_or(0)
+}
 
 struct ComputationBranchRow<'a> {
     chain_id: i64,
@@ -161,31 +230,6 @@ async fn insert_computation_branch_row(
         row.chain_id,
         row.producer_block.number as i64,
         row.producer_block.hash,
-    )
-    .execute(tx.deref_mut())
-    .await?;
-    Ok(done.rows_affected() > 0)
-}
-
-async fn insert_pbs_computation_branch_row(
-    tx: &mut Transaction<'_>,
-    chain_id: i64,
-    handle: &[u8],
-    transaction_id: Option<Vec<u8>>,
-    block_number: i64,
-    block_hash: &[u8],
-    producer_block_hash: &[u8],
-) -> Result<bool, SqlxError> {
-    let done = sqlx::query!(
-        "INSERT INTO pbs_computations_branch(handle, transaction_id, host_chain_id, block_number, block_hash, producer_block_hash)
-         VALUES($1, $2, $3, $4, $5, $6)
-         ON CONFLICT DO NOTHING;",
-        handle,
-        transaction_id,
-        chain_id,
-        block_number,
-        block_hash,
-        producer_block_hash,
     )
     .execute(tx.deref_mut())
     .await?;
@@ -339,6 +383,255 @@ pub struct LogTfhe {
     pub log_index: Option<u64>,
 }
 
+struct NormalizedTfheComputation {
+    output_handle: Vec<u8>,
+    dependencies: Vec<Vec<u8>>,
+    fhe_operation: FheOperation,
+    is_scalar: bool,
+}
+
+fn normalize_tfhe_computation(
+    log: &LogTfhe,
+) -> Option<NormalizedTfheComputation> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+
+    let operation = event_to_op_int(&log.event);
+    let scalar = |flag: &FixedBytes<1>| !flag.is_zero();
+    let ty = |to_type: &ToType| vec![*to_type];
+    let as_bytes = |value: &ClearConst| value.to_be_bytes_vec();
+    let handles = |values: &[&Handle]| {
+        values.iter().map(|value| value.to_vec()).collect()
+    };
+
+    let (result, dependencies, is_scalar) = match &log.event.data {
+        E::Cast(C::Cast {
+            ct, toType, result, ..
+        }) => (result, vec![ct.to_vec(), ty(toType)], true),
+        E::FheAdd(C::FheAdd {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheBitAnd(C::FheBitAnd {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheBitOr(C::FheBitOr {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheBitXor(C::FheBitXor {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheDiv(C::FheDiv {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheMax(C::FheMax {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheMin(C::FheMin {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheMul(C::FheMul {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheRem(C::FheRem {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheRotl(C::FheRotl {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheRotr(C::FheRotr {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheShl(C::FheShl {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheShr(C::FheShr {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheSub(C::FheSub {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheEq(C::FheEq {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheGe(C::FheGe {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheGt(C::FheGt {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheLe(C::FheLe {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheLt(C::FheLt {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        })
+        | E::FheNe(C::FheNe {
+            lhs,
+            rhs,
+            scalarByte,
+            result,
+            ..
+        }) => (result, handles(&[lhs, rhs]), scalar(scalarByte)),
+        E::FheIfThenElse(C::FheIfThenElse {
+            control,
+            ifTrue,
+            ifFalse,
+            result,
+            ..
+        }) => (result, handles(&[control, ifTrue, ifFalse]), false),
+        E::FheNeg(C::FheNeg { ct, result, .. })
+        | E::FheNot(C::FheNot { ct, result, .. }) => {
+            (result, handles(&[ct]), false)
+        }
+        E::FheRand(C::FheRand {
+            randType,
+            seed,
+            result,
+            ..
+        }) => (result, vec![seed.to_vec(), ty(randType)], true),
+        E::FheRandBounded(C::FheRandBounded {
+            upperBound,
+            randType,
+            seed,
+            result,
+            ..
+        }) => (
+            result,
+            vec![seed.to_vec(), as_bytes(upperBound), ty(randType)],
+            true,
+        ),
+        E::TrivialEncrypt(C::TrivialEncrypt {
+            pt, toType, result, ..
+        }) => (result, vec![as_bytes(pt), ty(toType)], true),
+        E::FheSum(C::FheSum { values, result, .. }) => (
+            result,
+            values.iter().map(|value| value.to_vec()).collect(),
+            false,
+        ),
+        E::FheIsIn(C::FheIsIn {
+            value,
+            values,
+            result,
+            ..
+        }) => {
+            let mut dependencies = Vec::with_capacity(values.len() + 1);
+            dependencies.push(value.to_vec());
+            dependencies.extend(values.iter().map(|item| item.to_vec()));
+            (result, dependencies, false)
+        }
+        E::FheMulDiv(C::FheMulDiv {
+            factor1,
+            factor2,
+            divisor,
+            scalarByte,
+            result,
+            ..
+        }) => (
+            result,
+            vec![factor1.to_vec(), factor2.to_vec(), divisor.to_vec()],
+            fhe_mul_div_factor2_is_scalar(scalarByte),
+        ),
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => return None,
+    };
+
+    Some(NormalizedTfheComputation {
+        output_handle: result.to_vec(),
+        dependencies,
+        fhe_operation: operation,
+        is_scalar,
+    })
+}
+
+struct BatchComputationRow {
+    index: usize,
+    output_handle: Vec<u8>,
+    dependencies: Vec<Vec<u8>>,
+    fhe_operation: i16,
+    is_scalar: bool,
+    dependence_chain_id: Vec<u8>,
+    transaction_id: Option<Vec<u8>>,
+    is_allowed: bool,
+    schedule_order: PrimitiveDateTime,
+    block_number: u64,
+    block_hash: Vec<u8>,
+}
+
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
 
 fn parse_branch_activation_block() -> u64 {
@@ -402,6 +695,13 @@ impl Database {
                 .into(),
             )));
         let branch_activation_block = parse_branch_activation_block();
+        if let Some(cutover_block) = configured_branch_cutover_block() {
+            validate_branch_rollout_bounds(
+                branch_activation_block,
+                cutover_block,
+            )
+            .map_err(anyhow::Error::msg)?;
+        }
         let db = Database {
             url: url.clone(),
             chain_id,
@@ -412,7 +712,7 @@ impl Database {
             gcs_mode,
             branch_activation_block,
         };
-        // Wave-1 deploy safety: a binary may start before the branch-context
+        // Wave-2 deploy safety: a binary may start before the branch-context
         // migration has applied (e.g. a rolling deploy where the db-migration
         // Job is still running). Wait for the branch schema rather than
         // crash-looping on `*_branch` / `parent_hash` writes. Returns instantly
@@ -422,8 +722,7 @@ impl Database {
         Ok(db)
     }
 
-    /// Block until the wave-1 branch-context schema is present (the `*_branch`
-    /// tables, `coprocessor_settlement`, and `host_chain_blocks_valid.parent_hash`).
+    /// Block until the wave-2 branch-context schema is present.
     /// This degrades a pre-migration start to a bounded wait instead of a
     /// crash-loop. Bounded so a genuinely-absent migration surfaces as an error
     /// (→ restart) rather than hanging forever.
@@ -440,13 +739,82 @@ impl Database {
                 r#"
                 SELECT (
                     to_regclass('public.computations_branch') IS NOT NULL
+                    AND to_regclass('public.pbs_computations_branch') IS NOT NULL
+                    AND to_regclass('public.allowed_handles_branch') IS NOT NULL
                     AND to_regclass('public.ciphertexts_branch') IS NOT NULL
+                    AND to_regclass('public.ciphertexts128_branch') IS NOT NULL
+                    AND to_regclass('public.ciphertext_digest_branch') IS NOT NULL
                     AND to_regclass('public.coprocessor_settlement') IS NOT NULL
+                    AND to_regclass('public.s3_canonical_repair_queue') IS NOT NULL
+                    AND to_regclass('public.branch_cleanup_jobs') IS NOT NULL
+                    AND to_regclass('public.bridge_handle_events') IS NOT NULL
+                    AND to_regclass('public.handle_bridged_events') IS NOT NULL
+                    AND to_regclass('public.fallback_granted_events') IS NOT NULL
                     AND EXISTS (
                         SELECT 1
                         FROM information_schema.columns
                         WHERE table_name = 'host_chain_blocks_valid'
                           AND column_name = 'parent_hash'
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'ciphertext_digest_branch'
+                          AND column_name = 's3_publication_verified_at'
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'ciphertext_digest_branch'
+                          AND column_name = 'ciphertext128_format'
+                          AND is_nullable = 'YES'
+                    )
+                    AND NOT EXISTS (
+                        SELECT required.column_name
+                        FROM (VALUES
+                            ('error_root_output_handle'),
+                            ('error_root_transaction_id'),
+                            ('error_root_producer_block_hash')
+                        ) AS required(column_name)
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns actual
+                            WHERE actual.table_schema = 'public'
+                              AND actual.table_name = 'computations_branch'
+                              AND actual.column_name = required.column_name
+                        )
+                    )
+                    AND NOT EXISTS (
+                        SELECT required.column_name
+                        FROM (VALUES
+                            ('is_error'),
+                            ('error_message'),
+                            ('error_at')
+                        ) AS required(column_name)
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns actual
+                            WHERE actual.table_schema = 'public'
+                              AND actual.table_name = 'pbs_computations_branch'
+                              AND actual.column_name = required.column_name
+                        )
+                    )
+                    AND NOT EXISTS (
+                        SELECT required.column_name
+                        FROM (VALUES
+                            ('status'),
+                            ('last_error'),
+                            ('last_error_at')
+                        ) AS required(column_name)
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns actual
+                            WHERE actual.table_schema = 'public'
+                              AND actual.table_name = 's3_canonical_repair_queue'
+                              AND actual.column_name = required.column_name
+                        )
                     )
                 ) AS "ready!"
                 "#,
@@ -457,18 +825,18 @@ impl Database {
                 if attempt > 0 {
                     info!(
                         attempt,
-                        "Branch-context schema present; proceeding."
+                        "Branch-context wave2 schema present; proceeding."
                     );
                 }
                 return Ok(());
             }
             warn!(
                 attempt,
-                "Branch-context (wave1) schema not yet present; waiting before ingesting..."
+                "Branch-context wave2 schema not yet present; waiting before ingesting..."
             );
         }
         anyhow::bail!(
-            "branch-context (wave1) schema not present after waiting; \
+            "branch-context wave2 schema not present after waiting; \
              is the db-migration job complete?"
         );
     }
@@ -530,7 +898,6 @@ impl Database {
         }
 
         tx.commit().await?;
-
         Ok(total_promoted)
     }
 
@@ -644,69 +1011,157 @@ impl Database {
         drop(old_refresh_handle);
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn insert_computation_bytes(
+    /// Insert all computation events from one listener batch with one
+    /// statement per target table (per bounded SQL chunk). The returned flags
+    /// retain input ordering for slow-lane accounting and catch-up logging.
+    pub async fn insert_tfhe_events_batch(
         &self,
         tx: &mut Transaction<'_>,
-        result: &Handle,
-        dependencies_handles: &[&Handle],
-        dependencies_bytes: &[Vec<u8>], /* always added after
-                                         * dependencies_handles */
-        fhe_operation: FheOperation,
-        scalar_byte: &FixedBytes<1>,
-        log: &LogTfhe,
-    ) -> Result<bool, SqlxError> {
-        let dependencies_handles = dependencies_handles
-            .iter()
-            .map(|d| d.to_vec())
-            .collect::<Vec<_>>();
-        let dependencies = [&dependencies_handles, dependencies_bytes].concat();
-        self.insert_computation_inner(
-            tx,
-            result,
-            dependencies,
-            fhe_operation,
-            scalar_byte,
-            log,
-        )
-        .await
-    }
+        logs: &[LogTfhe],
+    ) -> Result<Vec<bool>, SqlxError> {
+        const SQL_CHUNK_ROWS: usize = 1_000;
 
-    #[allow(clippy::too_many_arguments)]
-    async fn insert_computation(
-        &self,
-        tx: &mut Transaction<'_>,
-        result: &Handle,
-        dependencies: &[&Handle],
-        fhe_operation: FheOperation,
-        scalar_byte: &FixedBytes<1>,
-        log: &LogTfhe,
-    ) -> Result<bool, SqlxError> {
-        let dependencies =
-            dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
-        self.insert_computation_inner(
-            tx,
-            result,
-            dependencies,
-            fhe_operation,
-            scalar_byte,
-            log,
-        )
-        .await
+        let mut transaction_begins = HashSet::new();
+        let mut rows = Vec::with_capacity(logs.len());
+        for (index, log) in logs.iter().enumerate() {
+            let Some(normalized) = normalize_tfhe_computation(log) else {
+                continue;
+            };
+            if let Some(transaction_id) =
+                log.transaction_hash.map(|hash| hash.to_vec())
+            {
+                transaction_begins.insert((transaction_id, log.block_number));
+            }
+            rows.push(BatchComputationRow {
+                index,
+                output_handle: normalized.output_handle,
+                dependencies: normalized.dependencies,
+                fhe_operation: normalized.fhe_operation as i16,
+                is_scalar: normalized.is_scalar,
+                dependence_chain_id: log.dependence_chain.to_vec(),
+                transaction_id: log.transaction_hash.map(|hash| hash.to_vec()),
+                is_allowed: log.is_allowed,
+                schedule_order: log.block_timestamp.saturating_add(
+                    TimeDuration::microseconds(log.tx_depth_size as i64),
+                ),
+                block_number: log.block_number,
+                block_hash: log.block_hash.to_vec(),
+            });
+        }
+
+        for (transaction_id, block_number) in transaction_begins {
+            self.record_transaction_begin(&Some(transaction_id), block_number)
+                .await;
+        }
+
+        let branch_rows = rows
+            .iter()
+            .filter(|row| row.block_number >= self.branch_activation_block)
+            .collect::<Vec<_>>();
+        let legacy_cutoff = legacy_mirror_cutoff();
+        let legacy_rows = rows
+            .iter()
+            .filter(|row| {
+                row.block_number < self.branch_activation_block
+                    || (row.block_number as i64) < legacy_cutoff
+            })
+            .collect::<Vec<_>>();
+
+        let mut inserted_branch = HashSet::new();
+        // These two inserts intentionally use QueryBuilder. The row count is
+        // runtime-sized and `dependencies` is a ragged `bytea[]`; PostgreSQL
+        // multidimensional arrays must be rectangular, so a statically checked
+        // `UNNEST($n::bytea[][])` cannot represent this batch shape.
+        for chunk in branch_rows.chunks(SQL_CHUNK_ROWS) {
+            let mut query = QueryBuilder::<Postgres>::new(
+                "INSERT INTO computations_branch (output_handle, dependencies, fhe_operation, \
+                 is_scalar, dependence_chain_id, transaction_id, is_allowed, created_at, \
+                 schedule_order, is_completed, host_chain_id, block_number, producer_block_hash) ",
+            );
+            query.push_values(chunk.iter().copied(), |mut values, row| {
+                values
+                    .push_bind(&row.output_handle)
+                    .push_bind(&row.dependencies)
+                    .push_bind(row.fhe_operation)
+                    .push_bind(row.is_scalar)
+                    .push_bind(&row.dependence_chain_id)
+                    .push_bind(&row.transaction_id)
+                    .push_bind(row.is_allowed)
+                    .push("NOW()")
+                    .push_bind(row.schedule_order)
+                    .push_bind(!row.is_allowed)
+                    .push_bind(self.chain_id.as_i64())
+                    .push_bind(row.block_number as i64)
+                    .push_bind(&row.block_hash);
+            });
+            query.push(
+                " ON CONFLICT (output_handle, transaction_id, producer_block_hash) DO NOTHING \
+                 RETURNING output_handle, transaction_id, producer_block_hash",
+            );
+            let returned = query
+                .build_query_as::<(Vec<u8>, Option<Vec<u8>>, Vec<u8>)>()
+                .fetch_all(tx.deref_mut())
+                .await?;
+            inserted_branch.extend(returned);
+        }
+
+        let mut inserted_legacy = HashSet::new();
+        for chunk in legacy_rows.chunks(SQL_CHUNK_ROWS) {
+            let mut query = QueryBuilder::<Postgres>::new(
+                "INSERT INTO computations (output_handle, dependencies, fhe_operation, is_scalar, \
+                 dependence_chain_id, transaction_id, is_allowed, created_at, schedule_order, \
+                 is_completed, host_chain_id, block_number) ",
+            );
+            query.push_values(chunk.iter().copied(), |mut values, row| {
+                values
+                    .push_bind(&row.output_handle)
+                    .push_bind(&row.dependencies)
+                    .push_bind(row.fhe_operation)
+                    .push_bind(row.is_scalar)
+                    .push_bind(&row.dependence_chain_id)
+                    .push_bind(&row.transaction_id)
+                    .push_bind(row.is_allowed)
+                    .push("NOW()")
+                    .push_bind(row.schedule_order)
+                    .push_bind(!row.is_allowed)
+                    .push_bind(self.chain_id.as_i64())
+                    .push_bind(row.block_number as i64);
+            });
+            query.push(
+                " ON CONFLICT (output_handle, transaction_id) DO NOTHING \
+                 RETURNING output_handle, transaction_id",
+            );
+            let returned = query
+                .build_query_as::<(Vec<u8>, Option<Vec<u8>>)>()
+                .fetch_all(tx.deref_mut())
+                .await?;
+            inserted_legacy.extend(returned);
+        }
+
+        let mut inserted = vec![false; logs.len()];
+        for row in rows {
+            let branch_inserted = inserted_branch.remove(&(
+                row.output_handle.clone(),
+                row.transaction_id.clone(),
+                row.block_hash,
+            ));
+            let legacy_inserted = inserted_legacy
+                .remove(&(row.output_handle, row.transaction_id));
+            inserted[row.index] = branch_inserted || legacy_inserted;
+        }
+        Ok(inserted)
     }
 
     #[allow(clippy::too_many_arguments)]
     async fn insert_computation_inner(
         &self,
         tx: &mut Transaction<'_>,
-        result: &Handle,
+        output_handle: &[u8],
         dependencies: Vec<Vec<u8>>,
         fhe_operation: FheOperation,
-        scalar_byte: &FixedBytes<1>,
+        is_scalar: bool,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
-        let is_scalar = !scalar_byte.is_zero();
-        let output_handle = result.to_vec();
         // Below the fleet-common activation height only legacy state is
         // written: per-node dual-write start times would otherwise key branch
         // rows divergently across operators during a rolling upgrade.
@@ -714,7 +1169,7 @@ impl Database {
             return self
                 .insert_computation_legacy_row(
                     tx,
-                    &output_handle,
+                    output_handle,
                     &dependencies,
                     fhe_operation,
                     is_scalar,
@@ -729,7 +1184,7 @@ impl Database {
             tx,
             ComputationBranchRow {
                 chain_id: self.chain_id.as_i64(),
-                output_handle: &output_handle,
+                output_handle,
                 dependencies: &dependencies,
                 fhe_operation: fhe_operation as i16,
                 is_scalar,
@@ -746,13 +1201,16 @@ impl Database {
             },
         )
         .await?;
-        // Wave-1 dual-write: the legacy pipeline still executes from the
-        // legacy tables, so every branch row is mirrored there until the
-        // block-scoped readers take over in wave 2.
+        // Dual-write below the cutover: keep feeding the legacy pipeline while
+        // it drains pre-cutover work. Blocks at or above the cutover belong to
+        // the block-scoped pipeline only.
+        if (log.block_number as i64) >= legacy_mirror_cutoff() {
+            return Ok(inserted);
+        }
         let legacy_inserted = self
             .insert_computation_legacy_row(
                 tx,
-                &output_handle,
+                output_handle,
                 &dependencies,
                 fhe_operation,
                 is_scalar,
@@ -814,116 +1272,34 @@ impl Database {
             .map(|result| result.rows_affected() > 0)
     }
 
-    #[rustfmt::skip]
     #[tracing::instrument(name = "handle_tfhe_event", skip_all, fields(txn_id = tracing::field::Empty))]
     pub async fn insert_tfhe_event(
         &self,
         tx: &mut Transaction<'_>,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
-        use TfheContract as C;
-        use TfheContractEvents as E;
-        const HAS_SCALAR : FixedBytes::<1> = FixedBytes([1]); // if any dependency is a scalar.
-        const NO_SCALAR : FixedBytes::<1> = FixedBytes([0]); // if all dependencies are handles.
-        // ciphertext type
-        let event = &log.event;
-        let ty = |to_type: &ToType| vec![*to_type];
-        let as_bytes = |x: &ClearConst| x.to_be_bytes_vec();
-        let fhe_operation = event_to_op_int(event);
+        let Some(computation) = normalize_tfhe_computation(log) else {
+            return Ok(false);
+        };
         telemetry::record_short_hex_if_some(
             &tracing::Span::current(),
             "txn_id",
             log.transaction_hash.as_ref(),
         );
-        let insert_computation = |tx, result, dependencies, scalar_byte| {
-            self.insert_computation(tx, result, dependencies, fhe_operation, scalar_byte, log)
-        };
-        let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
-            self.insert_computation_bytes(tx, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
-        };
-
-        // Record the transaction if this is a computation event
-        if !matches!(
-            &event.data,
-            E::Initialized(_)
-                |  E::Upgraded(_)
-                |  E::VerifyInput(_)
-        ) {
-            self.record_transaction_begin(
-                &log.transaction_hash.map(|h| h.to_vec()),
-                log.block_number,
-            ).await;
-        };
-
-        match &event.data {
-            E::Cast(C::Cast {ct, toType, result, ..})
-            => insert_computation_bytes(tx, result, &[ct], &[ty(toType)], &HAS_SCALAR).await,
-
-            E::FheAdd(C::FheAdd {lhs, rhs, scalarByte, result, ..})
-            | E::FheBitAnd(C::FheBitAnd {lhs, rhs, scalarByte, result, ..})
-            | E::FheBitOr(C::FheBitOr {lhs, rhs, scalarByte, result, ..})
-            | E::FheBitXor(C::FheBitXor {lhs, rhs, scalarByte, result, ..} )
-            | E::FheDiv(C::FheDiv {lhs, rhs, scalarByte, result, ..})
-            | E::FheMax(C::FheMax {lhs, rhs, scalarByte, result, ..})
-            | E::FheMin(C::FheMin {lhs, rhs, scalarByte, result, ..})
-            | E::FheMul(C::FheMul {lhs, rhs, scalarByte, result, ..})
-            | E::FheRem(C::FheRem {lhs, rhs, scalarByte, result, ..})
-            | E::FheRotl(C::FheRotl {lhs, rhs, scalarByte, result, ..})
-            | E::FheRotr(C::FheRotr {lhs, rhs, scalarByte, result, ..})
-            | E::FheShl(C::FheShl {lhs, rhs, scalarByte, result, ..})
-            | E::FheShr(C::FheShr {lhs, rhs, scalarByte, result, ..})
-            | E::FheSub(C::FheSub {lhs, rhs, scalarByte, result, ..})
-            => insert_computation(tx, result, &[lhs, rhs], scalarByte).await,
-
-            E::FheIfThenElse(C::FheIfThenElse {control, ifTrue, ifFalse, result, ..})
-            => insert_computation(tx, result, &[control, ifTrue, ifFalse], &NO_SCALAR).await,
-
-            | E::FheEq(C::FheEq {lhs, rhs, scalarByte, result, ..})
-            | E::FheGe(C::FheGe {lhs, rhs, scalarByte, result, ..})
-            | E::FheGt(C::FheGt {lhs, rhs, scalarByte, result, ..})
-            | E::FheLe(C::FheLe {lhs, rhs, scalarByte, result, ..})
-            | E::FheLt(C::FheLt {lhs, rhs, scalarByte, result, ..})
-            | E::FheNe(C::FheNe {lhs, rhs, scalarByte, result, ..})
-            => insert_computation(tx, result, &[lhs, rhs], scalarByte).await,
-
-
-            E::FheNeg(C::FheNeg {ct, result, ..})
-            | E::FheNot(C::FheNot {ct, result, ..})
-            => insert_computation(tx, result, &[ct], &NO_SCALAR).await,
-
-            | E::FheRand(C::FheRand {randType, seed, result, ..})
-            => insert_computation_bytes(tx, result, &[], &[seed.to_vec(), ty(randType)], &HAS_SCALAR).await,
-
-            | E::FheRandBounded(C::FheRandBounded {upperBound, randType, seed, result, ..})
-            => insert_computation_bytes(tx, result, &[], &[seed.to_vec(), as_bytes(upperBound), ty(randType)], &HAS_SCALAR).await,
-
-            | E::TrivialEncrypt(C::TrivialEncrypt {pt, toType, result, ..})
-            => insert_computation_bytes(tx, result, &[], &[as_bytes(pt), ty(toType)], &HAS_SCALAR).await,
-
-            E::FheSum(C::FheSum { values, result, .. }) => {
-                let deps: Vec<&Handle> = values.iter().collect();
-                insert_computation(tx, result, &deps, &NO_SCALAR).await
-            }
-
-            E::FheIsIn(C::FheIsIn { value, values, result, .. }) => {
-                let mut deps: Vec<&Handle> = vec![value];
-                deps.extend(values.iter());
-                insert_computation(tx, result, &deps, &NO_SCALAR).await
-            }
-
-            E::FheMulDiv(C::FheMulDiv { factor1, factor2, divisor, scalarByte, result, .. }) => {
-                if fhe_mul_div_factor2_is_scalar(scalarByte) {
-                    insert_computation_bytes(tx, result, &[factor1], &[factor2.to_vec(), divisor.to_vec()], &HAS_SCALAR).await
-                } else {
-                    insert_computation_bytes(tx, result, &[factor1, factor2], &[divisor.to_vec()], &NO_SCALAR).await
-                }
-            }
-
-            | E::Initialized(_)
-            | E::Upgraded(_)
-            | E::VerifyInput(_)
-            => Ok(false),
-        }
+        self.record_transaction_begin(
+            &log.transaction_hash.map(|hash| hash.to_vec()),
+            log.block_number,
+        )
+        .await;
+        self.insert_computation_inner(
+            tx,
+            &computation.output_handle,
+            computation.dependencies,
+            computation.fhe_operation,
+            computation.is_scalar,
+            log,
+        )
+        .await
     }
 
     /// Finalizes `(block_number, block_hash)` and orphans its observed
@@ -947,6 +1323,14 @@ impl Database {
         // chain. Rows with the '' parent sentinel (recorded before parent
         // tracking, not yet repaired) pass vacuously: only positive evidence
         // of a mismatch blocks finalization.
+        // A mismatching finalized predecessor only vetoes the block when its
+        // ACTUAL parent is not itself stored and finalized: anchoring on the
+        // matching parent is exactly what this check exists for. A height can
+        // transiently carry two finalized rows (a refused pass inserts the
+        // canonical row as finalized without orphaning the stale sibling);
+        // letting the stale sibling veto correctly-anchored children would
+        // then refuse every ancestor above it forever, since orphaning only
+        // runs on success and the contradiction could never clear itself.
         let finalized_result = sqlx::query!(
             r#"
             UPDATE host_chain_blocks_valid
@@ -963,6 +1347,14 @@ impl Database {
                     AND prev.block_status = 'finalized'
                     AND host_chain_blocks_valid.parent_hash <> ''::BYTEA
                     AND host_chain_blocks_valid.parent_hash <> prev.block_hash
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM host_chain_blocks_valid par
+                        WHERE par.chain_id = $1
+                          AND par.block_number = $3 - 1
+                          AND par.block_status = 'finalized'
+                          AND par.block_hash = host_chain_blocks_valid.parent_hash
+                    )
               )
             "#,
             self.chain_id.as_i64(),
@@ -995,6 +1387,7 @@ impl Database {
             WHERE block_number = $2
               AND chain_id = $1
               AND block_hash <> $3
+              AND block_status <> 'orphaned'
             RETURNING block_hash
             "#,
             self.chain_id.as_i64(),
@@ -1055,6 +1448,307 @@ impl Database {
         Ok(Some(orphaned_hashes))
     }
 
+    pub async fn enqueue_orphaned_branch_cleanup(
+        &self,
+        tx: &mut Transaction<'_>,
+        finalized_block_number: i64,
+        finalized_block_hash: &[u8],
+        orphaned_block_hashes: &[Vec<u8>],
+    ) -> Result<(), SqlxError> {
+        if orphaned_block_hashes.is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query!(
+            r#"
+            INSERT INTO branch_cleanup_jobs (
+                chain_id,
+                finalized_block_hash,
+                finalized_block_number,
+                orphaned_block_hashes,
+                status
+            )
+            VALUES ($1, $2, $3, $4, 'pending')
+            ON CONFLICT (chain_id, finalized_block_hash) DO UPDATE
+            SET finalized_block_number = EXCLUDED.finalized_block_number,
+                orphaned_block_hashes = EXCLUDED.orphaned_block_hashes,
+                status = 'pending',
+                attempts = 0,
+                locked_at = NULL,
+                last_error = NULL,
+                updated_at = NOW()
+            "#,
+            self.chain_id.as_i64(),
+            finalized_block_hash,
+            finalized_block_number,
+            orphaned_block_hashes,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
+        Ok(())
+    }
+
+    pub fn spawn_orphaned_branch_cleanup_worker(
+        &self,
+        cancel_token: CancellationToken,
+    ) -> JoinHandle<()> {
+        let db = self.clone();
+        tokio::spawn(async move {
+            db.run_orphaned_branch_cleanup_worker(cancel_token).await;
+        })
+    }
+
+    async fn run_orphaned_branch_cleanup_worker(
+        self,
+        cancel_token: CancellationToken,
+    ) {
+        let mut ticker = interval(BRANCH_CLEANUP_RECHECK_INTERVAL);
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+        loop {
+            if let Err(err) = self.process_orphaned_branch_cleanup_jobs().await
+            {
+                error!(?err, "Failed to process orphaned branch cleanup jobs");
+            }
+
+            tokio::select! {
+                _ = cancel_token.cancelled() => break,
+                _ = ticker.tick() => {}
+            }
+        }
+    }
+
+    pub async fn process_orphaned_branch_cleanup_jobs(
+        &self,
+    ) -> Result<u64, SqlxError> {
+        let mut processed = 0_u64;
+
+        loop {
+            match self.process_orphaned_branch_cleanup_job().await? {
+                BranchCleanupOutcome::Processed => {
+                    processed += 1;
+                }
+                BranchCleanupOutcome::NoJob
+                | BranchCleanupOutcome::WritesDisabled => break,
+            }
+
+            if processed >= BRANCH_CLEANUP_BATCH_SIZE as u64 {
+                break;
+            }
+        }
+
+        Ok(processed)
+    }
+
+    async fn claim_orphaned_branch_cleanup_job(
+        &self,
+        tx: &mut Transaction<'_>,
+    ) -> Result<Option<(Vec<u8>, Vec<Vec<u8>>)>, SqlxError> {
+        let row = sqlx::query!(
+            r#"
+            WITH selected AS (
+                SELECT chain_id, finalized_block_hash
+                  FROM branch_cleanup_jobs
+                 WHERE chain_id = $1
+                   AND status = 'pending'
+                   AND (
+                        locked_at IS NULL
+                        OR locked_at < NOW() - INTERVAL '5 minutes'
+                   )
+                 ORDER BY finalized_block_number ASC, updated_at ASC
+                 FOR UPDATE SKIP LOCKED
+                 LIMIT 1
+            )
+            UPDATE branch_cleanup_jobs j
+               SET locked_at = NOW(),
+                   attempts = attempts + 1,
+                   updated_at = NOW()
+              FROM selected s
+             WHERE j.chain_id = s.chain_id
+               AND j.finalized_block_hash = s.finalized_block_hash
+             RETURNING
+                j.finalized_block_hash AS "finalized_block_hash!",
+                j.orphaned_block_hashes AS "orphaned_block_hashes!"
+            "#,
+            self.chain_id.as_i64(),
+        )
+        .fetch_optional(tx.deref_mut())
+        .await?;
+
+        Ok(
+            row.map(|row| {
+                (row.finalized_block_hash, row.orphaned_block_hashes)
+            }),
+        )
+    }
+
+    async fn process_orphaned_branch_cleanup_job(
+        &self,
+    ) -> Result<BranchCleanupOutcome, SqlxError> {
+        let Some(mut tx) = self.new_transaction().await? else {
+            // Cutover retired this stack while the guarded transaction was
+            // starting. No job was claimed, so stop this sweep without
+            // consuming an attempt or reporting work as completed.
+            return Ok(BranchCleanupOutcome::WritesDisabled);
+        };
+
+        let Some((finalized_block_hash, orphaned_hashes)) =
+            self.claim_orphaned_branch_cleanup_job(&mut tx).await?
+        else {
+            tx.rollback().await?;
+            return Ok(BranchCleanupOutcome::NoJob);
+        };
+
+        // Keep the claim locked in the outer guarded transaction. The
+        // savepoint lets us roll back a failed cleanup statement, record the
+        // bounded retry in the same transaction, and never expose an
+        // unguarded claim/error write during cutover.
+        let mut cleanup_tx = tx.begin().await?;
+        let cleanup_result = self
+            .complete_orphaned_branch_cleanup_job(
+                &mut cleanup_tx,
+                &finalized_block_hash,
+                &orphaned_hashes,
+            )
+            .await;
+
+        if let Err(err) = cleanup_result {
+            cleanup_tx.rollback().await?;
+            let recorded = self
+                .record_orphaned_branch_cleanup_error_in_tx(
+                    &mut tx,
+                    &finalized_block_hash,
+                    &err.to_string(),
+                )
+                .await?;
+            tx.commit().await?;
+            self.report_orphaned_branch_cleanup_error(
+                &finalized_block_hash,
+                &err.to_string(),
+                recorded,
+            );
+            return Err(err);
+        }
+
+        cleanup_tx.commit().await?;
+        tx.commit().await?;
+
+        info!(
+            finalized_block_hash = %to_hex(&finalized_block_hash),
+            orphaned_blocks = orphaned_hashes.len(),
+            "Completed orphaned branch cleanup job"
+        );
+
+        Ok(BranchCleanupOutcome::Processed)
+    }
+
+    async fn complete_orphaned_branch_cleanup_job(
+        &self,
+        tx: &mut Transaction<'_>,
+        finalized_block_hash: &[u8],
+        orphaned_hashes: &[Vec<u8>],
+    ) -> Result<(), SqlxError> {
+        self.cleanup_orphaned_branch_state(tx, orphaned_hashes)
+            .await?;
+        sqlx::query!(
+            r#"
+            UPDATE branch_cleanup_jobs
+               SET status = 'completed',
+                   locked_at = NULL,
+                   last_error = NULL,
+                   updated_at = NOW()
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+            "#,
+            self.chain_id.as_i64(),
+            finalized_block_hash,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn record_orphaned_branch_cleanup_error(
+        &self,
+        finalized_block_hash: &[u8],
+        error: &str,
+    ) -> Result<(), SqlxError> {
+        let Some(mut tx) = self.new_transaction().await? else {
+            return Ok(());
+        };
+        let recorded = self
+            .record_orphaned_branch_cleanup_error_in_tx(
+                &mut tx,
+                finalized_block_hash,
+                error,
+            )
+            .await?;
+        tx.commit().await?;
+        self.report_orphaned_branch_cleanup_error(
+            finalized_block_hash,
+            error,
+            recorded,
+        );
+        Ok(())
+    }
+
+    async fn record_orphaned_branch_cleanup_error_in_tx(
+        &self,
+        tx: &mut Transaction<'_>,
+        finalized_block_hash: &[u8],
+        error: &str,
+    ) -> Result<Option<(String, i32)>, SqlxError> {
+        let row = sqlx::query!(
+            r#"
+            UPDATE branch_cleanup_jobs
+               SET status = CASE
+                       WHEN attempts >= $4 THEN 'quarantined'
+                       ELSE 'pending'
+                   END,
+                   locked_at = NULL,
+                   last_error = $3,
+                   updated_at = NOW()
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+               AND status = 'pending'
+             RETURNING status AS "status!", attempts AS "attempts!"
+            "#,
+            self.chain_id.as_i64(),
+            finalized_block_hash,
+            error,
+            BRANCH_CLEANUP_MAX_ATTEMPTS,
+        )
+        .fetch_optional(tx.deref_mut())
+        .await?;
+
+        Ok(row.map(|row| (row.status, row.attempts)))
+    }
+
+    fn report_orphaned_branch_cleanup_error(
+        &self,
+        finalized_block_hash: &[u8],
+        cleanup_error: &str,
+        recorded: Option<(String, i32)>,
+    ) {
+        if let Some((status, attempts)) = recorded {
+            if status == "quarantined" {
+                let chain_id_label = self.chain_id.as_i64().to_string();
+                BRANCH_CLEANUP_QUARANTINED_TOTAL
+                    .with_label_values(&[chain_id_label.as_str()])
+                    .inc();
+                error!(
+                    chain_id = self.chain_id.as_i64(),
+                    finalized_block_hash = %to_hex(finalized_block_hash),
+                    attempts,
+                    cleanup_error,
+                    "Quarantined orphaned branch cleanup job after bounded retries"
+                );
+            }
+        }
+    }
+
     pub async fn cleanup_orphaned_branch_state(
         &self,
         tx: &mut Transaction<'_>,
@@ -1064,12 +1758,9 @@ impl Database {
             return Ok(());
         }
 
-        // This cleanup is part of the same finalization transaction that marks
-        // blocks orphaned. Once host_chain_blocks_valid exposes an orphaned
-        // branch, branch-scoped rows for that branch should no longer be
-        // visible to readers. If the listener is down, finalization does not
-        // advance; catchup reruns this idempotent cleanup when it later marks
-        // the branch orphaned.
+        // Finalization exposes the orphan marker and enqueues this durable,
+        // idempotent cleanup before committing. Readers exclude orphan-marked
+        // rows immediately, while settlement waits for this job to complete.
         //
         // Capture producer tuples whose ciphertext bytes were actually
         // produced on an orphaned branch. ACL/PBS rows can now be orphaned by
@@ -1177,6 +1868,22 @@ impl Database {
             .map(|row| row.event_type)
             .collect::<Vec<_>>();
 
+        let orphaned_digest_handles = sqlx::query_scalar::<_, Vec<u8>>(
+            r#"
+            SELECT DISTINCT handle
+             FROM ciphertext_digest_branch
+             WHERE host_chain_id = $1
+               AND (
+                    block_hash = ANY($2::bytea[])
+                    OR producer_block_hash = ANY($2::bytea[])
+               )
+            "#,
+        )
+        .bind(self.chain_id.as_i64())
+        .bind(orphaned_block_hashes)
+        .fetch_all(tx.deref_mut())
+        .await?;
+
         if !orphaned_ciphertext_pairs.is_empty() {
             // This removes only DB branch state and materialized DB bytes. S3
             // objects are not branch-addressed in the wave-1 path, so orphaned
@@ -1221,6 +1928,26 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
+        // The completed PBS row is the SNS worker's provenance witness for
+        // inserting a digest. Delete it first: an in-flight SNS transaction
+        // either commits its digest before this DELETE acquires the row lock,
+        // in which case the digest DELETE below removes it, or observes the
+        // missing witness and cannot resurrect the digest afterwards.
+        sqlx::query!(
+            r#"
+            DELETE FROM pbs_computations_branch
+             WHERE host_chain_id = $1
+               AND (
+                    block_hash = ANY($2::bytea[])
+                    OR producer_block_hash = ANY($2::bytea[])
+               )
+            "#,
+            self.chain_id.as_i64(),
+            orphaned_block_hashes as _,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
         sqlx::query!(
             r#"
             DELETE FROM ciphertext_digest_branch
@@ -1236,13 +1963,16 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
+        // Keep digest and queue lock ordering aligned with the SNS uploader:
+        // digest first, queue second. The survivor repair pass below repoints
+        // affected handles atomically before this cleanup transaction commits.
         sqlx::query!(
             r#"
-            DELETE FROM allowed_handles_branch
+            DELETE FROM s3_canonical_repair_queue
              WHERE host_chain_id = $1
                AND (
-                    block_hash = ANY($2::bytea[])
-                    OR producer_block_hash = ANY($2::bytea[])
+                    target_block_hash = ANY($2::bytea[])
+                    OR target_producer_block_hash = ANY($2::bytea[])
                )
             "#,
             self.chain_id.as_i64(),
@@ -1253,7 +1983,7 @@ impl Database {
 
         sqlx::query!(
             r#"
-            DELETE FROM pbs_computations_branch
+            DELETE FROM allowed_handles_branch
              WHERE host_chain_id = $1
                AND (
                     block_hash = ANY($2::bytea[])
@@ -1548,8 +2278,29 @@ impl Database {
                 .await?;
 
                 sqlx::query!(
+                    "DELETE FROM ciphertexts_branch
+                     WHERE handle = ANY($1::bytea[])
+                       AND producer_block_hash = ''::bytea",
+                    &orphan_only_handles as _,
+                )
+                .execute(tx.deref_mut())
+                .await?;
+
+                sqlx::query!(
                     "DELETE FROM ciphertext_digest
                      WHERE handle = ANY($1::bytea[]) AND host_chain_id = $2",
+                    &orphan_only_handles as _,
+                    self.chain_id.as_i64(),
+                )
+                .execute(tx.deref_mut())
+                .await?;
+
+                sqlx::query!(
+                    "DELETE FROM ciphertext_digest_branch
+                     WHERE handle = ANY($1::bytea[])
+                       AND host_chain_id = $2
+                       AND producer_block_hash = ''::bytea
+                       AND block_hash = ''::bytea",
                     &orphan_only_handles as _,
                     self.chain_id.as_i64(),
                 )
@@ -1587,6 +2338,28 @@ impl Database {
         )
         .execute(tx.deref_mut())
         .await?;
+
+        let repair_handles = orphaned_ciphertext_handles
+            .iter()
+            .cloned()
+            .chain(orphaned_digest_handles)
+            .chain(orphaned_legacy_computation_handles.iter().cloned())
+            .chain(orphaned_legacy_pbs_handles.iter().cloned())
+            .chain(orphaned_allowed_handles.iter().cloned())
+            .collect::<Vec<_>>();
+        let enqueued_repairs = enqueue_s3_canonical_repairs(
+            tx,
+            self.chain_id.as_i64(),
+            repair_handles,
+            "orphan_cleanup",
+        )
+        .await?;
+        if enqueued_repairs > 0 {
+            info!(
+                enqueued_repairs,
+                "Enqueued S3 canonical repairs after orphan branch cleanup"
+            );
+        }
 
         Ok(())
     }
@@ -1628,12 +2401,12 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
-        // 2. Finalize this block or orphan the competing observed branch, then
-        // clean branch-scoped computations/ACL/PBS/digest/bytes for that
-        // orphan branch in the same transaction. This path just recorded the
-        // block it finalizes (ingestion of a finalized block), so a linkage
-        // refusal (None) means the recorded row genuinely contradicts the
-        // finalized predecessor: skip cleanup and leave it for the
+        // Finalize this block or orphan the competing observed branch, then
+        // enqueue destructive cleanup for the async worker. Keeping S3 and
+        // branch-table cleanup outside this ingestion transaction prevents
+        // uploader-held locks from stalling block ingestion. This path just
+        // recorded the block it finalizes, so a linkage refusal (None) means
+        // the row contradicts the finalized predecessor; leave it for the
         // finalization loop to sort out.
         if finalized {
             if let Some(orphaned_hashes) = self
@@ -1644,8 +2417,13 @@ impl Database {
                 )
                 .await?
             {
-                self.cleanup_orphaned_branch_state(tx, &orphaned_hashes)
-                    .await?;
+                self.enqueue_orphaned_branch_cleanup(
+                    tx,
+                    block_summary.number as i64,
+                    block_summary.hash.as_ref(),
+                    &orphaned_hashes,
+                )
+                .await?;
             }
         }
         Ok(())
@@ -1774,24 +2552,61 @@ impl Database {
         })
     }
 
-    pub async fn get_finalized_blocks_number(
+    pub async fn get_pending_blocks_to_finalize(
         tx: &mut Transaction<'_>,
         last_block_max: i64,
         chain_id: ChainId,
+        limit: i64,
     ) -> Result<HashSet<i64>, SqlxError> {
-        // Most of the time there is only 1 block pending. Under a backlog,
+        // Most of the time there is only one pending block. Under a backlog,
         // take the OLDEST pending blocks: finalization must progress
         // oldest-first so each block's parent-linkage check anchors on a
         // finalized predecessor instead of passing vacuously.
         let blocks_number = sqlx::query!(
             r#"
-            SELECT block_number FROM host_chain_blocks_valid
-            WHERE block_status = 'pending' AND block_number <= $1 AND chain_id = $2
+            SELECT DISTINCT block_number
+            FROM host_chain_blocks_valid
+            WHERE block_status = 'pending'
+              AND block_number <= $1
+              AND chain_id = $2
             ORDER BY block_number ASC
-            LIMIT 10
+            LIMIT $3
             "#,
             last_block_max,
             chain_id.as_i64(),
+            limit,
+        )
+        .fetch_all(tx.deref_mut())
+        .await?;
+        Ok(blocks_number
+            .into_iter()
+            .map(|record| record.block_number)
+            .collect())
+    }
+
+    pub async fn get_finalized_blocks_to_revalidate(
+        tx: &mut Transaction<'_>,
+        chain_id: ChainId,
+        first_unsettled_block: i64,
+        settlement_candidate_height: i64,
+        limit: i64,
+    ) -> Result<HashSet<i64>, SqlxError> {
+        // Revalidation is independent from pending finalization so undrained
+        // work at the settlement frontier cannot starve newer pending blocks.
+        let blocks_number = sqlx::query!(
+            r#"
+            SELECT DISTINCT block_number
+            FROM host_chain_blocks_valid
+            WHERE block_status = 'finalized'
+              AND chain_id = $1
+              AND block_number BETWEEN $2 AND $3
+            ORDER BY block_number ASC
+            LIMIT $4
+            "#,
+            chain_id.as_i64(),
+            first_unsettled_block,
+            settlement_candidate_height,
+            limit,
         )
         .fetch_all(tx.deref_mut())
         .await?;
@@ -1817,12 +2632,31 @@ impl Database {
         &self,
         last_finalized_block: i64,
     ) -> Result<u64, SqlxError> {
-        let prune_below =
+        let mut prune_below =
             last_finalized_block.saturating_sub(BLOCKS_VALID_RETENTION);
+        let pool = self.pool.read().await.clone();
+        // Never prune above the settlement frontier: an unsettled finalized
+        // row is live revalidation evidence — a stale row that keeps refusing
+        // revalidation is the only thing holding settlement below a
+        // contradicted height, and deleting it would turn that height into a
+        // bare gap that sparse-tolerant settlement crosses silently. Chains
+        // without a settlement row keep the plain retention window.
+        let settled_height = sqlx::query_scalar!(
+            r#"
+            SELECT settled_height AS "settled_height!"
+             FROM coprocessor_settlement
+             WHERE chain_id = $1
+            "#,
+            self.chain_id.as_i64(),
+        )
+        .fetch_optional(&pool)
+        .await?;
+        if let Some(settled_height) = settled_height {
+            prune_below = prune_below.min(settled_height.saturating_add(1));
+        }
         if prune_below <= 0 {
             return Ok(0);
         }
-        let pool = self.pool.read().await.clone();
         let deleted = sqlx::query!(
             r#"
             DELETE FROM host_chain_blocks_valid b
@@ -1957,20 +2791,6 @@ impl Database {
         Ok(())
     }
 
-    pub async fn read_last_valid_block(&self) -> Option<i64> {
-        let query = sqlx::query!(
-            r#"
-            SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
-            "#,
-            self.chain_id.as_i64(),
-        );
-        let pool = self.pool.read().await.clone();
-        match query.fetch_one(&pool).await {
-            Ok(record) => record.max,
-            Err(_err) => None, // table could be empty
-        }
-    }
-
     async fn resolve_handle_producer_block(
         &self,
         tx: &mut Transaction<'_>,
@@ -2091,6 +2911,16 @@ impl Database {
             });
         }
 
+        // No computation on the current branch, no branchless ciphertext, and
+        // no legacy ciphertext resolve this handle. Do NOT guess the ACL-event
+        // block: keying a branch row to the allow block would silently assign
+        // it to a block that produced no ciphertext (the sns readiness join
+        // then skips it forever) and could even collide with an unrelated
+        // branch's ciphertext, risking a wrong-bytes noise-squash. Fall back to
+        // the branchless sentinel ('') -- the explicit "unknown branch"
+        // namespace, which matches only branchless ciphertexts and never an
+        // arbitrary fork -- and surface the anomaly via a counter and an error
+        // log so it is alertable rather than silent.
         let chain_id_label = self.chain_id.as_i64().to_string();
         UNRESOLVED_PRODUCER_BLOCK_TOTAL
             .with_label_values(&[chain_id_label.as_str()])
@@ -2105,6 +2935,20 @@ impl Database {
             hash: Vec::new(),
             number: current_block_number,
         })
+    }
+
+    pub async fn read_last_valid_block(&self) -> Option<i64> {
+        let query = sqlx::query!(
+            r#"
+            SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
+            "#,
+            self.chain_id.as_i64(),
+        );
+        let pool = self.pool.read().await.clone();
+        match query.fetch_one(&pool).await {
+            Ok(record) => record.max,
+            Err(_err) => None, // table could be empty
+        }
     }
 
     /// Handles all types of ACL events
@@ -2481,34 +3325,82 @@ impl Database {
         acl_block_number: u64,
         acl_block_hash: &[u8],
     ) -> Result<bool, SqlxError> {
+        const SQL_CHUNK_ROWS: usize = 1_000;
+
+        if handles.is_empty() {
+            return Ok(false);
+        }
+
         let mut inserted = false;
-        for (handle, producer_block) in handles {
-            // Below the activation height only legacy state is written (see
-            // Database::branch_activation_block).
-            if acl_block_number >= self.branch_activation_block {
-                inserted |= insert_pbs_computation_branch_row(
-                    tx,
+        // Below the activation height only legacy state is written.
+        if acl_block_number >= self.branch_activation_block {
+            for chunk in handles.chunks(SQL_CHUNK_ROWS) {
+                let chunk_handles = chunk
+                    .iter()
+                    .map(|(handle, _)| handle.clone())
+                    .collect::<Vec<_>>();
+                let producer_block_hashes = chunk
+                    .iter()
+                    .map(|(_, producer_block)| producer_block.hash.clone())
+                    .collect::<Vec<_>>();
+                inserted |= sqlx::query!(
+                    r#"
+                    INSERT INTO pbs_computations_branch (
+                        handle,
+                        transaction_id,
+                        host_chain_id,
+                        block_number,
+                        block_hash,
+                        producer_block_hash
+                    )
+                    SELECT input.handle, $2, $3, $4, $5, input.producer_block_hash
+                    FROM UNNEST($1::BYTEA[], $6::BYTEA[])
+                        AS input(handle, producer_block_hash)
+                    ON CONFLICT DO NOTHING
+                    "#,
+                    &chunk_handles,
+                    transaction_id,
                     self.chain_id.as_i64(),
-                    handle,
-                    transaction_id.clone(),
                     acl_block_number as i64,
                     acl_block_hash,
-                    &producer_block.hash,
+                    &producer_block_hashes,
                 )
-                .await?;
+                    .execute(tx.deref_mut())
+                    .await?
+                    .rows_affected()
+                    > 0;
             }
-            // Wave-1 dual-write: keep feeding the legacy sns-worker until
-            // wave 2 switches it to the branch tables.
-            let query = sqlx::query!(
-                "INSERT INTO pbs_computations(handle, transaction_id, host_chain_id, block_number) VALUES($1, $2, $3, $4)
-                 ON CONFLICT DO NOTHING;",
-                handle,
-                transaction_id,
-                self.chain_id.as_i64(),
-                acl_block_number as i64,
-            );
-            inserted |=
-                query.execute(tx.deref_mut()).await?.rows_affected() > 0;
+        }
+
+        // Dual-write below the cutover while the legacy sns-worker drains.
+        if (acl_block_number as i64) < legacy_mirror_cutoff() {
+            for chunk in handles.chunks(SQL_CHUNK_ROWS) {
+                let chunk_handles = chunk
+                    .iter()
+                    .map(|(handle, _)| handle.clone())
+                    .collect::<Vec<_>>();
+                inserted |= sqlx::query!(
+                    r#"
+                    INSERT INTO pbs_computations (
+                        handle,
+                        transaction_id,
+                        host_chain_id,
+                        block_number
+                    )
+                    SELECT input.handle, $2, $3, $4
+                    FROM UNNEST($1::BYTEA[]) AS input(handle)
+                    ON CONFLICT DO NOTHING
+                    "#,
+                    &chunk_handles,
+                    transaction_id,
+                    self.chain_id.as_i64(),
+                    acl_block_number as i64,
+                )
+                .execute(tx.deref_mut())
+                .await?
+                .rows_affected()
+                    > 0;
+            }
         }
         Ok(inserted)
     }
@@ -2693,8 +3585,11 @@ impl Database {
             } else {
                 false
             };
-        // Wave-1 dual-write: keep feeding the legacy readers until wave 2
-        // switches them to the branch tables.
+        // Dual-write below the cutover: keep feeding the legacy readers
+        // while the legacy pipeline drains pre-cutover work.
+        if (insert.acl_block_number as i64) >= legacy_mirror_cutoff() {
+            return Ok(branch_inserted);
+        }
         let query = sqlx::query!(
             "INSERT INTO allowed_handles(handle, account_address, event_type, transaction_id, host_chain_id, block_number) VALUES($1, $2, $3, $4, $5, $6)
                     ON CONFLICT DO NOTHING;",
@@ -2777,6 +3672,10 @@ impl Database {
         slow_dep_chain_ids: &HashSet<ChainHash>,
     ) -> Result<(), SqlxError> {
         for chain in chains {
+            debug_assert!(
+                chain.dependencies.is_empty(),
+                "dependency_count is intentionally dormant; producer must not emit non-zero dependency edges without reworking DCID release bookkeeping"
+            );
             let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash)
             {
                 SchedulePriority::Slow

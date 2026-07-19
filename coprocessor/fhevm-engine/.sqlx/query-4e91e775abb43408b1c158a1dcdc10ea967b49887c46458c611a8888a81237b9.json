@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT is_completed AS \"is_completed!\",\n                   is_error AS \"is_error!\",\n                   error_message,\n                   error_at\n              FROM pbs_computations_branch\n             WHERE handle = $1 AND producer_block_hash = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_completed!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_error!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "error_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "4e91e775abb43408b1c158a1dcdc10ea967b49887c46458c611a8888a81237b9"
+}

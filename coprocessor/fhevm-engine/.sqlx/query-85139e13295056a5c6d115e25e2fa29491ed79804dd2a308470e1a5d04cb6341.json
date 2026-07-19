@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT txn_is_sent, txn_limited_retries_count, txn_unlimited_retries_count\n             FROM ciphertext_digest_branch\n             WHERE handle = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "txn_is_sent",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "txn_limited_retries_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "txn_unlimited_retries_count",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "85139e13295056a5c6d115e25e2fa29491ed79804dd2a308470e1a5d04cb6341"
+}

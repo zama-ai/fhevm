@@ -55,6 +55,19 @@ async fn block_status(db: &Database, hash: &[u8]) -> Option<String> {
     .expect("status query")
 }
 
+async fn seed_settled_height(db: &Database, height: i64) {
+    let pool = db.pool().await;
+    sqlx::query(
+        "INSERT INTO coprocessor_settlement(chain_id, settled_height) \
+         VALUES ($1, $2)",
+    )
+    .bind(CHAIN_ID as i64)
+    .bind(height)
+    .execute(&pool)
+    .await
+    .expect("seed coprocessor_settlement");
+}
+
 fn b32(seed: u8) -> Vec<u8> {
     vec![seed; 32]
 }
@@ -77,10 +90,11 @@ async fn finalization_refuses_mismatched_parent_and_stops_batch() {
     seed_block(&db, 2, &c2, &x0, "pending").await; // fork sibling
     seed_block(&db, 3, &b3, &b2, "pending").await; // true chain
     seed_block(&db, 3, &c3, &c2, "pending").await; // fork child
+    seed_settled_height(&db, 1).await;
 
     // The poisoned RPC serves the fork chain for both heights.
     let fork = [(2u64, c2.clone()), (3u64, c3.clone())];
-    update_finalized_blocks_aux(&mut db, 3, 0, |n| {
+    update_finalized_blocks_aux(&mut db, 3, 0, 0, |n| {
         let hash = fork
             .iter()
             .find(|(num, _)| *num == n)
@@ -122,10 +136,11 @@ async fn finalization_stops_batch_at_fetch_failure() {
     seed_block(&db, 3, &c3, &b32(0x0F), "pending").await; // fork sibling
     seed_block(&db, 4, &b4, &b3, "pending").await; // true chain
     seed_block(&db, 4, &c4, &c3, "pending").await; // fork child
+    seed_settled_height(&db, 1).await;
 
     // Height 2 answers honestly, height 3 errors, height 4 serves the fork.
     let served = [(2u64, b2.clone()), (4u64, c4.clone())];
-    update_finalized_blocks_aux(&mut db, 4, 0, |n| {
+    update_finalized_blocks_aux(&mut db, 4, 0, 0, |n| {
         let hash = served
             .iter()
             .find(|(num, _)| *num == n)
@@ -153,6 +168,100 @@ async fn finalization_stops_batch_at_fetch_failure() {
             "{what} must stay pending after a fetch failure"
         );
     }
+}
+
+/// The revalidation and pending finalization queues stop independently, and
+/// the safety of that split rests on stored statuses: a pending block
+/// immediately above a refused height anchors its parent-linkage check on the
+/// stale finalized row still sitting there, so it must refuse on the
+/// contradiction rather than finalize behind the refusal.
+#[tokio::test]
+#[serial(db)]
+async fn pending_block_above_refused_height_fails_its_own_linkage_check() {
+    let (mut db, _inst) = fresh_db(CHAIN_ID).await;
+    let (a1, f2, c2, c3) = (b32(0xA1), b32(0xF2), b32(0xC2), b32(0xC3));
+
+    seed_block(&db, 1, &a1, &b32(0xA0), "finalized").await;
+    // Stale fork row finalized on the old branch; its canonical sibling c2
+    // was never ingested (sparse catch-up skipped the empty canonical block).
+    seed_block(&db, 2, &f2, &a1, "finalized").await;
+    // Canonical child of the unstored c2, ingested pending.
+    seed_block(&db, 3, &c3, &c2, "pending").await;
+    seed_settled_height(&db, 1).await;
+
+    // The RPC serves the canonical chain: height 2 refuses in the
+    // revalidation queue (no stored row for c2), and height 3 sits in the
+    // pending queue right above the refusal.
+    let served = [(2u64, c2.clone()), (3u64, c3.clone())];
+    update_finalized_blocks_aux(&mut db, 3, 0, 0, |n| {
+        let hash = served
+            .iter()
+            .find(|(num, _)| *num == n)
+            .map(|(_, h)| alloy::primitives::FixedBytes::<32>::from_slice(h))
+            .expect("requested block");
+        async move { Ok(hash) }
+    })
+    .await;
+
+    assert_eq!(
+        block_status(&db, &f2).await.as_deref(),
+        Some("finalized"),
+        "the stale row stays until its canonical sibling is re-ingested"
+    );
+    assert_eq!(
+        block_status(&db, &c3).await.as_deref(),
+        Some("pending"),
+        "the pending block above the refusal must fail its own linkage \
+         check against the stale finalized predecessor"
+    );
+}
+
+/// A height can transiently carry TWO finalized rows: a refused pass inserts
+/// the canonical row as finalized without orphaning the stale sibling. The
+/// stale sibling must not veto a child anchored on the matching finalized
+/// parent — otherwise every ancestor above the double height refuses forever
+/// (orphaning only runs on success, so the contradiction never clears).
+#[tokio::test]
+#[serial(db)]
+async fn stale_finalized_sibling_does_not_veto_anchored_child() {
+    let (mut db, _inst) = fresh_db(CHAIN_ID).await;
+    let (a1, a2, s2, a3) = (b32(0xA1), b32(0xA2), b32(0x52), b32(0xA3));
+
+    seed_block(&db, 1, &a1, &b32(0xA0), "finalized").await;
+    // Both the canonical block and a stale branch sibling are finalized at
+    // height 2 (the stale one from a pre-switch chain view).
+    seed_block(&db, 2, &a2, &a1, "finalized").await;
+    seed_block(&db, 2, &s2, &a1, "finalized").await;
+    // Canonical child anchored on the matching finalized parent a2.
+    seed_block(&db, 3, &a3, &a2, "pending").await;
+    seed_settled_height(&db, 1).await;
+
+    // Settlement lag 2 keeps height 2 out of the revalidation window, so the
+    // child at height 3 is finalized while BOTH height-2 rows are still
+    // finalized — the exact double-row state the veto exception is for.
+    let chain = [(2u64, a2.clone()), (3u64, a3.clone())];
+    update_finalized_blocks_aux(&mut db, 3, 0, 2, |n| {
+        let hash = chain
+            .iter()
+            .find(|(num, _)| *num == n)
+            .map(|(_, h)| alloy::primitives::FixedBytes::<32>::from_slice(h))
+            .expect("requested block");
+        async move { Ok(hash) }
+    })
+    .await;
+
+    assert_eq!(
+        block_status(&db, &a3).await.as_deref(),
+        Some("finalized"),
+        "a child anchored on the matching finalized parent must not be \
+         vetoed by the stale sibling"
+    );
+    assert_eq!(
+        block_status(&db, &s2).await.as_deref(),
+        Some("finalized"),
+        "the stale sibling is cleaned up when its height is revalidated, \
+         not by the child's pass"
+    );
 }
 
 /// Pruning removes only old finalized rows that nothing references: rows
@@ -228,9 +337,10 @@ async fn finalization_accepts_linked_chain_and_orphans_sibling() {
     seed_block(&db, 2, &b2, &a1, "pending").await;
     seed_block(&db, 2, &c2, &b32(0x0F), "pending").await;
     seed_block(&db, 3, &b3, &b2, "pending").await;
+    seed_settled_height(&db, 1).await;
 
     let chain = [(2u64, b2.clone()), (3u64, b3.clone())];
-    update_finalized_blocks_aux(&mut db, 3, 0, |n| {
+    update_finalized_blocks_aux(&mut db, 3, 0, 0, |n| {
         let hash = chain
             .iter()
             .find(|(num, _)| *num == n)

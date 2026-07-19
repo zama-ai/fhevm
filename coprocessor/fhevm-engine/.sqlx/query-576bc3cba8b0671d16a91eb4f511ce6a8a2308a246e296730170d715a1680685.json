@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH event_scoped AS (\n                SELECT\n                    d.ciphertext,\n                    d.ciphertext128,\n                    EXISTS (\n                        SELECT 1\n                        FROM host_chain_blocks_valid b\n                        WHERE b.chain_id = d.host_chain_id\n                          AND b.block_hash = d.block_hash\n                          AND b.block_status = 'finalized'\n                    ) AS finalized\n                FROM ciphertext_digest_branch d\n                WHERE d.handle = $1\n                  AND d.block_hash <> ''::bytea\n             ),\n             has_event_scoped_rows AS (\n                SELECT EXISTS(SELECT 1 FROM event_scoped) AS value\n             ),\n             selected AS (\n                SELECT ciphertext, ciphertext128\n                FROM event_scoped\n                WHERE finalized\n                UNION ALL\n                SELECT d.ciphertext, d.ciphertext128\n                FROM ciphertext_digest_branch d\n                WHERE d.handle = $1\n                  AND d.producer_block_hash = ''::bytea\n                  AND d.block_hash = ''::bytea\n                  AND NOT (SELECT value FROM has_event_scoped_rows)\n             )\n             SELECT\n                ciphertext,\n                ciphertext128,\n                ciphertext IS NOT NULL AND ciphertext128 IS NOT NULL AS is_complete\n             FROM selected\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "is_complete",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "576bc3cba8b0671d16a91eb4f511ce6a8a2308a246e296730170d715a1680685"
+}

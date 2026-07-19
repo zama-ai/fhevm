@@ -424,7 +424,6 @@ async fn ingest_fallback_block_at(
         finalized: false,
     };
     let options = IngestOptions {
-        dependence_by_connexity: false,
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         is_protocol_config_listener: false,
@@ -871,6 +870,37 @@ async fn seed_materialization(db: &Database, handle: &[u8], chain_id: u64) {
     .expect("seed ciphertext_digest");
 }
 
+async fn seed_branchless_materialization(
+    db: &Database,
+    handle: &[u8],
+    chain_id: u64,
+) {
+    let pool = db.pool().await;
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch
+             (handle, ciphertext, ciphertext_version, ciphertext_type,
+              producer_block_hash, block_number)
+         VALUES ($1, '\\x11'::bytea, 0, 4, ''::bytea, NULL)",
+    )
+    .bind(handle)
+    .execute(&pool)
+    .await
+    .expect("seed branchless ciphertext");
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch
+             (handle, ciphertext, ciphertext128, ciphertext128_format,
+              host_chain_id, key_id_gw, producer_block_hash, block_hash,
+              block_number)
+         VALUES ($1, '\\xa1'::bytea, '\\xb2'::bytea, 11, $2, '\\xc3'::bytea,
+                 ''::bytea, ''::bytea, NULL)",
+    )
+    .bind(handle)
+    .bind(chain_id as i64)
+    .execute(&pool)
+    .await
+    .expect("seed branchless ciphertext digest");
+}
+
 async fn run_bridge_cleanup(db: &Database, orphaned_hashes: &[Vec<u8>]) {
     let mut tx = db
         .new_transaction()
@@ -942,6 +972,52 @@ async fn reorg_retracts_associated_bridged_handle() {
         .await,
         0,
         "copied digest should be retracted (cancels unsent publication)"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn reorg_retracts_associated_branchless_bridged_handle() {
+    let (db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = handle_for_chain(DST_CHAIN_ID, 0x34);
+    let orphaned_hash = vec![0x0A; 32];
+
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &orphaned_hash,
+        true,
+    )
+    .await;
+    seed_branchless_materialization(&db, dst_handle.as_slice(), DST_CHAIN_ID)
+        .await;
+
+    run_bridge_cleanup(&db, &[orphaned_hash]).await;
+
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertexts_branch
+             WHERE handle = $1 AND producer_block_hash = ''::bytea",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "branchless bridged ciphertext should be retracted"
+    );
+    assert_eq!(
+        count_rows(
+            &db,
+            "SELECT COUNT(*) FROM ciphertext_digest_branch
+             WHERE handle = $1
+               AND producer_block_hash = ''::bytea
+               AND block_hash = ''::bytea",
+            dst_handle.as_slice(),
+        )
+        .await,
+        0,
+        "branchless bridged digest should be retracted"
     );
 }
 

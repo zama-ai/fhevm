@@ -4,6 +4,9 @@ use std::future::Future;
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
+use fhevm_engine_common::branch::{
+    advance_settled_height, read_settled_height,
+};
 use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::{
@@ -19,7 +22,8 @@ use crate::contracts::{
 };
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, tfhe_result_handle, Chain, ChainHash, Database, LogTfhe,
+    acl_result_handles, settlement_cutover_block, tfhe_result_handle, Chain,
+    ChainHash, Database, LogTfhe,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -34,7 +38,6 @@ pub struct BlockLogs<T> {
 
 #[derive(Clone, Debug)]
 pub struct IngestOptions {
-    pub dependence_by_connexity: bool,
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
     /// Resolved once at startup from the listener's own `chain_id` and the
@@ -57,6 +60,14 @@ fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
             OffsetDateTime::now_utc()
         });
     PrimitiveDateTime::new(offset.date(), offset.time())
+}
+
+fn settlement_candidate_block(
+    last_block_number: u64,
+    finality_lag: u64,
+    settlement_finality_lag: u64,
+) -> u64 {
+    last_block_number.saturating_sub(finality_lag.max(settlement_finality_lag))
 }
 
 fn propagate_slow_lane_to_dependents(
@@ -91,7 +102,7 @@ fn propagate_slow_lane_to_dependents(
 
 /// Marks slow chains by counting inserted ops on linked split chains together.
 ///
-/// In no-fork mode, one logical workload can be split into many small chains.
+/// Same-block components can still be connected to prior-block components.
 /// Here we connect chains through `split_dependencies`, sum their inserted-op
 /// counts, and if the sum is above the cap we mark all linked chains as slow.
 fn classify_slow_by_split_dependency_closure(
@@ -455,6 +466,7 @@ pub async fn ingest_block_logs(
             );
         }
     }
+
     for tfhe_log in tfhe_event_log.iter_mut() {
         tfhe_log.is_allowed =
             if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
@@ -467,15 +479,16 @@ pub async fn ingest_block_logs(
     let chains = dependence_chains(
         &mut tfhe_event_log,
         &db.dependence_chain,
-        options.dependence_by_connexity,
         options.dependence_cross_block,
     )
     .await;
 
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
     let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
-    for tfhe_log in tfhe_event_log {
-        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
+    let insertions = db
+        .insert_tfhe_events_batch(&mut tx, &tfhe_event_log)
+        .await?;
+    for (tfhe_log, inserted) in tfhe_event_log.into_iter().zip(insertions) {
         at_least_one_insertion |= inserted;
         // Count all newly inserted ops per chain to avoid underestimating
         // pressure from producer paths that are required by downstream work.
@@ -700,12 +713,14 @@ pub async fn update_finalized_blocks(
     log_iter: &mut InfiniteLogIter,
     last_block_number: u64,
     finality_lag: u64,
+    settlement_finality_lag: u64,
 ) {
     let log_iter = &*log_iter;
     update_finalized_blocks_aux(
         db,
         last_block_number,
         finality_lag,
+        settlement_finality_lag,
         |block_number| async move {
             log_iter
                 .get_block_by_number(block_number)
@@ -720,19 +735,35 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     db: &mut Database,
     last_block_number: u64,
     finality_lag: u64,
+    settlement_finality_lag: u64,
     mut get_block_hash_by_number: GetBlockHash,
 ) where
     GetBlockHash: FnMut(u64) -> GetBlockHashFuture,
     GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
 {
-    info!(last_block_number, finality_lag, "Updating finalized blocks");
+    info!(
+        last_block_number,
+        finality_lag,
+        settlement_finality_lag,
+        effective_settlement_lag = finality_lag.max(settlement_finality_lag),
+        "Updating finalized blocks"
+    );
     let last_finalized_block = last_block_number.saturating_sub(finality_lag);
+    let settlement_candidate_height = settlement_candidate_block(
+        last_block_number,
+        finality_lag,
+        settlement_finality_lag,
+    );
 
     // Read the candidate numbers in a short transaction, then resolve the
     // canonical hashes over RPC with NO transaction open: block fetches can
     // take seconds each, and holding the finalization transaction across the
     // round-trips kept its row locks pinned for the whole time.
-    let blocks_number = {
+    // Bounded batch of 10 per queue; the 11th selected row is a lookahead
+    // marking where this pass's revalidation coverage ends.
+    const FINALIZATION_BATCH_SIZE: usize = 10;
+    const FINALIZATION_LOOKAHEAD: i64 = FINALIZATION_BATCH_SIZE as i64 + 1;
+    let (pending_blocks, revalidation_blocks) = {
         let mut tx = match db.new_transaction().await {
             Ok(Some(tx)) => tx,
             Ok(None) => {
@@ -749,10 +780,23 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                 return;
             }
         };
-        match Database::get_finalized_blocks_number(
+        let current_settled_height =
+            match read_settled_height(&mut tx, db.chain_id.as_i64()).await {
+                Ok(height) => height,
+                Err(err) => {
+                    error!(?err, "Failed to read settlement frontier");
+                    return;
+                }
+            };
+        let first_post_cutover_block = settlement_cutover_block().max(0);
+        let first_unsettled_block = current_settled_height
+            .saturating_add(1)
+            .max(first_post_cutover_block);
+        let pending_blocks = match Database::get_pending_blocks_to_finalize(
             &mut tx,
             last_finalized_block as i64,
             db.chain_id,
+            FINALIZATION_LOOKAHEAD,
         )
         .await
         {
@@ -761,25 +805,84 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                 error!(
                     ?err,
                     last_finalized_block,
-                    "Failed to fetch finalized blocks number"
+                    "Failed to fetch pending blocks for finalization"
                 );
                 return;
             }
-        }
+        };
+        let revalidation_blocks =
+            match Database::get_finalized_blocks_to_revalidate(
+                &mut tx,
+                db.chain_id,
+                first_unsettled_block,
+                settlement_candidate_height as i64,
+                FINALIZATION_LOOKAHEAD,
+            )
+            .await
+            {
+                Ok(numbers) => numbers,
+                Err(err) => {
+                    error!(
+                        ?err,
+                        settlement_candidate_height,
+                        "Failed to fetch finalized blocks for canonical revalidation"
+                    );
+                    return;
+                }
+            };
+        (pending_blocks, revalidation_blocks)
     };
-    info!(?blocks_number, "Finalizing blocks");
+    info!(?pending_blocks, ?revalidation_blocks, "Finalizing blocks");
 
     // Ascending: finalization verifies each block's parent linkage against
-    // its finalized predecessor, so within one batch the predecessor must be
+    // its finalized predecessor, so within one queue the predecessor must be
     // finalized first.
-    let mut blocks_number: Vec<i64> = blocks_number.into_iter().collect();
-    blocks_number.sort_unstable();
+    let mut pending_blocks: Vec<i64> = pending_blocks.into_iter().collect();
+    pending_blocks.sort_unstable();
+    let mut revalidation_blocks: Vec<i64> =
+        revalidation_blocks.into_iter().collect();
+    revalidation_blocks.sort_unstable();
+    // Catch-up persists blocks containing relevant logs, not every empty host
+    // block, so the valid-block table can be sparse after a restart. Validate
+    // every stored finalized checkpoint before settlement crosses it, using
+    // the 11th selected row as lookahead for a bounded batch of 10: stored
+    // finalized rows past the batch are invisible to `advance_settled_height`
+    // (they look drained), so settlement may not cross them until a later
+    // pass revalidates them. Gaps with no stored row are not themselves work
+    // and do not freeze settlement. Pending rows need no such cap: any
+    // pending row left behind — beyond the batch or refused — still blocks
+    // `advance_settled_height` directly.
+    let mut verified_settlement_candidate = match revalidation_blocks
+        .get(FINALIZATION_BATCH_SIZE)
+        .copied()
+    {
+        Some(first_deferred_block) => first_deferred_block.saturating_sub(1),
+        None => settlement_candidate_height as i64,
+    };
+    pending_blocks.truncate(FINALIZATION_BATCH_SIZE);
+    revalidation_blocks.truncate(FINALIZATION_BATCH_SIZE);
 
-    let mut canonical = Vec::with_capacity(blocks_number.len());
-    for block_number in blocks_number {
+    let mut fetch_heights: Vec<i64> = pending_blocks
+        .iter()
+        .copied()
+        .chain(revalidation_blocks.iter().copied())
+        .collect();
+    fetch_heights.sort_unstable();
+    fetch_heights.dedup();
+
+    let mut canonical =
+        std::collections::HashMap::with_capacity(fetch_heights.len());
+    for block_number in fetch_heights {
         match get_block_hash_by_number(block_number as u64).await {
-            Ok(block_hash) => canonical.push((block_number, block_hash)),
+            Ok(block_hash) => {
+                canonical.insert(block_number, block_hash);
+            }
             Err(err) => {
+                // The stop skips every batched block from here up, so nothing
+                // above this height was revalidated this pass. Clamping below
+                // the frontier just means no advance this pass.
+                verified_settlement_candidate = verified_settlement_candidate
+                    .min(block_number.saturating_sub(1));
                 error!(
                     block_number,
                     ?err,
@@ -795,10 +898,9 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             }
         }
     }
-    if canonical.is_empty() {
-        return;
-    }
 
+    // Advance settlement even when no blocks need finalization: asynchronous
+    // cleanup or publication work may have unblocked an existing finalized row.
     let mut tx = match db.new_transaction().await {
         Ok(Some(tx)) => tx,
         Ok(None) => {
@@ -813,45 +915,97 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             return;
         }
     };
-    for (block_number, block_hash) in canonical {
-        match db
-            .update_block_as_finalized(&mut tx, block_number, &block_hash)
-            .await
-        {
-            Ok(Some(orphaned_hashes)) => {
-                if let Err(err) = db
-                    .cleanup_orphaned_branch_state(&mut tx, &orphaned_hashes)
-                    .await
-                {
+    // The revalidation and pending queues finalize independently, each in
+    // ascending order, so a refusal in the revalidation window (a stale row
+    // whose canonical sibling awaits re-ingestion) cannot starve newer
+    // pending blocks — and vice versa. Cross-queue linkage safety needs no
+    // shared stop: a block adjacent to a refused height still checks its own
+    // parent linkage against the stale finalized row and refuses on
+    // contradiction.
+    for queue in [&revalidation_blocks, &pending_blocks] {
+        for &block_number in queue.iter() {
+            let Some(block_hash) = canonical.get(&block_number) else {
+                // The hash fetch stopped below this height; already clamped.
+                break;
+            };
+            match db
+                .update_block_as_finalized(&mut tx, block_number, block_hash)
+                .await
+            {
+                Ok(Some(orphaned_hashes)) => {
+                    if let Err(err) = db
+                        .enqueue_orphaned_branch_cleanup(
+                            &mut tx,
+                            block_number,
+                            block_hash.as_ref(),
+                            &orphaned_hashes,
+                        )
+                        .await
+                    {
+                        error!(
+                            block_number,
+                            ?err,
+                            "Failed to enqueue orphaned branch cleanup during finalization"
+                        );
+                        return;
+                    }
+                }
+                Ok(None) => {
+                    // The stop skips every queued block from here up, so
+                    // nothing above this height was revalidated this pass.
+                    // Clamping below the frontier just means no advance this
+                    // pass.
+                    verified_settlement_candidate =
+                        verified_settlement_candidate
+                            .min(block_number.saturating_sub(1));
+                    // Finalization refused (missing row / orphaned / parent
+                    // linkage contradiction). STOP this queue: the next
+                    // height's linkage check would pass vacuously without a
+                    // finalized predecessor, letting a stale or poisoned RPC
+                    // finalize a fork block right behind the refusal. Earlier
+                    // blocks of this queue stay finalized; the rest retries
+                    // next pass.
+                    warn!(
+                        block_number,
+                        "Stopping finalization queue at refused block"
+                    );
+                    break;
+                }
+                Err(err) => {
                     error!(
                         block_number,
                         ?err,
-                        "Failed to clean orphaned branch state during finalization"
+                        "Failed to update block as finalized"
                     );
                     return;
                 }
             }
-            Ok(None) => {
-                // Finalization refused (missing row / orphaned / parent
-                // linkage contradiction). STOP the batch: the next height's
-                // linkage check would pass vacuously without a finalized
-                // predecessor, letting a stale or poisoned RPC finalize a
-                // fork block right behind the refusal. Earlier blocks of
-                // this batch stay finalized; the rest retries next pass.
-                warn!(
-                    block_number,
-                    "Stopping finalization batch at refused block"
-                );
-                break;
-            }
-            Err(err) => {
-                error!(
-                    block_number,
-                    ?err,
-                    "Failed to update block as finalized"
-                );
-                return;
-            }
+        }
+    }
+    // Settlement is monotonic, so never let it cross a stored post-cutover
+    // checkpoint which this pass did not revalidate against the listener's
+    // current chain view.
+    match advance_settled_height(
+        &mut tx,
+        db.chain_id.as_i64(),
+        verified_settlement_candidate,
+        settlement_cutover_block(),
+    )
+    .await
+    {
+        Ok(settled_height) => {
+            info!(
+                settled_height,
+                "Updated coprocessor branch settlement frontier"
+            );
+        }
+        Err(err) => {
+            error!(
+                ?err,
+                settlement_candidate_height,
+                "Failed to update coprocessor branch settlement frontier"
+            );
+            return;
         }
     }
     if let Err(err) = tx.commit().await {
@@ -879,6 +1033,8 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
 #[cfg(test)]
 mod tests {
     use alloy::primitives::FixedBytes;
+    use fhevm_engine_common::branch::read_settled_height;
+    use test_harness::instance::ImportMode;
 
     use super::*;
 
@@ -899,6 +1055,621 @@ mod tests {
             before_size: 0,
             new_chain: true,
         }
+    }
+
+    #[test]
+    fn settlement_candidate_uses_deeper_lag_than_indexing_finality() {
+        assert_eq!(settlement_candidate_block(100, 15, 50), 50);
+    }
+
+    #[test]
+    fn settlement_candidate_never_advances_ahead_of_indexing_finality() {
+        assert_eq!(settlement_candidate_block(100, 50, 15), 50);
+    }
+
+    struct EnvGuard {
+        key: &'static str,
+        value: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self {
+                key,
+                value: previous,
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.value {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn finalized_blocks_can_advance_ahead_of_settlement_lag() {
+        let _cutover = EnvGuard::set("FHEVM_BRANCH_CUTOVER_BLOCK", "1");
+        let db_instance =
+            test_harness::instance::setup_test_db(ImportMode::None)
+                .await
+                .expect("valid db instance");
+        let chain_id = ChainId::try_from(42_u64).unwrap();
+        let mut db = Database::new(&db_instance.db_url, chain_id, 128)
+            .await
+            .expect("database");
+        let pool = db.pool.read().await.clone();
+        sqlx::query("DELETE FROM coprocessor_settlement WHERE chain_id = $1")
+            .bind(chain_id.as_i64())
+            .execute(&pool)
+            .await
+            .expect("clear settlement row");
+        sqlx::query("DELETE FROM host_chain_blocks_valid WHERE chain_id = $1")
+            .bind(chain_id.as_i64())
+            .execute(&pool)
+            .await
+            .expect("clear block rows");
+        sqlx::query("DELETE FROM computations_branch WHERE host_chain_id = $1")
+            .bind(chain_id.as_i64())
+            .execute(&pool)
+            .await
+            .expect("clear branch computation rows");
+        sqlx::query(
+            "DELETE FROM pbs_computations_branch WHERE host_chain_id = $1",
+        )
+        .bind(chain_id.as_i64())
+        .execute(&pool)
+        .await
+        .expect("clear branch pbs rows");
+
+        for block_number in 0_i64..=10 {
+            sqlx::query(
+                "INSERT INTO host_chain_blocks_valid \
+                 (chain_id, block_hash, parent_hash, block_number, block_status) \
+                 VALUES ($1, $2, $3, $4, 'pending')",
+            )
+            .bind(chain_id.as_i64())
+            .bind(vec![block_number as u8; 32])
+            .bind(if block_number == 0 {
+                Vec::new()
+            } else {
+                vec![(block_number - 1) as u8; 32]
+            })
+            .bind(block_number)
+            .execute(&pool)
+            .await
+            .expect("insert pending block");
+        }
+
+        update_finalized_blocks_aux(
+            &mut db,
+            10,
+            1,
+            4,
+            |block_number| async move {
+                Ok(BlockHash::from([block_number as u8; 32]))
+            },
+        )
+        .await;
+
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+
+        let block_statuses = sqlx::query_as::<_, (i64, String)>(
+            "SELECT block_number, block_status::text FROM host_chain_blocks_valid \
+             WHERE chain_id = $1 ORDER BY block_number",
+        )
+        .bind(chain_id.as_i64())
+        .fetch_all(&pool)
+        .await
+        .expect("query block statuses");
+
+        assert_eq!(block_statuses.len(), 11);
+        for block_number in 0_i64..=9 {
+            assert!(
+                block_statuses
+                    .contains(&(block_number, "finalized".to_string())),
+                "block {block_number} should be finalized by indexing finality"
+            );
+        }
+        assert!(
+            block_statuses.contains(&(10, "pending".to_string())),
+            "block 10 should remain pending"
+        );
+
+        assert_eq!(
+            settled_height, 6,
+            "settlement should use the stricter settlement_finality_lag"
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn settlement_waits_for_reingestion_after_finalized_branch_changes() {
+        let _cutover = EnvGuard::set("FHEVM_BRANCH_CUTOVER_BLOCK", "1");
+        let db_instance =
+            test_harness::instance::setup_test_db(ImportMode::None)
+                .await
+                .expect("valid db instance");
+        let chain_id = ChainId::try_from(44_u64).unwrap();
+        let mut db = Database::new(&db_instance.db_url, chain_id, 128)
+            .await
+            .expect("database");
+        let pool = db.pool.read().await.clone();
+
+        sqlx::query(
+            "INSERT INTO coprocessor_settlement(chain_id, settled_height) \
+             VALUES ($1, 1)",
+        )
+        .bind(chain_id.as_i64())
+        .execute(&pool)
+        .await
+        .expect("insert settlement frontier");
+
+        let mut parent_hash = Vec::new();
+        for block_number in 0_i64..=6 {
+            let block_hash = if block_number < 2 {
+                vec![block_number as u8; 32]
+            } else {
+                vec![0x40 + block_number as u8; 32]
+            };
+            sqlx::query(
+                "INSERT INTO host_chain_blocks_valid \
+                 (chain_id, block_hash, parent_hash, block_number, block_status) \
+                 VALUES ($1, $2, $3, $4, 'finalized')",
+            )
+            .bind(chain_id.as_i64())
+            .bind(&block_hash)
+            .bind(&parent_hash)
+            .bind(block_number)
+            .execute(&pool)
+            .await
+            .expect("insert old finalized branch");
+            parent_hash = block_hash;
+        }
+
+        update_finalized_blocks_aux(
+            &mut db,
+            10,
+            1,
+            4,
+            |block_number| async move {
+                // The listener now observes a different branch from height 2,
+                // but its canonical rows have not been replayed into the DB.
+                Ok(BlockHash::from([0x80 + block_number as u8; 32]))
+            },
+        )
+        .await;
+
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+
+        assert_eq!(
+            settled_height, 1,
+            "settlement must not trust finalized hashes from the listener's old branch"
+        );
+
+        let mut canonical_parent_hash = vec![1_u8; 32];
+        for block_number in 2_i64..=6 {
+            let canonical_hash = vec![0x80 + block_number as u8; 32];
+            sqlx::query(
+                "INSERT INTO host_chain_blocks_valid \
+                 (chain_id, block_hash, parent_hash, block_number, block_status) \
+                 VALUES ($1, $2, $3, $4, 'pending')",
+            )
+            .bind(chain_id.as_i64())
+            .bind(&canonical_hash)
+            .bind(&canonical_parent_hash)
+            .bind(block_number)
+            .execute(&pool)
+            .await
+            .expect("replay canonical block");
+            canonical_parent_hash = canonical_hash;
+        }
+
+        update_finalized_blocks_aux(
+            &mut db,
+            10,
+            1,
+            4,
+            |block_number| async move {
+                Ok(BlockHash::from([0x80 + block_number as u8; 32]))
+            },
+        )
+        .await;
+        assert_eq!(
+            db.process_orphaned_branch_cleanup_jobs()
+                .await
+                .expect("clean old branch"),
+            1
+        );
+
+        // Cleanup completion unblocks the same shared finalization path. Its
+        // bounded revalidation is idempotent and may now advance settlement.
+        update_finalized_blocks_aux(
+            &mut db,
+            10,
+            1,
+            4,
+            |block_number| async move {
+                Ok(BlockHash::from([0x80 + block_number as u8; 32]))
+            },
+        )
+        .await;
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read recovered settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+        assert_eq!(settled_height, 6);
+    }
+
+    /// A fork-recovered listener can hold a stale finalized row whose
+    /// canonical sibling was never ingested (the canonical block is empty and
+    /// below every replay window until the next restart). Its refusal must
+    /// stall only the revalidation queue: newer pending blocks keep
+    /// finalizing, and settlement holds below the stale row until
+    /// re-ingestion resolves it.
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn stale_finalized_row_does_not_starve_pending_finalization() {
+        let _cutover = EnvGuard::set("FHEVM_BRANCH_CUTOVER_BLOCK", "1");
+        let db_instance =
+            test_harness::instance::setup_test_db(ImportMode::None)
+                .await
+                .expect("valid db instance");
+        let chain_id = ChainId::try_from(46_u64).unwrap();
+        let mut db = Database::new(&db_instance.db_url, chain_id, 128)
+            .await
+            .expect("database");
+        let pool = db.pool.read().await.clone();
+
+        sqlx::query(
+            "INSERT INTO coprocessor_settlement(chain_id, settled_height) \
+             VALUES ($1, 2)",
+        )
+        .bind(chain_id.as_i64())
+        .execute(&pool)
+        .await
+        .expect("insert settlement frontier");
+
+        let seed_block = |number: i64,
+                          hash: Vec<u8>,
+                          parent: Vec<u8>,
+                          status: &'static str| {
+            let pool = pool.clone();
+            let chain_id = chain_id.as_i64();
+            async move {
+                sqlx::query(
+                    "INSERT INTO host_chain_blocks_valid \
+                     (chain_id, block_hash, parent_hash, block_number, block_status) \
+                     VALUES ($1, $2, $3, $4, $5)",
+                )
+                .bind(chain_id)
+                .bind(hash)
+                .bind(parent)
+                .bind(number)
+                .bind(status)
+                .execute(&pool)
+                .await
+                .expect("seed block row");
+            }
+        };
+
+        // Shared canonical history up to the settlement frontier.
+        seed_block(1, vec![1_u8; 32], vec![0_u8; 32], "finalized").await;
+        seed_block(2, vec![2_u8; 32], vec![1_u8; 32], "finalized").await;
+        // Stale fork row finalized on the old branch; its canonical sibling
+        // (0x83) was never stored.
+        seed_block(3, vec![0x43_u8; 32], vec![2_u8; 32], "finalized").await;
+        // Newer live pending blocks above a sparse gap at height 4.
+        seed_block(5, vec![0x85_u8; 32], vec![0x84_u8; 32], "pending").await;
+        seed_block(6, vec![0x86_u8; 32], vec![0x85_u8; 32], "pending").await;
+
+        let canonical_hash = |block_number: u64| {
+            if block_number < 3 {
+                BlockHash::from([block_number as u8; 32])
+            } else {
+                BlockHash::from([0x80 + block_number as u8; 32])
+            }
+        };
+
+        update_finalized_blocks_aux(&mut db, 10, 1, 4, |block_number| {
+            let hash = canonical_hash(block_number);
+            async move { Ok(hash) }
+        })
+        .await;
+
+        let status_of = |hash: Vec<u8>| {
+            let pool = pool.clone();
+            let chain_id = chain_id.as_i64();
+            async move {
+                sqlx::query_scalar::<_, String>(
+                    "SELECT block_status FROM host_chain_blocks_valid \
+                     WHERE chain_id = $1 AND block_hash = $2",
+                )
+                .bind(chain_id)
+                .bind(hash)
+                .fetch_one(&pool)
+                .await
+                .expect("block status")
+            }
+        };
+
+        assert_eq!(
+            status_of(vec![0x85_u8; 32]).await,
+            "finalized",
+            "pending blocks above the stale row must not be starved"
+        );
+        assert_eq!(status_of(vec![0x86_u8; 32]).await, "finalized");
+        assert_eq!(
+            status_of(vec![0x43_u8; 32]).await,
+            "finalized",
+            "the stale row stays untouched until its canonical sibling is re-ingested"
+        );
+
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+        assert_eq!(
+            settled_height, 2,
+            "settlement must hold below the contradicted height"
+        );
+
+        // Re-ingestion (poller replay from the settlement frontier) stores
+        // the canonical sibling; the next pass resolves the fork.
+        seed_block(3, vec![0x83_u8; 32], vec![2_u8; 32], "pending").await;
+        update_finalized_blocks_aux(&mut db, 10, 1, 4, |block_number| {
+            let hash = canonical_hash(block_number);
+            async move { Ok(hash) }
+        })
+        .await;
+        assert_eq!(status_of(vec![0x83_u8; 32]).await, "finalized");
+        assert_eq!(
+            status_of(vec![0x43_u8; 32]).await,
+            "orphaned",
+            "finalizing the canonical sibling orphans the stale fork row"
+        );
+
+        assert_eq!(
+            db.process_orphaned_branch_cleanup_jobs()
+                .await
+                .expect("clean stale branch"),
+            1
+        );
+        update_finalized_blocks_aux(&mut db, 10, 1, 4, |block_number| {
+            let hash = canonical_hash(block_number);
+            async move { Ok(hash) }
+        })
+        .await;
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read recovered settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+        assert_eq!(
+            settled_height, 6,
+            "settlement recovers to the candidate once the fork is resolved"
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn finalization_enqueues_orphan_cleanup_asynchronously() {
+        let _cutover = EnvGuard::set("FHEVM_BRANCH_CUTOVER_BLOCK", "1");
+        let db_instance =
+            test_harness::instance::setup_test_db(ImportMode::None)
+                .await
+                .expect("valid db instance");
+        let chain_id = ChainId::try_from(43_u64).unwrap();
+        let mut db = Database::new(&db_instance.db_url, chain_id, 128)
+            .await
+            .expect("database");
+        let pool = db.pool.read().await.clone();
+
+        let canonical_hash = vec![0x02_u8; 32];
+        let orphan_hash = vec![0x03_u8; 32];
+        let orphan_handle = vec![0xA3_u8; 32];
+
+        for (block_number, block_hash, parent_hash) in [
+            (0_i64, vec![0x00_u8; 32], Vec::new()),
+            (1_i64, vec![0x01_u8; 32], vec![0x00_u8; 32]),
+            (2_i64, canonical_hash.clone(), vec![0x01_u8; 32]),
+            (2_i64, orphan_hash.clone(), vec![0x01_u8; 32]),
+        ] {
+            sqlx::query(
+                "INSERT INTO host_chain_blocks_valid \
+                 (chain_id, block_hash, parent_hash, block_number, block_status) \
+                 VALUES ($1, $2, $3, $4, 'pending')",
+            )
+            .bind(chain_id.as_i64())
+            .bind(block_hash)
+            .bind(parent_hash)
+            .bind(block_number)
+            .execute(&pool)
+            .await
+            .expect("insert pending block");
+        }
+
+        sqlx::query(
+            "INSERT INTO computations_branch (
+                output_handle,
+                dependencies,
+                fhe_operation,
+                is_scalar,
+                transaction_id,
+                host_chain_id,
+                block_number,
+                producer_block_hash
+             )
+             VALUES ($1, $2, 1, FALSE, $3, $4, 2, $5)",
+        )
+        .bind(&orphan_handle)
+        .bind(vec![vec![0x55_u8; 32]])
+        .bind(vec![0x77_u8; 32])
+        .bind(chain_id.as_i64())
+        .bind(&orphan_hash)
+        .execute(&pool)
+        .await
+        .expect("insert orphan branch computation");
+
+        update_finalized_blocks_aux(
+            &mut db,
+            3,
+            1,
+            1,
+            |block_number| async move {
+                let byte = block_number as u8;
+                Ok(BlockHash::from([byte; 32]))
+            },
+        )
+        .await;
+
+        let orphan_status: String = sqlx::query_scalar(
+            "SELECT block_status::text
+             FROM host_chain_blocks_valid
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&orphan_hash)
+        .fetch_one(&pool)
+        .await
+        .expect("orphan status");
+        assert_eq!(orphan_status, "orphaned");
+
+        let pending_cleanup: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM branch_cleanup_jobs
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+               AND status = 'pending'",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&canonical_hash)
+        .fetch_one(&pool)
+        .await
+        .expect("pending cleanup job");
+        assert_eq!(pending_cleanup, 1);
+
+        let orphan_computations: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM computations_branch
+             WHERE host_chain_id = $1
+               AND producer_block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&orphan_hash)
+        .fetch_one(&pool)
+        .await
+        .expect("orphan branch computation still present");
+        assert_eq!(
+            orphan_computations, 1,
+            "finalization should not run heavy cleanup inline"
+        );
+
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+        assert_eq!(
+            settled_height, 1,
+            "pending cleanup for block 2 should block settlement"
+        );
+
+        let processed = db
+            .process_orphaned_branch_cleanup_jobs()
+            .await
+            .expect("process cleanup jobs");
+        assert_eq!(processed, 1);
+
+        let orphan_computations: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM computations_branch
+             WHERE host_chain_id = $1
+               AND producer_block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&orphan_hash)
+        .fetch_one(&pool)
+        .await
+        .expect("orphan branch computation cleaned");
+        assert_eq!(orphan_computations, 0);
+
+        let completed_cleanup: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*)
+             FROM branch_cleanup_jobs
+             WHERE chain_id = $1
+               AND finalized_block_hash = $2
+               AND status = 'completed'",
+        )
+        .bind(chain_id.as_i64())
+        .bind(&canonical_hash)
+        .fetch_one(&pool)
+        .await
+        .expect("completed cleanup job");
+        assert_eq!(completed_cleanup, 1);
+
+        update_finalized_blocks_aux(
+            &mut db,
+            3,
+            1,
+            1,
+            |block_number| async move {
+                let byte = block_number as u8;
+                Ok(BlockHash::from([byte; 32]))
+            },
+        )
+        .await;
+
+        let mut tx = db
+            .new_transaction()
+            .await
+            .expect("settlement tx")
+            .expect("new_transaction() returns Some on a live stack");
+        let settled_height = read_settled_height(&mut tx, chain_id.as_i64())
+            .await
+            .expect("read settlement");
+        tx.rollback().await.expect("rollback settlement tx");
+        assert_eq!(settled_height, 2);
     }
 
     #[test]

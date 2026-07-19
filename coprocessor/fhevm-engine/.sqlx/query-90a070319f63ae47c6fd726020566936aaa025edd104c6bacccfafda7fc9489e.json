@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO ciphertexts_branch(handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type)\n         VALUES ($1, $2, $3, $4, $5, $6)\n         ON CONFLICT DO NOTHING;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int2",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "90a070319f63ae47c6fd726020566936aaa025edd104c6bacccfafda7fc9489e"
+}

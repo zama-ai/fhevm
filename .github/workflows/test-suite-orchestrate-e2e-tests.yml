@@ -335,6 +335,43 @@ jobs:
       test-profile: standard-shard-stateful
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
 
+  # Required real-chain-fork leg. It boots the dedicated 3-of-3 dual-Anvil
+  # topology and exercises equivocation, exact-hash finalization, RFC-011
+  # settlement, orphan cleanup, recovered consensus, and decryption.
+  run-e2e-tests-real-fork:
+    needs: [create-e2e-tests-input]
+    if: *build-trigger-condition
+    uses:
+      ./.github/workflows/test-suite-e2e-tests.yml
+    permissions: *e2e_permissions
+    secrets: *e2e_secrets
+    with:
+      orchestrated: true
+      build: false
+      coprocessor-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
+      coprocessor-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
+      coprocessor-host-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-host-listener-version }}
+      coprocessor-sns-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-sns-worker-version }}
+      coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
+      coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
+      coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
+      coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
+      listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
+      connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
+      connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
+      connector-kms-worker-version: ${{ needs.create-e2e-tests-input.outputs.connector-kms-worker-version }}
+      connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
+      host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
+      kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
+      lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
+      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
+      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      scenario: three-of-three-fork
+      test-profile: real-fork-consensus
+      test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
+
   # Same orchestrated PR-built images and base-sha lock as run-e2e-tests, exercised against a real
   # 4-party threshold-mode KMS (secure keygen, Test params) via the kms-generation acceptance profile.
   # NOT a merge-queue gate, and since it competes with the gating shards for the same runner pool it

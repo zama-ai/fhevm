@@ -157,6 +157,7 @@ describe("cli", () => {
     expect(result.stdout).toContain("multi-chain-isolation");
     expect(result.stdout).toContain("ciphertext-drift - 2+ coprocessors");
     expect(result.stdout).toContain("ciphertext-drift-auto-recovery - standard");
+    expect(result.stdout).toContain("real-fork-consensus");
   });
 
   test("standard suite includes multi-chain isolation coverage", () => {

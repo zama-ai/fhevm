@@ -2,6 +2,9 @@ target
 .cargo/advisory-db
 .cargo/advisory-db..lock
 
+# Keep SQLx offline metadata in this workspace's root `.sqlx` only.
+*/.sqlx/
+
 # Local dev-only run scripts and test env (not tracked)
 run_with_localnet*.sh
 run_fleet*.sh

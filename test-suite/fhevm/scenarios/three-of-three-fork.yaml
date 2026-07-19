@@ -1,0 +1,69 @@
+## Three coprocessor instances with dual-Anvil fork topology.
+##
+## Coprocessors 0 and 1 observe the canonical chain (host-node, port 8545).
+## Coprocessor 2 observes the forked chain (fork-anvil, container port 8546).
+## All 3 submit consensus digests to the shared Gateway chain.
+##
+## Both Anvil instances share the same genesis (chain ID, mnemonic, accounts).
+## The test orchestrator submits different transactions to each Anvil at the
+## fork point, creating branch-specific computation results.
+##
+## Usage:
+##   ./fhevm-cli up --scenario three-of-three-fork --build
+##
+## fhevm-cli starts the secondary fork Anvil automatically when this scenario
+## routes an instance to the `fork-anvil` hostname.
+version: 1
+kind: coprocessor-consensus
+name: Three Of Three Fork
+description: >-
+  Three coprocessor instances with dual-Anvil topology for fork/equivocation testing. Coprocessors 0,1 observe the
+  canonical Anvil; coprocessor 2 observes the fork Anvil over the Docker network.
+topology:
+  count: 3
+  threshold: 3
+instances:
+  - index: 0
+    env:
+      FHEVM_BRANCH_CUTOVER_BLOCK: "1"
+    # Default RPC — canonical Anvil on port 8545
+    args:
+      host-listener:
+        - --catchup-margin=8
+        - --catchup-finalization-in-blocks=2
+        - --settlement-finality-lag=8
+        - --reorg-maximum-duration-in-blocks=8
+      host-listener-poller:
+        - --finality-lag=2
+        - --settlement-finality-lag=8
+        - --reorg-maximum-duration-in-blocks=8
+  - index: 1
+    env:
+      FHEVM_BRANCH_CUTOVER_BLOCK: "1"
+    # Default RPC — canonical Anvil on port 8545
+    args:
+      host-listener:
+        - --catchup-margin=8
+        - --catchup-finalization-in-blocks=2
+        - --settlement-finality-lag=8
+        - --reorg-maximum-duration-in-blocks=8
+      host-listener-poller:
+        - --finality-lag=2
+        - --settlement-finality-lag=8
+        - --reorg-maximum-duration-in-blocks=8
+  - index: 2
+    env:
+      FHEVM_BRANCH_CUTOVER_BLOCK: "1"
+      # Override RPC to point to the fork Anvil on its Docker-network port.
+      RPC_HTTP_URL: "http://fork-anvil:8546"
+      RPC_WS_URL: "ws://fork-anvil:8546"
+    args:
+      host-listener:
+        - --catchup-margin=8
+        - --catchup-finalization-in-blocks=2
+        - --settlement-finality-lag=8
+        - --reorg-maximum-duration-in-blocks=8
+      host-listener-poller:
+        - --finality-lag=2
+        - --settlement-finality-lag=8
+        - --reorg-maximum-duration-in-blocks=8

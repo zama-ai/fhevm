@@ -176,7 +176,7 @@ pub(crate) async fn fetch_stored_ciphertexts(
     let rows = sqlx::query(
         "
             SELECT handle, ciphertext, ciphertext_type, input_blob_index
-            FROM ciphertexts
+            FROM ciphertexts_branch
             WHERE handle = ANY($1::BYTEA[])
             AND ciphertext_version = $2
             ORDER BY input_blob_index ASC

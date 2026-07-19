@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE pbs_computations_branch\n                SET is_completed = TRUE,\n                    completed_at = NOW(),\n                    is_error = FALSE,\n                    error_message = NULL,\n                    error_at = NULL\n                WHERE host_chain_id = $1\n                  AND handle = $2\n                  AND producer_block_hash = $3\n                  AND block_hash = $4\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "875a2ef3f25147f2ef0aefa6510ccdba3a25a828413a5e33f5166a5e2a17c84d"
+}

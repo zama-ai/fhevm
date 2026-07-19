@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ciphertext_digest_branch (\n                host_chain_id,\n                key_id_gw,\n                handle,\n                producer_block_hash,\n                block_hash,\n                block_number,\n                transaction_id,\n                ciphertext128_format\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n            ON CONFLICT (handle, producer_block_hash, block_hash) DO UPDATE\n            SET ciphertext128_format = EXCLUDED.ciphertext128_format\n            WHERE ciphertext_digest_branch.ciphertext128_format IS NULL\n              AND EXCLUDED.ciphertext128_format IS NOT NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e8f6e289df566de93a233f8b153d9001e3ab3fd1953ae51f28c8abec552b6588"
+}

@@ -1,9 +1,10 @@
 use crate::{
+    aws_upload::{enqueue_unverified_settled_publications, fetch_pending_uploads},
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
-    Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy, SchedulePolicy,
-    DEFAULT_S3_MIGRATION_MAX_RETRIES,
+    BigCiphertext, Ciphertext128Format, Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy,
+    SchedulePolicy, CURRENT_S3_FORMAT_VERSION, DEFAULT_S3_MIGRATION_MAX_RETRIES,
 };
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
@@ -12,8 +13,12 @@ use aws_config::BehaviorVersion;
 use ciphertext_attestation::{
     CiphertextAttestation, CiphertextFormat, S3_METADATA_ATTESTATION_KEY,
 };
-use fhevm_engine_common::db_keys::DbKeyId;
+use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::utils::{to_hex, DatabaseURL};
+use fhevm_engine_common::{
+    branch::{advance_settled_height, enqueue_s3_canonical_repair},
+    db_keys::DbKeyId,
+};
 use serde::{Deserialize, Serialize};
 use serial_test::serial;
 use sqlx::Row;
@@ -41,6 +46,9 @@ use tokio::{
 use tracing::{info, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
+// The uploader permits a 120-second S3 retry window; leave margin for the
+// database recovery pass that follows a failed direct upload.
+const S3_UPLOAD_STATE_RETRIES: u64 = 1_800;
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
 
 mod s3_migration;
@@ -268,7 +276,7 @@ async fn test_lifo_mode() {
 
     let mut trx = pool.begin().await.unwrap();
     if let Result::Ok(Some(tasks)) =
-        query_sns_tasks(&mut trx, BATCH_SIZE as u32, Order::Desc, &key_id_gw).await
+        query_sns_tasks(&mut trx, BATCH_SIZE as u32, 0, Order::Desc, &key_id_gw).await
     {
         assert!(
             tasks.len() == BATCH_SIZE,
@@ -292,7 +300,7 @@ async fn test_lifo_mode() {
 
     let mut trx = pool.begin().await.unwrap();
     if let Result::Ok(Some(tasks)) =
-        query_sns_tasks(&mut trx, BATCH_SIZE as u32, Order::Asc, &key_id_gw).await
+        query_sns_tasks(&mut trx, BATCH_SIZE as u32, 0, Order::Asc, &key_id_gw).await
     {
         assert!(
             tasks.len() == BATCH_SIZE,
@@ -352,30 +360,53 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
 
     // Acquire the task the same way the worker does, then release the lock.
     let mut trx = pool.begin().await.unwrap();
-    let task = query_sns_tasks(&mut trx, 1, Order::Asc, &key_id_gw)
+    let mut task = query_sns_tasks(&mut trx, 1, 0, Order::Asc, &key_id_gw)
         .await
         .unwrap()
         .expect("one task")
         .remove(0);
     trx.rollback().await.unwrap();
 
-    // Live provenance: the digest row is enqueued.
+    // A cancelled conversion must not leave a digest row that recovery could
+    // complete with the no-SNS sentinel.
+    let mut trx = pool.begin().await.unwrap();
+    assert!(!task.enqueue_upload_task(&mut trx).await.unwrap());
+    trx.commit().await.unwrap();
+    let digest_rows = || async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM ciphertext_digest_branch WHERE handle = $1",
+        )
+        .bind(&handle)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    };
+    assert_eq!(digest_rows().await, 0);
+
+    sqlx::query(
+        "UPDATE pbs_computations_branch
+         SET is_completed = TRUE
+         WHERE handle = $1",
+    )
+    .bind(&handle)
+    .execute(&pool)
+    .await
+    .unwrap();
+    task.ct128 = Arc::new(BigCiphertext::new(
+        vec![0xCD; 32],
+        Ciphertext128Format::CompressedOnCpu,
+    ));
+
+    // Completed live provenance: the digest row is enqueued.
     let mut trx = pool.begin().await.unwrap();
     assert!(task.enqueue_upload_task(&mut trx).await.unwrap());
     trx.commit().await.unwrap();
-    let digest_rows = || async {
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM ciphertext_digest WHERE handle = $1")
-            .bind(&handle)
-            .fetch_one(&pool)
-            .await
-            .unwrap()
-    };
     assert_eq!(digest_rows().await, 1);
 
     // Simulate the reorg cleanup for an orphan-only handle.
     for sql in [
-        "DELETE FROM pbs_computations WHERE handle = $1",
-        "DELETE FROM ciphertext_digest WHERE handle = $1",
+        "DELETE FROM pbs_computations_branch WHERE handle = $1",
+        "DELETE FROM ciphertext_digest_branch WHERE handle = $1",
     ] {
         sqlx::query(sql).bind(&handle).execute(&pool).await.unwrap();
     }
@@ -400,7 +431,7 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
     test_harness::db_utils::insert_into_pbs_computations(&pool, host_chain_id, &handle)
         .await
         .unwrap();
-    sqlx::query("DELETE FROM ciphertexts WHERE handle = $1")
+    sqlx::query("DELETE FROM ciphertexts_branch WHERE handle = $1")
         .bind(&handle)
         .execute(&pool)
         .await
@@ -415,6 +446,1082 @@ async fn enqueue_upload_task_skips_after_reorg_cleanup() {
 
     // Leave the shared (localhost-mode) database as we found it.
     clean_up(&pool).await.unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+#[cfg(not(feature = "gpu"))]
+async fn test_query_sns_tasks_reads_branch_rows() {
+    init_tracing();
+
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .unwrap();
+
+    let host_chain_id: i64 = 1;
+    let key_id_gw: DbKeyId = vec![0u8; 32];
+    let first_handle = vec![0x09_u8; 32];
+    let second_handle = vec![0x0A_u8; 32];
+    let branchful_without_exact_handle = vec![0x0B_u8; 32];
+    let branchless_handle = vec![0x0C_u8; 32];
+    let branchful_null_block_handle = vec![0x0D_u8; 32];
+    let branchless_producer_pre_cutover_handle = vec![0x0E_u8; 32];
+    let first_hash = vec![0x19_u8; 32];
+    let second_hash = vec![0x1A_u8; 32];
+    let missing_exact_hash = vec![0x1B_u8; 32];
+    let null_block_hash = vec![0x1C_u8; 32];
+    let first_event_hash = vec![0x29_u8; 32];
+    let second_event_hash = vec![0x2A_u8; 32];
+    let missing_event_hash = vec![0x2B_u8; 32];
+    let null_block_event_hash = vec![0x2C_u8; 32];
+    let branchless_producer_event_hash = vec![0x2D_u8; 32];
+
+    for (handle, producer_block_hash, block_hash, block_number) in [
+        (&first_handle, &first_hash, &first_event_hash, 9_i64),
+        (&second_handle, &second_hash, &second_event_hash, 10_i64),
+    ] {
+        sqlx::query(
+            "INSERT INTO pbs_computations_branch(
+                handle, host_chain_id, block_number, producer_block_hash, block_hash
+             )
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(handle)
+        .bind(host_chain_id)
+        .bind(block_number)
+        .bind(producer_block_hash)
+        .bind(block_hash)
+        .execute(&pool)
+        .await
+        .expect("insert pbs_computations_branch");
+
+        sqlx::query(
+            "INSERT INTO ciphertexts_branch(
+                handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type
+             )
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(handle)
+        .bind(producer_block_hash)
+        .bind(block_number)
+        .bind(vec![0x42_u8; 32])
+        .bind(current_ciphertext_version())
+        .bind(0_i16)
+        .execute(&pool)
+        .await
+        .expect("insert ciphertexts_branch");
+    }
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash
+         )
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(&branchful_without_exact_handle)
+    .bind(host_chain_id)
+    .bind(11_i64)
+    .bind(&missing_exact_hash)
+    .bind(&missing_event_hash)
+    .execute(&pool)
+    .await
+    .expect("insert branchful pbs_computations_branch without exact ciphertext");
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, ''::bytea, $2, $3, $4)",
+    )
+    .bind(&branchful_without_exact_handle)
+    .bind(vec![0x43_u8; 32])
+    .bind(current_ciphertext_version())
+    .bind(0_i16)
+    .execute(&pool)
+    .await
+    .expect("insert branchless ciphertext candidate");
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash
+         )
+         VALUES ($1, $2, NULL, ''::bytea)",
+    )
+    .bind(&branchless_handle)
+    .bind(host_chain_id)
+    .execute(&pool)
+    .await
+    .expect("insert branchless pbs_computations_branch");
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, ''::bytea, $2, $3, $4)",
+    )
+    .bind(&branchless_handle)
+    .bind(vec![0x44_u8; 32])
+    .bind(current_ciphertext_version())
+    .bind(0_i16)
+    .execute(&pool)
+    .await
+    .expect("insert branchless ciphertext");
+
+    let branchful_null_insert = sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash
+         )
+         VALUES ($1, $2, NULL, $3, $4)",
+    )
+    .bind(&branchful_null_block_handle)
+    .bind(host_chain_id)
+    .bind(&null_block_hash)
+    .bind(&null_block_event_hash)
+    .execute(&pool)
+    .await;
+    assert!(
+        branchful_null_insert.is_err(),
+        "branchful pbs rows must carry a producer block number"
+    );
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash
+         )
+         VALUES ($1, $2, 9, ''::bytea, $3)",
+    )
+    .bind(&branchless_producer_pre_cutover_handle)
+    .bind(host_chain_id)
+    .bind(&branchless_producer_event_hash)
+    .execute(&pool)
+    .await
+    .expect("insert pre-cutover pbs row consuming branchless input");
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, ''::bytea, $2, $3, $4)",
+    )
+    .bind(&branchless_producer_pre_cutover_handle)
+    .bind(vec![0x46_u8; 32])
+    .bind(current_ciphertext_version())
+    .bind(0_i16)
+    .execute(&pool)
+    .await
+    .expect("insert branchless ciphertext for pre-cutover pbs row");
+
+    let mut trx = pool.begin().await.unwrap();
+    let tasks = query_sns_tasks(&mut trx, 10, 0, Order::Asc, &key_id_gw)
+        .await
+        .expect("query_sns_tasks")
+        .expect("branch tasks");
+
+    assert_eq!(tasks.len(), 4);
+    assert_eq!(tasks[0].handle, first_handle);
+    assert_eq!(tasks[0].block_number, Some(9));
+    assert_eq!(tasks[0].producer_block_hash, first_hash);
+    assert_eq!(tasks[0].block_hash, first_event_hash);
+    assert_eq!(tasks[1].handle, second_handle);
+    assert_eq!(tasks[1].block_number, Some(10));
+    assert_eq!(tasks[1].producer_block_hash, second_hash);
+    assert_eq!(tasks[1].block_hash, second_event_hash);
+    assert!(tasks
+        .iter()
+        .all(|task| task.handle != branchful_without_exact_handle));
+    assert!(tasks
+        .iter()
+        .all(|task| task.handle != branchful_null_block_handle));
+    assert!(tasks
+        .iter()
+        .any(|task| task.handle == branchless_producer_pre_cutover_handle));
+    let branchless_task = tasks
+        .iter()
+        .find(|task| task.handle == branchless_handle)
+        .expect("branchless PBS row should select branchless ciphertext");
+    assert_eq!(branchless_task.producer_block_hash, Vec::<u8>::new());
+    assert_eq!(branchless_task.block_hash, Vec::<u8>::new());
+
+    let upload_task = tasks[0].clone();
+    trx.rollback().await.expect("rollback zero-cutover fetch");
+
+    let mut limit_trx = pool.begin().await.unwrap();
+    let limited_post_cutover_tasks = query_sns_tasks(&mut limit_trx, 1, 10, Order::Asc, &key_id_gw)
+        .await
+        .expect("limited query_sns_tasks with nonzero cutover")
+        .expect("limited post-cutover branch task");
+    limit_trx
+        .rollback()
+        .await
+        .expect("rollback limited post-cutover fetch");
+    assert_eq!(limited_post_cutover_tasks.len(), 1);
+    assert_eq!(limited_post_cutover_tasks[0].handle, first_handle);
+
+    let mut cutover_trx = pool.begin().await.unwrap();
+    let post_cutover_tasks = query_sns_tasks(&mut cutover_trx, 10, 10, Order::Asc, &key_id_gw)
+        .await
+        .expect("query_sns_tasks with nonzero cutover")
+        .expect("post-cutover branch tasks");
+    cutover_trx
+        .rollback()
+        .await
+        .expect("rollback post-cutover fetch");
+    assert_eq!(post_cutover_tasks.len(), 4);
+    assert!(
+        post_cutover_tasks
+            .iter()
+            .all(|task| task.producer_block_hash.is_empty() || task.block_number.is_some()),
+        "sns-worker must keep branchless and pre-cutover rows drainable"
+    );
+    assert!(post_cutover_tasks
+        .iter()
+        .any(|task| task.handle == first_handle));
+    assert!(post_cutover_tasks
+        .iter()
+        .all(|task| task.handle != branchful_null_block_handle));
+    assert!(post_cutover_tasks
+        .iter()
+        .any(|task| task.handle == branchless_producer_pre_cutover_handle));
+    assert!(post_cutover_tasks
+        .iter()
+        .any(|task| task.handle == second_handle));
+    assert!(post_cutover_tasks
+        .iter()
+        .any(|task| task.handle == branchless_handle));
+
+    let mut trx = pool.begin().await.unwrap();
+    let mut upload_task = upload_task;
+    upload_task.ct128 = Arc::new(BigCiphertext::new(
+        vec![0x55_u8; 32],
+        Ciphertext128Format::CompressedOnCpu,
+    ));
+    sqlx::query(
+        "UPDATE pbs_computations_branch
+         SET is_completed = TRUE
+         WHERE host_chain_id = $1
+           AND handle = $2
+           AND producer_block_hash = $3
+           AND block_hash = $4",
+    )
+    .bind(host_chain_id)
+    .bind(&upload_task.handle)
+    .bind(&upload_task.producer_block_hash)
+    .bind(&upload_task.block_hash)
+    .execute(trx.as_mut())
+    .await
+    .expect("complete upload task PBS witness");
+    upload_task
+        .enqueue_upload_task(&mut trx)
+        .await
+        .expect("enqueue upload task");
+
+    let sibling_event_hash = vec![0x2E_u8; 32];
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number
+         )
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&upload_task.handle)
+    .bind(&upload_task.producer_block_hash)
+    .bind(&sibling_event_hash)
+    .bind(upload_task.block_number)
+    .execute(trx.as_mut())
+    .await
+    .expect("insert sibling digest row");
+
+    let ct64_digest = vec![0x77_u8; 32];
+    let ct128_digest = vec![0x88_u8; 32];
+    let marked = upload_task
+        .mark_ciphertexts_uploaded(
+            &mut trx,
+            ct64_digest.clone(),
+            ct128_digest.clone(),
+            CURRENT_S3_FORMAT_VERSION,
+        )
+        .await
+        .expect("mark exact digest row uploaded");
+    assert!(marked);
+
+    let rows = sqlx::query(
+        "SELECT block_hash, ciphertext, ciphertext128
+         FROM ciphertext_digest_branch
+         WHERE handle = $1
+           AND producer_block_hash = $2",
+    )
+    .bind(&upload_task.handle)
+    .bind(&upload_task.producer_block_hash)
+    .fetch_all(trx.as_mut())
+    .await
+    .expect("fetch digest rows");
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        let block_hash: Vec<u8> = row.try_get("block_hash").expect("block_hash");
+        let ciphertext: Option<Vec<u8>> = row.try_get("ciphertext").expect("ciphertext");
+        let ciphertext128: Option<Vec<u8>> = row.try_get("ciphertext128").expect("ciphertext128");
+        if block_hash == upload_task.block_hash {
+            assert_eq!(ciphertext, Some(ct64_digest.clone()));
+            assert_eq!(ciphertext128, Some(ct128_digest.clone()));
+        } else {
+            assert_eq!(block_hash, sibling_event_hash);
+            assert!(ciphertext.is_none());
+            assert!(ciphertext128.is_none());
+        }
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn stale_upload_mark_enqueues_canonical_repair_target() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    let pool = &pool;
+    clean_up(pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let key_id_gw = vec![0x01_u8; 32];
+    let handle = vec![0xA0_u8; 32];
+    let stale_producer = vec![0xA1_u8; 32];
+    let stale_event = vec![0xA2_u8; 32];
+    let canonical_producer = vec![0xB1_u8; 32];
+    let canonical_event = vec![0xB2_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid(chain_id, block_hash, block_number, block_status)
+         VALUES ($1, $2, 20, 'orphaned'), ($1, $3, 20, 'orphaned'), ($1, $4, 20, 'finalized'), ($1, $5, 20, 'finalized')",
+    )
+    .bind(host_chain_id)
+    .bind(&stale_producer)
+    .bind(&stale_event)
+    .bind(&canonical_producer)
+    .bind(&canonical_event)
+    .execute(pool)
+    .await
+    .expect("insert block statuses");
+
+    for (producer, event) in [
+        (&stale_producer, &stale_event),
+        (&canonical_producer, &canonical_event),
+    ] {
+        sqlx::query(
+            "INSERT INTO ciphertext_digest_branch(
+                host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number
+             )
+             VALUES ($1, $2, $3, $4, $5, 20)",
+        )
+        .bind(host_chain_id)
+        .bind(&key_id_gw)
+        .bind(&handle)
+        .bind(producer)
+        .bind(event)
+        .execute(pool)
+        .await
+        .expect("insert digest row");
+    }
+
+    let stale_task = crate::HandleItem {
+        host_chain_id: fhevm_engine_common::chain_id::ChainId::try_from(host_chain_id).unwrap(),
+        key_id_gw: key_id_gw.clone(),
+        handle: handle.clone(),
+        producer_block_hash: stale_producer.clone(),
+        block_hash: stale_event.clone(),
+        block_number: Some(20),
+        ct64_compressed: Arc::new(vec![0x11_u8; 32]),
+        ct128: Arc::new(BigCiphertext::new(Vec::new(), Ciphertext128Format::Unknown)),
+        ct64_digest: None,
+        ct128_digest: None,
+        s3_format_version: None,
+        span: tracing::Span::none(),
+        transaction_id: None,
+    };
+
+    let mut trx = pool.begin().await.expect("begin tx");
+    assert!(!stale_task
+        .is_upload_publishable(&mut trx)
+        .await
+        .expect("publishability check"));
+    let marked = stale_task
+        .mark_ciphertexts_uploaded(
+            &mut trx,
+            vec![0x55_u8; 32],
+            vec![0_u8; 32],
+            CURRENT_S3_FORMAT_VERSION,
+        )
+        .await
+        .expect("stale mark should not error");
+    assert!(!marked);
+    assert!(stale_task
+        .enqueue_canonical_repair(&mut trx, "test_stale_upload")
+        .await
+        .expect("enqueue repair"));
+    trx.commit().await.expect("commit repair");
+
+    let repair = sqlx::query(
+        "SELECT target_producer_block_hash, target_block_hash
+         FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .fetch_one(pool)
+    .await
+    .expect("repair row");
+    let target_producer: Vec<u8> = repair.try_get("target_producer_block_hash").unwrap();
+    let target_event: Vec<u8> = repair.try_get("target_block_hash").unwrap();
+    assert_eq!(target_producer, canonical_producer);
+    assert_eq!(target_event, canonical_event);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn resubmit_waits_for_completed_pbs_and_rearms_stale_zero_digest() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    clean_up(&pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let handle = vec![0xB0_u8; 32];
+    let producer = vec![0xB1_u8; 32];
+    let event = vec![0xB2_u8; 32];
+    let key_id_gw = vec![0xB3_u8; 32];
+    let ct64 = vec![0xB4_u8; 32];
+    let ct128 = vec![0xB5_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash, is_completed
+         )
+         VALUES ($1, $2, 20, $3, $4, FALSE)",
+    )
+    .bind(&handle)
+    .bind(host_chain_id)
+    .bind(&producer)
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("insert incomplete PBS witness");
+
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, $2, 20, $3, $4, 0)",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&ct64)
+    .bind(current_ciphertext_version())
+    .execute(&pool)
+    .await
+    .expect("insert ct64 bytes");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number
+         )
+         VALUES ($1, $2, $3, $4, $5, 20)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("insert pending digest row");
+
+    let jobs = fetch_pending_uploads(&pool, 10, Ciphertext128Format::CompressedOnCpu)
+        .await
+        .expect("fetch pending uploads");
+    assert!(
+        jobs.is_empty(),
+        "incomplete PBS conversion must not be reconstructed as ct64-only"
+    );
+
+    // Model a row poisoned by the old recovery path, followed by a successful
+    // recomputation. The stale sentinel must be treated as missing so the real
+    // ct128 digest is recomputed from the retained bytes.
+    sqlx::query(
+        "INSERT INTO ciphertexts128_branch(handle, producer_block_hash, block_number, ciphertext)
+         VALUES ($1, $2, 20, $3)",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&ct128)
+    .execute(&pool)
+    .await
+    .expect("insert recomputed ct128 bytes");
+    sqlx::query(
+        "UPDATE pbs_computations_branch
+         SET is_completed = TRUE
+         WHERE handle = $1
+           AND producer_block_hash = $2
+           AND block_hash = $3",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("complete PBS witness");
+    sqlx::query(
+        "UPDATE ciphertext_digest_branch
+         SET ciphertext = $1,
+             ciphertext128 = $2,
+             ciphertext128_format = $3
+         WHERE handle = $4
+           AND producer_block_hash = $5
+           AND block_hash = $6",
+    )
+    .bind(vec![0xB6_u8; 32])
+    .bind(vec![0_u8; 32])
+    .bind(i16::from(Ciphertext128Format::CompressedOnCpu))
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("seed stale no-SNS digest");
+
+    let jobs = fetch_pending_uploads(&pool, 10, Ciphertext128Format::CompressedOnCpu)
+        .await
+        .expect("fetch stale-zero recovery");
+    assert_eq!(jobs.len(), 1);
+    match &jobs[0] {
+        crate::UploadJob::DatabaseLock(item) => {
+            assert_eq!(item.handle, handle);
+            assert_eq!(item.ct128.bytes(), ct128);
+            assert_eq!(item.ct128.format(), Ciphertext128Format::CompressedOnCpu);
+            assert!(
+                item.ct128_digest.is_none(),
+                "stale no-SNS sentinel must be rearmed for digest computation"
+            );
+        }
+        crate::UploadJob::Normal(_) => panic!("pending upload must reacquire its database lock"),
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn resubmit_recovers_and_backfills_missing_ct128_format() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    clean_up(&pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let handle = vec![0xA0_u8; 32];
+    let producer = vec![0xA1_u8; 32];
+    let event = vec![0xA2_u8; 32];
+    let ct64 = vec![0xA3_u8; 32];
+    let ct128 = vec![0xA4_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash, is_completed
+         )
+         VALUES ($1, $2, 19, $3, $4, TRUE)",
+    )
+    .bind(&handle)
+    .bind(host_chain_id)
+    .bind(&producer)
+    .bind(&event)
+    .execute(&pool)
+    .await
+    .expect("insert completed PBS witness");
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, $2, 19, $3, $4, 0)",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&ct64)
+    .bind(current_ciphertext_version())
+    .execute(&pool)
+    .await
+    .expect("insert ct64 bytes");
+    sqlx::query(
+        "INSERT INTO ciphertexts128_branch(handle, producer_block_hash, block_number, ciphertext)
+         VALUES ($1, $2, 19, $3)",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&ct128)
+    .execute(&pool)
+    .await
+    .expect("insert ct128 bytes");
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number,
+            ciphertext, ciphertext128, ciphertext128_format
+         )
+         VALUES ($1, $2, $3, $4, $5, 19, $6, $7, NULL)",
+    )
+    .bind(host_chain_id)
+    .bind(vec![0xA5_u8; 32])
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .bind(vec![0xA6_u8; 32])
+    .bind(vec![0xA7_u8; 32])
+    .execute(&pool)
+    .await
+    .expect("insert format-less digest row");
+
+    let jobs = fetch_pending_uploads(&pool, 10, Ciphertext128Format::UncompressedOnCpu)
+        .await
+        .expect("fetch format recovery");
+    assert_eq!(jobs.len(), 1);
+    let crate::UploadJob::DatabaseLock(item) = jobs.into_iter().next().unwrap() else {
+        panic!("format recovery must reacquire the digest row lock");
+    };
+    assert_eq!(item.ct128.bytes(), ct128);
+    assert_eq!(item.ct128.format(), Ciphertext128Format::UncompressedOnCpu);
+
+    let mut tx = pool.begin().await.expect("begin format backfill");
+    assert!(item
+        .enqueue_upload_task(&mut tx)
+        .await
+        .expect("backfill format through enqueue conflict"));
+    tx.commit().await.expect("commit format backfill");
+
+    let stored_format: Option<i16> = sqlx::query_scalar(
+        "SELECT ciphertext128_format
+         FROM ciphertext_digest_branch
+         WHERE handle = $1 AND producer_block_hash = $2 AND block_hash = $3",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .fetch_one(&pool)
+    .await
+    .expect("read backfilled format");
+    assert_eq!(
+        stored_format,
+        Some(i16::from(Ciphertext128Format::UncompressedOnCpu))
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn canonical_repair_after_ct128_gc_retains_stored_format() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    let pool = &pool;
+    clean_up(pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let key_id_gw = vec![0x02_u8; 32];
+    let handle = vec![0xC0_u8; 32];
+    let producer = vec![0xC1_u8; 32];
+    let event = vec![0xC2_u8; 32];
+    let ct64 = vec![0xC3_u8; 32];
+    let ct64_digest = vec![0xC4_u8; 32];
+    let ct128_digest = vec![0xC5_u8; 32];
+    let ct128_format = Ciphertext128Format::CompressedOnCpu;
+
+    sqlx::query(
+        "INSERT INTO pbs_computations_branch(
+            handle, host_chain_id, block_number, producer_block_hash, block_hash, is_completed
+         )
+         VALUES ($1, $2, 30, $3, $4, TRUE)",
+    )
+    .bind(&handle)
+    .bind(host_chain_id)
+    .bind(&producer)
+    .bind(&event)
+    .execute(pool)
+    .await
+    .expect("insert completed PBS witness");
+
+    sqlx::query(
+        "INSERT INTO ciphertexts_branch(
+            handle, producer_block_hash, block_number, ciphertext, ciphertext_version, ciphertext_type
+         )
+         VALUES ($1, $2, 30, $3, $4, 0)",
+    )
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&ct64)
+    .bind(current_ciphertext_version())
+    .execute(pool)
+    .await
+    .expect("insert ct64 bytes");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number,
+            ciphertext, ciphertext128, ciphertext128_format, s3_format_version
+         )
+         VALUES ($1, $2, $3, $4, $5, 30, $6, $7, $8, $9)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .bind(&ct64_digest)
+    .bind(&ct128_digest)
+    .bind(i16::from(ct128_format))
+    .bind(CURRENT_S3_FORMAT_VERSION)
+    .execute(pool)
+    .await
+    .expect("insert complete digest row");
+
+    sqlx::query(
+        "INSERT INTO s3_canonical_repair_queue(
+            host_chain_id, handle, target_producer_block_hash, target_block_hash,
+            target_block_number, reason
+         )
+         VALUES ($1, $2, $3, $4, 30, 'test')",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .execute(pool)
+    .await
+    .expect("insert repair row");
+
+    let jobs = fetch_pending_uploads(pool, 10, Ciphertext128Format::CompressedOnCpu)
+        .await
+        .expect("fetch pending repairs");
+    assert_eq!(jobs.len(), 1);
+    match &jobs[0] {
+        crate::UploadJob::Normal(item) => {
+            assert_eq!(item.handle, handle);
+            assert_eq!(item.producer_block_hash, producer);
+            assert_eq!(item.block_hash, event);
+            assert_eq!(item.ct64_compressed.as_ref(), &ct64);
+            assert_eq!(item.ct64_digest.as_deref(), Some(ct64_digest.as_slice()));
+            assert_eq!(item.ct128_digest.as_deref(), Some(ct128_digest.as_slice()));
+            assert!(item.ct128.is_empty(), "ct128 bytes were already GC'd");
+            assert_eq!(item.ct128.format(), ct128_format);
+        }
+        crate::UploadJob::DatabaseLock(_) => panic!("repair work should use normal upload path"),
+    }
+
+    let (locked, attempts): (bool, i32) = sqlx::query_as(
+        "SELECT locked_at IS NOT NULL, attempts
+         FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .fetch_one(pool)
+    .await
+    .expect("repair lock timestamp");
+    assert!(locked);
+    assert_eq!(attempts, 1);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unverified_settled_publication_is_enqueued_for_repair() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    let pool = &pool;
+    clean_up(pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let key_id_gw = vec![0x03_u8; 32];
+    let handle = vec![0xD0_u8; 32];
+    let producer = vec![0xD1_u8; 32];
+    let event = vec![0xD2_u8; 32];
+    let ct64_digest = vec![0xD3_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO coprocessor_settlement(chain_id, settled_height)
+         VALUES ($1, 40)",
+    )
+    .bind(host_chain_id)
+    .execute(pool)
+    .await
+    .expect("insert settlement");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number,
+            ciphertext, ciphertext128, s3_format_version
+         )
+         VALUES ($1, $2, $3, $4, $5, 40, $6, $7, $8)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .bind(&ct64_digest)
+    .bind(vec![0_u8; 32])
+    .bind(CURRENT_S3_FORMAT_VERSION)
+    .execute(pool)
+    .await
+    .expect("insert complete digest row");
+
+    let enqueued = enqueue_unverified_settled_publications(pool, 10)
+        .await
+        .expect("enqueue unverified settled publication");
+    assert_eq!(enqueued, 1);
+
+    let target: (Vec<u8>, Vec<u8>) = sqlx::query_as(
+        "SELECT target_producer_block_hash, target_block_hash
+         FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .fetch_one(pool)
+    .await
+    .expect("repair queue target");
+    assert_eq!(target, (producer, event));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn canonical_repair_resolution_removes_dangling_target() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    clean_up(&pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let handle = vec![0xD4_u8; 32];
+    sqlx::query(
+        "INSERT INTO s3_canonical_repair_queue(
+            host_chain_id, handle, target_producer_block_hash, target_block_hash,
+            target_block_number, reason
+         ) VALUES ($1, $2, $3, $4, 40, 'dangling_test')",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .bind(vec![0xD5_u8; 32])
+    .bind(vec![0xD6_u8; 32])
+    .execute(&pool)
+    .await
+    .expect("insert dangling repair target");
+
+    let mut tx = pool.begin().await.expect("begin repair resolution");
+    let enqueued =
+        enqueue_s3_canonical_repair(&mut tx, host_chain_id, &handle, "no_surviving_target")
+            .await
+            .expect("resolve missing target");
+    tx.commit().await.expect("commit repair resolution");
+    assert!(!enqueued);
+
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM s3_canonical_repair_queue
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .fetch_one(&pool)
+    .await
+    .expect("count dangling targets");
+    assert_eq!(remaining, 0);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn settlement_blocks_only_repair_targets_with_digest_rows() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    clean_up(&pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let handle = vec![0xD7_u8; 32];
+    let block_hash = vec![0xD8_u8; 32];
+    let producer_hash = vec![0xD9_u8; 32];
+    let ciphertext_digest = vec![0xDA_u8; 32];
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid(chain_id, block_hash, block_number, block_status)
+         VALUES ($1, $2, 10, 'finalized')",
+    )
+    .bind(host_chain_id)
+    .bind(&block_hash)
+    .execute(&pool)
+    .await
+    .expect("insert finalized block");
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash,
+            block_number, ciphertext, ciphertext128, s3_format_version,
+            s3_publication_verified_at, s3_publication_verified_digest,
+            s3_publication_verified_producer_block_hash
+         ) VALUES ($1, $2, $3, $4, $5, 10, $6, $7, $8, NOW(), $6, $4)",
+    )
+    .bind(host_chain_id)
+    .bind(vec![0xDB_u8; 32])
+    .bind(&handle)
+    .bind(&producer_hash)
+    .bind(&block_hash)
+    .bind(&ciphertext_digest)
+    .bind(vec![0_u8; 32])
+    .bind(CURRENT_S3_FORMAT_VERSION)
+    .execute(&pool)
+    .await
+    .expect("insert verified digest target");
+    sqlx::query(
+        "INSERT INTO s3_canonical_repair_queue(
+            host_chain_id, handle, target_producer_block_hash, target_block_hash,
+            target_block_number, reason
+         ) VALUES ($1, $2, $3, $4, 10, 'dangling_settlement_test')",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .bind(&producer_hash)
+    .bind(&block_hash)
+    .execute(&pool)
+    .await
+    .expect("insert dangling repair target");
+
+    let mut tx = pool.begin().await.expect("begin blocked settlement");
+    let settled = advance_settled_height(&mut tx, host_chain_id, 10, 10)
+        .await
+        .expect("check live repair target");
+    tx.commit().await.expect("commit blocked settlement");
+    assert_eq!(settled, 9);
+
+    sqlx::query(
+        "DELETE FROM ciphertext_digest_branch
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .execute(&pool)
+    .await
+    .expect("delete repair target while preserving queue entry");
+
+    let mut tx = pool.begin().await.expect("begin unblocked settlement");
+    let settled = advance_settled_height(&mut tx, host_chain_id, 10, 10)
+        .await
+        .expect("advance past dangling target");
+    tx.commit().await.expect("commit unblocked settlement");
+    assert_eq!(settled, 10);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn settlement_waits_for_verified_s3_publication_marker() {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(test_instance.db_url())
+        .await
+        .expect("connect test db");
+    let pool = &pool;
+    clean_up(pool).await.expect("clean db");
+
+    let host_chain_id = 1_i64;
+    let key_id_gw = vec![0x04_u8; 32];
+    let handle = vec![0xE0_u8; 32];
+    let producer = vec![0xE1_u8; 32];
+    let event = vec![0xE2_u8; 32];
+    let ct64_digest = vec![0xE3_u8; 32];
+
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid(chain_id, block_hash, block_number, block_status)
+         VALUES ($1, $2, 10, 'finalized')",
+    )
+    .bind(host_chain_id)
+    .bind(&event)
+    .execute(pool)
+    .await
+    .expect("insert finalized block");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id, key_id_gw, handle, producer_block_hash, block_hash, block_number,
+            ciphertext, ciphertext128, s3_format_version
+         )
+         VALUES ($1, $2, $3, $4, $5, 10, $6, $7, $8)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&handle)
+    .bind(&producer)
+    .bind(&event)
+    .bind(&ct64_digest)
+    .bind(vec![0_u8; 32])
+    .bind(CURRENT_S3_FORMAT_VERSION)
+    .execute(pool)
+    .await
+    .expect("insert complete digest row");
+
+    let mut tx = pool.begin().await.expect("begin settlement tx");
+    let settled = advance_settled_height(&mut tx, host_chain_id, 10, 10)
+        .await
+        .expect("advance unsettled");
+    tx.commit().await.expect("commit settlement");
+    assert_eq!(settled, 9);
+
+    sqlx::query(
+        "UPDATE ciphertext_digest_branch
+         SET s3_publication_verified_at = NOW(),
+             s3_publication_verified_digest = ciphertext,
+             s3_publication_verified_producer_block_hash = producer_block_hash
+         WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(host_chain_id)
+    .bind(&handle)
+    .execute(pool)
+    .await
+    .expect("mark publication verified");
+
+    let mut tx = pool.begin().await.expect("begin settlement tx");
+    let settled = advance_settled_height(&mut tx, host_chain_id, 10, 10)
+        .await
+        .expect("advance verified");
+    tx.commit().await.expect("commit settlement");
+    assert_eq!(settled, 10);
 }
 
 #[tokio::test]
@@ -445,70 +1552,125 @@ async fn test_garbage_collect() {
         let mut handle = [0u8; 32];
         handle[..4].copy_from_slice(&i.to_le_bytes());
 
-        let _ = sqlx::query!(
-            "INSERT INTO ciphertexts128(handle, ciphertext)
-                VALUES ($1, $2)
+        let producer_block_hash = vec![i as u8; 32];
+        let _ = sqlx::query(
+            "INSERT INTO ciphertexts128_branch(handle, producer_block_hash, block_number, ciphertext)
+                VALUES ($1, $2, $3, $4)
             ON CONFLICT DO NOTHING;",
-            &handle,
-            &[i as u8; 32],
         )
+        .bind(&handle[..])
+        .bind(&producer_block_hash)
+        .bind(i as i64 + 1)
+        .bind(&[i as u8; 32][..])
         .execute(&pool)
         .await
-        .expect("insert into ciphertexts");
+        .expect("insert into ciphertexts128_branch");
 
-        let _ = sqlx::query!(
-            "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext, ciphertext128)
-                VALUES ($1, $2, $3, $4, $5)
+        let _ = sqlx::query(
+            "INSERT INTO ciphertext_digest_branch(host_chain_id, key_id_gw, handle, producer_block_hash, block_number, ciphertext, ciphertext128)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT DO NOTHING;",
-            host_chain_id,
-            &key_id_gw,
-            &handle,
-            &[i as u8; 32],
-            &[i as u8; 32],
         )
+        .bind(host_chain_id)
+        .bind(&key_id_gw)
+        .bind(&handle[..])
+        .bind(&producer_block_hash)
+        .bind(i as i64 + 1)
+        .bind(&[i as u8; 32][..])
+        .bind(&[i as u8; 32][..])
         .execute(&pool)
         .await
-        .expect("insert into ciphertext_digest");
+        .expect("insert into ciphertext_digest_branch");
     }
 
-    let count = sqlx::query_scalar!(
-        "SELECT COUNT(*)::BIGINT FROM ciphertexts128 WHERE ciphertext IS NOT NULL"
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ciphertexts128_branch where ciphertext IS not NULL",
     )
     .fetch_one(&pool)
     .await
-    .expect("count ciphertexts128")
-    .unwrap_or(0);
+    .expect("count ciphertexts128_branch");
     assert_eq!(
         count, HANDLES_COUNT as i64,
         "ciphertext128 should not be empty before garbage_collect"
     );
 
     let partial_handle = vec![0xffu8; 32];
+    let partial_producer_block_hash = vec![0xeeu8; 32];
     let partial_ciphertext = vec![0xffu8; 32];
     let partial_digest = vec![0xffu8; 32];
-    sqlx::query!(
-        "INSERT INTO ciphertexts128(handle, ciphertext)
-            VALUES ($1, $2)
+    let complete_block_hash = vec![0x11u8; 32];
+    let incomplete_block_hash = vec![0x12u8; 32];
+    sqlx::query(
+        "INSERT INTO ciphertexts128_branch(handle, producer_block_hash, block_number, ciphertext)
+            VALUES ($1, $2, 99, $3)
         ON CONFLICT DO NOTHING;",
-        &partial_handle,
-        &partial_ciphertext,
     )
+    .bind(&partial_handle)
+    .bind(&partial_producer_block_hash)
+    .bind(&partial_ciphertext)
     .execute(&pool)
     .await
-    .expect("insert partial ciphertexts128");
+    .expect("insert partial ciphertexts128_branch");
 
-    sqlx::query!(
-        "INSERT INTO ciphertext_digest(host_chain_id, key_id_gw, handle, ciphertext128)
-            VALUES ($1, $2, $3, $4)
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(host_chain_id, key_id_gw, handle, producer_block_hash, block_number, ciphertext128)
+            VALUES ($1, $2, $3, $4, 99, $5)
         ON CONFLICT DO NOTHING;",
-        host_chain_id,
-        &key_id_gw,
-        &partial_handle,
-        &partial_digest,
     )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&partial_handle)
+    .bind(&partial_producer_block_hash)
+    .bind(&partial_digest)
     .execute(&pool)
     .await
-    .expect("insert partial ciphertext_digest");
+    .expect("insert partial ciphertext_digest_branch");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id,
+            key_id_gw,
+            handle,
+            producer_block_hash,
+            block_hash,
+            block_number,
+            ciphertext,
+            ciphertext128
+        )
+        VALUES ($1, $2, $3, $4, $5, 99, $6, $7)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&partial_handle)
+    .bind(&partial_producer_block_hash)
+    .bind(&complete_block_hash)
+    .bind(&partial_digest)
+    .bind(&partial_digest)
+    .execute(&pool)
+    .await
+    .expect("insert complete sibling ciphertext_digest_branch");
+
+    sqlx::query(
+        "INSERT INTO ciphertext_digest_branch(
+            host_chain_id,
+            key_id_gw,
+            handle,
+            producer_block_hash,
+            block_hash,
+            block_number,
+            ciphertext
+        )
+        VALUES ($1, $2, $3, $4, $5, 99, $6)",
+    )
+    .bind(host_chain_id)
+    .bind(&key_id_gw)
+    .bind(&partial_handle)
+    .bind(&partial_producer_block_hash)
+    .bind(&incomplete_block_hash)
+    .bind(&partial_digest)
+    .execute(&pool)
+    .await
+    .expect("insert incomplete sibling ciphertext_digest_branch");
 
     let handles: Vec<_> = (0..CONCURRENT_TASKS)
         .map(|_| {
@@ -534,24 +1696,26 @@ async fn test_garbage_collect() {
         "garbage_collect tasks did not complete in time"
     );
 
-    let count = sqlx::query_scalar!("SELECT COUNT(*)::BIGINT FROM ciphertexts128")
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts128_branch")
         .fetch_one(&pool)
         .await
-        .expect("ciphertexts128 has been GCd")
-        .unwrap_or(0);
+        .expect("ciphertexts128_branch has been GCd");
     assert!(
         count <= 100,
         "ciphertext128 should have less entries than threshold after garbage_collect"
     );
 
-    let partial_count = sqlx::query_scalar!(
-        "SELECT COUNT(*)::BIGINT FROM ciphertexts128 WHERE handle = $1",
-        &partial_handle
+    let partial_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*)
+         FROM ciphertexts128_branch
+         WHERE handle = $1
+           AND producer_block_hash = $2",
     )
+    .bind(&partial_handle)
+    .bind(&partial_producer_block_hash)
     .fetch_one(&pool)
     .await
-    .expect("partial ciphertext128 should remain queryable")
-    .unwrap_or(0);
+    .expect("partial ciphertexts128_branch should remain queryable");
     assert_eq!(
         partial_count, 1,
         "garbage_collect should keep ct128 material until both upload digests are committed"
@@ -655,14 +1819,14 @@ async fn setup_localstack(
 
     tracing::info!("LocalStack started on port: {}", host_port);
 
-    let endpoint_url = format!("http://127.0.0.1:{}", host_port);
-    std::env::set_var("AWS_ENDPOINT_URL", endpoint_url.clone());
+    // `run_all` constructs its own S3 client from the standard AWS environment.
+    // Keep that client on the same LocalStack instance as the explicit test client.
+    std::env::set_var("AWS_ENDPOINT_URL", format!("http://127.0.0.1:{host_port}"));
     std::env::set_var("AWS_REGION", "us-east-1");
     std::env::set_var("AWS_ACCESS_KEY_ID", "test");
     std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
 
-    let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
-    let client: aws_sdk_s3::Client = aws_sdk_s3::Client::new(&aws_conf);
+    let client = test_harness::localstack::create_localstack_s3_client(host_port).await;
 
     recreate_bucket(&client, &conf.s3.bucket_ct128).await?;
     recreate_bucket(&client, &conf.s3.bucket_ct64).await?;
@@ -855,7 +2019,19 @@ async fn insert_into_pbs_computations(
 async fn clean_up(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     truncate_tables(
         pool,
-        vec!["pbs_computations", "ciphertexts", "ciphertext_digest"],
+        vec![
+            "pbs_computations_branch",
+            "ciphertexts_branch",
+            "ciphertexts128_branch",
+            "ciphertext_digest_branch",
+            // insert_ciphertext64 dual-writes the legacy table; without
+            // truncating it, persistent-DB runs pin first-writer bytes there
+            // (ON CONFLICT DO NOTHING) and legacy/branch state diverges.
+            "ciphertexts",
+            "host_chain_blocks_valid",
+            "coprocessor_settlement",
+            "s3_canonical_repair_queue",
+        ],
     )
     .await?;
 
@@ -966,7 +2142,8 @@ async fn assert_ciphertext_uploaded(
     use crate::S3_FORMAT_VERSION_V1;
 
     let (ciphertext_digest, sns_ciphertext_digest, s3_format_version) =
-        wait_for_ciphertext_digest_upload_state(&test_env.pool, handle, 100).await?;
+        wait_for_ciphertext_digest_upload_state(&test_env.pool, handle, S3_UPLOAD_STATE_RETRIES)
+            .await?;
 
     s3_utils::assert_key_exists(
         test_env.s3_client.to_owned(),
@@ -1083,9 +2260,12 @@ async fn wait_for_ciphertext_digest_upload_state(
     retries: u64,
 ) -> anyhow::Result<(Vec<u8>, Vec<u8>, i16)> {
     for retry in 0..retries {
+        // The upload path marks ciphertext_digest_branch (legacy
+        // ciphertext_digest is no longer written by sns-worker); the tests
+        // create one branch row per handle.
         let row = sqlx::query(
             "SELECT ciphertext, ciphertext128, s3_format_version
-            FROM ciphertext_digest
+            FROM ciphertext_digest_branch
             WHERE handle = $1",
         )
         .bind(handle)
@@ -1169,6 +2349,7 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
             max_connections: 5,
             timeout: Duration::from_secs(5),
             lifo: false,
+            branch_cutover_block: 0,
         },
         s3: S3Config {
             bucket_ct128: "ct128".to_owned(),
