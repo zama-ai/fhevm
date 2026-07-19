@@ -16,7 +16,7 @@ import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
 import { checkDelegation } from '../host-contracts/checkDelegation.js';
 import { resolveFhevmTkmsVersion } from '../runtime/resolveFhevmVersions-p.js';
-import { fromKmsExtraDataBytesHex } from './kmsExtraData-p.js';
+import { createKmsExtraDataFromBytesHex } from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -143,7 +143,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
   // Not required because a signedPermit is guaranteed to be verified.
 
   // 9. Fetch `KmsSignersContext` on-chain (cached)
-  const extraData = fromKmsExtraDataBytesHex(signedPermitV1.eip712.message.extraData);
+  const extraData = createKmsExtraDataFromBytesHex(signedPermitV1.eip712.message.extraData);
   const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContextFromExtraData(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,

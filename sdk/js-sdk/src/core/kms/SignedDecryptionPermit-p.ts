@@ -6,8 +6,6 @@ import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { NativeSigner } from '../modules/ethereum/types.js';
 import type { TransportKeyPair } from './TransportKeyPair-p.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
-import { getResolvedProtocolVersion } from '../runtime/CoreFhevm-p.js';
-import { isSemverStrictlyBefore } from '../base/semver.js';
 import {
   isSignedDecryptionPermitV1,
   parseSignedDecryptionPermitV1,
@@ -19,6 +17,7 @@ import {
   signDecryptionPermitV2,
 } from './SignedDecryptionPermitV2-p.js';
 import { isRecordUintNumberProperty } from '../base/uint.js';
+import { SDK_PROTOCOL_API_MAJOR_VERSION, SDK_PROTOCOL_API_MINOR_VERSION } from '../runtime/sdkProtocolApiVersion.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -156,14 +155,11 @@ export async function signDecryptionPermit(
   context: KmsSignDecryptionPermitContext,
   parameters: KmsSignDecryptionPermitParameters,
 ): Promise<SignedDecryptionPermit> {
-  const protocolVersion = getResolvedProtocolVersion(context);
-  if (protocolVersion === undefined) {
-    throw new Error(
-      'Unable to resolve protocol version from context, ensure proper initialization of the FhevmRuntime and FhevmChain.',
-    );
-  }
-
-  if (isSemverStrictlyBefore(protocolVersion.version, '0.14.0')) {
+  // V1 permits are always created here: the current protocol API version this
+  // SDK is using is 0.13.0, so the SDK does not know the 0.14.0 API (which is
+  // what introduces V2 permits). Once the SDK adopts API 0.14.0, this branch
+  // falls through to signDecryptionPermitV2 below.
+  if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
     return await signDecryptionPermitV1(context, parameters);
   }
 

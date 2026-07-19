@@ -39,7 +39,8 @@ export async function verifyKmsPublicDecryptEip712(context: Context, parameters:
   // Warning!!!! Do not use '0x00' here!! Only '0x' is permitted!
   //
   ////////////////////////////////////////////////////////////////////////////
-  let signedExtraDataBytesHex: BytesHex = extraData.toBytesHex();
+
+  let signedExtraDataBytesHex: BytesHex = extraData.bytesHex;
   if (extraData.version === EXTRA_DATA_V0) {
     signedExtraDataBytesHex = '0x' as BytesHex;
   }
@@ -58,6 +59,7 @@ export async function verifyKmsPublicDecryptEip712(context: Context, parameters:
   // A 'PublicDecryptVerification' KmsEip712Domain uses the gateway chainId!
   //
   //////////////////////////////////////////////////////////////////////////////
+
   const domain = createKmsEip712Domain({
     chainId: context.chain.fhevm.gateway.id,
     verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address,

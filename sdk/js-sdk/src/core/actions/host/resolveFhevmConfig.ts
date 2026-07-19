@@ -29,7 +29,7 @@ export type ResolveFhevmConfigParameters = {
       readonly hcuLimit?: OptionalChainContract | undefined;
       readonly inputVerifier?: OptionalChainContract | undefined;
       readonly kmsVerifier: { readonly address: string };
-      readonly protocolConfig: OptionalChainContract | undefined;
+      readonly protocolConfig?: OptionalChainContract | undefined;
     };
     readonly gateway?:
       | {

@@ -29,19 +29,22 @@ export async function decryptKmsSigncryptedShares(context: Context, parameters: 
   if (context.tkmsVersion !== kmsSigncryptedShares.tkmsVersion) {
     throw new Error('TkmsVersion mismatch');
   }
-  if (context.tkmsVersion !== transportKeyPair.tkmsVersion) {
-    throw new Error('TkmsVersion mismatch');
-  }
+
+  // Could check compatibility of transportKeyPair bytes and
+  // context tkmsVersion
 
   // also validates `transportKeyPair`
   const tkmsPrivateKey = await transportKeyPairToTkmsPrivateKey(context, transportKeyPair);
+  try {
+    // Using the `KmsSigncryptedShares` decrypt and reconstruct clear values
+    const orderedDecryptedHandles: readonly ClearValue[] = await context.runtime.decrypt.decryptAndReconstruct({
+      shares: kmsSigncryptedShares,
+      tkmsPrivateKey,
+      tkmsVersion: context.tkmsVersion,
+    });
 
-  // Using the `KmsSigncryptedShares` decrypt and reconstruct clear values
-  const orderedDecryptedHandles: readonly ClearValue[] = await context.runtime.decrypt.decryptAndReconstruct({
-    shares: kmsSigncryptedShares,
-    tkmsPrivateKey,
-    tkmsVersion: context.tkmsVersion,
-  });
-
-  return orderedDecryptedHandles;
+    return orderedDecryptedHandles;
+  } finally {
+    tkmsPrivateKey.free();
+  }
 }

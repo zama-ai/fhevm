@@ -16,7 +16,7 @@ import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { checkDelegation } from '../host-contracts/checkDelegation.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
 import { resolveFhevmTkmsVersion } from '../runtime/resolveFhevmVersions-p.js';
-import { EXTRA_DATA_V2, fromKmsExtraDataBytesHex } from './kmsExtraData-p.js';
+import { EXTRA_DATA_V2, createKmsExtraDataFromBytesHex } from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -67,10 +67,10 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
   if (signedPermitVersion !== 2) {
     throw Error(`fetchKmsSigncryptedSharesV2 requires a v2 permit, got v${signedPermitVersion}`);
   }
-  const signedPermitExtraData = fromKmsExtraDataBytesHex(signedPermit.eip712.message.extraData);
-  if (signedPermitExtraData.version < EXTRA_DATA_V2) {
+  const signedPermitExtraData = createKmsExtraDataFromBytesHex(signedPermit.eip712.message.extraData);
+  if (signedPermitExtraData.lt(EXTRA_DATA_V2)) {
     throw new Error(
-      `fetchKmsSigncryptedSharesV2 error: Invalid extraData version extraData=${signedPermitExtraData.toBytesHex()}`,
+      `fetchKmsSigncryptedSharesV2 error: Invalid extraData version (< 2) extraData=${signedPermitExtraData.bytesHex}`,
     );
   }
 

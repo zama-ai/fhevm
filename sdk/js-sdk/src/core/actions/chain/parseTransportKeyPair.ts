@@ -9,10 +9,12 @@ import { toTransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 export type ParseTransportKeyPairParameters = {
   readonly publicKey: string;
   readonly privateKey: string;
+  readonly tkmsVersion?: string | undefined;
 };
 
 export type ParseTransportKeyPairReturnType = TransportKeyPair;
 
+// eslint-disable-next-line @typescript-eslint/require-await
 export async function parseTransportKeyPair(
   fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
   parameters: ParseTransportKeyPairParameters,

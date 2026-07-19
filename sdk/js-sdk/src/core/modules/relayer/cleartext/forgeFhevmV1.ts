@@ -109,35 +109,6 @@ export async function readPlaintexts(
   return cleartexts;
 }
 
-// /**
-//  * Reads the registered KMS signer set and threshold from the standard KMSVerifier
-//  * (which forge-fhevm implements). These replace the `signers` / `threshold` the
-//  * `Cleartext*KMSVerifier` view used to return.
-//  */
-// export async function readKmsSignersAndThreshold(
-//   relayerClient: RelayerClientWithRuntime,
-//   trustedClient: TrustedClient,
-// ): Promise<{ signers: readonly ChecksummedAddress[]; threshold: bigint }> {
-//   const kmsVerifierAddress = relayerClient.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress;
-
-//   const signersRes = await relayerClient.runtime.ethereum.readContract(trustedClient, {
-//     abi: getKmsSignersAbi,
-//     address: kmsVerifierAddress,
-//     args: [],
-//     functionName: getKmsSignersAbi[0].name,
-//   });
-
-//   const thresholdRes = await relayerClient.runtime.ethereum.readContract(trustedClient, {
-//     abi: getThresholdAbi,
-//     address: kmsVerifierAddress,
-//     args: [],
-//     functionName: getThresholdAbi[0].name,
-//   });
-
-//   const signers = (signersRes as readonly Address[]).map(addressToChecksummedAddress);
-//   return { signers, threshold: asUint32BigInt(thresholdRes) };
-// }
-
 /**
  * Reversible mask that replicates `CleartextKMSVerifier._xorMaskWithPublicKey`:
  * XORs each cleartext with the first 32 bytes of the user's public key. The

@@ -127,7 +127,7 @@ export async function createPublicDecryptionProof(
   //
   ////////////////////////////////////////////////////////////////////////////
 
-  const signedExtraDataBytesHex = extraData.version === EXTRA_DATA_V0 ? ('0x' as BytesHex) : extraData.toBytesHex();
+  const signedExtraDataBytesHex = extraData.version === EXTRA_DATA_V0 ? ('0x' as BytesHex) : extraData.bytesHex;
 
   //////////////////////////////////////////////////////////////////////////////
   // Compute the proof as numSigners + KMS signatures + extraData

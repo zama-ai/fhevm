@@ -9,7 +9,7 @@ import { asFhevmWithTkmsVersion } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type GenerateTransportKeyPairReturnType = TransportKeyPair;
+export type GenerateTransportKeyPairReturnType = TransportKeyPair & { readonly tkmsVersion: string };
 
 export async function generateTransportKeyPair(
   fhevm: Fhevm<FhevmChain, WithDecrypt>,

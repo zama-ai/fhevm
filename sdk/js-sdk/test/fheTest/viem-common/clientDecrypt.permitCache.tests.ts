@@ -12,6 +12,8 @@ import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 // CHAIN=localstack_v11 npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitCache.test.ts
 // CHAIN=localstack_v12 npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitCache.test.ts
 // CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitCache.test.ts
+// CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitCache.test.ts
+// CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitCache.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -49,7 +51,7 @@ export function defineClientDecryptPermitCacheTests(parameters: {
 
     async function signAndSerialize(client: Awaited<ReturnType<typeof createReadyClient>>) {
       const transportKeyPair = await client.generateTransportKeyPair();
-      const signedPermit = await client.signDecryptionPermit({
+      const signedPermit = await client.signLegacyDecryptionPermit({
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,

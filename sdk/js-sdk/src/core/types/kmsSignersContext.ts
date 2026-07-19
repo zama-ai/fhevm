@@ -42,7 +42,7 @@ import type { ChecksummedAddress, Uint256BigInt, Uint8Number } from './primitive
  */
 export type KmsSignersContext = {
   /** The checksummed address of the `KMSVerifier` contract. */
-  readonly address: ChecksummedAddress;
+  readonly kmsVerifierAddress: ChecksummedAddress;
   /** The unique, immutable context identifier. See {@link KmsSignersContext} for valid range. */
   readonly id: Uint256BigInt;
   /** Epoch identifier linked to this context. Active only after Phase 2 key resharing completes. See {@link KmsSignersContext}. */

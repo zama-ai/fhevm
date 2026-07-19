@@ -75,7 +75,7 @@ export function createKmsDelegatedUserDecryptEip712V1(
       delegatorAddress: checksummedDelegatorAddress,
       startTimestamp: startTimestamp.toString(),
       durationDays: durationDays.toString(),
-      extraData: extraData.toBytesHex(),
+      extraData: extraData.bytesHex,
     },
   };
 

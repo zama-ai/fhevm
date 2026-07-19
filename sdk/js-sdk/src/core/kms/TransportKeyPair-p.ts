@@ -21,7 +21,7 @@ declare const TransportKeyPairBrand: unique symbol;
 
 export type TransportKeyPair = {
   readonly publicKey: BytesHex;
-  readonly tkmsVersion: TkmsVersion;
+  readonly tkmsVersion: string | undefined;
   readonly [TransportKeyPairBrand]: true;
 };
 
@@ -44,10 +44,9 @@ class TransportKeyPairImpl implements TransportKeyPair {
 
   readonly #publicKeyBytesHex: BytesHex;
   readonly #privateKeyBytes: Bytes;
-  readonly #tkmsVersion: TkmsVersion;
+  readonly #tkmsVersion: string | undefined;
 
   readonly #runtime: WeakRef<FhevmRuntime>;
-  #tkmsPrivateKey: TkmsPrivateKey | undefined;
 
   constructor(
     privateToken: symbol,
@@ -55,8 +54,7 @@ class TransportKeyPairImpl implements TransportKeyPair {
     parameters: {
       readonly publicKeyBytesHex: BytesHex;
       readonly privateKeyBytes: Bytes;
-      readonly tkmsPrivateKey?: TkmsPrivateKey | undefined;
-      readonly tkmsVersion: TkmsVersion;
+      readonly tkmsVersion?: string | undefined;
     },
   ) {
     if (privateToken !== PRIVATE_TOKEN) {
@@ -65,7 +63,6 @@ class TransportKeyPairImpl implements TransportKeyPair {
     this.#runtime = new WeakRef(runtime);
     this.#publicKeyBytesHex = parameters.publicKeyBytesHex;
     this.#privateKeyBytes = parameters.privateKeyBytes;
-    this.#tkmsPrivateKey = parameters.tkmsPrivateKey;
     this.#tkmsVersion = parameters.tkmsVersion;
   }
 
@@ -73,7 +70,7 @@ class TransportKeyPairImpl implements TransportKeyPair {
     return this.#publicKeyBytesHex;
   }
 
-  public get tkmsVersion(): TkmsVersion {
+  public get tkmsVersion(): string | undefined {
     return this.#tkmsVersion;
   }
 
@@ -88,7 +85,11 @@ class TransportKeyPairImpl implements TransportKeyPair {
    *
    * @throws If `privateToken` is invalid or `expectedRuntime` does not match.
    */
-  async [GetTkmsPrivateKeyFn](privateToken: symbol, expectedRuntime: FhevmRuntime): Promise<TkmsPrivateKey> {
+  async [GetTkmsPrivateKeyFn](
+    privateToken: symbol,
+    expectedRuntime: FhevmRuntime,
+    expectedTkmsVersion: TkmsVersion,
+  ): Promise<TkmsPrivateKey> {
     if (privateToken !== PRIVATE_TOKEN) {
       throw new Error('Unauthorized');
     }
@@ -97,27 +98,32 @@ class TransportKeyPairImpl implements TransportKeyPair {
     if (expectedRuntime !== this.#runtime.deref()) {
       throw new Error('Invalid runtime');
     }
-    if (this.#tkmsPrivateKey !== undefined) {
-      return this.#tkmsPrivateKey;
-    }
 
     const runtimeWithDecrypt = asFhevmRuntimeWith(expectedRuntime, 'decrypt');
 
-    this.#tkmsPrivateKey = await runtimeWithDecrypt.decrypt.deserializeTkmsPrivateKey({
+    const tkmsPrivateKey = await runtimeWithDecrypt.decrypt.deserializeTkmsPrivateKey({
       tkmsPrivateKeyBytes: this.#privateKeyBytes,
-      tkmsVersion: this.#tkmsVersion,
+      tkmsVersion: expectedTkmsVersion,
     });
 
-    // Verify the key is valid
-    await verifyTkmsPublicKey(
-      { runtime: runtimeWithDecrypt, tkmsVersion: this.#tkmsVersion },
-      {
-        tkmsPrivateKey: this.#tkmsPrivateKey,
-        tkmsPublicKeyBytesHex: this.#publicKeyBytesHex,
-      },
-    );
+    try {
+      // Verify the key is valid
+      await verifyTkmsPublicKey(
+        { runtime: runtimeWithDecrypt, tkmsVersion: expectedTkmsVersion },
+        {
+          tkmsPrivateKey: tkmsPrivateKey,
+          tkmsPublicKeyBytesHex: this.#publicKeyBytesHex,
+        },
+      );
+    } catch (e) {
+      // Verification failed: free the freshly deserialized key before propagating.
+      // On success ownership transfers to the caller (who frees it); on this error
+      // path the caller never receives it, so its WASM memory would otherwise leak.
+      tkmsPrivateKey.free();
+      throw e;
+    }
 
-    return this.#tkmsPrivateKey;
+    return tkmsPrivateKey;
   }
 
   /**
@@ -128,10 +134,16 @@ class TransportKeyPairImpl implements TransportKeyPair {
   [SerializeFn](privateToken: symbol): {
     readonly publicKey: BytesHex;
     readonly privateKey: BytesHex;
-    readonly tkmsVersion: TkmsVersion;
+    readonly tkmsVersion?: string;
   } {
     if (privateToken !== PRIVATE_TOKEN) {
       throw new Error('Unauthorized');
+    }
+    if (this.#tkmsVersion === undefined) {
+      return {
+        publicKey: this.#publicKeyBytesHex,
+        privateKey: bytesToHexLarge(this.#privateKeyBytes, false /* no0x */),
+      };
     }
     return {
       publicKey: this.#publicKeyBytesHex,
@@ -144,7 +156,10 @@ class TransportKeyPairImpl implements TransportKeyPair {
    * Prevents accidental private key exposure via `JSON.stringify`.
    * Only the public key is included in the output.
    */
-  public toJSON(): { publicKey: string; tkmsVersion: string } {
+  public toJSON(): { publicKey: string; tkmsVersion?: string } {
+    if (this.#tkmsVersion === undefined) {
+      return { publicKey: this.#publicKeyBytesHex };
+    }
     return { publicKey: this.#publicKeyBytesHex, tkmsVersion: this.#tkmsVersion };
   }
 }
@@ -186,21 +201,26 @@ export async function generateTransportKeyPair(context: {
   readonly chain: FhevmChain;
   readonly client: NativeClient;
   readonly tkmsVersion: TkmsVersion;
-}): Promise<TransportKeyPair> {
+}): Promise<TransportKeyPair & { readonly tkmsVersion: string }> {
   const tkmsVersion = context.tkmsVersion;
 
   const tkmsPrivateKey = await context.runtime.decrypt.generateTkmsPrivateKey({ tkmsVersion });
-  const tkmsPrivateKeyBytes = await context.runtime.decrypt.serializeTkmsPrivateKey({ tkmsPrivateKey, tkmsVersion });
-  const tkmsPublicKeyBytesHex = await context.runtime.decrypt.getTkmsPublicKeyHex({
-    tkmsPrivateKey,
-    tkmsVersion,
-  });
-  return new TransportKeyPairImpl(PRIVATE_TOKEN, context.runtime, {
-    privateKeyBytes: tkmsPrivateKeyBytes,
-    publicKeyBytesHex: tkmsPublicKeyBytesHex,
-    tkmsPrivateKey,
-    tkmsVersion,
-  });
+  try {
+    const tkmsPrivateKeyBytes = await context.runtime.decrypt.serializeTkmsPrivateKey({ tkmsPrivateKey, tkmsVersion });
+    const tkmsPublicKeyBytesHex = await context.runtime.decrypt.getTkmsPublicKeyHex({
+      tkmsPrivateKey,
+      tkmsVersion,
+    });
+    // A freshly generated key pair always carries a resolved tkmsVersion, so we
+    // narrow away the `undefined` the impl's getter allows for the general case.
+    return new TransportKeyPairImpl(PRIVATE_TOKEN, context.runtime, {
+      privateKeyBytes: tkmsPrivateKeyBytes,
+      publicKeyBytesHex: tkmsPublicKeyBytesHex,
+      tkmsVersion,
+    }) as TransportKeyPair & { readonly tkmsVersion: string };
+  } finally {
+    tkmsPrivateKey.free();
+  }
 }
 
 /**
@@ -212,17 +232,15 @@ export async function generateTransportKeyPair(context: {
  *
  * @throws {InvalidTypeError} If `value` is not a recognized key pair shape.
  */
-export async function toTransportKeyPair(
+export function toTransportKeyPair(
   context: {
     readonly runtime: FhevmRuntime;
     readonly chain: FhevmChain;
     readonly client?: OptionalNativeClient;
   },
   value: unknown,
-): Promise<TransportKeyPair> {
+): TransportKeyPair {
   if (isTransportKeyPair(value)) {
-    // Force realize
-    await (value as TransportKeyPairImpl)[GetTkmsPrivateKeyFn](PRIVATE_TOKEN, context.runtime);
     return value;
   }
 
@@ -241,9 +259,8 @@ export async function toTransportKeyPair(
   const rawPrivateKey = value.privateKey;
   const rawTkmsVersion = value.tkmsVersion;
 
-  // TODO: this is not correct. We must add a resolution function
-  let resolvedTkmsVersion: TkmsVersion = '0.13.20-0';
-  if (rawTkmsVersion === '0.13.10') {
+  let resolvedTkmsVersion: string | undefined = undefined;
+  if (typeof rawTkmsVersion === 'string' && rawTkmsVersion.trim().length > 0) {
     resolvedTkmsVersion = rawTkmsVersion;
   }
 
@@ -256,34 +273,9 @@ export async function toTransportKeyPair(
   const tkmsPublicKeyBytesHex: BytesHex =
     typeof rawPublicKey === 'string' ? rawPublicKey : bytesToHexLarge(rawPublicKey, false /* no0x */);
 
-  let tkmsPrivateKey: TkmsPrivateKey | undefined;
-
-  // If the "decrypt" module is available, deserialize and verify the key
-  let runtimeWithDecrypt: WithDecrypt | undefined;
-  try {
-    runtimeWithDecrypt = asFhevmRuntimeWith(context.runtime, 'decrypt');
-  } catch {
-    // there's no decrypt module
-  }
-
-  if (runtimeWithDecrypt !== undefined) {
-    tkmsPrivateKey = await runtimeWithDecrypt.decrypt.deserializeTkmsPrivateKey({
-      tkmsPrivateKeyBytes,
-      tkmsVersion: resolvedTkmsVersion,
-    });
-    await verifyTkmsPublicKey(
-      { runtime: runtimeWithDecrypt, tkmsVersion: resolvedTkmsVersion },
-      {
-        tkmsPrivateKey,
-        tkmsPublicKeyBytesHex,
-      },
-    );
-  }
-
   return new TransportKeyPairImpl(PRIVATE_TOKEN, context.runtime, {
     privateKeyBytes: tkmsPrivateKeyBytes,
     publicKeyBytesHex: tkmsPublicKeyBytesHex,
-    tkmsPrivateKey,
     tkmsVersion: resolvedTkmsVersion,
   });
 }
@@ -298,6 +290,7 @@ export async function toTransportKeyPair(
 export function serializeTransportKeyPair(value: TransportKeyPair): {
   publicKey: BytesHex;
   privateKey: BytesHex;
+  tkmsVersion?: string;
 } {
   assertIsTransportKeyPair(value, {});
   return (value as TransportKeyPairImpl)[SerializeFn](PRIVATE_TOKEN);
@@ -311,9 +304,13 @@ export function serializeTransportKeyPair(value: TransportKeyPair): {
  * @throws If the runtime does not match or the key verification fails.
  */
 export async function transportKeyPairToTkmsPrivateKey(
-  context: { readonly runtime: FhevmRuntime },
+  context: { readonly runtime: FhevmRuntime; readonly tkmsVersion: TkmsVersion },
   value: TransportKeyPair,
 ): Promise<TkmsPrivateKey> {
   assertIsTransportKeyPair(value, {});
-  return await (value as TransportKeyPairImpl)[GetTkmsPrivateKeyFn](PRIVATE_TOKEN, context.runtime);
+  return await (value as TransportKeyPairImpl)[GetTkmsPrivateKeyFn](
+    PRIVATE_TOKEN,
+    context.runtime,
+    context.tkmsVersion,
+  );
 }

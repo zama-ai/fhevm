@@ -13,13 +13,14 @@ import type {
   DecryptModuleFactory,
 } from './types.js';
 import type { CleartextEthereumModule } from '../ethereum/types-ct.js';
-import type { TkmsPrivateKey } from '../../types/tkms-p.js';
+import type { TkmsPrivateKey, TkmsPrivateKeyBrand } from '../../types/tkms-p.js';
+import type { TkmsVersion } from '../../../wasm/tkms/KmsLibApi.js';
 import type { BytesHex } from '../../types/primitives.js';
 import type { KmsSigncryptedShare, KmsSigncryptedSharesMetadata } from '../../types/kms-p.js';
 import type { ClearValue } from '../../types/encryptedTypes-p.js';
 import { ensure0x, remove0x } from '../../base/string.js';
 import { getMetadata, getShares } from '../../kms/KmsSigncryptedShares-p.js';
-import { asBytesHex, bytesToHex, hexToBytes } from '../../base/bytes.js';
+import { bytesToHex, hexToBytes } from '../../base/bytes.js';
 import { bigintToClearValueType } from '../../handle/FheType.js';
 import { createClearValue } from '../../handle/ClearValue.js';
 import { assertIsKmsExtraDataBytesHex } from '../../kms/kmsExtraData-p.js';
@@ -27,6 +28,57 @@ import { assertIsKmsExtraDataBytesHex } from '../../kms/kmsExtraData-p.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 const PRIVATE_CLEARTEXT_TKMS_LIB_TOKEN = Symbol('CleartextTKMSLib.token');
+
+// The mock has no TKMS WASM, so the tkmsVersion carried by a mock key is
+// meaningless — a fixed sentinel that satisfies the TkmsPrivateKey interface.
+const MOCK_TKMS_VERSION = '0.0.0-mock' as TkmsVersion;
+
+////////////////////////////////////////////////////////////////////////////////
+// MockTkmsPrivateKeyImpl
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Mock {@link TkmsPrivateKey}. The cleartext mock has no WASM, so it wraps the
+ * raw secp256k1 private key hex and implements the full interface — including a
+ * no-op `free()` (there is no native memory to reclaim) with a disposed guard
+ * mirroring the real wasm-backed key, so the SDK's `free()`-and-fail-loud paths
+ * behave the same against the mock.
+ */
+class MockTkmsPrivateKeyImpl implements TkmsPrivateKey {
+  declare readonly [TkmsPrivateKeyBrand]: never;
+
+  readonly #privateKeySecp256k1: BytesHex;
+  readonly #tkmsVersion: TkmsVersion;
+  #disposed = false;
+
+  constructor(privateKeySecp256k1: BytesHex, tkmsVersion: TkmsVersion) {
+    this.#privateKeySecp256k1 = privateKeySecp256k1;
+    this.#tkmsVersion = tkmsVersion;
+  }
+
+  public get tkmsVersion(): TkmsVersion {
+    return this.#tkmsVersion;
+  }
+
+  public free(): void {
+    // No WASM memory to reclaim in the mock; mark disposed to catch use-after-free.
+    this.#disposed = true;
+  }
+
+  public get privateKeySecp256k1(): BytesHex {
+    if (this.#disposed) {
+      throw new Error('MockTkmsPrivateKey is already disposed');
+    }
+    return this.#privateKeySecp256k1;
+  }
+}
+
+function _asMockTkmsPrivateKey(tkmsPrivateKey: TkmsPrivateKey): MockTkmsPrivateKeyImpl {
+  if (!(tkmsPrivateKey instanceof MockTkmsPrivateKeyImpl)) {
+    throw new Error('Invalid mock TkmsPrivateKey');
+  }
+  return tkmsPrivateKey;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -50,7 +102,7 @@ export async function decryptAndReconstruct(
   const cleartextEthereumModule = runtime.ethereum as CleartextEthereumModule;
   const { tkmsPrivateKey, shares } = parameters;
 
-  const privateKeySecp256k1 = asBytesHex(tkmsPrivateKey);
+  const privateKeySecp256k1 = _asMockTkmsPrivateKey(tkmsPrivateKey).privateKeySecp256k1;
   const publicKeySecp256k1 = cleartextEthereumModule.getPublicKey({ privateKey: privateKeySecp256k1 });
 
   const metadata: KmsSigncryptedSharesMetadata = getMetadata(shares);
@@ -134,7 +186,7 @@ export async function decryptAndReconstruct(
 export async function generateTkmsPrivateKey(runtime: FhevmRuntime): Promise<GenerateTkmsPrivateKeyReturnType> {
   const cleartextEthereumModule = runtime.ethereum as CleartextEthereumModule;
   const privateKeySecp256k1 = cleartextEthereumModule.generatePrivateKey();
-  return Promise.resolve(privateKeySecp256k1 as unknown as TkmsPrivateKey);
+  return Promise.resolve(new MockTkmsPrivateKeyImpl(privateKeySecp256k1, MOCK_TKMS_VERSION));
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -146,7 +198,7 @@ export async function getTkmsPublicKeyHex(
   parameters: GetTkmsPublicKeyHexParameters,
 ): Promise<GetTkmsPublicKeyHexReturnType> {
   const { tkmsPrivateKey } = parameters;
-  const privateKeySecp256k1 = asBytesHex(tkmsPrivateKey);
+  const privateKeySecp256k1 = _asMockTkmsPrivateKey(tkmsPrivateKey).privateKeySecp256k1;
   const cleartextEthereumModule = runtime.ethereum as CleartextEthereumModule;
   const publicKeySecp256k1 = cleartextEthereumModule.getPublicKey({ privateKey: privateKeySecp256k1 });
   return Promise.resolve(publicKeySecp256k1);
@@ -161,7 +213,7 @@ export async function serializeTkmsPrivateKey(
   parameters: SerializeTkmsPrivateKeyParameters,
 ): Promise<SerializeTkmsPrivateKeyReturnType> {
   const { tkmsPrivateKey } = parameters;
-  const privateKeySecp256k1 = asBytesHex(tkmsPrivateKey);
+  const privateKeySecp256k1 = _asMockTkmsPrivateKey(tkmsPrivateKey).privateKeySecp256k1;
   const privateKeySecp256k1Bytes = hexToBytes(privateKeySecp256k1);
   return Promise.resolve(privateKeySecp256k1Bytes);
 }
@@ -176,7 +228,7 @@ export async function deserializeTkmsPrivateKey(
 ): Promise<DeserializeTkmsPrivateKeyReturnType> {
   const { tkmsPrivateKeyBytes } = parameters;
   const privateKeySecp256k1 = bytesToHex(tkmsPrivateKeyBytes);
-  return Promise.resolve(privateKeySecp256k1 as unknown as TkmsPrivateKey);
+  return Promise.resolve(new MockTkmsPrivateKeyImpl(privateKeySecp256k1, MOCK_TKMS_VERSION));
 }
 
 //////////////////////////////////////////////////////////////////////////////

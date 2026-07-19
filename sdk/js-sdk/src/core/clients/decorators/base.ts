@@ -44,6 +44,11 @@ import {
   type DecryptPublicValuesWithSignaturesReturnType,
 } from '../../actions/base/decryptPublicValuesWithSignatures.js';
 import { ensureResolvedProtocolVersion } from '../../runtime/resolveFhevmVersions-p.js';
+import {
+  signLegacyDecryptionPermit,
+  type SignLegacyDecryptionPermitParameters,
+  type SignLegacyDecryptionPermitReturnType,
+} from '../../actions/base/signLegacyDecryptionPermit.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -123,13 +128,23 @@ export type BaseActions = {
   /**
    * Signs a decryption permit.
    *
+   * @deprecated Will be deprecated in the next version. Use
+   * {@link signLegacyDecryptionPermit} instead, which pins the V1 permit shape
+   * and stays stable across SDK protocol-API upgrades.
+   */
+  readonly signDecryptionPermit: (parameters: SignDecryptionPermitParameters) => Promise<SignedDecryptionPermit>;
+  /**
+   * Signs a legacy decryption permit.
+   *
    * - Without `delegatorAddress`: Alice signs to decrypt her own encrypted values.
    * - With `delegatorAddress`: Bob signs to decrypt values belonging to `delegatorAddress` (Alice),
    *   after Alice has granted permission via `FHE.delegateUserDecryption()` on-chain.
    *
    * Inspect `isDelegated` on the returned permit to distinguish the two cases.
    */
-  readonly signDecryptionPermit: (parameters: SignDecryptionPermitParameters) => Promise<SignedDecryptionPermit>;
+  readonly signLegacyDecryptionPermit: (
+    parameters: SignLegacyDecryptionPermitParameters,
+  ) => Promise<SignLegacyDecryptionPermitReturnType>;
   /** Deserializes a previously serialized e2e transport key pair back into a usable key pair. */
   readonly parseTransportKeyPair: (
     parameters: ParseTransportKeyPairParameters,
@@ -160,6 +175,7 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
     decryptPublicValues: (parameters) => decryptPublicValues(fhevm, parameters),
     decryptPublicValuesWithSignatures: (parameters) => decryptPublicValuesWithSignatures(fhevm, parameters),
     signDecryptionPermit: (parameters) => signDecryptionPermit(fhevm, parameters),
+    signLegacyDecryptionPermit: (parameters) => signLegacyDecryptionPermit(fhevm, parameters),
     parseTransportKeyPair: (parameters) => parseTransportKeyPair(fhevm, parameters),
     serializeTransportKeyPair: (parameters) => serializeTransportKeyPair(fhevm, parameters),
     serializeSignedDecryptionPermit: (parameters) => serializeSignedDecryptionPermit(fhevm, parameters),

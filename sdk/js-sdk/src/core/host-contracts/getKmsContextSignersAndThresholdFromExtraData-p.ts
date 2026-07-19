@@ -77,7 +77,7 @@ async function _getKmsContextSignersAndThresholdFromExtraData(
 
   const trustedClient = getTrustedClient(context);
 
-  const extraDataBytesHex = parameters.extraData.toBytesHex();
+  const extraDataBytesHex = parameters.extraData.bytesHex;
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {
     address: parameters.kmsVerifierAddress,

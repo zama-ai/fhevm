@@ -12,7 +12,7 @@ import {
   EXTRA_DATA_V0,
   EXTRA_DATA_V1,
   EXTRA_DATA_V2,
-  fromKmsExtraDataBytesHex,
+  createKmsExtraDataFromBytesHex,
   isKmsExtraData,
   isKmsExtraDataCompatibleWithKmsVerifier,
   KmsExtraDataImpl,
@@ -35,14 +35,14 @@ const kmsVerifierVersion = (major: number, minor: number, patch: number): HostCo
 describe('kmsExtraData', () => {
   it('encodes and decodes v0 extraData', () => {
     const fromFactory = createKmsExtraDataV0();
-    const fromZeroByte = fromKmsExtraDataBytesHex('0x00' as BytesHex);
-    const fromEmptyBytes = fromKmsExtraDataBytesHex('0x' as BytesHex);
+    const fromZeroByte = createKmsExtraDataFromBytesHex('0x00' as BytesHex);
+    const fromEmptyBytes = createKmsExtraDataFromBytesHex('0x' as BytesHex);
 
     for (const extraData of [fromFactory, fromZeroByte, fromEmptyBytes]) {
       expect(extraData.version).toBe(EXTRA_DATA_V0);
       expect(extraData.kmsContextId).toBe(0n);
       expect(extraData.kmsEpochId).toBe(0n);
-      expect(extraData.toBytesHex()).toBe('0x00');
+      expect(extraData.bytesHex).toBe('0x00');
     }
   });
 
@@ -51,9 +51,9 @@ describe('kmsExtraData', () => {
     const expectedBytes = `0x01${word(kmsContextId)}` as BytesHex;
 
     const fromFactory = createKmsExtraDataV1({ kmsContextId });
-    const fromBytes = fromKmsExtraDataBytesHex(expectedBytes);
+    const fromBytes = createKmsExtraDataFromBytesHex(expectedBytes);
 
-    expect(fromFactory.toBytesHex()).toBe(expectedBytes);
+    expect(fromFactory.bytesHex).toBe(expectedBytes);
     expect(fromBytes.version).toBe(EXTRA_DATA_V1);
     expect(fromBytes.kmsContextId).toBe(kmsContextId);
     expect(fromBytes.kmsEpochId).toBe(0n);
@@ -66,9 +66,9 @@ describe('kmsExtraData', () => {
     const expectedBytes = `0x02${word(kmsContextId)}${word(kmsEpochId)}` as BytesHex;
 
     const fromFactory = createKmsExtraDataV2({ kmsContextId, kmsEpochId });
-    const fromBytes = fromKmsExtraDataBytesHex(expectedBytes);
+    const fromBytes = createKmsExtraDataFromBytesHex(expectedBytes);
 
-    expect(fromFactory.toBytesHex()).toBe(expectedBytes);
+    expect(fromFactory.bytesHex).toBe(expectedBytes);
     expect(fromBytes.version).toBe(EXTRA_DATA_V2);
     expect(fromBytes.kmsContextId).toBe(kmsContextId);
     expect(fromBytes.kmsEpochId).toBe(kmsEpochId);
@@ -103,19 +103,118 @@ describe('kmsExtraData', () => {
   });
 
   it('rejects malformed extraData bytes', () => {
-    expect(() => fromKmsExtraDataBytesHex('0x01' as BytesHex)).toThrow('Unsupported kms extraData length');
-    expect(() => fromKmsExtraDataBytesHex(`0x01${word(1n)}00` as BytesHex)).toThrow(
-      'Invalid kms extraData length for v1',
-    );
-    expect(() => fromKmsExtraDataBytesHex(`0x02${word(1n)}` as BytesHex)).toThrow('Invalid extraData length for v2');
-    expect(() => fromKmsExtraDataBytesHex(`0x03${word(1n)}` as BytesHex)).toThrow(
-      'Unsupported kms extraData version 3',
-    );
+    // Too short: no version byte at all.
+    expect(() => createKmsExtraDataFromBytesHex('0x0' as BytesHex)).toThrow();
+
+    // v1 declared but wrong length (missing / extra bytes).
+    expect(() => createKmsExtraDataFromBytesHex('0x01' as BytesHex)).toThrow();
+    expect(() => createKmsExtraDataFromBytesHex(`0x01${word(1n)}00` as BytesHex)).toThrow();
+
+    // v2 declared but wrong length (missing / extra bytes).
+    expect(() => createKmsExtraDataFromBytesHex('0x02' as BytesHex)).toThrow();
+    expect(() => createKmsExtraDataFromBytesHex(`0x02${word(1n)}` as BytesHex)).toThrow();
+    expect(() => createKmsExtraDataFromBytesHex(`0x02${word(1n)}${word(2n)}00` as BytesHex)).toThrow();
+
+    // Correct length, but the payload is not valid hex.
+    expect(() => createKmsExtraDataFromBytesHex(`0x01${'z'.repeat(64)}` as BytesHex)).toThrow();
+
+    // Version byte itself is not valid hex.
+    expect(() => createKmsExtraDataFromBytesHex(`0xzz${word(1n)}` as BytesHex)).toThrow();
+  });
+
+  it('classifies any 0x00-prefixed payload as v0, ignoring trailing bytes (matches KMSVerifier)', () => {
+    // KMSVerifier._extractKmsContextId treats an empty payload or a leading
+    // 0x00 byte as "current context" (v0) and ignores trailing bytes; the SDK
+    // decoder must mirror that so it never disagrees with the chain.
+    for (const bytes of ['0x', '0x00', '0x0000', `0x00${word(7n)}`] as BytesHex[]) {
+      const extraData = createKmsExtraDataFromBytesHex(bytes);
+      expect(extraData.version).toBe(EXTRA_DATA_V0);
+      expect(extraData.kmsContextId).toBe(0n);
+      expect(extraData.kmsEpochId).toBe(0n);
+      expect(extraData.isFutureVersion).toBe(false);
+    }
+  });
+
+  it('decodes an unrecognized version as a future (unknown) extraData', () => {
+    const future = createKmsExtraDataFromBytesHex(`0x03${word(1n)}` as BytesHex);
+
+    expect(future.version).toBeUndefined();
+    expect(future.isFutureVersion).toBe(true);
+    // The SDK cannot decode a future layout: the ids are not trusted (neutral 0),
+    // but the raw bytes are preserved so the encoding can still be forwarded to
+    // the chain verbatim (the chain is the authority on future versions).
+    expect(future.kmsContextId).toBe(0n);
+    expect(future.kmsEpochId).toBe(0n);
+    expect(future.bytesHex).toBe(`0x03${word(1n)}`);
+  });
+
+  it('reports isFutureVersion only for unrecognized versions', () => {
+    expect(createKmsExtraDataV0().isFutureVersion).toBe(false);
+    expect(createKmsExtraDataV1({ kmsContextId: 1n as Uint256BigInt }).isFutureVersion).toBe(false);
+    expect(
+      createKmsExtraDataV2({ kmsContextId: 1n as Uint256BigInt, kmsEpochId: 2n as Uint256BigInt }).isFutureVersion,
+    ).toBe(false);
+    expect(createKmsExtraDataFromBytesHex(`0x03${word(1n)}` as BytesHex).isFutureVersion).toBe(true);
+  });
+
+  it('compares known versions with lt/le/gt/ge numerically', () => {
+    const v0 = createKmsExtraDataV0();
+    const v1 = createKmsExtraDataV1({ kmsContextId: 1n as Uint256BigInt });
+    const v2 = createKmsExtraDataV2({ kmsContextId: 1n as Uint256BigInt, kmsEpochId: 2n as Uint256BigInt });
+
+    // v1 (version 1) against each threshold.
+    expect(v1.lt(EXTRA_DATA_V2)).toBe(true);
+    expect(v1.lt(EXTRA_DATA_V1)).toBe(false);
+    expect(v1.le(EXTRA_DATA_V1)).toBe(true);
+    expect(v1.le(EXTRA_DATA_V0)).toBe(false);
+    expect(v1.gt(EXTRA_DATA_V0)).toBe(true);
+    expect(v1.gt(EXTRA_DATA_V1)).toBe(false);
+    expect(v1.ge(EXTRA_DATA_V1)).toBe(true);
+    expect(v1.ge(EXTRA_DATA_V2)).toBe(false);
+
+    // v0 and v2 boundary spot-checks.
+    expect(v0.lt(EXTRA_DATA_V1)).toBe(true);
+    expect(v0.ge(EXTRA_DATA_V1)).toBe(false);
+    expect(v2.gt(EXTRA_DATA_V1)).toBe(true);
+    expect(v2.ge(EXTRA_DATA_V2)).toBe(true);
+    expect(v2.lt(EXTRA_DATA_V2)).toBe(false);
+  });
+
+  it('treats a future (unknown) version as greater than every version', () => {
+    const future = createKmsExtraDataFromBytesHex(`0x03${word(1n)}` as BytesHex);
+
+    // Never less-than / less-or-equal to any version.
+    expect(future.lt(EXTRA_DATA_V0)).toBe(false);
+    expect(future.lt(EXTRA_DATA_V2)).toBe(false);
+    expect(future.lt(255)).toBe(false);
+    expect(future.le(EXTRA_DATA_V2)).toBe(false);
+    expect(future.le(255)).toBe(false);
+
+    // Always greater-than / greater-or-equal to any version.
+    expect(future.gt(EXTRA_DATA_V0)).toBe(true);
+    expect(future.gt(EXTRA_DATA_V2)).toBe(true);
+    expect(future.gt(255)).toBe(true);
+    expect(future.ge(EXTRA_DATA_V0)).toBe(true);
+    expect(future.ge(EXTRA_DATA_V2)).toBe(true);
+  });
+
+  it('gates "v2 or later" via lt(EXTRA_DATA_V2): rejects v0/v1, accepts v2 and future', () => {
+    // This is the exact predicate the unified (V2) permit builder relies on:
+    // `extraData.lt(EXTRA_DATA_V2)` === true means "reject".
+    const v0 = createKmsExtraDataV0();
+    const v1 = createKmsExtraDataV1({ kmsContextId: 1n as Uint256BigInt });
+    const v2 = createKmsExtraDataV2({ kmsContextId: 1n as Uint256BigInt, kmsEpochId: 2n as Uint256BigInt });
+    const future = createKmsExtraDataFromBytesHex(`0x03${word(1n)}` as BytesHex);
+
+    expect(v0.lt(EXTRA_DATA_V2)).toBe(true); // reject
+    expect(v1.lt(EXTRA_DATA_V2)).toBe(true); // reject
+    expect(v2.lt(EXTRA_DATA_V2)).toBe(false); // accept
+    expect(future.lt(EXTRA_DATA_V2)).toBe(false); // accept
   });
 
   it('narrows valid extraData objects and bytes', () => {
     const v2Bytes = `0x02${word(1n)}${word(2n)}` as BytesHex;
-    const extraData = fromKmsExtraDataBytesHex(v2Bytes);
+    const extraData = createKmsExtraDataFromBytesHex(v2Bytes);
 
     expect(isKmsExtraData(extraData)).toBe(true);
     expect(isKmsExtraData({})).toBe(false);
@@ -124,7 +223,7 @@ describe('kmsExtraData', () => {
     expect(() => assertIsKmsExtraDataBytesHex('0x', {})).not.toThrow();
     expect(() => assertIsKmsExtraDataBytesHex('0x00', {})).not.toThrow();
     expect(() => assertIsKmsExtraDataBytesHex(v2Bytes, {})).not.toThrow();
-    expect(() => assertIsKmsExtraDataBytesHex('0x02', {})).toThrow('Unsupported kms extraData length');
+    expect(() => assertIsKmsExtraDataBytesHex('0x02', {})).toThrow('Invalid extraData length for v2');
   });
 
   it('keeps KmsExtraDataImpl constructor private to the module', () => {
@@ -134,6 +233,7 @@ describe('kmsExtraData', () => {
           version: EXTRA_DATA_V0,
           kmsContextId: 0n as Uint256BigInt,
           kmsEpochId: 0n as Uint256BigInt,
+          kmsExtraData: '0x00' as BytesHex,
         }),
     ).toThrow('Unauthorized');
   });

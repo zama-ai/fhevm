@@ -169,10 +169,6 @@ export type RelayerPostResponseStatus =
   | NonEmptyExtract<RelayerSuccessStatus, 202>
   | NonEmptyExtract<RelayerFailureStatus, 400 | 401 | 429 | 500 | 503>;
 
-// export type RelayerPostResponse =
-//   | RelayerResponseFailed
-//   | RelayerPostResponse202Queued;
-
 // GET:  200 | 202 | 400 | 401 | 404 | 500 | 503
 export type RelayerGetResponseStatus =
   | NonEmptyExtract<RelayerSuccessStatus, 200 | 202>

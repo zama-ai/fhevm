@@ -74,7 +74,7 @@ export function createKmsUserDecryptEip712V1(
       contractAddresses: checksummedContractAddresses,
       startTimestamp: startTimestamp.toString(),
       durationDays: durationDays.toString(),
-      extraData: extraData.toBytesHex(),
+      extraData: extraData.bytesHex,
     },
   };
 

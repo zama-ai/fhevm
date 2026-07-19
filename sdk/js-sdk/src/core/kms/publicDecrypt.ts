@@ -79,7 +79,7 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
   } = await context.runtime.relayer.fetchPublicDecrypt(context, {
     payload: {
       orderedHandles,
-      extraData: requestedExtraData.toBytesHex(),
+      extraData: requestedExtraData.bytesHex,
     },
     options: relayerOptions,
   });

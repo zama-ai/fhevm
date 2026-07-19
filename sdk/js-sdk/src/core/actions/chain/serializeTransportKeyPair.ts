@@ -16,6 +16,7 @@ export type SerializeTransportKeyPairParameters = {
 export type SerializeTransportKeyPairReturnType = {
   publicKey: BytesHex;
   privateKey: BytesHex;
+  tkmsVersion?: string;
 };
 
 export function serializeTransportKeyPair(

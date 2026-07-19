@@ -48,7 +48,7 @@ export function defineClientDecryptPermitCacheTests(parameters: {
 
     async function signAndSerialize(client: Awaited<ReturnType<typeof createReadyClient>>) {
       const transportKeyPair = await client.generateTransportKeyPair();
-      const signedPermit = await client.signDecryptionPermit({
+      const signedPermit = await client.signLegacyDecryptionPermit({
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,

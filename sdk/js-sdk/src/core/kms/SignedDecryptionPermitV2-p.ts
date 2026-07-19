@@ -231,12 +231,12 @@ export async function createUnsignedDecryptionPermitEip712V2(
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   });
 
-  const extraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
+  const kmsContextExtraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
 
   // A unified (v2) permit requires protocol v14+ extraData (context id + epoch id).
   assert(
-    extraData.version >= EXTRA_DATA_V2,
-    `createUnsignedDecryptionPermitEip712V2 error: Invalid extraData version extraData=${extraData.toBytesHex()}`,
+    kmsContextExtraData.ge(EXTRA_DATA_V2),
+    `createUnsignedDecryptionPermitEip712V2 error: Invalid extraData version extraData=${kmsContextExtraData.bytesHex}`,
   );
 
   // RFC-016: round startTimestamp down to the nearest minute. This absorbs small clock skew
@@ -251,7 +251,7 @@ export async function createUnsignedDecryptionPermitEip712V2(
     allowedContracts: contractAddresses, // [] = permissive, [...] = specific
     durationSeconds,
     startTimestamp: roundedStartTimestamp,
-    extraData,
+    extraData: kmsContextExtraData,
     publicKey: transportKeyPair.publicKey,
   };
 

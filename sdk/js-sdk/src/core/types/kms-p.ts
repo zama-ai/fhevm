@@ -28,8 +28,13 @@ export interface KmsSigncryptedShare {
 }
 
 export interface KmsExtraData {
-  readonly version: Uint8Number;
+  readonly version: Uint8Number | undefined;
   readonly kmsContextId: Uint256BigInt;
   readonly kmsEpochId: Uint256BigInt;
-  toBytesHex(): BytesHex;
+  readonly bytesHex: BytesHex;
+  readonly isFutureVersion: boolean;
+  lt(version: number): boolean;
+  le(version: number): boolean;
+  gt(version: number): boolean;
+  ge(version: number): boolean;
 }
