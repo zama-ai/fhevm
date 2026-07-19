@@ -106,8 +106,7 @@ struct Conf {
 
     #[arg(
         long,
-        requires = "ciphertext_commits_address",
-        help = "GatewayConfig contract address used to fetch coprocessor tx-senders"
+        help = "GatewayConfig contract address used to synchronize the coprocessor registry"
     )]
     gateway_config_address: Option<Address>,
 

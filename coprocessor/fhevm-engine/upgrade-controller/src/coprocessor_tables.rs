@@ -189,6 +189,40 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: true,
         conflict_cols: &[],
     },
+    // Consensus construction, downloaded peer evidence, verification queues,
+    // and the mutable remediation inventory must be isolated from the live
+    // blue stack during a green dry-run. The live stack deterministically
+    // rebuilds its own state, so these copies are not merged at cutover.
+    CoprocessorTable {
+        name: "block_consensus",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_consensus_range",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_consensus_manifest",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_consensus_verification_target",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_consensus_peer_download",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_consensus_drift_handle",
+        duplicated: true,
+        conflict_cols: &[],
+    },
     // Written by the GCS host-listener kms_generation module during the dry-run.
     CoprocessorTable {
         name: "kms_key_activation_events",
@@ -256,6 +290,13 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
     CoprocessorTable {
         name: "crs",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    // Current signer and bucket registry snapshot. Both stacks must authorize
+    // manifests against the same observed GatewayConfig state.
+    CoprocessorTable {
+        name: "gateway_config_coprocessors",
         duplicated: false,
         conflict_cols: &[],
     },

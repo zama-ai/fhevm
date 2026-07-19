@@ -15,6 +15,7 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
+use crate::coprocessor_registry::refresh_coprocessor_registry;
 use crate::drift_detector::{DriftDetector, EventContext};
 use crate::metrics::{
     GET_BLOCK_NUM_FAIL_COUNTER, GET_BLOCK_NUM_SUCCESS_COUNTER, GET_LOGS_FAIL_COUNTER,
@@ -119,6 +120,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         sleep_duration: &mut u64,
     ) -> anyhow::Result<()> {
         let mut ticker = tokio::time::interval(self.conf.get_logs_poll_interval);
+        if let Some(gateway_config_address) = self.conf.gateway_config_address {
+            refresh_coprocessor_registry(&self.provider, gateway_config_address, db_pool).await?;
+        }
         let progress = self.get_listener_progress(db_pool).await?;
         let mut last_processed_block_num = progress.last_processed_block_num;
         let mut number_of_last_processed_updates: u64 = 0;

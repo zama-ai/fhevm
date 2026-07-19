@@ -68,21 +68,22 @@ For each eligible local publication, `sns-worker`:
 3. verifies each signature and discards manifests from unknown or duplicate
    publishers;
 4. groups comparable latest authenticated revisions by their exact commitment;
-5. selects a commitment only when it has the required number of distinct authorized
-   publishers; and
-6. persists and publishes a signed consensus summary referencing the winning and
-   dissenting manifest evidence.
+5. classifies any visible difference as `drift`, independently of quorum;
+6. separately selects a remediation reference only when one commitment has the
+   required number of distinct authorized publishers; and
+7. persists and publishes a signed summary referencing every observed group and the
+   winning group when one exists.
 
-A local publisher inside the winning group can publish its summary immediately after
-the quorum decision is durable. A local publisher outside the winning group is
-classified as drifted: it first localizes and persists its local-versus-quorum handle
-findings, then publishes the summary and uses the same inventory for remediation.
+A local publisher persists its local-versus-observed handle findings before
+publishing a drift summary. If a unique winning group exists, each finding records
+whether its observed side belongs to that group. Only a local value outside the
+winning group can use such a finding for remediation.
 
-If no commitment reaches the threshold, the outcome remains unknown. No publisher
-may promote the largest sub-threshold group to consensus, even when all observed
-manifests happen to be equal within that group. The bounded retry process may later
-turn the same target into consensus when newer or previously missing peer revisions
-arrive.
+If no commitment reaches the threshold, equal visible values produce
+`unknown_but_equal`; differing visible values produce `drift`. No publisher may
+promote the largest sub-threshold group to consensus or remediation authority. The
+bounded retry process may later establish quorum when newer or previously missing
+peer revisions arrive.
 
 Manifest consensus establishes agreed metadata, but it does not prove that usable
 ciphertext bytes remain available. A downstream request retrieves a body from a
@@ -145,7 +146,7 @@ scanning and retry limits, and any later automatic-response safety controls. The
 initial verification controls include `--consensus-verification-delay`,
 `--consensus-verification-retry-delay`, and
 `--consensus-verification-retry-count`. The same retry delay and count budget apply
-to both unknown outcomes and post-drift reconcile attempts (see
+to insufficient-quorum and post-drift reconcile attempts (see
 [Verification retry and tip reconcile](#verification-retry-and-tip-reconcile)).
 The reserved control for future manifest cleanup is
 `--consensus-manifest-retention-days`, with a default of `90` days.
@@ -528,8 +529,9 @@ Full consensus can advance only from authenticated latest manifests of all confi
 coprocessors. Their detailed and historical ranges must provide gap-free comparable
 coverage from the preceding full-consensus boundary through the new checkpoint, and
 all roots and detailed entries in that common coverage must agree. A threshold result
-is sufficient for drift attribution under the configured safety policy, but not for
-advancing this all-coprocessor cleanup boundary.
+is sufficient for remediation attribution under the configured safety policy, but
+not for advancing this all-coprocessor cleanup boundary. Drift detection itself does
+not require threshold support.
 
 For the first full-consensus checkpoint, there is no preceding boundary. Its
 certificate therefore starts at the oldest block in the gap-free coverage shared by
@@ -580,10 +582,11 @@ drift with each other.
 
 Commitments are compared only over the same chain, exact block or dyadic range
 identity, and lineage. That comparison does not wait for finality. Different block,
-detailed-range, or exact historical-range digests establish a disagreement, but a
-specific operator is classified as drifted only when another identical result
-reaches quorum. Once attributed, drift remains a correctness finding even if the
-block is later orphaned. Whether that lineage eventually wins the reorg is a separate
+detailed-range, or exact historical-range digests establish `drift` immediately,
+whether or not any digest group reaches quorum. Quorum is recorded separately and
+controls whether one observed value is safe to use as an automatic-remediation
+reference. Once observed, drift remains a correctness finding even if the block is
+later orphaned. Whether that lineage eventually wins the reorg is a separate
 annotation and does not retroactively erase the finding.
 
 A divergence on an orphaned lineage does not contaminate a later canonical lineage:
@@ -601,14 +604,15 @@ heights are equal.
 | --- | --- | --- |
 | Different block hashes at the same height | `different_lineage` | Never |
 | Same block hash, fewer than quorum, all results equal | `unknown_but_equal` | Never |
-| Same block hash, fewer than quorum, results differ | `unknown_but_unequal` | Never |
-| Same block hash, one identical result reaches quorum | Members are `consensus`; different results are `drift` | Only a local `drift` result may become eligible |
+| Same block hash, fewer than quorum, results differ | `drift` with `observed_has_quorum = false` | Never |
+| Same block hash, one identical result reaches quorum and another differs | `drift` with the winning group recorded | Only a local value outside the winning group may become eligible |
 
-A branch observed by too few coprocessors therefore cannot cause drift attribution,
-let alone drift-revert. If that branch later disappears, its unknown observations
-remain fork evidence only. If enough coprocessors independently agree on that branch,
-it may reach consensus for that lineage; a later reorg still does not turn branch
-agreement into computation drift.
+A branch observed by too few coprocessors can establish drift when comparable
+content differs, but it cannot authorize drift-revert. If that branch later
+disappears, its observations remain fork evidence. If enough coprocessors
+independently agree on that branch, it may also establish a remediation reference
+for that lineage; a later reorg still does not turn branch agreement into
+computation drift.
 
 Restricting publication and verification to finalized blocks would remove most fork
 bookkeeping, unknown outcomes on short-lived branches, and orphan-lineage retention.
@@ -625,12 +629,11 @@ range they share. A differing range root brackets the drift without downloading 
 intermediate manifests. To refine it, the verifier keeps a worklist of every
 differing range and reads older authenticated manifests that expose each interval at
 a smaller scale. Equal child ranges are discarded and every differing child is
-refined again. The verifier does not stop after the first differing block: for a
-coprocessor classified as drifted, traversal continues until it has found every
-differing block in the covered interval, then compares the sorted handle descriptors
-for those blocks while building its mutable repair inventory. A coprocessor in the
-quorum group may stop at compact range and block evidence once attribution is
-established.
+refined again. The verifier does not stop after the first differing block: every
+local reporter continues until it has found every differing block in the covered
+interval, then compares the sorted handle descriptors for those blocks while
+building its mutable drift inventory. Membership in a quorum group changes
+remediation eligibility, not localization completeness.
 
 Downloaded historical manifests are inserted into the same durable manifest archive
 as newly observed tips. Recursive localization first consults that archive and only
@@ -671,20 +674,22 @@ manifests are compared only after that cursor; already inspected handles are ret
 and newly discovered differing handles are appended.
 
 The current handle inventory is stored in `block_consensus_drift_handle`, with one
-row per local publisher, context, chain, exact block hash, and handle. A row keeps
-both the local descriptor and the quorum descriptor, the individual keyset, ct64,
-ct128, and format mismatch flags, optional local `gateway_key_id` provenance, and
-immutable references to the first and latest verification evidence. It is created
-as `unresolved` only when a unique quorum attributes the local value as drifted.
-No-quorum disagreement does not create an attributed remediation row.
+row per local publisher, context, chain, exact block hash, handle, and distinct
+observed commitment. A row keeps both the local and observed descriptors, the
+individual keyset, ct64, ct128, and format mismatch flags, optional local
+`gateway_key_id` provenance, and immutable references to the first and latest
+verification evidence. Every localized difference creates an `unresolved` row.
+`observed_has_quorum` states whether that observed descriptor belongs to the unique
+threshold group and is therefore eligible to become a remediation reference; a
+below-quorum row is persistent diagnosis only.
 
 Replay publishes a superseding local manifest revision; it does not edit the
 manifest that established the drift. When a later detailed-range verification puts
-that local revision in the quorum group, all unresolved rows for the exact covered
-block hashes are updated to `resolved` with the resolving target, manifest digest,
-revision, and timestamp. The original drift descriptor values and first-detection
-evidence remain available for diagnosis. Revision guards prevent an older worker
-from overwriting a newer result.
+that local revision in a threshold-sized concordant visible group, all unresolved
+rows for the exact covered block hashes are updated to `resolved` with the resolving
+target, manifest digest, revision, and timestamp. The original drift descriptor
+values and first-detection evidence remain available for diagnosis. Revision guards
+prevent an older worker from overwriting a newer result.
 
 For each later interval having complete quorum reference manifests, the drifted
 coprocessor continues the normal linear comparison and adds only handles that
@@ -807,12 +812,10 @@ outside the comparison scope rather than a different vote.
 after the initial verification attempt. The same delay
 (`--consensus-verification-retry-delay`) and count budget apply to:
 
-- `unknown_but_equal` and `unknown_but_unequal` (missing or insufficient tips);
-- attributed `drift` while any expected publisher tip still disagrees with the
-  quorum tip set, or while the local operator remains outside quorum after it may
-  still repair and republish; and
-- `consensus` with residual dissenting tips, so a minority that later publishes a
-  matching higher revision can rejoin.
+- `unknown_but_equal` (visible tips are concordant but insufficient for quorum);
+- `drift` while any visible comparable tip still differs, including when no digest
+  group has quorum; and
+- `consensus` only when later tip revisions can extend the recorded coverage.
 
 Repair-in-progress and still-drifted are indistinguishable until a tip changes. The
 worker does not need a separate "wait for new revision" signal: an unchanged bad tip
@@ -823,12 +826,13 @@ quorum) but uses the same loop as single-peer drift.
 
 The number of retries already performed and the next eligible attempt time are
 persisted in the database and updated atomically, so restarts neither reset the
-budget nor lose a scheduled retry. Observing a tip revision or digest change for any
-publisher in the comparison set, or publishing a local superseding revision, re-arms
-verification for that target even if a previous budget was exhausted (reset or extend
-the attempt counter according to implementation policy; the important property is that
-supersession is not permanently ignored). Peer absence may also become a missing or
-stale-peer finding, but never ciphertext drift by itself.
+budget nor lose a scheduled retry. Every attempt polls for higher peer revisions, so
+a changed peer tip is consumed while that bounded budget remains. Publishing a local
+superseding revision creates a fresh verification target for that exact revision even
+when the preceding target was exhausted. An exhausted target is not polled forever;
+reopening one after only a remote tip changes would require a separate durable trigger
+or periodic reconcile policy. Peer absence may become a missing or stale-peer finding,
+but never ciphertext drift by itself.
 
 ### Multi-worker verification locking
 
@@ -880,13 +884,17 @@ visible.
 
 The verification outcome is:
 
-- `consensus`: one result reaches quorum and the operator's result belongs to that
-  group;
-- `drift`: one result reaches quorum and the operator's current tip differs;
-- `unknown_but_equal` ("unknown - but equal"): too few valid results reach quorum,
-  but every available tip is identical; or
-- `unknown_but_unequal` ("unknown - but unequal"): no result reaches quorum and the
-  available valid tips contain at least two different commitments.
+- `consensus`: all visible comparable commitments agree and that value reaches the
+  configured quorum;
+- `drift`: at least one exact detailed or historical scope contains two different
+  visible commitments, whether or not either value reaches quorum; or
+- `unknown_but_equal` ("insufficient quorum, but equal"): all visible comparable
+  commitments agree, but that value does not reach quorum.
+
+Outcomes are first evaluated independently for every exact detailed or historical
+scope. Any visible difference makes the aggregate result `drift`; a matching recent
+detailed range never overrides a historical mismatch. Historical localization
+controls the precision of the block and handle inventory, not drift existence.
 
 Every outcome records its exact comparison scope: detailed-range bounds, exact
 dyadic range identities, uncovered intervals, and every localized drift block or
@@ -895,23 +903,47 @@ interpreted as agreement outside that recorded coverage. Separately, the
 full-consensus checkpoint advances only when all configured coprocessors agree over
 the required gap-free coverage.
 
-Unknown outcomes and non-final drift/reconcile situations schedule another attempt
+Insufficient-quorum and non-final drift/reconcile situations schedule another attempt
 after `--consensus-verification-retry-delay` while the extended retry policy allows
 it (see [Verification retry and tip reconcile](#verification-retry-and-tip-reconcile)).
-If the unknown budget is exhausted without a tip change re-arming the target, the
-worker retains the exact unknown subtype and marks retry exhaustion rather than
-guessing consensus or drift. A pairwise difference therefore supports
-`unknown_but_unequal`, not an attributed drift finding at that comparison scope.
-Finer block or handle scopes may nevertheless reach their own configured threshold
-as described below; those scoped findings do not turn the complete manifest outcome
-into `consensus`.
+If the unknown budget is exhausted without a matching tip appearing during the
+bounded attempts, the
+worker retains `unknown_but_equal` and marks retry exhaustion rather than guessing
+consensus. A pairwise content difference is never an unknown outcome: it is `drift`
+and its local-versus-observed descriptor explanations are persisted. Quorum remains
+separate metadata and is required before the observed side can authorize automatic
+remediation.
+
+#### Comparison with the current Gateway contract
+
+The current Gateway `CiphertextCommits.addCiphertextMaterial` groups votes by
+`keccak256(handle, keyId, ciphertextDigest, snsCiphertextDigest)`. Each registered
+transaction sender can vote once per handle. A material tuple is finalized when its
+counter reaches `GatewayConfig.getCoprocessorMajorityThreshold()`, or immediately
+when the configured priority sender submits it. Different tuples occupy different
+counter buckets; the contract emits each submission but does not expose a durable
+`drift` classification for non-winning buckets.
+
+| Manifest behavior relative to Gateway | Classification | Consequence |
+| --- | --- | --- |
+| Exact descriptor values are grouped before quorum, as Gateway groups the complete material tuple | Equivalent | Quorum never combines votes for different content |
+| Any two comparable manifest values establish persistent `drift`, even when neither reaches threshold | Improvement | All-different and split-vote failures are diagnosable instead of remaining only separate on-chain vote buckets/events |
+| Quorum is still required before one value becomes an automatic-remediation reference | Equivalent safety property | Detection is quorum-independent; correction authority is not |
+| A publisher may issue a higher signed manifest revision while every revision remains archived | Improvement with an explicit semantic change | Recovery can be observed without deleting evidence; unlike the Gateway vote, the publisher's current tip can change |
+| Manifest verification has no priority-sender shortcut | Intentional improvement for decentralized consensus | One publisher cannot make its own material the remediation reference; this differs from current Gateway priority mode |
+| Manifest observations are downloaded asynchronously rather than written atomically on chain | Regression/risk | Missing or delayed tips can yield `unknown_but_equal`; bounded retries and durable queues are required |
+| Manifests cover ct64, ct128, format, keyset and history, not only the Gateway material tuple | Improvement | Drift can be localized across historical blocks and explained field by field |
+
+These differences are intentional for the planned removal of Gateway consensus.
+They must not be interpreted as reproducing the Gateway's first threshold-winning
+state machine off chain.
 
 #### Degenerate comparison without manifest-level quorum
 
 When no commitment reaches quorum for the top-level manifest or detailed-range
-scope, the verifier does not choose the largest group or stop after recording
-`unknown_but_unequal`. It enters a slower diagnostic path over all authenticated,
-comparable data on the same lineage.
+scope, the verifier does not choose the largest group. If visible commitments
+differ, the result is already `drift`; it enters a slower localization path over all
+authenticated, comparable data on the same lineage.
 
 The threshold at every scope is the same global coprocessor threshold loaded with
 `getCoprocessorMajorityThreshold()` from the pinned `GatewayConfig` snapshot. It is
@@ -940,12 +972,11 @@ no value reaches threshold, that handle remains unknown.
 
 The degenerate path therefore provides block-by-block and, when necessary,
 handle-by-handle results even when no complete manifest variant has quorum. It never
-lowers the threshold to the number of manifests that happened to be available, never
-assembles those scoped results into a synthetic manifest vote, and never advances
-the full-consensus checkpoint. The overall manifest outcome remains
-`unknown_but_unequal`. Scoped results may populate the local diagnostic or repair
-inventory, but they do not by themselves make the complete manifest eligible for
-automatic revert.
+lowers the threshold to the number of manifests that happened to be available,
+never assembles those scoped results into a synthetic manifest vote, and never
+advances the full-consensus checkpoint. The overall outcome remains `drift`, while
+every persisted comparison row has `observed_has_quorum = false` and is ineligible
+for automatic revert.
 
 ### Manifest consensus-status tag
 
@@ -957,15 +988,15 @@ that block identity):
 consensus-status = consensus
                  | drift
                  | unknown_but_equal
-                 | unknown_but_unequal
 ```
 
 The tag is absent only before the first verification attempt completes for that tip.
-An unknown or drift outcome is written immediately and may be overwritten by a later
-retry or reconcile attempt. The worker sets `consensus` when its tip belongs to the
-quorum group and `drift` when another identical result reaches quorum and its tip
-differs. After retry exhaustion, the last outcome remains visible on that tip until
-a superseding local revision or a re-armed attempt updates it.
+An insufficient-quorum or drift outcome is written immediately and may be
+overwritten by a later retry or reconcile attempt. `Drift` means visible comparable
+content diverged; it does not by itself claim that the local publisher is outside a
+quorum group. After retry exhaustion, the last outcome remains visible on that tip
+until a superseding local revision creates a fresh target or a separately scheduled
+reconcile attempt updates it.
 
 Object tagging does not rewrite the manifest body or its S3 user metadata. The tag
 is externally observable operational evidence for manual inspection, integration
@@ -1106,36 +1137,43 @@ distinguish at least these states:
 - consensus quorum reached;
 - different peer lineage observed but not comparable;
 - `unknown_but_equal` while retries remain or exhausted;
-- `unknown_but_unequal` while retries remain or exhausted;
+- `drift`, with or without a quorum-backed observed value;
 - invalid or unauthenticated manifest.
 
 Absence at one exact publication height is not yet an availability failure because a
 peer may use another cadence. Failure to find a sufficiently recent valid manifest
 within the bounded scan is an availability or lag failure, not proof of drift. A
 difference requires comparable authenticated commitments for the same block identity
-under one pinned registry snapshot. Attributed drift additionally requires a quorum
-of an identical competing commitment.
+under one pinned registry snapshot. Automatic remediation additionally requires a
+unique quorum of an identical competing commitment.
 
 For the production-shaped five-coprocessor case with quorum `3`, verification must
 cover every possible local publisher origin for at least these populations:
 
 | Intended population | Observable commitment groups | Result for each local origin |
 | --- | --- | --- |
-| One drifter | `4 + 1` | Four consensus, one drift |
-| Two matching drifters | `3 + 2` | Three consensus, two drift |
-| Three drifters, two matching and one distinct | `2 + 2 + 1` | Five `unknown_but_unequal` summaries with local disagreement explanations |
-| All five drifted as two matching pairs and one singleton | `2 + 2 + 1` | Five `unknown_but_unequal` summaries with local disagreement explanations |
+| One drifter | `4 + 1` | Five `drift` summaries; four local values belong to the quorum group and one does not |
+| Two matching drifters | `3 + 2` | Five `drift` summaries; three local values belong to the quorum group and two do not |
+| Three drifters, two matching and one distinct | `2 + 2 + 1` | Five `drift` summaries without a quorum-backed remediation reference |
+| All five drifted as two matching pairs and one singleton | `2 + 2 + 1` | Five `drift` summaries without a quorum-backed remediation reference |
+| Every coprocessor differs | `1 + 1 + 1 + 1 + 1` | Five `drift` summaries without a quorum-backed remediation reference |
 
-The final two populations are intentionally indistinguishable from manifests alone.
-Neither has a quorum-backed reference, so the implementation must not infer which
-pair, singleton, or intended ground truth is correct. Tests evaluate the same
-manifest population once with each of the five publishers as the local origin; this
-covers both a locally winning and locally dissenting observer whenever a winner
-exists. No-quorum prevents attribution, not diagnosis: every
-`unknown_but_unequal` summary still records the distinct commitment groups and all
-explanations derivable from the signed descriptors, such as `keyset_mismatch`,
-`ct64_digest_mismatch`, `ct128_digest_mismatch`, `format_mismatch`, or handle-set
-differences.
+The two `2 + 2 + 1` populations are intentionally indistinguishable from manifests
+alone. Neither has a quorum-backed reference, so the implementation must not infer
+which pair, singleton, or intended ground truth is correct. Tests evaluate the same
+manifest population once with each publisher as the local origin. No-quorum prevents
+automatic remediation, not drift detection or persistence: every summary and handle
+row records the distinct commitment groups and explanations derivable from the
+signed descriptors, such as `keyset_mismatch`, `ct64_digest_mismatch`,
+`ct128_digest_mismatch`, `format_mismatch`, or handle-set differences.
+
+Revision tests use the production publisher and object-store path: revision `0` and
+its repaired revision `1` are created from database descriptors, signed, uploaded to
+their numbered immutable S3 keys, archived, and linked by `supersedes`. A dependent
+later manifest is also republished so its `previous_manifest` points to the repaired
+revision. Separate multi-worker downloader tests retain every downloaded revision,
+select only the highest contiguous authenticated tip, and resolve persisted drift
+when a matching peer revision appears during the bounded retry window.
 
 Comparison has two useful cases:
 
@@ -1147,15 +1185,14 @@ Comparison has two useful cases:
   historical interval differs.
 
 When a range root differs, workers fetch progressively finer historical manifests.
-A worker in the quorum group may locate or bracket the first divergent block, record
-compact commitment evidence, and stop. A worker classified as drifted instead
-traverses every differing child range until it has enumerated all differing blocks
-in the covered interval. It uses authenticated manifests matching the quorum digests
-as its references, compares the signed handle-to-descriptor lists for each differing
-block, and records whether each local finding is a missing handle, an unexpected
-handle, or a digest mismatch. Fetching ciphertext bodies is not required for this
-comparison; a later investigation may compare S3 object metadata or bodies against
-the manifest evidence.
+Every reporter traverses each differing child range until it has enumerated all
+differing blocks in the covered interval. It uses authenticated manifests matching
+each observed digest as its references, compares the signed handle-to-descriptor
+lists for every differing block, and records whether each finding is a missing
+handle, an unexpected handle, or a descriptor mismatch. A reference belonging to a
+unique quorum group is marked separately. Fetching ciphertext bodies is not required
+for this comparison; a later investigation may compare S3 object metadata or bodies
+against the manifest evidence.
 
 Manifests at the same height but under different block hashes are recorded as
 different lineages, not drift. Their `A` values are not two claims about the same
@@ -1171,34 +1208,32 @@ the winning commitment and its manifest references.
 
 A reporter whose local commitment belongs to the winning group can publish the
 summary as soon as the quorum decision is durable. A reporter outside that group
-first durably records its localized local-versus-quorum findings and scan cursor, so
-the summary and remediation inventory cannot disagree after a crash. An exhausted
-no-quorum evaluation may also publish an `unknown_but_equal` or
-`unknown_but_unequal` observation summary, but that summary is explicitly not a
-readiness or remediation authority.
+first durably records its localized local-versus-observed findings and scan cursor,
+so the summary and remediation inventory cannot disagree after a crash. An exhausted
+no-quorum evaluation publishes `unknown_but_equal` when every visible value agrees,
+or `drift` when visible values differ. Neither is remediation authority without a
+quorum-backed observed descriptor.
 
-The summary preserves the local and quorum sides instead of flattening them into one
-tuple. For a winning local reporter those values are equal. For a drifted local
-reporter they expose the exact mismatch. When no group reaches quorum there is no
-quorum descriptor and no drift attribution, regardless of the intended ground truth
-used by a test scenario. The summary nevertheless contains each non-local commitment
-group and its local-versus-observed descriptor explanations; it must not collapse a
-diagnosable `unknown_but_unequal` result into an unexplained `unknown`.
+The summary preserves the local, observed, and quorum metadata instead of flattening
+them into one tuple. Every local-versus-observed difference is drift evidence. When
+no group reaches quorum, the summary still contains each non-local commitment group
+and its descriptor explanations, but marks every comparison
+`observed_has_quorum = false`; it must not collapse diagnosable drift into an
+unexplained `unknown`.
 
 ### Public drift-evidence files
 
-When a quorum result differs from one or more operator results, every coprocessor
-that detects the drift publishes a compact signed summary in its own registered
-bucket. A detector in the quorum group publishes commitment-level attribution only;
-it does not compute or publish the drifted operator's handle inventory. A cooperative
-drifted operator maintains that inventory locally after classifying itself as
-drifted, but detection does not depend on it doing so.
+When comparable results differ, every coprocessor that detects the drift publishes a
+compact signed summary in its own registered bucket. The summary identifies every
+observed group and whether a unique group has quorum. Each reporter maintains its
+own local-versus-observed inventory; only comparisons against a quorum-backed group
+are eligible for automatic remediation.
 
 The compact evidence flow is:
 
 1. use the differing detailed or dyadic range roots to find the first differing
    block on the same lineage;
-2. identify the quorum commitment and every dissenting publisher;
+2. identify every commitment group and, when one exists, the quorum commitment;
 3. record immutable references and digests for the manifests establishing that
    attribution; and
 4. publish the signed summary without handle associations.
@@ -1390,15 +1425,18 @@ local revert. For one pinned verification registry snapshot, the configured
 coprocessor set and threshold must make it safe to distinguish a drifted minority
 from the honest majority. A plurality or one conflicting peer is never sufficient.
 
-The consensus and automatic-revert rule is:
+The drift and automatic-revert rules are deliberately separate:
 
-- local commitment belongs to a threshold group: classify it as `consensus` and do
-  not revert locally;
-- another commitment reaches threshold and the local commitment does not: local
-  result is `drift` and is eligible for revert; and
-- no commitment reaches threshold: classify the available evidence as
-  `unknown_but_equal` or `unknown_but_unequal`, retry while permitted, and do not
-  revert.
+- all visible comparable commitments are equal and reach threshold: classify the
+  observation as `consensus` and do not revert locally;
+- all visible comparable commitments are equal but below threshold: classify it as
+  `unknown_but_equal`, retry while permitted, and do not revert;
+- any visible comparable commitment differs: classify the observation as `drift`;
+- if the local commitment belongs to the unique threshold group, do not revert it;
+- if another commitment reaches threshold and the local commitment does not, its
+  `observed_has_quorum = true` findings may become eligible for local revert; and
+- if no commitment reaches threshold, persist the drift findings with
+  `observed_has_quorum = false`, retry while permitted, and do not revert.
 
 The worker also fails closed and does not auto-revert when the registry snapshot is
 unknown or changes during evaluation, the configured threshold is invalid for the
@@ -1460,7 +1498,7 @@ A durable verification target is keyed by the exact local manifest revision bein
 checked and the pinned registry snapshot. It stores eligibility, attempt timestamps,
 retry count and exhaustion, next-attempt time, and the latest outcome. Outcomes
 distinguish at least `pending`, `consensus`, `drift`, `unknown_but_equal`,
-`unknown_but_unequal`, `different_lineage`, and `invalid_evidence`.
+`different_lineage`, and `invalid_evidence`.
 
 The target is inserted atomically with local publication. If GatewayConfig has not
 yet supplied a complete snapshot, it remains in `waiting_registry`; binding later
@@ -1507,7 +1545,7 @@ tentative but their semantics are part of the design:
 | `coprocessor_sns_worker_peer_manifest_fetch_total{peer,result}` | Counter | Peer fetches ending in `success`, `not_found`, `timeout`, `http_error`, `invalid`, or `unsupported_version` |
 | `coprocessor_sns_worker_missing_peer_manifests{peer}` | Gauge | Whether a peer still lacks a sufficiently recent comparable manifest after cadence-aware scanning and verification retry exhaustion |
 | `coprocessor_sns_worker_peer_manifest_cadence_mismatch{peer}` | Gauge | Whether an authenticated peer manifest was observed at a height incompatible with the expected `K` |
-| `coprocessor_sns_worker_localized_drift_block_number{peer,bound}` | Gauge | Exact drift block or lower/upper block bound for a peer classified outside the quorum result |
+| `coprocessor_sns_worker_localized_drift_block_number{peer,bound}` | Gauge | Exact drift block or lower/upper block bound for one observed differing peer result |
 
 All metrics may also carry a bounded `host_chain_id` label. The `peer`, `result`,
 and `bound` values come from fixed or configured finite sets. Block hashes, manifest
@@ -1518,20 +1556,21 @@ Counters increment only when a new finding or state transition is durably persis
 not every time a polling loop observes the same condition. Missing-peer and localized
 block gauges are derived from current persisted state.
 
-Per-ciphertext drift findings come from comparing a drifted operator's signed
-association list with the quorum result after an exact drift block has been
-localized. They distinguish at least `missing_handle`, `unexpected_handle`, and
+Per-ciphertext drift findings come from comparing one signed local association list
+with each distinct observed result after an exact drift block has been localized.
+They distinguish at least `missing_handle`, `unexpected_handle`, and
 `digest_mismatch`, with more specific `keyset_mismatch` and `format_mismatch`
 classification when the descriptors explain the difference. A finding retains the
-local and quorum descriptor values separately, including `local_keyset_id` and
-`quorum_keyset_id`. `local_gateway_key_id` may be retained as nullable legacy
-diagnostic state, but no quorum Gateway ID is stored or inferred.
+local and observed descriptor values separately, including `local_keyset_id` and
+`observed_keyset_id`, plus `observed_has_quorum`. `local_gateway_key_id` may be
+retained as nullable legacy diagnostic state, but no observed Gateway ID is stored
+or inferred.
 
-Differences observed under `unknown_but_unequal` are retained as disagreement
-evidence but are not attributed as per-ciphertext drift. The Prometheus metric
-remains unspecified until its deduplication semantics are defined. In particular, a
-handle must not be a metric label; exact handles and the conflicting descriptor
-values belong in persisted evidence and structured logs.
+Below-quorum differences are persisted as per-ciphertext drift with
+`observed_has_quorum = false`. The Prometheus metric remains unspecified until its
+deduplication semantics are defined. In particular, a handle must not be a metric
+label; exact handles and conflicting descriptor values belong in persisted evidence
+and structured logs.
 
 ## Unresolved blockers
 
@@ -1638,11 +1677,10 @@ with the existing Gateway consensus:
 4. discover each peer's latest authenticated revision, validate it, store its exact
    signed body in the same manifest archive as local revisions with its signed
    `publisher`, compare tips, and retain all observed revisions;
-5. recursively localize quorum-backed range differences using any available member
-   of the winning commitment group, and use the block-by-block then handle-by-handle
-   degenerate comparison when the manifest-level result has no quorum;
-6. extend verification retries across unknown outcomes and drift reconcile so later
-   superseding tips can converge without status-tag filtering;
+5. recursively localize every range difference, preferring a member of the winning
+   group when one exists, and persist below-quorum observations as non-actionable;
+6. extend verification retries across insufficient-quorum outcomes and drift
+   reconcile so later superseding tips can converge without status-tag filtering;
 7. best-effort tag the local tip with every completed verification outcome and
    overwrite outcomes when later retries produce a newer result;
 8. emit drift, cadence, invalid-evidence, and stale-peer metrics and alerts; and

@@ -3,6 +3,7 @@ use alloy::transports::http::reqwest::Url;
 use fhevm_engine_common::utils::DatabaseURL;
 use std::time::Duration;
 
+pub(crate) mod coprocessor_registry;
 pub(crate) mod drift_detector;
 pub mod gw_listener;
 pub mod http_server;

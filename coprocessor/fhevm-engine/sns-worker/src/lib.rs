@@ -58,7 +58,9 @@ use tracing::{error, info, warn, Level};
 
 use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
-    consensus::publisher::spawn_manifest_publisher,
+    consensus::{
+        peer_downloader::spawn_peer_manifest_downloader, publisher::spawn_manifest_publisher,
+    },
     executor::SwitchNSquashService,
     metrics::spawn_gauge_update_routine,
     s3_migration::{run_startup_migrations, S3MigrationConfig},
@@ -1200,6 +1202,12 @@ pub async fn run_all(
         info!("Consensus manifest publication is disabled");
         None
     };
+    let peer_manifest_downloader = if conf.consensus.verify_others_party_manifests {
+        Some(spawn_peer_manifest_downloader(&pool_mngr, client.clone(), stack_mode.clone()).await?)
+    } else {
+        info!("Consensus peer manifest verification is disabled");
+        None
+    };
 
     // Spawns a task to handle S3 uploads. In GCS mode the loop parks until the
     // cutover flips `stack_mode` out of GCS mode, so nothing is uploaded during
@@ -1235,6 +1243,7 @@ pub async fn run_all(
             Err(join_err) => Err(join_err.into()),
         },
         res = wait_for_consensus_task(manifest_publisher) => res,
+        res = wait_for_consensus_task(peer_manifest_downloader) => res,
     };
     token.cancel();
 

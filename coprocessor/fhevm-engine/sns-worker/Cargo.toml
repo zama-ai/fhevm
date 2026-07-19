@@ -29,6 +29,7 @@ tonic = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
+url = { workspace = true }
 
 # opentelemetry support
 opentelemetry = { workspace = true }

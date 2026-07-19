@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO block_consensus_drift_handle (\n            local_publisher,\n            version,\n            coprocessor_context_id,\n            host_chain_id,\n            block_number,\n            block_hash,\n            handle,\n            status,\n            finding_kind,\n            local_present,\n            observed_present,\n            local_keyset_id,\n            observed_keyset_id,\n            local_gateway_key_id,\n            local_ct64_digest,\n            observed_ct64_digest,\n            local_ct128_digest,\n            observed_ct128_digest,\n            local_ct128_format,\n            observed_ct128_format,\n            keyset_mismatch,\n            ct64_digest_mismatch,\n            ct128_digest_mismatch,\n            ct128_format_mismatch,\n            observed_publisher,\n            observed_manifest_digest,\n            observed_commitment_digest,\n            observed_has_quorum,\n            first_detected_target_id,\n            last_observed_target_id,\n            first_detected_local_manifest_digest,\n            last_observed_local_manifest_digest,\n            last_local_manifest_revision\n        )\n        VALUES (\n            $1, $2, $3, $4, $5, $6, $7, 'unresolved', $8,\n            $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,\n            $20, $21, $22, $23, $24, $25, $26, $27, $28, $28, $29, $29, $30\n        )\n        ON CONFLICT (\n            local_publisher,\n            version,\n            coprocessor_context_id,\n            host_chain_id,\n            block_hash,\n            handle,\n            observed_commitment_digest\n        ) DO UPDATE\n           SET block_number = EXCLUDED.block_number,\n               status = 'unresolved',\n               finding_kind = EXCLUDED.finding_kind,\n               local_present = EXCLUDED.local_present,\n               observed_present = EXCLUDED.observed_present,\n               local_keyset_id = EXCLUDED.local_keyset_id,\n               observed_keyset_id = EXCLUDED.observed_keyset_id,\n               local_gateway_key_id = EXCLUDED.local_gateway_key_id,\n               local_ct64_digest = EXCLUDED.local_ct64_digest,\n               observed_ct64_digest = EXCLUDED.observed_ct64_digest,\n               local_ct128_digest = EXCLUDED.local_ct128_digest,\n               observed_ct128_digest = EXCLUDED.observed_ct128_digest,\n               local_ct128_format = EXCLUDED.local_ct128_format,\n               observed_ct128_format = EXCLUDED.observed_ct128_format,\n               keyset_mismatch = EXCLUDED.keyset_mismatch,\n               ct64_digest_mismatch = EXCLUDED.ct64_digest_mismatch,\n               ct128_digest_mismatch = EXCLUDED.ct128_digest_mismatch,\n               ct128_format_mismatch = EXCLUDED.ct128_format_mismatch,\n               observed_publisher = EXCLUDED.observed_publisher,\n               observed_manifest_digest = EXCLUDED.observed_manifest_digest,\n               observed_has_quorum = EXCLUDED.observed_has_quorum,\n               last_observed_target_id = EXCLUDED.last_observed_target_id,\n               last_observed_local_manifest_digest =\n                   EXCLUDED.last_observed_local_manifest_digest,\n               last_local_manifest_revision = EXCLUDED.last_local_manifest_revision,\n               last_observed_at = NOW(),\n               resolved_target_id = NULL,\n               resolved_local_manifest_digest = NULL,\n               resolved_local_manifest_revision = NULL,\n               resolved_at = NULL,\n               updated_at = NOW()\n         WHERE block_consensus_drift_handle.last_local_manifest_revision\n                   <= EXCLUDED.last_local_manifest_revision\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Text",
+        "Bool",
+        "Bool",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Int2",
+        "Int2",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bool",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "97c2bbdf9543dd655fdd86c833eed4744075faeb500ad156a5b9f1553902df11"
+}

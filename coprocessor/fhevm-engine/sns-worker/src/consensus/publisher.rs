@@ -12,7 +12,7 @@ use tokio::{task::JoinHandle, time::MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use crate::{aws_upload::COPROCESSOR_CONTEXT_ID_1, Config, ExecutionError};
+use crate::{aws_upload::COPROCESSOR_CONTEXT_ID_1, Config, ConsensusConfig, ExecutionError};
 
 use super::manifest::{
     discover_block_children, discover_known_children, is_block_manifest_ready,
@@ -20,6 +20,7 @@ use super::manifest::{
     pending_chain_ids, prepare_manifest, seal_block_content, PendingBlock,
 };
 use super::manifest_archive::{manifest_object_key, store_authenticated_manifest};
+use super::peer_downloader::schedule_manifest_verification;
 
 const MANIFEST_POLL_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -110,6 +111,7 @@ async fn run_manifest_publisher(
                     cadence,
                     host_chain_id,
                     &signer,
+                    &conf.consensus,
                 )
                 .await
                 {
@@ -138,6 +140,7 @@ async fn progress_chain(
     cadence: i64,
     host_chain_id: i64,
     signer: &CoproSigner,
+    consensus: &ConsensusConfig,
 ) -> Result<Progress, ExecutionError> {
     let mut trx = pool.begin().await?;
     let Some(block) = lock_next_block_to_progress(&mut trx, host_chain_id, cadence).await? else {
@@ -165,7 +168,7 @@ async fn progress_chain(
         return Ok(Progress::Advanced);
     }
 
-    publish_block_manifest(&mut trx, client, bucket, &block, signer).await?;
+    publish_block_manifest(&mut trx, client, bucket, &block, signer, consensus).await?;
     trx.commit().await?;
     Ok(Progress::Advanced)
 }
@@ -176,6 +179,7 @@ pub(crate) async fn publish_block_manifest(
     bucket: &str,
     block: &PendingBlock,
     signer: &CoproSigner,
+    consensus: &ConsensusConfig,
 ) -> Result<(), ExecutionError> {
     let prepared = prepare_manifest(trx, block, COPROCESSOR_CONTEXT_ID_1, signer.address()).await?;
     let detailed_range_start = i64::try_from(prepared.payload.detailed_range.first_block_number)
@@ -214,6 +218,16 @@ pub(crate) async fn publish_block_manifest(
         manifest_digest,
     )
     .await?;
+    if consensus.verify_others_party_manifests {
+        schedule_manifest_verification(
+            trx,
+            &archived.manifest,
+            consensus.verification_delay,
+            consensus.verification_retry_delay,
+            consensus.verification_retry_count,
+        )
+        .await?;
+    }
     info!(
         host_chain_id = block.host_chain_id,
         block_number = block.block_number,
@@ -486,8 +500,16 @@ mod tests {
             .await
             .expect("create manifest revision bucket");
         let signer: CoproSigner = Arc::new(PrivateKeySigner::random());
-        publish_pending_revision(&pool, &client, bucket, CHAIN_ID, context, &signer).await;
-        publish_pending_revision(&pool, &client, bucket, CHAIN_ID, context, &signer).await;
+        let consensus = ConsensusConfig::default();
+
+        publish_pending_revision(
+            &pool, &client, bucket, CHAIN_ID, context, &signer, &consensus,
+        )
+        .await;
+        publish_pending_revision(
+            &pool, &client, bucket, CHAIN_ID, context, &signer, &consensus,
+        )
+        .await;
         let revision_zero = load_local_revision(
             &pool,
             signer.address(),
@@ -544,8 +566,14 @@ mod tests {
             .await
             .expect("commit repaired revision request");
 
-        publish_pending_revision(&pool, &client, bucket, CHAIN_ID, context, &signer).await;
-        publish_pending_revision(&pool, &client, bucket, CHAIN_ID, context, &signer).await;
+        publish_pending_revision(
+            &pool, &client, bucket, CHAIN_ID, context, &signer, &consensus,
+        )
+        .await;
+        publish_pending_revision(
+            &pool, &client, bucket, CHAIN_ID, context, &signer, &consensus,
+        )
+        .await;
         let revision_one = load_local_revision(
             &pool,
             signer.address(),
@@ -675,6 +703,7 @@ mod tests {
         host_chain_id: i64,
         context: U256,
         signer: &CoproSigner,
+        consensus: &ConsensusConfig,
     ) {
         let mut trx = pool.begin().await.expect("begin block seal");
         let block = lock_next_block_to_progress(&mut trx, host_chain_id, 1)
@@ -698,7 +727,7 @@ mod tests {
             .await
             .expect("lock block for publication")
             .expect("pending block for publication");
-        publish_block_manifest(&mut trx, client, bucket, &block, signer)
+        publish_block_manifest(&mut trx, client, bucket, &block, signer, consensus)
             .await
             .expect("publish numbered manifest revision");
         trx.commit().await.expect("commit manifest publication");
