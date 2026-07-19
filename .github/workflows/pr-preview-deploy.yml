@@ -203,21 +203,30 @@ jobs:
             exit 0
           fi
           echo "PR labels: $PR_LABELS"
-          # PR runs auto-run the e2e DAG only when explicitly labeled, so the
-          # PR-comment report path is reachable without a manual dispatch.
+          # Compute in shell vars and write once at the end: pr-preview-e2e-tests
+          # must be able to force should_deploy=true on its own (automated tests
+          # need a deployed env), which a trailing else branch would otherwise
+          # clobber via last-write-wins.
+          should_deploy=false
+          build_images=false
+          automated_tests=false
+          # pr-preview-e2e-tests: auto-run the e2e DAG AND deploy the env it needs,
+          # so the PR-comment report path is reachable without a manual dispatch.
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "pr-preview-e2e-tests")' > /dev/null; then
-            echo "automated_tests=true" >> "$GITHUB_OUTPUT"
+            automated_tests=true
+            should_deploy=true
           fi
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "pr-preview-e2e-build")' > /dev/null; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "build_images=true" >> "$GITHUB_OUTPUT"
+            should_deploy=true
+            build_images=true
           elif echo "$PR_LABELS" | jq -e '.[] | select(. == "pr-preview-e2e")' > /dev/null; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "build_images=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-            echo "build_images=false" >> "$GITHUB_OUTPUT"
+            should_deploy=true
           fi
+          {
+            echo "should_deploy=${should_deploy}"
+            echo "build_images=${build_images}"
+            echo "automated_tests=${automated_tests}"
+          } >> "$GITHUB_OUTPUT"
 
   ##########################################################################
   # Build every fhevm-owned image at this PR's HEAD (or the dispatched
