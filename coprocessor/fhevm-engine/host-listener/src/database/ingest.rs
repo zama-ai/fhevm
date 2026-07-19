@@ -699,7 +699,6 @@ async fn notify_coprocessor_upgrade_proposed(
             updated_at         = NOW()
         WHERE upgrade_state.state IN ('LIVE', 'PAUSED')
            OR upgrade_state.status IN ('completed', 'failed')
-           OR upgrade_state.proposal_id = EXCLUDED.proposal_id
         "#,
     )
     .bind(stack_role)
