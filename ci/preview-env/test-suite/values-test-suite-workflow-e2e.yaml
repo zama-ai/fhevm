@@ -404,9 +404,11 @@ additionalResources:
                 # alice..eve are accounts[0..4] of MNEMONIC above, and the
                 # "should reject setHCUPerBlock from non-owner" case signs with alice
                 # and expects a NotHostOwner revert. We deploy the host ACL with
-                # Hardhat account #9 (0xa0Ee7A14..., funded by anvil but not a signer)
-                # - see host-chain/values-host-contracts-e2e.yaml. This must stay in
-                # lockstep with that file's deployer key.
+                # Hardhat account #9 (0xa0Ee7A14..., funded by anvil but not a signer).
+                # The host contracts are deployed + keygen'd by #0, then ACL ownership is
+                # transferred to #9 (see host-chain/values-host-trigger-keygen-e2e.yaml).
+                # So #9 is the ACL owner here and signs the HCU owner-only setters, while
+                # alice (accounts[0]) stays a genuine non-owner for the reject case.
                 - name: DEPLOYER_PRIVATE_KEY
                   value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
                 - name: RELAYER_URL

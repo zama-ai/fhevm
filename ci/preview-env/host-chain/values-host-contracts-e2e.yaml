@@ -51,17 +51,18 @@ scDeploy:
     - {name: HARDHAT_NETWORK, value: "staging"}
     - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
     - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
-    # Hardhat account #9 (0xa0Ee7A14...). This deployer becomes ACL.owner(), which
-    # onlyACLOwner (HCULimit setters) checks. It MUST be an account that is NOT one
-    # of the e2e test signers: the test suite derives alice..eve from this same
-    # mnemonic as accounts[0..4] (see test-suite/e2e/test/signers.ts), and the
-    # hcu-block-cap "should reject setHCUPerBlock from non-owner" case signs with
-    # alice and asserts a NotHostOwner revert. Using account #0 (the natural choice)
-    # made alice == ACL.owner(), so that setter did NOT revert and the test failed.
-    # #9 is funded by anvil's --mnemonic yet unused as a signer, so owner-restricted
-    # setters work (deployer == owner) while alice stays a genuine non-owner. The
-    # matching test-suite/keygen-trigger DEPLOYER_PRIVATE_KEY must use this same key.
-    - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
+    # Hardhat account #0 (0xf39Fd6...). Deploy the host contracts AND trigger
+    # keygen/crsgen with this account: this reproduces the exact deployment + keygen
+    # conditions of the run where random-subset last passed (contract addresses,
+    # keygen-trigger sender). ACL.owner() is #0 at deploy/keygen time, so the
+    # onlyACLOwner keygen()/crsgenRequest() calls succeed.
+    # AFTER crsgen, host-trigger-keygen transfers ACL ownership to the non-signer
+    # account #9 (Ownable2Step transfer+accept) so hcu-block-cap sees
+    # ACL.owner() != alice (accounts[0]) - the "reject setHCUPerBlock from non-owner"
+    # case asserts a NotHostOwner revert, and the owner setters are signed by #9 in
+    # test-suite-workflow. This decouples "who deployed/keygen'd" (#0) from "who owns"
+    # (#9) to keep both random-subset and hcu-block-cap green.
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
     # Gateway's chain id + the two gateway contract addresses KMSVerifier/InputVerifier verify
     # signatures against. Read directly from gateway-contracts' output ConfigMap instead of
     # being hardcoded — these addresses are non-deterministic (depend on deploy order/nonces)
