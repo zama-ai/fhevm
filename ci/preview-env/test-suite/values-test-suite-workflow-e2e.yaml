@@ -64,7 +64,6 @@ additionalResources:
             - ""
           resources:
             - pods
-            - pods/log
             - pods/exec
           verbs:
             - create
@@ -73,6 +72,20 @@ additionalResources:
             - list
             - patch
             - update
+            - watch
+        # pods/log is a read-only subresource, and the deploying CI principal
+        # (fhevm-ci-access, bound to the built-in `admin` ClusterRole) only holds
+        # get/list/watch on it - NOT create/delete/patch/update. Requesting those
+        # write verbs tripped RBAC privilege-escalation prevention ("attempting to
+        # grant RBAC permissions not currently held: pods/log ..."), so this rule
+        # is split out with just the read verbs Argo actually needs to fetch logs.
+        - apiGroups:
+            - ""
+          resources:
+            - pods/log
+          verbs:
+            - get
+            - list
             - watch
   - enabled: true
     object:
@@ -385,9 +398,14 @@ additionalResources:
                     configMapKeyRef:
                       name: host-sc-addresses
                       key: protocol_config.address
-                # Hardhat account #9, "deployer" for HCU-limit owner-restricted tests.
+                # HCU-limit owner-restricted setters use onlyACLOwner, which checks
+                # msg.sender == ACL.owner(). In this preview the ACL/host contracts
+                # are deployed by Hardhat account #0 (see host-chain/values-host-
+                # contracts-e2e.yaml), so the deployer signer MUST be account #0 or
+                # the setters revert NotHostOwner(sender). Account #9 (the staging
+                # reference's choice) is NOT the owner here.
                 - name: DEPLOYER_PRIVATE_KEY
-                  value: "0x2d24c36c57e6bfbf90c43173481cc00edcbd1a3922de5e5fdb9aba5fc4e0fafd"
+                  value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
                 - name: RELAYER_URL
                   value: "http://relayer:3000/v2"
                 - name: RELAYER_SDK_VERSION

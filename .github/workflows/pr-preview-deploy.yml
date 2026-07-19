@@ -53,6 +53,10 @@ on:
         description: "Version of the coprocessor Helm chart"
         required: true
         default: "0.13.0"
+      nb_coprocessor:
+        description: "Number of coprocessor parties to deploy - e.g. 1, 3 or 5"
+        required: true
+        default: "1"
       kms_connector_version:
         description: "Image tag for kms-connector images (same override rule as host_contracts_version above)"
         required: true
@@ -154,8 +158,18 @@ env:
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================
-  KMS_REPO_REF: "v0.13.22"
-  KMS_CORE_TAG: "v0.13.22"
+  # Pinned to v0.13.20 (was v0.13.22): v0.13.21/.22 landed the PRSS-Mask
+  # counter-schedule change (kms #663 "non-overlapping counters in batched
+  # PRSS-Mask" + breaking #712 "backward compatible PRSS hotfix", Issue#3089),
+  # which alters the masking noise added during threshold decryption. Runtime
+  # evidence showed FheRand (oblivious-PRNG) ciphertexts decrypting to a
+  # constant 0xAAAA..AAAA on v0.13.22 while ordinary ciphertexts decrypted
+  # correctly (see gateway Decryption PublicDecryptionResponse events). v0.13.20
+  # is the last tag before that schedule change and the version this preview's
+  # coprocessor (v0.13.1) + kms-connector (v0.13.1-hotfix.kmsconnector.1) pairing
+  # was already validated against.
+  KMS_REPO_REF: "v0.13.20"
+  KMS_CORE_TAG: "v0.13.20"
   NB_KMS_CORE: "4"
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
