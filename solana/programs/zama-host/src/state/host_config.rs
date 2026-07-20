@@ -74,16 +74,23 @@ impl HostConfig {
         + 1;
 
     /// Active coprocessor signer set (the first `coprocessor_signer_count` entries).
+    /// Count is write-validated (`≤ MAX`); clamp defends a corrupted singleton without panicking.
     pub fn active_coprocessor_signers(&self) -> &[[u8; 20]] {
-        &self.coprocessor_signers[..self.coprocessor_signer_count as usize]
+        let count = (self.coprocessor_signer_count as usize).min(Self::MAX_COPROCESSOR_SIGNERS);
+        &self.coprocessor_signers[..count]
     }
 }
 
 /// Zero-pads a coprocessor signer slice into the fixed-capacity array stored in `HostConfig`.
-/// Entries beyond `MAX_COPROCESSOR_SIGNERS` are ignored; callers validate the length first.
+/// Panics if `signers.len()` exceeds [`HostConfig::MAX_COPROCESSOR_SIGNERS`] — callers must
+/// validate first (`validate_and_pack_coprocessor_signers`); test fixtures must pass a legal set.
 pub fn pack_coprocessor_signers(
     signers: &[[u8; 20]],
 ) -> [[u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS] {
+    assert!(
+        signers.len() <= HostConfig::MAX_COPROCESSOR_SIGNERS,
+        "coprocessor signer set exceeds HostConfig::MAX_COPROCESSOR_SIGNERS"
+    );
     let mut out = [[0u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS];
     for (slot, signer) in out.iter_mut().zip(signers.iter()) {
         *slot = *signer;

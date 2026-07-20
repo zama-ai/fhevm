@@ -23,16 +23,16 @@ export type {
   SolanaPublicDecryptCertificateClaim,
   SolanaPublicDecryptCertificateParameters,
 } from './actions/publicDecryptCertificate.js';
+export { buildDiscloseSecpInstruction } from './actions/discloseSecp.js';
+export type { SolanaDiscloseSecpAccounts } from './actions/discloseSecp.js';
 export {
-  buildDiscloseSecpInstruction,
   buildVerifyPublicDecryptInstruction,
   verifyPublicDecryptArgsFromClaim,
-} from './actions/discloseSecp.js';
+} from './actions/verifyPublicDecrypt.js';
 export type {
-  SolanaDiscloseSecpAccounts,
   SolanaVerifyPublicDecryptAccounts,
   SolanaVerifyPublicDecryptArgs,
-} from './actions/discloseSecp.js';
+} from './actions/verifyPublicDecrypt.js';
 export type { SolanaDecryptActions } from './clients/decorators/decrypt.js';
 export type { SolanaPublicDecryptActions } from './clients/decorators/publicDecrypt.js';
 

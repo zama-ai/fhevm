@@ -411,7 +411,7 @@ pub(crate) fn assert_burned_amount_lineage(
     require_keys_eq!(
         amount_value.acl_domain_key,
         mint,
-        ConfidentialTokenError::AmountAclMismatch
+        ConfidentialTokenError::AclDomainKeyMismatch
     );
     require_keys_eq!(
         amount_value.app_account,

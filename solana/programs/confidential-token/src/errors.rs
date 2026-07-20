@@ -88,11 +88,13 @@ pub enum ConfidentialTokenError {
     /// Account-backed request witness is expired or already consumed.
     #[msg("request witness is expired or already consumed")]
     RequestWitnessUnavailable,
-    /// Material commitment witness did not match the disclosed handle.
-    #[msg("material commitment witness does not match")]
+    /// Tombstoned: disclosure material-commitment witness was removed with the
+    /// `DisclosureRequest` lifecycle (fhevm#3231). Kept so Anchor error ordinals stay stable.
+    #[msg("material commitment witness does not match (retired)")]
     MaterialCommitmentMismatch,
-    /// The disclosed handle has not been released for public decrypt.
-    #[msg("handle is not released for public decrypt")]
+    /// Tombstoned: public-decrypt release gate lived on the deleted disclosure request path.
+    /// Kept so Anchor error ordinals stay stable.
+    #[msg("handle is not released for public decrypt (retired)")]
     PublicDecryptNotReleased,
     /// Internal FHE eval plan construction failed before the host CPI.
     #[msg("FHE eval plan is invalid")]
@@ -119,8 +121,7 @@ pub enum ConfidentialTokenError {
     #[msg("FHE eval plan is missing a required output authority")]
     MissingFheOutputAuthority,
     /// The host public-decrypt verifier CPI did not return well-formed `(handle, cleartext)`
-    /// data, was not produced by the ZamaHost program, or certified a cleartext that does not fit
-    /// the token's euint64 width (nonzero high bytes in the 32-byte `uint256`).
+    /// data, or the return was not produced by the ZamaHost program.
     #[msg("public-decrypt verifier return data is invalid")]
     VerifierReturnDataInvalid,
     /// The handle proven public by the host verifier did not equal the caller-pinned handle.
@@ -133,4 +134,7 @@ pub enum ConfidentialTokenError {
     /// or one was supplied while the host grant deny-list is disabled.
     #[msg("redemption deny-list record is invalid")]
     RedemptionDenyRecordInvalid,
+    /// The certified `uint256` cleartext does not fit the token's euint64 width (nonzero high bytes).
+    #[msg("certified cleartext exceeds euint64 width")]
+    CleartextExceedsEuint64,
 }
