@@ -71,7 +71,7 @@ pub fn disclose_secp(
     require_keys_eq!(
         value.acl_domain_key,
         mint_key,
-        ConfidentialTokenError::AmountAclMismatch
+        ConfidentialTokenError::AclDomainKeyMismatch
     );
 
     let certified_cleartext = fhe::verify_public_decrypt(fhe::VerifyPublicDecrypt {
@@ -91,7 +91,7 @@ pub fn disclose_secp(
     // wider rather than silently discarding high bits.
     require!(
         certified_cleartext[..24].iter().all(|byte| *byte == 0),
-        ConfidentialTokenError::VerifierReturnDataInvalid
+        ConfidentialTokenError::CleartextExceedsEuint64
     );
 
     emit_cpi!(HandleDisclosedEvent {

@@ -44,8 +44,11 @@ impl InputVerifierParams {
     }
 
     /// Active coprocessor signer set (the first `coprocessor_signer_count` entries).
+    /// Count is write-validated (`≤ MAX`); clamp defends a corrupted singleton without panicking.
     fn active_signers(&self) -> &[[u8; 20]] {
-        &self.coprocessor_signers[..self.coprocessor_signer_count as usize]
+        let count =
+            (self.coprocessor_signer_count as usize).min(HostConfig::MAX_COPROCESSOR_SIGNERS);
+        &self.coprocessor_signers[..count]
     }
 }
 

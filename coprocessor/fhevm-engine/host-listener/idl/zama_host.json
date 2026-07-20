@@ -2205,6 +2205,11 @@
       "code": 6078,
       "name": "ZeroCoprocessorSigner",
       "msg": "coprocessor signer set contains the zero address"
+    },
+    {
+      "code": 6079,
+      "name": "ZeroKmsSigner",
+      "msg": "KMS signer set contains the zero address"
     }
   ],
   "types": [

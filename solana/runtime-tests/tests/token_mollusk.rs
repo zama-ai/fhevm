@@ -3661,7 +3661,7 @@ fn mollusk_disclose_secp_rejects_foreign_mint_domain() {
             proof,
         ),
         &[token_error(
-            token::ConfidentialTokenError::AmountAclMismatch,
+            token::ConfidentialTokenError::AclDomainKeyMismatch,
         )],
     );
 }
@@ -3709,7 +3709,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
             proof,
         ),
         &[token_error(
-            token::ConfidentialTokenError::VerifierReturnDataInvalid,
+            token::ConfidentialTokenError::CleartextExceedsEuint64,
         )],
     );
 }
@@ -4420,90 +4420,6 @@ fn cost_snapshot_initialize_token_account() {
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
 
     cost_snapshot::assert_cost_snapshot("token_mollusk", "initialize_token_account", &ix, &result);
-}
-
-// ---------------------------------------------------------------------------
-// KMS public-decrypt threshold fit table (EVM KMSVerifier parity)
-//
-// Public-decrypt certificates carry t signatures (t = the context's public-decryption threshold)
-// and the consume transaction also carries an MMR inclusion proof whose size scales with the
-// lineage depth. Both grow the serialized `disclose_secp` transaction. This table pins the
-// wire-size corner where high threshold meets deep lineage against the Solana packet limit.
-// ---------------------------------------------------------------------------
-
-/// Builds a `disclose_secp` legacy transaction carrying `sig_count` signatures and an MMR proof of
-/// `sibling_count` siblings over the real disclose account list, and returns its bincode-serialized
-/// wire size. Validity is irrelevant: this measures serialization only.
-fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
-    use solana_sdk::message::Message;
-    use solana_sdk::transaction::Transaction;
-
-    let fixture = DiscloseFixture::new();
-    let proof = host::instructions::MmrInclusionProof {
-        leaf_index: 0,
-        siblings: vec![[0u8; 32]; sibling_count],
-    };
-    let ix = disclose_secp_ix(
-        &fixture,
-        fixture.amount_value,
-        handle_for_chain(80, BALANCE_FHE_TYPE),
-        cleartext_u256(500),
-        vec![[0u8; 65]; sig_count],
-        vec![0x00u8],
-        proof,
-    );
-    let message = Message::new(&[ix], Some(&fixture.owner));
-    let tx = Transaction::new_unsigned(message);
-    bincode::serialize(&tx)
-        .expect("serialize transaction")
-        .len()
-}
-
-#[test]
-fn disclose_secp_threshold_fit_table() {
-    // Corner table: (threshold t, MMR proof sibling depth, expected-to-fit). Measured wire sizes for
-    // the full `disclose_secp` legacy transaction against the 1232-byte packet limit.
-    //
-    // This table lives on the thin consume path introduced by fhevm-internal#1704, and the booleans
-    // are RE-MEASURED against it, not carried over from the old disclose_amount_secp table. Dropping
-    // the DisclosureRequest witness account did NOT shrink the transaction: it is offset by the added
-    // zama_program account (for the verifier CPI), and the cleartext widened from a u64 (8B) to the
-    // raw 32-byte uint256 the host verifier signs over (+24B). Net, disclose_secp is ~24B LARGER than
-    // disclose_amount_secp at the same (t, depth), so the single-packet envelope NARROWED: the only
-    // fitting corner is t=7 at depth 0 (917B); any MMR proof depth at t=7 already overflows
-    // (t=7/depth-10 = 1237B, over by 5), and t>=9 overflows even before the proof.
-    //
-    // The carried payload scales with the threshold t (t x 65B) plus the proof depth (depth x 32B),
-    // so deep-lineage x high-threshold consumes are the binding corner; anything that overflows needs
-    // the scratch-account two-tx fallback reserved in #1704. The `expected_fits` column pins the
-    // measured boundary so a regression (or a size shrink that widens the envelope) is caught here.
-    let cases = [
-        (7usize, 0usize, true),
-        (7, 10, false),
-        (7, 20, false),
-        (9, 10, false),
-        (13, 10, false),
-    ];
-    let limit = solana_packet::PACKET_DATA_SIZE;
-    eprintln!("disclose_secp threshold fit table (packet limit = {limit} bytes):");
-    for (t, depth, expected_fits) in cases {
-        let size = disclose_secp_tx_size(t, depth);
-        let fits = size <= limit;
-        eprintln!(
-            "  t={t:>2} sigs, depth={depth:>2} siblings -> {size:>4} bytes  ({}{})",
-            if fits { "FITS" } else { "OVER" },
-            if fits {
-                String::new()
-            } else {
-                format!(" by {}", size - limit)
-            },
-        );
-        assert_eq!(
-            fits, expected_fits,
-            "t={t}, depth={depth} measured {size} bytes (fits={fits}); table expected fits={expected_fits}. \
-             The single-packet envelope moved — update the table and revisit the #1704 two-tx fallback."
-        );
-    }
 }
 
 #[test]

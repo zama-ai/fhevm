@@ -1725,12 +1725,12 @@
     {
       "code": 6027,
       "name": "MaterialCommitmentMismatch",
-      "msg": "material commitment witness does not match"
+      "msg": "material commitment witness does not match (retired)"
     },
     {
       "code": 6028,
       "name": "PublicDecryptNotReleased",
-      "msg": "handle is not released for public decrypt"
+      "msg": "handle is not released for public decrypt (retired)"
     },
     {
       "code": 6029,
@@ -1791,6 +1791,11 @@
       "code": 6040,
       "name": "RedemptionDenyRecordInvalid",
       "msg": "redemption deny-list record is invalid"
+    },
+    {
+      "code": 6041,
+      "name": "CleartextExceedsEuint64",
+      "msg": "certified cleartext exceeds euint64 width"
     }
   ],
   "types": [

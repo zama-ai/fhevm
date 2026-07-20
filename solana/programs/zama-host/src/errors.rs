@@ -278,4 +278,7 @@ pub enum ZamaHostError {
     /// EVM signer.
     #[msg("coprocessor signer set contains the zero address")]
     ZeroCoprocessorSigner,
+    /// The KMS signer set contains the zero address, which can never be a valid recovered EVM signer.
+    #[msg("KMS signer set contains the zero address")]
+    ZeroKmsSigner,
 }

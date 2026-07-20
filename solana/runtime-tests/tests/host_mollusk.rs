@@ -3425,6 +3425,41 @@ fn mollusk_initialize_host_config_rejects_empty_coprocessor_set() {
 }
 
 #[test]
+fn mollusk_initialize_host_config_rejects_zero_coprocessor_signer() {
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    let args = init_args_with_coprocessor_set(vec![[0u8; 20]], 1);
+    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+
+    context.process_and_validate_instruction(
+        &initialize_host_config_ix(program_id, payer, admin, host_config, args),
+        &[custom_error(
+            host::errors::ZamaHostError::ZeroCoprocessorSigner,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_initialize_host_config_rejects_too_many_coprocessor_signers() {
+    let program_id = host::id();
+    let payer = Pubkey::new_unique();
+    let admin = Pubkey::new_unique();
+    let (host_config, _) = host::host_config_address();
+    let signers: Vec<[u8; 20]> = (1..=9).map(|i| [i; 20]).collect();
+    let args = init_args_with_coprocessor_set(signers, 1);
+    let context = mollusk_eval_context(payer, vec![(host_config, system_account(0))]);
+
+    context.process_and_validate_instruction(
+        &initialize_host_config_ix(program_id, payer, admin, host_config, args),
+        &[custom_error(
+            host::errors::ZamaHostError::TooManyCoprocessorSigners,
+        )],
+    );
+}
+
+#[test]
 fn mollusk_set_coprocessor_signers_rotates_the_set_and_threshold() {
     // The admin setter replaces the registered set + threshold in place.
     let program_id = host::id();
@@ -3517,6 +3552,71 @@ fn mollusk_define_kms_context_at_realistic_signer_count() {
     let stored = read_kms_context(&context, kms_context).expect("kms context");
     assert_eq!(stored.signers, signers);
     assert_eq!(stored.thresholds.public_decryption, 7);
+}
+
+fn default_kms_thresholds() -> host::KmsThresholds {
+    host::KmsThresholds {
+        public_decryption: 1,
+        user_decryption: 1,
+        kms_gen: 1,
+        mpc: 1,
+    }
+}
+
+fn run_define_kms_context_expecting(signers: Vec<[u8; 20]>, expected: Check<'static>) {
+    let program_id = host::id();
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let context_id = 1;
+    let kms_context = host::kms_context_address(context_id).0;
+    let context = mollusk_eval_context(
+        admin,
+        vec![(host_config, account), (kms_context, system_account(0))],
+    );
+    context.process_and_validate_instruction(
+        &define_kms_context_ix(
+            program_id,
+            admin,
+            host_config,
+            context_id,
+            signers,
+            default_kms_thresholds(),
+        ),
+        &[expected],
+    );
+}
+
+#[test]
+fn mollusk_define_kms_context_rejects_empty_signer_set() {
+    run_define_kms_context_expecting(
+        vec![],
+        custom_error(host::errors::ZamaHostError::EmptyKmsContext),
+    );
+}
+
+#[test]
+fn mollusk_define_kms_context_rejects_too_many_signers() {
+    let signers: Vec<[u8; 20]> = (1..=17).map(|i| [i; 20]).collect();
+    run_define_kms_context_expecting(
+        signers,
+        custom_error(host::errors::ZamaHostError::TooManyKmsSigners),
+    );
+}
+
+#[test]
+fn mollusk_define_kms_context_rejects_duplicate_signer() {
+    run_define_kms_context_expecting(
+        vec![[0xAAu8; 20], [0xAAu8; 20]],
+        custom_error(host::errors::ZamaHostError::DuplicateKmsSigner),
+    );
+}
+
+#[test]
+fn mollusk_define_kms_context_rejects_zero_signer() {
+    run_define_kms_context_expecting(
+        vec![[0u8; 20]],
+        custom_error(host::errors::ZamaHostError::ZeroKmsSigner),
+    );
 }
 
 // ---- EvalFixture: a durable-output frame for block-cap enforcement ----

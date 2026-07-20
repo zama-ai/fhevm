@@ -17,39 +17,77 @@ use crate::{
 #[cfg(any(feature = "emit-events", test))]
 use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
 
+/// Error mapping for the shared EVM signer-address checks used by KMS contexts and the
+/// coprocessor signer set.
+pub(super) struct EvmSignerSetErrors {
+    pub empty: ZamaHostError,
+    pub too_many: ZamaHostError,
+    pub duplicate: ZamaHostError,
+    pub zero: ZamaHostError,
+}
+
+/// Shared registration invariants for an EVM secp256k1 signer set: non-empty, within `max`,
+/// no zero address, no duplicates. Threshold checks stay at the call site (KMS has several).
+pub(super) fn assert_evm_signer_set(
+    signers: &[[u8; 20]],
+    max: usize,
+    errors: EvmSignerSetErrors,
+) -> Result<()> {
+    if signers.is_empty() {
+        return Err(errors.empty.into());
+    }
+    if signers.len() > max {
+        return Err(errors.too_many.into());
+    }
+    if signers.contains(&[0u8; 20]) {
+        return Err(errors.zero.into());
+    }
+    for i in 0..signers.len() {
+        for j in (i + 1)..signers.len() {
+            if signers[i] == signers[j] {
+                return Err(errors.duplicate.into());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A verification threshold must be at least one and at most the signer count.
+pub(super) fn assert_quorum_threshold(
+    threshold: u8,
+    signer_count: usize,
+    error: ZamaHostError,
+) -> Result<()> {
+    if threshold >= 1 && (threshold as usize) <= signer_count {
+        Ok(())
+    } else {
+        Err(error.into())
+    }
+}
+
 /// Validates a coprocessor signer set + threshold and packs it into the fixed-capacity array
-/// stored in `HostConfig`. Enforces the EVM `InputVerifier`-parity invariants: non-empty set,
-/// within the capacity bound, `1 <= threshold <= len`, no zero-address signer, and no duplicate
-/// signer (threshold verification counts DISTINCT recovered addresses, so a duplicate would
-/// silently raise the effective quorum). Shared by `initialize_host_config` and the admin setter.
+/// stored in `HostConfig`. Shared by `initialize_host_config` and the admin setter.
+/// Address checks run before the threshold check so a multi-violation input surfaces the
+/// registration shape error first (empty / too-many / zero / duplicate), then threshold.
 pub(super) fn validate_and_pack_coprocessor_signers(
     signers: &[[u8; 20]],
     threshold: u8,
 ) -> Result<([[u8; 20]; HostConfig::MAX_COPROCESSOR_SIGNERS], u8)> {
-    require!(
-        !signers.is_empty(),
-        ZamaHostError::EmptyCoprocessorSignerSet
-    );
-    require!(
-        signers.len() <= HostConfig::MAX_COPROCESSOR_SIGNERS,
-        ZamaHostError::TooManyCoprocessorSigners
-    );
-    require!(
-        threshold >= 1 && threshold as usize <= signers.len(),
-        ZamaHostError::InvalidCoprocessorThreshold
-    );
-    require!(
-        signers.iter().all(|signer| *signer != [0u8; 20]),
-        ZamaHostError::ZeroCoprocessorSigner
-    );
-    for i in 0..signers.len() {
-        for j in (i + 1)..signers.len() {
-            require!(
-                signers[i] != signers[j],
-                ZamaHostError::DuplicateCoprocessorSigner
-            );
-        }
-    }
+    assert_evm_signer_set(
+        signers,
+        HostConfig::MAX_COPROCESSOR_SIGNERS,
+        EvmSignerSetErrors {
+            empty: ZamaHostError::EmptyCoprocessorSignerSet,
+            too_many: ZamaHostError::TooManyCoprocessorSigners,
+            duplicate: ZamaHostError::DuplicateCoprocessorSigner,
+            zero: ZamaHostError::ZeroCoprocessorSigner,
+        },
+    )?;
+    assert_quorum_threshold(
+        threshold,
+        signers.len(),
+        ZamaHostError::InvalidCoprocessorThreshold,
+    )?;
     Ok((
         crate::state::pack_coprocessor_signers(signers),
         signers.len() as u8,

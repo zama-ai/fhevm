@@ -7,7 +7,10 @@
 
 use anchor_lang::prelude::*;
 
-use super::common::{assert_admin, assert_no_remaining_accounts};
+use super::common::{
+    assert_admin, assert_evm_signer_set, assert_no_remaining_accounts, assert_quorum_threshold,
+    EvmSignerSetErrors,
+};
 #[cfg(feature = "emit-events")]
 use crate::events::NewKmsContextEvent;
 use crate::{errors::ZamaHostError, state::*};
@@ -48,26 +51,32 @@ pub fn define_kms_context(
         context_id == ctx.accounts.host_config.current_kms_context_id + 1,
         ZamaHostError::InvalidKmsContextId
     );
-    require!(!signers.is_empty(), ZamaHostError::EmptyKmsContext);
-    require!(
-        signers.len() <= KmsContext::MAX_SIGNERS,
-        ZamaHostError::TooManyKmsSigners
-    );
+    assert_evm_signer_set(
+        &signers,
+        KmsContext::MAX_SIGNERS,
+        EvmSignerSetErrors {
+            empty: ZamaHostError::EmptyKmsContext,
+            too_many: ZamaHostError::TooManyKmsSigners,
+            duplicate: ZamaHostError::DuplicateKmsSigner,
+            zero: ZamaHostError::ZeroKmsSigner,
+        },
+    )?;
     let signer_count = signers.len();
-    assert_quorum_threshold(thresholds.public_decryption, signer_count)?;
-    assert_quorum_threshold(thresholds.user_decryption, signer_count)?;
+    assert_quorum_threshold(
+        thresholds.public_decryption,
+        signer_count,
+        ZamaHostError::InvalidKmsThreshold,
+    )?;
+    assert_quorum_threshold(
+        thresholds.user_decryption,
+        signer_count,
+        ZamaHostError::InvalidKmsThreshold,
+    )?;
+    // `kms_gen` / `mpc` are stored for fidelity and may be zero; only an upper bound applies.
     require!(
         thresholds.kms_gen as usize <= signer_count && thresholds.mpc as usize <= signer_count,
         ZamaHostError::InvalidKmsThreshold
     );
-    // Reject duplicate signers: threshold verification counts DISTINCT recovered addresses,
-    // so a duplicate would silently raise the effective quorum (a 2-of-[A,A,B] set cannot be
-    // satisfied by A+B). EVM KMS signer sets are distinct; enforce the same here.
-    for i in 0..signer_count {
-        for j in (i + 1)..signer_count {
-            require!(signers[i] != signers[j], ZamaHostError::DuplicateKmsSigner);
-        }
-    }
 
     let kms_context = &mut ctx.accounts.kms_context;
     kms_context.context_id = context_id;
@@ -85,14 +94,5 @@ pub fn define_kms_context(
         public_decryption_threshold: thresholds.public_decryption,
         user_decryption_threshold: thresholds.user_decryption,
     });
-    Ok(())
-}
-
-/// A verification threshold must be at least one and at most the signer count.
-fn assert_quorum_threshold(threshold: u8, signer_count: usize) -> Result<()> {
-    require!(
-        threshold >= 1 && threshold as usize <= signer_count,
-        ZamaHostError::InvalidKmsThreshold
-    );
     Ok(())
 }
