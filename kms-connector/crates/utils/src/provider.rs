@@ -1,8 +1,8 @@
 use alloy::{
     network::{Network, TransactionBuilder},
-    primitives::{Address, Bytes},
+    primitives::{Address, Bytes, U64},
     providers::{
-        PendingTransactionBuilder, Provider, RootProvider, SendableTx,
+        EthCall, PendingTransactionBuilder, Provider, RootProvider, SendableTx,
         fillers::{BlobGasFiller, CachedNonceManager, GasFiller, JoinFill, NonceManager},
     },
     transports::TransportResult,
@@ -43,11 +43,15 @@ impl<P: Clone> Clone for NonceManagedProvider<P> {
     }
 }
 
-// Only the transaction sending/signing methods are overridden, as the `TxFiller`s of the inner
-// provider only act on these operations.
-// All other methods intentionally use the trait defaults, which perform their RPC requests via
-// `self.root()`, i.e. the same client the inner provider forwards to. If a layer intercepting
-// other operations is ever added to the inner provider, forward these operations here as well.
+// We forward to `self.inner` exactly the methods that rely on the wallet: the `send_*`/
+// `sign_transaction` methods (which build and sign the transaction) and `call`/`estimate_gas`
+// (which need the `from` field set to the signer address). Any other method left to the trait
+// default reaches the same underlying node and behaves identically, so it doesn't need forwarding.
+//
+// If a wallet-dependent method were missing here, it would fall back to the trait default, which
+// skips the fillers: `estimate_gas`, for example, would then run with `from = 0x0` instead of the
+// signer address, and could revert on contracts that restrict callers. This list is complete for
+// the current `alloy` version, and the unit tests below guard the methods our services rely on.
 #[async_trait::async_trait]
 impl<N, P> Provider<N> for NonceManagedProvider<P>
 where
@@ -152,5 +156,111 @@ where
 
     async fn sign_transaction(&self, tx: N::TransactionRequest) -> TransportResult<Bytes> {
         self.inner.sign_transaction(tx).await
+    }
+
+    fn call(&self, tx: N::TransactionRequest) -> EthCall<N, Bytes> {
+        self.inner.call(tx)
+    }
+
+    fn estimate_gas(&self, tx: N::TransactionRequest) -> EthCall<N, U64, u64> {
+        self.inner.estimate_gas(tx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{config::KmsWallet, conn::WalletProvider};
+    use alloy::{
+        providers::ProviderBuilder,
+        rpc::{client::RpcClient, json_rpc::RequestPacket, types::TransactionRequest},
+        transports::mock::{Asserter, MockTransport},
+    };
+    use std::sync::Mutex as StdMutex;
+
+    /// The JSON-RPC requests received by the mocked node, serialized, in order.
+    type RecordedRequests = Arc<StdMutex<Vec<String>>>;
+
+    // Builds the exact provider stack used in production on top of a mocked transport that
+    // records every JSON-RPC request it receives.
+    fn wallet_provider(asserter: Asserter) -> (WalletProvider, Address, RecordedRequests) {
+        let wallet = KmsWallet::from_private_key_str(
+            "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774",
+            None,
+        )
+        .unwrap();
+        let signer_address = wallet.address();
+
+        let requests = RecordedRequests::default();
+        let requests_recorder = requests.clone();
+        let transport = tower::ServiceBuilder::new()
+            .map_request(move |request: RequestPacket| {
+                if let RequestPacket::Single(single) = &request {
+                    let serialized = serde_json::to_string(single).unwrap();
+                    requests_recorder.lock().unwrap().push(serialized);
+                }
+                request
+            })
+            .service(MockTransport::new(asserter));
+
+        let inner_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .with_chain_id(1)
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(wallet)
+            .connect_client(RpcClient::new(transport, true));
+        let provider = NonceManagedProvider::new(inner_provider, signer_address);
+        (provider, signer_address, requests)
+    }
+
+    // Extracts the `from` field of the single `expected_method` request the node received.
+    fn from_field_received_by_node(
+        requests: &RecordedRequests,
+        expected_method: &str,
+    ) -> Option<Address> {
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        let request: serde_json::Value = serde_json::from_str(&requests[0]).unwrap();
+        assert_eq!(request["method"], expected_method);
+        request["params"][0]["from"]
+            .as_str()
+            .map(|from| from.parse().unwrap())
+    }
+
+    // `estimate_gas` must delegate to the inner provider so its wallet filler populates `from`.
+    // If it fell back to the `Provider` trait default (which routes through the fillerless
+    // `RootProvider`), the node would run the estimation with `from = 0x0` instead of the signer
+    // address, which could revert on contracts that restrict callers.
+    #[tokio::test]
+    async fn estimate_gas_goes_through_wallet_filler() {
+        let asserter = Asserter::new();
+        let (provider, signer_address, requests) = wallet_provider(asserter.clone());
+        asserter.push_success(&U64::from(21_000));
+
+        // A request with no `from`, as produced by `CallBuilder::into_transaction_request()`.
+        provider
+            .estimate_gas(TransactionRequest::default())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            from_field_received_by_node(&requests, "eth_estimateGas"),
+            Some(signer_address)
+        );
+    }
+
+    // Same guarantee for `call`, which the tx-sender relies on for caller-gated contract reads.
+    #[tokio::test]
+    async fn call_goes_through_wallet_filler() {
+        let asserter = Asserter::new();
+        let (provider, signer_address, requests) = wallet_provider(asserter.clone());
+        asserter.push_success(&Bytes::new());
+
+        provider.call(TransactionRequest::default()).await.unwrap();
+
+        assert_eq!(
+            from_field_received_by_node(&requests, "eth_call"),
+            Some(signer_address)
+        );
     }
 }

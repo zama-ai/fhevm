@@ -30,7 +30,7 @@ ciphertext-attestation = { path = "../shared/ciphertext-attestation" }
 #                       External dependencies                       #
 #####################################################################
 actix-web = "=4.11.0"
-alloy = { version = "=2.1.1", default-features = false, features = [
+alloy = { version = "=2.2.0", default-features = false, features = [
     "essentials",
     "provider-debug-api",
     "provider-ws",
@@ -95,6 +95,7 @@ tonic = { version = "=0.14.6", default-features = true, features = [
     "tls-native-roots",
 ] }
 tonic-health = { version = "=0.14.5", default-features = false }
+tower = { version = "=0.5.3", default-features = false, features = ["util"] }
 tracing = { version = "=0.1.44", default-features = true }
 tracing-opentelemetry = "=0.31.0"
 tracing-subscriber = { version = "=0.3.20", default-features = true, features = [
