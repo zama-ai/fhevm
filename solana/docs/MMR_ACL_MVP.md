@@ -149,7 +149,8 @@ Pull-based, mirroring OZ `ConfidentialFungibleTokenERC20Wrapper` unwrap→finali
 delta is born public in the burn's `fhe_eval` CPI; redemption is a single `redeem_burned_amount` that
 consumes the stateless host `verify_public_decrypt` verifier (the request-witness lifecycle was
 dissolved in fhevm-internal#1763), authorizing by the pinned handle's public-decrypt proof against the
-current KMS context, so it stays valid after later burns supersede the lineage.
+live KMS context the cert names (any non-destroyed context, fhevm-internal#1765), so it stays valid
+after later burns supersede the lineage.
 
 ```mermaid
 sequenceDiagram
@@ -162,7 +163,7 @@ sequenceDiagram
     ZH-->>ZH: rewrite current_handle,<br/>append PublicDecryptLeaf(new handle)
     KMS-->>KMS: decrypt burned handle (public proof),<br/>sign cleartext cert
     U->>CT: redeem_burned_amount(burned_handle, cleartext, cert, MMR proof)
-    CT->>ZH: verify_public_decrypt (current KMS context + proof vs peaks)
+    CT->>ZH: verify_public_decrypt (live KMS context named by the cert + proof vs peaks)
     Note over CT: replay-marker PDA created (consume-once, permanent)
     CT-->>U: release underlying (over-collateralized), mark paid out
 ```

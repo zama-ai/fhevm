@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# adversarial-l4.sh — negative live checks (relayer bypass + context rotation).
+# adversarial-l4.sh — negative live checks (relayer bypass + context-mismatch cert reuse).
 #
 # Usage (from repo root):
 #   bash solana/scripts/e2e/adversarial-l4.sh
@@ -13,9 +13,11 @@
 #      NOT bind the supplied publicKey (the publicKey is swapped after signing) is REJECTED by the
 #      kms-connector's per-party ed25519 check, and NO plaintext is returned.
 #
-#  (b) CONTEXT-ROTATION cert reuse: a disclose with a genuine KMS PublicDecryptVerification cert
-#      whose extra_data names a DIFFERENT context than the on-chain kms_context is REJECTED on-chain
-#      (InvalidKmsContext), so no cleartext is emitted.
+#  (b) CONTEXT-MISMATCH cert reuse: a disclose with a genuine KMS PublicDecryptVerification cert
+#      whose extra_data names a context that is NOT the supplied on-chain kms_context account (and is
+#      not a live registered context here) is REJECTED on-chain (InvalidKmsContext), so no cleartext
+#      is emitted. (Post-fhevm-internal#1765 the verifier accepts any LIVE context the cert names;
+#      the binding that still fails closed is cert-id -> canonical PDA -> live account.)
 #
 # Prereq: a running stack (solana/scripts/e2e/clean-e2e.sh) — same as full-vertical.sh. Local-only,
 # MAINNET-safe (validator pinned 127.0.0.1:8899). Run AFTER (or independently of) full-vertical.sh.
@@ -70,7 +72,7 @@ set -e
 pass "(a) publicKey-substitution rejected — no plaintext re-encrypted to the attacker key"
 
 # ---------------------------------------------------------------------------
-# (b) CONTEXT-ROTATION cert reuse
+# (b) CONTEXT-MISMATCH cert reuse
 # ---------------------------------------------------------------------------
 echo "==> [L4-b] disclose with a cert bound to a DIFFERENT context MUST be rejected on-chain"
 # shellcheck disable=SC1091
@@ -118,7 +120,7 @@ done
 # Seal the burned handle publicly decryptable via the host make_handle_public instruction. After
 # fhevm-internal#1704 there is no DisclosureRequest witness, no per-request PDA, and no KMS-context
 # pin: the sealed public-decrypt leaf IS the request, and the consume verifies the cert against the
-# CURRENT KMS context (context rotation fails closed, one layer down in the host verifier).
+# LIVE KMS context the cert names (destroy is the revocation lever, one layer down in the host verifier).
 relout="$(lc CONSUME_SEAL=1 TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE")" || true
 echo "$relout" | grep -q 'OK make_handle_public' || fail "(b) seal (make_handle_public) burned amount: $(echo "$relout" | tail -3)"
 
@@ -135,14 +137,15 @@ for i in $(seq 1 50); do
 done
 CLEARTEXT="$(echo "$cr" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 KMS_SIG="0x$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
-echo "    genuine cert obtained (cleartext=$CLEARTEXT, bound to the current KMS context)"
+echo "    genuine cert obtained (cleartext=$CLEARTEXT, bound to a live KMS context)"
 
-# ATTACK: present the genuine cert but with extra_data naming a DIFFERENT context (id 2) than the
-# host's CURRENT context (id 1). host verify_public_decrypt checks the context id FIRST (before the
-# cert and the MMR proof): extract_kms_context_id(extra)=2 != current(1) -> InvalidKmsContext. The
-# context check fails ahead of the proof, so no valid MMR proof is needed to prove the rejection is
-# specifically the context binding. This preserves the adversarial-l4 context-rotation property one
-# layer down in the stateless verifier.
+# ATTACK: present the genuine cert but with extra_data naming a DIFFERENT context (id 2) while the
+# supplied on-chain kms_context account is context 1 (context 2 is not a live registered context
+# here). host verify_public_decrypt checks the context binding FIRST (before the cert and the MMR
+# proof): extract_kms_context_id(extra)=2, but the supplied account is context 1, so the
+# cert-id -> canonical-PDA -> account binding fails -> InvalidKmsContext. The context check fails
+# ahead of the proof, so no valid MMR proof is needed to prove the rejection is the context binding.
+# This preserves the adversarial-l4 context-binding property one layer down in the stateless verifier.
 WRONG_CTX_EXTRA="0x01$(printf '%064x' 2)"
 set +e
 disbad="$(lc CONSUME_DISCLOSE=1 MINT="$MINT" TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
@@ -152,7 +155,7 @@ if echo "$disbad" | grep -q 'OK disclose_secp'; then
   fail "(b) SECURITY: a context-mismatched cert was ACCEPTED on-chain — cleartext disclosed!"
 fi
 echo "$disbad" | grep -qiE 'InvalidKmsContext|custom program error|0x' || echo "    (note: rejected, error text: $(echo "$disbad" | tail -2))"
-pass "(b) context-rotation cert reuse rejected on-chain against the current KMS context — no cleartext emitted"
+pass "(b) context-mismatch cert reuse rejected on-chain (cert names a context the supplied account is not) — no cleartext emitted"
 
 # NOTE: consume-once and expired-witness (the former [L4-c] / [L4-d]) no longer exist. The
 # DisclosureRequest witness was dissolved (fhevm-internal#1704): disclosure is idempotent information
@@ -161,4 +164,4 @@ pass "(b) context-rotation cert reuse rejected on-chain against the current KMS 
 # (mollusk_disclose_secp_is_idempotent_no_replay_marker); the happy-path disclose is exercised in
 # full-vertical.sh with a real MMR public-leaf proof.
 
-echo "==> ADVERSARIAL L4 GREEN: (a) publicKey-substitution rejected + (b) context-rotation cert reuse rejected on-chain (consume-once/expiry retired with the DisclosureRequest witness — see token_mollusk idempotency test)"
+echo "==> ADVERSARIAL L4 GREEN: (a) publicKey-substitution rejected + (b) context-mismatch cert reuse rejected on-chain (consume-once/expiry retired with the DisclosureRequest witness — see token_mollusk idempotency test)"

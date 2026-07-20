@@ -243,13 +243,14 @@ pub enum ZamaHostError {
     FheEvalUnanchoredUnderBlockCap,
 
     // ---- stateless public-decrypt verifier (verify_public_decrypt, fhevm-internal#1704) ----
-    /// The KMS context is destroyed, is not the current canonical context, or is not the context
-    /// the certificate committed to via signed `extra_data`. Verification binds to the CURRENT
-    /// context, so a cert minted under a rotated-out context fails closed here.
-    #[msg("KMS context is destroyed, not current, or does not match the certificate")]
+    /// The supplied KMS context account is destroyed, is not the canonical PDA for the id the
+    /// certificate committed to via signed `extra_data`, or has a mismatched stored id. Verification
+    /// binds to the cert-named context (any live context), so a destroyed context — or an account
+    /// that is not the one the cert names — fails closed here.
+    #[msg("KMS context is destroyed or does not match the certificate's committed context")]
     InvalidKmsContext,
     /// The KMS `PublicDecryptVerification` certificate failed secp256k1 threshold verification
-    /// against the current context's signer set.
+    /// against the cert-named context's signer set.
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
     /// The MMR public-decrypt inclusion proof does not prove the exact handle public against the

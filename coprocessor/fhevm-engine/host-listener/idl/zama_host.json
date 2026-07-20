@@ -1446,9 +1446,10 @@
     {
       "name": "verify_public_decrypt",
       "docs": [
-        "Stateless pull-oracle verifier (fhevm-internal#1704): verifies a KMS public-decrypt",
-        "certificate against the current `KmsContext` plus an MMR public-leaf inclusion proof, and",
-        "returns `(handle, cleartext)` via `return_data`. Creates and mutates nothing; emits nothing."
+        "Stateless pull-oracle verifier (fhevm-internal#1704, #1765): verifies a KMS public-decrypt",
+        "certificate against the live `KmsContext` the certificate itself names plus an MMR",
+        "public-leaf inclusion proof, and returns `(handle, cleartext, context_id)` via",
+        "`return_data`. Creates and mutates nothing; emits nothing."
       ],
       "discriminator": [
         128,
@@ -1491,7 +1492,8 @@
         {
           "name": "kms_context",
           "docs": [
-            "KMS context PDA; must be the canonical PDA for `host_config.current_kms_context_id`."
+            "KMS context PDA; must be the canonical PDA for the id the certificate commits to in its",
+            "signed `extra_data`, and must not be destroyed. Verified in the handler."
           ]
         },
         {
@@ -2169,7 +2171,7 @@
     {
       "code": 6071,
       "name": "InvalidKmsContext",
-      "msg": "KMS context is destroyed, not current, or does not match the certificate"
+      "msg": "KMS context is destroyed or does not match the certificate's committed context"
     },
     {
       "code": 6072,

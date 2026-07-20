@@ -1567,27 +1567,46 @@ Decision:
 A new host instruction `verify_public_decrypt` is a CPI-able, stateless verifier. It verifies a KMS
 `PublicDecryptVerification` secp256k1 threshold certificate plus an MMR public-leaf inclusion proof
 (`zama_solana_acl::authorize_public`, exact-handle, no roll-forward) and returns the proven
-`(handle, cleartext)` via `set_return_data` (64 bytes: `handle ++ cleartext`, well under the 1024-byte
-limit). It creates nothing, mutates nothing, emits nothing, and takes no signer — all three accounts
+`(handle, cleartext, context_id)` via `set_return_data` (72 bytes: `handle ++ cleartext ++
+context_id`, the last 8 bytes the verified context id little-endian, well under the 1024-byte limit). It creates nothing, mutates nothing, emits nothing, and takes no signer — all three accounts
 (`host_config`, `kms_context`, `encrypted_value`) are read-only. An app CPIs it, asserts the returned
 handle equals the handle it pinned at request time, then applies its own state transition; act-once
 and timeout live in the app's own state machine (a settled flag + deadline), which it needs anyway.
 This generalizes the DD-036 precedent (burn-redemption already authorizes by MMR public-decrypt proof
 + cert rather than live state) instead of the token's witness pattern.
 
-Current-context, not request-time pin:
+Any live context, not a current-only pin (fhevm-internal#1765):
 
-The cert is verified against the CURRENT `KmsContext` (`host_config.current_kms_context_id`), not a
-witness-pinned id. This is strictly safer — a rotated-out, possibly compromised context can produce no
-accepted cert — at the cost of a liveness hiccup: in-flight certs die on rotation and the KMS re-signs
-under the new context. Fail closed. The certificate commits its own context id via signed `extra_data`
-(EVM `_extractContextId` parity), and that committed id must equal the current id, so a cert minted
-under context N cannot be presented after a rotation to N+1. This preserves the adversarial-l4
-context-rotation-rejection property one layer below the app. A v0 / empty `extra_data` cert commits
-no context id, so it binds to whatever context is current only through that context's signer set;
-explicit context pinning requires v1 / v3 `extra_data` carrying the id (EVM `_extractContextId`
-parity). This is sound because rotation exists precisely to change the signer set, so the current
-set is the authoritative one to verify against.
+The cert is verified against the `KmsContext` the certificate itself names in its signed `extra_data`
+(EVM `_extractContextId` parity), for whatever context that is, as long as the context is still alive
+(`destroyed == false`). The binding chain is: signed `extra_data` → context id → canonical PDA for
+that id → that context's signer set. The verifier reads the committed id, derives its canonical PDA,
+requires the supplied account to be exactly that PDA (with a matching stored id) and not destroyed,
+then checks the threshold signature against that context's signers. A v0 / empty `extra_data` cert
+commits no explicit id and so selects the current context; v1 / v3 `extra_data` carries the id.
+
+This adopts EVM's rotation semantics. On EVM a request pinned to context N stays answerable by N's
+signers after a rotation to N+1, until an operator explicitly calls `destroyKmsContext(N)` — a
+deliberate dual-set grace window. We get the same outcome with less machinery: the verifier is
+stateless and receives a complete threshold cert in one call, so there is no per-request pin to store;
+the cert names its own context and acceptance is a pure read of an existing, non-destroyed account.
+Rotation for hygiene keeps in-flight certs verifiable (no liveness hiccup); `destroy_kms_context(N)`
+is the revocation lever — one flag flip that instantly invalidates every outstanding N-cert
+everywhere. Rotation for compromise is therefore `define` + `destroy`.
+
+The accepted footgun (as on EVM): valid-until-destroyed means a forgotten `destroy` leaves an old
+signer set powerful indefinitely. EVM manages this by runbook and we do the same for the PoC; a cheap
+`max_context_lag` in `HostConfig` (accept only contexts within K of current) is the natural guard if we
+ever want one — noted, not in scope. Earlier revisions of this DD verified against the CURRENT context
+only and framed a cert-after-rotation as a hazard to fail closed on; that framing is superseded here —
+rotation is no longer the revocation boundary, `destroy` is.
+
+The verified context id is surfaced in `return_data` (8 little-endian bytes appended after `handle ++
+cleartext`, so 72 bytes total) precisely so a calling program can pick its own policy: an
+informational consumer accepts any live context, while a value-releasing instruction can compare the
+returned id against `host_config.current_kms_context_id` and demand current-only. Confidential-token's
+`disclose_secp` and `redeem_burned_amount` both take the default (accept any live context), matching
+EVM.
 
 The verifier is deliberately NOT pause-gated: `make_handle_public` is the pause-gated boundary that
 seals a leaf, and an already-sealed leaf is already-public information, so re-proving it later reveals
@@ -1630,8 +1649,10 @@ Request side is no longer a token instruction: an allowed subject (balance owner
 seals the public-decrypt leaf by calling the host `make_handle_public` instruction directly. There is
 no per-request PDA, no `kms_context_id` pin, and no `expires_slot`.
 
-Verify against current context: the cert is verified by the host against the CURRENT `KmsContext`
-(context rotation fails closed one layer down), not a request-time pin.
+Verify against the cert-named context: the cert is verified by the host against the `KmsContext` the
+cert names, for any live context (see "Any live context" above), not a request-time pin. (Originally
+this read "against the CURRENT context, context rotation fails closed"; superseded by
+fhevm-internal#1765 — `destroy` is now the revocation boundary, not rotation.)
 
 Idempotent by design: act-once is intentionally NOT enforced on-chain. Disclosure is idempotent
 information release with no replay marker; an app needing consume-once tracks it in its own state
@@ -1657,10 +1678,11 @@ pays out and writes the marker. Every field the witness pinned is carried elsewh
 integrity by the redeem-time signer check, handle binding by the born-public MMR leaf sealed in the
 burn per DD-036, owner/mint by the lineage), so the witness was pure scaffolding.
 
-Current context replaces the request-time KMS pin: the cert is now verified against
-`host_config.current_kms_context_id` inside the verifier (fail closed on rotation), not the
-witness's pinned `kms_context_id`, which was strictly worse — it accepted a rotated-out signer set's
-certificates until expiry.
+The stateless verifier replaces the request-time KMS pin: the cert is verified against the context it
+names inside the verifier, not the witness's pinned `kms_context_id`. (This note originally said the
+verifier used `host_config.current_kms_context_id` and failed closed on rotation; superseded by
+fhevm-internal#1765, which accepts any live context and makes `destroy_kms_context` the revocation
+lever — see "Any live context" above.)
 
 Deny check is now explicit at redeem: because redemption moves value, a denied subject cannot cash
 out. The request's no-op `allow_subjects` CPI (which only re-proved the owner allowed) is replaced by

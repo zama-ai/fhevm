@@ -52,7 +52,7 @@ export function verifyPublicDecryptArgsFromClaim(
 export type SolanaVerifyPublicDecryptAccounts = {
   /** Canonical singleton host config; defaults to the host config PDA when omitted. */
   readonly hostConfig?: Address | undefined;
-  /** KMS context PDA for the host's current context id. */
+  /** KMS context PDA for the id the certificate commits to (any live, non-destroyed context). */
   readonly kmsContext: Address;
   /** The `EncryptedValue` lineage the inclusion proof is checked against. */
   readonly encryptedValue: Address;
@@ -60,7 +60,7 @@ export type SolanaVerifyPublicDecryptAccounts = {
 
 /**
  * Builds the raw, stateless `zama_host::verify_public_decrypt` instruction from a certificate claim.
- * The verifier reads state and returns `(handle, cleartext)` via `return_data`; it creates and
+ * The verifier reads state and returns `(handle, cleartext, context_id)` via `return_data`; it creates and
  * mutates nothing. Use this when consuming the verifier from a non-token program (the token wrapper
  * is `buildDiscloseSecpInstruction`). Async because the host config account defaults to its PDA
  * when omitted.
