@@ -39,6 +39,7 @@ export type StackSpec = {
   requiresGitHub: boolean;
   target: State["target"];
   versions: VersionBundle;
+  kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
   overrides: State["overrides"];
   topology: Topology;
   hostChains: HostChainScenario[];
@@ -104,6 +105,7 @@ export const topologyForState = (state: Pick<State, "scenario">): Topology => ({
 const stackSpecFromResolved = (input: {
   target: State["target"];
   versions: VersionBundle;
+  kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
   overrides: State["overrides"];
   scenario: ResolvedScenario;
   requiresGitHub: boolean;
@@ -132,6 +134,7 @@ const stackSpecFromResolved = (input: {
       requiresGitHub: input.requiresGitHub,
       target: input.target,
       versions: input.versions,
+      kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
       overrides: input.overrides,
       topology: bg.topology,
       hostChains: bg.hostChains,
@@ -144,6 +147,7 @@ const stackSpecFromResolved = (input: {
     requiresGitHub: input.requiresGitHub,
     target: input.target,
     versions: input.versions,
+    kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
     overrides: input.overrides,
     topology: topologyFromScenario(input.scenario),
     hostChains: input.scenario.hostChains,
@@ -154,12 +158,13 @@ const stackSpecFromResolved = (input: {
 
 /** Rebuilds a stack spec from persisted state. */
 export const stackSpecForState = (
-  state: Pick<State, "requiresGitHub" | "target" | "versions" | "overrides" | "scenario">,
+  state: Pick<State, "requiresGitHub" | "target" | "versions" | "kmsCoreVersionByNodeId" | "overrides" | "scenario">,
 ): StackSpec =>
   stackSpecFromResolved({
     requiresGitHub: state.requiresGitHub ?? true,
     target: state.target,
     versions: state.versions,
+    kmsCoreVersionByNodeId: state.kmsCoreVersionByNodeId,
     overrides: state.overrides,
     scenario: state.scenario,
   });

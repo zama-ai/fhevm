@@ -4,7 +4,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { PreflightError } from "../errors";
+import { CommandError, PreflightError } from "../errors";
 import { runContractTask, snapshotContractSources } from "../flow/contracts";
 import { waitForTestSuite } from "../flow/readiness";
 import { composeUp } from "../flow/runtime-compose";
@@ -12,12 +12,15 @@ import {
   applyVersionLock as applyStackVersionLock,
   refreshDiscovery as refreshStackDiscovery,
   up,
+  upgradeThresholdKmsNode,
   upgradeRuntimeGroup as upgradeStackRuntimeGroup,
 } from "../flow/up-flow";
 import { STATE_DIR, composePath, hostChainRuntimes } from "../layout";
+import { reconstructionThreshold } from "../kms-party";
 import { loadState } from "../state/state";
 import type { LocalOverride, State, UpOptions, VersionBundle, VersionTarget } from "../types";
 import { ensureDir, writeJson } from "../utils/fs";
+import { partyContainers, setRunning, waitForPartiesRunning, waitForPartiesStopped } from "./kms-generation";
 import { type RolloutReceipt, createRolloutReceipt } from "./rollout-receipt";
 import { test as runTest } from "./test";
 
@@ -30,6 +33,9 @@ type RolloutUpOptions = {
 type RolloutRuntimeUpgradeOptions = {
   lockFile?: string;
 };
+type RolloutKmsNodeUpgradeOptions = {
+  lockFile: string;
+};
 type RolloutVersionLockOptions = {
   allowedVersionKeys: string[];
   lockFile: string;
@@ -37,9 +43,13 @@ type RolloutVersionLockOptions = {
 };
 
 type RolloutTestOptions = {
+  grep?: string;
   network?: string;
   noHardhatCompile?: boolean;
   parallel?: boolean;
+};
+type RolloutExpectedTestFailureOptions = RolloutTestOptions & {
+  errorIncludes: string;
 };
 type RolloutContractTaskOptions = {
   env?: Record<string, string>;
@@ -52,6 +62,7 @@ type RolloutLockOptions = {
 
 export type RolloutRunContext = {
   applyVersionLock(label: string, options: RolloutVersionLockOptions): Promise<void>;
+  expectTestFailure(profile: string, options: RolloutExpectedTestFailureOptions): Promise<void>;
   readState(): Promise<State>;
   refreshDiscovery(): Promise<void>;
   runGatewayContractTask(command: string, options?: RolloutContractTaskOptions): Promise<void>;
@@ -63,11 +74,22 @@ export type RolloutRunContext = {
   stateDir(): string;
   test(profile?: string, options?: RolloutTestOptions): Promise<void>;
   up(options: RolloutUpOptions): Promise<void>;
+  /** Sequentially applies one CORE_VERSION lock to exactly the listed serving KMS nodes. */
+  upgradeKmsNodes(nodeIds: readonly number[], options: RolloutKmsNodeUpgradeOptions): Promise<void>;
+  /** Runs a check with an exact reconstruction quorum that must include this KMS node. */
+  withRequiredKmsNode(nodeId: number, task: () => Promise<void>): Promise<void>;
   upgradeRuntimeGroup(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
   writeVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
 };
 
 export type RolloutRunbook = (ctx: RolloutRunContext) => Promise<void> | void;
+
+type RolloutContextOperations = {
+  setRunning: typeof setRunning;
+  upgradeThresholdKmsNode: typeof upgradeThresholdKmsNode;
+  waitForPartiesRunning: typeof waitForPartiesRunning;
+  waitForPartiesStopped: typeof waitForPartiesStopped;
+};
 
 const upOptions = (options: RolloutUpOptions): UpOptions => ({
   target: "latest-main",
@@ -86,7 +108,27 @@ const refreshTestSuiteContainer = async () => {
   await waitForTestSuite();
 };
 
-export const createRolloutContext = (receipt: RolloutReceipt = createRolloutReceipt()): RolloutRunContext => ({
+const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options: RolloutTestOptions) => {
+  await refreshTestSuiteContainer();
+  await receipt.record("refresh-test-suite", "recreated test-suite container with current env", {
+    details: { profile },
+  });
+  await runTest(profile, {
+    network: options.network ?? "staging",
+    verbose: false,
+    noHardhatCompile: options.noHardhatCompile ?? true,
+    parallel: options.parallel,
+    grep: options.grep,
+  });
+};
+
+export const matchesExpectedTestFailure = (error: unknown, errorIncludes: string): error is CommandError =>
+  error instanceof CommandError && error.stderr.includes(errorIncludes);
+
+export const createRolloutContext = (
+  receipt: RolloutReceipt = createRolloutReceipt(),
+  operationOverrides: Partial<RolloutContextOperations> = {},
+): RolloutRunContext => ({
   async applyVersionLock(label, options) {
     await applyStackVersionLock(label, options.lockFile, options.allowedVersionKeys, { overrides: options.overrides });
     await receipt.record("apply-version-lock", label, {
@@ -96,6 +138,24 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
       },
       lockFile: options.lockFile,
     });
+  },
+  async expectTestFailure(profile, options) {
+    try {
+      await runRolloutTest(receipt, profile, options);
+    } catch (error) {
+      if (!matchesExpectedTestFailure(error, options.errorIncludes)) {
+        throw error;
+      }
+      await receipt.record("test", `${profile} failed as expected`, {
+        details: {
+          errorIncludes: options.errorIncludes,
+          ...(options.grep === undefined ? {} : { grep: options.grep }),
+          observedError: error.stderr.slice(-2_000),
+        },
+      });
+      return;
+    }
+    throw new PreflightError(`${profile} unexpectedly passed; expected an error containing ${JSON.stringify(options.errorIncludes)}`);
   },
   async readState() {
     const state = await loadState();
@@ -145,20 +205,12 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
     return STATE_DIR;
   },
   async test(profile = "rollout-standard", options = {}) {
-    await refreshTestSuiteContainer();
-    await receipt.record("refresh-test-suite", "recreated test-suite container with current env", {
-      details: { profile },
-    });
-    await runTest(profile, {
-      network: options.network ?? "staging",
-      verbose: false,
-      noHardhatCompile: options.noHardhatCompile ?? true,
-      parallel: options.parallel,
-    });
+    await runRolloutTest(receipt, profile, options);
     await receipt.record("test", `${profile} passed`, {
       details: {
         network: options.network ?? "staging",
         noHardhatCompile: options.noHardhatCompile ?? true,
+        ...(options.grep === undefined ? {} : { grep: options.grep }),
         ...(options.parallel === undefined ? {} : { parallel: options.parallel }),
       },
     });
@@ -169,6 +221,117 @@ export const createRolloutContext = (receipt: RolloutReceipt = createRolloutRece
       details: { overrides: (options.overrides ?? []).map((override) => override.group), scenario: options.scenario },
       lockFile: options.lockFile,
     });
+  },
+  async upgradeKmsNodes(nodeIds, options) {
+    const state = await loadState();
+    if (!state || state.scenario.kms.mode !== "threshold") {
+      throw new PreflightError("upgradeKmsNodes requires a running threshold KMS cluster");
+    }
+    if (nodeIds.length === 0) {
+      throw new PreflightError("upgradeKmsNodes requires at least one node id");
+    }
+    const selected = new Set<number>();
+    for (const nodeId of nodeIds) {
+      if (!Number.isInteger(nodeId) || nodeId < 1 || nodeId > state.scenario.kms.committeeSize) {
+        throw new PreflightError(
+          `upgradeKmsNodes expects serving node ids between 1 and ${state.scenario.kms.committeeSize}; received ${nodeId}`,
+        );
+      }
+      if (selected.has(nodeId)) {
+        throw new PreflightError(`upgradeKmsNodes received duplicate node id ${nodeId}`);
+      }
+      selected.add(nodeId);
+    }
+    for (const nodeId of nodeIds) {
+      try {
+        await (operationOverrides.upgradeThresholdKmsNode ?? upgradeThresholdKmsNode)(nodeId, options);
+      } catch (error) {
+        try {
+          await receipt.record("upgrade-kms-node-failed", `KMS node ${nodeId}`, {
+            details: { error: error instanceof Error ? error.message : String(error), nodeId },
+            docker: true,
+            lockFile: options.lockFile,
+          });
+        } catch (receiptError) {
+          throw new AggregateError(
+            [error, receiptError],
+            `KMS node ${nodeId} upgrade failed and its required receipt snapshot also failed`,
+          );
+        }
+        throw error;
+      }
+      await receipt.record("upgrade-kms-node", `KMS node ${nodeId}`, {
+        details: { nodeId },
+        docker: true,
+        lockFile: options.lockFile,
+      });
+    }
+  },
+  async withRequiredKmsNode(nodeId, task) {
+    const state = await loadState();
+    if (!state || state.scenario.kms.mode !== "threshold") {
+      throw new PreflightError("withRequiredKmsNode requires a running threshold KMS cluster");
+    }
+    const { committeeSize, threshold } = state.scenario.kms;
+    if (!Number.isInteger(nodeId) || nodeId < 1 || nodeId > committeeSize) {
+      throw new PreflightError(
+        `withRequiredKmsNode expects a serving node id between 1 and ${committeeSize}; received ${nodeId}`,
+      );
+    }
+    const requiredCount = reconstructionThreshold(threshold);
+    const running = [nodeId];
+    for (let candidate = 1; running.length < requiredCount && candidate <= committeeSize; candidate += 1) {
+      if (candidate !== nodeId) {
+        running.push(candidate);
+      }
+    }
+    const stopped = Array.from({ length: committeeSize }, (_, index) => index + 1).filter(
+      (candidate) => !running.includes(candidate),
+    );
+    if (stopped.length === 0) {
+      throw new PreflightError(
+        `withRequiredKmsNode cannot require one node when all ${committeeSize} serving nodes are needed for reconstruction`,
+      );
+    }
+
+    let taskError: unknown;
+    let taskFailed = false;
+    try {
+      await (operationOverrides.setRunning ?? setRunning)(stopped.flatMap(partyContainers), "stop");
+      await (operationOverrides.waitForPartiesStopped ?? waitForPartiesStopped)(stopped);
+      await receipt.record(
+        "require-kms-node",
+        `KMS node ${nodeId} required in ${requiredCount}/${committeeSize} quorum`,
+        {
+          details: { nodeId, running, stopped },
+          docker: true,
+        },
+      );
+      await task();
+    } catch (error) {
+      taskError = error;
+      taskFailed = true;
+    }
+
+    try {
+      await (operationOverrides.setRunning ?? setRunning)(stopped.flatMap(partyContainers), "start");
+      await (operationOverrides.waitForPartiesRunning ?? waitForPartiesRunning)(stopped);
+      await receipt.record("restore-kms-nodes", `restored KMS nodes ${stopped.join(", ")}`, {
+        details: { stopped },
+        docker: true,
+      });
+    } catch (restoreError) {
+      if (taskFailed) {
+        throw new AggregateError(
+          [taskError, restoreError],
+          "KMS quorum check failed and stopped nodes could not be restored",
+        );
+      }
+      throw restoreError;
+    }
+    if (taskFailed) {
+      throw taskError;
+    }
   },
   async upgradeRuntimeGroup(group, options = {}) {
     await upgradeStackRuntimeGroup(group, options);

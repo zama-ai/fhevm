@@ -232,6 +232,8 @@ export type State = {
   lockPath: string;
   requiresGitHub?: boolean;
   versions: VersionBundle;
+  /** Per-node threshold KMS core versions while a rollout is intentionally mixed. */
+  kmsCoreVersionByNodeId?: Record<string, string>;
   overrides: LocalOverride[];
   scenario: ResolvedScenario;
   scenarioSourcePath?: string;
