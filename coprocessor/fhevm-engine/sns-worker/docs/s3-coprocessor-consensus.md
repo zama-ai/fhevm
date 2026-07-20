@@ -556,6 +556,14 @@ number and different block hashes. They coexist under different S3 keys and arch
 identities. The authoritative tip for comparison is the highest authenticated
 revision for that publisher and exact block identity.
 
+Publication scheduling is ordered only within a lineage, not across every hash on a
+chain. A pending block prevents its own descendants from overtaking it, but it does
+not prevent an independent fork frontier from progressing. During one chain-locked
+scan, an incomplete block or a manifest creation/upload failure is skipped and the
+worker tries the next eligible lineage frontier. The failed candidate remains pending
+and is retried on later scans; immutable S3 writes make an upload whose database
+transaction failed safe to retry.
+
 ### Manifest format and layout versioning
 
 The manifest carries `version: 1` in its signed envelope. Version `1` uses

@@ -39,6 +39,26 @@ pub(crate) struct PreparedManifest {
     pub next_frontier: RangeFrontier,
 }
 
+#[derive(Debug)]
+pub(crate) struct ManifestProgressCursor {
+    block_number: i64,
+    block_hash: Vec<u8>,
+}
+
+impl ManifestProgressCursor {
+    pub(crate) fn start() -> Self {
+        Self {
+            block_number: -1,
+            block_hash: Vec::new(),
+        }
+    }
+
+    pub(crate) fn advance_to(&mut self, block: &PendingBlock) {
+        self.block_number = block.block_number;
+        self.block_hash.clone_from(&block.block_hash);
+    }
+}
+
 pub(crate) type CiphertextDescriptor = BlockCiphertextDescriptor;
 
 pub(crate) async fn pending_chain_ids(
@@ -64,13 +84,15 @@ pub(crate) async fn pending_chain_ids(
     Ok(rows.into_iter().map(|row| row.host_chain_id).collect())
 }
 
-/// Takes the chain-scoped transaction lock before selecting its earliest work.
-/// This prevents another publisher from skipping a locked earlier block on the
-/// same lineage and publishing a later commitment.
+/// Takes the chain-scoped transaction lock before selecting the earliest work
+/// after `cursor`. A caller can advance the cursor past blocked work and inspect
+/// competing lineages without allowing concurrent workers to publish the same
+/// candidate.
 pub(crate) async fn lock_next_block_to_progress(
     trx: &mut Transaction<'_, Postgres>,
     host_chain_id: i64,
     publication_cadence: i64,
+    cursor: &ManifestProgressCursor,
 ) -> Result<Option<PendingBlock>, ExecutionError> {
     validate_cadence(publication_cadence)?;
     let advisory_key = host_chain_id ^ MANIFEST_ADVISORY_LOCK_DOMAIN;
@@ -86,30 +108,68 @@ pub(crate) async fn lock_next_block_to_progress(
 
     let row = sqlx::query!(
         r#"
-        SELECT host_chain_id,
-               block_number,
-               block_hash,
-               parent_block_hash,
-               block_content_digest,
-               descriptor_count,
-               manifest_revision,
-               manifest_digest,
-               manifest_published
-          FROM block_consensus
-         WHERE host_chain_id = $1
+        WITH RECURSIVE blocked_descendants AS (
+            SELECT child.host_chain_id,
+                   child.block_hash
+              FROM block_consensus blocker
+              JOIN block_consensus child
+                ON child.host_chain_id = blocker.host_chain_id
+               AND child.parent_block_hash = blocker.block_hash
+             WHERE blocker.host_chain_id = $1
+               AND (
+                    blocker.block_content_digest IS NULL
+                    OR (
+                        blocker.manifest_published = FALSE
+                        AND MOD(blocker.block_number, $2) = 0
+                    )
+               )
+            UNION
+            SELECT child.host_chain_id,
+                   child.block_hash
+              FROM blocked_descendants blocked
+              JOIN block_consensus child
+                ON child.host_chain_id = blocked.host_chain_id
+               AND child.parent_block_hash = blocked.block_hash
+        )
+        SELECT candidate.host_chain_id,
+               candidate.block_number,
+               candidate.block_hash,
+               candidate.parent_block_hash,
+               candidate.block_content_digest,
+               candidate.descriptor_count,
+               candidate.manifest_revision,
+               candidate.manifest_digest,
+               candidate.manifest_published
+          FROM block_consensus candidate
+         WHERE candidate.host_chain_id = $1
            AND (
-                block_content_digest IS NULL
+                candidate.block_content_digest IS NULL
                 OR (
-                    manifest_published = FALSE
-                    AND MOD(block_number, $2) = 0
+                    candidate.manifest_published = FALSE
+                    AND MOD(candidate.block_number, $2) = 0
                 )
            )
-         ORDER BY block_number, block_hash
+           AND NOT EXISTS (
+                SELECT 1
+                  FROM blocked_descendants blocked
+                 WHERE blocked.host_chain_id = candidate.host_chain_id
+                   AND blocked.block_hash = candidate.block_hash
+           )
+           AND (
+                candidate.block_number > $3
+                OR (
+                    candidate.block_number = $3
+                    AND candidate.block_hash > $4
+                )
+           )
+         ORDER BY candidate.block_number, candidate.block_hash
          LIMIT 1
            FOR UPDATE
         "#,
         host_chain_id,
         publication_cadence,
+        cursor.block_number,
+        &cursor.block_hash,
     )
     .fetch_optional(trx.as_mut())
     .await?;

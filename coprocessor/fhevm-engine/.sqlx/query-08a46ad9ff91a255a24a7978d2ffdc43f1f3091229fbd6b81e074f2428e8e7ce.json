@@ -1,0 +1,73 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH RECURSIVE blocked_descendants AS (\n            SELECT child.host_chain_id,\n                   child.block_hash\n              FROM block_consensus blocker\n              JOIN block_consensus child\n                ON child.host_chain_id = blocker.host_chain_id\n               AND child.parent_block_hash = blocker.block_hash\n             WHERE blocker.host_chain_id = $1\n               AND (\n                    blocker.block_content_digest IS NULL\n                    OR (\n                        blocker.manifest_published = FALSE\n                        AND MOD(blocker.block_number, $2) = 0\n                    )\n               )\n            UNION\n            SELECT child.host_chain_id,\n                   child.block_hash\n              FROM blocked_descendants blocked\n              JOIN block_consensus child\n                ON child.host_chain_id = blocked.host_chain_id\n               AND child.parent_block_hash = blocked.block_hash\n        )\n        SELECT candidate.host_chain_id,\n               candidate.block_number,\n               candidate.block_hash,\n               candidate.parent_block_hash,\n               candidate.block_content_digest,\n               candidate.descriptor_count,\n               candidate.manifest_revision,\n               candidate.manifest_digest,\n               candidate.manifest_published\n          FROM block_consensus candidate\n         WHERE candidate.host_chain_id = $1\n           AND (\n                candidate.block_content_digest IS NULL\n                OR (\n                    candidate.manifest_published = FALSE\n                    AND MOD(candidate.block_number, $2) = 0\n                )\n           )\n           AND NOT EXISTS (\n                SELECT 1\n                  FROM blocked_descendants blocked\n                 WHERE blocked.host_chain_id = candidate.host_chain_id\n                   AND blocked.block_hash = candidate.block_hash\n           )\n           AND (\n                candidate.block_number > $3\n                OR (\n                    candidate.block_number = $3\n                    AND candidate.block_hash > $4\n                )\n           )\n         ORDER BY candidate.block_number, candidate.block_hash\n         LIMIT 1\n           FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "parent_block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "block_content_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "descriptor_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "manifest_revision",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "manifest_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "manifest_published",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "08a46ad9ff91a255a24a7978d2ffdc43f1f3091229fbd6b81e074f2428e8e7ce"
+}

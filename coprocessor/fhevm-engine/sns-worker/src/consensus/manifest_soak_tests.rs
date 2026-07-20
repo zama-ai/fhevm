@@ -486,9 +486,11 @@ async fn concurrent_manifest_worker(
                 .begin()
                 .await
                 .expect("begin concurrent publisher transaction");
-            let Some(block) = lock_next_block_to_progress(&mut trx, host_chain_id, cadence)
-                .await
-                .expect("call production manifest chain lock")
+            let cursor = ManifestProgressCursor::start();
+            let Some(block) =
+                lock_next_block_to_progress(&mut trx, host_chain_id, cadence, &cursor)
+                    .await
+                    .expect("call production manifest chain lock")
             else {
                 stats.busy_locks.fetch_add(1, Ordering::AcqRel);
                 trx.rollback().await.expect("rollback busy publisher");

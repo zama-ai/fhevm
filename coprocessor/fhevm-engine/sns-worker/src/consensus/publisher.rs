@@ -17,7 +17,7 @@ use crate::{aws_upload::COPROCESSOR_CONTEXT_ID_1, Config, ConsensusConfig, Execu
 use super::manifest::{
     discover_block_children, discover_known_children, is_block_manifest_ready,
     load_manifest_descriptors, lock_next_block_to_progress, mark_manifest_published,
-    pending_chain_ids, prepare_manifest, seal_block_content, PendingBlock,
+    pending_chain_ids, prepare_manifest, seal_block_content, ManifestProgressCursor, PendingBlock,
 };
 use super::manifest_archive::{manifest_object_key, store_authenticated_manifest};
 use super::peer_downloader::schedule_manifest_verification;
@@ -142,21 +142,74 @@ async fn progress_chain(
     signer: &CoproSigner,
     consensus: &ConsensusConfig,
 ) -> Result<Progress, ExecutionError> {
-    let mut trx = pool.begin().await?;
-    let Some(block) = lock_next_block_to_progress(&mut trx, host_chain_id, cadence).await? else {
-        trx.rollback().await?;
-        return Ok(Progress::Busy);
-    };
+    let mut cursor = ManifestProgressCursor::start();
+    let mut attempted_candidate = false;
 
+    loop {
+        let mut trx = pool.begin().await?;
+        let Some(block) =
+            lock_next_block_to_progress(&mut trx, host_chain_id, cadence, &cursor).await?
+        else {
+            trx.rollback().await?;
+            return Ok(if attempted_candidate {
+                Progress::Waiting
+            } else {
+                Progress::Busy
+            });
+        };
+        attempted_candidate = true;
+        cursor.advance_to(&block);
+
+        let result = progress_locked_block(
+            &mut trx,
+            client,
+            bucket,
+            host_chain_id,
+            &block,
+            signer,
+            consensus,
+        )
+        .await;
+        match result {
+            Ok(Progress::Advanced) => {
+                trx.commit().await?;
+                return Ok(Progress::Advanced);
+            }
+            Ok(Progress::Waiting) => {
+                trx.commit().await?;
+            }
+            Ok(Progress::Busy) => unreachable!("a locked block cannot be busy"),
+            Err(err @ ExecutionError::DbError(_)) => return Err(err),
+            Err(err) => {
+                trx.rollback().await?;
+                error!(
+                    host_chain_id,
+                    block_number = block.block_number,
+                    block_hash = %hex::encode(&block.block_hash),
+                    error = %err,
+                    "Manifest candidate failed; continuing with another lineage"
+                );
+            }
+        }
+    }
+}
+
+async fn progress_locked_block(
+    trx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    client: &Client,
+    bucket: &str,
+    host_chain_id: i64,
+    block: &PendingBlock,
+    signer: &CoproSigner,
+    consensus: &ConsensusConfig,
+) -> Result<Progress, ExecutionError> {
     if block.block_content_digest.is_none() {
-        if !is_block_manifest_ready(&mut trx, &block).await? {
-            trx.commit().await?;
+        if !is_block_manifest_ready(trx, block).await? {
             return Ok(Progress::Waiting);
         }
-        let descriptors = load_manifest_descriptors(&mut trx, &block).await?;
-        seal_block_content(&mut trx, &block, COPROCESSOR_CONTEXT_ID_1, &descriptors).await?;
-        let discovered = discover_block_children(&mut trx, &block).await?;
-        trx.commit().await?;
+        let descriptors = load_manifest_descriptors(trx, block).await?;
+        seal_block_content(trx, block, COPROCESSOR_CONTEXT_ID_1, &descriptors).await?;
+        let discovered = discover_block_children(trx, block).await?;
         debug!(
             host_chain_id,
             block_number = block.block_number,
@@ -168,8 +221,7 @@ async fn progress_chain(
         return Ok(Progress::Advanced);
     }
 
-    publish_block_manifest(&mut trx, client, bucket, &block, signer, consensus).await?;
-    trx.commit().await?;
+    publish_block_manifest(trx, client, bucket, block, signer, consensus).await?;
     Ok(Progress::Advanced)
 }
 
@@ -696,6 +748,232 @@ mod tests {
         assert_eq!(total_archive_count, 4);
     }
 
+    #[tokio::test]
+    #[serial(db)]
+    #[ignore = "PostgreSQL and LocalStack-backed competing-lineage publication"]
+    async fn failed_creation_or_upload_does_not_block_competing_lineage_with_multiple_workers() {
+        const CHAIN_ID: i64 = 9;
+        const BLOCK_NUMBER: i64 = 42;
+        const WORKER_COUNT: usize = 4;
+        let context = U256::ONE;
+        let blocked_hash = B256::repeat_byte(0x20);
+        let creation_failed_hash = B256::repeat_byte(0x25);
+        let ready_hash = B256::repeat_byte(0x30);
+
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .expect("create competing-lineage publication database");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(8)
+            .connect(instance.db_url())
+            .await
+            .expect("connect competing-lineage publication database");
+        seed_revision_publication_block(
+            &pool,
+            CHAIN_ID,
+            BLOCK_NUMBER,
+            blocked_hash,
+            B256::repeat_byte(0x10),
+            B256::repeat_byte(0x41),
+            B256::repeat_byte(0x42),
+            B256::repeat_byte(0x43),
+            B256::repeat_byte(0x44),
+            B256::repeat_byte(0x45),
+            B256::repeat_byte(0x46),
+            B256::repeat_byte(0x47),
+        )
+        .await;
+        seed_revision_publication_block(
+            &pool,
+            CHAIN_ID,
+            BLOCK_NUMBER,
+            ready_hash,
+            B256::repeat_byte(0x11),
+            B256::repeat_byte(0x51),
+            B256::repeat_byte(0x52),
+            B256::repeat_byte(0x53),
+            B256::repeat_byte(0x54),
+            B256::repeat_byte(0x55),
+            B256::repeat_byte(0x56),
+            B256::repeat_byte(0x57),
+        )
+        .await;
+        seed_revision_publication_block(
+            &pool,
+            CHAIN_ID,
+            BLOCK_NUMBER,
+            creation_failed_hash,
+            B256::repeat_byte(0x12),
+            B256::repeat_byte(0x71),
+            B256::repeat_byte(0x72),
+            B256::repeat_byte(0x73),
+            B256::repeat_byte(0x74),
+            B256::repeat_byte(0x75),
+            B256::repeat_byte(0x76),
+            B256::repeat_byte(0x77),
+        )
+        .await;
+        sqlx::query(
+            "UPDATE ciphertext_digest_branch
+                SET ciphertext128_format = 99
+              WHERE host_chain_id = $1 AND block_hash = $2",
+        )
+        .bind(CHAIN_ID)
+        .bind(creation_failed_hash.as_slice())
+        .execute(&pool)
+        .await
+        .expect("make one sibling fail manifest creation");
+        let blocked_child_hash = B256::repeat_byte(0x21);
+        seed_revision_publication_block(
+            &pool,
+            CHAIN_ID,
+            BLOCK_NUMBER + 1,
+            blocked_child_hash,
+            blocked_hash,
+            B256::repeat_byte(0x61),
+            B256::repeat_byte(0x62),
+            B256::repeat_byte(0x63),
+            B256::repeat_byte(0x64),
+            B256::repeat_byte(0x65),
+            B256::repeat_byte(0x66),
+            B256::repeat_byte(0x67),
+        )
+        .await;
+        seal_seeded_block(&pool, CHAIN_ID, blocked_hash, context).await;
+
+        let localstack = test_harness::localstack::start_localstack()
+            .await
+            .expect("start LocalStack for competing-lineage publication");
+        let client =
+            test_harness::localstack::create_localstack_s3_client(localstack.host_port).await;
+        let bucket = "manifest-competing-lineages";
+        client
+            .create_bucket()
+            .bucket(bucket)
+            .send()
+            .await
+            .expect("create competing-lineage manifest bucket");
+        let signer: CoproSigner = Arc::new(PrivateKeySigner::random());
+
+        let (blocked_key, conflicting_body) = {
+            let mut trx = pool
+                .begin()
+                .await
+                .expect("begin blocked manifest preparation");
+            let blocked = load_seeded_block(&pool, CHAIN_ID, blocked_hash).await;
+            let prepared = prepare_manifest(&mut trx, &blocked, context, signer.address())
+                .await
+                .expect("prepare manifest used to derive blocked object key");
+            trx.rollback()
+                .await
+                .expect("rollback blocked manifest preparation");
+            let intended = prepared
+                .payload
+                .clone()
+                .sign(signer.as_ref())
+                .await
+                .expect("sign intended blocked manifest");
+            let mut conflicting_payload = prepared.payload;
+            conflicting_payload.detailed_range.blocks[0].ciphertexts[0].gateway_key_id = None;
+            let conflicting = conflicting_payload
+                .sign(signer.as_ref())
+                .await
+                .expect("sign conflicting immutable manifest");
+            conflicting
+                .verify()
+                .expect("conflicting immutable manifest is valid");
+            (
+                manifest_object_key(&intended),
+                serde_json::to_vec(&conflicting).expect("serialize conflicting manifest"),
+            )
+        };
+        client
+            .put_object()
+            .bucket(bucket)
+            .key(&blocked_key)
+            .body(ByteStream::from(conflicting_body))
+            .send()
+            .await
+            .expect("seed conflicting immutable manifest object");
+
+        let consensus = ConsensusConfig::default();
+        let mut workers = Vec::with_capacity(WORKER_COUNT);
+        for _ in 0..WORKER_COUNT {
+            let pool = pool.clone();
+            let client = client.clone();
+            let signer = Arc::clone(&signer);
+            let consensus = consensus.clone();
+            workers.push(tokio::spawn(async move {
+                let mut outcomes = Vec::new();
+                for _ in 0..2 {
+                    outcomes.push(
+                        progress_chain(&pool, &client, bucket, 1, CHAIN_ID, &signer, &consensus)
+                            .await
+                            .expect("progress competing manifest lineages"),
+                    );
+                }
+                outcomes
+            }));
+        }
+        let mut advanced = 0;
+        for worker in workers {
+            advanced += worker
+                .await
+                .expect("join competing-lineage publisher")
+                .into_iter()
+                .filter(|outcome| *outcome == Progress::Advanced)
+                .count();
+        }
+        assert!(
+            advanced >= 2,
+            "one worker must seal and publish the ready fork"
+        );
+
+        let states = sqlx::query(
+            "SELECT block_hash, manifest_published
+               FROM block_consensus
+              WHERE host_chain_id = $1 AND block_number = $2",
+        )
+        .bind(CHAIN_ID)
+        .bind(BLOCK_NUMBER)
+        .fetch_all(&pool)
+        .await
+        .expect("load competing-lineage publication states");
+        assert_eq!(states.len(), 3);
+        for state in states {
+            let hash = B256::from_slice(&state.get::<Vec<u8>, _>("block_hash"));
+            let published = state.get::<bool, _>("manifest_published");
+            assert_eq!(published, hash == ready_hash);
+        }
+        let ready_archive_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM block_consensus_manifest
+              WHERE publisher = $1 AND host_chain_id = $2
+                AND publication_block_hash = $3",
+        )
+        .bind(signer.address().as_slice())
+        .bind(CHAIN_ID)
+        .bind(ready_hash.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("count ready-lineage manifest archive rows");
+        assert_eq!(
+            ready_archive_count, 1,
+            "only one worker publishes the manifest"
+        );
+        let blocked_child = load_seeded_block(&pool, CHAIN_ID, blocked_child_hash).await;
+        assert!(blocked_child.block_content_digest.is_none());
+        assert!(!blocked_child.manifest_published);
+
+        for _ in 0..3 {
+            assert_eq!(
+                progress_chain(&pool, &client, bucket, 1, CHAIN_ID, &signer, &consensus,)
+                    .await
+                    .expect("retry permanently conflicting manifest"),
+                Progress::Waiting,
+            );
+        }
+    }
+
     async fn publish_pending_revision(
         pool: &PgPool,
         client: &Client,
@@ -706,7 +984,8 @@ mod tests {
         consensus: &ConsensusConfig,
     ) {
         let mut trx = pool.begin().await.expect("begin block seal");
-        let block = lock_next_block_to_progress(&mut trx, host_chain_id, 1)
+        let cursor = ManifestProgressCursor::start();
+        let block = lock_next_block_to_progress(&mut trx, host_chain_id, 1, &cursor)
             .await
             .expect("lock block for seal")
             .expect("pending block for seal");
@@ -723,7 +1002,8 @@ mod tests {
         trx.commit().await.expect("commit replayed block seal");
 
         let mut trx = pool.begin().await.expect("begin manifest publication");
-        let block = lock_next_block_to_progress(&mut trx, host_chain_id, 1)
+        let cursor = ManifestProgressCursor::start();
+        let block = lock_next_block_to_progress(&mut trx, host_chain_id, 1, &cursor)
             .await
             .expect("lock block for publication")
             .expect("pending block for publication");
@@ -731,6 +1011,51 @@ mod tests {
             .await
             .expect("publish numbered manifest revision");
         trx.commit().await.expect("commit manifest publication");
+    }
+
+    async fn load_seeded_block(
+        pool: &PgPool,
+        host_chain_id: i64,
+        block_hash: B256,
+    ) -> PendingBlock {
+        let row = sqlx::query(
+            "SELECT host_chain_id, block_number, block_hash, parent_block_hash,
+                    block_content_digest, descriptor_count, manifest_revision,
+                    manifest_digest, manifest_published
+               FROM block_consensus
+              WHERE host_chain_id = $1 AND block_hash = $2",
+        )
+        .bind(host_chain_id)
+        .bind(block_hash.as_slice())
+        .fetch_one(pool)
+        .await
+        .expect("load seeded manifest block");
+        PendingBlock {
+            host_chain_id: row.get("host_chain_id"),
+            block_number: row.get("block_number"),
+            block_hash: row.get("block_hash"),
+            parent_block_hash: row.get("parent_block_hash"),
+            block_content_digest: row.get("block_content_digest"),
+            descriptor_count: row.get("descriptor_count"),
+            manifest_revision: row.get("manifest_revision"),
+            manifest_digest: row.get("manifest_digest"),
+            manifest_published: row.get("manifest_published"),
+        }
+    }
+
+    async fn seal_seeded_block(pool: &PgPool, host_chain_id: i64, block_hash: B256, context: U256) {
+        let mut trx = pool.begin().await.expect("begin seeded block seal");
+        let block = load_seeded_block(pool, host_chain_id, block_hash).await;
+        assert!(is_block_manifest_ready(&mut trx, &block)
+            .await
+            .expect("check seeded block readiness"));
+        let descriptors = load_manifest_descriptors(&mut trx, &block)
+            .await
+            .expect("load seeded block descriptors");
+        seal_block_content(&mut trx, &block, context, &descriptors)
+            .await
+            .expect("seal seeded block");
+        trx.commit().await.expect("commit seeded block seal");
     }
 
     #[allow(clippy::too_many_arguments)]
