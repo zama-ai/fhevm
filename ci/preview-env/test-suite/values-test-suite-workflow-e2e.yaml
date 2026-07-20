@@ -145,8 +145,6 @@ additionalResources:
                         value: "user-input-uint64"
                       - name: test-command
                         value: "test user input uint64"
-                      - name: deployer-key
-                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: user-decrypt
                   dependencies: ["user-input-uint64"]
@@ -159,8 +157,6 @@ additionalResources:
                         value: "user-decrypt"
                       - name: test-command
                         value: "test user decrypt"
-                      - name: deployer-key
-                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: public-decrypt-http
                   dependencies: ["user-decrypt"]
@@ -173,8 +169,6 @@ additionalResources:
                         value: "public-decrypt-http"
                       - name: test-command
                         value: "test HTTPPublicDecrypt"
-                      - name: deployer-key
-                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: erc20-token-transfer
                   dependencies: ["public-decrypt-http"]
@@ -187,8 +181,6 @@ additionalResources:
                         value: "erc20-token-transfer"
                       - name: test-command
                         value: "should transfer tokens between two users."
-                      - name: deployer-key
-                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: delegated-user-decrypt
                   dependencies: ["erc20-token-transfer"]
@@ -201,8 +193,6 @@ additionalResources:
                         value: "delegated-user-decrypt"
                       - name: test-command
                         value: "test delegated user decryption"
-                      - name: deployer-key
-                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: random-subset
                   dependencies: ["delegated-user-decrypt"]
@@ -215,11 +205,6 @@ additionalResources:
                         value: "random-subset"
                       - name: test-command
                         value: "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt"
-                      # Sign as Hardhat account #0 - the exact signer env under which
-                      # random-subset last passed (238b3dcd: owner #9, signer #0). All
-                      # other tests fall back to the #9 default so their owner-ops work.
-                      - name: deployer-key
-                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: hcu-block-cap
                   dependencies: ["random-subset"]
@@ -232,11 +217,6 @@ additionalResources:
                         value: "hcu-block-cap"
                       - name: test-command
                         value: "block cap scenarios"
-                      # Sign as #9, the ACL owner after the post-keygen transfer, so the
-                      # onlyACLOwner HCU setters succeed while alice (#0) stays a genuine
-                      # non-owner for the "reject setHCUPerBlock from non-owner" case.
-                      - name: deployer-key
-                        value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
 
                 - name: negative-acl
                   dependencies: ["hcu-block-cap"]
@@ -249,8 +229,6 @@ additionalResources:
                         value: "negative-acl"
                       - name: test-command
                         value: "negative-acl"
-                      - name: deployer-key
-                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: generate-summary
                   dependencies: [
@@ -290,11 +268,6 @@ additionalResources:
               parameters:
                 - name: test-name
                 - name: test-command
-                # Per-test signer for this.deployer, passed explicitly by every DAG
-                # task. All tests use Hardhat account #0 (0xac09...), which deploys the
-                # host contracts and remains ACL.owner() (no ownership transfer), so
-                # HCU's onlyACLOwner setters succeed.
-                - name: deployer-key
             outputs:
               parameters:
               - name: test-result
@@ -336,7 +309,6 @@ additionalResources:
                   echo "=========================================="
 
                   start_time=$(date +%s)
-                  export DEPLOYER_PRIVATE_KEY="{{`{{inputs.parameters.deployer-key}}`}}"
                   ./run-tests.sh -g "{{`{{inputs.parameters.test-command}}`}}"
                   test_exit=$?
                   end_time=$(date +%s)
@@ -426,6 +398,11 @@ additionalResources:
                     configMapKeyRef:
                       name: host-sc-addresses
                       key: protocol_config.address
+                # Single deployer/signer for all tests: Hardhat account #0 (0xac09...),
+                # which deploys the host contracts and stays ACL.owner() (no ownership
+                # transfer), so HCU's onlyACLOwner setters succeed.
+                - name: DEPLOYER_PRIVATE_KEY
+                  value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
                 - name: RELAYER_URL
                   value: "http://relayer:3000/v2"
                 - name: RELAYER_SDK_VERSION
