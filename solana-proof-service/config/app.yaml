@@ -21,8 +21,11 @@ yellowstone:
 
 # Bounded confirmed RPC recovery (not the live source).
 # TODO(prod): raise horizons for archive depth / catch-up SLOs; exhaustion fails closed.
+# bootstrap_slot is required for history_complete / proof readiness. Unset keeps
+# the service ingesting but never ready (ACL history may predate process start).
+# Local e2e uses 0 because setup-solana-side always runs solana-test-validator --reset.
 recovery:
   # rpc_url: optional override; defaults to solana.rpc_url
-  # bootstrap_slot: set for Bootstrap A completeness (history_complete flip)
+  bootstrap_slot: 0
   max_slots_per_attempt: 256
   max_blocks_per_attempt: 128

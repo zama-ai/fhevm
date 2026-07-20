@@ -118,6 +118,38 @@ GW_RPC="${GW_RPC:-http://127.0.0.1:8546}"
 source "$ROOT/.fhevm/runtime/addresses/gateway/.env.gateway"
 COPROCESSOR_SIGNER="$(cast call "$GATEWAY_CONFIG_ADDRESS" 'getCoprocessorSigners()(address[])' --rpc-url "$GW_RPC" | tr -d '[]' | tr ',' '\n' | head -1 | tr -d ' ')"
 
+PROOF_URL="${PROOF_SERVICE_URL:-http://127.0.0.1:8088}"
+
+wait_proof_ready() {
+  local label="$1"
+  local i body
+  for i in $(seq 1 60); do
+    body="$(curl -sS -m3 "$PROOF_URL/health/readiness" 2>/dev/null || true)"
+    if printf '%s' "$body" | grep -Eq '"ready"[[:space:]]*:[[:space:]]*true'; then
+      echo "    $label: ready ($body)"
+      return 0
+    fi
+    sleep 2
+  done
+  fail "$label: timed out waiting for proof readiness (last=$body)"
+}
+
+echo "==> [proof-service] decisive vertical gates"
+# Adoption matrix for standalone solana-proof-service (#1682 / #3215):
+#   [x] readiness becomes true (requires recovery.bootstrap_slot; e2e uses 0 on --reset)
+#   [x] exact inclusive replay after process restart (container restart below)
+#   [x] proof serving + consumption (public/user decrypt legs later in this script)
+#   [~] empty-block delivery: pinned geyser emits every block; store applies empty tx vectors
+#   [~] bounded recovery + exhaustion fail-closed: covered by solana-proof-* unit/Postgres tests
+#       (full RPC chaos inject not in this script yet)
+wait_proof_ready "pre-restart"
+docker restart fhevm-solana-proof-service >/dev/null
+for _ in $(seq 1 30); do
+  [ "$(docker inspect -f '{{.State.Running}}' fhevm-solana-proof-service 2>/dev/null)" = "true" ] && break
+  sleep 1
+done
+wait_proof_ready "post-restart exact-replay"
+
 echo "==> [input] REAL ZK proof via public @fhevm/sdk/solana client -> relayer /v2/input-proof -> zama-host secp256k1 bind"
 # The relayer was just restarted with the Solana host chain (clean-e2e step 4b); wait until it
 # accepts input-proof POSTs before submitting (curl returns 0 on any HTTP reply, non-zero only

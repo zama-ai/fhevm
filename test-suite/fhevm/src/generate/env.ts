@@ -267,6 +267,9 @@ const applySolanaProofServiceEnv = (
   proofEnv.SOLANA_PROOF__SOLANA__PROGRAM_ID = solanaProgramId(state.discovery, solana.key);
   proofEnv.SOLANA_PROOF__SOLANA__RPC_URL = solanaValidatorUrl(solana);
   proofEnv.SOLANA_PROOF__YELLOWSTONE__GRPC_URL = `http://host.docker.internal:${SOLANA_YELLOWSTONE_GRPC_PORT}`;
+  // Local e2e validator is always `--reset`; genesis slot 0 is the Bootstrap A boundary.
+  // Without this, history_complete never flips and mmr-proof stays 503 not_ready.
+  proofEnv.SOLANA_PROOF__RECOVERY__BOOTSTRAP_SLOT = "0";
 };
 
 export type KmsParty = { party: number; endpoint: string; privateKey: string; dbName: string };

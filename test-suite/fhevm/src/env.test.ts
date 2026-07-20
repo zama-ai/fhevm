@@ -616,5 +616,6 @@ describe("env", () => {
     expect(proof.SOLANA_PROOF__SOLANA__RPC_URL).toBe("http://host.docker.internal:8899");
     expect(proof.SOLANA_PROOF__YELLOWSTONE__GRPC_URL).toBe("http://host.docker.internal:10000");
     expect(proof.SOLANA_PROOF__SERVER__BIND_ADDRESS).toBe("0.0.0.0:8088");
+    expect(proof.SOLANA_PROOF__RECOVERY__BOOTSTRAP_SLOT).toBe("0");
   });
 });

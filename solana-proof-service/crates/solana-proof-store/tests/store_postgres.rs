@@ -687,7 +687,7 @@ async fn recovered_gap_fill_applies_contiguous_parents() {
     );
     assert!(!store.integrity_status().await.unwrap().history_complete);
 
-    // Program-filtered gap: next observed would be slot 12 with parent 11.
+    // Contiguous parent gap: next observed would be slot 12 with parent 11.
     let observed = block(12, 11, pk(0xB0), pk(0xC0), Vec::new());
     match store.apply_completed_block(&observed).await.unwrap() {
         ApplyOutcome::RecoveryRequired {
