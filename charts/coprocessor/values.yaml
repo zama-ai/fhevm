@@ -432,6 +432,12 @@ hostListenerPollerShared:
   #     --dependence-cross-block
   #   v0.12 only:
   #     --dependent-ops-max-per-chain=0
+  #   when the image supports it:
+  #     --seed-start-block=-10000            # starting block when no poller state exists yet;
+  #                                             # >= 0 absolute height, negative = blocks behind head.
+  #                                             # Used only at first startup: existing state always
+  #                                             # wins, so restarts never rewind or skip. Set this when
+  #                                             # onboarding a new host chain to avoid walking from genesis.
   extraArgs: []
 
   # Service ports configuration
