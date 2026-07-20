@@ -194,7 +194,7 @@ scDeploy:
     # matching the test-suite workflow's DEPLOYER_PRIVATE_KEY (this.deployer == owner).
     - npx hardhat task:transferHostOwnership --new-owner-address 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
     - npx hardhat task:acceptHostOwnership
-    - echo "ACL ownership transferred to account #0 (0xf39Fd6...)"
+    - echo "ACL ownership transferred to account \#0 (0xf39Fd6...)"
   verifyContracts: false
 persistence:
   enabled: true
