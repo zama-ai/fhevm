@@ -185,8 +185,19 @@ export async function confidentialTransfer(
       sigVerify: true,
     })
     .send();
-  if (simulation.value.err !== null)
-    throw new Error(`confidential transfer simulation failed: ${JSON.stringify(simulation.value.err)}`);
+  if (simulation.value.err !== null) {
+    // @solana/kit InstructionError payloads can contain bigint Custom codes;
+    // plain JSON.stringify throws and hides the real on-chain failure.
+    const err = JSON.stringify(simulation.value.err, (_key, value) =>
+      typeof value === 'bigint' ? value.toString() : value,
+    );
+    const logs = simulation.value.logs?.join('\n') ?? '';
+    throw new Error(
+      logs.length > 0
+        ? `confidential transfer simulation failed: ${err}\n${logs}`
+        : `confidential transfer simulation failed: ${err}`,
+    );
+  }
   await sendAndConfirmTransactionFactory({ rpc: parameters.rpc, rpcSubscriptions: parameters.rpcSubscriptions })(
     transaction,
     {
