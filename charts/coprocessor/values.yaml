@@ -432,13 +432,12 @@ hostListenerPollerShared:
   #     --dependence-cross-block
   #   v0.12 only:
   #     --dependent-ops-max-per-chain=0
-  #   images with --seed-start-block (zama-ai/fhevm#3123; 0.13.x/0.14.x
-  #   backports zama-ai/fhevm#3124 / zama-ai/fhevm#3125):
-  #     --seed-start-block=-10000            # initial sync anchor when no poller state exists yet;
+  #   when the image supports it:
+  #     --seed-start-block=-10000            # starting block when no poller state exists yet;
   #                                             # >= 0 absolute height, negative = blocks behind head.
-  #                                             # Initialization-only: an existing anchor row always
+  #                                             # Used only at first startup: existing state always
   #                                             # wins, so restarts never rewind or skip. Set this when
-  #                                             # onboarding a new host chain to avoid a genesis walk.
+  #                                             # onboarding a new host chain to avoid walking from genesis.
   extraArgs: []
 
   # Service ports configuration

@@ -49,28 +49,24 @@ BROKER_URL=redis://listener-redis:6379 host_listener_consumer \
 
 Use `--url` or `--broker-url` to override `BROKER_URL` for a single process.
 
-### Poller initial sync anchor (`--seed-start-block`)
+### Poller starting block (`--seed-start-block`)
 
 `host_listener_poller` tracks its progress in
 `host_listener_poller_state.last_caught_up_block`. When that row is missing
-(fresh database, new chain onboarding, or a poller added to a running
-listener-only deployment), `--seed-start-block` is required and seeds the
-anchor: `>= 0` is an absolute block height (`0` = genesis, explicitly),
-negative means that many blocks behind the current head at first startup.
-Without the flag the poller exits with an error, so a missing value on a new
-chain surfaces at deploy time instead of silently walking the chain from
-genesis. (Older versions seeded from `max(host_chain_blocks_valid)` — the WS
-listener's table — which made the seed a startup race between the two
-services; that fallback is removed.)
+(fresh database, new chain, or a poller added to a listener-only deployment),
+`--seed-start-block` is required and sets the starting block: `>= 0` is an
+absolute block height (`0` = genesis), negative means that many blocks behind
+the current head at first startup. Without the flag the poller exits with an
+error, so a missing value on a new chain fails at deploy time instead of
+silently scanning from genesis.
 
-The flag is initialization-only, on purpose. It is **not** the listener's
-`--start-at-block` (which beats persisted state on every startup): once the
-anchor row exists the flag is inert, so leaving it in Helm values can never
-rewind the poller on restart, skip blocks past the anchor, or clobber a
-drift-revert anchor reset.
+The flag is used only the first time. It is **not** the listener's
+`--start-at-block` (which overrides saved state on every startup): once the
+poller has saved its progress, the flag is ignored. Leaving it in Helm values
+will not move the poller backward or skip ahead on restart.
 
-To fix a poller that already persisted a bad anchor (e.g. a genesis walk in
-progress), patch the database instead:
+To fix a poller that already saved a bad starting block (for example, it is
+scanning from genesis), update the database instead:
 
 ```sql
 UPDATE host_listener_poller_state
