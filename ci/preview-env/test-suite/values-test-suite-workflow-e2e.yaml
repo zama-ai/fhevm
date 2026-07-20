@@ -145,6 +145,8 @@ additionalResources:
                         value: "user-input-uint64"
                       - name: test-command
                         value: "test user input uint64"
+                      - name: deployer-key
+                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: user-decrypt
                   dependencies: ["user-input-uint64"]
@@ -157,6 +159,8 @@ additionalResources:
                         value: "user-decrypt"
                       - name: test-command
                         value: "test user decrypt"
+                      - name: deployer-key
+                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: public-decrypt-http
                   dependencies: ["user-decrypt"]
@@ -169,6 +173,8 @@ additionalResources:
                         value: "public-decrypt-http"
                       - name: test-command
                         value: "test HTTPPublicDecrypt"
+                      - name: deployer-key
+                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: erc20-token-transfer
                   dependencies: ["public-decrypt-http"]
@@ -181,6 +187,8 @@ additionalResources:
                         value: "erc20-token-transfer"
                       - name: test-command
                         value: "should transfer tokens between two users."
+                      - name: deployer-key
+                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: delegated-user-decrypt
                   dependencies: ["erc20-token-transfer"]
@@ -193,6 +201,8 @@ additionalResources:
                         value: "delegated-user-decrypt"
                       - name: test-command
                         value: "test delegated user decryption"
+                      - name: deployer-key
+                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: random-subset
                   dependencies: ["delegated-user-decrypt"]
@@ -239,6 +249,8 @@ additionalResources:
                         value: "negative-acl"
                       - name: test-command
                         value: "negative-acl"
+                      - name: deployer-key
+                        value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
                 - name: generate-summary
                   dependencies: [
@@ -284,7 +296,6 @@ additionalResources:
                 # HCU's onlyACLOwner setters succeed. random-subset overrides this to
                 # #0 in the DAG (the signer/owner combo it last passed under).
                 - name: deployer-key
-                  default: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
             outputs:
               parameters:
               - name: test-result
@@ -326,6 +337,7 @@ additionalResources:
                   echo "=========================================="
 
                   start_time=$(date +%s)
+                  export DEPLOYER_PRIVATE_KEY="{{`{{inputs.parameters.deployer-key}}`}}"
                   ./run-tests.sh -g "{{`{{inputs.parameters.test-command}}`}}"
                   test_exit=$?
                   end_time=$(date +%s)
@@ -415,15 +427,6 @@ additionalResources:
                     configMapKeyRef:
                       name: host-sc-addresses
                       key: protocol_config.address
-                # Per-test signer (this.deployer). HCU-limit owner-restricted setters
-                # use onlyACLOwner (msg.sender == ACL.owner()). The host contracts are
-                # deployed by #0 but ACL ownership is transferred to #9 after keygen
-                # (host-chain/values-host-trigger-keygen-e2e.yaml), so owner-op tests
-                # (hcu-block-cap) must sign as #9 (the default). random-subset overrides
-                # this to #0 in the DAG - the signer/owner combo it last passed under
-                # (it never reads DEPLOYER_PRIVATE_KEY, but we keep its known-good env).
-                - name: DEPLOYER_PRIVATE_KEY
-                  value: "{{`{{inputs.parameters.deployer-key}}`}}"
                 - name: RELAYER_URL
                   value: "http://relayer:3000/v2"
                 - name: RELAYER_SDK_VERSION
