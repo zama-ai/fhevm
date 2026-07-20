@@ -3868,6 +3868,84 @@ fn mollusk_transfer_from_value_rejects_non_euint64_amount() {
     );
 }
 
+/// Spending the entire balance: the amount lineage is the sender's own balance value, so
+/// `amount_value` aliases the `from_balance` output account. The eval plan merges them into one
+/// account slot, and the transfer debits the whole balance without tripping duplicate-account
+/// resolution.
+#[test]
+fn mollusk_transfer_from_value_spends_full_balance_with_balance_lineage_as_amount() {
+    let fixture = TokenFixture::new();
+    let accounts = fixture.base_accounts();
+    let context = mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.alice_initial, 1_000);
+    cleartext.seed_amount(fixture.bob_initial, 100);
+
+    let transfer = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        // Amount aliased to the sender's own balance lineage: transfer the whole balance.
+        fixture.alice_balance_value,
+    );
+    let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
+
+    assert_eq!(durable_outputs, 3);
+    assert_eq!(cleartext.balance(&context, fixture.alice_token), 0);
+    assert_eq!(cleartext.balance(&context, fixture.bob_token), 1_100);
+}
+
+/// Re-sending a received amount: the sender spends their own `transferred_amount` lineage, which is
+/// also this transfer's `transferred_amount` output account. `amount_value` aliases an output the
+/// eval frame writes, and the merged account slot lets the transfer settle.
+#[test]
+fn mollusk_transfer_from_value_resends_transferred_amount_that_is_also_this_output() {
+    let fixture = TokenFixture::new();
+    let accounts = fixture.base_accounts();
+    let context = mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.alice_initial, 1_000);
+    cleartext.seed_amount(fixture.bob_initial, 0);
+
+    // First transfer (attested, 300) creates Alice's transferred_amount lineage.
+    let alice_amount = handle_for_chain(90, BALANCE_FHE_TYPE);
+    cleartext.seed_amount(alice_amount, 300);
+    let first = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        amount_attestation_for(alice_amount, fixture.owner, fixture.compute_signer),
+    );
+    let first_result = context.process_and_validate_instruction(&first, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &first_result);
+    assert_eq!(cleartext.balance(&context, fixture.bob_token), 300);
+
+    // Alice sends the same amount again by spending her own transferred_amount lineage, which is
+    // also this transfer's transferred_amount output account.
+    let own_transferred = fixture.transferred_amount_value_address(fixture.alice_token);
+    let again = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_value,
+        fixture.bob_balance_value,
+        own_transferred,
+    );
+    let again_result = context.process_and_validate_instruction(&again, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &again_result);
+    assert_eq!(cleartext.balance(&context, fixture.alice_token), 400);
+    assert_eq!(cleartext.balance(&context, fixture.bob_token), 600);
+}
+
 /// Done-when 4 (tx-size half): the new arm carries no 190-byte attestation, so its instruction data
 /// is strictly SMALLER than the fresh-attested arm's. This is the measured wire-size win that lets a
 /// contract-driven settlement pack more into a packet.

@@ -271,7 +271,15 @@ fn execute_transfer_eval<'info>(
         to_output.account_info(),
     ];
     if let TransferAmountSource::ExistingValue { amount_value, .. } = amount_source {
-        dynamic_accounts.push(amount_value.clone());
+        // The amount lineage can legitimately alias one of the output accounts (spending the entire
+        // balance, or re-sending a transferred_amount that is also this frame's output). The plan
+        // already merges those into one slot, so only add the amount when it is a distinct account.
+        if !dynamic_accounts
+            .iter()
+            .any(|account| account.key() == amount_value.key())
+        {
+            dynamic_accounts.push(amount_value.clone());
+        }
     }
     let eval_accounts = fhe::EvalAccountSet::for_plan(
         &plan,
