@@ -616,7 +616,11 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
   if (component === "core-threshold") {
     // Dedicated threshold-cluster component (gen-keys + N cores + kms-init).
     // Separate from `core` so it never merges with the centralized template.
-    return buildKmsThresholdOverride(plan.kms, kmsRenderOptionsFor(plan.versions.env.CORE_VERSION));
+    return buildKmsThresholdOverride(
+      plan.kms,
+      kmsRenderOptionsFor(plan.versions.env.CORE_VERSION),
+      plan.kmsCoreVersionByNodeId,
+    );
   }
   if (component === "kms-connector" && plan.kms.mode === "threshold") {
     // One connector per KMS party (each cores↔connector pair is independent).
