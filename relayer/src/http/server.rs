@@ -176,7 +176,6 @@ pub async fn run_http_server(
         // Add OpenAPI documentation
         .merge(openapi_middleware());
 
-
     // Admin endpoints configuration
     // When enabled, pass both registry (for TPS) and retry-after state
     // When disabled, None is passed so handler returns 403
