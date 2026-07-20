@@ -49,6 +49,31 @@ BROKER_URL=redis://listener-redis:6379 host_listener_consumer \
 
 Use `--url` or `--broker-url` to override `BROKER_URL` for a single process.
 
+### Poller starting block (`--seed-start-block`)
+
+`host_listener_poller` tracks its progress in
+`host_listener_poller_state.last_caught_up_block`. When that row is missing
+(fresh database, new chain, or a poller added to a listener-only deployment),
+`--seed-start-block` is required and sets the starting block: `>= 0` is an
+absolute block height (`0` = genesis), negative means that many blocks behind
+the current head at first startup. Without the flag the poller exits with an
+error, so a missing value on a new chain fails at deploy time instead of
+silently scanning from genesis.
+
+The flag is used only the first time. It is **not** the listener's
+`--start-at-block` (which overrides saved state on every startup): once the
+poller has saved its progress, the flag is ignored. Leaving it in Helm values
+will not move the poller backward or skip ahead on restart.
+
+To fix a poller that already saved a bad starting block (for example, it is
+scanning from genesis), update the database instead:
+
+```sql
+UPDATE host_listener_poller_state
+SET last_caught_up_block = <target_block>, updated_at = NOW()
+WHERE chain_id = <chain_id>;
+```
+
 ### Dependent ops throttling (optional)
 
 `--dependent-ops-max-per-chain` enables slow-lane assignment (`0` disables).
