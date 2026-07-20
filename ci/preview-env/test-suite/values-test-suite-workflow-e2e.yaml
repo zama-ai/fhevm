@@ -290,11 +290,10 @@ additionalResources:
               parameters:
                 - name: test-name
                 - name: test-command
-                # Per-test signer for this.deployer. Defaults to Hardhat account #9
-                # (0xa0Ee7A14...), the ACL owner after the post-keygen ownership
-                # transfer (see host-chain/values-host-trigger-keygen-e2e.yaml), so
-                # HCU's onlyACLOwner setters succeed. random-subset overrides this to
-                # #0 in the DAG (the signer/owner combo it last passed under).
+                # Per-test signer for this.deployer, passed explicitly by every DAG
+                # task. All tests use Hardhat account #0 (0xac09...), which deploys the
+                # host contracts and remains ACL.owner() (no ownership transfer), so
+                # HCU's onlyACLOwner setters succeed.
                 - name: deployer-key
             outputs:
               parameters:
