@@ -424,10 +424,21 @@ async fn active_host_chain_id(pool: &Pool<Postgres>) -> Result<Option<i64>, Erro
     Ok(row.and_then(|(v,)| v))
 }
 
+/// Timeout state machine for the tracked window.
+enum WindowTimeout {
+    /// No deadline running.
+    NotArmed,
+    /// Give up at this instant.
+    Armed(Instant),
+    /// Already emitted.
+    Emitted,
+}
+
 struct WindowState {
-    window: Option<(i64, i64)>,
-    timeout_deadline: Option<Instant>,
-    timeout_emitted: bool,
+    /// The (start, end) window being tracked; when it changes, both consensus
+    /// tracks and the timeout reset for the new window.
+    tracked_window: Option<(i64, i64)>,
+    timeout: WindowTimeout,
 }
 
 /// One consensus pass over both tracks. Reads the active window, resets track
@@ -445,13 +456,12 @@ async fn consensus_pass(
     commitment_timeout: Duration,
 ) -> Result<(), Error> {
     let window = active_upgrade_window(pool).await?;
-    if window_state.window != window {
+    if window_state.tracked_window != window {
         host.reset();
         gateway.reset();
         // The upgrade window changed, so reset the timeout for the new one.
-        window_state.timeout_deadline = None;
-        window_state.timeout_emitted = false;
-        window_state.window = window;
+        window_state.timeout = WindowTimeout::NotArmed;
+        window_state.tracked_window = window;
     }
     let Some((start, end)) = window else {
         return Ok(());
@@ -484,44 +494,43 @@ async fn consensus_pass(
     // If we reached the last block but didn't agree in time, give up so the
     // upgrade can be rerun.
     let both_anchored = host.anchor_emitted && gateway.anchor_emitted;
-    if !window_state.timeout_emitted && !both_anchored {
-        // Start the clock once we reach the last block (chain_id is 0 until then).
-        if window_state.timeout_deadline.is_none()
-            && host.chain_id != 0
-            && host_reached_end_block(pool, host.chain_id, end).await?
-        {
-            window_state.timeout_deadline = Some(Instant::now() + commitment_timeout);
-            info!(
-                host_chain_id = host.chain_id,
-                end_block = end,
-                timeout_secs = commitment_timeout.as_secs(),
-                "host chain reached end_block without unanimity — arming consensus timeout"
-            );
-        }
-
-        if window_state
-            .timeout_deadline
-            .is_some_and(|d| Instant::now() >= d)
-        {
-            warn!(
-                host_chain_id = host.chain_id,
-                start_block = start,
-                end_block = end,
-                host_anchored = host.anchor_emitted,
-                gateway_anchored = gateway.anchor_emitted,
-                "consensus timeout elapsed without both-track unanimity — emitting event_unanimity_consensus_timeout"
-            );
-            notify_unanimity(
-                pool,
-                UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
-                &NewBlockPayload {
-                    chain_id: host.chain_id,
-                    block_height: end,
-                    block_hash: String::new(),
-                },
-            )
-            .await?;
-            window_state.timeout_emitted = true;
+    if !both_anchored {
+        match window_state.timeout {
+            // Arm once we reach end_block (chain_id is 0 until then).
+            WindowTimeout::NotArmed
+                if host.chain_id != 0
+                    && host_reached_end_block(pool, host.chain_id, end).await? =>
+            {
+                window_state.timeout = WindowTimeout::Armed(Instant::now() + commitment_timeout);
+                info!(
+                    host_chain_id = host.chain_id,
+                    end_block = end,
+                    timeout_secs = commitment_timeout.as_secs(),
+                    "host chain reached end_block without unanimity — arming consensus timeout"
+                );
+            }
+            WindowTimeout::Armed(deadline) if Instant::now() >= deadline => {
+                warn!(
+                    host_chain_id = host.chain_id,
+                    start_block = start,
+                    end_block = end,
+                    host_anchored = host.anchor_emitted,
+                    gateway_anchored = gateway.anchor_emitted,
+                    "consensus timeout elapsed without both-track unanimity — emitting event_unanimity_consensus_timeout"
+                );
+                notify_unanimity(
+                    pool,
+                    UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
+                    &NewBlockPayload {
+                        chain_id: host.chain_id,
+                        block_height: end,
+                        block_hash: String::new(),
+                    },
+                )
+                .await?;
+                window_state.timeout = WindowTimeout::Emitted;
+            }
+            _ => {}
         }
     }
 
@@ -705,12 +714,10 @@ where
     // provider-resolved gw_chain_id.
     let mut host_track = ConsensusTrack::new(0);
     let mut gateway_track = ConsensusTrack::new(gw_chain_id);
-    // Last-seen upgrade window; a change (incl. close) resets both tracks.
-    // Timeout tracking: when the clock started, and whether we already gave up.
+    // Tracked window + its timeout state.
     let mut window_state = WindowState {
-        window: None,
-        timeout_deadline: None,
-        timeout_emitted: false,
+        tracked_window: None,
+        timeout: WindowTimeout::NotArmed,
     };
 
     // The consensus poll cadence: re-attempt S3 every commitment_poll_interval,
