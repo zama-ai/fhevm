@@ -50,37 +50,37 @@ jobs:
             package: tfhe-worker
             needs_localstack: false
             needs_foundry: false
-            runner: large_ubuntu_16
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
           - service: sns-worker
             package: sns-worker
             needs_localstack: true
             needs_foundry: false
-            runner: large_ubuntu_16
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
           - service: zkproof-worker
             package: zkproof-worker
             needs_localstack: false
             needs_foundry: false
-            runner: large_ubuntu_16
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
           - service: transaction-sender
             package: transaction-sender
             needs_localstack: true
             needs_foundry: true
-            runner: large_ubuntu_16
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
           - service: gw-listener
             package: gw-listener
             needs_localstack: false
             needs_foundry: true
-            runner: large_ubuntu_16
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
           - service: host-listener
             package: host-listener
             needs_localstack: false
             needs_foundry: true
-            runner: large_ubuntu_16
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
           - service: common
             package: fhevm-engine-common
             needs_localstack: false
             needs_foundry: false
-            runner: ubuntu-latest
+            runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     steps:
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
