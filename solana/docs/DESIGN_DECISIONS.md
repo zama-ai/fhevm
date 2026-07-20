@@ -1710,9 +1710,9 @@ preserves individual amount privacy at near-zero encrypted-math cost. Ported as 
 mechanics: where the EVM join is a token-side `transferAndCall` hook, Solana inverts control — the
 batcher's `join` CPIs the confidential transfer itself (programs cannot react to incoming
 transfers); where the EVM aggregate reveal is a gateway callback, ours is the existing pull-shaped
-burn-redemption certificate (`confidential_burn` -> `request_burn_redemption` -> KMS-certified
-`redeem_burned_amount_secp`, DD-040 family) — the burn certificate *is* the aggregate decrypt, no
-separate reveal instruction.
+burn-redemption certificate (`confidential_burn` -> KMS-certified `redeem_burned_amount` against the
+current context, DD-040 family; the request-witness lifecycle is dissolved by fhevm-internal#1763) —
+the burn certificate *is* the aggregate decrypt, no separate reveal instruction.
 
 Load-bearing mechanics, all pre-existing host semantics (verified, no host changes): the transfer's
 recipient rule already places the receiving account's owner in the `transferred_amount` output

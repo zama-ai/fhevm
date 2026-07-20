@@ -117,4 +117,4 @@ strategy machinery that a demo does not need, and none of them is a standard
   tokens to the vault so the share price rises.
 
 Design record: DD-042 in `DESIGN_DECISIONS.md`. Demo tracking: the
-confidential-vault epic in fhevm-internal.
+confidential-vault epic, fhevm-internal#1754.
