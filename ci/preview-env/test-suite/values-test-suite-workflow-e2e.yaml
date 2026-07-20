@@ -105,15 +105,26 @@ additionalResources:
           # explicitly - it does not default to the binding's namespace).
           namespace: PLACEHOLDER_NAMESPACE
 
+  # Shared WorkflowTemplate holding the whole e2e DAG + run-test/summary templates.
+  # The two thin Workflow objects at the end of this file reference it, differing
+  # ONLY by the relayer-sdk-version parameter, so the same suite runs once against
+  # @fhevm/sdk (version "") and once against @zama-fhe/relayer-sdk (a pinned version)
+  # without duplicating the ~350-line DAG. The WorkflowTemplate itself never runs.
   - enabled: true
     object:
       apiVersion: argoproj.io/v1alpha1
-      kind: Workflow
+      kind: WorkflowTemplate
       metadata:
-        name: e2e-test-suite-workflow
+        name: e2e-test-suite-template
         labels:
           app: fhevm-test-suite
       spec:
+        arguments:
+          parameters:
+            # Overridden per-Workflow below. Empty => instance.ts sets useFhevmSdk=true
+            # (@fhevm/sdk); any non-empty version => the @zama-fhe/relayer-sdk code path.
+            - name: relayer-sdk-version
+              value: ""
         serviceAccountName: workflow-runner
         # Kept under the deploy job's own timeout budget (see pr-preview-deploy.yml):
         # 8 tests run sequentially and each recompiles the contracts, so this is
@@ -398,19 +409,24 @@ additionalResources:
                     configMapKeyRef:
                       name: host-sc-addresses
                       key: protocol_config.address
-                # Single DEPLOYER_PRIVATE_KEY for all tests: Hardhat account #9
-                # (0x2a87...), the host/ACL owner set by host-contracts + trigger-keygen
-                # (no ownership transfer). Only the HCU block-cap test actually reads it
-                # (this.deployer, for onlyACLOwner setters); every other test signs as the
-                # MNEMONIC-derived signers (alice..eve = #0..#4) and ignores it. Account #9
-                # is outside that signer range, so alice (#0) stays a genuine non-owner for
-                # HCU's "reject setHCUPerBlock from non-owner" case.
+                # Single DEPLOYER_PRIVATE_KEY for all tests: Hardhat account #0
+                # (0xac09...), the FINAL host/ACL owner. host-contracts + trigger-keygen
+                # deploy/keygen/crsgen as #9, then host-trigger-keygen transfers ACL
+                # ownership #9 -> #0 after crsgen, so this.deployer (#0) == ACL.owner() (#0)
+                # and the HCU block-cap owner-only setters succeed. Only the HCU test reads
+                # this key (this.deployer); every other test signs as the MNEMONIC-derived
+                # signers (alice..eve = #0..#4) and ignores it. NOTE: because #0 == alice,
+                # HCU's "reject setHCUPerBlock from non-owner" subtest will NOT revert and
+                # will fail - accepted trade-off for keeping the e2e deployer on #0.
                 - name: DEPLOYER_PRIVATE_KEY
-                  value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
+                  value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
                 - name: RELAYER_URL
                   value: "http://relayer:3000/v2"
+                # Empty => @fhevm/sdk; non-empty => @zama-fhe/relayer-sdk. Value comes
+                # from the per-Workflow relayer-sdk-version parameter (see the two
+                # Workflow objects at the end of this file).
                 - name: RELAYER_SDK_VERSION
-                  value: ""
+                  value: "{{`{{workflow.parameters.relayer-sdk-version}}`}}"
               resources:
                 requests:
                   memory: "1Gi"
@@ -501,3 +517,43 @@ additionalResources:
         # Credentials for pulling the private test-suite image.
         imagePullSecrets:
         - name: registry-credentials
+
+  # --- SDK matrix: one Workflow per SDK, both referencing the template above. ---
+  # helm creates both on install, so both run in parallel (separate pods). The deploy
+  # workflow (pr-preview-deploy.yml) patches the run-test image once on the shared
+  # WorkflowTemplate, deletes both Workflows before install (fresh re-trigger), and
+  # waits on / reports both by name.
+  - enabled: true
+    object:
+      apiVersion: argoproj.io/v1alpha1
+      kind: Workflow
+      metadata:
+        # @fhevm/sdk run (RELAYER_SDK_VERSION="").
+        name: e2e-test-suite-fhevm-sdk
+        labels:
+          app: fhevm-test-suite
+          sdk: fhevm-sdk
+      spec:
+        workflowTemplateRef:
+          name: e2e-test-suite-template
+        arguments:
+          parameters:
+            - name: relayer-sdk-version
+              value: ""
+  - enabled: true
+    object:
+      apiVersion: argoproj.io/v1alpha1
+      kind: Workflow
+      metadata:
+        # @zama-fhe/relayer-sdk run (RELAYER_SDK_VERSION=<pinned version>).
+        name: e2e-test-suite-relayer-sdk
+        labels:
+          app: fhevm-test-suite
+          sdk: relayer-sdk
+      spec:
+        workflowTemplateRef:
+          name: e2e-test-suite-template
+        arguments:
+          parameters:
+            - name: relayer-sdk-version
+              value: "0.4.4"

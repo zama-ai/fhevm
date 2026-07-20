@@ -42,9 +42,15 @@ scDeploy:
     - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
     - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
     # Same deployer as host-contracts' own deploy (Hardhat account #9) - must own the
-    # canonical host ACL to trigger keygen/crsgen. Keep in sync with
-    # values-host-contracts-e2e.yaml's DEPLOYER_PRIVATE_KEY.
+    # canonical host ACL to trigger keygen/crsgen (onlyACLOwner). Keep in sync with
+    # values-host-contracts-e2e.yaml's DEPLOYER_PRIVATE_KEY. After crsgen, this account
+    # transfers ACL ownership to NEW_OWNER_PRIVATE_KEY's address (#0) - see deployCommands.
     - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
+    # Hardhat account #0 - the FINAL host/ACL owner after the post-crsgen ownership
+    # transfer. task:acceptHostOwnership signs the acceptOwnership() tx with this key.
+    # Must match the test-suite workflow's DEPLOYER_PRIVATE_KEY (this.deployer == owner
+    # for the HCU owner-restricted setters).
+    - {name: NEW_OWNER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
   deployCommands:
     # task:triggerKeygen/triggerCrsgen below resolve KMS_GENERATION_CONTRACT_ADDRESS by
     # reading addresses/.env.host directly inside their own Hardhat/Node process (see
@@ -165,6 +171,30 @@ scDeploy:
         );
       })().catch((e) => { console.error(e); process.exit(1); });
       "
+    # Post-crsgen ACL ownership transfer #0 -> #9 (DECOUPLED strategy). Everything above
+    # (deploy + keygen + crsgen) ran as #0 so the ACL address and FheRand seed match the
+    # regime; now hand ownership to #0 so the HCU block-cap test's owner-only setters,
+    # signed by #0 (test-suite workflow DEPLOYER_PRIVATE_KEY == this.deployer == owner),
+    # succeed. NOTE: with owner = #0 = alice, the "reject setHCUPerBlock from non-owner"
+    # subtest will NOT revert (alice is the owner) and will fail - accepted trade-off for
+    # keeping the e2e deployer on #0. task:transferHostOwnership and
+    # task:acceptHostOwnership read ACL_CONTRACT_ADDRESS from process.env (they do NOT
+    # dotenv-load addresses/.env.host), so export it in-shell first - same gap the
+    # KMS_GENERATION_CONTRACT_ADDRESS export above works around.
+    - |
+      export ACL_CONTRACT_ADDRESS=$(grep --color=never '^ACL_CONTRACT_ADDRESS=' addresses/.env.host | cut -d'=' -f2 | tr -d '[:space:]')
+      if [[ -z "${ACL_CONTRACT_ADDRESS}" ]]; then
+        echo "::error::ACL_CONTRACT_ADDRESS could not be extracted from addresses/.env.host - cannot transfer ownership"
+        exit 1
+      fi
+      echo "Resolved ACL_CONTRACT_ADDRESS=${ACL_CONTRACT_ADDRESS}"
+    # transferHostOwnership is signed by DEPLOYER_PRIVATE_KEY (#9, the current owner) and
+    # only marks #0 as pendingOwner (Ownable2Step); acceptHostOwnership is signed by
+    # NEW_OWNER_PRIVATE_KEY (#0) to finalize. #0 = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266,
+    # matching the test-suite workflow's DEPLOYER_PRIVATE_KEY (this.deployer == owner).
+    - npx hardhat task:transferHostOwnership --new-owner-address 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+    - npx hardhat task:acceptHostOwnership
+    - echo "ACL ownership transferred to account #0 (0xf39Fd6...)"
   verifyContracts: false
 persistence:
   enabled: true

@@ -1123,13 +1123,16 @@ jobs:
           NS="${NAMESPACE}" yq -i \
             '(.additionalResources[] | select(.object.kind == "RoleBinding") | .object.subjects[0].namespace) = strenv(NS)' \
             "${values}"
+          # The run-test template now lives on the shared WorkflowTemplate that both
+          # per-SDK Workflows reference, so patch the image there (once).
           yq -i \
-            '(.additionalResources[] | select(.object.kind == "Workflow") | .object.spec.templates[] | select(.name == "run-test") | .script.image) = strenv(E2E_IMAGE)' \
+            '(.additionalResources[] | select(.object.kind == "WorkflowTemplate") | .object.spec.templates[] | select(.name == "run-test") | .script.image) = strenv(E2E_IMAGE)' \
             "${values}"
           echo "Patched run-test image to: ${E2E_IMAGE}"
-          # A prior run in a reused namespace may leave a completed Workflow of
-          # the same name; delete it so this install re-triggers a fresh run.
-          kubectl delete workflow e2e-test-suite-workflow -n "${NAMESPACE}" --ignore-not-found
+          # A prior run in a reused namespace may leave completed Workflows of the
+          # same names; delete both so this install re-triggers fresh runs.
+          kubectl delete workflow e2e-test-suite-fhevm-sdk e2e-test-suite-relayer-sdk \
+            -n "${NAMESPACE}" --ignore-not-found
           helm upgrade --install test-suite-workflow "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
             -n "${NAMESPACE}" -f "${values}"
 
@@ -1148,55 +1151,85 @@ jobs:
           KMS_CONNECTOR_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).kms_connector_gw_listener }}
         run: |
           set -euo pipefail
-          wf=e2e-test-suite-workflow
-          # Poll the overall phase. continueOn.failed keeps failed tests from
-          # failing the DAG, so the terminal phase is (almost) always Succeeded;
-          # per-test pass/fail is read from the node statuses below.
-          max_wait=7200; elapsed=0; interval=30; phase=""
-          while [[ $elapsed -lt $max_wait ]]; do
-            phase=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
-            case "${phase}" in
-              Succeeded|Failed|Error) break ;;
-              *) echo "workflow phase='${phase:-<none>}' (${elapsed}s/${max_wait}s)"; sleep "${interval}"; elapsed=$((elapsed + interval)) ;;
+          # SDK matrix: one Workflow per SDK (see values-test-suite-workflow-e2e.yaml).
+          # Wait on each and emit a per-SDK result table into a combined report.
+          wfs=(e2e-test-suite-fhevm-sdk e2e-test-suite-relayer-sdk)
+          sdk_label() {
+            case "$1" in
+              e2e-test-suite-fhevm-sdk) echo "@fhevm/sdk (RELAYER_SDK_VERSION=\"\")" ;;
+              e2e-test-suite-relayer-sdk) echo "@zama-fhe/relayer-sdk" ;;
+              *) echo "$1" ;;
             esac
+          }
+
+          sections=$(mktemp --suffix=.md)
+          overall_failed=0
+          for wf in "${wfs[@]}"; do
+            # Poll the overall phase. continueOn.failed keeps failed tests from
+            # failing the DAG, so the terminal phase is (almost) always Succeeded;
+            # per-test pass/fail is read from the node statuses below.
+            max_wait=7200; elapsed=0; interval=30; phase=""
+            while [[ $elapsed -lt $max_wait ]]; do
+              phase=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+              case "${phase}" in
+                Succeeded|Failed|Error) break ;;
+                *) echo "[${wf}] phase='${phase:-<none>}' (${elapsed}s/${max_wait}s)"; sleep "${interval}"; elapsed=$((elapsed + interval)) ;;
+              esac
+            done
+            echo "[${wf}] final phase: ${phase:-<timed out>}"
+
+            wf_json=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o json 2>/dev/null || echo '{}')
+
+            # Per-test phase table from the run-test pod nodes.
+            rows=$(jq -r '
+              (.status.nodes // {}) | to_entries
+              | map(.value | select(.templateName == "run-test"))
+              | sort_by(.displayName)
+              | .[] | "| \(.displayName) | \(.phase) |"' <<<"${wf_json}")
+            failed=$(jq -r '
+              [(.status.nodes // {}) | to_entries[] | .value
+               | select(.templateName == "run-test")
+               | select(.phase != "Succeeded")] | length' <<<"${wf_json}")
+            total=$(jq -r '
+              [(.status.nodes // {}) | to_entries[] | .value
+               | select(.templateName == "run-test")] | length' <<<"${wf_json}")
+            if [[ -z "${rows}" ]]; then rows="| _(no test nodes found)_ | ${phase:-Unknown} |"; fi
+
+            if [[ "${phase}" != "Succeeded" && "${phase}" != "Failed" && "${phase}" != "Error" ]]; then
+              sub="### :warning: $(sdk_label "${wf}") - timed out after ${max_wait}s"
+              overall_failed=$((overall_failed + 1))
+            elif [[ "${failed}" -gt 0 ]]; then
+              sub="### :x: $(sdk_label "${wf}") - ${failed}/${total} failed"
+              overall_failed=$((overall_failed + failed))
+            else
+              sub="### :white_check_mark: $(sdk_label "${wf}") - all ${total} passed"
+            fi
+
+            {
+              echo "${sub}"
+              echo
+              echo "Workflow \`${wf}\`."
+              echo
+              echo "| Test | Result |"
+              echo "| --- | --- |"
+              echo "${rows}"
+              echo
+            } >> "${sections}"
           done
-          echo "Final workflow phase: ${phase:-<timed out>}"
 
-          wf_json=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o json 2>/dev/null || echo '{}')
-
-          # Per-test phase table from the run-test pod nodes.
-          rows=$(jq -r '
-            (.status.nodes // {}) | to_entries
-            | map(.value | select(.templateName == "run-test"))
-            | sort_by(.displayName)
-            | .[] | "| \(.displayName) | \(.phase) |"' <<<"${wf_json}")
-          failed=$(jq -r '
-            [(.status.nodes // {}) | to_entries[] | .value
-             | select(.templateName == "run-test")
-             | select(.phase != "Succeeded")] | length' <<<"${wf_json}")
-          total=$(jq -r '
-            [(.status.nodes // {}) | to_entries[] | .value
-             | select(.templateName == "run-test")] | length' <<<"${wf_json}")
-          if [[ -z "${rows}" ]]; then rows="| _(no test nodes found)_ | ${phase:-Unknown} |"; fi
-
-          if [[ "${phase}" != "Succeeded" && "${phase}" != "Failed" && "${phase}" != "Error" ]]; then
-            header="## :warning: Automated e2e tests: timed out after ${max_wait}s"
-          elif [[ "${failed}" -gt 0 ]]; then
-            header="## :x: Automated e2e tests: ${failed}/${total} failed"
+          if [[ "${overall_failed}" -gt 0 ]]; then
+            header="## :x: Automated e2e tests (SDK matrix): ${overall_failed} failure(s)"
           else
-            header="## :white_check_mark: Automated e2e tests: all ${total} passed"
+            header="## :white_check_mark: Automated e2e tests (SDK matrix): all passed"
           fi
 
           report=$(mktemp --suffix=.md)
           {
             echo "${header}"
             echo
-            echo "Namespace \`${NAMESPACE}\` on zws-dev - workflow \`${wf}\`."
+            echo "Namespace \`${NAMESPACE}\` on zws-dev."
             echo
-            echo "| Test | Result |"
-            echo "| --- | --- |"
-            echo "${rows}"
-            echo
+            cat "${sections}"
             echo "<details><summary>Resolved component versions</summary>"
             echo
             echo "| Component | Version |"

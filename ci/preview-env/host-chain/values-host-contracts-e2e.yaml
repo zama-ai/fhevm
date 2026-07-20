@@ -51,13 +51,16 @@ scDeploy:
     - {name: HARDHAT_NETWORK, value: "staging"}
     - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
     - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
-    # Hardhat account #9 — the host/ACL owner. Deliberately OUTSIDE the e2e signer
-    # range (alice..eve = accounts #0..#4): the HCU block-cap test needs the deployer
-    # (this.deployer) to be ACL.owner() for its owner-restricted setters AND needs
-    # alice (#0) to be a genuine non-owner for "reject setHCUPerBlock from non-owner".
-    # task:deployAllHostContracts never transfers ownership, so ACL.owner() = this
-    # deployer. Must match host-trigger-keygen's key (ACL-owner op) and the test-suite
-    # DEPLOYER_PRIVATE_KEY. Separate chain from gateway-contracts (#0), no collision.
+    # Hardhat account #9 — deploy the host contracts (and, in host-trigger-keygen,
+    # trigger keygen/crsgen) with this account, so ACL.owner() = #9 at deploy/keygen
+    # time and the onlyACLOwner keygen()/crsgen() calls succeed. AFTER crsgen,
+    # host-trigger-keygen transfers ACL ownership #9 -> #0 (Ownable2Step transfer+accept)
+    # so the HCU block-cap test's owner-only setters, signed by #0 (the test-suite
+    # workflow DEPLOYER_PRIVATE_KEY == this.deployer == owner), succeed. NOTE: with the
+    # final owner = #0 = alice, HCU's "reject setHCUPerBlock from non-owner" subtest will
+    # NOT revert and will fail - accepted trade-off for keeping the e2e deployer on #0.
+    # Keep in sync with host-trigger-keygen's DEPLOYER_PRIVATE_KEY. Separate chain from
+    # gateway-contracts (#0), no collision.
     - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
     # Gateway's chain id + the two gateway contract addresses KMSVerifier/InputVerifier verify
     # signatures against. Read directly from gateway-contracts' output ConfigMap instead of
