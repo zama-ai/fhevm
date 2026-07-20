@@ -282,6 +282,14 @@ fn decode_transaction_result(
     })
 }
 
+fn decode_transaction_value(
+    signature: &str,
+    value: serde_json::Value,
+) -> Result<ChainTransaction, ChainError> {
+    let parsed = serde_json::from_value(value).map_err(|e| ChainError::Rpc(e.to_string()))?;
+    decode_transaction_result(signature, parsed)
+}
+
 fn compiled_to_raw(
     ix: &CompiledIx,
     account_keys: &[[u8; 32]],
@@ -372,9 +380,7 @@ impl ChainFetcher for RpcChainFetcher {
         if result.is_null() {
             return Ok(None);
         }
-        let parsed: GetTransactionResult =
-            serde_json::from_value(result).map_err(|e| ChainError::Rpc(e.to_string()))?;
-        Ok(Some(decode_transaction_result(signature, parsed)?))
+        Ok(Some(decode_transaction_value(signature, result)?))
     }
 
     async fn get_lineage_state(
@@ -492,130 +498,111 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn flatten_interleaves_inner_after_its_top_level_instruction() {
-        let account_keys = vec![[1u8; 32], [2u8; 32], [3u8; 32]];
-        let top_level = vec![
-            CompiledIx {
-                program_id_index: 0,
-                accounts: vec![],
-                data: "".to_string(),
-                stack_height: None,
-            },
-            CompiledIx {
-                program_id_index: 1,
-                accounts: vec![],
-                data: "".to_string(),
-                stack_height: None,
-            },
-        ];
-        let inner_groups = vec![InnerIxGroup {
-            index: 0,
-            instructions: vec![CompiledIx {
-                program_id_index: 2,
-                accounts: vec![],
-                data: "".to_string(),
-                stack_height: Some(2),
-            }],
-        }];
-        let out = flatten_execution_order(&top_level, &inner_groups, &account_keys).unwrap();
-        assert_eq!(out.len(), 3);
-        assert_eq!(out[0].program_id, [1u8; 32]);
-        assert_eq!(out[0].stack_height, Some(1));
-        assert_eq!(out[1].program_id, [3u8; 32]); // inner CPI spawned by top-level 0
-        assert_eq!(out[1].stack_height, Some(2));
-        assert_eq!(out[1].top_level_index, 0);
-        assert_eq!(out[2].program_id, [2u8; 32]);
-    }
-
-    #[test]
-    fn flatten_rejects_duplicate_and_orphan_inner_groups() {
-        let account_keys = vec![[1u8; 32]];
-        let top_level = vec![CompiledIx {
-            program_id_index: 0,
-            accounts: vec![],
-            data: "".to_string(),
-            stack_height: None,
-        }];
-        let duplicate = vec![
-            InnerIxGroup {
-                index: 0,
-                instructions: vec![],
-            },
-            InnerIxGroup {
-                index: 0,
-                instructions: vec![],
-            },
-        ];
-        assert!(matches!(
-            flatten_execution_order(&top_level, &duplicate, &account_keys),
-            Err(ChainError::Rpc(message)) if message.contains("duplicate")
-        ));
-
-        let orphan = vec![InnerIxGroup {
-            index: 1,
-            instructions: vec![],
-        }];
-        assert!(matches!(
-            flatten_execution_order(&top_level, &orphan, &account_keys),
-            Err(ChainError::Rpc(message)) if message.contains("out of range")
+    mod shared_fixtures {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../solana/test-fixtures/transaction_decoding.rs"
         ));
     }
 
+    use shared_fixtures::{
+        base58_encode as fixture_base58_encode, transaction_decoding_fixtures, ExpectedInstruction,
+        ExpectedOutcome,
+    };
+
     #[test]
-    fn flatten_rejects_impossible_inner_stack_traces() {
-        let account_keys = vec![[1u8; 32]];
-        let top_level = vec![CompiledIx {
-            program_id_index: 0,
-            accounts: vec![],
-            data: "".to_string(),
-            stack_height: None,
-        }];
-        for heights in [vec![3], vec![2, 4], vec![2, 1], vec![2, 2, 4]] {
-            let group = vec![InnerIxGroup {
-                index: 0,
-                instructions: heights
-                    .into_iter()
-                    .map(|height| CompiledIx {
-                        program_id_index: 0,
-                        accounts: vec![],
-                        data: "".to_string(),
-                        stack_height: Some(height),
+    fn shared_transaction_decoding_contract() {
+        for fixture in transaction_decoding_fixtures() {
+            let top_level: Vec<serde_json::Value> = fixture
+                .top_level
+                .iter()
+                .map(|instruction| {
+                    json!({
+                        "programIdIndex": instruction.program_id_index,
+                        "accounts": instruction.accounts,
+                        "data": fixture_base58_encode(&instruction.data),
+                        "stackHeight": instruction.stack_height,
                     })
-                    .collect(),
-            }];
-            assert!(matches!(
-                flatten_execution_order(&top_level, &group, &account_keys),
-                Err(ChainError::Rpc(message)) if message.contains("impossible")
-            ));
-        }
-        let missing = vec![InnerIxGroup {
-            index: 0,
-            instructions: vec![CompiledIx {
-                program_id_index: 0,
-                accounts: vec![],
-                data: "".to_string(),
-                stack_height: None,
-            }],
-        }];
-        assert!(matches!(
-            flatten_execution_order(&top_level, &missing, &account_keys),
-            Err(ChainError::Rpc(message)) if message.contains("no stackHeight")
-        ));
-
-        let valid = vec![InnerIxGroup {
-            index: 0,
-            instructions: [2, 3, 3, 2]
-                .into_iter()
-                .map(|height| CompiledIx {
-                    program_id_index: 0,
-                    accounts: vec![],
-                    data: "".to_string(),
-                    stack_height: Some(height),
                 })
-                .collect(),
-        }];
-        assert!(flatten_execution_order(&top_level, &valid, &account_keys).is_ok());
+                .collect();
+            let inner_groups: Vec<serde_json::Value> = fixture
+                .inner_groups
+                .iter()
+                .map(|group| {
+                    let instructions: Vec<serde_json::Value> = group
+                        .instructions
+                        .iter()
+                        .map(|instruction| {
+                            json!({
+                                "programIdIndex": instruction.program_id_index,
+                                "accounts": instruction.accounts,
+                                "data": fixture_base58_encode(&instruction.data),
+                                "stackHeight": instruction.stack_height,
+                            })
+                        })
+                        .collect();
+                    json!({
+                        "index": group.index,
+                        "instructions": instructions,
+                    })
+                })
+                .collect();
+
+            let result = json!({
+                "slot": 0,
+                "transaction": {
+                    "message": {
+                        "accountKeys": fixture
+                            .static_account_tags
+                            .iter()
+                            .map(|tag| fixture_base58_encode(&[*tag; 32]))
+                            .collect::<Vec<_>>(),
+                        "instructions": top_level,
+                    }
+                },
+                "meta": {
+                    "err": null,
+                    "innerInstructions": inner_groups,
+                    "loadedAddresses": {
+                        "writable": fixture
+                            .loaded_writable_account_tags
+                            .iter()
+                            .map(|tag| fixture_base58_encode(&[*tag; 32]))
+                            .collect::<Vec<_>>(),
+                        "readonly": fixture
+                            .loaded_readonly_account_tags
+                            .iter()
+                            .map(|tag| fixture_base58_encode(&[*tag; 32]))
+                            .collect::<Vec<_>>(),
+                    }
+                }
+            });
+            let decoded = decode_transaction_value("fixture", result)
+                .map(|transaction| transaction.instructions);
+            match &fixture.expected {
+                ExpectedOutcome::Accept { instructions } => {
+                    let actual: Vec<ExpectedInstruction> = decoded
+                        .unwrap_or_else(|error| panic!("{}: {error}", fixture.name))
+                        .into_iter()
+                        .map(|instruction| ExpectedInstruction {
+                            program_tag: instruction.program_id[0],
+                            account_tags: instruction
+                                .accounts
+                                .iter()
+                                .map(|account| account[0])
+                                .collect(),
+                            data: instruction.data,
+                            top_level_index: instruction.top_level_index as u32,
+                            is_inner: instruction.stack_height != Some(1),
+                        })
+                        .collect();
+                    assert_eq!(actual, *instructions, "{}", fixture.name);
+                }
+                ExpectedOutcome::Reject => {
+                    assert!(decoded.is_err(), "{}", fixture.name);
+                }
+            }
+        }
     }
 
     #[test]
@@ -653,7 +640,7 @@ mod tests {
 
     #[test]
     fn failed_transaction_is_rejected_before_instruction_decoding() {
-        let parsed: GetTransactionResult = serde_json::from_value(json!({
+        let result = json!({
             "slot": 42,
             "transaction": { "message": {
                 // Deliberately malformed: decoding this key would fail.
@@ -668,10 +655,9 @@ mod tests {
                 "err": { "InstructionError": [0, "Custom"] },
                 "innerInstructions": []
             }
-        }))
-        .unwrap();
+        });
 
-        let transaction = decode_transaction_result("failed", parsed).unwrap();
+        let transaction = decode_transaction_value("failed", result).unwrap();
 
         assert!(transaction.instructions.is_empty());
         assert_eq!(transaction.slot, 42);
