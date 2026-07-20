@@ -25,6 +25,12 @@ import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
 import { buildKmsThresholdOverride, kmsRenderOptionsFor } from "./kms-core";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
+import {
+  sccacheBuildArgs,
+  sccacheBuildSecretIds,
+  sccacheComposeSecrets,
+  sccacheEnabled,
+} from "../utils/sccache";
 
 export type ComposeDoc = Record<string, unknown> & {
   services: Record<string, Record<string, unknown>>;
@@ -163,6 +169,40 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
   },
 };
 const localBuildSpecFor = (component: string, service: string) => COMPONENT_BUILD_SPECS[component]?.[service];
+
+/**
+ * Components whose Dockerfiles carry the sccache hook (the Rust workspace builds). Only these get
+ * the S3-cache build args + BuildKit secrets injected; Node/Solidity image builds (gateway/host
+ * contracts, test-suite) are left untouched.
+ */
+const SCCACHE_BUILD_COMPONENTS = new Set(["coprocessor", "kms-connector"]);
+
+/**
+ * Returns a build spec augmented with the sccache build args + secret references when sccache is
+ * enabled and the component's Dockerfile carries the hook. A no-op otherwise, so the generated
+ * compose is byte-identical when SCCACHE_BUCKET is unset. Clones the input so the shared
+ * COMPONENT_BUILD_SPECS entries are never mutated.
+ */
+const withSccacheBuild = (component: string, build: Record<string, unknown> | undefined) => {
+  if (!build || !sccacheEnabled() || !SCCACHE_BUILD_COMPONENTS.has(component)) {
+    return build;
+  }
+  const next = structuredClone(build);
+  const existingArgs = (next.args as Record<string, unknown> | undefined) ?? {};
+  next.args = { ...existingArgs, ...sccacheBuildArgs() };
+  const existingSecrets = Array.isArray(next.secrets) ? (next.secrets as string[]) : [];
+  next.secrets = [...existingSecrets, ...sccacheBuildSecretIds()];
+  return next;
+};
+
+/** Adds the top-level compose `secrets:` block for a Rust component when sccache is enabled. */
+const withSccacheSecrets = <T extends Record<string, unknown>>(component: string, doc: T): T => {
+  if (!sccacheEnabled() || !SCCACHE_BUILD_COMPONENTS.has(component)) {
+    return doc;
+  }
+  const existing = (doc.secrets as Record<string, unknown> | undefined) ?? {};
+  return { ...doc, secrets: { ...existing, ...sccacheComposeSecrets() } };
+};
 const CANONICAL_HOST_ONLY_SERVICES = new Set([
   "host-sc-trigger-keygen",
   "host-sc-trigger-crsgen",
@@ -374,7 +414,7 @@ const applyCoprocessorSource = (
 ) => {
   if (locallyBuilt) {
     service.image = retagLocal(service.image, localInstanceTag(instance.index));
-    service.build = localBuildSpecFor("coprocessor", serviceName);
+    service.build = withSccacheBuild("coprocessor", localBuildSpecFor("coprocessor", serviceName));
     return;
   }
   if (instance.source.mode === "registry") {
@@ -434,7 +474,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     }
   }
   next.services = services;
-  return next;
+  return withSccacheSecrets("coprocessor", next);
 };
 
 /**
@@ -466,7 +506,7 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
       next.env_file = [envFileValue];
       applyBuildPolicy(next, overridden.has(name));
       if (party === 1 && overridden.has(name)) {
-        const build = localBuildSpecFor("kms-connector", name);
+        const build = withSccacheBuild("kms-connector", localBuildSpecFor("kms-connector", name));
         if (build) {
           next.build = build;
         }
@@ -482,7 +522,7 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
       services[serviceName] = next;
     }
   }
-  return { services };
+  return withSccacheSecrets("kms-connector", { services });
 };
 
 /** Builds the generated compose override for one component. */
@@ -508,13 +548,13 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     }
     const next = structuredClone(service);
     applyBuildPolicy(next, true);
-    const build = localBuildSpecFor(component, name);
+    const build = withSccacheBuild(component, localBuildSpecFor(component, name));
     if (build) {
       next.build = build;
     }
     services[name] = next;
   }
-  return { services };
+  return withSccacheSecrets(component, { services });
 };
 
 /** Builds a host-node compose override for an extra (EVM) host chain. */
@@ -624,7 +664,7 @@ const buildExtraCoprocessorListenerOverride = async (
       services[cloneName] = adjusted;
     }
   }
-  return { services };
+  return withSccacheSecrets("coprocessor", { services });
 };
 
 /** Lists which components need generated compose overrides for a runtime plan. */

@@ -31,7 +31,9 @@ concurrency:
 jobs:
   solana-e2e:
     name: solana-e2e/full-vertical${{ matrix.reconstruct && '-reconstruct' || '' }}
-    runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb
+    # extras=s3-cache is the RunsOn S3 build-cache extra (same one main's docker-build runners use);
+    # it provisions the runner's access to the sccache S3 bucket wired into clean-e2e.sh below.
+    runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb/extras=s3-cache
     timeout-minutes: 120
     strategy:
       matrix:
@@ -118,7 +120,39 @@ jobs:
         # realpath-resolves that link to sdk/js-sdk/src and finds @noble/* by walking up from there.
         run: bun install --frozen-lockfile
 
+      - name: Cache host-side cargo builds (host-listener + live-client)
+        # setup-solana-side.sh compiles the host-listener (coprocessor/fhevm-engine/target) and the
+        # live-client (solana/scripts/e2e/live-client/target) natively on the runner, plus the
+        # shared cargo registry/git. Cache them so a cold runner reuses prior compilation. Same
+        # pinned action + key shape as solana-tests.yml, distinct `-solana-e2e-host-` key.
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            coprocessor/fhevm-engine/target
+            solana/scripts/e2e/live-client/target
+          key: ${{ runner.os }}-cargo-solana-e2e-host-${{ hashFiles('coprocessor/fhevm-engine/Cargo.lock', 'solana/scripts/e2e/live-client/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-solana-e2e-host-
+
       - name: Bring up fresh stack + Solana side (clean-e2e.sh)
+        # sccache S3 cache for the source-built Rust images (coprocessor + kms-connector). The
+        # bucket/region/prefix mirror main's publishing CI (zama-ai/ci-templates common-docker.yml)
+        # so builds share the same cache; the AWS creds reach docker as BuildKit secrets sourced
+        # from these env vars (fhevm-cli wires the compose `secrets:` plumbing). Keeping the creds in
+        # step-level env (not inline) is the zizmor-clean pattern for run steps.
+        env:
+          # Only set the bucket when BOTH S3-cache creds are actually present (they are empty on
+          # fork PRs / Dependabot, and one missing secret would activate sccache with a broken
+          # credential). Empty bucket -> fhevm-cli's sccacheEnabled() gate is false -> compose
+          # is byte-identical and the Dockerfile hook falls back to a plain build, so the whole chain
+          # degrades by design without relying on sccache's own handling of unusable S3 creds. This
+          # mirrors main's common-docker.yml, which passes the bucket only alongside the creds.
+          SCCACHE_BUCKET: ${{ secrets.AWS_ACCESS_KEY_S3_USER != '' && secrets.AWS_SECRET_KEY_S3_USER != '' && 'gh-actions-cache-eu-west-3' || '' }} # zizmor: ignore[secrets-outside-env] gates the bucket on both creds being present, same creds scoped to this step's env below
+          SCCACHE_REGION: eu-west-3
+          SCCACHE_S3_PREFIX: sccache/fhevm-coprocessor
+          AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 cache creds scoped to this step's env, same pattern as the registry logins above
+          AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 cache creds scoped to this step's env, same pattern as the registry logins above
         run: bash solana/scripts/e2e/clean-e2e.sh
 
       - name: Ensure @fhevm/sdk runtime deps resolve for full-vertical
