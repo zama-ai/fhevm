@@ -1118,23 +1118,54 @@ jobs:
         env:
           E2E_IMAGE: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e:${{ fromJSON(needs.resolve-tags.outputs.tags_json).test_suite }}
         run: |
-          values=$(mktemp --suffix=.yaml)
-          cp ci/preview-env/test-suite/values-test-suite-workflow-e2e.yaml "${values}"
-          NS="${NAMESPACE}" yq -i \
-            '(.additionalResources[] | select(.object.kind == "RoleBinding") | .object.subjects[0].namespace) = strenv(NS)' \
-            "${values}"
-          # The run-test template now lives on the shared WorkflowTemplate that both
-          # per-SDK Workflows reference, so patch the image there (once).
-          yq -i \
-            '(.additionalResources[] | select(.object.kind == "WorkflowTemplate") | .object.spec.templates[] | select(.name == "run-test") | .script.image) = strenv(E2E_IMAGE)' \
-            "${values}"
-          echo "Patched run-test image to: ${E2E_IMAGE}"
+          set -euo pipefail
+
+          # Patch the run-test image on the Workflow object(s) in a values file.
+          patch_image() {
+            yq -i \
+              '(.additionalResources[] | select(.object.kind == "Workflow") | .object.spec.templates[] | select(.name == "run-test") | .script.image) = strenv(E2E_IMAGE)' \
+              "$1"
+          }
+          wait_wf() {
+            local wf="$1" max_wait=7200 elapsed=0 interval=30 phase=""
+            while [[ $elapsed -lt $max_wait ]]; do
+              phase=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+              case "${phase}" in
+                Succeeded|Failed|Error) break ;;
+                *) echo "[${wf}] phase='${phase:-<none>}' (${elapsed}s/${max_wait}s)"; sleep "${interval}"; elapsed=$((elapsed + interval)) ;;
+              esac
+            done
+            echo "[${wf}] final phase: ${phase:-<timed out>}"
+          }
+
           # A prior run in a reused namespace may leave completed Workflows of the
-          # same names; delete both so this install re-triggers fresh runs.
+          # same names; delete both so these installs re-trigger fresh runs.
           kubectl delete workflow e2e-test-suite-fhevm-sdk e2e-test-suite-relayer-sdk \
             -n "${NAMESPACE}" --ignore-not-found
+
+          # Deploy the two SDK suites as separate helm releases, ONE AFTER ANOTHER,
+          # so they don't interleave on-chain txs against the shared contracts.
+          # Release 1 (@fhevm/sdk) also owns the shared workflow-runner RBAC that
+          # release 2 (@zama-fhe/relayer-sdk) reuses, so it MUST deploy first.
+          f1=$(mktemp --suffix=.yaml)
+          cp ci/preview-env/test-suite/values-test-suite-workflow-e2e.yaml "${f1}"
+          NS="${NAMESPACE}" yq -i \
+            '(.additionalResources[] | select(.object.kind == "RoleBinding") | .object.subjects[0].namespace) = strenv(NS)' \
+            "${f1}"
+          patch_image "${f1}"
+          echo "Deploying @fhevm/sdk workflow (image ${E2E_IMAGE})..."
           helm upgrade --install test-suite-workflow "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f "${values}"
+            -n "${NAMESPACE}" -f "${f1}"
+          wait_wf e2e-test-suite-fhevm-sdk
+
+          # Release 2 (@zama-fhe/relayer-sdk): no RBAC of its own, reuses release 1's.
+          f2=$(mktemp --suffix=.yaml)
+          cp ci/preview-env/test-suite/values-test-suite-workflow-relayer-sdk-e2e.yaml "${f2}"
+          patch_image "${f2}"
+          echo "Deploying @zama-fhe/relayer-sdk workflow (image ${E2E_IMAGE})..."
+          helm upgrade --install test-suite-workflow-relayer "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+            -n "${NAMESPACE}" -f "${f2}"
+          wait_wf e2e-test-suite-relayer-sdk
 
       - name: Wait for e2e workflow and build report
         id: e2e_report
@@ -1151,8 +1182,10 @@ jobs:
           KMS_CONNECTOR_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).kms_connector_gw_listener }}
         run: |
           set -euo pipefail
-          # SDK matrix: one Workflow per SDK (see values-test-suite-workflow-e2e.yaml).
-          # Wait on each and emit a per-SDK result table into a combined report.
+          # SDK matrix: one Workflow per SDK, deployed as two separate helm releases
+          # (values-test-suite-workflow-e2e.yaml + values-test-suite-workflow-relayer-sdk-e2e.yaml).
+          # Both are already terminal here (the deploy step waited on each); read
+          # their node statuses and emit a per-SDK result table into a combined report.
           wfs=(e2e-test-suite-fhevm-sdk e2e-test-suite-relayer-sdk)
           sdk_label() {
             case "$1" in

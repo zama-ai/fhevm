@@ -1,135 +1,38 @@
-# common chart overlay for the AUTOMATED e2e @fhevm/sdk test-suite run in the
-# fhevm e2e preview namespace. Unlike values-test-suite-e2e.yaml (a one-shot Job
-# that patches addresses then idles for manual `kubectl exec` runs), this deploys
-# an Argo Workflow that runs the whole e2e DAG unattended and reports results.
+# common chart overlay for the AUTOMATED e2e relayer-sdk test-suite run in the
+# fhevm e2e preview namespace. Companion to values-test-suite-workflow-e2e.yaml
+# (the @fhevm/sdk run): this file is a near-duplicate that runs the SAME e2e DAG
+# but with RELAYER_SDK_VERSION set, so instance.ts uses @zama-fhe/relayer-sdk
+# instead of @fhevm/sdk.
 #
-# SDK matrix: this file is the @fhevm/sdk half (RELAYER_SDK_VERSION unset =>
-# instance.ts sets useFhevmSdk=true). The @zama-fhe/relayer-sdk half lives in the
-# companion file values-test-suite-workflow-relayer-sdk-e2e.yaml (a near-duplicate
-# with RELAYER_SDK_VERSION set). They are deployed as TWO separate helm releases,
-# one after another, by pr-preview-deploy.yml (this fhevm-sdk release first), which
-# then posts a combined report to the PR. Running them serially as independent
-# releases avoids them contending on the shared contracts/KMS/relayer at once, and
-# sidesteps the WorkflowTemplate-ordering bug that broke the earlier single-file
-# approach (a workflowTemplateRef missing at first evaluation fails permanently).
+# Deployed as its OWN helm release (test-suite-workflow-relayer), one after the
+# fhevm-sdk release, by pr-preview-deploy.yml. It intentionally declares NO RBAC:
+# it reuses the workflow-runner ServiceAccount/Role/RoleBinding created by the
+# fhevm-sdk release (values-test-suite-workflow-e2e.yaml), which always deploys
+# first into the same namespace. Running the two suites as separate, sequential
+# releases avoids them contending on the shared contracts/KMS/relayer at once.
 #
-# This release ALSO owns the shared RBAC (workflow-runner ServiceAccount/Role/
-# RoleBinding) that the relayer-sdk release reuses - so it must deploy first.
-#
-# Deployed only when pr-preview-deploy.yml is run with automated_tests=true, as:
-#   helm upgrade --install test-suite-workflow \
-#     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
-#     -n <namespace> -f this-file
-#
-# Two dynamic bits are patched with yq at deploy time (see pr-preview-deploy.yml):
+# One dynamic bit is patched with yq at deploy time (see pr-preview-deploy.yml):
 #   - the run-test image tag (per-PR short-SHA / pinned test_suite tag)
-#   - the RoleBinding subject namespace (the per-PR namespace)
-# Every additionalResources object omits metadata.namespace so helm places it in
-# the release namespace; only the RoleBinding *subject* needs it spelled out.
-fullnameOverride: test-suite-workflow
+# There is no RoleBinding here, so no namespace placeholder to patch.
+fullnameOverride: test-suite-workflow-relayer
 
 # Raw K8s objects applied verbatim by the common chart (rendered through `tpl`,
 # hence the {{`{{...}}`}} escaping below to emit literal Argo placeholders).
 additionalResources:
-  # RBAC so the Workflow's controller-driven pods can create/read workflow
-  # task results and pod logs in this namespace.
-  - enabled: true
-    object:
-      apiVersion: v1
-      kind: ServiceAccount
-      metadata:
-        name: workflow-runner
-  - enabled: true
-    object:
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: Role
-      metadata:
-        name: workflow-runner-role
-      rules:
-        - apiGroups:
-            - argoproj.io
-          resources:
-            - workflows
-            - workflows/finalizers
-            - workflowtasksets
-            - workflowtaskresults
-            - workflowtemplates
-            - workflowtemplates/finalizers
-          verbs:
-            - create
-            - delete
-            - get
-            - list
-            - patch
-            - update
-            - watch
-        - apiGroups:
-            - ""
-          resources:
-            - pods
-            - pods/exec
-          verbs:
-            - create
-            - delete
-            - get
-            - list
-            - patch
-            - update
-            - watch
-        # pods/log is a read-only subresource, and the deploying CI principal
-        # (fhevm-ci-access, bound to the built-in `admin` ClusterRole) only holds
-        # get/list/watch on it - NOT create/delete/patch/update. Requesting those
-        # write verbs tripped RBAC privilege-escalation prevention ("attempting to
-        # grant RBAC permissions not currently held: pods/log ..."), so this rule
-        # is split out with just the read verbs Argo actually needs to fetch logs.
-        - apiGroups:
-            - ""
-          resources:
-            - pods/log
-          verbs:
-            - get
-            - list
-            - watch
-  - enabled: true
-    object:
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: RoleBinding
-      metadata:
-        name: workflow-runner-binding
-      roleRef:
-        apiGroup: rbac.authorization.k8s.io
-        kind: Role
-        name: workflow-runner-role
-      subjects:
-        - kind: ServiceAccount
-          name: workflow-runner
-          # Patched to the release namespace with yq at deploy time (a
-          # ServiceAccount subject on a namespaced RoleBinding must name it
-          # explicitly - it does not default to the binding's namespace).
-          namespace: PLACEHOLDER_NAMESPACE
-
-  # ====================================================================
-  # Workflow #1 - @fhevm/sdk (RELAYER_SDK_VERSION unset).
-  # ====================================================================
   - enabled: true
     object:
       apiVersion: argoproj.io/v1alpha1
       kind: Workflow
       metadata:
-        name: e2e-test-suite-fhevm-sdk
+        name: e2e-test-suite-relayer-sdk
         labels:
           app: fhevm-test-suite
-          sdk: fhevm-sdk
+          sdk: relayer-sdk
       spec:
         serviceAccountName: workflow-runner
-        # Kept under the deploy job's own timeout budget (see pr-preview-deploy.yml):
-        # 8 tests run sequentially and each recompiles the contracts, so this is
-        # generous but bounded rather than the reference's 2h.
         activeDeadlineSeconds: 7800  # 130m
         ttlStrategy:
           secondsAfterCompletion: 86400  # keep 1 day for post-mortem
-        # Pin to the coprocessor nodepool, same as the coprocessor workers - the
-        # only nodes tainted for this workload in the preview cluster.
         tolerations:
         - key: karpenter.sh/nodepool
           effect: NoSchedule
@@ -405,21 +308,18 @@ additionalResources:
                     configMapKeyRef:
                       name: host-sc-addresses
                       key: protocol_config.address
-                # Single DEPLOYER_PRIVATE_KEY for all tests: Hardhat account #0
-                # (0xac09...), the FINAL host/ACL owner. host-contracts + trigger-keygen
-                # deploy/keygen/crsgen as #9, then host-trigger-keygen transfers ACL
-                # ownership #9 -> #0 after crsgen, so this.deployer (#0) == ACL.owner() (#0)
-                # and the HCU block-cap owner-only setters succeed. Only the HCU test reads
-                # this key (this.deployer); every other test signs as the MNEMONIC-derived
-                # signers (alice..eve = #0..#4) and ignores it. NOTE: because #0 == alice,
-                # HCU's "reject setHCUPerBlock from non-owner" subtest will NOT revert and
-                # will fail - accepted trade-off for keeping the e2e deployer on #0.
+                # See Workflow #1 for the full DEPLOYER_PRIVATE_KEY rationale (#0 is
+                # the final ACL owner after the #9 -> #0 transfer in host-trigger-keygen).
                 - name: DEPLOYER_PRIVATE_KEY
                   value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
                 - name: RELAYER_URL
                   value: "http://relayer:3000/v2"
-                # RELAYER_SDK_VERSION deliberately NOT set here: instance.ts then sets
-                # useFhevmSdk=true, exercising the @fhevm/sdk code path.
+                # Non-empty => instance.ts uses the @zama-fhe/relayer-sdk code path.
+                # NOTE: this only toggles the code path at runtime; the actual
+                # relayer-sdk version tested is whatever the image baked at build time
+                # (Dockerfile ARG RELAYER_SDK_VERSION).
+                - name: RELAYER_SDK_VERSION
+                  value: "0.4.4"
               resources:
                 requests:
                   memory: "1Gi"
@@ -428,10 +328,6 @@ additionalResources:
                   memory: "2Gi"
                   cpu: "2"
 
-          # In-cluster pass/fail summary (also surfaced to the PR comment by the
-          # deploy workflow). Slack posting from the reference is dropped: the
-          # preview namespace has no webhook secret, and reporting is done from
-          # GitHub Actions instead.
           - name: summary-report
             inputs:
               parameters:
@@ -502,9 +398,6 @@ additionalResources:
                 echo "- Success Rate: $success_rate%"
                 echo "- Total Execution Time: $total_time seconds"
                 echo "=========================================="
-
-                # Summary reporting always succeeds; per-test pass/fail is what
-                # the deploy workflow reads from the workflow node statuses.
                 exit 0
 
         # Credentials for pulling the private test-suite image.
