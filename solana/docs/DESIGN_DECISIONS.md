@@ -1692,3 +1692,53 @@ depth (or `t>=9`) needs the scratch-account two-transaction fallback reserved in
 
 Relates to DD-007 (input verification model) and closes the FUTURE_DESIGN §1 / EVM_PARITY "single
 coprocessor signer at threshold 1" fragile item.
+
+## DD-042: Confidential Vaults Are A Batcher-Gateway In Front Of A Public Share-Mint Vault
+
+Confidential yield on Solana is built as a **confidential batcher in front of an ordinary public
+vault**, not as a vault whose own accounting is encrypted. The batcher collects encrypted deposits,
+sums them homomorphically, and reveals **only the batch total**; that one public number is deposited
+into a standard share-mint vault (PDA authority, SPL share mint, share price = assets / shares,
+yield as share-price appreciation — the shape Kamino/Jupiter/Meteora/LSTs all use). Per-user share
+distribution is `encrypted(deposit) x public batch rate` — the share-price division happens once, on
+the plaintext aggregate. Ciphertext-by-ciphertext division is never needed anywhere in the flow.
+
+This mirrors the architecture Zama shipped on Ethereum (confidential batcher over a Morpho ERC-4626
+vault) for the same reason it was chosen there: a natively confidential vault needs encrypted
+division for share pricing, which FHE cannot do efficiently, while an aggregate-only reveal
+preserves individual amount privacy at near-zero encrypted-math cost. Ported as *intent*, not
+mechanics: where the EVM join is a token-side `transferAndCall` hook, Solana inverts control — the
+batcher's `join` CPIs the confidential transfer itself (programs cannot react to incoming
+transfers); where the EVM aggregate reveal is a gateway callback, ours is the existing pull-shaped
+burn-redemption certificate (`confidential_burn` -> `request_burn_redemption` -> KMS-certified
+`redeem_burned_amount_secp`, DD-040 family) — the burn certificate *is* the aggregate decrypt, no
+separate reveal instruction.
+
+Load-bearing mechanics, all pre-existing host semantics (verified, no host changes): the transfer's
+recipient rule already places the receiving account's owner in the `transferred_amount` output
+audience, so the batcher PDA gains read admission on the deposit handle **by construction**; the
+batcher re-materializes each deposit into its own batcher-owned lineage in the same join transaction
+(audience `{user, batcher}`) because input admission pins `current_handle` and the user's
+`transferred_amount` lineage is superseded by their next transfer. Each batch gets its **own token
+account**, so the burned/revealed total is exactly that batch's sum (the EVM code documents the
+inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Finalized/Canceled with
+permissionless dispatch/settle/claim and an exact-refund `quit` — no operator custody of principal.
+
+Deliberate non-goals, carrying the EVM team's recorded lessons: **no participant-count gates**
+(trivially defeated by one actor joining N times with encrypted zeros; a single-participant batch
+reveals that participant's amount and we document it instead of gating it), **no protocol-level
+noise injection**, **no action that branches on encrypted state** (push-only flow; reactive designs
+are probeable), and **no reward/incentive machinery** (the EVM campaign's dominant operational pain;
+demo yield is simulated by donating underlying to the vault). The demo vault is new, deliberately
+minimal code whose instruction interface mirrors Jupiter Earn's and is isolated behind one CPI
+module in the batcher — Solana has no adopted vault interface standard (no ERC-4626 equivalent), so
+compatibility means matching the prevailing shape, not importing a program.
+
+The only confidential-token addition the flow needs is `confidential_burn_from_value` (burn an
+existing handle; today burn only accepts a fresh coprocessor attestation) — the burn-side analog of
+the existing-handle transfer, with the same aliased-account dedup applied from day one (burning an
+entire balance aliases the amount lineage with the balance lineage).
+
+Didactic companion: `CONFIDENTIAL_VAULTS.md`. Relates to DD-039 (HCU metering identity), DD-040
+(pull-oracle public decrypt), DD-041 (packet envelope — batch transactions stay within the measured
+fit table).
