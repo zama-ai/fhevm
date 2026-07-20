@@ -1,0 +1,26 @@
+{
+  "deposit": {
+    "compute_units": 14814,
+    "unique_accounts": 10,
+    "instruction_data_bytes": 16,
+    "cpi_instructions": 2,
+    "total_cpi_instruction_data_bytes": 19,
+    "max_cpi_instruction_data_bytes": 10
+  },
+  "harvest": {
+    "compute_units": 7070,
+    "unique_accounts": 7,
+    "instruction_data_bytes": 16,
+    "cpi_instructions": 1,
+    "total_cpi_instruction_data_bytes": 10,
+    "max_cpi_instruction_data_bytes": 10
+  },
+  "withdraw": {
+    "compute_units": 14836,
+    "unique_accounts": 10,
+    "instruction_data_bytes": 16,
+    "cpi_instructions": 2,
+    "total_cpi_instruction_data_bytes": 19,
+    "max_cpi_instruction_data_bytes": 10
+  }
+}

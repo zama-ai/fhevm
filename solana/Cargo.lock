@@ -346,8 +346,11 @@ checksum = "0b8005eef3a48a9a8cb21b126ae3bb252647e353afe6ef7f19e545177801c841"
 dependencies = [
  "anchor-lang",
  "spl-associated-token-account-interface",
+ "spl-pod",
  "spl-token-2022-interface",
+ "spl-token-group-interface",
  "spl-token-interface",
+ "spl-token-metadata-interface",
 ]
 
 [[package]]
@@ -1174,6 +1177,14 @@ dependencies = [
  "darling_core",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "demo-vault"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
 ]
 
 [[package]]
@@ -4960,6 +4971,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "confidential-token",
+ "demo-vault",
  "k256",
  "mollusk-svm",
  "mollusk-svm-programs-token",

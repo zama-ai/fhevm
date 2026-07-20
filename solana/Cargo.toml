@@ -6,6 +6,7 @@ members = [
     "crates/zama-solana-acl",
     "programs/confidential-deposit-app",
     "programs/confidential-token",
+    "programs/demo-vault",
     "programs/zama-host",
     "runtime-tests",
 ]
