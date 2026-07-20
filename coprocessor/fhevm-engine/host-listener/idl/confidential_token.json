@@ -186,6 +186,195 @@
       ]
     },
     {
+      "name": "confidential_burn_from_value",
+      "docs": [
+        "Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
+        "received handle) instead of a freshly attested client-side encryption — the burn-side analog",
+        "of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn a",
+        "batch's computed encrypted total, then requests the KMS burn certificate. The signing owner",
+        "must be in the amount value's subject set (the token spend gate); the amount is spent",
+        "read-only, and the burned-amount output is born publicly decryptable exactly as in",
+        "`confidential_burn`, so `redeem_burned_amount` consumes it unchanged."
+      ],
+      "discriminator": [
+        28,
+        103,
+        140,
+        245,
+        220,
+        114,
+        34,
+        179
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Token owner and burn authority. Must be in `amount_value`'s subject set (the spend gate).",
+            "Not `mut`: rent for the burned-amount lineage's first bind is paid by `payer`, so the owner",
+            "may be a program PDA (the batcher) that only authorizes the burn via `invoke_signed`."
+          ],
+          "signer": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Pays rent for the burned-amount lineage on its first bind."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint whose encrypted total supply is decreased."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_account",
+          "docs": [
+            "Token account whose balance is decreased."
+          ],
+          "writable": true
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "total_supply_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  116,
+                  97,
+                  108,
+                  45,
+                  115,
+                  117,
+                  112,
+                  112,
+                  108,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "balance_value",
+          "docs": [
+            "Stable balance lineage; read for the current handle and superseded by this eval."
+          ],
+          "writable": true
+        },
+        {
+          "name": "total_supply_value",
+          "docs": [
+            "Stable total-supply lineage; read for the current handle and superseded by this eval."
+          ],
+          "writable": true
+        },
+        {
+          "name": "burned_amount_value",
+          "docs": [
+            "as in [`ConfidentialBurn`]; created on the account's first burn, superseded in place",
+            "thereafter to each burn's own delta (DD-036 / Vector 2). This is the same output shape",
+            "`redeem_burned_amount` later consumes — only where the amount comes from differs."
+          ],
+          "writable": true
+        },
+        {
+          "name": "amount_value",
+          "docs": [
+            "The existing encrypted amount to burn: a computed or received `euint64` handle. Read-only",
+            "durable operand — never superseded, never consumed. Its address is the canonical PDA of its",
+            "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a lineage from any app",
+            "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
+          ]
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used for FHE operations."
+          ],
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for ACL account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. Supplied by an untrusted mint under a",
+            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "canonical `[\"hcu-trusted\", compute_signer]` PDA. Present + valid bypasses the cap; absent",
+            "means the mint is metered."
+          ],
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "confidential_transfer",
       "docs": [
         "Transfers an encrypted amount by rotating the sender and recipient balance handles."
