@@ -53,6 +53,10 @@ on:
         description: "Version of the coprocessor Helm chart"
         required: true
         default: "0.13.0"
+      coprocessor_infra_chart_version:
+        description: "Version of the coprocessor-infra Helm chart"
+        required: true
+        default: "0.6.5"
       nb_coprocessor:
         description: "Number of coprocessor parties to deploy - e.g. 1, 3 or 5"
         required: true
@@ -81,10 +85,14 @@ on:
         description: "Image tag for the relayer/relayer-migrate images (same override rule as host_contracts_version above)"
         required: true
         default: "v0.13.0"
+      relayer_sdk_version:
+        description: "Version of the relayer-sdk to test in the e2e test-suite workflow"
+        required: true
+        default: "0.4.4"
       test_suite_version:
         description: "Image tag for the test-suite image (same override rule as host_contracts_version above) - only matters when build_images=false, see env.TEST_SUITE_VERSION's comment"
         required: true
-        default: "v0.13.0"
+        default: "b858525"
       common_chart_version:
         description: "Version of the generic `common` Helm chart, used for postgres-*, relayer-migrate, relayer and test-suite alike"
         required: true
