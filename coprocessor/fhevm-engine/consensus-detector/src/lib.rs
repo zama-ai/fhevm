@@ -441,17 +441,17 @@ async fn consensus_pass(
     s3_urls: &Arc<RwLock<Vec<String>>>,
     host: &mut ConsensusTrack,
     gateway: &mut ConsensusTrack,
-    ws: &mut WindowState,
+    window_state: &mut WindowState,
     commitment_timeout: Duration,
 ) -> Result<(), Error> {
     let window = active_upgrade_window(pool).await?;
-    if ws.window != window {
+    if window_state.window != window {
         host.reset();
         gateway.reset();
         // The upgrade window changed, so reset the timeout for the new one.
-        ws.timeout_deadline = None;
-        ws.timeout_emitted = false;
-        ws.window = window;
+        window_state.timeout_deadline = None;
+        window_state.timeout_emitted = false;
+        window_state.window = window;
     }
     let Some((start, end)) = window else {
         return Ok(());
@@ -484,13 +484,13 @@ async fn consensus_pass(
     // If we reached the last block but didn't agree in time, give up so the
     // upgrade can be rerun.
     let both_anchored = host.anchor_emitted && gateway.anchor_emitted;
-    if !ws.timeout_emitted && !both_anchored {
+    if !window_state.timeout_emitted && !both_anchored {
         // Start the clock once we reach the last block (chain_id is 0 until then).
-        if ws.timeout_deadline.is_none()
+        if window_state.timeout_deadline.is_none()
             && host.chain_id != 0
             && host_reached_end_block(pool, host.chain_id, end).await?
         {
-            ws.timeout_deadline = Some(Instant::now() + commitment_timeout);
+            window_state.timeout_deadline = Some(Instant::now() + commitment_timeout);
             info!(
                 host_chain_id = host.chain_id,
                 end_block = end,
@@ -499,7 +499,10 @@ async fn consensus_pass(
             );
         }
 
-        if ws.timeout_deadline.is_some_and(|d| Instant::now() >= d) {
+        if window_state
+            .timeout_deadline
+            .is_some_and(|d| Instant::now() >= d)
+        {
             warn!(
                 host_chain_id = host.chain_id,
                 start_block = start,
@@ -518,7 +521,7 @@ async fn consensus_pass(
                 },
             )
             .await?;
-            ws.timeout_emitted = true;
+            window_state.timeout_emitted = true;
         }
     }
 

@@ -775,6 +775,7 @@ pub async fn run_all(
             client.clone(),
             events_tx.clone(),
             stack_mode.clone(),
+            start_block_state.clone(),
         )
         .await?,
     );
