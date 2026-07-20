@@ -46,17 +46,20 @@ pub const EVENT_DRY_RUN_ROLLED_BACK: &str = "event_dry_run_rolled_back";
 pub const GCS_NOT_ACTIVATED: i64 = -1;
 
 /// Pause flag for the tfhe/sns workers: run from `start_block` while dry-running,
-/// pause on rollback, otherwise unchanged.
+/// keep the released value through cutover (`UpgradeAuthorized`/`LIVE`), pause on
+/// any other state — including a fresh re-proposal (`UpgradeActivated`) that races
+/// in after a rollback, so the worker never runs before the new `DryRunStarted`.
 fn host_gate_value(state: &str, start_block: Option<i64>, current: i64) -> i64 {
     match state {
         "DryRunStarted" => start_block.unwrap_or(current),
-        "PAUSED" => GCS_NOT_ACTIVATED,
-        _ => current,
+        "UpgradeAuthorized" | "LIVE" => current,
+        _ => GCS_NOT_ACTIVATED,
     }
 }
 
 /// Pause flag for the zkproof-worker: run from `gw_start_block` once the Gateway
-/// gate clears, pause on rollback, otherwise unchanged.
+/// gate clears, keep the released value through cutover, pause on any other state
+/// (including a racing re-proposal before its gate clears).
 fn gw_gate_value(
     state: &str,
     gw_dry_run_started: bool,
@@ -65,10 +68,10 @@ fn gw_gate_value(
 ) -> i64 {
     if gw_dry_run_started {
         gw_start_block.unwrap_or(current)
-    } else if state == "PAUSED" {
-        GCS_NOT_ACTIVATED
-    } else {
+    } else if state == "UpgradeAuthorized" || state == "LIVE" {
         current
+    } else {
+        GCS_NOT_ACTIVATED
     }
 }
 
@@ -242,6 +245,10 @@ mod tests {
             200
         );
         assert_eq!(gw_gate_value("LIVE", true, Some(200), 200), 200);
+        assert_eq!(
+            gw_gate_value("UpgradeActivated", false, Some(200), 100),
+            GCS_NOT_ACTIVATED
+        );
     }
 
     /// Same lifecycle for the host gate (tfhe/sns workers).
@@ -265,5 +272,9 @@ mod tests {
             200
         );
         assert_eq!(host_gate_value("LIVE", Some(200), 200), 200);
+        assert_eq!(
+            host_gate_value("UpgradeActivated", Some(200), 100),
+            GCS_NOT_ACTIVATED
+        );
     }
 }
