@@ -145,9 +145,11 @@ flowchart TD
 
 ### Burn → Redeem (Vector-2 closed, DD-036)
 
-Pull-based two-phase, mirroring OZ `ConfidentialFungibleTokenERC20Wrapper` unwrap→finalizeUnwrap. The
-burned delta is born public in the burn's `fhe_eval` CPI; redemption authorizes by the pinned handle's
-public-decrypt proof, so it stays valid after later burns supersede the lineage.
+Pull-based, mirroring OZ `ConfidentialFungibleTokenERC20Wrapper` unwrap→finalizeUnwrap. The burned
+delta is born public in the burn's `fhe_eval` CPI; redemption is a single `redeem_burned_amount` that
+consumes the stateless host `verify_public_decrypt` verifier (the request-witness lifecycle was
+dissolved in fhevm-internal#1763), authorizing by the pinned handle's public-decrypt proof against the
+current KMS context, so it stays valid after later burns supersede the lineage.
 
 ```mermaid
 sequenceDiagram
@@ -158,12 +160,11 @@ sequenceDiagram
     U->>CT: confidential_burn(amount)
     CT->>ZH: fhe_eval sub → durable output make_public=true
     ZH-->>ZH: rewrite current_handle,<br/>append PublicDecryptLeaf(new handle)
-    U->>CT: request_burn_redemption (pins burned-amount handle)
-    Note over CT: replay-marker PDA created (consume-once)
-    KMS-->>KMS: decrypt pinned handle (public proof),<br/>sign cleartext cert
-    U->>CT: redeem_burned_amount_secp(cleartext, cert, MMR proof)
-    CT->>ZH: authorize_public(pinned handle, proof) vs peaks
-    CT-->>U: release underlying (over-collateralized), mark consumed
+    KMS-->>KMS: decrypt burned handle (public proof),<br/>sign cleartext cert
+    U->>CT: redeem_burned_amount(burned_handle, cleartext, cert, MMR proof)
+    CT->>ZH: verify_public_decrypt (current KMS context + proof vs peaks)
+    Note over CT: replay-marker PDA created (consume-once, permanent)
+    CT-->>U: release underlying (over-collateralized), mark paid out
 ```
 
 ### Event transport + off-chain reconstruction (DD-037)

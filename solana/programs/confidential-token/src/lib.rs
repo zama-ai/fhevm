@@ -30,16 +30,14 @@ pub use constants::*;
 pub use errors::*;
 /// Re-export events and instruction argument enums for generated clients and tests.
 pub use events::*;
-pub use instructions::common::MmrInclusionProof;
 /// The random-amount PoC helper account context (gated behind `poc`, see below).
 #[cfg(feature = "poc")]
 pub use instructions::CreateRandomAmount;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
-    CloseConsumedBurnRedemptionRequest, CloseExpiredBurnRedemptionRequest, ConfidentialBurn,
-    ConfidentialTransfer, ConfidentialTransferFromValue, DiscloseSecp, InitializeMint,
-    InitializeTokenAccount, RedeemBurnedAmountSecp, RequestBurnRedemption, WrapUsdc,
+    ConfidentialBurn, ConfidentialTransfer, ConfidentialTransferFromValue, DiscloseSecp,
+    InitializeMint, InitializeTokenAccount, RedeemBurnedAmount, WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
@@ -117,16 +115,6 @@ pub mod confidential_token {
         instructions::confidential_transfer_from_value(ctx)
     }
 
-    /// Requests KMS certification for redeeming a burned encrypted amount.
-    pub fn request_burn_redemption(
-        ctx: Context<RequestBurnRedemption>,
-        burned_handle: [u8; 32],
-        request_nonce: [u8; 32],
-        expires_slot: u64,
-    ) -> Result<()> {
-        instructions::request_burn_redemption(ctx, burned_handle, request_nonce, expires_slot)
-    }
-
     /// Consumes a KMS public-decrypt certificate through the stateless host verifier and emits a
     /// token-scoped disclosed event. See `instructions::disclose_secp` for the act-once semantics
     /// (idempotent by design — no on-chain replay marker).
@@ -141,17 +129,19 @@ pub mod confidential_token {
         instructions::disclose_secp(ctx, handle, cleartext, signatures, extra_data, proof)
     }
 
-    /// Gateway-compatible redemption: verifies the KMS `PublicDecryptVerification`
-    /// EIP-712 certificate on-chain via secp256k1_recover against the active KMS context.
-    pub fn redeem_burned_amount_secp(
-        ctx: Context<RedeemBurnedAmountSecp>,
+    /// Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.
+    /// Verifies the KMS `PublicDecryptVerification` certificate against the CURRENT KMS context plus
+    /// an exact-handle MMR public-decrypt proof, then pays out `cleartext_amount` and writes the
+    /// permanent per-handle `BurnRedemption` marker. See `instructions::redeem_burned_amount`.
+    pub fn redeem_burned_amount(
+        ctx: Context<RedeemBurnedAmount>,
         burned_handle: [u8; 32],
         cleartext_amount: u64,
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
-        proof: MmrInclusionProof,
+        proof: zama_host::instructions::MmrInclusionProof,
     ) -> Result<()> {
-        instructions::redeem_burned_amount_secp(
+        instructions::redeem_burned_amount(
             ctx,
             burned_handle,
             cleartext_amount,
@@ -159,19 +149,5 @@ pub mod confidential_token {
             extra_data,
             proof,
         )
-    }
-
-    /// Closes a consumed burn-redemption request witness.
-    pub fn close_consumed_burn_redemption_request(
-        ctx: Context<CloseConsumedBurnRedemptionRequest>,
-    ) -> Result<()> {
-        instructions::close_consumed_burn_redemption_request(ctx)
-    }
-
-    /// Closes an expired, unconsumed burn-redemption request witness.
-    pub fn close_expired_burn_redemption_request(
-        ctx: Context<CloseExpiredBurnRedemptionRequest>,
-    ) -> Result<()> {
-        instructions::close_expired_burn_redemption_request(ctx)
     }
 }

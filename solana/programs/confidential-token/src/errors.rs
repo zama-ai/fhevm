@@ -126,4 +126,11 @@ pub enum ConfidentialTokenError {
     /// The handle proven public by the host verifier did not equal the caller-pinned handle.
     #[msg("disclosed handle does not match the pinned handle")]
     DisclosedHandleMismatch,
+    /// The redeem signer is on the host deny-list, so it cannot cash out.
+    #[msg("redemption subject is denied")]
+    RedemptionSubjectDenied,
+    /// The redeem deny-list record was missing, malformed, or not the canonical PDA for the signer,
+    /// or one was supplied while the host grant deny-list is disabled.
+    #[msg("redemption deny-list record is invalid")]
+    RedemptionDenyRecordInvalid,
 }

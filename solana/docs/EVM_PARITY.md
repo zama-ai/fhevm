@@ -39,7 +39,7 @@ Design rationale for the divergences below is recorded in
 | `confidentialBalanceOf(account)` view | encrypted balance handle | `ConfidentialTokenAccount.balance_encrypted_value` points to the stable `EncryptedValue` lineage whose `current_handle` is read off-chain | **MET** (DIVERGENCE: account read) |
 | `name/symbol/decimals(=6)/contractURI` views | metadata | mint/app config; `wrap_usdc` ties decimals to the underlying SPL mint | **DIVERGENCE** (app config / off-chain reads) |
 | `_mint(to, amount)` | increase total supply + credit | `initialize_mint` (total-supply lineage birth) + `wrap_usdc` (escrow SPL USDC → trivial-encrypt → add to balance) + `initialize_token_account` (zero-balance lineage birth) | **DIVERGENCE** — minting modeled as SPL wrapping (RFC 024 wrap flow; real SPL-token boundary) |
-| `_burn(from, amount)` | decrease balance + total supply | `confidential_burn` (supersede balance + total-supply lineages) + `redeem_burned_amount_secp` through a `request_burn_redemption` witness (release underlying from vault — KMS-cert gated, public-decrypt gated) | **MET** + Solana-only redeem leg (no ERC7984 analogue; wrapper needs underlying release) |
+| `_burn(from, amount)` | decrease balance + total supply | `confidential_burn` (supersede balance + total-supply lineages) + `redeem_burned_amount` consuming the stateless host `verify_public_decrypt` (release underlying from vault — KMS-cert gated against the current context, public-decrypt gated, permanent replay marker) | **MET** + Solana-only redeem leg (no ERC7984 analogue; wrapper needs underlying release) |
 | `_update` safe-math (`tryIncrease`/`tryDecrease`, `select`, allow/allowThis) | overflow/underflow-safe FHE balance update, conditional transfer of `select(success, amount, 0)` | `confidential-token/src/fhe.rs` + `fhe_eval` Binary/Ternary steps (add/sub/ge/select — the standalone `fhe_binary_op*`/`fhe_ternary_op*` instructions were removed, DD-032) + output binding into `EncryptedValue` | **PARTIAL** — `tryDecrease` reproduced (transfer/burn debit: `ge` → `sub` → `select(success, candidate, balance)`); `tryIncrease` NOT reproduced — the wrap/mint total-supply increase and the recipient credit use a plain `add`. Total-supply overflow is instead bounded by the 1:1 SPL backing (a real `u64` mint), per the `_mint` DIVERGENCE above. Output ACL via authorized producer paths |
 | `FHE.allow / allowThis` | durable ACL grant to user / contract | output-binding producer paths (create or supersede an `EncryptedValue` with subjects, DD-032) + `allow_subjects` (append) | **MET** |
 | `FHE.allowTransient(transferred, sender)` | transaction-local grant | instruction-local `AllowedLocal` value within one `fhe_eval`, plus CPI signer propagation within one instruction | **DIVERGENCE** (no tstore; DD-008) |
@@ -168,10 +168,11 @@ connector's canonical-PDA + MMR-proof verification (DD-032; materiality now live
 3. **No per-block HCU / complexity metering.** The host caps total and critical-path HCU per
    `fhe_eval` plan (`HostConfig::max_hcu_per_tx` / `max_hcu_depth_per_tx`, `0` = off) plus the Solana
    compute budget, but there is no EVM-style per-block `HCULimit` plane. Relevant to DoS/cost-bounding.
-4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification.** Disclosure is now the
-   stateless `disclose_secp` → host `verify_public_decrypt` path (no request accounts, DD-040);
-   burn-redemption still uses a `BurnRedemptionRequest` witness account. The residual risk is
-   off-chain integration of KMS certificate publication before the flow is end-to-end production ready.
+4. **On-chain disclosure/redemption uses secp256k1 KMS-cert verification.** Both disclosure and
+   burn-redemption are now stateless consumers of the host `verify_public_decrypt` verifier (no
+   request-witness accounts): `disclose_secp` (DD-040) and `redeem_burned_amount`
+   (fhevm-internal#1763). The residual risk is off-chain integration of KMS certificate publication
+   before the flow is end-to-end production ready.
 5. **The confirmed Yellowstone listener is not wired into the EVM reorg substrate**
    (DD-025/DD-028): it reconstructs instruction effects and inserts directly, bypassing the
    block-status machine. This is accepted for authorization because KMS revalidates confirmed live

@@ -14,6 +14,8 @@ const TOKEN_COMMON: &str =
     include_str!("../../programs/confidential-token/src/instructions/common.rs");
 const TOKEN_WRAP_USDC: &str =
     include_str!("../../programs/confidential-token/src/instructions/wrap_usdc.rs");
+const TOKEN_REDEEM: &str =
+    include_str!("../../programs/confidential-token/src/instructions/redeem_burned_amount.rs");
 const IDL_CHECK_SCRIPT: &str = include_str!("../../scripts/check-zama-host-idl.sh");
 const SOLANA_ABI_CHECK: &str = include_str!("../../scripts/check_solana_abi.py");
 const HOST_LISTENER_BUILD: &str =
@@ -116,8 +118,8 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         "confidential_transfer amount is an attested external input, not a durable amount_compute_acl account"
     );
 
-    // There is no per-mint verifier-set rotation surface; the burn-redemption request pins a
-    // KMS context id and the response verifies a secp256k1 cert against that context.
+    // There is no per-mint verifier-set rotation surface; redemption verifies a secp256k1 KMS cert
+    // against the host's current KMS context through the stateless `verify_public_decrypt` CPI.
     for removed in ["update_mint_verifier_sets", "migrate_mint_verifier_sets"] {
         assert!(
             !instructions.iter().any(|name| name == removed),
@@ -150,22 +152,44 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
         "disclose_amount_secp",
         "close_consumed_disclosure_request",
         "close_expired_disclosure_request",
+        // The BurnRedemptionRequest witness lifecycle was dissolved (fhevm-internal#1763): redeem
+        // is now the thin `redeem_burned_amount` consumer of the stateless host verifier.
+        "request_burn_redemption",
+        "redeem_burned_amount_secp",
+        "close_consumed_burn_redemption_request",
+        "close_expired_burn_redemption_request",
     ] {
         assert!(
             !instructions.iter().any(|name| name == removed),
-            "production token IDL must not expose dissolved disclosure instruction `{removed}`"
+            "production token IDL must not expose dissolved instruction `{removed}`"
         );
     }
     assert!(
         instructions.iter().any(|name| name == "disclose_secp"),
         "token IDL must expose the thin `disclose_secp` consumer"
     );
-    // The burn-redemption witness still pins a KMS context id (its migration is deferred).
     assert!(
-        type_field_names(&idl, "BurnRedemptionRequest")
+        instructions
             .iter()
-            .any(|field| field == "kms_context_id"),
-        "BurnRedemptionRequest must pin a kms_context_id"
+            .any(|name| name == "redeem_burned_amount"),
+        "token IDL must expose the thin `redeem_burned_amount` consumer"
+    );
+    // The BurnRedemptionRequest witness account is gone; the permanent per-handle replay marker
+    // remains as the sole durable token redemption state.
+    assert!(
+        !names(&idl, "accounts")
+            .iter()
+            .any(|name| name == "BurnRedemptionRequest")
+            && !names(&idl, "types")
+                .iter()
+                .any(|name| name == "BurnRedemptionRequest"),
+        "BurnRedemptionRequest account must be removed from the token IDL"
+    );
+    assert!(
+        names(&idl, "accounts")
+            .iter()
+            .any(|name| name == "BurnRedemption"),
+        "token IDL must retain the permanent BurnRedemption replay marker"
     );
 
     let source = format!("{TOKEN_LIB}\n{TOKEN_COMMON}");
@@ -245,44 +269,49 @@ fn token_idl_drops_transfer_and_call_callback_surface() {
 }
 
 #[test]
-fn token_request_witnesses_bind_handle_lineage_and_secp_kms_context() {
-    let source = TOKEN_COMMON;
-    // The surviving burn-redemption request witness binds the request to its accounts, the burned
-    // handle and its `EncryptedValue` lineage account (which replaced the deleted
-    // `HandleMaterialCommitment` material_* fields), host config, chain id, and the pinned KMS
-    // context id; the response then verifies a secp256k1 KMS cert. (The DisclosureRequest witness was
-    // dissolved in fhevm-internal#1704; disclosure now consumes the stateless host verifier directly.)
+fn token_redeem_consumes_stateless_verifier_with_lineage_and_deny_binding() {
+    // The BurnRedemptionRequest witness lifecycle was dissolved (fhevm-internal#1763): redeem is now
+    // a single thin consumer that binds the burned lineage (`assert_burned_amount_lineage`), CPIs the
+    // stateless host `verify_public_decrypt` against the CURRENT KMS context, asserts the certified
+    // cleartext equals the claimed amount, consults the deny-list explicitly at payout, and writes
+    // the permanent per-handle replay marker.
     for required in [
-        "request_hash",
-        "kms_context_id",
-        "request.burned_handle == burned_handle",
-        "request.burned_encrypted_value == burned_encrypted_value",
-        "host_config",
-        "chain_id",
-        "assert_kms_public_decrypt_cert_for_request",
-        "extract_kms_context_id",
-        "verify_kms_public_decrypt",
+        "assert_burned_amount_lineage",
+        "fhe::verify_public_decrypt",
+        "assert_redeem_subject_not_denied",
+        "kms_decrypted_result_bytes(cleartext_amount)",
+        "b\"burn-redemption\"",
+        "transfer_checked",
     ] {
         assert!(
-            source.contains(required),
-            "token request/consume path must bind `{required}`"
+            TOKEN_REDEEM.contains(required),
+            "token redeem consumer must bind `{required}`"
         );
     }
-    // The dead Ed25519 verifier-set message helpers and the removed
-    // handle-material commitment surface must be gone.
+    // The dissolved witness surface (request hash, request-time KMS context pin, witness/cert asserts)
+    // must be gone from the shared helpers and the redeem path.
+    let source = format!("{TOKEN_COMMON}\n{TOKEN_REDEEM}");
     for removed in [
-        "proof_message_v2",
-        "assert_threshold_verifier_signature",
-        "verifier_set_version",
+        "request_hash",
+        "kms_context_id",
+        "assert_kms_public_decrypt_cert_for_request",
+        "assert_burn_redemption_request_witness",
+        "BurnRedemptionRequest",
+        // Also gone with the prior disclosure dissolution / verifier-set cleanup.
         "material_commitment_hash",
-        "material_key_id",
         "HandleMaterialCommitment",
     ] {
         assert!(
             !source.contains(removed),
-            "legacy verifier-set helper `{removed}` should not remain in production paths"
+            "dissolved witness symbol `{removed}` should not remain in production paths"
         );
     }
+    // The deny consultation and the current-context verifier CPI live one layer down; the token layer
+    // must NOT re-pin a request-time context id or hand-roll the secp cert verification anymore.
+    assert!(
+        !TOKEN_COMMON.contains("verify_kms_public_decrypt"),
+        "token layer must not hand-roll KMS cert verification; the host verifier owns it"
+    );
 }
 
 #[test]
@@ -372,7 +401,7 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         .get("schemas")
         .and_then(Value::as_array)
         .expect("ABI golden schemas should be an array");
-    for required in ["KmsContext", "BurnRedemptionRequest"] {
+    for required in ["KmsContext", "BurnRedemption"] {
         assert!(
             schemas
                 .iter()
@@ -393,6 +422,9 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         "AmountDisclosureRequestedEvent",
         "BalanceDisclosedEvent",
         "BalanceDisclosureRequestedEvent",
+        // Dissolved by fhevm-internal#1763 (BurnRedemptionRequest lifecycle -> thin host verifier).
+        "BurnRedemptionRequest",
+        "BurnRedemptionRequestedEvent",
     ] {
         assert!(
             !schemas

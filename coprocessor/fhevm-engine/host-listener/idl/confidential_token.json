@@ -11,74 +11,6 @@
   ],
   "instructions": [
     {
-      "name": "close_consumed_burn_redemption_request",
-      "docs": [
-        "Closes a consumed burn-redemption request witness."
-      ],
-      "discriminator": [
-        104,
-        139,
-        122,
-        231,
-        214,
-        45,
-        172,
-        159
-      ],
-      "accounts": [
-        {
-          "name": "owner",
-          "docs": [
-            "Request owner and rent recipient."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "redemption_request",
-          "docs": [
-            "Consumed request witness to close."
-          ],
-          "writable": true
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "close_expired_burn_redemption_request",
-      "docs": [
-        "Closes an expired, unconsumed burn-redemption request witness."
-      ],
-      "discriminator": [
-        60,
-        198,
-        28,
-        143,
-        76,
-        180,
-        245,
-        48
-      ],
-      "accounts": [
-        {
-          "name": "owner",
-          "docs": [
-            "Request owner and rent recipient."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "redemption_request",
-          "docs": [
-            "Expired request witness to close."
-          ],
-          "writable": true
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "confidential_burn",
       "docs": [
         "Burns an encrypted amount by rotating the account balance and encrypted total supply."
@@ -716,7 +648,7 @@
           "name": "proof",
           "type": {
             "defined": {
-              "name": "zama_host::instructions::verify_public_decrypt::MmrInclusionProof"
+              "name": "MmrInclusionProof"
             }
           }
         }
@@ -1018,26 +950,28 @@
       ]
     },
     {
-      "name": "redeem_burned_amount_secp",
+      "name": "redeem_burned_amount",
       "docs": [
-        "Gateway-compatible redemption: verifies the KMS `PublicDecryptVerification`",
-        "EIP-712 certificate on-chain via secp256k1_recover against the active KMS context."
+        "Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.",
+        "Verifies the KMS `PublicDecryptVerification` certificate against the CURRENT KMS context plus",
+        "an exact-handle MMR public-decrypt proof, then pays out `cleartext_amount` and writes the",
+        "permanent per-handle `BurnRedemption` marker. See `instructions::redeem_burned_amount`."
       ],
       "discriminator": [
-        69,
-        39,
-        88,
-        170,
-        163,
-        18,
-        191,
-        93
+        75,
+        99,
+        73,
+        176,
+        121,
+        166,
+        244,
+        3
       ],
       "accounts": [
         {
           "name": "owner",
           "docs": [
-            "Token owner and redemption recipient."
+            "Token owner, redemption recipient, and payer for the replay marker."
           ],
           "writable": true,
           "signer": true
@@ -1070,7 +1004,8 @@
         {
           "name": "destination_usdc",
           "docs": [
-            "Owner's destination USDC token account."
+            "Signer's destination USDC token account (any SPL account of the right mint owned by the",
+            "signer, not necessarily the ATA)."
           ],
           "writable": true
         },
@@ -1108,20 +1043,16 @@
         {
           "name": "burned_amount_value",
           "docs": [
-            "Burned amount `EncryptedValue` lineage whose handle is redeemed."
+            "Burned amount `EncryptedValue` lineage whose handle is redeemed. Bound to the mint/token",
+            "account/owner by `assert_burned_amount_lineage`; its canonical PDA, layout, host ownership,",
+            "and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI."
           ]
-        },
-        {
-          "name": "redemption_request",
-          "docs": [
-            "Account-backed redemption request witness pinned to a KMS context id."
-          ],
-          "writable": true
         },
         {
           "name": "redemption_record",
           "docs": [
-            "Replay marker for this burned handle."
+            "Replay marker for this burned handle: write-once, never closed, the sole durable \"paid out\"",
+            "bit for `(mint, burned_handle)`."
           ],
           "writable": true,
           "pda": {
@@ -1160,7 +1091,7 @@
         {
           "name": "host_config",
           "docs": [
-            "Host config carrying the gateway KMS verifier params."
+            "Host config carrying the current KMS context id and gateway EIP-712 domain."
           ],
           "pda": {
             "seeds": [
@@ -1223,10 +1154,23 @@
         {
           "name": "kms_context",
           "docs": [
-            "KMS context the request was pinned to. Verified in-handler against the witness's",
-            "`kms_context_id` (not the current context), so a cert minted under one context cannot be",
-            "presented against a request pinned to another after rotation."
+            "KMS context PDA for the host's current context id (validated by the verifier CPI)."
           ]
+        },
+        {
+          "name": "deny_subject_record",
+          "docs": [
+            "consulted read-only by `assert_redeem_subject_not_denied`. Absent (must be `None`) when the",
+            "deny-list is disabled."
+          ],
+          "optional": true
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used for the stateless verifier CPI."
+          ],
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
         {
           "name": "token_program",
@@ -1282,178 +1226,9 @@
           "name": "proof",
           "type": {
             "defined": {
-              "name": "confidential_token::instructions::common::MmrInclusionProof"
+              "name": "MmrInclusionProof"
             }
           }
-        }
-      ]
-    },
-    {
-      "name": "request_burn_redemption",
-      "docs": [
-        "Requests KMS certification for redeeming a burned encrypted amount."
-      ],
-      "discriminator": [
-        249,
-        11,
-        114,
-        238,
-        31,
-        157,
-        245,
-        116
-      ],
-      "accounts": [
-        {
-          "name": "owner",
-          "docs": [
-            "Token owner and redemption authority."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint whose vault backs the redeemed burned amount."
-          ]
-        },
-        {
-          "name": "token_account",
-          "docs": [
-            "Confidential token account that produced the burned amount."
-          ]
-        },
-        {
-          "name": "underlying_mint",
-          "docs": [
-            "Underlying SPL mint."
-          ]
-        },
-        {
-          "name": "destination_usdc",
-          "docs": [
-            "Owner's destination USDC token account."
-          ]
-        },
-        {
-          "name": "burned_amount_value",
-          "docs": [
-            "Stable burned-amount lineage whose (possibly historical) handle will be",
-            "redeemed. The burn already made that handle publicly decryptable, so this",
-            "instruction only sanity-checks the lineage and binds the handle into the",
-            "witness; it re-proves the owner is a live subject via `allow_subjects`."
-          ],
-          "writable": true
-        },
-        {
-          "name": "redemption_request",
-          "docs": [
-            "Account-backed request witness consumed by the redemption path."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  98,
-                  117,
-                  114,
-                  110,
-                  45,
-                  114,
-                  101,
-                  100,
-                  101,
-                  109,
-                  112,
-                  116,
-                  105,
-                  111,
-                  110,
-                  45,
-                  114,
-                  101,
-                  113,
-                  117,
-                  101,
-                  115,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "mint"
-              },
-              {
-                "kind": "account",
-                "path": "owner"
-              },
-              {
-                "kind": "arg",
-                "path": "burned_handle"
-              },
-              {
-                "kind": "arg",
-                "path": "request_nonce"
-              }
-            ]
-          }
-        },
-        {
-          "name": "deny_subject_record",
-          "optional": true
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used to update the burned-amount lineage."
-          ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for pause and deny-list checks."
-          ]
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for request witness creation and lineage growth."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "burned_handle",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "request_nonce",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "expires_slot",
-          "type": "u64"
         }
       ]
     },
@@ -1692,19 +1467,6 @@
       ]
     },
     {
-      "name": "BurnRedemptionRequest",
-      "discriminator": [
-        162,
-        190,
-        151,
-        208,
-        178,
-        0,
-        226,
-        157
-      ]
-    },
-    {
       "name": "ConfidentialMint",
       "discriminator": [
         63,
@@ -1756,19 +1518,6 @@
         140,
         98,
         152
-      ]
-    },
-    {
-      "name": "BurnRedemptionRequestedEvent",
-      "discriminator": [
-        216,
-        124,
-        73,
-        131,
-        64,
-        33,
-        146,
-        213
       ]
     },
     {
@@ -2032,6 +1781,16 @@
       "code": 6038,
       "name": "DisclosedHandleMismatch",
       "msg": "disclosed handle does not match the pinned handle"
+    },
+    {
+      "code": 6039,
+      "name": "RedemptionSubjectDenied",
+      "msg": "redemption subject is denied"
+    },
+    {
+      "code": 6040,
+      "name": "RedemptionDenyRecordInvalid",
+      "msg": "redemption deny-list record is invalid"
     }
   ],
   "types": [
@@ -2155,7 +1914,11 @@
     {
       "name": "BurnRedeemedEvent",
       "docs": [
-        "Emitted when a KMS-certified burned amount is redeemed from the vault."
+        "Emitted when a KMS-certified burned amount is redeemed from the vault.",
+        "",
+        "After the `BurnRedemptionRequest` witness lifecycle was dissolved (fhevm-internal#1763), redeem is",
+        "a single instruction with no request witness, so this event no longer carries a `request` PDA or",
+        "`request_hash`."
       ],
       "type": {
         "kind": "struct",
@@ -2213,25 +1976,6 @@
               "Underlying token destination account."
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "request",
-            "docs": [
-              "Consumed request witness."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request_hash",
-            "docs": [
-              "Canonical request hash stored in the witness."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           },
           {
             "name": "cleartext_amount",
@@ -2304,250 +2048,6 @@
               "PDA bump for `(mint, burned_handle)`."
             ],
             "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "BurnRedemptionRequest",
-      "docs": [
-        "Account-backed witness for a burned-amount redemption request."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint whose vault backs the redemption."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "owner",
-            "docs": [
-              "Token owner that requested redemption."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "docs": [
-              "Token account that produced the burned amount."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "underlying_mint",
-            "docs": [
-              "Underlying SPL mint for the vault and destination."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "destination_owner",
-            "docs": [
-              "Destination token account owner."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "destination_account",
-            "docs": [
-              "Destination token account to receive redeemed underlying tokens."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "burned_handle",
-            "docs": [
-              "Burned amount handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "burned_encrypted_value",
-            "docs": [
-              "`EncryptedValue` lineage for `burned_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "host_config",
-            "docs": [
-              "Host config whose chain id and gates were validated."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "kms_context_id",
-            "docs": [
-              "KMS context id pinned at request time; the redemption cert must verify",
-              "against this context's signer set, not the current one."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "request_nonce",
-            "docs": [
-              "Caller-supplied nonce that makes the request PDA unique."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "request_hash",
-            "docs": [
-              "Canonical hash over this request witness."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "chain_id",
-            "docs": [
-              "Host chain id copied from the validated host config."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "expires_slot",
-            "docs": [
-              "Last slot in which this request can be consumed."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "status",
-            "docs": [
-              "Request lifecycle state."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for this request account."
-            ],
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "BurnRedemptionRequestedEvent",
-      "docs": [
-        "Emitted when a holder requests redemption of a burned amount."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "mint",
-            "docs": [
-              "Confidential mint."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "owner",
-            "docs": [
-              "Token account owner."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "docs": [
-              "Confidential token account that produced the burned amount."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "burned_handle",
-            "docs": [
-              "Burned amount handle."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "burned_encrypted_value",
-            "docs": [
-              "ACL record for `burned_handle`."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "destination_owner",
-            "docs": [
-              "Underlying token destination owner."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "destination_account",
-            "docs": [
-              "Underlying token destination account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request",
-            "docs": [
-              "Account-backed request witness."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "request_hash",
-            "docs": [
-              "Canonical request hash stored in the witness."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "kms_context_id",
-            "docs": [
-              "KMS context id the redemption cert must verify against."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "expires_slot",
-            "docs": [
-              "Last slot in which this request can be consumed."
-            ],
-            "type": "u64"
           }
         ]
       }
@@ -3295,6 +2795,41 @@
       }
     },
     {
+      "name": "MmrInclusionProof",
+      "docs": [
+        "Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction argument. The",
+        "shared ACL crate is deliberately Anchor-free (pure `borsh`) so it cannot derive Anchor IDL",
+        "metadata; this local type carries the identical wire shape and converts into the shared proof.",
+        "Defined in the host program so CPI callers depend only on the host IDL, never on token types."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "leaf_index",
+            "docs": [
+              "Index of the proven leaf within the lineage's MMR."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "siblings",
+            "docs": [
+              "Authentication path from the leaf up to its mountain peak."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "RandomAmountCreatedEvent",
       "docs": [
         "Emitted when the token program creates a token-scoped random amount."
@@ -3457,76 +2992,6 @@
           },
           {
             "name": "Burn"
-          }
-        ]
-      }
-    },
-    {
-      "name": "confidential_token::instructions::common::MmrInclusionProof",
-      "docs": [
-        "Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction",
-        "argument. The shared ACL crate is deliberately Anchor-free (pure `borsh`), so",
-        "it cannot derive Anchor's IDL metadata; this local type carries the identical",
-        "wire shape and converts into the shared proof for verification."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "leaf_index",
-            "docs": [
-              "Index of the proven leaf within the lineage's MMR."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "siblings",
-            "docs": [
-              "Authentication path from the leaf up to its mountain peak."
-            ],
-            "type": {
-              "vec": {
-                "array": [
-                  "u8",
-                  32
-                ]
-              }
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "zama_host::instructions::verify_public_decrypt::MmrInclusionProof",
-      "docs": [
-        "Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction argument. The",
-        "shared ACL crate is deliberately Anchor-free (pure `borsh`) so it cannot derive Anchor IDL",
-        "metadata; this local type carries the identical wire shape and converts into the shared proof.",
-        "Defined in the host program so CPI callers depend only on the host IDL, never on token types."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "leaf_index",
-            "docs": [
-              "Index of the proven leaf within the lineage's MMR."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "siblings",
-            "docs": [
-              "Authentication path from the leaf up to its mountain peak."
-            ],
-            "type": {
-              "vec": {
-                "array": [
-                  "u8",
-                  32
-                ]
-              }
-            }
           }
         ]
       }

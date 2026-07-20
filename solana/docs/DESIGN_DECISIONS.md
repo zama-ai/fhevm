@@ -1643,6 +1643,36 @@ marker PDA, and the shared helpers `assert_kms_public_decrypt_cert_for_request` 
 `assert_burn_redemption_request_witness` all remain on the witness pattern. Migrating burn-redemption
 onto the verifier is a DEFERRED open decision, not part of this PR.
 
+Deferral closed (fhevm-internal#1763):
+
+The burn-redemption witness has now been dissolved onto the same stateless verifier, closing the
+deferral above. Deleted: `request_burn_redemption`, both `close_*_burn_redemption_request`
+instructions, the `BurnRedemptionRequest` account (and its address / request-hash helpers), the
+`assert_burn_redemption_request_witness` + `assert_kms_public_decrypt_cert_for_request` helpers, and
+the `BurnRedemptionRequestedEvent`. Added: ONE thin `redeem_burned_amount(burned_handle,
+cleartext_amount, signatures, extra_data, proof)` that binds the burned lineage
+(`assert_burned_amount_lineage`, unchanged), CPIs `zama_host::verify_public_decrypt`, asserts the
+proven handle equals `burned_handle` and the certified cleartext equals `cleartext_amount`, then
+pays out and writes the marker. Every field the witness pinned is carried elsewhere (destination
+integrity by the redeem-time signer check, handle binding by the born-public MMR leaf sealed in the
+burn per DD-036, owner/mint by the lineage), so the witness was pure scaffolding.
+
+Current context replaces the request-time KMS pin: the cert is now verified against
+`host_config.current_kms_context_id` inside the verifier (fail closed on rotation), not the
+witness's pinned `kms_context_id`, which was strictly worse — it accepted a rotated-out signer set's
+certificates until expiry.
+
+Deny check is now explicit at redeem: because redemption moves value, a denied subject cannot cash
+out. The request's no-op `allow_subjects` CPI (which only re-proved the owner allowed) is replaced by
+a read-only `deny_subject_record` consultation at payout, mirroring the host's own
+`check_grant_not_denied` model.
+
+Marker retained as the sole durable bit: unlike disclosure (idempotent, no marker), redemption keeps
+the write-once, never-closed per-handle `BurnRedemption` PDA at `["burn-redemption", mint,
+burned_handle]` as the one "paid out" bit; a second redeem of the same handle fails on the `init`.
+This also simplifies the vault batcher (fhevm-internal#1757): dispatch is burn tx → redeem tx, with
+no witness rent fronted per batch and no close obligations.
+
 ## DD-041: Coprocessor Input Trust Is A Registered n-of-m Signer Set In `HostConfig`
 
 Input `CiphertextVerification` attestations are now verified against a **registered coprocessor

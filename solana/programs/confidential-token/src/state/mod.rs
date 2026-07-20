@@ -1,12 +1,10 @@
 //! Account layouts, PDA helpers, and token-domain labels.
 
 pub mod burn_redemption;
-pub mod burn_redemption_request;
 pub mod confidential_mint;
 pub mod confidential_token_account;
 
 pub use burn_redemption::*;
-pub use burn_redemption_request::*;
 pub use confidential_mint::*;
 pub use confidential_token_account::*;
 
@@ -156,10 +154,6 @@ mod space_invariants {
     #[test]
     fn manual_space_matches_derived_init_space() {
         assert_eq!(BurnRedemption::SPACE, BurnRedemption::INIT_SPACE);
-        assert_eq!(
-            BurnRedemptionRequest::SPACE,
-            BurnRedemptionRequest::INIT_SPACE
-        );
         assert_eq!(ConfidentialMint::SPACE, ConfidentialMint::INIT_SPACE);
         assert_eq!(
             ConfidentialTokenAccount::SPACE,
