@@ -125,8 +125,11 @@ env:
   # Same host-sc-addresses key the coprocessor's host-listener uses.
   - name: PROTOCOL_CONFIG_CONTRACT_ADDRESS
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
-  # Hardhat account #9 - "deployer" role needed for HCU-limit owner-restricted
-  # tests, matching the staging reference env file's own comment.
-  - {name: DEPLOYER_PRIVATE_KEY, value: "0x2d24c36c57e6bfbf90c43173481cc00edcbd1a3922de5e5fdb9aba5fc4e0fafd"}
+  # Hardhat account #9 (of the "test test ... junk" mnemonic) - the host/ACL owner,
+  # needed for HCU-limit owner-restricted tests when run manually via kubectl exec.
+  # Must match the host-contracts/trigger-keygen deployer. (The previous value
+  # 0x2d24c36c... was account #9 of a DIFFERENT default mnemonic and never owned this
+  # ACL - it silently broke manual HCU runs.)
+  - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
   - {name: RELAYER_URL, value: "http://relayer:3000/v2"}
   - {name: RELAYER_SDK_VERSION, value: ""}

@@ -51,9 +51,14 @@ scDeploy:
     - {name: HARDHAT_NETWORK, value: "staging"}
     - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
     - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
-    # Hardhat account #0 — same deterministic ephemeral-testing deployer as gateway-contracts
-    # (separate chain, so no address collision risk).
-    - {name: DEPLOYER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
+    # Hardhat account #9 — the host/ACL owner. Deliberately OUTSIDE the e2e signer
+    # range (alice..eve = accounts #0..#4): the HCU block-cap test needs the deployer
+    # (this.deployer) to be ACL.owner() for its owner-restricted setters AND needs
+    # alice (#0) to be a genuine non-owner for "reject setHCUPerBlock from non-owner".
+    # task:deployAllHostContracts never transfers ownership, so ACL.owner() = this
+    # deployer. Must match host-trigger-keygen's key (ACL-owner op) and the test-suite
+    # DEPLOYER_PRIVATE_KEY. Separate chain from gateway-contracts (#0), no collision.
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
     # Gateway's chain id + the two gateway contract addresses KMSVerifier/InputVerifier verify
     # signatures against. Read directly from gateway-contracts' output ConfigMap instead of
     # being hardcoded — these addresses are non-deterministic (depend on deploy order/nonces)
