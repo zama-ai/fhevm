@@ -31,7 +31,7 @@ concurrency:
 jobs:
   solana-e2e:
     name: solana-e2e/full-vertical${{ matrix.reconstruct && '-reconstruct' || '' }}
-    runs-on: large_ubuntu_32
+    runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=80gb
     timeout-minutes: 120
     strategy:
       matrix:
