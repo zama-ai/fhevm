@@ -6,25 +6,21 @@ use crate::{
 };
 use alloy::{
     hex,
-    providers::{Provider, fillers::TxFiller},
+    providers::Provider,
     rpc::types::{TransactionReceipt, TransactionRequest},
 };
 use anyhow::anyhow;
-use connector_utils::{
-    provider::NonceManagedProvider,
-    types::{KmsResponseKind, PublicDecryptionResponse, UserDecryptionResponse},
-};
+use connector_utils::types::{KmsResponseKind, PublicDecryptionResponse, UserDecryptionResponse};
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use tracing::{debug, error, info, warn};
 
 /// The struct used to send decryption transactions to the Gateway.
-pub struct GatewayTransactionSender<F, P>
+pub struct GatewayTransactionSender<P>
 where
-    F: TxFiller,
     P: Provider,
 {
-    provider: NonceManagedProvider<F, P>,
-    decryption_contract: DecryptionInstance<NonceManagedProvider<F, P>>,
+    provider: P,
+    decryption_contract: DecryptionInstance<P>,
     config: GatewaySenderConfig,
 }
 
@@ -47,14 +43,13 @@ impl From<&super::Config> for GatewaySenderConfig {
     }
 }
 
-impl<F, P> GatewayTransactionSender<F, P>
+impl<P> GatewayTransactionSender<P>
 where
-    F: TxFiller,
     P: Provider,
 {
     pub fn new(
-        provider: NonceManagedProvider<F, P>,
-        decryption_contract: DecryptionInstance<NonceManagedProvider<F, P>>,
+        provider: P,
+        decryption_contract: DecryptionInstance<P>,
         inner_config: GatewaySenderConfig,
     ) -> Self {
         Self {
@@ -190,9 +185,8 @@ where
     }
 }
 
-impl<F, P> Clone for GatewayTransactionSender<F, P>
+impl<P> Clone for GatewayTransactionSender<P>
 where
-    F: TxFiller,
     P: Provider + Clone,
 {
     fn clone(&self) -> Self {
@@ -208,11 +202,11 @@ where
 mod tests {
     use super::*;
     use alloy::{
-        network::{Ethereum, IntoWallet, Network, TransactionBuilder},
+        network::{Ethereum, IntoWallet, Network, NetworkTransactionBuilder, TransactionBuilder},
         primitives::Address,
         providers::{
             ProviderBuilder, SendableTx,
-            fillers::{FillProvider, FillerControlFlow},
+            fillers::{FillProvider, FillerControlFlow, TxFiller},
             mock::Asserter,
         },
         rpc::types::trace::geth::GethTrace,
@@ -220,6 +214,7 @@ mod tests {
     };
     use connector_utils::{
         config::KmsWallet,
+        provider::NonceManagedProvider,
         tests::rand::{rand_signature, rand_u256},
     };
     use serde::de::DeserializeOwned;
