@@ -405,17 +405,16 @@ additionalResources:
                     configMapKeyRef:
                       name: host-sc-addresses
                       key: protocol_config.address
-                # Single DEPLOYER_PRIVATE_KEY for all tests: Hardhat account #0
-                # (0xac09...), the FINAL host/ACL owner. host-contracts + trigger-keygen
-                # deploy/keygen/crsgen as #9, then host-trigger-keygen transfers ACL
-                # ownership #9 -> #0 after crsgen, so this.deployer (#0) == ACL.owner() (#0)
-                # and the HCU block-cap owner-only setters succeed. Only the HCU test reads
-                # this key (this.deployer); every other test signs as the MNEMONIC-derived
-                # signers (alice..eve = #0..#4) and ignores it. NOTE: because #0 == alice,
-                # HCU's "reject setHCUPerBlock from non-owner" subtest will NOT revert and
-                # will fail - accepted trade-off for keeping the e2e deployer on #0.
+                # Single DEPLOYER_PRIVATE_KEY for all tests: Hardhat account #9
+                # (0x2a87.../addr 0xa0Ee7A...), which is the host/ACL owner. host-contracts +
+                # trigger-keygen deploy/keygen/crsgen as #9 and #9 STAYS the owner (no
+                # ownership transfer), so this.deployer (#9) == ACL.owner() (#9) and the HCU
+                # block-cap owner-only setters succeed. Only the HCU test reads this key
+                # (this.deployer); every other test signs as the MNEMONIC-derived signers
+                # (alice..eve = #0..#4) and ignores it. Because owner == #9 != alice (#0),
+                # HCU's "reject setHCUPerBlock from non-owner" subtest also correctly reverts.
                 - name: DEPLOYER_PRIVATE_KEY
-                  value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                  value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
                 - name: RELAYER_URL
                   value: "http://relayer:3000/v2"
                 # RELAYER_SDK_VERSION deliberately NOT set here: instance.ts then sets
