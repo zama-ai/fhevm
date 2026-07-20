@@ -35,6 +35,29 @@ fullnameOverride: postgres-coprocessor
 
 statefulset:
   enabled: true
+  # PVC (not emptyDir) so the coprocessor DB - inserted ciphertexts/handles,
+  # the "fhevm_e2e" schema - survives a Postgres pod restart or reschedule
+  # instead of coming back empty (which orphans on-chain handles that can no
+  # longer be decrypted). The claim is namespaced, so it's still torn down with
+  # the preview namespace; it only persists across pod restarts, not teardown.
+  # NOTE: volumeClaimTemplates is immutable on an existing StatefulSet, so
+  # flipping this on requires a fresh deploy (delete the sts/namespace first),
+  # not just an in-place `helm upgrade`.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      # The common chart auto-adds the matching container volumeMount from this
+      # name + mountPath (see charts/common/templates/statefulset.yaml), so no
+      # separate volumeMounts block is needed. Mounts the dir that holds PGDATA
+      # (.../pgdata subdir), same path the emptyDir used to cover.
+      mountPath: /var/lib/postgresql/data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # storageClassName omitted on purpose: bind the cluster default SC,
+        # same as charts/anvil-node's chain-data PVC.
+        resources:
+          requests:
+            storage: 10Gi
 
 image:
   repository: postgres
@@ -53,16 +76,6 @@ service:
   enabled: true
   ports:
     - {name: tcp-postgresql, port: 5432}
-
-# emptyDir, not a PVC: this StatefulSet's data lives (and dies) with the
-# namespace, and skipping persistence means the pod is Ready in seconds
-# instead of waiting on a StorageClass to bind a volume.
-volumes:
-  - name: data
-    emptyDir: {}
-volumeMounts:
-  - name: data
-    mountPath: /var/lib/postgresql/data
 
 readinessProbe:
   exec: {command: ["pg_isready", "-U", "zama"]}

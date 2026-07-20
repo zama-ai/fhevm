@@ -8,7 +8,8 @@
 # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml - see that file's
 # header for the full rationale (why not Bitnami's postgresql chart,
 # fullnameOverride -> deterministic Service name, plain non-secret ephemeral
-# test credentials, emptyDir not a PVC).
+# test credentials) and the statefulset.volumeClaimTemplates note (PVC so data
+# survives pod restarts).
 #
 # One dedicated instance PER kms-connector/kms-core party (pr-preview-deploy.yml's
 # "Deploy in-cluster Postgres for kms-connector" loops this over NB_KMS_CORE
@@ -24,6 +25,24 @@ fullnameOverride: postgres-connector
 
 statefulset:
   enabled: true
+  # PVC (not emptyDir) so each per-party connector DB survives a Postgres pod
+  # restart or reschedule instead of coming back empty. Each per-party release
+  # (postgres-connector-<i>) is its own StatefulSet, so each gets its own
+  # independent PVC. Namespaced, so still torn down with the preview namespace;
+  # only persists across pod restarts.
+  # NOTE: volumeClaimTemplates is immutable on an existing StatefulSet, so
+  # flipping this on requires a fresh deploy (delete the sts/namespace first),
+  # not just an in-place `helm upgrade`. See
+  # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml for the full note.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      mountPath: /var/lib/postgresql/data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
 
 image:
   repository: postgres
@@ -40,13 +59,6 @@ service:
   enabled: true
   ports:
     - {name: tcp-postgresql, port: 5432}
-
-volumes:
-  - name: data
-    emptyDir: {}
-volumeMounts:
-  - name: data
-    mountPath: /var/lib/postgresql/data
 
 readinessProbe:
   exec: {command: ["pg_isready", "-U", "zama"]}

@@ -9,7 +9,8 @@
 # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml - see that file's
 # header for the full rationale (why not Bitnami's postgresql chart,
 # fullnameOverride -> deterministic Service name, plain non-secret ephemeral
-# test credentials, emptyDir not a PVC).
+# test credentials) and the statefulset.volumeClaimTemplates note (PVC so data
+# survives pod restarts).
 #
 # Deployed as:
 #   helm upgrade --install postgres-relayer \
@@ -19,6 +20,22 @@ fullnameOverride: postgres-relayer
 
 statefulset:
   enabled: true
+  # PVC (not emptyDir) so the relayer DB survives a Postgres pod restart or
+  # reschedule instead of coming back empty. Namespaced, so it's still torn
+  # down with the preview namespace; it only persists across pod restarts.
+  # NOTE: volumeClaimTemplates is immutable on an existing StatefulSet, so
+  # flipping this on requires a fresh deploy (delete the sts/namespace first),
+  # not just an in-place `helm upgrade`. See
+  # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml for the full note.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      mountPath: /var/lib/postgresql/data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
 
 image:
   repository: postgres
@@ -35,13 +52,6 @@ service:
   enabled: true
   ports:
     - {name: tcp-postgresql, port: 5432}
-
-volumes:
-  - name: data
-    emptyDir: {}
-volumeMounts:
-  - name: data
-    mountPath: /var/lib/postgresql/data
 
 readinessProbe:
   exec: {command: ["pg_isready", "-U", "zama"]}
