@@ -1223,6 +1223,12 @@ pub async fn handle_unanimity_consensus_timeout(
 
     reset_gcs_schema(&mut tx).await?;
 
+    // Wake the worker watchers to re-pause promptly; queued in the tx, delivered only on commit.
+    sqlx::query("SELECT pg_notify($1, '')")
+        .bind(fhevm_engine_common::gcs_activation::EVENT_DRY_RUN_ROLLED_BACK)
+        .execute(&mut *tx)
+        .await?;
+
     tx.commit().await?;
     warn!(
         chain_id = payload.chain_id,
