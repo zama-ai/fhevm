@@ -62,6 +62,19 @@ PINNED_SCHEMAS = [
     ("zama_host", "instruction_args", "remove_subject", True),
     ("zama_host", "instruction_args", "update_encrypted_value", True),
     ("zama_host", "instruction_args", "make_handle_public", True),
+    ("zama_host", "instruction_args", "define_kms_context", True),
+    ("zama_host", "instruction_args", "delegate_for_user_decryption", True),
+    ("zama_host", "instruction_args", "destroy_kms_context", True),
+    ("zama_host", "instruction_args", "revoke_delegation_for_user_decryption", True),
+    ("zama_host", "instruction_args", "set_coprocessor_signers", True),
+    ("zama_host", "instruction_args", "set_deny_subject", True),
+    ("zama_host", "instruction_args", "set_grant_deny_list_enabled", True),
+    ("zama_host", "instruction_args", "set_hcu_app_trusted", True),
+    ("zama_host", "instruction_args", "set_hcu_block_cap_per_app", True),
+    ("zama_host", "instruction_args", "set_host_pause", True),
+    ("zama_host", "instruction_args", "set_max_hcu_depth_per_tx", True),
+    ("zama_host", "instruction_args", "set_max_hcu_per_tx", True),
+    ("zama_host", "instruction_args", "verify_public_decrypt", True),
     ("confidential_token", "account", "ConfidentialMint", True),
     ("confidential_token", "account", "ConfidentialTokenAccount", True),
     # The DisclosureRequest account and its request/disclose/close instruction lifecycle were
@@ -73,6 +86,7 @@ PINNED_SCHEMAS = [
     ("confidential_token", "instruction_args", "close_expired_burn_redemption_request", True),
     ("confidential_token", "instruction_args", "confidential_burn", True),
     ("confidential_token", "instruction_args", "confidential_transfer", True),
+    ("confidential_token", "instruction_args", "confidential_transfer_from_value", True),
     # create_random_amount / create_random_bounded_amount are `poc`-gated demo helpers and are
     # intentionally absent from the production IDL, so they are not pinned here.
     ("confidential_token", "instruction_args", "disclose_secp", True),
@@ -170,6 +184,24 @@ def build_manifest(root: pathlib.Path) -> dict[str, Any]:
     for program, idl in idls.items():
         for event in idl.get("events", []):
             requested.append((program, "event", event["name"], True))
+
+    # Every production instruction must be pinned in PINNED_SCHEMAS. Report any IDL instruction
+    # that has no "instruction_args" entry through the pending channel so it surfaces as an error.
+    pinned_instructions: dict[str, set[str]] = {program: set() for program in idls}
+    for program, category, name, _ in PINNED_SCHEMAS:
+        if category == "instruction_args":
+            pinned_instructions[program].add(name)
+    for program, idl in idls.items():
+        for instruction in idl.get("instructions", []):
+            if instruction["name"] not in pinned_instructions[program]:
+                pending.append(
+                    {
+                        "program": program,
+                        "category": "instruction_args",
+                        "name": instruction["name"],
+                        "reason": "production instruction is not pinned in PINNED_SCHEMAS",
+                    }
+                )
 
     seen: set[tuple[str, str, str]] = set()
     for program, category, name, needs_fixture in requested:

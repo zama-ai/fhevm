@@ -408,6 +408,163 @@
       ]
     },
     {
+      "name": "confidential_transfer_from_value",
+      "docs": [
+        "Transfers an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or",
+        "received handle) instead of a freshly attested client-side encryption — the path that lets a",
+        "contract be the sender of a computed amount (fhevm-internal#1680). The signing owner must be",
+        "in the amount value's subject set (the token spend gate); the amount is spent read-only."
+      ],
+      "discriminator": [
+        107,
+        168,
+        52,
+        232,
+        133,
+        153,
+        185,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "Sender and transfer authority. Must be in `amount_value`'s subject set (the spend gate)."
+          ],
+          "signer": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Pays rent for the transferred-amount lineage on its first bind."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Confidential mint."
+          ]
+        },
+        {
+          "name": "from_account",
+          "docs": [
+            "Sender token account."
+          ],
+          "writable": true
+        },
+        {
+          "name": "to_account",
+          "writable": true
+        },
+        {
+          "name": "compute_signer",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  104,
+                  101,
+                  45,
+                  99,
+                  111,
+                  109,
+                  112,
+                  117,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "from_balance_value",
+          "docs": [
+            "Sender's stable balance `EncryptedValue` lineage; read for the current",
+            "handle and superseded in place by this eval's CPI."
+          ],
+          "writable": true
+        },
+        {
+          "name": "to_balance_value",
+          "docs": [
+            "Recipient's stable balance `EncryptedValue` lineage."
+          ],
+          "writable": true
+        },
+        {
+          "name": "transferred_amount_value",
+          "docs": [
+            "the sender's first transfer, superseded thereafter."
+          ],
+          "writable": true
+        },
+        {
+          "name": "amount_value",
+          "docs": [
+            "The existing encrypted amount to spend: a computed or received `euint64` handle. Read-only",
+            "durable operand — never superseded, never consumed. Its address is the canonical PDA of its",
+            "own `(acl_domain_key, app_account, encrypted_value_label)` fields, so a lineage from any app",
+            "may be passed here once its owner has granted the mint's compute subject via `allow_subjects`."
+          ]
+        },
+        {
+          "name": "zama_event_authority"
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program used for FHE operations."
+          ],
+          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "ZamaHost config used for handle derivation."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for ACL account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "hcu_block_meter",
+          "docs": [
+            "canonical `[\"hcu-block-meter\", compute_signer]` PDA. The per-mint HCU block meter — supplied",
+            "by an untrusted mint under a metering-band cap, omitted otherwise."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "hcu_trusted_app_record",
+          "docs": [
+            "trust witness — present + valid bypasses the cap; absent means untrusted (metered)."
+          ],
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "disclose_secp",
       "docs": [
         "Consumes a KMS public-decrypt certificate through the stateless host verifier and emits a",
@@ -1778,96 +1935,101 @@
     },
     {
       "code": 6019,
+      "name": "AmountSpendSubjectMismatch",
+      "msg": "amount value spender is not in the amount's subject set"
+    },
+    {
+      "code": 6020,
       "name": "TotalSupplyAuthorityMismatch",
       "msg": "total supply authority does not match mint"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "InvalidKmsCertificate",
       "msg": "KMS public-decrypt certificate is invalid"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "PublicDecryptProofInvalid",
       "msg": "public-decrypt MMR proof is invalid for this lineage"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "GatewayVerifierConfigUnset",
       "msg": "gateway verifier config is not set"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "InvalidKmsContext",
       "msg": "KMS context is not valid for this request"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "RequestWitnessMismatch",
       "msg": "request witness does not match"
     },
     {
-      "code": 6025,
+      "code": 6026,
       "name": "RequestWitnessUnavailable",
       "msg": "request witness is expired or already consumed"
     },
     {
-      "code": 6026,
+      "code": 6027,
       "name": "MaterialCommitmentMismatch",
       "msg": "material commitment witness does not match"
     },
     {
-      "code": 6027,
+      "code": 6028,
       "name": "PublicDecryptNotReleased",
       "msg": "handle is not released for public decrypt"
     },
     {
-      "code": 6028,
+      "code": 6029,
       "name": "InvalidFheEvalPlan",
       "msg": "FHE eval plan is invalid"
     },
     {
-      "code": 6029,
+      "code": 6030,
       "name": "DuplicateFheEvalAccount",
       "msg": "FHE eval account list contains a duplicate account"
     },
     {
-      "code": 6030,
+      "code": 6031,
       "name": "UnexpectedFheEvalAccount",
       "msg": "FHE eval account list contains an unexpected account"
     },
     {
-      "code": 6031,
+      "code": 6032,
       "name": "MissingFheEvalAccount",
       "msg": "FHE eval plan is missing a required dynamic account"
     },
     {
-      "code": 6032,
+      "code": 6033,
       "name": "FheEvalAccountNotWritable",
       "msg": "FHE eval dynamic account must be writable"
     },
     {
-      "code": 6033,
+      "code": 6034,
       "name": "DuplicateFheOutputAuthority",
       "msg": "FHE eval output authority list contains a duplicate authority"
     },
     {
-      "code": 6034,
+      "code": 6035,
       "name": "UnexpectedFheOutputAuthority",
       "msg": "FHE eval output authority list contains an unexpected authority"
     },
     {
-      "code": 6035,
+      "code": 6036,
       "name": "MissingFheOutputAuthority",
       "msg": "FHE eval plan is missing a required output authority"
     },
     {
-      "code": 6036,
+      "code": 6037,
       "name": "VerifierReturnDataInvalid",
       "msg": "public-decrypt verifier return data is invalid"
     },
     {
-      "code": 6037,
+      "code": 6038,
       "name": "DisclosedHandleMismatch",
       "msg": "disclosed handle does not match the pinned handle"
     }

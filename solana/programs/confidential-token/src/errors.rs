@@ -62,6 +62,10 @@ pub enum ConfidentialTokenError {
     /// The attested input's contract is not the mint compute-signer PDA.
     #[msg("attested input contract does not match compute signer")]
     AttestationContractMismatch,
+    /// The signer spending an existing amount value is not in that value's subject set.
+    /// Token-level spend gate mirroring EVM's `FHE.isAllowed(amount, msg.sender)`.
+    #[msg("amount value spender is not in the amount's subject set")]
+    AmountSpendSubjectMismatch,
     /// Total-supply authority PDA did not match the mint.
     #[msg("total supply authority does not match mint")]
     TotalSupplyAuthorityMismatch,
