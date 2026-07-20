@@ -172,6 +172,7 @@ const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =
 export const buildKmsThresholdOverride = (
   topology: ResolvedKmsTopology,
   opts: KmsRenderOptions,
+  coreVersionByNodeId: Readonly<Record<string, string>> = {},
 ): ComposeDoc => {
   if (topology.mode !== "threshold") {
     throw new Error("buildKmsThresholdOverride called for a non-threshold topology");
@@ -195,7 +196,9 @@ export const buildKmsThresholdOverride = (
       partyId > topology.committeeSize ? KMS_THRESHOLD_SPARE_CONFIG_NAME : KMS_THRESHOLD_CONFIG_NAME;
     services[name] = {
       container_name: name,
-      image: opts.coreImage,
+      image: coreVersionByNodeId[partyId]
+        ? kmsRenderOptionsFor(coreVersionByNodeId[partyId]).coreImage
+        : opts.coreImage,
       // No shell wrapper: per-party config comes from KMS_CORE__* env and AWS creds
       // come from the environment, so the core binary runs directly.
       entrypoint: ["kms-server", "--config-file", `config/${configName}`],
