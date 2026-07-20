@@ -14,14 +14,13 @@
 //! (mint/token-account creation and `confidential_transfer`'s durable-output supersession), plus
 //! the token-level end-to-end coverage requested for this pass (stable addressing across a
 //! transfer, a `transferred_amount` lineage entry, and self-transfer no-op). It also covers the
-//! two consume paths whose authorization changed shape to proof-against-a-pinned-handle (DD-036):
-//! `redeem_burned_amount_secp` and `disclose_balance_secp`/`disclose_amount_secp` now authorize by
-//! an MMR public-decrypt proof against the witness-pinned handle rather than the live lineage
-//! handle, so their after-supersession, consume-once, foreign-proof, and expiry behaviour is
-//! exercised directly here, alongside the `close_*` disclosure-request witness instructions. The
-//! old suite's coverage of `wrap_usdc`, `confidential_burn`, `request_disclose_balance`/
-//! `request_disclose_amount`, `request_burn_redemption`, the burn-redemption `close_*`
-//! instructions, and the `poc`-gated `create_random_amount` was not ported 1:1 for this pass: none
+//! two consume paths that are now thin consumers of the stateless host `verify_public_decrypt`
+//! (DD-040): `redeem_burned_amount` and `disclose_secp` authorize by an MMR public-decrypt proof
+//! against the pinned handle rather than the live lineage handle, so their after-supersession,
+//! foreign-proof, current-context-rotation, and (for redeem) deny/marker/destination behaviour is
+//! exercised directly here. The old suite's coverage of `wrap_usdc`, `confidential_burn`,
+//! `request_disclose_balance`/`request_disclose_amount`, and the `poc`-gated `create_random_amount`
+//! was not ported 1:1 for this pass: none
 //! of that instruction logic changed shape from the ACL rewrite itself (it still reads/writes one
 //! `EncryptedValue` lineage per amount the same way `confidential_transfer` does), and each needs
 //! its own multi-account Mollusk fixture that was not feasible to rebuild faithfully here. Every
@@ -2157,12 +2156,16 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
 }
 
 // ---------------------------------------------------------------------------
-// confidential_burn -> request_burn_redemption -> redeem_burned_amount_secp
+// confidential_burn -> redeem_burned_amount
 //
-// Vector 2 (burn-stranding) fix: every burn is born publicly decryptable at the
-// burn instant (ERC-7984 `unwrap` parity), so a historical burned handle stays
-// redeemable even after a later burn supersedes the shared `burned_amount`
-// lineage. Authorization at redeem is by MMR public-decrypt proof (theme-A).
+// The BurnRedemptionRequest witness lifecycle was dissolved (fhevm-internal#1763): redeem is now a
+// single thin consumer of the stateless host `verify_public_decrypt`, verifying the KMS cert
+// against the CURRENT KMS context plus an exact-handle MMR public-decrypt proof, then paying out
+// and writing the permanent per-handle marker.
+//
+// Vector 2 (burn-stranding) fix, unchanged: every burn is born publicly decryptable at the burn
+// instant (ERC-7984 `unwrap` parity, DD-036), so a historical burned handle stays redeemable even
+// after a later burn supersedes the shared `burned_amount` lineage.
 // ---------------------------------------------------------------------------
 
 use anchor_spl::token::spl_token;
@@ -2171,8 +2174,8 @@ use solana_sdk::program_option::COption;
 use support::kms_cert::{cleartext_u256, kms_signing_key, kms_signing_key_n};
 
 /// Builds a KMS `PublicDecryptVerification` secp256k1 cert (`signatures`, `extra_data`)
-/// over `handle`/`cleartext_amount`, matching `assert_kms_public_decrypt_cert_for_request`.
-/// `extra_data == [0x00]` binds the cert to the request's current KMS context.
+/// over `handle`/`cleartext_amount`, verified by the host `verify_public_decrypt` CPI.
+/// `extra_data == [0x00]` is a v0 cert that binds only through the current context's signer set.
 fn kms_public_decrypt_cert(handle: [u8; 32], cleartext_amount: u64) -> (Vec<[u8; 65]>, Vec<u8>) {
     kms_public_decrypt_cert_signed_by(handle, cleartext_amount, &[kms_signing_key()])
 }
@@ -2474,52 +2477,20 @@ fn confidential_burn_ix(
     )
 }
 
-fn request_burn_redemption_ix(
-    fixture: &BurnRedeemFixture,
-    burned_handle: [u8; 32],
-    request_nonce: [u8; 32],
-    expires_slot: u64,
-    redemption_request: Pubkey,
-) -> Instruction {
-    anchor_ix(
-        token::id(),
-        token::accounts::RequestBurnRedemption {
-            owner: fixture.owner,
-            mint: fixture.mint,
-            token_account: fixture.token_account,
-            underlying_mint: fixture.underlying_mint,
-            destination_usdc: fixture.destination_usdc,
-            burned_amount_value: fixture.burned_amount_value,
-            redemption_request,
-            deny_subject_record: None,
-            zama_program: host::id(),
-            host_config: fixture.host_config,
-            system_program: system_program::ID,
-            event_authority: event_authority(token::id()),
-            program: token::id(),
-        },
-        token::instruction::RequestBurnRedemption {
-            burned_handle,
-            request_nonce,
-            expires_slot,
-        },
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
-fn redeem_burned_amount_secp_ix(
+fn redeem_burned_amount_ix(
     fixture: &BurnRedeemFixture,
     burned_handle: [u8; 32],
     cleartext_amount: u64,
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
-    proof: token::MmrInclusionProof,
-    redemption_request: Pubkey,
+    proof: host::instructions::MmrInclusionProof,
     redemption_record: Pubkey,
+    deny_subject_record: Option<Pubkey>,
 ) -> Instruction {
     anchor_ix(
         token::id(),
-        token::accounts::RedeemBurnedAmountSecp {
+        token::accounts::RedeemBurnedAmount {
             owner: fixture.owner,
             mint: fixture.mint,
             token_account: fixture.token_account,
@@ -2528,16 +2499,17 @@ fn redeem_burned_amount_secp_ix(
             destination_usdc: fixture.destination_usdc,
             vault_authority: fixture.vault_authority,
             burned_amount_value: fixture.burned_amount_value,
-            redemption_request,
             redemption_record,
             host_config: fixture.host_config,
             kms_context: fixture.kms_context,
+            deny_subject_record,
+            zama_program: host::id(),
             token_program: spl_token::id(),
             system_program: system_program::ID,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
-        token::instruction::RedeemBurnedAmountSecp {
+        token::instruction::RedeemBurnedAmount {
             burned_handle,
             cleartext_amount,
             signatures,
@@ -2588,13 +2560,16 @@ fn mollusk_confidential_burn_makes_burned_amount_publicly_decryptable() {
     );
 }
 
-/// Reconstructs the burned_amount lineage's four leaves after two burns and
-/// builds a public-decrypt inclusion proof for the FIRST burn's handle (leaf 0).
-fn public_decrypt_proof_for_first_burn(
+/// Reconstructs the burned_amount lineage's four leaves after two burns
+/// (public(H1)@0, hist(H1,owner)@1, hist(H1,compute)@2, public(H2)@3) and builds a
+/// public-decrypt inclusion proof for the leaf at `leaf_index`, returning it with the
+/// lineage peaks. Leaf 0 proves the historical first burn; leaf 3 proves the current second.
+fn two_burn_lineage_proof(
     fixture: &BurnRedeemFixture,
     first_handle: [u8; 32],
     second_handle: [u8; 32],
-) -> (token::MmrInclusionProof, Vec<[u8; 32]>) {
+    leaf_index: u64,
+) -> (host::instructions::MmrInclusionProof, Vec<[u8; 32]>) {
     let acct = fixture.burned_amount_value.to_bytes();
     let leaves = vec![
         zama_solana_acl::public_decrypt_leaf_commitment(acct, 0, first_handle),
@@ -2612,9 +2587,10 @@ fn public_decrypt_proof_for_first_burn(
         ),
         zama_solana_acl::public_decrypt_leaf_commitment(acct, 3, second_handle),
     ];
-    let proof = zama_solana_acl::mmr_build_proof(&leaves, 0).expect("proof for leaf 0");
+    let proof =
+        zama_solana_acl::mmr_build_proof(&leaves, leaf_index).expect("proof for requested leaf");
     (
-        token::MmrInclusionProof {
+        host::instructions::MmrInclusionProof {
             leaf_index: proof.leaf_index,
             siblings: proof.siblings,
         },
@@ -2622,22 +2598,14 @@ fn public_decrypt_proof_for_first_burn(
     )
 }
 
-#[test]
-fn mollusk_request_and_redeem_historical_burned_handle_after_supersession() {
-    // Vector 2 regression, validated against the burned_amount lineage state that two
-    // real burns produce (public(H1)@0, hist(H1,owner)@1, hist(H1,compute)@2, public(H2)@3,
-    // current handle H2). The two-burn *execution* is exercised by the `#[ignore]`d E2E test
-    // below; it currently overflows the 32 KiB per-transaction heap on the supersede burn
-    // (see the migration report). This test drives the exact request + redeem code paths the
-    // fix changed: request accepting a HISTORICAL handle, and redeem authorizing it via the
-    // burn-appended public-decrypt MMR proof.
-    let fixture = BurnRedeemFixture::new();
-    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (proof, expected_peaks) =
-        public_decrypt_proof_for_first_burn(&fixture, first_handle, second_handle);
-
-    let mut accounts = fixture.accounts(1_000);
+/// Seeds `fixture.burned_amount_value` with the post-two-burn lineage state (current handle
+/// `second_handle`, four leaves) into `accounts`, returning the peaks it wrote.
+fn seed_two_burn_lineage(
+    fixture: &BurnRedeemFixture,
+    accounts: &mut HashMap<Pubkey, Account>,
+    second_handle: [u8; 32],
+    peaks: Vec<[u8; 32]>,
+) {
     let (_, mut lineage) = new_encrypted_value(
         fixture.mint,
         fixture.token_account,
@@ -2646,44 +2614,32 @@ fn mollusk_request_and_redeem_historical_burned_handle_after_supersession() {
         &[fixture.owner, fixture.compute_signer],
     );
     lineage.leaf_count = 4;
-    lineage.peaks = expected_peaks.clone();
+    lineage.peaks = peaks;
     accounts.insert(
         fixture.burned_amount_value,
         encrypted_value_account(&lineage),
     );
+}
+
+/// Redeem the historical first-burn handle H1 after a later burn superseded the lineage to H2,
+/// then reject the double-redeem via the permanent per-handle marker PDA. This drives the exact
+/// consumer path the dissolution added: redeem accepting a HISTORICAL handle authorized by the
+/// burn-appended public-decrypt MMR proof through the `verify_public_decrypt` CPI, with no request
+/// witness. (The two real burns overflow the 32 KiB per-tx heap in Mollusk, so the seeded
+/// post-supersession lineage stands in for them; the burn-execution path is the burn test above.)
+#[test]
+fn mollusk_redeem_historical_burned_handle_after_supersession_then_rejects_double_redeem() {
+    let fixture = BurnRedeemFixture::new();
+    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+
+    let mut accounts = fixture.accounts(1_000);
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    // request(H1) SUCCEEDS even though H1 is historical (lineage current handle is H2).
-    let request_nonce = [0x99u8; 32];
-    let expires_slot = 200;
-    let redemption_request = token::burn_redemption_request_address(
-        fixture.mint,
-        fixture.owner,
-        first_handle,
-        request_nonce,
-    )
-    .0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_request, system_account(0));
-    context.process_and_validate_instruction(
-        &request_burn_redemption_ix(
-            &fixture,
-            first_handle,
-            request_nonce,
-            expires_slot,
-            redemption_request,
-        ),
-        &[Check::success()],
-    );
-
-    // request appends NO leaf (the burn already made H1 public); proof position is stable.
-    let after_request = read_encrypted_value(&context, fixture.burned_amount_value);
-    assert_eq!(after_request.leaf_count, 4);
-    assert_eq!(after_request.peaks, expected_peaks);
-
-    // redeem(H1) with the real public-decrypt proof + KMS cert releases H1's amount.
+    // redeem(H1) with the real public-decrypt proof + KMS cert releases H1's amount even though
+    // H1 is historical (the live handle is H2).
     let cleartext_amount = 500;
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
     let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
@@ -2692,15 +2648,15 @@ fn mollusk_request_and_redeem_historical_burned_handle_after_supersession() {
         .borrow_mut()
         .insert(redemption_record, system_account(0));
     context.process_and_validate_instruction(
-        &redeem_burned_amount_secp_ix(
+        &redeem_burned_amount_ix(
             &fixture,
             first_handle,
             cleartext_amount,
             signatures.clone(),
             extra_data.clone(),
             proof.clone(),
-            redemption_request,
             redemption_record,
+            None,
         ),
         &[Check::success()],
     );
@@ -2724,16 +2680,17 @@ fn mollusk_request_and_redeem_historical_burned_handle_after_supersession() {
     assert_eq!(redemption.burned_handle, first_handle);
     assert_eq!(redemption.cleartext_amount, cleartext_amount);
 
-    // Double-redeem of the same handle is blocked (consumed request + per-handle marker PDA).
-    let dup = redeem_burned_amount_secp_ix(
+    // Double-redeem of the same handle is blocked: Anchor's `init` on the already-initialized
+    // per-handle marker PDA fails.
+    let dup = redeem_burned_amount_ix(
         &fixture,
         first_handle,
         cleartext_amount,
         signatures,
         extra_data,
         proof,
-        redemption_request,
         redemption_record,
+        None,
     );
     assert!(context.process_instruction(&dup).raw_result.is_err());
     assert_eq!(
@@ -2742,56 +2699,21 @@ fn mollusk_request_and_redeem_historical_burned_handle_after_supersession() {
     );
 }
 
+/// A structurally valid proof aimed at the WRONG leaf position: the host verifier recomputes
+/// public(H1)@leaf_index against the peaks, it no longer matches, so the redeem fails closed with
+/// the host's `PublicDecryptProofInvalid` (surfaced through the CPI) and the vault is untouched.
 #[test]
 fn mollusk_redeem_rejects_foreign_public_decrypt_proof() {
-    // Same seeded post-supersession lineage as the regression test above.
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
     let (mut proof, expected_peaks) =
-        public_decrypt_proof_for_first_burn(&fixture, first_handle, second_handle);
+        two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
 
     let mut accounts = fixture.accounts(1_000);
-    let (_, mut lineage) = new_encrypted_value(
-        fixture.mint,
-        fixture.token_account,
-        token::burned_amount_label(),
-        second_handle,
-        &[fixture.owner, fixture.compute_signer],
-    );
-    lineage.leaf_count = 4;
-    lineage.peaks = expected_peaks;
-    accounts.insert(
-        fixture.burned_amount_value,
-        encrypted_value_account(&lineage),
-    );
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    let request_nonce = [0x99u8; 32];
-    let redemption_request = token::burn_redemption_request_address(
-        fixture.mint,
-        fixture.owner,
-        first_handle,
-        request_nonce,
-    )
-    .0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_request, system_account(0));
-    context.process_and_validate_instruction(
-        &request_burn_redemption_ix(
-            &fixture,
-            first_handle,
-            request_nonce,
-            200,
-            redemption_request,
-        ),
-        &[Check::success()],
-    );
-
-    // A structurally valid proof aimed at the WRONG leaf position: authorize_public recomputes
-    // public(H1)@leaf_index, which no longer matches the lineage peaks, so it is rejected.
     proof.leaf_index = 3; // H2's public-decrypt leaf, not H1's.
 
     let cleartext_amount = 500;
@@ -2802,69 +2724,50 @@ fn mollusk_redeem_rejects_foreign_public_decrypt_proof() {
         .borrow_mut()
         .insert(redemption_record, system_account(0));
     context.process_and_validate_instruction(
-        &redeem_burned_amount_secp_ix(
+        &redeem_burned_amount_ix(
             &fixture,
             first_handle,
             cleartext_amount,
             signatures,
             extra_data,
             proof,
-            redemption_request,
             redemption_record,
+            None,
         ),
-        &[token_error(
-            token::ConfidentialTokenError::PublicDecryptProofInvalid,
+        &[host_error(
+            host::errors::ZamaHostError::PublicDecryptProofInvalid,
         )],
     );
 
-    // Vault untouched on a rejected proof.
     assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
 }
 
-// Full end-to-end Vector 2 regression: burn H1 -> burn H2 (supersede, no request between)
-// -> request(H1) -> redeem(H1). The burned delta is now born publicly decryptable inside the
-// single eval CPI (DD-036), so the supersede burn no longer runs a second `make_handle_public`
-// CPI — the transaction stays within Solana's 32 KiB bump heap. This drives two real burns and
-// then the historical request + proof-authorized redeem end to end.
+/// Current-context fail-closed: a cert whose KMS context has rotated out (`host_config`'s current id
+/// no longer matches the passed `kms_context` account / cert) is rejected by the host verifier with
+/// `InvalidKmsContext`, so no rotated-out signer set can cash out. This is the context-rotation
+/// rejection observed one layer up at the redeem boundary.
 #[test]
-fn mollusk_e2e_vector2_burn_supersede_request_redeem() {
+fn mollusk_redeem_rejects_rotated_out_kms_context() {
     let fixture = BurnRedeemFixture::new();
-    let context = burn_redeem_mollusk().with_context(fixture.accounts(1_000));
+    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
 
-    let first_handle = run_burn(&context, &fixture, 41);
-    let second_handle = run_burn(&context, &fixture, 42);
-    assert_ne!(first_handle, second_handle);
-
-    let lineage = read_encrypted_value(&context, fixture.burned_amount_value);
-    assert_eq!(lineage.current_handle, second_handle);
-    assert_eq!(lineage.leaf_count, 4);
-    let (proof, expected_peaks) =
-        public_decrypt_proof_for_first_burn(&fixture, first_handle, second_handle);
-    assert_eq!(lineage.peaks, expected_peaks);
-
-    let request_nonce = [0x99u8; 32];
-    let redemption_request = token::burn_redemption_request_address(
-        fixture.mint,
-        fixture.owner,
-        first_handle,
-        request_nonce,
-    )
-    .0;
-    context
-        .account_store
-        .borrow_mut()
-        .insert(redemption_request, system_account(0));
-    context.process_and_validate_instruction(
-        &request_burn_redemption_ix(
-            &fixture,
-            first_handle,
-            request_nonce,
-            200,
-            redemption_request,
+    let mut accounts = fixture.accounts(1_000);
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    // Rotate the host's current context id away from the fixture's seeded `kms_context` account
+    // (still at id 9). The cert was signed for the fixture context; the host now requires the
+    // current id, so the passed context is stale.
+    accounts.insert(
+        fixture.host_config,
+        host_config_account_with_kms_context(
+            fixture.owner,
+            secp_evm_address(&coprocessor_signing_key()),
+            fixture.kms_context_id + 1,
         ),
-        &[Check::success()],
     );
+    let context = burn_redeem_mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
     let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
@@ -2874,22 +2777,432 @@ fn mollusk_e2e_vector2_burn_supersede_request_redeem() {
         .borrow_mut()
         .insert(redemption_record, system_account(0));
     context.process_and_validate_instruction(
-        &redeem_burned_amount_secp_ix(
+        &redeem_burned_amount_ix(
             &fixture,
             first_handle,
             cleartext_amount,
             signatures,
             extra_data,
             proof,
-            redemption_request,
             redemption_record,
+            None,
+        ),
+        &[host_error(host::errors::ZamaHostError::InvalidKmsContext)],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+}
+
+/// The destination token account must be owned by the signer: an account of the right mint owned by
+/// someone else is rejected by the `destination_usdc.owner == owner` constraint, before any payout.
+#[test]
+fn mollusk_redeem_rejects_destination_not_owned_by_signer() {
+    let fixture = BurnRedeemFixture::new();
+    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+
+    let mut accounts = fixture.accounts(1_000);
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    // Re-own the destination account by a stranger (right mint, wrong owner).
+    let stranger = Pubkey::new_unique();
+    accounts.insert(
+        fixture.destination_usdc,
+        spl_token_account(fixture.underlying_mint, stranger, 0),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let cleartext_amount = 500;
+    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
+    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(redemption_record, system_account(0));
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            first_handle,
+            cleartext_amount,
+            signatures,
+            extra_data,
+            proof,
+            redemption_record,
+            None,
+        ),
+        &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+}
+
+/// Explicit deny-at-redeem: with the host grant deny-list enabled, a signer whose canonical
+/// `deny_subject_record` marks it denied cannot cash out — the redeem fails with the token's
+/// `RedemptionSubjectDenied` before the vault is touched.
+#[test]
+fn mollusk_redeem_rejects_denied_subject() {
+    let fixture = BurnRedeemFixture::new();
+    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+
+    let mut accounts = fixture.accounts(1_000);
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    // Enable the grant deny-list on the host config (keeping the fixture's current KMS context)
+    // and mark the signer denied.
+    accounts.insert(
+        fixture.host_config,
+        host_config_account_with_flags(
+            fixture.owner,
+            &[secp_evm_address(&coprocessor_signing_key())],
+            1,
+            fixture.kms_context_id,
+            true,
+        ),
+    );
+    let (deny_record, denied_account) = deny_subject_record_account(fixture.owner, true);
+    accounts.insert(deny_record, denied_account);
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let cleartext_amount = 500;
+    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
+    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(redemption_record, system_account(0));
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            first_handle,
+            cleartext_amount,
+            signatures,
+            extra_data,
+            proof,
+            redemption_record,
+            Some(deny_record),
+        ),
+        &[token_error(
+            token::ConfidentialTokenError::RedemptionSubjectDenied,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+}
+
+/// Two concurrent burns from one account produce a lineage where both H1 (leaf 0) and H2 (leaf 3)
+/// carry public-decrypt leaves. Each is redeemable exactly once: redeem(H1) and redeem(H2) both
+/// succeed against their own per-handle marker PDA, and re-redeeming either fails on the marker.
+#[test]
+fn mollusk_two_concurrent_burns_each_redeemable_exactly_once() {
+    let fixture = BurnRedeemFixture::new();
+    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let (proof_h1, expected_peaks) =
+        two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+    let (proof_h2, _) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 3);
+
+    let mut accounts = fixture.accounts(1_000);
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    // redeem(H1): 300 from leaf 0.
+    let (sig_h1, extra_h1) = kms_public_decrypt_cert(first_handle, 300);
+    let record_h1 = token::burn_redemption_address(fixture.mint, first_handle).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(record_h1, system_account(0));
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            first_handle,
+            300,
+            sig_h1.clone(),
+            extra_h1.clone(),
+            proof_h1.clone(),
+            record_h1,
+            None,
         ),
         &[Check::success()],
     );
-    assert_eq!(
-        read_spl_amount(&context, fixture.destination_usdc),
-        cleartext_amount
+
+    // redeem(H2): 200 from leaf 3, a distinct marker PDA.
+    let (sig_h2, extra_h2) = kms_public_decrypt_cert(second_handle, 200);
+    let record_h2 = token::burn_redemption_address(fixture.mint, second_handle).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(record_h2, system_account(0));
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            second_handle,
+            200,
+            sig_h2,
+            extra_h2,
+            proof_h2,
+            record_h2,
+            None,
+        ),
+        &[Check::success()],
     );
+
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 500);
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 500);
+
+    // Re-redeem(H1) fails on the already-initialized marker.
+    let dup = redeem_burned_amount_ix(
+        &fixture,
+        first_handle,
+        300,
+        sig_h1,
+        extra_h1,
+        proof_h1,
+        record_h1,
+        None,
+    );
+    assert!(context.process_instruction(&dup).raw_result.is_err());
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 500);
+}
+
+/// Builds the fixture's host config with the grant deny-list enabled (keeping the current KMS
+/// context so the redeem reaches the deny gate rather than failing the verifier config).
+fn deny_enabled_redeem_host_config(fixture: &BurnRedeemFixture) -> Account {
+    host_config_account_with_flags(
+        fixture.owner,
+        &[secp_evm_address(&coprocessor_signing_key())],
+        1,
+        fixture.kms_context_id,
+        true,
+    )
+}
+
+/// Builds the fixture's host config with `paused = true` so the redeem is rejected at the pause gate.
+fn paused_redeem_host_config(fixture: &BurnRedeemFixture) -> Account {
+    let mut account = host_config_account_with_kms_context(
+        fixture.owner,
+        secp_evm_address(&coprocessor_signing_key()),
+        fixture.kms_context_id,
+    );
+    let mut config = host::HostConfig::try_deserialize(&mut account.data.as_slice())
+        .expect("host config deserializes");
+    config.paused = true;
+    account.data = serialized_account(config);
+    account
+}
+
+/// Deny-list ENABLED but no `deny_subject_record` passed: the redeem cannot prove the signer is not
+/// denied, so it fails closed with `RedemptionDenyRecordInvalid` and the vault is untouched.
+#[test]
+fn mollusk_redeem_deny_enabled_missing_record_rejected() {
+    let fixture = BurnRedeemFixture::new();
+    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+
+    let mut accounts = fixture.accounts(1_000);
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    accounts.insert(
+        fixture.host_config,
+        deny_enabled_redeem_host_config(&fixture),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
+    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(redemption_record, system_account(0));
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            first_handle,
+            500,
+            signatures,
+            extra_data,
+            proof,
+            redemption_record,
+            None,
+        ),
+        &[token_error(
+            token::ConfidentialTokenError::RedemptionDenyRecordInvalid,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
+}
+
+/// Deny-list DISABLED but a `deny_subject_record` IS passed: the optional-account convention rejects
+/// a supplied record when the deny-list is off, with `RedemptionDenyRecordInvalid`, vault untouched.
+#[test]
+fn mollusk_redeem_deny_disabled_unexpected_record_rejected() {
+    let fixture = BurnRedeemFixture::new();
+    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+
+    let mut accounts = fixture.accounts(1_000);
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    // Default fixture host config has the deny-list DISABLED. Supply a (non-denied) record anyway.
+    let (deny_record, record_account) = deny_subject_record_account(fixture.owner, false);
+    accounts.insert(deny_record, record_account);
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
+    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(redemption_record, system_account(0));
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            first_handle,
+            500,
+            signatures,
+            extra_data,
+            proof,
+            redemption_record,
+            Some(deny_record),
+        ),
+        &[token_error(
+            token::ConfidentialTokenError::RedemptionDenyRecordInvalid,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
+}
+
+/// Deny-list ENABLED with a non-canonical `deny_subject_record` (the deny PDA for a DIFFERENT
+/// subject, not the signer): the key check against `deny_subject_address(signer)` fails, so the
+/// redeem is rejected with `RedemptionDenyRecordInvalid` and the vault is untouched.
+#[test]
+fn mollusk_redeem_deny_wrong_subject_record_rejected() {
+    let fixture = BurnRedeemFixture::new();
+    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+
+    let mut accounts = fixture.accounts(1_000);
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    accounts.insert(
+        fixture.host_config,
+        deny_enabled_redeem_host_config(&fixture),
+    );
+    // A deny record for a stranger — a valid record, but not the canonical PDA for the signer.
+    let stranger = Pubkey::new_unique();
+    let (stranger_record, record_account) = deny_subject_record_account(stranger, false);
+    accounts.insert(stranger_record, record_account);
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
+    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(redemption_record, system_account(0));
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            first_handle,
+            500,
+            signatures,
+            extra_data,
+            proof,
+            redemption_record,
+            Some(stranger_record),
+        ),
+        &[token_error(
+            token::ConfidentialTokenError::RedemptionDenyRecordInvalid,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
+}
+
+/// A paused host config rejects the redeem at the pause gate (`assert_host_config_allows_token_response`)
+/// before any vault movement, with `RequestWitnessUnavailable`.
+#[test]
+fn mollusk_redeem_rejected_when_host_paused() {
+    let fixture = BurnRedeemFixture::new();
+    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+
+    let mut accounts = fixture.accounts(1_000);
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    accounts.insert(fixture.host_config, paused_redeem_host_config(&fixture));
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
+    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(redemption_record, system_account(0));
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            first_handle,
+            500,
+            signatures,
+            extra_data,
+            proof,
+            redemption_record,
+            None,
+        ),
+        &[token_error(
+            token::ConfidentialTokenError::RequestWitnessUnavailable,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
+}
+
+/// A balance-lineage account passed as `burned_amount_value` is rejected by the burned-amount
+/// label / canonical-PDA pin in `assert_burned_amount_lineage` (`AmountAclMismatch`), before the
+/// verifier CPI and before any payout.
+#[test]
+fn mollusk_redeem_rejects_wrong_lineage_label() {
+    let fixture = BurnRedeemFixture::new();
+    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+
+    let mut accounts = fixture.accounts(1_000);
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, 500);
+    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(redemption_record, system_account(0));
+    // Substitute the balance lineage (balance label) for the burned_amount lineage account.
+    let mut ix = redeem_burned_amount_ix(
+        &fixture,
+        first_handle,
+        500,
+        signatures,
+        extra_data,
+        proof,
+        redemption_record,
+        None,
+    );
+    let burned_meta = ix
+        .accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == fixture.burned_amount_value)
+        .expect("burned_amount_value account meta");
+    burned_meta.pubkey = fixture.balance_value;
+    context.process_and_validate_instruction(
+        &ix,
+        &[token_error(
+            token::ConfidentialTokenError::AmountAclMismatch,
+        )],
+    );
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -3224,7 +3537,7 @@ fn mollusk_disclose_secp_after_supersession_consumes_with_public_proof() {
 fn mollusk_disclose_secp_is_idempotent_no_replay_marker() {
     // Act-once is intentionally NOT enforced on-chain: disclosure is idempotent information release,
     // so re-running the same cert succeeds again and re-emits the same event. No replay marker PDA
-    // exists by design (contrast redeem_burned_amount_secp). Apps that need consume-once track it in
+    // exists by design (contrast redeem_burned_amount). Apps that need consume-once track it in
     // their own state.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(44, BALANCE_FHE_TYPE);

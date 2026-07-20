@@ -389,33 +389,13 @@ pub(crate) fn assert_amount_attestation_binding(
     Ok(())
 }
 
-/// Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction
-/// argument. The shared ACL crate is deliberately Anchor-free (pure `borsh`), so
-/// it cannot derive Anchor's IDL metadata; this local type carries the identical
-/// wire shape and converts into the shared proof for verification.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, Default, PartialEq, Eq)]
-pub struct MmrInclusionProof {
-    /// Index of the proven leaf within the lineage's MMR.
-    pub leaf_index: u64,
-    /// Authentication path from the leaf up to its mountain peak.
-    pub siblings: Vec<[u8; 32]>,
-}
-
-impl From<MmrInclusionProof> for zama_solana_acl::MmrProof {
-    fn from(proof: MmrInclusionProof) -> Self {
-        zama_solana_acl::MmrProof {
-            leaf_index: proof.leaf_index,
-            siblings: proof.siblings,
-        }
-    }
-}
-
-/// Lineage checks shared by the request and redeem paths: burned-amount handle
-/// type, canonical address, domain/app account, the burned-amount label, and
-/// current membership for the owner and mint compute signer. Does NOT authorize
-/// the specific handle: the redeem path adds an MMR public-decrypt proof, while
-/// the request path binds the handle into the witness (its publicness is proven
-/// at redeem, since the burn already made the handle public — DD-036 / Vector 2).
+/// Lineage checks for the redeem path: burned-amount handle type, canonical
+/// address, domain/app account, the burned-amount label, and current membership
+/// for the owner and mint compute signer. Does NOT authorize the specific handle:
+/// the redeem path proves the handle's publicness via the exact-handle MMR
+/// public-decrypt proof verified inside the `verify_public_decrypt` CPI, since the
+/// burn already made the handle public (DD-036 / Vector 2). The handle need not be
+/// the live one, so a historical handle superseded by a later burn stays redeemable.
 pub(crate) fn assert_burned_amount_lineage(
     amount_value: &Account<zama_host::EncryptedValue>,
     burned_handle: [u8; 32],
@@ -455,39 +435,6 @@ pub(crate) fn assert_burned_amount_lineage(
         amount_value.has_subject(compute_signer),
         ConfidentialTokenError::AmountAclMismatch
     );
-    Ok(())
-}
-
-/// Redeem (consume) path: the burned handle need not be current. It is authorized
-/// by an MMR public-decrypt proof against the lineage's current peaks, so a
-/// redemption pinned to a handle stays valid after later burns supersede the
-/// lineage — closing the fund-stranding window without a per-operation escrow.
-/// Replay is still prevented by the per-handle `burn-redemption` marker PDA.
-pub(crate) fn authorize_burned_amount_redeem(
-    amount_value: &Account<zama_host::EncryptedValue>,
-    encrypted_value_account: Pubkey,
-    burned_handle: [u8; 32],
-    proof: &zama_solana_acl::MmrProof,
-    mint: Pubkey,
-    token_account: Pubkey,
-    owner: Pubkey,
-    compute_signer: Pubkey,
-) -> Result<()> {
-    assert_burned_amount_lineage(
-        amount_value,
-        burned_handle,
-        mint,
-        token_account,
-        owner,
-        compute_signer,
-    )?;
-    zama_solana_acl::authorize_public(
-        encrypted_value_account.to_bytes(),
-        &amount_value.to_shared(),
-        burned_handle,
-        proof,
-    )
-    .map_err(|_| ConfidentialTokenError::PublicDecryptProofInvalid)?;
     Ok(())
 }
 
@@ -593,131 +540,61 @@ pub(crate) fn assert_confidential_token_account_shape(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn assert_burn_redemption_request_witness(
-    request: &Account<BurnRedemptionRequest>,
-    request_key: Pubkey,
-    mint: Pubkey,
-    owner: Pubkey,
-    token_account: Pubkey,
-    underlying_mint: Pubkey,
-    destination_owner: Pubkey,
-    destination_account: Pubkey,
-    burned_handle: [u8; 32],
-    burned_encrypted_value: Pubkey,
-    host_config: Pubkey,
-) -> Result<()> {
-    let (expected_key, expected_bump) =
-        burn_redemption_request_address(mint, owner, burned_handle, request.request_nonce);
-    require_keys_eq!(
-        request_key,
-        expected_key,
-        ConfidentialTokenError::RequestWitnessMismatch
-    );
-    require!(
-        request.to_account_info().data_len() == 8 + BurnRedemptionRequest::SPACE
-            && request.bump == expected_bump,
-        ConfidentialTokenError::RequestWitnessMismatch
-    );
-    require!(
-        request.status == REQUEST_STATUS_PENDING && request.expires_slot >= Clock::get()?.slot,
-        ConfidentialTokenError::RequestWitnessUnavailable
-    );
-    require!(
-        request.mint == mint
-            && request.owner == owner
-            && request.token_account == token_account
-            && request.underlying_mint == underlying_mint
-            && request.destination_owner == destination_owner
-            && request.destination_account == destination_account
-            && request.burned_handle == burned_handle
-            && request.burned_encrypted_value == burned_encrypted_value
-            && request.host_config == host_config
-            && request.kms_context_id != 0
-            && request.chain_id != 0,
-        ConfidentialTokenError::RequestWitnessMismatch
-    );
-    let recomputed_hash = burn_redemption_request_hash(
-        crate::ID,
-        request_key,
-        request.mint,
-        request.owner,
-        request.token_account,
-        request.underlying_mint,
-        request.destination_owner,
-        request.destination_account,
-        request.burned_handle,
-        request.burned_encrypted_value,
-        request.host_config,
-        request.kms_context_id,
-        request.request_nonce,
-        request.chain_id,
-        request.expires_slot,
-    );
-    require!(
-        request.request_hash == recomputed_hash,
-        ConfidentialTokenError::RequestWitnessMismatch
-    );
-    Ok(())
-}
-
-/// Verifies a KMS `PublicDecryptVerification` secp256k1 EIP-712 certificate against the
-/// KMS context a request witness was pinned to at request time.
+/// Explicit deny-list consultation at redeem payout (fhevm-internal#1763): a denied signer cannot
+/// cash out. Mirrors the host's own `check_grant_not_denied` model so the token layer reads the deny
+/// list exactly as the host would.
 ///
-/// The context is resolved two ways and required to agree: the passed `kms_context` account
-/// must be the canonical PDA for `request_kms_context_id` (the id stored in the witness), and
-/// the id the certificate itself commits to via `extra_data` (EVM `_extractContextId` parity)
-/// must equal that same id. Binding to the witness id — not the *current* context — is what
-/// closes the rotation-reuse window: a cert minted under context N cannot satisfy a request
-/// pinned to N, then be replayed against a rotated context, nor can a witness be steered to a
-/// different context than the one it was created under.
-pub(crate) fn assert_kms_public_decrypt_cert_for_request(
+/// When the host grant deny-list is disabled, no `deny_subject_record` may be passed. When it is
+/// enabled, the canonical record PDA for `subject` must be passed: an absent (system-owned, empty)
+/// record means "never denied" and clears; a present record must be the host-owned canonical PDA for
+/// `subject` and must not mark it denied.
+pub(crate) fn assert_redeem_subject_not_denied(
     host_config: &Account<zama_host::HostConfig>,
-    kms_context: &Account<zama_host::KmsContext>,
-    request_kms_context_id: u64,
-    ct_handle: [u8; 32],
-    cleartext_amount: u64,
-    signatures: &[[u8; 65]],
-    extra_data: &[u8],
+    subject: Pubkey,
+    deny_subject_record: Option<&UncheckedAccount>,
 ) -> Result<()> {
-    require!(
-        host_config.decryption_contract != [0u8; 20] && request_kms_context_id != 0,
-        ConfidentialTokenError::GatewayVerifierConfigUnset
+    if !host_config.grant_deny_list_enabled {
+        require!(
+            deny_subject_record.is_none(),
+            ConfidentialTokenError::RedemptionDenyRecordInvalid
+        );
+        return Ok(());
+    }
+    let info = deny_subject_record
+        .ok_or(ConfidentialTokenError::RedemptionDenyRecordInvalid)?
+        .to_account_info();
+    let (expected, expected_bump) = zama_host::deny_subject_address(subject);
+    require_keys_eq!(
+        info.key(),
+        expected,
+        ConfidentialTokenError::RedemptionDenyRecordInvalid
+    );
+    // An uninitialized (system-owned, empty) record means the subject was never denied.
+    if *info.owner == System::id() && info.data_is_empty() {
+        require!(
+            !info.executable,
+            ConfidentialTokenError::RedemptionDenyRecordInvalid
+        );
+        return Ok(());
+    }
+    require_keys_eq!(
+        *info.owner,
+        zama_host::ID,
+        ConfidentialTokenError::RedemptionDenyRecordInvalid
     );
     require!(
-        !kms_context.destroyed,
-        ConfidentialTokenError::InvalidKmsContext
+        info.data_len() == 8 + zama_host::DenySubjectRecord::SPACE,
+        ConfidentialTokenError::RedemptionDenyRecordInvalid
     );
-    // The passed context account must be the canonical PDA for the witness-pinned id.
+    let mut data: &[u8] = &info.try_borrow_data()?;
+    let record = zama_host::DenySubjectRecord::try_deserialize(&mut data)?;
     require!(
-        kms_context.context_id == request_kms_context_id
-            && kms_context.key() == zama_host::kms_context_address(request_kms_context_id).0,
-        ConfidentialTokenError::InvalidKmsContext
+        record.bump == expected_bump && record.subject == subject,
+        ConfidentialTokenError::RedemptionDenyRecordInvalid
     );
-    // The id the certificate commits to (via signed extra_data) must equal the witness id, so a
-    // cert minted under a different context cannot be presented against this request.
-    let cert_context_id =
-        zama_host::eip712::extract_kms_context_id(extra_data, request_kms_context_id)
-            .ok_or(ConfidentialTokenError::InvalidKmsContext)?;
     require!(
-        cert_context_id == request_kms_context_id,
-        ConfidentialTokenError::InvalidKmsContext
-    );
-    let verifier = zama_host::eip712::Eip712VerifierConfig {
-        gateway_chain_id: host_config.gateway_chain_id,
-        verifying_contract: host_config.decryption_contract,
-        signers: &kms_context.signers,
-        threshold: kms_context.thresholds.public_decryption,
-    };
-    require!(
-        zama_host::eip712::verify_kms_public_decrypt(
-            &verifier,
-            &[ct_handle],
-            &kms_decrypted_result_bytes(cleartext_amount),
-            extra_data,
-            signatures,
-        ),
-        ConfidentialTokenError::InvalidKmsCertificate
+        !record.denied,
+        ConfidentialTokenError::RedemptionSubjectDenied
     );
     Ok(())
 }

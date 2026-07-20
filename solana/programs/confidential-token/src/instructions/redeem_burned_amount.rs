@@ -1,18 +1,36 @@
-//! Redeems KMS-certified burned encrypted amounts from the SPL vault, verifying the
-//! KMS `PublicDecryptVerification` EIP-712 certificate on-chain via `secp256k1_recover`
-//! (the gateway-compatible path, #1494 Phase 3 cert-secp).
+//! Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.
 //!
-//! Uses the gateway-level KMS context signer set (EVM secp256k1 EIP-712), the same cert shape the
-//! `disclose_*_secp` instructions verify.
+//! This is the whole burn-redemption path after the burn-redemption request-witness lifecycle was
+//! dissolved (fhevm-internal#1763, DD-040). It mirrors `disclose_secp`: the redeemer brings the KMS
+//! `PublicDecryptVerification` certificate plus an MMR public-leaf inclusion proof in its own
+//! transaction, CPIs the stateless `zama_host::verify_public_decrypt`, and asserts the handle the
+//! host proved public equals the `burned_handle` it pinned and that the certified cleartext equals
+//! the claimed `cleartext_amount`. There is no request witness, no request-time KMS context pin, and
+//! no expiry: the certificate is verified against the host's CURRENT `KmsContext` (context rotation
+//! fails closed one layer down in the host verifier).
+//!
+//! ## Act-once IS enforced here
+//!
+//! Unlike disclosure, redemption moves real value, so it cannot be idempotent: the per-handle
+//! write-once, never-closed `burn-redemption` marker PDA is the single durable "paid out" bit. A
+//! second redeem of the same burned handle fails when Anchor tries to `init` the already-initialized
+//! marker.
+//!
+//! ## Deny check at payout
+//!
+//! The denied-subject check is explicit here (fhevm-internal#1763): a denied signer cannot cash out.
+//! When the host grant deny-list is enabled the redeemer must pass the canonical `deny_subject_record`
+//! for the signer; a record marking the signer denied rejects the redemption. This replaces the
+//! request-time no-op `allow_subjects` CPI the dissolved witness relied on.
 
 use super::*;
 
-/// Accounts for redeeming a KMS-certified burned amount via secp256k1 EIP-712.
+/// Accounts for redeeming a KMS-certified burned amount via the stateless host verifier.
 #[derive(Accounts)]
 #[instruction(burned_handle: [u8; 32], cleartext_amount: u64)]
 #[event_cpi]
-pub struct RedeemBurnedAmountSecp<'info> {
-    /// Token owner and redemption recipient.
+pub struct RedeemBurnedAmount<'info> {
+    /// Token owner, redemption recipient, and payer for the replay marker.
     #[account(mut)]
     pub owner: Signer<'info>,
     /// Confidential mint whose vault backs the redeemed burned amount.
@@ -28,7 +46,8 @@ pub struct RedeemBurnedAmountSecp<'info> {
         constraint = vault_usdc.owner == vault_authority.key() @ ConfidentialTokenError::VaultAuthorityMismatch
     )]
     pub vault_usdc: Box<Account<'info, TokenAccount>>,
-    /// Owner's destination USDC token account.
+    /// Signer's destination USDC token account (any SPL account of the right mint owned by the
+    /// signer, not necessarily the ATA).
     #[account(
         mut,
         constraint = destination_usdc.mint == underlying_mint.key() @ ConfidentialTokenError::UnderlyingMintMismatch,
@@ -38,12 +57,12 @@ pub struct RedeemBurnedAmountSecp<'info> {
     /// CHECK: PDA authority for the underlying-token vault.
     #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
-    /// Burned amount `EncryptedValue` lineage whose handle is redeemed.
+    /// Burned amount `EncryptedValue` lineage whose handle is redeemed. Bound to the mint/token
+    /// account/owner by `assert_burned_amount_lineage`; its canonical PDA, layout, host ownership,
+    /// and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
     pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
-    /// Account-backed redemption request witness pinned to a KMS context id.
-    #[account(mut)]
-    pub redemption_request: Box<Account<'info, BurnRedemptionRequest>>,
-    /// Replay marker for this burned handle.
+    /// Replay marker for this burned handle: write-once, never closed, the sole durable "paid out"
+    /// bit for `(mint, burned_handle)`.
     #[account(
         init,
         payer = owner,
@@ -52,32 +71,36 @@ pub struct RedeemBurnedAmountSecp<'info> {
         bump
     )]
     pub redemption_record: Account<'info, BurnRedemption>,
-    /// Host config carrying the gateway KMS verifier params.
+    /// Host config carrying the current KMS context id and gateway EIP-712 domain.
     #[account(
         seeds = [zama_host::HOST_CONFIG_SEED],
         seeds::program = zama_host::ID,
         bump = host_config.bump,
     )]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// KMS context the request was pinned to. Verified in-handler against the witness's
-    /// `kms_context_id` (not the current context), so a cert minted under one context cannot be
-    /// presented against a request pinned to another after rotation.
+    /// KMS context PDA for the host's current context id (validated by the verifier CPI).
     pub kms_context: Box<Account<'info, zama_host::KmsContext>>,
+    /// CHECK: canonical deny-list record for the signer when the host grant deny-list is enabled;
+    /// consulted read-only by `assert_redeem_subject_not_denied`. Absent (must be `None`) when the
+    /// deny-list is disabled.
+    pub deny_subject_record: Option<UncheckedAccount<'info>>,
+    /// ZamaHost program used for the stateless verifier CPI.
+    pub zama_program: Program<'info, ZamaHost>,
     /// SPL token program.
     pub token_program: Program<'info, Token>,
     /// System program used for the replay marker.
     pub system_program: Program<'info, System>,
 }
 
-/// Redeems a previously burned encrypted amount from the underlying-token vault after
-/// on-chain secp256k1 verification of the KMS `PublicDecryptVerification` certificate.
-pub fn redeem_burned_amount_secp(
-    ctx: Context<RedeemBurnedAmountSecp>,
+/// Redeems a previously burned encrypted amount from the underlying-token vault after the host
+/// verifier certifies the burned handle's cleartext against the current KMS context.
+pub fn redeem_burned_amount(
+    ctx: Context<RedeemBurnedAmount>,
     burned_handle: [u8; 32],
     cleartext_amount: u64,
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
-    proof: MmrInclusionProof,
+    proof: zama_host::instructions::MmrInclusionProof,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
@@ -109,47 +132,44 @@ pub fn redeem_burned_amount_secp(
         mint_key,
         ctx.accounts.owner.key(),
     )?;
-    // Authorize the pinned burned handle by MMR public-decrypt proof rather than
-    // requiring it to still be the live handle, so a redemption survives a later
-    // burn superseding the shared burned-amount lineage.
-    let proof = zama_solana_acl::MmrProof::from(proof);
-    authorize_burned_amount_redeem(
+
+    // Lineage binding: the burned handle need not be current. The burn already made it publicly
+    // decryptable (DD-036 / Vector 2), so a historical handle superseded by a later burn stays
+    // redeemable; the exact-handle MMR public-decrypt proof is checked inside the verifier CPI.
+    assert_burned_amount_lineage(
         &ctx.accounts.burned_amount_value,
-        ctx.accounts.burned_amount_value.key(),
         burned_handle,
-        &proof,
         mint_key,
         token_account_key,
         ctx.accounts.owner.key(),
         ctx.accounts.mint.compute_signer,
     )?;
 
-    // Bind the redemption to a previously created request witness: same handle, accounts, host
-    // config; still PENDING and not expired; recomputed request_hash matches.
-    assert_burn_redemption_request_witness(
-        &ctx.accounts.redemption_request,
-        ctx.accounts.redemption_request.key(),
-        mint_key,
-        ctx.accounts.owner.key(),
-        token_account_key,
-        ctx.accounts.underlying_mint.key(),
-        ctx.accounts.destination_usdc.owner,
-        ctx.accounts.destination_usdc.key(),
-        burned_handle,
-        ctx.accounts.burned_amount_value.key(),
-        ctx.accounts.host_config.key(),
-    )?;
-    // Verify the KMS PublicDecryptVerification secp256k1 cert against the context the witness was
-    // pinned to at request time (not the current context), closing rotation reuse.
-    assert_kms_public_decrypt_cert_for_request(
+    // Explicit deny-list check at payout: a denied signer cannot cash out.
+    assert_redeem_subject_not_denied(
         &ctx.accounts.host_config,
-        &ctx.accounts.kms_context,
-        ctx.accounts.redemption_request.kms_context_id,
-        burned_handle,
-        cleartext_amount,
-        &signatures,
-        &extra_data,
+        ctx.accounts.owner.key(),
+        ctx.accounts.deny_subject_record.as_ref(),
     )?;
+
+    // Verify the KMS certificate against the CURRENT KMS context plus the exact-handle MMR proof.
+    // The wrapper asserts the returned handle equals `burned_handle`; we additionally require the
+    // certified cleartext to equal the claimed `cleartext_amount`.
+    let certified_cleartext = fhe::verify_public_decrypt(fhe::VerifyPublicDecrypt {
+        expected_handle: burned_handle,
+        cleartext: kms_decrypted_result_bytes(cleartext_amount),
+        signatures,
+        extra_data,
+        proof,
+        encrypted_value: ctx.accounts.burned_amount_value.to_account_info(),
+        host_config: &ctx.accounts.host_config,
+        kms_context: ctx.accounts.kms_context.to_account_info(),
+        zama_program: &ctx.accounts.zama_program,
+    })?;
+    require!(
+        certified_cleartext == kms_decrypted_result_bytes(cleartext_amount),
+        ConfidentialTokenError::VerifierReturnDataInvalid
+    );
 
     let vault_authority_bump = [ctx.bumps.vault_authority];
     let vault_authority_seeds: &[&[u8]] =
@@ -177,7 +197,6 @@ pub fn redeem_burned_amount_secp(
     redemption.burned_encrypted_value = ctx.accounts.burned_amount_value.key();
     redemption.cleartext_amount = cleartext_amount;
     redemption.bump = ctx.bumps.redemption_record;
-    ctx.accounts.redemption_request.status = REQUEST_STATUS_CONSUMED;
 
     emit_cpi!(BurnRedeemedEvent {
         version: APP_EVENT_VERSION,
@@ -187,8 +206,6 @@ pub fn redeem_burned_amount_secp(
         burned_handle,
         burned_encrypted_value: ctx.accounts.burned_amount_value.key(),
         destination_usdc: ctx.accounts.destination_usdc.key(),
-        request: ctx.accounts.redemption_request.key(),
-        request_hash: ctx.accounts.redemption_request.request_hash,
         cleartext_amount,
     });
     Ok(())

@@ -42,7 +42,7 @@ pub_field() {
 LC="$ROOT/solana/scripts/e2e/live-client/target/debug/poc-live-client"
 PUBLIC_DECRYPT_JSON=""
 # Mode-byte-free borsh(MmrInclusionProof) for the last handle proved — the PROOF the on-chain
-# consume steps (redeem_burned_amount_secp / disclose_*_secp) borsh-decode. Set by run_public_decrypt_with_proof.
+# consume steps (redeem_burned_amount / disclose_secp) borsh-decode. Set by run_public_decrypt_with_proof.
 PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES=""
 
 run_public_decrypt_with_proof() {
@@ -464,13 +464,6 @@ for i in $(seq 1 40); do
   [ "$i" = 40 ] && fail "burned-handle SNS commit timed out"; sleep 6
 done
 
-# Real material digests (ProtocolConfig-mirrored coprocessor set), retained for the burn-redemption
-# request path. Disclosure no longer commits material or creates a witness (fhevm-internal#1704).
-KEY_ID="0x$(ctdig "SELECT encode(key_id_gw,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
-CT64="0x$(ctdig "SELECT encode(ciphertext,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
-CT128="0x$(ctdig "SELECT encode(ciphertext128,'hex') FROM ciphertext_digest WHERE handle=decode('$BHH','hex')")"
-COPROC_SET_DIGEST="$(cast keccak "$(cast abi-encode 'f(address[])' "[$COPROCESSOR_SIGNER]")")"
-
 # Seal the burned handle publicly decryptable via the host make_handle_public instruction (owner is
 # an allowed subject in the burned ACL). After fhevm-internal#1704 there is no DisclosureRequest
 # witness: the sealed public-decrypt leaf IS the request.
@@ -484,27 +477,22 @@ echo "    burned handle released for public decrypt (make_handle_public)"
 run_public_decrypt_with_proof "burned" "$BURNED_HANDLE" "$BURNED_ACL" 2 1
 cr="$PUBLIC_DECRYPT_JSON"
 # The burned handle's public-decrypt MMR proof (DD-036): both the redeem and disclose consume
-# steps authorize by verifying it against the lineage's on-chain peaks. request_burn_redemption
-# appends no leaf, so this proof stays valid through both consumes.
+# steps authorize by verifying it against the lineage's on-chain peaks. The burn already sealed the
+# public-decrypt leaf, so no consume appends a leaf and this proof stays valid through both.
 BURNED_PROOF_BYTES="$PUBLIC_DECRYPT_INCLUSION_PROOF_BYTES"
 CLEARTEXT="$(echo "$cr" | python3 -c "import sys,json;print(int(json.load(sys.stdin)['result']['decryptedValue'],16))")"
 KMS_SIG="0x$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['signatures'][0])")"
 CEXTRA="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['result'].get('extraData','$EXTRA'))")"
 echo "    burned amount cleartext=$CLEARTEXT (KMS PublicDecryptVerification cert)"
 
-# Create the burn-redemption request witness (material already committed by the seal step, so
-# REDEEM_SKIP_COMMIT): pins the host's current KMS context id + expires_slot + request_hash into a
-# BurnRedemptionRequest PDA the redeem_burned_amount_secp consume step binds to.
-reqout="$(lc CONSUME_REQUEST_REDEEM=1 REDEEM_SKIP_COMMIT=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE")" || true
-echo "$reqout" | grep -q 'OK request_burn_redemption' || fail "request_burn_redemption witness: $(echo "$reqout" | tail -3)"
-echo "    burn-redemption request witness created (KMS context pinned)"
-
-# Redeem: bind the redemption witness + on-chain secp256k1 verify of the KMS cert against the
-# witness-pinned KMS context + SPL vault release.
+# Redeem: the thin token redeem_burned_amount CPIs the stateless host verify_public_decrypt (KMS cert
+# verified against the CURRENT KMS context + the burned handle's MMR public-leaf proof), consults the
+# deny-list at payout, writes the permanent per-handle replay marker, and releases from the SPL vault.
+# No request witness (fhevm-internal#1763).
 redout="$(lc CONSUME_REDEEM=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
    KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 PROOF="$BURNED_PROOF_BYTES")" || true
-echo "$redout" | grep -q 'OK redeem_burned_amount_secp' || fail "redeem_burned_amount_secp: $(echo "$redout" | tail -3)"
-echo "    redeem_burned_amount_secp OK -- witness-bound secp256k1 KMS-cert verify released $CLEARTEXT USDC base units"
+echo "$redout" | grep -q 'OK redeem_burned_amount' || fail "redeem_burned_amount: $(echo "$redout" | tail -3)"
+echo "    redeem_burned_amount OK -- host verify_public_decrypt (current KMS context) released $CLEARTEXT USDC base units"
 
 # Disclose: the thin token disclose_secp CPIs the stateless host verify_public_decrypt (KMS cert
 # verified against the CURRENT KMS context + the burned handle's MMR public-leaf proof) and emits

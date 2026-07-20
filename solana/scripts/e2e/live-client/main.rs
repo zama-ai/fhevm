@@ -154,19 +154,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         consume_burn(&token, &payer, host_config)?;
         return Ok(());
     }
-    // CONSUME_REQUEST_REDEEM: create the burn-redemption request witness (request_burn_redemption)
-    // pinning the host's current KMS context id + expires_slot + request_hash before the secp
-    // consume. Releases the burned handle for public decrypt via the zama-host allow CPI.
-    if std::env::var("CONSUME_REQUEST_REDEEM").is_ok() {
-        consume_request_redeem(&host, &token, &payer, host_config)?;
-        return Ok(());
-    }
-    // CONSUME_REDEEM: redeem a KMS-certified burned amount from the SPL vault
-    // (redeem_burned_amount_secp) — commits the burned handle's material, then verifies the KMS
-    // PublicDecryptVerification cert on-chain via secp256k1 and releases the cleartext amount of
-    // underlying USDC to the owner. The vault-releasing Consume seam.
+    // CONSUME_REDEEM: redeem a KMS-certified burned amount from the SPL vault via the thin token
+    // `redeem_burned_amount`, which CPIs the stateless host `verify_public_decrypt` (KMS
+    // PublicDecryptVerification EIP-712 cert verified against the CURRENT KMS context + an MMR
+    // public-leaf inclusion proof), consults the deny-list at payout, writes the permanent per-handle
+    // replay marker, and releases the cleartext amount of underlying USDC to the owner. The
+    // vault-releasing Consume seam; no request witness (fhevm-internal#1763).
     if std::env::var("CONSUME_REDEEM").is_ok() {
-        consume_redeem(&host, &token, &payer, host_config)?;
+        consume_redeem(&token, &payer, host_config)?;
         return Ok(());
     }
 
@@ -928,7 +923,7 @@ fn public_decrypt_proof_step(
     println!("PUB siblings {}", hex_csv(&proof.siblings));
     println!("PUB mmrProofBytes 0x{}", hex(&proof_bytes));
     // Same proof, mode-byte stripped: proof_blob prepends a 1-byte MMR_MODE tag, but the
-    // on-chain consume steps (redeem_burned_amount_secp / disclose_*_secp, PROOF env) borsh-decode
+    // on-chain consume steps (redeem_burned_amount / disclose_secp, PROOF env) borsh-decode
     // a bare MmrInclusionProof, whose wire shape == borsh(MmrProof). So this is proof_bytes[1..].
     println!("PUB mmrInclusionProofBytes 0x{}", hex(&proof_bytes[1..]));
     Ok(())
@@ -1219,28 +1214,6 @@ fn consume_seal(
         .send()?;
     println!("OK make_handle_public: {sig2}  (handle released for public decrypt)");
     Ok(())
-}
-
-/// Returns the 32-byte request nonce from REQUEST_NONCE (hex) or a default fixed nonce so a
-/// witness PDA is deterministic within one e2e run. Used by the burn-redemption request path.
-fn request_nonce_from_env() -> [u8; 32] {
-    match std::env::var("REQUEST_NONCE") {
-        Ok(s) => hexdec(&s)
-            .try_into()
-            .expect("REQUEST_NONCE must be 32 bytes"),
-        Err(_) => [7u8; 32],
-    }
-}
-
-/// Computes a witness expiry slot: current slot + REQUEST_TTL_SLOTS (default 5000). Used by the
-/// burn-redemption request path.
-fn request_expires_slot(program: &Program<Rc<Keypair>>) -> Result<u64, Box<dyn std::error::Error>> {
-    let ttl: u64 = std::env::var("REQUEST_TTL_SLOTS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(5000);
-    let slot = program.rpc().get_slot()?;
-    Ok(slot + ttl)
 }
 
 /// Consume step 2: publish a KMS-certified cleartext via the thin token `disclose_secp`, which CPIs
@@ -1583,76 +1556,16 @@ fn consume_burn(
     Ok(())
 }
 
-/// Redeem step 1: create the burn-redemption request witness, which pins the host's current KMS
-/// context id + expires_slot + request_hash into a BurnRedemptionRequest PDA the
-/// redeem_burned_amount_secp consume step binds to, and releases the burned handle for public
-/// decrypt through the token program's host CPIs. Inputs via env: MINT, UNDERLYING_MINT,
-/// BURNED_ACL, BURNED_HANDLE; optional REQUEST_NONCE, REQUEST_TTL_SLOTS.
-fn consume_request_redeem(
-    _host: &Program<Rc<Keypair>>,
-    token: &Program<Rc<Keypair>>,
-    payer: &Rc<Keypair>,
-    host_config: Pubkey,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mint = Pubkey::from_str(&std::env::var("MINT")?)?;
-    let underlying = Pubkey::from_str(&std::env::var("UNDERLYING_MINT")?)?;
-    let burned_acl = Pubkey::from_str(&std::env::var("BURNED_ACL")?)?;
-    let burned_handle: [u8; 32] = hexdec(&std::env::var("BURNED_HANDLE")?)
-        .try_into()
-        .expect("BURNED_HANDLE");
-    let owner = payer.pubkey();
-    let spl_token_id = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
-    let ata_prog = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")?;
-
-    let (token_account, _) = confidential_token::token_account_address(mint, owner);
-    let (destination_usdc, _) = Pubkey::find_program_address(
-        &[owner.as_ref(), spl_token_id.as_ref(), underlying.as_ref()],
-        &ata_prog,
-    );
-    let nonce = request_nonce_from_env();
-    let expires_slot = request_expires_slot(token)?;
-    let (redemption_request, _) =
-        confidential_token::burn_redemption_request_address(mint, owner, burned_handle, nonce);
-    let (token_evt, _) =
-        Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
-
-    let sig = token
-        .request()
-        .accounts(confidential_token::accounts::RequestBurnRedemption {
-            owner,
-            mint,
-            token_account,
-            underlying_mint: underlying,
-            destination_usdc,
-            burned_amount_value: burned_acl,
-            redemption_request,
-            deny_subject_record: None,
-            zama_program: zama_host::ID,
-            host_config,
-            system_program: system_program::ID,
-            event_authority: token_evt,
-            program: confidential_token::ID,
-        })
-        .args(confidential_token::instruction::RequestBurnRedemption {
-            burned_handle,
-            request_nonce: nonce,
-            expires_slot,
-        })
-        .send()?;
-    println!("OK request_burn_redemption: {sig}");
-    println!("  burn-redemption request witness {redemption_request}  (kms_context pinned, expires_slot {expires_slot})");
-    Ok(())
-}
-
-/// Redeem step 2: redeem the KMS-certified burned amount from the SPL vault
-/// (redeem_burned_amount_secp): binds the BurnRedemptionRequest witness, verifies the KMS
-/// PublicDecryptVerification EIP-712 cert on-chain via secp256k1 against the witness-pinned KMS
-/// context, and releases the cleartext amount of underlying USDC to the owner. Inputs via env:
-/// MINT, UNDERLYING_MINT, BURNED_ACL, BURNED_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, PROOF (borsh
-/// MmrInclusionProof for the burned handle's public-decrypt leaf), optional KMS_CTX_ID
-/// (default 1), REQUEST_NONCE.
+/// Redeem the KMS-certified burned amount from the SPL vault via the thin token
+/// `redeem_burned_amount`, which CPIs the stateless host `verify_public_decrypt` (KMS
+/// PublicDecryptVerification EIP-712 cert verified against the CURRENT KMS context + an MMR
+/// public-leaf inclusion proof), asserts the proven handle equals the pinned burned handle and the
+/// certified cleartext equals the claimed amount, consults the deny-list at payout, writes the
+/// permanent per-handle replay marker, and releases the cleartext amount of underlying USDC to the
+/// owner. No request witness (fhevm-internal#1763). Inputs via env: MINT, UNDERLYING_MINT,
+/// BURNED_ACL, BURNED_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, PROOF (borsh MmrInclusionProof for the
+/// burned handle's public-decrypt leaf), optional KMS_CTX_ID (default 1).
 fn consume_redeem(
-    _host: &Program<Rc<Keypair>>,
     token: &Program<Rc<Keypair>>,
     payer: &Rc<Keypair>,
     host_config: Pubkey,
@@ -1668,10 +1581,10 @@ fn consume_redeem(
         .try_into()
         .expect("KMS_SIG 65 bytes");
     let extra = hexdec(&std::env::var("EXTRA")?);
-    // Borsh-serialized MmrInclusionProof (leaf_index + siblings) for the burned
-    // handle's public-decrypt leaf, produced by the relayer proof service. Empty
-    // env yields an empty proof, which fails on-chain authorization by design.
-    let proof = confidential_token::MmrInclusionProof::try_from_slice(&hexdec(
+    // Borsh-serialized host MmrInclusionProof (leaf_index + siblings) for the burned handle's
+    // public-decrypt leaf, produced by the relayer proof service. Empty env yields an empty proof,
+    // which fails on-chain in the verifier CPI by design.
+    let proof = zama_host::instructions::MmrInclusionProof::try_from_slice(&hexdec(
         &std::env::var("PROOF").unwrap_or_default(),
     ))
     .unwrap_or_default();
@@ -1679,7 +1592,6 @@ fn consume_redeem(
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
-    let nonce = request_nonce_from_env();
     let owner = payer.pubkey();
     let spl_token_id = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
     let ata_prog = Pubkey::from_str("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")?;
@@ -1691,8 +1603,6 @@ fn consume_redeem(
         &[owner.as_ref(), spl_token_id.as_ref(), underlying.as_ref()],
         &ata_prog,
     );
-    let (redemption_request, _) =
-        confidential_token::burn_redemption_request_address(mint, owner, burned_handle, nonce);
     let (redemption_record, _) = Pubkey::find_program_address(
         &[b"burn-redemption", mint.as_ref(), burned_handle.as_ref()],
         &confidential_token::ID,
@@ -1701,12 +1611,18 @@ fn consume_redeem(
         &[zama_host::KMS_CONTEXT_SEED, &ctx_id.to_le_bytes()],
         &zama_host::ID,
     );
+    // Optional deny-list record for the signer: passed only when the host grant deny-list is enabled
+    // (DENY_SUBJECT_RECORD hex pubkey). Omitted (None) otherwise, matching the optional convention.
+    let deny_subject_record = std::env::var("DENY_SUBJECT_RECORD")
+        .ok()
+        .map(|s| Pubkey::from_str(&s))
+        .transpose()?;
     let (token_evt, _) =
         Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &confidential_token::ID);
 
     let sig = token
         .request()
-        .accounts(confidential_token::accounts::RedeemBurnedAmountSecp {
+        .accounts(confidential_token::accounts::RedeemBurnedAmount {
             owner,
             mint,
             token_account,
@@ -1715,16 +1631,17 @@ fn consume_redeem(
             destination_usdc,
             vault_authority,
             burned_amount_value: burned_acl,
-            redemption_request,
             redemption_record,
             host_config,
             kms_context,
+            deny_subject_record,
+            zama_program: zama_host::ID,
             token_program: spl_token_id,
             system_program: system_program::ID,
             event_authority: token_evt,
             program: confidential_token::ID,
         })
-        .args(confidential_token::instruction::RedeemBurnedAmountSecp {
+        .args(confidential_token::instruction::RedeemBurnedAmount {
             burned_handle,
             cleartext_amount: cleartext,
             signatures: vec![kms_sig],
@@ -1732,8 +1649,8 @@ fn consume_redeem(
             proof,
         })
         .send()?;
-    println!("OK redeem_burned_amount_secp: {sig}");
-    println!("  KMS PublicDecryptVerification cert verified on-chain (secp256k1); released {cleartext} USDC base units to {destination_usdc}");
+    println!("OK redeem_burned_amount: {sig}");
+    println!("  KMS PublicDecryptVerification cert verified on-chain via host verify_public_decrypt (current KMS context); released {cleartext} USDC base units to {destination_usdc}");
     Ok(())
 }
 

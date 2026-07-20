@@ -138,36 +138,11 @@ pub struct HandleDisclosedEvent {
     pub cleartext_amount: u64,
 }
 
-/// Emitted when a holder requests redemption of a burned amount.
-#[event]
-pub struct BurnRedemptionRequestedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Confidential mint.
-    pub mint: Pubkey,
-    /// Token account owner.
-    pub owner: Pubkey,
-    /// Confidential token account that produced the burned amount.
-    pub token_account: Pubkey,
-    /// Burned amount handle.
-    pub burned_handle: [u8; 32],
-    /// ACL record for `burned_handle`.
-    pub burned_encrypted_value: Pubkey,
-    /// Underlying token destination owner.
-    pub destination_owner: Pubkey,
-    /// Underlying token destination account.
-    pub destination_account: Pubkey,
-    /// Account-backed request witness.
-    pub request: Pubkey,
-    /// Canonical request hash stored in the witness.
-    pub request_hash: [u8; 32],
-    /// KMS context id the redemption cert must verify against.
-    pub kms_context_id: u64,
-    /// Last slot in which this request can be consumed.
-    pub expires_slot: u64,
-}
-
 /// Emitted when a KMS-certified burned amount is redeemed from the vault.
+///
+/// After the `BurnRedemptionRequest` witness lifecycle was dissolved (fhevm-internal#1763), redeem is
+/// a single instruction with no request witness, so this event no longer carries a `request` PDA or
+/// `request_hash`.
 #[event]
 pub struct BurnRedeemedEvent {
     /// Event schema version.
@@ -184,10 +159,6 @@ pub struct BurnRedeemedEvent {
     pub burned_encrypted_value: Pubkey,
     /// Underlying token destination account.
     pub destination_usdc: Pubkey,
-    /// Consumed request witness.
-    pub request: Pubkey,
-    /// Canonical request hash stored in the witness.
-    pub request_hash: [u8; 32],
     /// KMS-certified cleartext amount released from the vault.
     pub cleartext_amount: u64,
 }

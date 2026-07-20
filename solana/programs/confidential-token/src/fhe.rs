@@ -647,46 +647,6 @@ pub(crate) fn verify_public_decrypt(request: VerifyPublicDecrypt<'_, '_>) -> Res
     Ok(returned_cleartext)
 }
 
-/// Inputs required to add subjects to an existing lineage.
-pub struct AllowSubjects<'a, 'info> {
-    /// Rent payer for the account's growth, if any.
-    pub payer: &'a Signer<'info>,
-    /// Current allowed subject on the lineage.
-    pub authority: &'a Signer<'info>,
-    /// `EncryptedValue` lineage receiving the new allowed subjects.
-    pub encrypted_value: AccountInfo<'info>,
-    /// ZamaHost config account.
-    pub host_config: &'a Account<'info, HostConfig>,
-    /// Optional deny-list witness when grant deny-lists are enabled.
-    pub deny_subject_record: Option<AccountInfo<'info>>,
-    /// ZamaHost program account.
-    pub zama_program: &'a Program<'info, ZamaHost>,
-    /// System program used for the account's growth, if any.
-    pub system_program: &'a Program<'info, System>,
-}
-
-/// Adds subjects to an existing `EncryptedValue` lineage. Re-adding an existing
-/// subject is idempotent and still proves the authority is currently allowed.
-pub(crate) fn allow_subjects<'info>(
-    request: AllowSubjects<'_, 'info>,
-    subjects: Vec<zama_host::instructions::EncryptedValueSubjectGrant>,
-) -> Result<()> {
-    cpi::allow_subjects(
-        CpiContext::new(
-            request.zama_program.key(),
-            cpi::accounts::AllowEncryptedValueSubjects {
-                payer: request.payer.to_account_info(),
-                authority: request.authority.to_account_info(),
-                encrypted_value: request.encrypted_value,
-                host_config: request.host_config.to_account_info(),
-                deny_subject_record: request.deny_subject_record,
-                system_program: request.system_program.to_account_info(),
-            },
-        ),
-        subjects,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
