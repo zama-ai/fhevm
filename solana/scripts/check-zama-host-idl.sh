@@ -15,6 +15,10 @@ NO_DNA=1 anchor build --ignore-keys
 
 python3 scripts/check_solana_abi.py --root "$ROOT"
 
+# When solana-proof-service is present (stacked / vertical branches), keep its
+# hand-decoded host instruction catalog partitioned against the vendored IDL.
+python3 scripts/check_proof_store_idl.py --repo-root "$ROOT/.."
+
 # Runtime Mollusk tests load ignored SBF artifacts from target/deploy. Keep the
 # production IDL/ABI check above on the default feature set, then rebuild the
 # confidential-token artifact with its PoC-only receiver helpers enabled. The

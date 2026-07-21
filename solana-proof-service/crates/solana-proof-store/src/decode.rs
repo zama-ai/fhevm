@@ -2,6 +2,11 @@
 //! data (Anchor discriminator + borsh args), independent of transaction/RPC
 //! shape so it can be unit-tested against synthetic data.
 //!
+//! The instruction/event names matched below are the ingest allowlist. CI keeps
+//! that catalog partitioned against the vendored host IDL via
+//! `solana/scripts/check_proof_store_idl.py` (decoded ∪ ignored = all host
+//! instructions; required lifecycle events must stay wired).
+//!
 //! One exception needs sibling context: a born-public (`make_public=true`)
 //! `fhe_eval` durable output commits a public-decrypt leaf to the eval OUTPUT
 //! handle, which is derived on-chain from slot entropy and appears in no
