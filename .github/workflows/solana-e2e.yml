@@ -51,6 +51,10 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: "false"
+          # Depth 2 so the pull_request merge commit's parents are available: HEAD^1 is the base
+          # branch commit the PR is applied onto, which the override selection below diffs against
+          # and whose branch-published images (:feature-solana-<sha>) it uses for untouched groups.
+          fetch-depth: 2
 
       - name: Setup Node
         # full-vertical.sh runs the @fhevm/sdk clients under `node`. node 24 realpath-resolves the
@@ -108,6 +112,16 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
           password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as test-suite-e2e workflows
 
+      - name: Select source-built overrides (skip components this PR does not touch)
+        # #1766 step 3: build from source only the component groups whose docker-image inputs the
+        # PR changes; the rest run the branch-published images from solana-images-publish.yml.
+        # Runs after the ghcr.io login (the script probes image existence with docker manifest
+        # inspect) and only on PRs: workflow_dispatch runs keep the build-everything default in
+        # clean-e2e.sh (the selection step is skipped, so both outputs stay empty).
+        id: select-overrides
+        if: github.event_name == 'pull_request'
+        run: bash solana/scripts/e2e/select-overrides.sh "$(git rev-parse HEAD^1)"
+
       - name: Build the @fhevm/sdk ESM (full-vertical's node clients import it)
         # build:esm emits src/_esm (gitignored) + copies the TKMS WASM into it; the @fhevm/sdk
         # `./solana` export resolves there. npm ci also populates the SDK's own node_modules.
@@ -153,6 +167,10 @@ jobs:
           SCCACHE_S3_PREFIX: sccache/fhevm-coprocessor
           AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 cache creds scoped to this step's env, same pattern as the registry logins above
           AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 cache creds scoped to this step's env, same pattern as the registry logins above
+          # Override selection computed above (empty on workflow_dispatch or if the step was
+          # skipped, in which case clean-e2e.sh keeps its build-everything default).
+          SOLANA_E2E_OVERRIDES: ${{ steps.select-overrides.outputs.overrides }}
+          SOLANA_E2E_LOCK_PINS: ${{ steps.select-overrides.outputs.lock_pins }}
         run: bash solana/scripts/e2e/clean-e2e.sh
 
       - name: Ensure @fhevm/sdk runtime deps resolve for full-vertical

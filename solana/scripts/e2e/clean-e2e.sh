@@ -15,7 +15,8 @@
 # The kms-core image carrying `compute_link_solana` is pinned in the lock; its tag is the
 # single source of truth in test-suite/fhevm/solana-images.env (kms-core is not an fhevm
 # override group). The five source-built groups are passed as --override so they build from
-# THIS worktree:
+# THIS worktree (by default — CI narrows the set via SOLANA_E2E_OVERRIDES/SOLANA_E2E_LOCK_PINS,
+# substituting branch-published images for groups the PR does not touch, see select-overrides.sh):
 #   - gateway-contracts : userDecryptionRequestSolana + verifyProofRequestSolana
 #   - host-contracts    : must track HEAD because the source-built kms-connector's gw-listener
 #                         reads ProtocolConfig.getCurrentKmsContextAndEpoch() at startup (the
@@ -36,6 +37,24 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 FHEVM="$ROOT/test-suite/fhevm"
+
+# CI seam (#1766): which of the five source-built groups build from THIS worktree (--override),
+# and optional KEY=TAG lock-env pins pointing the remaining groups at branch-published images
+# (select-overrides.sh computes both in CI). Local runs keep the build-everything default; set
+# SOLANA_E2E_OVERRIDES to "none" for an explicit empty override list.
+SOLANA_E2E_OVERRIDES="${SOLANA_E2E_OVERRIDES:-gateway-contracts host-contracts coprocessor relayer kms-connector}"
+SOLANA_E2E_LOCK_PINS="${SOLANA_E2E_LOCK_PINS:-}"
+if [ "$SOLANA_E2E_OVERRIDES" = "none" ]; then
+  SOLANA_E2E_OVERRIDES=""
+fi
+OVERRIDE_ARGS=()
+for group in $SOLANA_E2E_OVERRIDES; do
+  OVERRIDE_ARGS+=(--override "$group")
+done
+echo "[clean-e2e] source-built overrides: ${SOLANA_E2E_OVERRIDES:-<none>}"
+if [ -n "$SOLANA_E2E_LOCK_PINS" ]; then
+  echo "[clean-e2e] lock pins for published images: $SOLANA_E2E_LOCK_PINS"
+fi
 # Pin the EVM stack to the main SHA this PoC was validated against. RFC-021 / Solana host support
 # is not yet on a release bundle, so we resolve a specific main commit explicitly.
 BASE_SHA="feaf86e"
@@ -47,15 +66,20 @@ LOCK="$ROOT/.fhevm/state/locks/sha-$BASE_SHA.json"
 
 # 1. Pin the Solana-capable kms-core image in the lock (idempotent).
 #    CORE_VERSION comes from the single source of truth so it cannot drift from the TS call sites.
+#    SOLANA_E2E_LOCK_PINS additionally repoints non-overridden groups at branch-published image
+#    tags (space-separated KEY=TAG entries, see select-overrides.sh).
 # shellcheck source=/dev/null
 source "$FHEVM/solana-images.env"
-python3 - "$LOCK" "$CORE_VERSION" <<'PY'
+# shellcheck disable=SC2086 # SOLANA_E2E_LOCK_PINS is a space-separated KEY=TAG list, one arg each
+python3 - "$LOCK" "CORE_VERSION=$CORE_VERSION" $SOLANA_E2E_LOCK_PINS <<'PY'
 import json, sys
-p, core = sys.argv[1], sys.argv[2]
+p = sys.argv[1]
 d = json.load(open(p))
-d["env"]["CORE_VERSION"] = core
+for pin in sys.argv[2:]:
+    key, _, tag = pin.partition("=")
+    d["env"][key] = tag
+    print(f"[clean-e2e] pinned {key}={tag} in {p}")
 json.dump(d, open(p, "w"), indent=2)
-print(f"[clean-e2e] pinned CORE_VERSION={core} in {p}")
 PY
 
 # 2. Clean rebuild of the whole EVM stack with the Solana code baked in from bootstrap.
@@ -65,16 +89,13 @@ PY
 ( cd "$FHEVM" && ./fhevm-cli up \
     --scenario solana \
     --lock-file "$LOCK" \
-    --override gateway-contracts \
-    --override host-contracts \
-    --override coprocessor \
-    --override relayer \
-    --override kms-connector \
+    ${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"} \
     --allow-schema-mismatch )
-# NOTE: relayer + kms-connector must be built from source, NOT pulled from the pinned 4f42734
+# NOTE: relayer + kms-connector must run feature/solana code, NOT the pinned 4f42734 baseline
 # images: the prebuilt kms-connector at that tag rejects the generated Solana host_chains config
 # ("missing field acl_address") — its config schema predates the optional-acl_address change the
-# config generator (src/generate/solana.ts) assumes. Dropping these --overrides breaks clean-e2e.
+# config generator (src/generate/solana.ts) assumes. Dropping these --overrides breaks clean-e2e
+# unless SOLANA_E2E_LOCK_PINS points them at branch-published feature/solana images instead.
 
 # 3. Bring the Solana side-stack online against the freshly-deployed live backend.
 #    Reads gateway addresses + KMS/coprocessor signer set live, so it tracks the new signer.
