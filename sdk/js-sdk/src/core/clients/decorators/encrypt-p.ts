@@ -3,7 +3,7 @@ import type { FhevmChain } from '../../types/fhevmChain.js';
 import { asFhevmClientWith } from '../../runtime/CoreFhevm-p.js';
 import { fetchFheEncryptionKeyBytes } from '../../key/fetchFheEncryptionKeyBytes.js';
 import { ensureFrozenContext } from '../../frozenContext/ensureFrozenContext-p.js';
-import { cloneFhevmClientFrozenContext } from '../../frozenContext/FhevmClientFrozenContext-p.js';
+import { cloneFhevmClientFrozenContext } from '../../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 

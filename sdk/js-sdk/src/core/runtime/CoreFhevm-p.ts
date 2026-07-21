@@ -22,7 +22,7 @@ import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js'
 import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
 import { globalFheEncryptionKeyCache } from '../key/FheEncryptionKeyCache-p.js';
 import { cloneModuleVersions } from '../runtimeConfig-p.js';
-import { cloneFhevmClientFrozenContext } from '../frozenContext/FhevmClientFrozenContext-p.js';
+import { cloneFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 

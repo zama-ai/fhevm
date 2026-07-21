@@ -8,7 +8,7 @@ import { executeWithBatching } from '../base/promise.js';
 import { assertIsHostContractVersionOf, getHostContractVersion } from '../host-contracts/HostContractVersion-p.js';
 import { hyperWasmResolveTfheModuleVersion, hyperWasmResolveTkmsModuleVersion } from '../runtime/HyperWasmSolver-p.js';
 import { protocolContextFromAclVersion } from '../runtime/ProtocolVersionResolver-p.js';
-import { createFhevmClientFrozenContext } from './FhevmClientFrozenContext-p.js';
+import { createFhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 

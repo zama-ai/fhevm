@@ -10,7 +10,7 @@ import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
 import { invalidateVersionCache } from './HostContractVersion-p.js';
 import { readKmsSignersContextFromPermitExtraData } from './readKmsSignersContext-p.js';
 import { createKmsExtraDataV0, createKmsExtraDataV1, createKmsExtraDataV2 } from '../kms/kmsExtraData-p.js';
-import { createFhevmClientFrozenContext } from '../frozenContext/FhevmClientFrozenContext-p.js';
+import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/host-contracts/readKmsSignersContext-p.test.ts

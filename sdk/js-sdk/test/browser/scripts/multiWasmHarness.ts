@@ -18,7 +18,7 @@ import { decryptModule } from '../../../src/core/modules/decrypt/module/index.js
 import { defineFhevmChain } from '../../../src/core/chains/utils.js';
 import { createZkProofBuilder } from '../../../src/core/coprocessor/ZkProofBuilder-p.js';
 import { globalFheEncryptionKeyCache } from '../../../src/core/key/FheEncryptionKeyCache-p.js';
-import { createFhevmClientFrozenContext } from '../../../src/core/frozenContext/FhevmClientFrozenContext-p.js';
+import { createFhevmClientFrozenContext } from '../../../src/core/frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Versions + resource budget
