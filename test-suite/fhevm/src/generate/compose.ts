@@ -88,55 +88,63 @@ const buildSpec = (context: string, dockerfile: string, extra: Record<string, un
   dockerfile: resolveComposePath(dockerfile),
   ...extra,
 });
-// Each image builds from its own per-binary Dockerfile (the same recipes main's docker-build
-// workflows publish from), not a shared Dockerfile.workspace: a per-image build compiles only
-// what that image needs, and identical COPY/RUN prefixes across images are deduplicated by
-// BuildKit content-addressing within a run and by the registry layer cache across runs.
+// The Rust images build from the BRANCH-LOCAL workspace Dockerfiles so one cargo pass compiles
+// every binary of a workspace (a per-binary Dockerfile per image ran a full workspace-sized cargo
+// build eight times sequentially; measured ~41 min of cargo, 71 min run vs the 44 min baseline).
+// The publish workflow (solana-images-publish.yml) still builds from the per-binary Dockerfiles,
+// like main's release CI. Pulled images (unchanged groups) are therefore per-binary `-p` builds
+// while locally rebuilt groups are `--workspace` builds: these stay functionally interchangeable.
+// Verified with `cargo tree -e normal,build` (dev-deps excluded; both workspaces use
+// resolver = "2"): kms-connector resolves identically under `-p` and `--workspace`; for
+// fhevm-engine the `--workspace` resolution is a strict additive superset per binary — every
+// feature of the `-p` build is present, siblings only ADD features on shared deps, none removed.
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
   coprocessor: {
-    "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/db-migration/Dockerfile", {
-      target: "prod",
+    "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "db-migration",
     }),
-    "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/host-listener/Dockerfile", {
-      target: "prod",
+    "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "host-listener",
     }),
-    "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/host-listener/Dockerfile", {
-      target: "prod",
+    "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "host-listener",
     }),
-    "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/host-listener/Dockerfile", {
-      target: "prod",
+    "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "host-listener",
     }),
-    "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/gw-listener/Dockerfile", {
-      target: "prod",
+    "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "gw-listener",
     }),
-    "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/tfhe-worker/Dockerfile", {
-      target: "prod",
+    "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "tfhe-worker",
     }),
-    "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/zkproof-worker/Dockerfile", {
-      target: "prod",
+    "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "zkproof-worker",
     }),
-    "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/sns-worker/Dockerfile", {
-      target: "prod",
+    "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "sns-worker",
     }),
-    "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/transaction-sender/Dockerfile", {
-      target: "prod",
+    "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
+      target: "transaction-sender",
     }),
   },
   "kms-connector": {
+    // connector-db was never workspace-built (sqlx-cli install, not a workspace member); it keeps
+    // its own per-binary Dockerfile.
     "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", {
       target: "prod",
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
-    "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/crates/gw-listener/Dockerfile", {
-      target: "prod",
+    "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
+      target: "gw-listener",
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
-    "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/crates/kms-worker/Dockerfile", {
-      target: "prod",
+    "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
+      target: "kms-worker",
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
-    "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/crates/tx-sender/Dockerfile", {
-      target: "prod",
+    "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
+      target: "tx-sender",
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
   },
@@ -206,11 +214,17 @@ const withSccacheBuild = (component: string, build: Record<string, unknown> | un
  * solana-images-publish.yml exports) when FHEVM_BUILDCACHE_TAG is set. The cache ref is the
  * service's own image repository at the cache tag, so the compose reader and the publish-workflow
  * writer stay aligned without a name map. Scoped to the same Rust components as sccache (the
- * builds the publish workflow exports caches for). A no-op otherwise, so the generated compose is
- * byte-identical when FHEVM_BUILDCACHE_TAG is unset.
+ * builds the publish workflow exports caches for), and within those to the specs that still build
+ * from a per-binary Dockerfile: the publish workflow's caches are per-binary build graphs, so
+ * they cannot hit against the branch-local workspace Dockerfiles — injecting them there would
+ * only add a guaranteed cache miss (harmless but pointless). A no-op otherwise, so the generated
+ * compose is byte-identical when FHEVM_BUILDCACHE_TAG is unset.
  */
 const withRegistryBuildCache = (component: string, image: unknown, build: Record<string, unknown> | undefined) => {
   if (!build || !buildCacheEnabled() || !SCCACHE_BUILD_COMPONENTS.has(component) || typeof image !== "string") {
+    return build;
+  }
+  if (typeof build.dockerfile === "string" && build.dockerfile.endsWith("Dockerfile.workspace")) {
     return build;
   }
   const next = structuredClone(build);
