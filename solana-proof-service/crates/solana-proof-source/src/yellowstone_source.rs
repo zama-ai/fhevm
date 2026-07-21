@@ -63,11 +63,24 @@ impl CompletedBlock {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct YellowstoneSourceConfig {
     pub grpc_url: String,
     pub x_token: Option<String>,
     pub program_id: String,
+}
+
+impl std::fmt::Debug for YellowstoneSourceConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("YellowstoneSourceConfig")
+            .field("grpc_url", &self.grpc_url)
+            .field(
+                "x_token",
+                &self.x_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("program_id", &self.program_id)
+            .finish()
+    }
 }
 
 #[derive(thiserror::Error, Clone, Debug, PartialEq, Eq)]
@@ -585,6 +598,23 @@ mod tests {
             program_id: "not-a-program-id".to_owned(),
         });
         assert!(matches!(result, Err(YellowstoneSourceError::Invalid(_))));
+    }
+
+    #[test]
+    fn debug_redacts_yellowstone_x_token() {
+        let program_id = bs58::encode([7u8; 32]).into_string();
+        let config = YellowstoneSourceConfig {
+            grpc_url: "https://yellowstone.example:443".to_owned(),
+            x_token: Some("super-secret-token".to_owned()),
+            program_id,
+        };
+        let source = YellowstoneBlockSource::new(config.clone()).unwrap();
+        let config_debug = format!("{config:?}");
+        let source_debug = format!("{source:?}");
+        assert!(config_debug.contains("[REDACTED]"));
+        assert!(!config_debug.contains("super-secret-token"));
+        assert!(source_debug.contains("[REDACTED]"));
+        assert!(!source_debug.contains("super-secret-token"));
     }
 
     #[test]
