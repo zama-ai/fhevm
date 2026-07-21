@@ -17,6 +17,7 @@ pub struct PublicDecryptRequestJson {
     pub ciphertext_handles: Vec<String>,
     /// Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01`
     /// (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId).
+    /// contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
     #[schema(value_type = String, example = "0x00")]
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     pub extra_data: String,

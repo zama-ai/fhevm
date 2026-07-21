@@ -28,7 +28,7 @@ pub mod validation_messages {
     pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
 
     pub const INVALID_EXTRA_DATA_FORMAT: &str =
-        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (33 bytes), or 0x02 + 32-byte contextId + 32-byte epochId (65 bytes)";
+        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (0x07-tagged first byte), or 0x02 + 32-byte contextId (0x07-tagged) + 32-byte epochId (0x08-tagged)";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
 }
 
@@ -113,23 +113,31 @@ pub fn validate_0x_hex_allow_empty(hex_str: &str) -> Result<(), ValidationError>
 /// introduced by bumping the version byte, not by appending to an existing one.
 /// - `"0x00"`: Legacy format (version 0).
 /// - `"0x01" + 64 hex chars`: Version 1 — `[version(1B) | contextId(32B)]` = 33 bytes
-///   (66 hex chars + `"0x"` prefix = 68 chars).
+///   (66 hex chars + `"0x"` prefix = 68 chars). The contextId must be 0x07-tagged
+///   (its first byte must be `0x07`).
 /// - `"0x02" + 128 hex chars`: Version 2 — `[version(1B) | contextId(32B) | epochId(32B)]`
-///   = 65 bytes (130 hex chars + `"0x"` prefix = 132 chars).
+///   = 65 bytes (130 hex chars + `"0x"` prefix = 132 chars). The contextId must be
+///   0x07-tagged and the epochId must be 0x08-tagged (first byte of each, respectively).
 ///
-/// The contextId and epochId are opaque to the Relayer: they are not interpreted, only
-/// validated for shape, and the bytes are propagated verbatim to the Gateway.
+/// The contextId and epochId are opaque to the Relayer: they are not interpreted beyond
+/// their type tag, and the bytes are propagated verbatim to the Gateway.
 pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), ValidationError> {
+    const CONTEXT_ID_TAG: u8 = 0x07;
+    const EPOCH_ID_TAG: u8 = 0x08;
+
     match extra_data {
         "0x00" => Ok(()),
         s if s.len() == 68 && s.starts_with("0x01") => {
             // Version 1: [0x01 | contextId(32B)] = 33 bytes = 66 hex chars + "0x" prefix = 68 chars
-            decode_versioned_extra_data(s)
+            let bytes = decode_versioned_extra_data(s)?;
+            validate_id_tag(&bytes[1..33], CONTEXT_ID_TAG)
         }
         s if s.len() == 132 && s.starts_with("0x02") => {
             // Version 2: [0x02 | contextId(32B) | epochId(32B)] = 65 bytes
             // = 130 hex chars + "0x" prefix = 132 chars.
-            decode_versioned_extra_data(s)
+            let bytes = decode_versioned_extra_data(s)?;
+            validate_id_tag(&bytes[1..33], CONTEXT_ID_TAG)?;
+            validate_id_tag(&bytes[33..65], EPOCH_ID_TAG)
         }
         _ => Err(ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())),
@@ -137,11 +145,19 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
 }
 
 /// Ensures the hex payload of a versioned extraData string decodes cleanly.
-fn decode_versioned_extra_data(extra_data: &str) -> Result<(), ValidationError> {
+fn decode_versioned_extra_data(extra_data: &str) -> Result<Vec<u8>, ValidationError> {
     hex::decode(&extra_data[2..]).map_err(|_| {
         ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())
-    })?;
+    })
+}
+
+/// Checks that a 32-byte id is tagged with the expected type in its first byte.
+fn validate_id_tag(id: &[u8], expected_tag: u8) -> Result<(), ValidationError> {
+    if id.first() != Some(&expected_tag) {
+        return Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
+    }
     Ok(())
 }
 
@@ -360,9 +376,15 @@ pub fn validate_request_validity_seconds(
 mod extra_data_tests {
     use super::{validate_extra_data_field_decryption, validate_extra_data_field_input_proof};
 
-    // 32-byte contextId / epochId payloads (64 hex chars each).
-    const CONTEXT_ID_HEX: &str = "00000000000000000000000000000000000000000000000000000000000000a1";
-    const EPOCH_ID_HEX: &str = "00000000000000000000000000000000000000000000000000000000000000b2";
+    // 32-byte contextId / epochId payloads (64 hex chars each), tagged with their
+    // required first byte: 0x07 for contextId, 0x08 for epochId.
+    const CONTEXT_ID_HEX: &str = "07000000000000000000000000000000000000000000000000000000000000a1";
+    const EPOCH_ID_HEX: &str = "08000000000000000000000000000000000000000000000000000000000000b2";
+    // Untagged variants (first byte 0x00) used to test tag rejection.
+    const UNTAGGED_CONTEXT_ID_HEX: &str =
+        "00000000000000000000000000000000000000000000000000000000000000a1";
+    const UNTAGGED_EPOCH_ID_HEX: &str =
+        "00000000000000000000000000000000000000000000000000000000000000b2";
 
     #[test]
     fn accepts_legacy_version_0x00() {
@@ -383,6 +405,24 @@ mod extra_data_tests {
         let extra_data = format!("0x02{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
         assert_eq!(extra_data.len(), 132);
         assert!(validate_extra_data_field_decryption(&extra_data).is_ok());
+    }
+
+    #[test]
+    fn rejects_version_0x01_with_untagged_context_id() {
+        let extra_data = format!("0x01{UNTAGGED_CONTEXT_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
+    fn rejects_version_0x02_with_untagged_context_id() {
+        let extra_data = format!("0x02{UNTAGGED_CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
+    }
+
+    #[test]
+    fn rejects_version_0x02_with_untagged_epoch_id() {
+        let extra_data = format!("0x02{CONTEXT_ID_HEX}{UNTAGGED_EPOCH_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
     }
 
     #[test]
