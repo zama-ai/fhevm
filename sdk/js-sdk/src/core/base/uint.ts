@@ -23,7 +23,12 @@ import type {
   UintTypeName,
   ValueTypeName,
 } from '../types/primitives.js';
-import type { RecordWithPropertyType, RecordUintPropertyType, RecordUint256PropertyType } from '../types/record-p.js';
+import type {
+  RecordWithPropertyType,
+  RecordUintPropertyType,
+  RecordUint256PropertyType,
+  RecordUintNumberPropertyType,
+} from '../types/record-p.js';
 import type { ErrorMetadataParams } from './errors/ErrorBase.js';
 import { isRecordNonNullableProperty, typeofProperty } from './record.js';
 import { InvalidPropertyError } from './errors/InvalidPropertyError.js';
@@ -114,6 +119,13 @@ export function isUintNumber(value: unknown, max?: number | bigint): value is Ui
 
 export function isUintBigInt(value: unknown, max?: bigint | number): value is UintBigInt {
   return typeof value === 'bigint' && value >= 0 && (max === undefined || value <= max);
+}
+
+export function isUintString(value: unknown, max?: number | bigint): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  return tryParseUintBigIntString(value, max) !== undefined;
 }
 
 export function isUintForType(value: unknown, typeName?: UintTypeName): value is Uint {
@@ -324,6 +336,22 @@ export function assertIsUintBigInt(
         subject: options.subject,
         type: typeof value,
         expectedType: 'uintBigInt',
+      },
+      options,
+    );
+  }
+}
+
+export function assertIsUintString(
+  value: unknown,
+  options: { max?: bigint | number; subject?: string } & ErrorMetadataParams,
+): asserts value is string {
+  if (!isUintString(value, options.max)) {
+    throw new InvalidTypeError(
+      {
+        subject: options.subject,
+        type: typeof value,
+        expectedType: 'uintString',
       },
       options,
     );
@@ -592,6 +620,18 @@ export function assertRecordUintProperty<K extends string>(
 
 ////////////////////////////////////////////////////////////////////////////////
 
+export function isRecordUintNumberProperty<K extends string>(
+  record: unknown,
+  property: K,
+): record is RecordUintNumberPropertyType<K> {
+  if (!isRecordNonNullableProperty(record, property)) {
+    return false;
+  }
+  return isUintNumber(record[property]);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 export function isRecordUint256Property<K extends string>(
   record: unknown,
   property: K,
@@ -645,7 +685,7 @@ export function assertRecordUintBigIntProperty<K extends string>(
   property: K,
   recordName: string,
   options: ErrorMetadataParams,
-): asserts record is RecordWithPropertyType<K, number> {
+): asserts record is RecordWithPropertyType<K, bigint> {
   if (typeofProperty(record, property) !== 'bigint' || !isUintBigInt((record as Record<string, unknown>)[property])) {
     throw new InvalidPropertyError(
       {
@@ -659,17 +699,23 @@ export function assertRecordUintBigIntProperty<K extends string>(
   }
 }
 
-export function parseUintBigIntString(value: string): bigint | undefined {
+/**
+ * Tries to parse a canonical unsigned decimal string as a bigint.
+ *
+ * Returns `undefined` instead of throwing when `value` is not parseable, is negative, is not in
+ * canonical decimal form, or exceeds `max`.
+ */
+export function tryParseUintBigIntString(value: string, max?: number | bigint): UintBigInt | undefined {
   let parsed: bigint;
   try {
     parsed = BigInt(value);
   } catch {
     return undefined;
   }
-  if (parsed < 0n || parsed.toString() !== value) {
+  if (parsed < 0n || parsed.toString() !== value || (max !== undefined && parsed > BigInt(max))) {
     return undefined;
   }
-  return parsed;
+  return parsed as UintBigInt;
 }
 
 /** Returns `count` unique integers drawn uniformly from [0, n-1]. Mock/debug only. */
@@ -689,4 +735,35 @@ export function randomUniqueUints(n: number, count: number): number[] {
     pool[j] = pi;
   }
   return pool.slice(0, count);
+}
+
+export function secondsToDays(
+  seconds: unknown,
+  options?: {
+    subject?: string;
+  } & ErrorMetadataParams,
+): UintNumber {
+  // Accept a decimal string, number, or bigint. Normalize to a validated
+  // non-negative integer (uint256 range) held as a bigint:
+  //  - strings are parsed with `tryParseUintBigIntString` (returns `undefined`
+  //    on any non-integer / out-of-range / malformed input);
+  //  - numbers/bigints go through `asUint`, which throws on anything that is not
+  //    a non-negative integer in range.
+  const subject = options?.subject ?? 'seconds';
+
+  const s =
+    typeof seconds === 'string'
+      ? tryParseUintBigIntString(seconds, MAX_UINT256)
+      : BigInt(asUint(seconds, { max: MAX_UINT256, ...options }));
+
+  if (s === undefined) {
+    throw new Error(`${subject} is not a valid non-negative integer number of seconds, got ${String(seconds)}`);
+  }
+
+  if (s % 86_400n !== 0n) {
+    throw new Error(`${subject} must be a whole number of days (a multiple of 86400 seconds), got ${s}`);
+  }
+
+  // `bigIntToNumber` safely narrows back to `number` (throws above Number.MAX_SAFE_INTEGER).
+  return bigIntToNumber(s / 86_400n, { subject }) as UintNumber;
 }

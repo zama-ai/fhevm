@@ -1,235 +1,149 @@
 # Architecture
 
-This page explains how the SDK is built internally. **You don't need to read this to use the SDK** — it's here for contributors, advanced users, and anyone curious about the design decisions.
+This page explains how `@fhevm/sdk` is built internally. It is for contributors
+and for anyone who wants to understand _why_ the API looks the way it does.
+Application developers can skip it — nothing here is required to use the SDK.
 
-## Layered design
+## The core idea: a thin, composable client
 
-```
-┌─────────────────────────────────────────────┐
-│  Application Code                           │
-├─────────────────────────────────────────────┤
-│  Adapter Layer (ethers/ or viem/)           │
-│  - Seals library clients into TrustedClient │
-│  - Manages runtime lifecycle                │
-│  - Exposes public factory functions         │
-├─────────────────────────────────────────────┤
-│  Core Layer (core/)                         │
-│  - Actions: encrypt, decrypt, base, chain   │
-│  - Clients: decorators + type composition   │
-│  - Modules: encrypt, decrypt, relayer       │
-│  - Types, chains, KMS, handle parsing       │
-├─────────────────────────────────────────────┤
-│  WASM Layer (wasm/)                         │
-│  - TFHE: encryption (~5MB)                  │
-│  - TKMS: decryption (~600KB)                │
-└─────────────────────────────────────────────┘
-```
-
-**Dependency direction is strictly top-down.** Core never imports from adapters. Actions never import from decorators. Modules never import from actions.
-
----
-
-## Source layout
+The SDK is one package with clear internal boundaries rather than many packages.
+Everything is organized in layers, each of which knows only about the layer below
+it:
 
 ```
-src/
-├── core/                    # Protocol-agnostic business logic
-│   ├── actions/             # Standalone action functions
-│   │   ├── base/            # publicDecrypt, fetchVerifiedInputProof, ACL checks, signers
-│   │   ├── chain/           # EIP-712 creation, verification, signDecryptionPermit, keypair ops
-│   │   ├── decrypt/         # decrypt, generateTransportKeyPair, decryptKmsSignedcryptedShares
-│   │   ├── encrypt/         # encrypt, generateZkProof
-│   │   └── host/            # Contract reads (ACL, KMSVerifier, InputVerifier, FhevmExecutor)
-│   ├── base/                # Primitives (address, bytes, errors, trustedValue)
-│   ├── chains/              # Chain definitions (mainnet, sepolia)
-│   ├── clients/
-│   │   └── decorators/      # baseActions, encryptActions, decryptActions
-│   ├── modules/
-│   │   ├── encrypt/         # EncryptModule (TFHE WASM)
-│   │   ├── decrypt/         # DecryptModule (TKMS WASM)
-│   │   ├── ethereum/        # EthereumModule interface + TrustedClient
-│   │   └── relayer/         # RelayerModule (HTTP client)
-│   ├── runtime/             # CoreFhevm-p.ts (client), CoreFhevmRuntime-p.ts (runtime)
-│   ├── types/               # All shared type definitions
-│   └── kms/                 # TransportKeyPair, SignedDecryptionPermit
-├── ethers/                  # Ethers.js v6 adapter
-│   ├── clients/             # createFhevmClient, createFhevmEncryptClient, createFhevmDecryptClient
-│   └── internal/            # Runtime config, TrustedClient sealing, EthereumModule impl
-├── viem/                    # Viem adapter (same pattern)
-│   ├── clients/
-│   └── internal/
-└── wasm/                    # WASM bindings
-    ├── tfhe/                # TFHE (~5MB, encryption)
-    └── tkms/                # TKMS (~600KB, decryption)
+┌───────────────────────────────────────────────────────────────┐
+│  @fhevm/sdk/ethers          @fhevm/sdk/viem                    │  Adapters (~200 LOC each)
+│  createFhevmClient, setFhevmRuntimeConfig, init helpers        │
+├───────────────────────────────────────────────────────────────┤
+│  Client + decorators                                          │  Methods live here
+│  base / encrypt / decrypt action groups attached via extend() │
+├───────────────────────────────────────────────────────────────┤
+│  Actions (@fhevm/sdk/actions/*)                               │  Pure functions (fhevm, params)
+├───────────────────────────────────────────────────────────────┤
+│  Runtime modules  (encrypt · decrypt · relayer · ethereum)    │  Orchestration + I/O
+├───────────────────────────────────────────────────────────────┤
+│  WASM  (TFHE · TKMS)                                          │  Cryptography
+└───────────────────────────────────────────────────────────────┘
 ```
 
----
+A **client** is a small object carrying a shared internal context (chain,
+runtime, options) with **action methods** decorated onto it. Each method is a thin
+wrapper over a standalone **action** function that takes the client as its first
+argument — which is exactly why `@fhevm/sdk/actions/*` exists as a public,
+tree-shakable surface.
 
-## Client composition
+## Directory map
 
-Clients are built by composing a base `CoreFhevm` with decorator actions via `.extend()`:
+| Path                          | Responsibility                                              |
+| ----------------------------- | ---------------------------------------------------------- |
+| `src/ethers/`, `src/viem/`    | Thin adapters: factories, runtime config, native signing.  |
+| `src/core/clients/`           | Client construction and the decorator groups.              |
+| `src/core/actions/`           | Standalone action functions (base/encrypt/decrypt/chain/host). |
+| `src/core/runtime/`           | The composable runtime and its lazy init.                  |
+| `src/core/modules/`           | Runtime modules: `encrypt`, `decrypt`, `relayer`, `ethereum`. |
+| `src/core/chains/`            | Built-in chain definitions and `defineFhevmChain`.         |
+| `src/core/kms/`               | Transport key pair, permits, KMS share flow.               |
+| `src/core/coprocessor/`       | ZK proof building.                                          |
+| `src/core/handle/`, `src/core/types/` | Encrypted-value handles and the type system.        |
+| `src/core/host-contracts/`    | Reads against ACL / verifier host contracts.               |
+| `src/wasm/`                   | The TFHE and TKMS WASM libraries and loaders.              |
 
-```
-createCoreFhevm() → base client (chain, runtime, trustedClient)
-  ↓ .extend() chains decorators:
-  ├─ baseActions       → publicDecrypt, signDecryptionPermit, parseTransportKeyPair, ...
-  ├─ decryptActions    → decrypt, generateTransportKeyPair, createUserDecryptEIP712, ...
-  └─ encryptActions    → encrypt
-```
+The `ethers` and `viem` adapters are deliberately tiny. Everything real lives in
+`core`; an adapter only knows how to read a contract, sign typed data, and derive
+a chain id through its native library.
 
-Four factory functions pre-compose the right set:
+## The runtime and modules
 
-| Factory                    | Decorators               | WASM        |
-| -------------------------- | ------------------------ | ----------- |
-| `createFhevmClient`        | base + decrypt + encrypt | TFHE + TKMS |
-| `createFhevmEncryptClient` | base + encrypt           | TFHE only   |
-| `createFhevmDecryptClient` | base + decrypt           | TKMS only   |
-| `createFhevmBaseClient`    | base                     | None        |
+A `FhevmRuntime` is a composable container of **modules**. A module wraps a unit
+of capability — and, for the two cryptographic modules, a specific WASM library:
 
----
+- **encrypt module** → the TFHE WASM (proof generation, ~4.9 MB).
+- **decrypt module** → the TKMS WASM (share reconstruction, ~600 KB).
+- **relayer module** → HTTP orchestration against the Relayer.
+- **ethereum module** → library-agnostic contract reads and signing.
 
-## Runtime module extension
+Modules are added by extension, which is the mechanism behind the four client
+factories. `createFhevmEncryptClient` extends the runtime with only the encrypt
+module, so a bundler never pulls in the decrypt WASM. `createFhevmClient` extends
+with both.
 
-The runtime starts with `EthereumModule` + `RelayerModule` and is extended with WASM modules:
+### Initialization is lazy, idempotent, and shared
 
-```ts
-const runtime = getAdapterRuntime() // EthereumModule + RelayerModule
-  .extend(encryptModule) // + EncryptModule (TFHE WASM)
-  .extend(decryptModule); // + DecryptModule (TKMS WASM)
-```
+The SDK follows a strict initialization contract:
 
-The TypeScript type system tracks which modules are present — actions that require specific modules enforce this at compile time:
+- **Construction is pure.** Constructing a client is synchronous — it triggers no
+  network or WASM work.
+- **`init()` resolves versions and loads WASM.** It runs every module's
+  registered init function: it resolves the protocol, TFHE, and TKMS versions and
+  compiles the WASM the client's modules need. `ready` is a getter alias for
+  `init()`. Awaiting either is required before `encryptValues`, `decryptValue`, or
+  `generateTransportKeyPair` — those actions assert the versions are already
+  resolved and throw otherwise.
+- **`init()` is idempotent.** Calling it again returns the same cached promise.
+  `decryptPublicValues` is the exception that needs no prior `init()`: it resolves
+  what it needs on demand (the protocol version comes from the on-chain ACL
+  contract version, read over RPC) rather than requiring the versions to be
+  pre-resolved.
+- **A WASM version is owned by one runtime.** Module init is globally unique per
+  version, preventing two clients from double-loading the same heavy library.
 
-```ts
-// encrypt() requires WithEncrypt runtime — compile error if module missing
-async function encrypt(fhevm: Fhevm<FhevmChain, WithEncrypt>, ...): Promise<...>
-```
+This is what lets construction stay cheap while giving callers explicit control
+over when the latency of WASM compilation is paid — you await `ready` once, at a
+moment you choose.
 
----
+## The encryption pipeline
 
-## Action function pattern
+`encryptValues` is a two-stage pipeline split across the encrypt and relayer
+modules:
 
-Every action is a standalone function with the client as first argument. Decorators curry this into a client method:
+1. **Generate a ZK proof** (encrypt module, TFHE WASM). Locally proves the
+   plaintext was encrypted correctly under the Fully Homomorphic Encryption (FHE) public key without revealing
+   it. The public key is fetched from the Relayer and cached.
+2. **Fetch a verified input proof** (relayer module). The Relayer's coprocessors
+   verify the proof and sign it, yielding the `inputProof` a contract trusts.
 
-```ts
-// Standalone (tree-shakable)
-import { encrypt } from "@fhevm/sdk/actions/encrypt";
-const result = await encrypt(fhevmClient, { ... });
+These stages are also exposed as the standalone actions `generateZkProof` and
+`fetchEncryptedValues`, so advanced callers can separate proof creation from
+verification.
 
-// Client method (via decorator)
-const result = await fhevmClient.encrypt({ ... });
-```
+## The private-decryption pipeline
 
-Each action file exports three things:
+`decryptValue` composes the KMS share flow:
 
-- `FunctionNameParameters` — input type
-- `FunctionNameReturnType` — output type
-- `functionName` — the function itself
+1. Build and send a decryption request authorized by the signed permit (relayer
+   module).
+2. Receive **signcrypted shares** from the KMS quorum — each encrypted under the
+   transport public key and signed by the node.
+3. Reconstruct the plaintext locally (decrypt module, TKMS WASM). The private
+   half of the transport key pair — held opaquely, never exposed — is the only
+   key that can read the shares.
 
----
+Because reconstruction is local, the plaintext never crosses the network in the
+clear.
 
-## Security patterns
+## Design principles
 
-### Opaque `TrustedClient`
+The internals follow a consistent set of rules:
 
-Adapter-specific clients (ethers `ContractRunner`, viem `PublicClient`) are sealed into an opaque `TrustedClient` using a private symbol token. The core layer never sees the native client.
+- **Creation is pure.** Constructing clients and runtimes performs no I/O.
+- **Configuration resolves at call time**, not at creation time — extensions do
+  not capture config when they are attached.
+- **Tree-shakable throughout.** Modules and actions are independent imports; you
+  pay only for what you touch.
+- **Validation happens at runtime.** TypeScript types stay permissive at the
+  boundary (`type: string`) and are validated when a call runs, so the SDK
+  throws clear errors rather than over-constraining the type system.
+- **Secrets are opaque.** Chain definitions, runtime instances, and the transport
+  key pair are frozen; private key material lives behind ES private fields and is
+  never reachable from application code.
+- **Errors are typed and identified by `name`**, with structured context — never
+  by parsing message strings.
 
-```ts
-// In viem adapter
-const PRIVATE_VIEM_TOKEN = Symbol('viem.token');
-const trusted = createTrustedClient(viemPublicClient, PRIVATE_VIEM_TOKEN);
-// Only the viem adapter can unseal it
-const original = verifyTrustedValue(trusted, PRIVATE_VIEM_TOKEN);
-```
+## Related
 
-### Symbol-based access control
-
-Sensitive data (KMS private keys, internal state) is protected using `#privateFields` and symbol-keyed static accessors:
-
-```ts
-const GET_KEY = Symbol('FhevmAccount.getKmsPrivateKey');
-
-class FhevmAccountImpl {
-  readonly #kmsPrivateKey: TkmsPrivateKey;
-  static [GET_KEY](account: unknown, token: symbol): TkmsPrivateKey {
-    if (token !== FHEVM_ACCOUNT_TOKEN) throw new Error('Unauthorized');
-    return account.#kmsPrivateKey;
-  }
-}
-```
-
-### Frozen objects
-
-All chain definitions, runtime instances, and EIP-712 messages are deep-frozen with `Object.freeze()`.
-
----
-
-## Private implementation files (`-p.ts`)
-
-Files suffixed with `-p.ts` contain internal implementation. The public file (without `-p`) re-exports only the public API:
-
-| File                          | Purpose                                  |
-| ----------------------------- | ---------------------------------------- |
-| `CoreFhevm-p.ts`              | Core client class with private fields    |
-| `CoreFhevmRuntime-p.ts`       | Runtime factory with module composition  |
-| `ethers-p.ts` / `viem-p.ts`   | Adapter internals (runtime cache, token) |
-| `TransportKeyPair-p.ts`       | E2E transport key pair implementation    |
-| `SignedDecryptionPermit-p.ts` | Signed permit implementation             |
-
----
-
-## Dual CJS/ESM build
-
-```
-src/_esm/    ← ESM (module: esnext, sideEffects: false)
-src/_cjs/    ← CJS (module: commonjs)
-src/_types/  ← Declaration files (.d.ts)
+- [Clients](clients.md) — how the four factories map to module composition.
+- [Runtime configuration](runtime-configuration.md) — the lazy-init and WASM-loading surface.
+- [Actions](actions.md) — the standalone functional layer.
+- [Glossary](GLOSSARY.md) — the vocabulary used across these layers.
 ```
 
-WASM base URL resolved via `package.json` `"imports"` field:
-
-- ESM: `import.meta.url` (in `wasmBaseUrl.ts`)
-- CJS: `require('node:url').pathToFileURL(__filename)` (in `wasmBaseUrl.cts`)
-
----
-
-## Data flow
-
-### Encryption
-
-```
-fetchFheEncryptionKeyBytes()
-  └─ relayer HTTP call                         → fetch ~50MB public key
-  └─ encrypt.deserializeGlobalFhePublicKey()   → TFHE WASM
-  └─ encrypt.deserializeGlobalFheCrs()         → TFHE WASM
-
-encrypt()
-  ├─ generateZkProof()
-  │    └─ encrypt.buildWithProofPacked()       → TFHE WASM (CPU intensive)
-  └─ fetchVerifiedInputProof()
-       └─ relayer.fetchCoprocessorSignatures() → HTTP to relayer
-       └─ coprocessor signature verification   → on-chain via RPC
-```
-
-### Private decryption
-
-```
-signDecryptionPermit()       → Constructs EIP-712 + signs with wallet → SignedDecryptionPermit
-
-decrypt()
-  ├─ fetchKmsSignedcryptedShares()
-  │    ├─ checkUserAllowedForDecryption() → ACL check via RPC
-  │    └─ relayer.fetchUserDecrypt()      → HTTP to Zama Protocol → encrypted shares
-  └─ decryptKmsSignedcryptedShares()
-       └─ decrypt.decryptAndReconstruct() → TKMS WASM (reconstruct cleartext)
-```
-
-### Reading public values
-
-```
-publicDecrypt()
-  ├─ Validation (non-empty, bit limit, chain ID)
-  ├─ checkAllowedForDecryption()     → ACL check via RPC
-  ├─ relayer.fetchPublicDecrypt()    → HTTP to Zama Protocol
-  └─ createPublicDecryptionProof()   → signature verification via RPC
-```

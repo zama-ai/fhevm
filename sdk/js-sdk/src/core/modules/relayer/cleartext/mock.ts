@@ -9,7 +9,7 @@ import type {
 import { createDeadbeefBytes } from '../../../base/bytes.js';
 import { fetchUserDecrypt } from './fetchUserDecrypt.js';
 import { fetchPublicDecrypt } from './fetchPublicDecrypt.js';
-import { fetchDelegatedUserDecrypt } from './fetchDelegatedUserDecrypt.js';
+import { fetchDelegatedUserDecrypt } from './fetchDelegatedUserDecryptV1.js';
 import { fetchCoprocessorSignatures } from './fetchCoprocessorSignatures.js';
 
 ////////////////////////////////////////////////////////////////////////////////

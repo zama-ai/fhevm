@@ -1,5 +1,3 @@
-export { type ReadKmsSignersContextReturnType, readKmsSignersContext } from './readKmsSignersContext.js';
-
 export {
   type DecryptPublicValueParameters,
   type DecryptPublicValueReturnType,
@@ -33,47 +31,21 @@ export {
 } from './canDecryptPublicValues.js';
 
 export {
-  type CreateVerifiedInputProofFromRawBytesParameters,
-  type CreateVerifiedInputProofFromRawBytesReturnType,
-  createVerifiedInputProofFromRawBytes,
-} from './createVerifiedInputProofFromRawBytes.js';
-
-export {
-  type ReadCoprocessorSignersContextReturnType,
-  readCoprocessorSignersContext,
-} from './readCoprocessorSignersContext.js';
-
-export {
-  type VerifyInputProofParameters,
-  type VerifyInputProofReturnType,
-  verifyInputProof,
-} from './verifyInputProof.js';
-
-export {
-  type FetchVerifiedInputProofParameters,
-  type FetchVerifiedInputProofReturnType,
-  fetchVerifiedInputProof,
-} from './fetchVerifiedInputProof.js';
-
-export {
   type FetchEncryptedValuesParameters,
   type FetchEncryptedValuesReturnType,
   fetchEncryptedValues,
 } from './fetchEncryptedValues.js';
 
+// v13: Only the Legacy version is exported
 export {
-  type VerifyZkProofCoprocessorSignaturesParameters,
-  verifyZkProofCoprocessorSignatures,
-} from './verifyZkProofCoprocessorSignatures.js';
+  type CreateUnsignedLegacyDecryptionPermitEip712Parameters,
+  type CreateUnsignedLegacyDecryptionPermitEip712ReturnType,
+  createUnsignedLegacyDecryptionPermitEip712,
+} from './createUnsignedLegacyDecryptionPermitEip712.js';
 
+// v13: Only the Legacy version is exported
 export {
-  type FetchSelfKmsSignedcryptedSharesParameters,
-  type FetchDelegatedKmsSignedcryptedSharesParameters,
-  type FetchKmsSignedcryptedSharesReturnType,
-  fetchKmsSignedcryptedShares,
-} from './fetchKmsSignedcryptedShares.js';
-
-export {
-  type VerifyHandlesCoprocessorSignaturesParameters,
-  verifyHandlesCoprocessorSignatures,
-} from './verifyHandlesCoprocessorSignatures.js';
+  type SignLegacyDecryptionPermitParameters,
+  type SignLegacyDecryptionPermitReturnType,
+  signLegacyDecryptionPermit,
+} from './signLegacyDecryptionPermit.js';

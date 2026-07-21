@@ -115,62 +115,6 @@ export type InputHandle<etype extends FheType = FheType> = {
   [K in etype]: InputHandleOfTypeBaseV0<K>;
 }[etype];
 
-// /**
-//  * Alias for {@link EncryptedValuePipo} using `FHE.sol` terminology.
-//  * In `FHE.sol`, a `handle` is the `bytes32` reference to any encrypted value.
-//  */
-// export type HandlePipo<etype extends FheType = FheType> = EncryptedValuePipo<etype>;
-
-// /**
-//  * Alias for {@link ExternalEncryptedValuePipo} using `FHE.sol` terminology.
-//  * In `FHE.sol`, an `inputHandle` is an encrypted value that has not yet been
-//  * verified on-chain via `InputVerifier.sol`.
-//  */
-// export type InputHandlePipo<etype extends FheType = FheType> = ExternalEncryptedValuePipo<etype>;
-
-// /** Alias for {@link ComputedEncryptedValuePipo} using `FHE.sol` terminology. */
-// export type ComputedHandlePipo<etype extends FheType = FheType> = ComputedEncryptedValuePipo<etype>;
-
-// ////////////////////////////////////////////////////////////////////////////////
-// // Typed shortcuts
-// ////////////////////////////////////////////////////////////////////////////////
-
-// /** Encrypted boolean (`ebool` in Solidity). */
-// export type EboolPipo = EncryptedValuePipo<'ebool'>;
-// /** Encrypted unsigned 8-bit integer (`euint8` in Solidity). */
-// export type Euint8Pipo = EncryptedValuePipo<'euint8'>;
-// /** Encrypted unsigned 16-bit integer (`euint16` in Solidity). */
-// export type Euint16Pipo = EncryptedValuePipo<'euint16'>;
-// /** Encrypted unsigned 32-bit integer (`euint32` in Solidity). */
-// export type Euint32Pipo = EncryptedValuePipo<'euint32'>;
-// /** Encrypted unsigned 64-bit integer (`euint64` in Solidity). */
-// export type Euint64Pipo = EncryptedValuePipo<'euint64'>;
-// /** Encrypted unsigned 128-bit integer (`euint128` in Solidity). */
-// export type Euint128Pipo = EncryptedValuePipo<'euint128'>;
-// /** Encrypted unsigned 256-bit integer (`euint256` in Solidity). */
-// export type Euint256Pipo = EncryptedValuePipo<'euint256'>;
-// /** Encrypted address (`eaddress` in Solidity). */
-// export type EaddressPipo = EncryptedValuePipo<'eaddress'>;
-
-// /** Unverified encrypted boolean (`externalEbool` in Solidity). Requires on-chain verification before use. */
-// export type ExternalEboolPipo = ExternalEncryptedValuePipo<'ebool'>;
-// /** Unverified encrypted unsigned 8-bit integer (`externalEuint8` in Solidity). */
-// export type ExternalEuint8Pipo = ExternalEncryptedValuePipo<'euint8'>;
-// /** Unverified encrypted unsigned 16-bit integer (`externalEuint16` in Solidity). */
-// export type ExternalEuint16Pipo = ExternalEncryptedValuePipo<'euint16'>;
-// /** Unverified encrypted unsigned 32-bit integer (`externalEuint32` in Solidity). */
-// export type ExternalEuint32Pipo = ExternalEncryptedValuePipo<'euint32'>;
-// /** Unverified encrypted unsigned 64-bit integer (`externalEuint64` in Solidity). */
-// export type ExternalEuint64Pipo = ExternalEncryptedValuePipo<'euint64'>;
-// /** Unverified encrypted unsigned 128-bit integer (`externalEuint128` in Solidity). */
-// export type ExternalEuint128Pipo = ExternalEncryptedValuePipo<'euint128'>;
-// /** Unverified encrypted unsigned 256-bit integer (`externalEuint256` in Solidity). */
-// export type ExternalEuint256Pipo = ExternalEncryptedValuePipo<'euint256'>;
-// /** Unverified encrypted address (`externalEaddress` in Solidity). */
-// export type ExternalEaddressPipo = ExternalEncryptedValuePipo<'eaddress'>;
-
-// ////////////////////////////////////////////////////////////////////////////////
-
 /**
  * Any value that can be interpreted as an encrypted value (bytes32 handle).
  *
@@ -180,27 +124,6 @@ export type InputHandle<etype extends FheType = FheType> = {
  * - `EncryptedValue` — an already-parsed encrypted value
  */
 export type EncryptedValueLike = Uint8Array | string | { readonly bytes32Hex: string };
-
-// export type HandleLike = EncryptedValueLike;
-
-// /**
-//  * Any value that can be interpreted as an external encrypted value (bytes32 input handle).
-//  * An input handle is a user-encrypted value that has not yet been verified on-chain via `InputVerifier.sol`.
-//  *
-//  * - `Uint8Array` — raw 32-byte handle (`Bytes32`)
-//  * - `string` — 0x-prefixed hex-encoded 32-byte handle (`Bytes32Hex`, e.g. `"0xabcd..."`)
-//  * - `{ bytes32Hex: string }` — object with a hex-encoded handle property
-//  * - `ExternalEncryptedValue` — an already-parsed external encrypted value
-//  */
-// export type ExternalEncryptedValueLike =
-//   | Uint8Array
-//   | string
-//   | { readonly bytes32Hex: string }
-//   | ExternalEncryptedValuePipo;
-
-// export type InputHandleLike = ExternalEncryptedValueLike;
-
-// ////////////////////////////////////////////////////////////////////////////////
 
 export type ClearValueOfFheType<etype extends FheType> = TypedValueOfBase<ClearValueTypeName<etype>> & {
   readonly handle: Handle<etype>;

@@ -12,6 +12,7 @@ export type FhevmChain = {
  *       acl: "0xdeadbeef..."
  *       inputVerifier: "0xdeadbeef..."
  *       kmsVerifier: "0xdeadbeef..."
+ *       protocolConfig: "0xdeadbeef..."
  *     },
  *     relayerUrl: "http://foo",
  *     gateway?: {
@@ -42,6 +43,7 @@ export type FhevmChainContracts = {
   readonly acl: ChainContract;
   readonly inputVerifier: ChainContract;
   readonly kmsVerifier: ChainContract;
+  readonly protocolConfig?: ChainContract | undefined;
 };
 
 export type FhevmGatewayChain = {
@@ -75,6 +77,7 @@ type ResolvedFhevmChainContracts = {
   readonly acl: ResolvedChainContract;
   readonly inputVerifier: ResolvedChainContract;
   readonly kmsVerifier: ResolvedChainContract;
+  readonly protocolConfig?: ResolvedChainContract | undefined;
 };
 
 type ResolvedFhevmGatewayChain = {
