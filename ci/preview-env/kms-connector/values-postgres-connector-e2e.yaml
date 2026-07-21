@@ -64,18 +64,27 @@ readinessProbe:
   exec: {command: ["pg_isready", "-U", "zama"]}
   initialDelaySeconds: 5
   periodSeconds: 5
+  timeoutSeconds: 5
+# Liveness hardened (wider timeout + more failures before restart) so a
+# busy-but-alive DB is not silently killed by a throttled pg_isready - see
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml for the full note.
 livenessProbe:
   exec: {command: ["pg_isready", "-U", "zama"]}
   initialDelaySeconds: 10
   periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
 
+# Bumped off the old 250m/256Mi..1/1Gi, which OOM-killed under load (silent
+# restart). Lighter than the coprocessor DB (this one holds no key material),
+# but still given real headroom.
 resources:
   requests:
     cpu: "250m"
-    memory: "256Mi"
+    memory: "512Mi"
   limits:
     cpu: "1"
-    memory: "1Gi"
+    memory: "2Gi"
 
 # Pins onto the zws-pool Karpenter node pool - see
 # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.

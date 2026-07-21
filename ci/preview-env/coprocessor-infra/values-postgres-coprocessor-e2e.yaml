@@ -81,18 +81,34 @@ readinessProbe:
   exec: {command: ["pg_isready", "-U", "zama"]}
   initialDelaySeconds: 5
   periodSeconds: 5
+  timeoutSeconds: 5
+# Liveness hardened so a busy-but-alive DB is not silently restarted: the
+# default probe (timeoutSeconds 1, failureThreshold 3) kills Postgres after
+# ~3 slow pg_isready replies, which is exactly what happens when the pod is
+# CPU-throttled at its limit under a heavy ciphertext/key-write load - looking
+# like a spurious "went down and restarted" with no crash in the logs. Wider
+# timeout + more failures before restart tolerate those transient stalls.
 livenessProbe:
   exec: {command: ["pg_isready", "-U", "zama"]}
   initialDelaySeconds: 10
   periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
 
+# Sized for the coprocessor DB specifically: it stores the FHE key material
+# (ServerKey/PublicKey/SNS) as Postgres large objects, streamed in 128MB
+# chunks by the host-listener poller, plus the ciphertext/handle rows the
+# workers read. The old 1Gi limit OOM-killed the pod mid key-write (silent
+# restart, empty-looking DB on recovery). Memory is the binding constraint
+# here, so the limit is raised well above the working set; CPU is bumped so
+# the liveness probe is not throttled into a false failure during those writes.
 resources:
   requests:
-    cpu: "250m"
-    memory: "256Mi"
-  limits:
-    cpu: "1"
+    cpu: "500m"
     memory: "1Gi"
+  limits:
+    cpu: "2"
+    memory: "4Gi"
 
 # Pins onto the zws-pool Karpenter node pool - same convention as
 # ../../charts/anvil-node/values.yaml's commented-out example.
