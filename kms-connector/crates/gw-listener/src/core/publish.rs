@@ -411,7 +411,7 @@ pub async fn update_last_block_polled<'e>(
 }
 
 /// Persists the `(context_id, epoch_id)` pair fetched at startup via
-/// `ProtocolConfig::getActiveKmsContextAndEpoch()`.
+/// `ProtocolConfig::getCurrentKmsContextAndEpoch()`.
 pub async fn publish_context_and_epoch(
     db_pool: &Pool<Postgres>,
     context_id: U256,

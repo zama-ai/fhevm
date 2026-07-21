@@ -158,7 +158,7 @@ where
             let Some(context_id) = epoch.context_id.map(|i| U256::from_le_slice(&i)) else {
                 // A valid epoch row always carries its context association; without it the epoch
                 // cannot be checked on-chain. This should be unreachable, but we delete the row
-                // just in case so the kms-worker's on-chain is able to fix the cache.
+                // just in case so the kms-worker's on-chain check is able to fix the cache.
                 warn!("KMS epoch #{epoch_id} was cached as valid without any context. Deleting...");
                 sqlx::query!("DELETE FROM kms_epoch WHERE id = $1", epoch.id)
                     .execute(&self.db_pool)
