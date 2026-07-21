@@ -2,9 +2,12 @@
 //!
 //! For frontend/demo indexers. The generic coprocessor host-listener does not
 //! consume these: the FHE-protocol events are emitted by the ZamaHost CPIs the
-//! batcher composes.
+//! batcher composes. Only settled events carry amounts — everything else stays
+//! encrypted.
 
 use anchor_lang::prelude::*;
+
+use crate::state::BatchDirection;
 
 /// Emitted when a batcher config is created.
 #[event]
@@ -13,10 +16,12 @@ pub struct BatcherInitialized {
     pub version: u8,
     /// Batcher config account.
     pub batcher: Pubkey,
-    /// Confidential mint users deposit through the batcher.
-    pub deposit_confidential_mint: Pubkey,
-    /// Confidential mint wrapping the vault's share mint.
-    pub shares_confidential_mint: Pubkey,
+    /// Direction of this batcher instance.
+    pub direction: BatchDirection,
+    /// Confidential mint users join batches with.
+    pub join_confidential_mint: Pubkey,
+    /// Confidential mint claims pay out in.
+    pub payout_confidential_mint: Pubkey,
     /// Public vault the batcher fronts.
     pub vault: Pubkey,
     /// Minimum slots a batch must stay open before dispatch.
@@ -48,16 +53,16 @@ pub struct JoinedBatch {
     pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
-    /// Joining user (deposit owner).
+    /// Joining user.
     pub user: Pubkey,
-    /// `EncryptedValue` lineage holding the user's accumulated batch deposit.
-    pub deposit_encrypted_value: Pubkey,
-    /// Current handle of the deposit lineage after this join.
-    pub deposit_handle: [u8; 32],
+    /// `EncryptedValue` lineage holding the user's accumulated joined amount.
+    pub joined_encrypted_value: Pubkey,
+    /// Current handle of the joined lineage after this join.
+    pub joined_handle: [u8; 32],
 }
 
-/// Emitted when a user quits a pending batch: the exact recorded deposit was
-/// transferred back and the deposit lineage reset to zero.
+/// Emitted when a user quits a pending batch: the exact recorded amount was
+/// transferred back and the joined lineage reset to zero.
 #[event]
 pub struct QuitBatch {
     /// Event schema version.
@@ -80,24 +85,26 @@ pub struct BatchDispatched {
     pub burned_total_handle: [u8; 32],
 }
 
-/// Emitted when a batch settles: the certified total went into the vault and
-/// the batch's public share rate is frozen.
+/// Emitted when a batch settles: the certified total went through the vault
+/// and the batch's public settle results are frozen. The amounts here are the
+/// batch aggregates, intentionally public.
 #[event]
 pub struct BatchSettled {
     /// Event schema version.
     pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
-    /// KMS-certified batch total (public by design).
-    pub total_deposited: u64,
-    /// Vault shares received for the batch total.
-    pub shares_received: u64,
-    /// Frozen share rate: `shares_received * RATE_SCALE / total_deposited`.
-    pub share_rate: u64,
+    /// KMS-certified batch join total (public by design).
+    pub total_joined: u64,
+    /// Payout units the vault leg produced for the batch total.
+    pub payout_received: u64,
+    /// Informational rate `payout_received * RATE_SCALE / total_joined`,
+    /// saturating at u64::MAX. Claims use exact proportional division.
+    pub payout_rate: u64,
 }
 
 /// Emitted when a zero-total batch is canceled at settle time (nothing to
-/// deposit, no rate to freeze — the division never happens).
+/// move through the vault, no rate to freeze — the division never happens).
 #[event]
 pub struct BatchCanceled {
     /// Event schema version.
@@ -106,15 +113,15 @@ pub struct BatchCanceled {
     pub batch: Pubkey,
 }
 
-/// Emitted when a user's confidential shares are claimed from a settled batch.
+/// Emitted when a user's confidential payout is claimed from a settled batch.
 #[event]
-pub struct SharesClaimed {
+pub struct PayoutClaimed {
     /// Event schema version.
     pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
-    /// User the shares were transferred to.
+    /// User the payout was transferred to.
     pub user: Pubkey,
-    /// `EncryptedValue` lineage holding the claimed share amount.
+    /// `EncryptedValue` lineage holding the claimed payout amount.
     pub claim_encrypted_value: Pubkey,
 }

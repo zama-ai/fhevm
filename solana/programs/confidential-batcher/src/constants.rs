@@ -3,20 +3,21 @@
 /// App event schema version, following the demo-vault pattern. The batcher is
 /// not ingested by the coprocessor host-listener (host protocol events are
 /// emitted by the ZamaHost CPIs it composes); this versions app/demo indexer
-/// reads.
-pub const APP_EVENT_VERSION: u8 = 1;
+/// reads. Version 2: direction-neutral join/payout field names and the
+/// `direction` field on `BatcherInitialized`.
+pub const APP_EVENT_VERSION: u8 = 2;
 
-/// Fixed-point scale of a batch's public share rate:
-/// `share_rate = shares_received * RATE_SCALE / total_deposited`, and each
-/// claim is `encrypted(deposit) * share_rate / RATE_SCALE` in one MulDiv eval.
+/// Fixed-point scale of a batch's public payout rate:
+/// `payout_rate = payout_received * RATE_SCALE / total_joined`.
 ///
-/// Domain bound: `share_rate <= RATE_SCALE * shares / total`, and the demo
-/// vault's share price never drops below ~1 (no loss path, donations only
-/// raise it), so `shares <= total` and the rate fits u64 with room to spare;
-/// `freeze_share_rate` still checks the u64 fit and fails closed. The MulDiv
-/// intermediate is `deposit * rate <= total * rate <= shares * RATE_SCALE
-/// < 2^64 * 10^9 < 2^128`, inside the coprocessor's widened MulDiv, and the
-/// result is at most `shares_received`, so it fits euint64.
+/// The rate is event-facing and informational only. Claims do NOT multiply by
+/// it: each claim is the exact proportional floor
+/// `encrypted(joined) * payout_received / total_joined` in one MulDiv eval,
+/// which strands strictly less than the rate's double rounding would (the
+/// intermediate `joined * payout_received < 2^128` stays inside the
+/// coprocessor's widened MulDiv, and the result is at most `payout_received`,
+/// so it fits euint64). On the redeem direction the rate itself can exceed
+/// u64 at extreme share prices, so it saturates instead of failing settle.
 pub const RATE_SCALE: u64 = 1_000_000_000;
 
 /// PDA seed for a batch, keyed by batcher and batch index.
@@ -26,13 +27,15 @@ pub const BATCH_SEED: &[u8] = b"batch";
 /// SPL token accounts, signs its FHE evals, and authorizes its token CPIs.
 pub const BATCH_AUTHORITY_SEED: &[u8] = b"batch-authority";
 
-/// PDA seed for a user's per-batch deposit record.
-pub const DEPOSIT_RECORD_SEED: &[u8] = b"deposit-record";
+/// PDA seed for a user's per-batch join record.
+pub const JOIN_RECORD_SEED: &[u8] = b"join-record";
 
-/// PDA seed for the batch's plain SPL account holding redeemed underlying
-/// tokens between settle's redeem and vault-deposit legs.
-pub const BATCH_UNDERLYING_SEED: &[u8] = b"batch-underlying";
+/// PDA seed for the batch's plain SPL account in the JOIN mint's underlying
+/// (vault underlying for deposit batchers, vault shares for redeem batchers),
+/// holding the redeemed batch total between settle's redeem and vault legs.
+pub const BATCH_JOIN_UNDERLYING_SEED: &[u8] = b"batch-join-underlying";
 
-/// PDA seed for the batch's plain SPL account holding vault shares between
-/// settle's vault-deposit and wrap legs.
-pub const BATCH_SHARE_TOKENS_SEED: &[u8] = b"batch-share-tokens";
+/// PDA seed for the batch's plain SPL account in the PAYOUT mint's underlying
+/// (vault shares for deposit batchers, vault underlying for redeem batchers),
+/// holding the vault leg's output between settle's vault and wrap legs.
+pub const BATCH_PAYOUT_UNDERLYING_SEED: &[u8] = b"batch-payout-underlying";

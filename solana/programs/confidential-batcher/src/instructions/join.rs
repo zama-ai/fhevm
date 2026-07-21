@@ -1,9 +1,11 @@
-//! Joins the pending batch with a coprocessor-attested encrypted amount.
+//! Joins the pending batch with a coprocessor-attested encrypted amount of the
+//! batcher's join token (confidential underlying for deposit batchers,
+//! confidential shares for redeem batchers — the code is direction-free).
 //!
 //! One user-signed transaction: the user's signature propagates through the
 //! `confidential_transfer` CPI into the batch's own token account, and the
 //! batcher's own eval re-materializes the transferred amount into the user's
-//! batch deposit lineage **in the same transaction**. Same-transaction is
+//! joined lineage **in the same transaction**. Same-transaction is
 //! load-bearing: the transfer's recipient rule places the batch authority in
 //! the `transferred_amount` output audience by construction, but that lineage
 //! is superseded by the user's next transfer and input admission pins the
@@ -17,7 +19,7 @@ use super::*;
 pub struct Join<'info> {
     /// Joining user; transfer authority over their confidential balance.
     pub user: Signer<'info>,
-    /// Pays deposit-record rent, transfer output rent, and the batcher eval's
+    /// Pays join-record rent, transfer output rent, and the batcher eval's
     /// ACL rent.
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -30,27 +32,27 @@ pub struct Join<'info> {
     /// batcher eval's compute subject + app authority.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
-    /// The user's deposit record for this batch; created on first join.
+    /// The user's join record for this batch; created on first join.
     #[account(
         init_if_needed,
         payer = payer,
-        space = 8 + DepositRecord::SPACE,
-        seeds = [DEPOSIT_RECORD_SEED, batch.key().as_ref(), user.key().as_ref()],
+        space = 8 + JoinRecord::SPACE,
+        seeds = [JOIN_RECORD_SEED, batch.key().as_ref(), user.key().as_ref()],
         bump,
     )]
-    pub deposit_record: Box<Account<'info, DepositRecord>>,
-    /// Confidential mint users deposit through the batcher.
-    pub deposit_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: deposit mint compute-signer PDA; validated by the token CPI.
-    pub deposit_compute_signer: UncheckedAccount<'info>,
+    pub join_record: Box<Account<'info, JoinRecord>>,
+    /// Confidential mint users join batches with.
+    pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
+    /// CHECK: join mint compute-signer PDA; validated by the token CPI.
+    pub join_compute_signer: UncheckedAccount<'info>,
     /// CHECK: user's confidential token account (transfer source); validated
     /// by the token CPI.
     #[account(mut)]
     pub user_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential deposit token account (transfer
-    /// destination); validated by the token CPI and pinned below.
+    /// CHECK: batch's confidential join token account (transfer destination);
+    /// validated by the token CPI and pinned below.
     #[account(mut)]
-    pub batch_deposit_token_account: UncheckedAccount<'info>,
+    pub batch_join_token_account: UncheckedAccount<'info>,
     /// CHECK: user's stable balance lineage; superseded by the token CPI.
     #[account(mut)]
     pub user_balance_value: UncheckedAccount<'info>,
@@ -61,10 +63,10 @@ pub struct Join<'info> {
     /// token CPI, then read as the batcher eval's operand.
     #[account(mut)]
     pub user_transferred_value: UncheckedAccount<'info>,
-    /// CHECK: the user's batch deposit lineage; created on first join,
-    /// superseded (accumulated) on repeat joins by the batcher eval.
+    /// CHECK: the user's joined lineage; created on first join, superseded
+    /// (accumulated) on repeat joins by the batcher eval.
     #[account(mut)]
-    pub pending_deposit_value: UncheckedAccount<'info>,
+    pub pending_join_value: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).
@@ -80,7 +82,7 @@ pub struct Join<'info> {
 }
 
 /// Transfers the attested amount into the batch account and accumulates it
-/// into the user's deposit lineage, atomically.
+/// into the user's joined lineage, atomically.
 pub fn join<'info>(
     ctx: Context<'info, Join<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
@@ -90,16 +92,16 @@ pub fn join<'info>(
         BatcherError::BatchNotPending
     );
     require_keys_eq!(
-        ctx.accounts.deposit_confidential_mint.key(),
-        ctx.accounts.batcher.deposit_confidential_mint,
+        ctx.accounts.join_confidential_mint.key(),
+        ctx.accounts.batcher.join_confidential_mint,
         BatcherError::ConfidentialMintMismatch
     );
-    let mint_key = ctx.accounts.deposit_confidential_mint.key();
+    let mint_key = ctx.accounts.join_confidential_mint.key();
     let batch_key = ctx.accounts.batch.key();
     let user = ctx.accounts.user.key();
     let batch_authority = ctx.accounts.batch_authority.key();
     require_keys_eq!(
-        ctx.accounts.batch_deposit_token_account.key(),
+        ctx.accounts.batch_join_token_account.key(),
         ct::token_account_address(mint_key, batch_authority).0,
         BatcherError::DerivedAccountMismatch
     );
@@ -113,10 +115,10 @@ pub fn join<'info>(
             ct::cpi::accounts::ConfidentialTransfer {
                 owner: ctx.accounts.user.to_account_info(),
                 payer: ctx.accounts.payer.to_account_info(),
-                mint: ctx.accounts.deposit_confidential_mint.to_account_info(),
+                mint: ctx.accounts.join_confidential_mint.to_account_info(),
                 from_account: ctx.accounts.user_token_account.to_account_info(),
-                to_account: ctx.accounts.batch_deposit_token_account.to_account_info(),
-                compute_signer: ctx.accounts.deposit_compute_signer.to_account_info(),
+                to_account: ctx.accounts.batch_join_token_account.to_account_info(),
+                compute_signer: ctx.accounts.join_compute_signer.to_account_info(),
                 from_balance_value: ctx.accounts.user_balance_value.to_account_info(),
                 to_balance_value: ctx.accounts.batch_balance_value.to_account_info(),
                 transferred_amount_value: ctx.accounts.user_transferred_value.to_account_info(),
@@ -136,33 +138,33 @@ pub fn join<'info>(
         amount_attestation,
     )?;
 
-    // Leg 2: re-materialize the just-transferred amount into the user's batch
-    // deposit lineage. The batch authority reads the transferred lineage (it
-    // is in its audience as the recipient owner) and accumulates:
-    // first join creates `deposit = transferred + 0`, repeats supersede to
-    // `deposit = deposit + transferred`.
+    // Leg 2: re-materialize the just-transferred amount into the user's joined
+    // lineage. The batch authority reads the transferred lineage (it is in its
+    // audience as the recipient owner) and accumulates: first join creates
+    // `joined = transferred + 0`, repeats supersede to
+    // `joined = joined + transferred`.
     let transferred_value = fhe::read_encrypted_value(&ctx.accounts.user_transferred_value)?;
     let transferred = fhe::uint64_operand(&transferred_value)?;
-    let deposit_binding = fhe::DurableBinding::bind(
-        ctx.accounts.pending_deposit_value.to_account_info(),
+    let joined_binding = fhe::DurableBinding::bind(
+        ctx.accounts.pending_join_value.to_account_info(),
         zama_fhe::DurableSlot::new(
             batch_key,
             batch_authority,
-            zama_fhe::DurableLabel::new(pending_deposit_label(user)),
+            zama_fhe::DurableLabel::new(pending_join_label(user)),
         ),
-        // The user decrypts their pending deposit; the batch authority computes
-        // refunds and claims from it; the deposit mint's compute signer lets
+        // The user decrypts their pending amount; the batch authority computes
+        // refunds and claims from it; the join mint's compute signer lets
         // quit's transfer eval read it as the refund amount.
         zama_fhe::AccessPolicy::from_subjects(vec![
             zama_fhe::AccessSubject::owner(user),
             zama_fhe::AccessSubject::compute(batch_authority),
-            zama_fhe::AccessSubject::compute(ctx.accounts.deposit_confidential_mint.compute_signer),
+            zama_fhe::AccessSubject::compute(ctx.accounts.join_confidential_mint.compute_signer),
         ])
         .map_err(fhe::invalid_eval_plan)?,
     )?;
-    let previous_deposit = match deposit_binding.previous_handle() {
+    let previous_joined = match joined_binding.previous_handle() {
         Some(_) => Some(fhe::uint64_operand(&fhe::read_encrypted_value(
-            &ctx.accounts.pending_deposit_value,
+            &ctx.accounts.pending_join_value,
         )?)?),
         None => None,
     };
@@ -176,9 +178,9 @@ pub fn join<'info>(
         .to_bytes(),
     )
     .map_err(fhe::invalid_eval_plan)?;
-    // The deposit and transferred lineages live in different ACL domains (the
+    // The joined and transferred lineages live in different ACL domains (the
     // batch vs the mint), so their PDAs are distinct by construction; the only
-    // alias in this frame is the deposit lineage as both operand and output on
+    // alias in this frame is the joined lineage as both operand and output on
     // repeat joins, which is the standard same-slot supersede.
     fhe::eval_as_batch_authority(
         fhe::BatchAuthorityEval {
@@ -194,25 +196,25 @@ pub fn join<'info>(
         },
         context_id,
         vec![
-            deposit_binding.account_info(),
+            joined_binding.account_info(),
             ctx.accounts.user_transferred_value.to_account_info(),
         ],
-        |builder| match previous_deposit {
-            Some(deposit) => builder.add(deposit, transferred, deposit_binding.output()),
+        |builder| match previous_joined {
+            Some(joined) => builder.add(joined, transferred, joined_binding.output()),
             None => builder.add(
                 transferred,
                 zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-                deposit_binding.output(),
+                joined_binding.output(),
             ),
         },
     )?;
 
-    let deposit_handle = deposit_binding.handle_after_eval()?;
-    let record = &mut ctx.accounts.deposit_record;
+    let joined_handle = joined_binding.handle_after_eval()?;
+    let record = &mut ctx.accounts.join_record;
     record.batch = batch_key;
     record.user = user;
-    record.deposit_encrypted_value = ctx.accounts.pending_deposit_value.key();
-    record.bump = ctx.bumps.deposit_record;
+    record.joined_encrypted_value = ctx.accounts.pending_join_value.key();
+    record.bump = ctx.bumps.join_record;
 
     let batch = &mut ctx.accounts.batch;
     batch.join_count = batch.join_count.saturating_add(1);
@@ -221,8 +223,8 @@ pub fn join<'info>(
         version: APP_EVENT_VERSION,
         batch: batch_key,
         user,
-        deposit_encrypted_value: ctx.accounts.pending_deposit_value.key(),
-        deposit_handle,
+        joined_encrypted_value: ctx.accounts.pending_join_value.key(),
+        joined_handle,
     });
     Ok(())
 }

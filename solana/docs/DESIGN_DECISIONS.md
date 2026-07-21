@@ -1825,3 +1825,45 @@ the loss per batch is bounded below one share's worth. Behavior is pinned by
 cancel-and-refund settle branch: wrap the redeemed underlying back into the batch's confidential
 account and refund each user's encrypted deposit via `confidential_transfer_from_value` (quit's
 mechanism) — not implemented in the deposit-path PR.
+
+Redeem path implemented (fhevm-internal#1758), as an addendum to the deposit path above. **One
+program serves both directions, with the direction on the `Batcher` config** — each config is a
+Deposit or a Redeem instance, mirroring the EVM's two batcher deployments: a pending deposit batch
+never blocks a redeem batch (each batcher serializes only its own batches), yet every account
+layout and every instruction is shared. The vocabulary is direction-neutral — a JOIN confidential
+mint (what users batch in: cUnderlying for deposits, cShares for redeems) and a PAYOUT confidential
+mint (what claims pay: cShares for deposits, cUnderlying for redeems) — and the batch lifecycle's
+only direction branch is settle's vault leg (`demo_vault::deposit` vs `demo_vault::withdraw`);
+`initialize_batcher` additionally validates the mint wiring per direction at setup, and join, quit,
+dispatch, claim, and open_batch are direction-free. The
+alternative (a duplicated instruction set) was rejected because the two flows differ in exactly one
+CPI: duplicating fourteen account structs to encode one branch would double the review surface for
+zero clarity.
+
+Claim math changed for BOTH directions (fixes fhevm-internal#1774 item 1): a claim is the exact
+proportional floor `encrypted(joined) x payout_received / total_joined` in one MulDiv — same FHE op
+count as before — instead of `encrypted(joined) x rate / RATE_SCALE` on a pre-floored rate. The
+double rounding stranded up to RATE_SCALE-scale dust per batch (6,148,914,726 raw units measured at
+a u64-scale two-user batch, vs at most one unit per claim now; pinned by
+`exact_division_strands_less_than_the_rate_would`). Sum-of-claims <= payout still holds:
+`sum(floor(j_i * P / T)) <= floor(sum(j_i) * P / T) = P`. The MulDiv intermediate
+`joined * payout_received < 2^128` stays inside the coprocessor's widened MulDiv and the result is
+at most `payout_received`, so it fits euint64; `total_joined > 0` because zero-total batches
+cancel. The frozen `payout_rate` remains on the batch and in `BatchSettled`, but is informational
+only and SATURATES at u64::MAX instead of failing settle (a redeem batch of few shares against a
+large payout can legitimately exceed the u64 rate domain — a display number must not brick funds).
+
+Settle's delta accounting is preserved as a security invariant on the redeem direction's
+underlying-received leg: the payout is the batch payout account's SPL balance DELTA across the
+vault CPI, never its raw balance, so preloaded tokens (which SPL destinations cannot refuse) stay
+inert (pinned by `mollusk_redeem_preloaded_underlying_stays_inert` alongside the deposit-side
+test). The dust-brick limitation above is deposit-only: the vault's share price never drops below
+1:1 (floor rounding favors the vault; `harvest` only raises the price), so withdrawing any non-zero
+share total always returns at least that many underlying units and `ZeroAssets` is unreachable from
+a redeem batch (pinned by `mollusk_redeem_one_share_dust_settles_at_extreme_price`). Exit rules are
+symmetric too: `quit` returns the exact encrypted share amount while pending; there is NO exit
+between dispatch and settle in either direction — the deadline-cancel path stays out of demo scope
+(fhevm-internal#1773). Operational assumption, both directions (fhevm-internal#1774 item 2): every
+token/host CPI passes deny-list records and HCU accounts (`deny_subject_record`,
+`hcu_block_meter`, `hcu_trusted_app_record`) as hardcoded `None` — the program assumes
+`grant_deny_list_enabled = false` and no binding HCU cap, which is how the PoC host fixtures run.

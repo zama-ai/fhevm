@@ -60,13 +60,18 @@ everything below uses Solana-native building blocks.
    share tokens, and wraps them into **confidential shares**. It fixes one
    public exchange rate for the whole batch: shares received ÷ total
    deposited.
-5. **Claim.** Each user collects their shares. Their encrypted deposit is
-   multiplied by the public rate — an encrypted number times a public number,
-   which FHE does cheaply. No one ever divides encrypted by encrypted.
+5. **Claim.** Each user collects their shares: their encrypted deposit's
+   exact proportional part of the batch's shares — an encrypted number times
+   a public number, divided by a public number, which FHE does cheaply. No
+   one ever divides encrypted by encrypted, and the floor rounding means the
+   claims can never add up to more than the batch received.
 
-Withdrawing works the same way in mirror: join a redeem batch with encrypted
-shares, the batch total of shares is revealed and redeemed from the vault,
-and users claim encrypted tokens back at the batch's rate.
+Withdrawing works the same way in mirror, in the same program: a *redeem*
+batcher's batches are joined with encrypted shares, the batch total of shares
+is revealed and withdrawn from the vault, and users claim their exact
+proportional part of the returned tokens, encrypted. Deposit and redeem
+batchers run side by side — one pending batch each — so exits never wait on
+entries.
 
 ## What is public and what is private
 

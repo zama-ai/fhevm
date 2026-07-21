@@ -1,4 +1,5 @@
-//! Mollusk-based runtime tests for the `confidential-batcher` deposit path.
+//! Mollusk-based runtime tests for the `confidential-batcher` — both the
+//! deposit and the redeem direction.
 //!
 //! The batcher composes four programs — zama-host (FHE compute + ACL),
 //! confidential-token (transfers, burn, redeem, wrap), demo-vault (public
@@ -6,13 +7,19 @@
 //! drives the REAL batcher instructions end to end. Every CPI the batcher
 //! issues under its per-batch authority PDA is therefore exercised through a
 //! genuine `invoke_signed` (init token account, attested transfer, transfer
-//! from value, whole-balance burn, redeem, vault deposit, wrap), not through
-//! the marked-signer stand-in used by the token suite's PDA-owner test.
+//! from value, whole-balance burn, redeem, vault deposit/withdraw, wrap), not
+//! through the marked-signer stand-in used by the token suite's PDA-owner
+//! test.
 //!
 //! Encrypted state is checked with the cleartext ledger: each instruction's
 //! `fhe_eval` CPIs (there can be several — a token CPI's eval plus the
 //! batcher's own) are decoded from the inner instructions and replayed in
 //! cleartext, binding results to the handles the host persisted.
+//!
+//! The fixture is direction-parametric: the same two confidential mints (one
+//! wrapping the vault's underlying, one wrapping its share mint) serve a
+//! deposit batcher (join = underlying, payout = shares) or a redeem batcher
+//! (join = shares, payout = underlying).
 
 mod support;
 
@@ -246,15 +253,14 @@ fn read_batch(context: &Ctx, address: Pubkey) -> batcher::Batch {
     batcher::Batch::try_deserialize(&mut account.data.as_slice()).expect("valid batch account")
 }
 
-fn read_deposit_record(context: &Ctx, address: Pubkey) -> batcher::DepositRecord {
+fn read_join_record(context: &Ctx, address: Pubkey) -> batcher::JoinRecord {
     let account = context
         .account_store
         .borrow()
         .get(&address)
-        .expect("missing deposit record")
+        .expect("missing join record")
         .clone();
-    batcher::DepositRecord::try_deserialize(&mut account.data.as_slice())
-        .expect("valid deposit record")
+    batcher::JoinRecord::try_deserialize(&mut account.data.as_slice()).expect("valid join record")
 }
 
 fn read_spl_amount(context: &Ctx, address: Pubkey) -> u64 {
@@ -370,7 +376,7 @@ fn coprocessor_signing_key() -> k256::ecdsa::SigningKey {
 }
 
 /// Coprocessor-signed `fromExternal` attestation over `amount_handle`, bound
-/// to (`user`, the deposit mint's compute-signer PDA).
+/// to (`user`, the join mint's compute-signer PDA).
 fn amount_attestation_for(
     amount_handle: [u8; 32],
     user: Pubkey,
@@ -491,16 +497,42 @@ impl ConfidentialMintKeys {
     }
 }
 
+/// One user's accounts on one confidential mint.
+struct UserMintKeys {
+    token_account: Pubkey,
+    balance_value: Pubkey,
+    transferred_value: Pubkey,
+    initial_balance: [u8; 32],
+}
+
+impl UserMintKeys {
+    fn new(user: Pubkey, mint: &ConfidentialMintKeys, seed: u8) -> Self {
+        let token_account = token::token_account_address(mint.mint, user).0;
+        Self {
+            token_account,
+            balance_value: token::balance_encrypted_value_address(mint.mint, token_account).0,
+            transferred_value: token::encrypted_value_address(
+                mint.mint,
+                token_account,
+                token::transferred_amount_label(),
+            )
+            .0,
+            initial_balance: handle_for_chain(seed, BALANCE_FHE_TYPE),
+        }
+    }
+}
+
 /// One user with token accounts on both confidential mints.
 struct UserKeys {
     user: Pubkey,
-    deposit_token_account: Pubkey,
-    deposit_balance_value: Pubkey,
-    deposit_transferred_value: Pubkey,
-    shares_token_account: Pubkey,
-    shares_balance_value: Pubkey,
-    initial_deposit_balance: [u8; 32],
-    initial_shares_balance: [u8; 32],
+    /// The user's accounts on the confidential mint wrapping the vault's
+    /// underlying (the join side of deposit batchers, the payout side of
+    /// redeem batchers).
+    underlying: UserMintKeys,
+    /// The user's accounts on the confidential mint wrapping the vault's
+    /// share mint (the payout side of deposit batchers, the join side of
+    /// redeem batchers).
+    shares: UserMintKeys,
 }
 
 impl UserKeys {
@@ -509,101 +541,82 @@ impl UserKeys {
         fixture_mints: (&ConfidentialMintKeys, &ConfidentialMintKeys),
         seed: u8,
     ) -> Self {
-        let (deposit_mint, shares_mint) = fixture_mints;
-        let deposit_token_account = token::token_account_address(deposit_mint.mint, user).0;
-        let shares_token_account = token::token_account_address(shares_mint.mint, user).0;
+        let (underlying_cmint, shares_cmint) = fixture_mints;
         Self {
             user,
-            deposit_token_account,
-            deposit_balance_value: token::balance_encrypted_value_address(
-                deposit_mint.mint,
-                deposit_token_account,
-            )
-            .0,
-            deposit_transferred_value: token::encrypted_value_address(
-                deposit_mint.mint,
-                deposit_token_account,
-                token::transferred_amount_label(),
-            )
-            .0,
-            shares_token_account,
-            shares_balance_value: token::balance_encrypted_value_address(
-                shares_mint.mint,
-                shares_token_account,
-            )
-            .0,
-            initial_deposit_balance: handle_for_chain(seed, BALANCE_FHE_TYPE),
-            initial_shares_balance: handle_for_chain(seed + 1, BALANCE_FHE_TYPE),
+            underlying: UserMintKeys::new(user, underlying_cmint, seed),
+            shares: UserMintKeys::new(user, shares_cmint, seed + 1),
         }
     }
 }
 
-/// Per-batch derived addresses.
+/// Per-batch derived addresses, resolved for the fixture's direction.
 struct BatchKeys {
     batch: Pubkey,
     batch_authority: Pubkey,
-    deposit_token_account: Pubkey,
-    deposit_balance_value: Pubkey,
-    deposit_transferred_value: Pubkey,
+    join_token_account: Pubkey,
+    join_balance_value: Pubkey,
+    join_transferred_value: Pubkey,
     burned_amount_value: Pubkey,
-    shares_token_account: Pubkey,
-    shares_balance_value: Pubkey,
-    shares_transferred_value: Pubkey,
-    underlying_tokens: Pubkey,
-    share_tokens: Pubkey,
+    payout_token_account: Pubkey,
+    payout_balance_value: Pubkey,
+    payout_transferred_value: Pubkey,
+    join_underlying: Pubkey,
+    payout_underlying: Pubkey,
 }
 
 impl BatchKeys {
     fn new(fixture: &BatcherFixture, index: u64) -> Self {
         let batch = batcher::batch_address(fixture.batcher, index).0;
         let batch_authority = batcher::batch_authority_address(batch).0;
-        let deposit_token_account =
-            token::token_account_address(fixture.deposit_mint.mint, batch_authority).0;
-        let shares_token_account =
-            token::token_account_address(fixture.shares_mint.mint, batch_authority).0;
+        let join_mint = fixture.join_mint();
+        let payout_mint = fixture.payout_mint();
+        let join_token_account = token::token_account_address(join_mint.mint, batch_authority).0;
+        let payout_token_account =
+            token::token_account_address(payout_mint.mint, batch_authority).0;
         Self {
             batch,
             batch_authority,
-            deposit_token_account,
-            deposit_balance_value: token::balance_encrypted_value_address(
-                fixture.deposit_mint.mint,
-                deposit_token_account,
+            join_token_account,
+            join_balance_value: token::balance_encrypted_value_address(
+                join_mint.mint,
+                join_token_account,
             )
             .0,
-            deposit_transferred_value: token::encrypted_value_address(
-                fixture.deposit_mint.mint,
-                deposit_token_account,
+            join_transferred_value: token::encrypted_value_address(
+                join_mint.mint,
+                join_token_account,
                 token::transferred_amount_label(),
             )
             .0,
             burned_amount_value: token::encrypted_value_address(
-                fixture.deposit_mint.mint,
-                deposit_token_account,
+                join_mint.mint,
+                join_token_account,
                 token::burned_amount_label(),
             )
             .0,
-            shares_token_account,
-            shares_balance_value: token::balance_encrypted_value_address(
-                fixture.shares_mint.mint,
-                shares_token_account,
+            payout_token_account,
+            payout_balance_value: token::balance_encrypted_value_address(
+                payout_mint.mint,
+                payout_token_account,
             )
             .0,
-            shares_transferred_value: token::encrypted_value_address(
-                fixture.shares_mint.mint,
-                shares_token_account,
+            payout_transferred_value: token::encrypted_value_address(
+                payout_mint.mint,
+                payout_token_account,
                 token::transferred_amount_label(),
             )
             .0,
-            underlying_tokens: batcher::batch_underlying_address(batch).0,
-            share_tokens: batcher::batch_share_tokens_address(batch).0,
+            join_underlying: batcher::batch_join_underlying_address(batch).0,
+            payout_underlying: batcher::batch_payout_underlying_address(batch).0,
         }
     }
 
-    fn pending_deposit_value(&self, user: Pubkey) -> Pubkey {
+    fn pending_join_value(&self, user: Pubkey) -> Pubkey {
         batcher::batcher_encrypted_value_address(
             self.batch,
             self.batch_authority,
-            batcher::pending_deposit_label(user),
+            batcher::pending_join_label(user),
         )
         .0
     }
@@ -617,16 +630,19 @@ impl BatchKeys {
         .0
     }
 
-    fn deposit_record(&self, user: Pubkey) -> Pubkey {
-        batcher::deposit_record_address(self.batch, user).0
+    fn join_record(&self, user: Pubkey) -> Pubkey {
+        batcher::join_record_address(self.batch, user).0
     }
 }
 
 struct BatcherFixture {
+    direction: batcher::BatchDirection,
     payer: Pubkey,
     batcher: Pubkey,
-    deposit_mint: ConfidentialMintKeys,
-    shares_mint: ConfidentialMintKeys,
+    /// Confidential mint wrapping the vault's underlying mint.
+    underlying_cmint: ConfidentialMintKeys,
+    /// Confidential mint wrapping the vault's share mint.
+    shares_cmint: ConfidentialMintKeys,
     vault: Pubkey,
     vault_authority: Pubkey,
     share_mint: Pubkey,
@@ -639,8 +655,9 @@ struct BatcherFixture {
 }
 
 impl BatcherFixture {
-    fn new() -> Self {
+    fn new(direction: batcher::BatchDirection) -> Self {
         Self::with_keys(
+            direction,
             Pubkey::new_unique(),
             Pubkey::new_unique(),
             Pubkey::new_unique(),
@@ -653,8 +670,9 @@ impl BatcherFixture {
 
     /// Fixed-key variant for cost snapshots: PDA bump searches are part of the
     /// measured compute, so profile addresses must not change between runs.
-    fn fixed(seed: u8) -> Self {
+    fn fixed(direction: batcher::BatchDirection, seed: u8) -> Self {
         Self::with_keys(
+            direction,
             Pubkey::new_from_array([seed; 32]),
             Pubkey::new_from_array([seed.wrapping_add(1); 32]),
             Pubkey::new_from_array([seed.wrapping_add(2); 32]),
@@ -665,11 +683,13 @@ impl BatcherFixture {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn with_keys(
+        direction: batcher::BatchDirection,
         payer: Pubkey,
         batcher_key: Pubkey,
-        deposit_mint: Pubkey,
-        shares_mint: Pubkey,
+        underlying_cmint: Pubkey,
+        shares_cmint: Pubkey,
         underlying_mint: Pubkey,
         vault_key: Pubkey,
         users_seed: Pubkey,
@@ -680,8 +700,8 @@ impl BatcherFixture {
             Pubkey::find_program_address(&[b"shares", vault_key.as_ref()], &vault::id()).0;
         let vault_token_account =
             Pubkey::find_program_address(&[b"underlying", vault_key.as_ref()], &vault::id()).0;
-        let deposit_mint = ConfidentialMintKeys::new(deposit_mint, underlying_mint, 3);
-        let shares_mint = ConfidentialMintKeys::new(shares_mint, share_mint, 4);
+        let underlying_cmint = ConfidentialMintKeys::new(underlying_cmint, underlying_mint, 3);
+        let shares_cmint = ConfidentialMintKeys::new(shares_cmint, share_mint, 4);
         // Derive two deterministic user keys from the seed key so the fixed
         // fixture stays stable across runs.
         let mut alice_bytes = users_seed.to_bytes();
@@ -690,19 +710,20 @@ impl BatcherFixture {
         bob_bytes[31] = bob_bytes[31].wrapping_add(2);
         let alice = UserKeys::new(
             Pubkey::new_from_array(alice_bytes),
-            (&deposit_mint, &shares_mint),
+            (&underlying_cmint, &shares_cmint),
             10,
         );
         let bob = UserKeys::new(
             Pubkey::new_from_array(bob_bytes),
-            (&deposit_mint, &shares_mint),
+            (&underlying_cmint, &shares_cmint),
             20,
         );
         Self {
+            direction,
             payer,
             batcher: batcher_key,
-            deposit_mint,
-            shares_mint,
+            underlying_cmint,
+            shares_cmint,
             vault: vault_key,
             vault_authority,
             share_mint,
@@ -712,6 +733,72 @@ impl BatcherFixture {
             kms_context: host::kms_context_address(KMS_CONTEXT_ID).0,
             alice,
             bob,
+        }
+    }
+
+    /// The confidential mint users join batches with.
+    fn join_mint(&self) -> &ConfidentialMintKeys {
+        match self.direction {
+            batcher::BatchDirection::Deposit => &self.underlying_cmint,
+            batcher::BatchDirection::Redeem => &self.shares_cmint,
+        }
+    }
+
+    /// The confidential mint claims pay out in.
+    fn payout_mint(&self) -> &ConfidentialMintKeys {
+        match self.direction {
+            batcher::BatchDirection::Deposit => &self.shares_cmint,
+            batcher::BatchDirection::Redeem => &self.underlying_cmint,
+        }
+    }
+
+    /// The given user's accounts on the join mint.
+    fn user_join<'a>(&self, user: &'a UserKeys) -> &'a UserMintKeys {
+        match self.direction {
+            batcher::BatchDirection::Deposit => &user.underlying,
+            batcher::BatchDirection::Redeem => &user.shares,
+        }
+    }
+
+    /// The given user's accounts on the payout mint.
+    fn user_payout<'a>(&self, user: &'a UserKeys) -> &'a UserMintKeys {
+        match self.direction {
+            batcher::BatchDirection::Deposit => &user.shares,
+            batcher::BatchDirection::Redeem => &user.underlying,
+        }
+    }
+
+    /// A redeem-direction batcher instance over this fixture's exact world:
+    /// same mints, vault, users, and payer — only the batcher config account
+    /// differs. The two-instance pattern for the concurrency test.
+    fn redeem_twin(&self, batcher_key: Pubkey) -> Self {
+        Self {
+            direction: batcher::BatchDirection::Redeem,
+            payer: self.payer,
+            batcher: batcher_key,
+            underlying_cmint: ConfidentialMintKeys::new(
+                self.underlying_cmint.mint,
+                self.underlying_mint,
+                3,
+            ),
+            shares_cmint: ConfidentialMintKeys::new(self.shares_cmint.mint, self.share_mint, 4),
+            vault: self.vault,
+            vault_authority: self.vault_authority,
+            share_mint: self.share_mint,
+            vault_token_account: self.vault_token_account,
+            underlying_mint: self.underlying_mint,
+            host_config: self.host_config,
+            kms_context: self.kms_context,
+            alice: UserKeys::new(
+                self.alice.user,
+                (&self.underlying_cmint, &self.shares_cmint),
+                10,
+            ),
+            bob: UserKeys::new(
+                self.bob.user,
+                (&self.underlying_cmint, &self.shares_cmint),
+                20,
+            ),
         }
     }
 
@@ -804,13 +891,18 @@ impl BatcherFixture {
         }
     }
 
-    /// Full account set: host + KMS fixtures, both confidential mints with
-    /// funded underlying vaults, the demo vault at `(total_assets,
-    /// total_shares)`, and both users with seeded balance lineages.
-    fn accounts(
+    /// Full account set: host + KMS fixtures, both confidential mints, the
+    /// demo vault at `(total_assets, total_shares)`, and both users with
+    /// seeded balance lineages on both mints. The confidential mints' plain
+    /// escrows hold `underlying_escrow` / `shares_escrow` — deposit tests
+    /// escrow underlying (the users' shielded deposits), redeem tests escrow
+    /// vault shares (the users' shielded share positions).
+    fn accounts_with_escrows(
         &self,
         vault_total_assets: u64,
         vault_total_shares: u64,
+        underlying_escrow: u64,
+        shares_escrow: u64,
     ) -> HashMap<Pubkey, Account> {
         let mut accounts = HashMap::from([
             (self.payer, system_account(50_000_000_000)),
@@ -838,21 +930,17 @@ impl BatcherFixture {
             (event_authority(token::id()), system_account(0)),
             mollusk_svm_programs_token::token::keyed_account(),
         ]);
-        for mint in [&self.deposit_mint, &self.shares_mint] {
+        for (mint, escrow_amount) in [
+            (&self.underlying_cmint, underlying_escrow),
+            (&self.shares_cmint, shares_escrow),
+        ] {
             accounts.insert(mint.mint, mint.mint_account(self.payer));
             accounts.insert(mint.compute_signer, system_account(0));
             accounts.insert(mint.total_supply_authority, system_account(0));
             accounts.insert(mint.vault_authority, system_account(0));
-            // The deposit mint's vault holds the users' escrowed underlying;
-            // the shares mint's vault starts empty and receives the wrap.
-            let vault_amount = if mint.mint == self.deposit_mint.mint {
-                1_000_000
-            } else {
-                0
-            };
             accounts.insert(
                 mint.vault_underlying,
-                spl_token_account(mint.underlying_mint, mint.vault_authority, vault_amount),
+                spl_token_account(mint.underlying_mint, mint.vault_authority, escrow_amount),
             );
             let (_, total_supply) = new_encrypted_value(
                 mint.mint,
@@ -867,56 +955,52 @@ impl BatcherFixture {
             );
         }
         for user in [&self.alice, &self.bob] {
-            accounts.insert(
-                user.deposit_token_account,
-                self.confidential_token_account(
-                    &self.deposit_mint,
-                    user.user,
-                    user.deposit_balance_value,
-                ),
-            );
-            let (_, deposit_balance) = new_encrypted_value(
-                self.deposit_mint.mint,
-                user.deposit_token_account,
-                token::balance_label(),
-                user.initial_deposit_balance,
-                &[user.user, self.deposit_mint.compute_signer],
-            );
-            accounts.insert(
-                user.deposit_balance_value,
-                encrypted_value_account(&deposit_balance),
-            );
-            accounts.insert(
-                user.shares_token_account,
-                self.confidential_token_account(
-                    &self.shares_mint,
-                    user.user,
-                    user.shares_balance_value,
-                ),
-            );
-            let (_, shares_balance) = new_encrypted_value(
-                self.shares_mint.mint,
-                user.shares_token_account,
-                token::balance_label(),
-                user.initial_shares_balance,
-                &[user.user, self.shares_mint.compute_signer],
-            );
-            accounts.insert(
-                user.shares_balance_value,
-                encrypted_value_account(&shares_balance),
-            );
+            for (mint, keys) in [
+                (&self.underlying_cmint, &user.underlying),
+                (&self.shares_cmint, &user.shares),
+            ] {
+                accounts.insert(
+                    keys.token_account,
+                    self.confidential_token_account(mint, user.user, keys.balance_value),
+                );
+                let (_, balance) = new_encrypted_value(
+                    mint.mint,
+                    keys.token_account,
+                    token::balance_label(),
+                    keys.initial_balance,
+                    &[user.user, mint.compute_signer],
+                );
+                accounts.insert(keys.balance_value, encrypted_value_account(&balance));
+            }
         }
         accounts
     }
 
-    /// Seeds ledger values for the fixture's initial handles.
-    fn seed_ledger(&self, ledger: &mut CleartextLedger, alice_balance: u64, bob_balance: u64) {
-        ledger.seed_amount(self.alice.initial_deposit_balance, alice_balance);
-        ledger.seed_amount(self.bob.initial_deposit_balance, bob_balance);
-        ledger.seed_amount(self.alice.initial_shares_balance, 0);
-        ledger.seed_amount(self.bob.initial_shares_balance, 0);
-        ledger.seed_amount(self.deposit_mint.initial_total_supply, 1_000_000);
-        ledger.seed_amount(self.shares_mint.initial_total_supply, 0);
+    /// Deposit-shaped account set: the underlying escrow holds the users'
+    /// shielded deposits, the shares escrow starts empty.
+    fn accounts(
+        &self,
+        vault_total_assets: u64,
+        vault_total_shares: u64,
+    ) -> HashMap<Pubkey, Account> {
+        self.accounts_with_escrows(vault_total_assets, vault_total_shares, 1_000_000, 0)
+    }
+
+    /// Seeds ledger values for the fixture's initial handles:
+    /// per-user `(underlying, shares)` balances and both encrypted supplies.
+    fn seed_ledger(
+        &self,
+        ledger: &mut CleartextLedger,
+        alice: (u64, u64),
+        bob: (u64, u64),
+        supplies: (u64, u64),
+    ) {
+        ledger.seed_amount(self.alice.underlying.initial_balance, alice.0);
+        ledger.seed_amount(self.alice.shares.initial_balance, alice.1);
+        ledger.seed_amount(self.bob.underlying.initial_balance, bob.0);
+        ledger.seed_amount(self.bob.shares.initial_balance, bob.1);
+        ledger.seed_amount(self.underlying_cmint.initial_total_supply, supplies.0);
+        ledger.seed_amount(self.shares_cmint.initial_total_supply, supplies.1);
     }
 }
 
@@ -930,13 +1014,14 @@ fn initialize_batcher_ix(fixture: &BatcherFixture, min_batch_age_slots: u64) -> 
         batcher::accounts::InitializeBatcher {
             payer: fixture.payer,
             batcher: fixture.batcher,
-            deposit_confidential_mint: fixture.deposit_mint.mint,
-            shares_confidential_mint: fixture.shares_mint.mint,
+            join_confidential_mint: fixture.join_mint().mint,
+            payout_confidential_mint: fixture.payout_mint().mint,
             vault: fixture.vault,
             system_program: system_program::ID,
         },
         batcher::instruction::InitializeBatcher {
             min_batch_age_slots,
+            direction: fixture.direction,
         },
     )
 }
@@ -954,18 +1039,18 @@ fn open_batch_ix(
             previous_batch,
             batch: keys.batch,
             batch_authority: keys.batch_authority,
-            deposit_confidential_mint: fixture.deposit_mint.mint,
-            deposit_compute_signer: fixture.deposit_mint.compute_signer,
-            batch_deposit_token_account: keys.deposit_token_account,
-            batch_deposit_balance_value: keys.deposit_balance_value,
-            shares_confidential_mint: fixture.shares_mint.mint,
-            shares_compute_signer: fixture.shares_mint.compute_signer,
-            batch_shares_token_account: keys.shares_token_account,
-            batch_shares_balance_value: keys.shares_balance_value,
-            underlying_mint: fixture.underlying_mint,
-            share_mint: fixture.share_mint,
-            batch_underlying_tokens: keys.underlying_tokens,
-            batch_share_tokens: keys.share_tokens,
+            join_confidential_mint: fixture.join_mint().mint,
+            join_compute_signer: fixture.join_mint().compute_signer,
+            batch_join_token_account: keys.join_token_account,
+            batch_join_balance_value: keys.join_balance_value,
+            payout_confidential_mint: fixture.payout_mint().mint,
+            payout_compute_signer: fixture.payout_mint().compute_signer,
+            batch_payout_token_account: keys.payout_token_account,
+            batch_payout_balance_value: keys.payout_balance_value,
+            join_underlying_mint: fixture.join_mint().underlying_mint,
+            payout_underlying_mint: fixture.payout_mint().underlying_mint,
+            batch_join_underlying: keys.join_underlying,
+            batch_payout_underlying: keys.payout_underlying,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
@@ -986,6 +1071,7 @@ fn join_ix(
     user: &UserKeys,
     amount_attestation: host::CoprocessorInputAttestation,
 ) -> Instruction {
+    let user_join = fixture.user_join(user);
     anchor_ix(
         batcher::id(),
         batcher::accounts::Join {
@@ -994,15 +1080,15 @@ fn join_ix(
             batcher: fixture.batcher,
             batch: keys.batch,
             batch_authority: keys.batch_authority,
-            deposit_record: keys.deposit_record(user.user),
-            deposit_confidential_mint: fixture.deposit_mint.mint,
-            deposit_compute_signer: fixture.deposit_mint.compute_signer,
-            user_token_account: user.deposit_token_account,
-            batch_deposit_token_account: keys.deposit_token_account,
-            user_balance_value: user.deposit_balance_value,
-            batch_balance_value: keys.deposit_balance_value,
-            user_transferred_value: user.deposit_transferred_value,
-            pending_deposit_value: keys.pending_deposit_value(user.user),
+            join_record: keys.join_record(user.user),
+            join_confidential_mint: fixture.join_mint().mint,
+            join_compute_signer: fixture.join_mint().compute_signer,
+            user_token_account: user_join.token_account,
+            batch_join_token_account: keys.join_token_account,
+            user_balance_value: user_join.balance_value,
+            batch_balance_value: keys.join_balance_value,
+            user_transferred_value: user_join.transferred_value,
+            pending_join_value: keys.pending_join_value(user.user),
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
@@ -1015,6 +1101,7 @@ fn join_ix(
 }
 
 fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instruction {
+    let user_join = fixture.user_join(user);
     anchor_ix(
         batcher::id(),
         batcher::accounts::Quit {
@@ -1023,15 +1110,15 @@ fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instr
             batcher: fixture.batcher,
             batch: keys.batch,
             batch_authority: keys.batch_authority,
-            deposit_record: keys.deposit_record(user.user),
-            deposit_confidential_mint: fixture.deposit_mint.mint,
-            deposit_compute_signer: fixture.deposit_mint.compute_signer,
-            batch_deposit_token_account: keys.deposit_token_account,
-            user_token_account: user.deposit_token_account,
-            batch_balance_value: keys.deposit_balance_value,
-            user_balance_value: user.deposit_balance_value,
-            batch_transferred_value: keys.deposit_transferred_value,
-            pending_deposit_value: keys.pending_deposit_value(user.user),
+            join_record: keys.join_record(user.user),
+            join_confidential_mint: fixture.join_mint().mint,
+            join_compute_signer: fixture.join_mint().compute_signer,
+            batch_join_token_account: keys.join_token_account,
+            user_token_account: user_join.token_account,
+            batch_balance_value: keys.join_balance_value,
+            user_balance_value: user_join.balance_value,
+            batch_transferred_value: keys.join_transferred_value,
+            pending_join_value: keys.pending_join_value(user.user),
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
@@ -1051,12 +1138,12 @@ fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
             batcher: fixture.batcher,
             batch: keys.batch,
             batch_authority: keys.batch_authority,
-            deposit_confidential_mint: fixture.deposit_mint.mint,
-            deposit_compute_signer: fixture.deposit_mint.compute_signer,
-            total_supply_authority: fixture.deposit_mint.total_supply_authority,
-            batch_deposit_token_account: keys.deposit_token_account,
-            batch_balance_value: keys.deposit_balance_value,
-            total_supply_value: fixture.deposit_mint.total_supply_value,
+            join_confidential_mint: fixture.join_mint().mint,
+            join_compute_signer: fixture.join_mint().compute_signer,
+            total_supply_authority: fixture.join_mint().total_supply_authority,
+            batch_join_token_account: keys.join_token_account,
+            batch_balance_value: keys.join_balance_value,
+            total_supply_value: fixture.join_mint().total_supply_value,
             batch_burned_amount_value: keys.burned_amount_value,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
@@ -1085,29 +1172,29 @@ fn settle_ix(
             batcher: fixture.batcher,
             batch: keys.batch,
             batch_authority: keys.batch_authority,
-            deposit_confidential_mint: fixture.deposit_mint.mint,
-            batch_deposit_token_account: keys.deposit_token_account,
-            underlying_mint: fixture.underlying_mint,
-            deposit_vault_underlying: fixture.deposit_mint.vault_underlying,
-            deposit_vault_authority: fixture.deposit_mint.vault_authority,
-            batch_underlying_tokens: keys.underlying_tokens,
+            join_confidential_mint: fixture.join_mint().mint,
+            batch_join_token_account: keys.join_token_account,
+            join_underlying_mint: fixture.join_mint().underlying_mint,
+            join_mint_vault_underlying: fixture.join_mint().vault_underlying,
+            join_mint_vault_authority: fixture.join_mint().vault_authority,
+            batch_join_underlying: keys.join_underlying,
             batch_burned_amount_value: keys.burned_amount_value,
             redemption_record,
             host_config: fixture.host_config,
             kms_context: fixture.kms_context,
             vault: fixture.vault,
             vault_authority: fixture.vault_authority,
-            share_mint: fixture.share_mint,
             vault_token_account: fixture.vault_token_account,
-            batch_share_tokens: keys.share_tokens,
-            shares_confidential_mint: fixture.shares_mint.mint,
-            batch_shares_token_account: keys.shares_token_account,
-            shares_vault_underlying: fixture.shares_mint.vault_underlying,
-            shares_vault_authority: fixture.shares_mint.vault_authority,
-            shares_compute_signer: fixture.shares_mint.compute_signer,
-            shares_total_supply_authority: fixture.shares_mint.total_supply_authority,
-            batch_shares_balance_value: keys.shares_balance_value,
-            shares_total_supply_value: fixture.shares_mint.total_supply_value,
+            batch_payout_underlying: keys.payout_underlying,
+            payout_confidential_mint: fixture.payout_mint().mint,
+            payout_underlying_mint: fixture.payout_mint().underlying_mint,
+            batch_payout_token_account: keys.payout_token_account,
+            payout_mint_vault_underlying: fixture.payout_mint().vault_underlying,
+            payout_mint_vault_authority: fixture.payout_mint().vault_authority,
+            payout_compute_signer: fixture.payout_mint().compute_signer,
+            payout_total_supply_authority: fixture.payout_mint().total_supply_authority,
+            batch_payout_balance_value: keys.payout_balance_value,
+            payout_total_supply_value: fixture.payout_mint().total_supply_value,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             confidential_token_event_authority: event_authority(token::id()),
@@ -1127,6 +1214,7 @@ fn settle_ix(
 }
 
 fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instruction {
+    let user_payout = fixture.user_payout(user);
     anchor_ix(
         batcher::id(),
         batcher::accounts::Claim {
@@ -1135,16 +1223,16 @@ fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Inst
             batcher: fixture.batcher,
             batch: keys.batch,
             batch_authority: keys.batch_authority,
-            deposit_record: keys.deposit_record(user.user),
-            pending_deposit_value: keys.pending_deposit_value(user.user),
+            join_record: keys.join_record(user.user),
+            pending_join_value: keys.pending_join_value(user.user),
             claim_amount_value: keys.claim_amount_value(user.user),
-            shares_confidential_mint: fixture.shares_mint.mint,
-            shares_compute_signer: fixture.shares_mint.compute_signer,
-            batch_shares_token_account: keys.shares_token_account,
-            user_shares_token_account: user.shares_token_account,
-            batch_shares_balance_value: keys.shares_balance_value,
-            user_shares_balance_value: user.shares_balance_value,
-            batch_shares_transferred_value: keys.shares_transferred_value,
+            payout_confidential_mint: fixture.payout_mint().mint,
+            payout_compute_signer: fixture.payout_mint().compute_signer,
+            batch_payout_token_account: keys.payout_token_account,
+            user_payout_token_account: user_payout.token_account,
+            batch_payout_balance_value: keys.payout_balance_value,
+            user_payout_balance_value: user_payout.balance_value,
+            batch_payout_transferred_value: keys.payout_transferred_value,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
@@ -1185,13 +1273,25 @@ fn ensure_open_batch_accounts(context: &Ctx, keys: &BatchKeys) {
         &[
             keys.batch,
             keys.batch_authority,
-            keys.deposit_token_account,
-            keys.deposit_balance_value,
-            keys.shares_token_account,
-            keys.shares_balance_value,
-            keys.underlying_tokens,
-            keys.share_tokens,
+            keys.join_token_account,
+            keys.join_balance_value,
+            keys.payout_token_account,
+            keys.payout_balance_value,
+            keys.join_underlying,
+            keys.payout_underlying,
         ],
+    );
+}
+
+/// Seeds the batch's freshly created (encrypted zero) balance lineages.
+fn seed_open_batch_balances(context: &Ctx, keys: &BatchKeys, ledger: &mut CleartextLedger) {
+    ledger.seed_amount(
+        read_encrypted_value(context, keys.join_balance_value).current_handle,
+        0,
+    );
+    ledger.seed_amount(
+        read_encrypted_value(context, keys.payout_balance_value).current_handle,
+        0,
     );
 }
 
@@ -1209,16 +1309,13 @@ fn run_join(
     ensure_system_accounts(
         context,
         &[
-            keys.deposit_record(user.user),
-            user.deposit_transferred_value,
-            keys.pending_deposit_value(user.user),
+            keys.join_record(user.user),
+            fixture.user_join(user).transferred_value,
+            keys.pending_join_value(user.user),
         ],
     );
-    let attestation = amount_attestation_for(
-        amount_handle,
-        user.user,
-        fixture.deposit_mint.compute_signer,
-    );
+    let attestation =
+        amount_attestation_for(amount_handle, user.user, fixture.join_mint().compute_signer);
     let ix = join_ix(fixture, keys, user, attestation);
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
     // The join issues the transfer's eval plus the batcher's re-materialization.
@@ -1252,7 +1349,7 @@ fn run_settle(
     let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, total);
     let proof = single_burn_public_decrypt_proof(keys.burned_amount_value, burned_handle);
     let redemption_record =
-        token::burn_redemption_address(fixture.deposit_mint.mint, burned_handle).0;
+        token::burn_redemption_address(fixture.join_mint().mint, burned_handle).0;
     ensure_system_accounts(context, &[redemption_record]);
     let ix = settle_ix(
         fixture,
@@ -1282,7 +1379,7 @@ fn run_claim(
         context,
         &[
             keys.claim_amount_value(user.user),
-            keys.shares_transferred_value,
+            keys.payout_transferred_value,
         ],
     );
     let ix = claim_ix(fixture, keys, user);
@@ -1292,34 +1389,27 @@ fn run_claim(
 }
 
 // ---------------------------------------------------------------------------
-// Lifecycle tests
+// Deposit lifecycle tests
 // ---------------------------------------------------------------------------
 
 /// Full multi-user lifecycle against a fresh (1:1) vault: two users join with
 /// encrypted amounts, only the total (800) is revealed by the burn+redeem, the
-/// vault mints 800 shares, the rate freezes at exactly RATE_SCALE, and each
-/// user claims encrypted shares equal to their deposit. Every batcher CPI is a
-/// real `invoke_signed` by the per-batch authority PDA.
+/// vault mints 800 shares, and each user claims encrypted shares equal to
+/// their exact proportional part. Every batcher CPI is a real `invoke_signed`
+/// by the per-batch authority PDA.
 #[test]
 fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
-    let fixture = BatcherFixture::new();
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = mollusk().with_context(fixture.accounts(0, 0));
     let mut ledger = CleartextLedger::default();
-    fixture.seed_ledger(&mut ledger, 1_000, 2_000);
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
 
     // Batch opens with an encrypted zero balance on both sides.
     let open_result = read_batch(&context, keys.batch);
     assert_eq!(open_result.status, batcher::BatchStatus::Pending);
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.deposit_balance_value).current_handle,
-        0,
-    );
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.shares_balance_value).current_handle,
-        0,
-    );
+    seed_open_batch_balances(&context, &keys, &mut ledger);
 
     run_join(
         &context,
@@ -1341,23 +1431,23 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
     );
 
     // Encrypted accounting after the joins: user balances debited, the batch
-    // account holds the (still encrypted) sum, each deposit lineage carries
+    // account holds the (still encrypted) sum, each joined lineage carries
     // that user's amount and only that user's amount.
     assert_eq!(
-        ledger.u64_at(&context, fixture.alice.deposit_balance_value),
+        ledger.u64_at(&context, fixture.alice.underlying.balance_value),
         700
     );
     assert_eq!(
-        ledger.u64_at(&context, fixture.bob.deposit_balance_value),
+        ledger.u64_at(&context, fixture.bob.underlying.balance_value),
         1_500
     );
-    assert_eq!(ledger.u64_at(&context, keys.deposit_balance_value), 800);
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 800);
     assert_eq!(
-        ledger.u64_at(&context, keys.pending_deposit_value(fixture.alice.user)),
+        ledger.u64_at(&context, keys.pending_join_value(fixture.alice.user)),
         300
     );
     assert_eq!(
-        ledger.u64_at(&context, keys.pending_deposit_value(fixture.bob.user)),
+        ledger.u64_at(&context, keys.pending_join_value(fixture.bob.user)),
         500
     );
     assert_eq!(read_batch(&context, keys.batch).join_count, 2);
@@ -1365,7 +1455,7 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
     // Dispatch burns the batch's whole balance; the burned lineage carries the
     // batch total, born publicly decryptable.
     let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
-    assert_eq!(ledger.u64_at(&context, keys.deposit_balance_value), 0);
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 0);
     assert_eq!(ledger.u64_at(&context, keys.burned_amount_value), 800);
     assert_eq!(
         read_batch(&context, keys.batch).status,
@@ -1373,60 +1463,53 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
     );
 
     // Settle: the KMS certifies 800; the vault (empty, 1:1) mints 800 shares;
-    // the rate freezes at exactly RATE_SCALE.
+    // the informational rate lands at exactly RATE_SCALE.
     run_settle(&context, &fixture, &keys, &mut ledger, burned_handle, 800);
     let settled = read_batch(&context, keys.batch);
     assert_eq!(settled.status, batcher::BatchStatus::Settled);
-    assert_eq!(settled.total_deposited, 800);
-    assert_eq!(settled.shares_received, 800);
-    assert_eq!(settled.share_rate, batcher::RATE_SCALE);
+    assert_eq!(settled.total_joined, 800);
+    assert_eq!(settled.payout_received, 800);
+    assert_eq!(settled.payout_rate, batcher::RATE_SCALE);
     assert_eq!(read_spl_amount(&context, fixture.vault_token_account), 800);
-    // The received shares were wrapped: the plain share account drained into
-    // the shares mint's vault, and the batch's confidential shares balance is
+    // The received shares were wrapped: the plain payout account drained into
+    // the shares mint's escrow, and the batch's confidential payout balance is
     // the aggregate.
-    assert_eq!(read_spl_amount(&context, keys.share_tokens), 0);
+    assert_eq!(read_spl_amount(&context, keys.payout_underlying), 0);
     assert_eq!(
-        read_spl_amount(&context, fixture.shares_mint.vault_underlying),
+        read_spl_amount(&context, fixture.shares_cmint.vault_underlying),
         800
     );
-    assert_eq!(ledger.u64_at(&context, keys.shares_balance_value), 800);
+    assert_eq!(ledger.u64_at(&context, keys.payout_balance_value), 800);
 
-    // Claims: each user receives encrypted shares equal to deposit x rate.
+    // Claims: each user receives their exact proportional encrypted shares.
     run_claim(&context, &fixture, &keys, &fixture.alice, &mut ledger);
     run_claim(&context, &fixture, &keys, &fixture.bob, &mut ledger);
     assert_eq!(
-        ledger.u64_at(&context, fixture.alice.shares_balance_value),
+        ledger.u64_at(&context, fixture.alice.shares.balance_value),
         300
     );
     assert_eq!(
-        ledger.u64_at(&context, fixture.bob.shares_balance_value),
+        ledger.u64_at(&context, fixture.bob.shares.balance_value),
         500
     );
-    assert_eq!(ledger.u64_at(&context, keys.shares_balance_value), 0);
-    assert!(read_deposit_record(&context, keys.deposit_record(fixture.alice.user)).claimed);
-    assert!(read_deposit_record(&context, keys.deposit_record(fixture.bob.user)).claimed);
+    assert_eq!(ledger.u64_at(&context, keys.payout_balance_value), 0);
+    assert!(read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
+    assert!(read_join_record(&context, keys.join_record(fixture.bob.user)).claimed);
 }
 
 /// Lifecycle against a vault with existing yield (2_000 assets / 1_000
-/// shares): the rate rounds down and the floor-rounded claims never exceed the
+/// shares): the floor-rounded exact-proportional claims never exceed the
 /// wrapped shares.
 #[test]
 fn mollusk_lifecycle_with_yield_rate_rounds_down() {
-    let fixture = BatcherFixture::new();
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     // Share price ~2: 2_000 assets backing 1_000 shares.
     let context = mollusk().with_context(fixture.accounts(2_000, 1_000));
     let mut ledger = CleartextLedger::default();
-    fixture.seed_ledger(&mut ledger, 1_000, 2_000);
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.deposit_balance_value).current_handle,
-        0,
-    );
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.shares_balance_value).current_handle,
-        0,
-    );
+    seed_open_batch_balances(&context, &keys, &mut ledger);
 
     run_join(
         &context,
@@ -1450,24 +1533,24 @@ fn mollusk_lifecycle_with_yield_rate_rounds_down() {
     run_settle(&context, &fixture, &keys, &mut ledger, burned_handle, 800);
 
     // shares = 800 * (1_000 + 1) / (2_000 + 1) = 400 (floor);
-    // rate = 400 * RATE_SCALE / 800 = RATE_SCALE / 2.
+    // informational rate = 400 * RATE_SCALE / 800 = RATE_SCALE / 2.
     let settled = read_batch(&context, keys.batch);
-    assert_eq!(settled.shares_received, 400);
-    assert_eq!(settled.share_rate, batcher::RATE_SCALE / 2);
+    assert_eq!(settled.payout_received, 400);
+    assert_eq!(settled.payout_rate, batcher::RATE_SCALE / 2);
 
     run_claim(&context, &fixture, &keys, &fixture.alice, &mut ledger);
     run_claim(&context, &fixture, &keys, &fixture.bob, &mut ledger);
-    // 300 * rate / RATE_SCALE = 150 and 500 -> 250; the claims sum exactly to
-    // the wrapped 400 here, and can never exceed it by the floor rounding.
+    // 300 * 400 / 800 = 150 and 500 -> 250; the claims sum exactly to the
+    // wrapped 400 here, and can never exceed it by the floor rounding.
     assert_eq!(
-        ledger.u64_at(&context, fixture.alice.shares_balance_value),
+        ledger.u64_at(&context, fixture.alice.shares.balance_value),
         150
     );
     assert_eq!(
-        ledger.u64_at(&context, fixture.bob.shares_balance_value),
+        ledger.u64_at(&context, fixture.bob.shares.balance_value),
         250
     );
-    assert_eq!(ledger.u64_at(&context, keys.shares_balance_value), 0);
+    assert_eq!(ledger.u64_at(&context, keys.payout_balance_value), 0);
 }
 
 /// A single-participant batch settles correctly but reveals that participant's
@@ -1477,20 +1560,13 @@ fn mollusk_lifecycle_with_yield_rate_rounds_down() {
 /// participant count.
 #[test]
 fn mollusk_single_user_batch_reveals_that_users_amount() {
-    let fixture = BatcherFixture::new();
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = mollusk().with_context(fixture.accounts(0, 0));
     let mut ledger = CleartextLedger::default();
-    fixture.seed_ledger(&mut ledger, 1_000, 2_000);
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.deposit_balance_value).current_handle,
-        0,
-    );
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.shares_balance_value).current_handle,
-        0,
-    );
+    seed_open_batch_balances(&context, &keys, &mut ledger);
 
     let alice_amount = 777;
     run_join(
@@ -1515,40 +1591,33 @@ fn mollusk_single_user_batch_reveals_that_users_amount() {
     // The amount-reveal caveat: with one participant, the public batch total
     // equals their private deposit exactly.
     let settled = read_batch(&context, keys.batch);
-    assert_eq!(settled.total_deposited, alice_amount);
+    assert_eq!(settled.total_joined, alice_amount);
     assert_eq!(
-        settled.total_deposited,
-        ledger.u64_at(&context, keys.pending_deposit_value(fixture.alice.user))
+        settled.total_joined,
+        ledger.u64_at(&context, keys.pending_join_value(fixture.alice.user))
     );
 
     run_claim(&context, &fixture, &keys, &fixture.alice, &mut ledger);
     assert_eq!(
-        ledger.u64_at(&context, fixture.alice.shares_balance_value),
+        ledger.u64_at(&context, fixture.alice.shares.balance_value),
         alice_amount
     );
 }
 
-/// Repeated joins accumulate in the deposit lineage (the operand-aliases-output
-/// supersede), quit refunds the exact accumulated deposit all-or-nothing and
+/// Repeated joins accumulate in the joined lineage (the operand-aliases-output
+/// supersede), quit refunds the exact accumulated amount all-or-nothing and
 /// resets the lineage to zero, and a re-join after quit accumulates from zero.
 #[test]
 fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
-    let fixture = BatcherFixture::new();
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = mollusk().with_context(fixture.accounts(0, 0));
     let mut ledger = CleartextLedger::default();
-    fixture.seed_ledger(&mut ledger, 1_000, 2_000);
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.deposit_balance_value).current_handle,
-        0,
-    );
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.shares_balance_value).current_handle,
-        0,
-    );
+    seed_open_batch_balances(&context, &keys, &mut ledger);
 
-    // Two joins accumulate: the second join's eval reads the deposit lineage
+    // Two joins accumulate: the second join's eval reads the joined lineage
     // as an operand AND supersedes it as the output (the #3238 aliasing class
     // for the batcher's own eval — the standard same-slot supersede).
     run_join(
@@ -1569,10 +1638,10 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
         handle_for_chain(42, BALANCE_FHE_TYPE),
         250,
     );
-    let pending = keys.pending_deposit_value(fixture.alice.user);
+    let pending = keys.pending_join_value(fixture.alice.user);
     assert_eq!(ledger.u64_at(&context, pending), 350);
     assert_eq!(
-        ledger.u64_at(&context, fixture.alice.deposit_balance_value),
+        ledger.u64_at(&context, fixture.alice.underlying.balance_value),
         650
     );
 
@@ -1582,12 +1651,12 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 2);
     assert_eq!(ledger.u64_at(&context, pending), 0);
     assert_eq!(
-        ledger.u64_at(&context, fixture.alice.deposit_balance_value),
+        ledger.u64_at(&context, fixture.alice.underlying.balance_value),
         1_000
     );
-    assert_eq!(ledger.u64_at(&context, keys.deposit_balance_value), 0);
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 0);
 
-    // Re-join after quit accumulates from zero, not from the stale deposit.
+    // Re-join after quit accumulates from zero, not from the stale amount.
     run_join(
         &context,
         &fixture,
@@ -1598,7 +1667,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
         40,
     );
     assert_eq!(ledger.u64_at(&context, pending), 40);
-    assert_eq!(ledger.u64_at(&context, keys.deposit_balance_value), 40);
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 40);
 }
 
 /// A batch with no joins burns zero, and settle with the KMS-certified zero
@@ -1607,14 +1676,14 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
 /// construction.
 #[test]
 fn mollusk_zero_total_batch_cancels_at_settle() {
-    let fixture = BatcherFixture::new();
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = mollusk().with_context(fixture.accounts(0, 0));
     let mut ledger = CleartextLedger::default();
-    fixture.seed_ledger(&mut ledger, 1_000, 2_000);
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
     ledger.seed_amount(
-        read_encrypted_value(&context, keys.deposit_balance_value).current_handle,
+        read_encrypted_value(&context, keys.join_balance_value).current_handle,
         0,
     );
 
@@ -1624,7 +1693,7 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
 
     let batch = read_batch(&context, keys.batch);
     assert_eq!(batch.status, batcher::BatchStatus::Canceled);
-    assert_eq!(batch.share_rate, 0);
+    assert_eq!(batch.payout_rate, 0);
     assert_eq!(read_spl_amount(&context, fixture.vault_token_account), 0);
 
     // The next batch opens against the canceled one.
@@ -1638,6 +1707,613 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
 }
 
 // ---------------------------------------------------------------------------
+// Redeem lifecycle tests
+// ---------------------------------------------------------------------------
+
+/// Redeem-shaped account set: users hold confidential shares (backed by plain
+/// vault shares in the shares mint's escrow) and claim underlying back.
+fn redeem_accounts(
+    fixture: &BatcherFixture,
+    vault_total_assets: u64,
+    vault_total_shares: u64,
+    shares_escrow: u64,
+) -> HashMap<Pubkey, Account> {
+    fixture.accounts_with_escrows(vault_total_assets, vault_total_shares, 0, shares_escrow)
+}
+
+/// Full multi-user redeem lifecycle against a 1:1 vault: two users join with
+/// encrypted SHARE amounts, only the share total (700) is revealed by the
+/// burn+redeem, the vault pays 700 underlying for it, and each user claims
+/// encrypted underlying equal to their exact proportional part. The mirror of
+/// the deposit lifecycle with join and payout mints swapped.
+#[test]
+fn mollusk_redeem_lifecycle_two_users_join_dispatch_settle_claim() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
+    // 1_000 assets backing 1_000 outstanding shares, all of them wrapped as
+    // the users' confidential share positions.
+    let context = mollusk().with_context(redeem_accounts(&fixture, 1_000, 1_000, 1_000));
+    let mut ledger = CleartextLedger::default();
+    fixture.seed_ledger(&mut ledger, (0, 600), (0, 400), (0, 1_000));
+
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    assert_eq!(
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Pending
+    );
+    seed_open_batch_balances(&context, &keys, &mut ledger);
+
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        &mut ledger,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.bob,
+        &mut ledger,
+        handle_for_chain(42, BALANCE_FHE_TYPE),
+        400,
+    );
+
+    // Encrypted accounting after the joins: confidential SHARE balances
+    // debited, the batch account holds the encrypted share sum.
+    assert_eq!(
+        ledger.u64_at(&context, fixture.alice.shares.balance_value),
+        300
+    );
+    assert_eq!(ledger.u64_at(&context, fixture.bob.shares.balance_value), 0);
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 700);
+    assert_eq!(read_batch(&context, keys.batch).join_count, 2);
+
+    // Dispatch burns the batch's whole confidential-share balance.
+    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 0);
+    assert_eq!(ledger.u64_at(&context, keys.burned_amount_value), 700);
+
+    // Settle: the KMS certifies 700 shares; the vault (1:1) pays 700
+    // underlying; the underlying is wrapped into the batch's confidential
+    // payout account.
+    run_settle(&context, &fixture, &keys, &mut ledger, burned_handle, 700);
+    let settled = read_batch(&context, keys.batch);
+    assert_eq!(settled.status, batcher::BatchStatus::Settled);
+    assert_eq!(settled.total_joined, 700);
+    assert_eq!(settled.payout_received, 700);
+    assert_eq!(settled.payout_rate, batcher::RATE_SCALE);
+    // 700 shares burned from the escrowed plain shares; 700 underlying left
+    // the vault and got wrapped into the underlying mint's escrow.
+    assert_eq!(read_spl_amount(&context, fixture.vault_token_account), 300);
+    assert_eq!(read_spl_amount(&context, keys.join_underlying), 0);
+    assert_eq!(read_spl_amount(&context, keys.payout_underlying), 0);
+    assert_eq!(
+        read_spl_amount(&context, fixture.underlying_cmint.vault_underlying),
+        700
+    );
+    assert_eq!(ledger.u64_at(&context, keys.payout_balance_value), 700);
+
+    // Claims: each user receives their exact proportional encrypted underlying.
+    run_claim(&context, &fixture, &keys, &fixture.alice, &mut ledger);
+    run_claim(&context, &fixture, &keys, &fixture.bob, &mut ledger);
+    assert_eq!(
+        ledger.u64_at(&context, fixture.alice.underlying.balance_value),
+        300
+    );
+    assert_eq!(
+        ledger.u64_at(&context, fixture.bob.underlying.balance_value),
+        400
+    );
+    assert_eq!(ledger.u64_at(&context, keys.payout_balance_value), 0);
+    assert!(read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
+    assert!(read_join_record(&context, keys.join_record(fixture.bob.user)).claimed);
+}
+
+/// Redeem lifecycle with yield (2_000 assets / 1_000 shares): 700 shares pay
+/// 700 * 2_001 / 1_001 = 1_399 underlying (floor), and the exact-proportional
+/// floor claims (599 + 799) never exceed the wrapped 1_399 — one dust unit
+/// stays in the batch account instead of over-distributing.
+#[test]
+fn mollusk_redeem_lifecycle_with_yield_rounds_down() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
+    let context = mollusk().with_context(redeem_accounts(&fixture, 2_000, 1_000, 1_000));
+    let mut ledger = CleartextLedger::default();
+    fixture.seed_ledger(&mut ledger, (0, 600), (0, 400), (0, 1_000));
+
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    seed_open_batch_balances(&context, &keys, &mut ledger);
+
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        &mut ledger,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.bob,
+        &mut ledger,
+        handle_for_chain(42, BALANCE_FHE_TYPE),
+        400,
+    );
+    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
+    run_settle(&context, &fixture, &keys, &mut ledger, burned_handle, 700);
+
+    // assets = 700 * (2_000 + 1) / (1_000 + 1) = 1_399 (floor).
+    let settled = read_batch(&context, keys.batch);
+    assert_eq!(settled.payout_received, 1_399);
+
+    run_claim(&context, &fixture, &keys, &fixture.alice, &mut ledger);
+    run_claim(&context, &fixture, &keys, &fixture.bob, &mut ledger);
+    // Exact proportional floors: 300 * 1_399 / 700 = 599, 400 * 1_399 / 700
+    // = 799. Sum 1_398 <= 1_399; the one dust unit stays with the batch.
+    assert_eq!(
+        ledger.u64_at(&context, fixture.alice.underlying.balance_value),
+        599
+    );
+    assert_eq!(
+        ledger.u64_at(&context, fixture.bob.underlying.balance_value),
+        799
+    );
+    assert_eq!(ledger.u64_at(&context, keys.payout_balance_value), 1);
+}
+
+/// The redeem twin of the deposit repeat-join/quit/re-join test: repeated
+/// SHARE joins accumulate in the joined lineage (the operand-aliases-output
+/// same-slot supersede — the aliasing class this test exists to pin), quit
+/// refunds the exact accumulated shares all-or-nothing and resets the lineage
+/// to zero, and a re-join after quit accumulates from zero.
+#[test]
+fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
+    let context = mollusk().with_context(redeem_accounts(&fixture, 1_000, 1_000, 1_000));
+    let mut ledger = CleartextLedger::default();
+    fixture.seed_ledger(&mut ledger, (0, 600), (0, 400), (0, 1_000));
+
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    seed_open_batch_balances(&context, &keys, &mut ledger);
+
+    // Two joins accumulate: the second join's eval reads the joined lineage
+    // as an operand AND supersedes it as the output.
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        &mut ledger,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        100,
+    );
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        &mut ledger,
+        handle_for_chain(42, BALANCE_FHE_TYPE),
+        250,
+    );
+    let pending = keys.pending_join_value(fixture.alice.user);
+    assert_eq!(ledger.u64_at(&context, pending), 350);
+    assert_eq!(
+        ledger.u64_at(&context, fixture.alice.shares.balance_value),
+        250
+    );
+
+    // Quit refunds exactly 350 shares (all-or-nothing) and resets the lineage.
+    let quit = quit_ix(&fixture, &keys, &fixture.alice);
+    let result = context.process_and_validate_instruction(&quit, &[Check::success()]);
+    assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 2);
+    assert_eq!(ledger.u64_at(&context, pending), 0);
+    assert_eq!(
+        ledger.u64_at(&context, fixture.alice.shares.balance_value),
+        600
+    );
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 0);
+
+    // Re-join after quit accumulates from zero, not from the stale amount.
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        &mut ledger,
+        handle_for_chain(43, BALANCE_FHE_TYPE),
+        40,
+    );
+    assert_eq!(ledger.u64_at(&context, pending), 40);
+    assert_eq!(ledger.u64_at(&context, keys.join_balance_value), 40);
+}
+
+/// A user who quits before dispatch can still run the (permissionless) claim
+/// after the batch settles on the other participants: their reset lineage
+/// makes the MulDiv produce an encrypted zero, the all-or-zero transfer moves
+/// nothing, and the record is marked claimed. Deposit direction only: quit,
+/// claim, and the lineage reset are direction-free shared code (settle's
+/// vault CPI is the sole direction branch), so one direction pins the class.
+#[test]
+fn mollusk_claim_after_quit_pays_zero() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = mollusk().with_context(fixture.accounts(0, 0));
+    let mut ledger = CleartextLedger::default();
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
+
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    seed_open_batch_balances(&context, &keys, &mut ledger);
+
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        &mut ledger,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.bob,
+        &mut ledger,
+        handle_for_chain(42, BALANCE_FHE_TYPE),
+        500,
+    );
+
+    // Alice quits; the batch dispatches and settles on bob's 500 alone.
+    let quit = quit_ix(&fixture, &keys, &fixture.alice);
+    let result = context.process_and_validate_instruction(&quit, &[Check::success()]);
+    assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 2);
+    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
+    assert_eq!(ledger.u64_at(&context, keys.burned_amount_value), 500);
+    run_settle(&context, &fixture, &keys, &mut ledger, burned_handle, 500);
+
+    // Alice's claim computes 0 * 500 / 500 = encrypted zero and transfers
+    // nothing; her record still flips to claimed (the record survives quit).
+    run_claim(&context, &fixture, &keys, &fixture.alice, &mut ledger);
+    assert_eq!(
+        ledger.u64_at(&context, fixture.alice.shares.balance_value),
+        0
+    );
+    assert_eq!(
+        ledger.u64_at(&context, keys.claim_amount_value(fixture.alice.user)),
+        0
+    );
+    assert!(read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
+
+    // Bob's claim still pays the full settled batch.
+    run_claim(&context, &fixture, &keys, &fixture.bob, &mut ledger);
+    assert_eq!(
+        ledger.u64_at(&context, fixture.bob.shares.balance_value),
+        500
+    );
+    assert_eq!(ledger.u64_at(&context, keys.payout_balance_value), 0);
+}
+
+/// A redeem batch with no joins cancels at settle exactly like a deposit
+/// batch: the certified zero cancels trustlessly and the vault is untouched.
+#[test]
+fn mollusk_redeem_zero_total_batch_cancels_at_settle() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
+    let context = mollusk().with_context(redeem_accounts(&fixture, 1_000, 1_000, 1_000));
+    let mut ledger = CleartextLedger::default();
+    fixture.seed_ledger(&mut ledger, (0, 600), (0, 400), (0, 1_000));
+
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    ledger.seed_amount(
+        read_encrypted_value(&context, keys.join_balance_value).current_handle,
+        0,
+    );
+
+    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
+    assert_eq!(ledger.u64_at(&context, keys.burned_amount_value), 0);
+    run_settle(&context, &fixture, &keys, &mut ledger, burned_handle, 0);
+
+    let batch = read_batch(&context, keys.batch);
+    assert_eq!(batch.status, batcher::BatchStatus::Canceled);
+    assert_eq!(batch.payout_rate, 0);
+    assert_eq!(
+        read_spl_amount(&context, fixture.vault_token_account),
+        1_000
+    );
+}
+
+/// A dust redeem batch has NO analog of the deposit direction's stuck state:
+/// the vault's share price never drops below 1:1 (floor rounding favors the
+/// vault, harvest only raises the price), so withdrawing any non-zero share
+/// total always returns at least that many underlying units —
+/// `demo_vault::withdraw`'s `ZeroAssets` is unreachable from a batch. One
+/// share redeemed at an extreme (donation-pumped) price settles fine.
+#[test]
+fn mollusk_redeem_one_share_dust_settles_at_extreme_price() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
+    // Share price ~20_000 underlying per share: 2_000_000 assets backing 100
+    // shares (the price shape that bricks sub-price deposit batches).
+    let context = mollusk().with_context(redeem_accounts(&fixture, 2_000_000, 100, 100));
+    let mut ledger = CleartextLedger::default();
+    fixture.seed_ledger(&mut ledger, (0, 60), (0, 40), (0, 100));
+
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    seed_open_batch_balances(&context, &keys, &mut ledger);
+
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        &mut ledger,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        1,
+    );
+    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
+    run_settle(&context, &fixture, &keys, &mut ledger, burned_handle, 1);
+
+    // assets = 1 * (2_000_000 + 1) / (100 + 1) = 19_801 (floor) — always
+    // >= 1 per share at any reachable price, so no ZeroAssets, no stuck batch.
+    let settled = read_batch(&context, keys.batch);
+    assert_eq!(settled.status, batcher::BatchStatus::Settled);
+    assert_eq!(settled.total_joined, 1);
+    assert_eq!(settled.payout_received, 19_801);
+
+    run_claim(&context, &fixture, &keys, &fixture.alice, &mut ledger);
+    assert_eq!(
+        ledger.u64_at(&context, fixture.alice.underlying.balance_value),
+        19_801
+    );
+}
+
+/// SPL destinations cannot refuse incoming transfers, so an attacker can push
+/// plain underlying into the PDA-owned `batch_payout_underlying` account of a
+/// redeem batch before settlement. Settle must price and wrap only the
+/// vault-paid delta across its withdraw leg — the redeem mirror of the
+/// deposit direction's preload invariant. Preloaded tokens stay in the
+/// account, unwrapped and unpriced (inert).
+#[test]
+fn mollusk_redeem_preloaded_underlying_stays_inert() {
+    const PRELOAD: u64 = 15_000_000_000_000;
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
+    let attacker = Pubkey::new_unique();
+    let attacker_underlying = Pubkey::new_unique();
+
+    let mut accounts = redeem_accounts(&fixture, 1_000, 1_000, 1_000);
+    accounts.insert(attacker, system_account(1_000_000_000));
+    accounts.insert(
+        attacker_underlying,
+        spl_token_account(fixture.underlying_mint, attacker, PRELOAD),
+    );
+    let context = mollusk().with_context(accounts);
+    let mut ledger = CleartextLedger::default();
+    fixture.seed_ledger(&mut ledger, (0, 600), (0, 400), (0, 1_000));
+
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    seed_open_batch_balances(&context, &keys, &mut ledger);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        &mut ledger,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.bob,
+        &mut ledger,
+        handle_for_chain(42, BALANCE_FHE_TYPE),
+        400,
+    );
+
+    // The attacker pushes plain underlying into the batch's payout account.
+    let preload_transfer = spl_token::instruction::transfer(
+        &spl_token::id(),
+        &attacker_underlying,
+        &keys.payout_underlying,
+        &attacker,
+        &[],
+        PRELOAD,
+    )
+    .unwrap();
+    context.process_and_validate_instruction(&preload_transfer, &[Check::success()]);
+    assert_eq!(read_spl_amount(&context, keys.payout_underlying), PRELOAD);
+
+    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
+    run_settle(&context, &fixture, &keys, &mut ledger, burned_handle, 700);
+
+    // Settle succeeded and the batch accounting reflects only the vault-paid
+    // delta: 700 shares in, 700 underlying out at the 1:1 price. The preload
+    // sits in the account, unwrapped, inert.
+    let settled = read_batch(&context, keys.batch);
+    assert_eq!(settled.status, batcher::BatchStatus::Settled);
+    assert_eq!(settled.total_joined, 700);
+    assert_eq!(settled.payout_received, 700);
+    assert_eq!(read_spl_amount(&context, keys.payout_underlying), PRELOAD);
+    assert_eq!(ledger.u64_at(&context, keys.payout_balance_value), 700);
+
+    run_claim(&context, &fixture, &keys, &fixture.alice, &mut ledger);
+    run_claim(&context, &fixture, &keys, &fixture.bob, &mut ledger);
+    assert_eq!(
+        ledger.u64_at(&context, fixture.alice.underlying.balance_value),
+        300
+    );
+    assert_eq!(
+        ledger.u64_at(&context, fixture.bob.underlying.balance_value),
+        400
+    );
+}
+
+/// One deposit batcher and one redeem batcher run a FULL interleaved
+/// lifecycle concurrently over the same vault, mints, and users — the
+/// two-instance pattern. Cross-direction state confusion (a redeem batch
+/// reading deposit-batch lineages, the shared escrows or the vault mixing
+/// legs) would surface here, not at open: both directions join, dispatch,
+/// settle, and claim against the shared world, and every balance is checked.
+#[test]
+fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
+    let deposit = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    // Same physical world (mints, vault, users, payer); only the batcher
+    // config account differs.
+    let redeem = deposit.redeem_twin(Pubkey::new_unique());
+
+    let mut accounts = deposit.accounts_with_escrows(1_000, 1_000, 1_000_000, 1_000);
+    accounts.insert(redeem.batcher, system_account(0));
+    let context = mollusk().with_context(accounts);
+    let mut ledger = CleartextLedger::default();
+    // Users hold both cUnderlying (to deposit) and cShares (to redeem).
+    deposit.seed_ledger(&mut ledger, (1_000, 600), (2_000, 400), (1_000_000, 1_000));
+
+    let deposit_keys = initialize_and_open_first_batch(&context, &deposit, 0);
+    let redeem_keys = initialize_and_open_first_batch(&context, &redeem, 0);
+    assert_ne!(deposit_keys.batch, redeem_keys.batch);
+    seed_open_batch_balances(&context, &deposit_keys, &mut ledger);
+    seed_open_batch_balances(&context, &redeem_keys, &mut ledger);
+
+    // Interleaved joins: both batches are pending at once, and each user
+    // participates in both directions.
+    run_join(
+        &context,
+        &deposit,
+        &deposit_keys,
+        &deposit.alice,
+        &mut ledger,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    run_join(
+        &context,
+        &redeem,
+        &redeem_keys,
+        &redeem.alice,
+        &mut ledger,
+        handle_for_chain(43, BALANCE_FHE_TYPE),
+        200,
+    );
+    run_join(
+        &context,
+        &deposit,
+        &deposit_keys,
+        &deposit.bob,
+        &mut ledger,
+        handle_for_chain(42, BALANCE_FHE_TYPE),
+        500,
+    );
+    run_join(
+        &context,
+        &redeem,
+        &redeem_keys,
+        &redeem.bob,
+        &mut ledger,
+        handle_for_chain(44, BALANCE_FHE_TYPE),
+        300,
+    );
+
+    // Each batch account holds exactly its own direction's encrypted sum.
+    assert_eq!(
+        ledger.u64_at(&context, deposit_keys.join_balance_value),
+        800
+    );
+    assert_eq!(ledger.u64_at(&context, redeem_keys.join_balance_value), 500);
+
+    // Interleaved dispatches: two independent burned handles on two mints.
+    let deposit_burned = run_dispatch(&context, &deposit, &deposit_keys, &mut ledger);
+    let redeem_burned = run_dispatch(&context, &redeem, &redeem_keys, &mut ledger);
+    assert_ne!(deposit_burned, redeem_burned);
+
+    // Settle the redeem batch first: 500 shares withdraw 500 underlying at
+    // the 1:1 price, leaving the vault at (500, 500).
+    run_settle(
+        &context,
+        &redeem,
+        &redeem_keys,
+        &mut ledger,
+        redeem_burned,
+        500,
+    );
+    let redeem_settled = read_batch(&context, redeem_keys.batch);
+    assert_eq!(redeem_settled.status, batcher::BatchStatus::Settled);
+    assert_eq!(redeem_settled.total_joined, 500);
+    assert_eq!(redeem_settled.payout_received, 500);
+    assert_eq!(read_spl_amount(&context, deposit.vault_token_account), 500);
+
+    // Then the deposit batch: 800 underlying at the (still 1:1) price mints
+    // 800 shares; the vault ends at (1_300, 1_300).
+    run_settle(
+        &context,
+        &deposit,
+        &deposit_keys,
+        &mut ledger,
+        deposit_burned,
+        800,
+    );
+    let deposit_settled = read_batch(&context, deposit_keys.batch);
+    assert_eq!(deposit_settled.status, batcher::BatchStatus::Settled);
+    assert_eq!(deposit_settled.total_joined, 800);
+    assert_eq!(deposit_settled.payout_received, 800);
+    assert_eq!(
+        read_spl_amount(&context, deposit.vault_token_account),
+        1_300
+    );
+    // Shared escrows carry both directions without mixing: the shares escrow
+    // lost the 500 redeemed and gained the 800 wrapped; the underlying escrow
+    // lost the 800 redeemed and gained the 500 wrapped.
+    assert_eq!(
+        read_spl_amount(&context, deposit.shares_cmint.vault_underlying),
+        1_000 - 500 + 800
+    );
+    assert_eq!(
+        read_spl_amount(&context, deposit.underlying_cmint.vault_underlying),
+        1_000_000 - 800 + 500
+    );
+
+    // Interleaved claims across both directions.
+    run_claim(
+        &context,
+        &deposit,
+        &deposit_keys,
+        &deposit.alice,
+        &mut ledger,
+    );
+    run_claim(&context, &redeem, &redeem_keys, &redeem.alice, &mut ledger);
+    run_claim(&context, &redeem, &redeem_keys, &redeem.bob, &mut ledger);
+    run_claim(&context, &deposit, &deposit_keys, &deposit.bob, &mut ledger);
+
+    // Final per-user balances: cShares = start - redeem join + deposit claim;
+    // cUnderlying = start - deposit join + redeem claim.
+    assert_eq!(
+        ledger.u64_at(&context, deposit.alice.shares.balance_value),
+        600 - 200 + 300
+    );
+    assert_eq!(
+        ledger.u64_at(&context, deposit.alice.underlying.balance_value),
+        1_000 - 300 + 200
+    );
+    assert_eq!(
+        ledger.u64_at(&context, deposit.bob.shares.balance_value),
+        400 - 300 + 500
+    );
+    assert_eq!(
+        ledger.u64_at(&context, deposit.bob.underlying.balance_value),
+        2_000 - 500 + 300
+    );
+    // Both batch payout accounts fully drained.
+    assert_eq!(
+        ledger.u64_at(&context, deposit_keys.payout_balance_value),
+        0
+    );
+    assert_eq!(ledger.u64_at(&context, redeem_keys.payout_balance_value), 0);
+}
+
+// ---------------------------------------------------------------------------
 // Lifecycle-gate rejects
 // ---------------------------------------------------------------------------
 
@@ -1645,7 +2321,7 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
 /// is the only time gate in the flow.
 #[test]
 fn mollusk_dispatch_before_min_batch_age_rejects() {
-    let fixture = BatcherFixture::new();
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = mollusk().with_context(fixture.accounts(0, 0));
     // Batch opens at slot 100 and must age 1_000 slots.
     let keys = initialize_and_open_first_batch(&context, &fixture, 1_000);
@@ -1660,14 +2336,14 @@ fn mollusk_dispatch_before_min_batch_age_rejects() {
 /// and a second dispatch rejects. Claims reject until settle.
 #[test]
 fn mollusk_join_quit_and_claim_respect_batch_status() {
-    let fixture = BatcherFixture::new();
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = mollusk().with_context(fixture.accounts(0, 0));
     let mut ledger = CleartextLedger::default();
-    fixture.seed_ledger(&mut ledger, 1_000, 2_000);
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
     ledger.seed_amount(
-        read_encrypted_value(&context, keys.deposit_balance_value).current_handle,
+        read_encrypted_value(&context, keys.join_balance_value).current_handle,
         0,
     );
     run_join(
@@ -1685,7 +2361,7 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
         &context,
         &[
             keys.claim_amount_value(fixture.alice.user),
-            keys.shares_transferred_value,
+            keys.payout_transferred_value,
         ],
     );
     context.process_and_validate_instruction(
@@ -1699,13 +2375,14 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
     let attestation = amount_attestation_for(
         handle_for_chain(42, BALANCE_FHE_TYPE),
         fixture.alice.user,
-        fixture.deposit_mint.compute_signer,
+        fixture.join_mint().compute_signer,
     );
     context.process_and_validate_instruction(
         &join_ix(&fixture, &keys, &fixture.alice, attestation),
         &[batcher_error(batcher::BatcherError::BatchNotPending)],
     );
-    // Quit after dispatch rejects — the exit is the claim, at the batch rate.
+    // Quit after dispatch rejects — the exit is the claim, pro rata. There is
+    // no exit between dispatch and settle (fhevm-internal#1773).
     context.process_and_validate_instruction(
         &quit_ix(&fixture, &keys, &fixture.alice),
         &[batcher_error(batcher::BatcherError::BatchNotPending)],
@@ -1721,20 +2398,13 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
 /// record's claimed flag.
 #[test]
 fn mollusk_double_claim_rejects() {
-    let fixture = BatcherFixture::new();
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = mollusk().with_context(fixture.accounts(0, 0));
     let mut ledger = CleartextLedger::default();
-    fixture.seed_ledger(&mut ledger, 1_000, 2_000);
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.deposit_balance_value).current_handle,
-        0,
-    );
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.shares_balance_value).current_handle,
-        0,
-    );
+    seed_open_batch_balances(&context, &keys, &mut ledger);
     run_join(
         &context,
         &fixture,
@@ -1753,7 +2423,7 @@ fn mollusk_double_claim_rejects() {
         &[batcher_error(batcher::BatcherError::AlreadyClaimed)],
     );
     assert_eq!(
-        ledger.u64_at(&context, fixture.alice.shares_balance_value),
+        ledger.u64_at(&context, fixture.alice.shares.balance_value),
         300
     );
 }
@@ -1763,7 +2433,7 @@ fn mollusk_double_claim_rejects() {
 /// rejects.
 #[test]
 fn mollusk_open_batch_requires_previous_batch_not_pending() {
-    let fixture = BatcherFixture::new();
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = mollusk().with_context(fixture.accounts(0, 0));
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
 
@@ -1781,6 +2451,35 @@ fn mollusk_open_batch_requires_previous_batch_not_pending() {
     );
 }
 
+/// Initializing a batcher with the direction's mint wiring swapped rejects:
+/// a redeem batcher whose join mint wraps the vault underlying (instead of
+/// its shares) is refused at setup.
+#[test]
+fn mollusk_initialize_batcher_rejects_swapped_direction_wiring() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
+    let context = mollusk().with_context(redeem_accounts(&fixture, 0, 0, 0));
+    let swapped = anchor_ix(
+        batcher::id(),
+        batcher::accounts::InitializeBatcher {
+            payer: fixture.payer,
+            batcher: fixture.batcher,
+            // Deposit-shaped wiring under a Redeem direction.
+            join_confidential_mint: fixture.underlying_cmint.mint,
+            payout_confidential_mint: fixture.shares_cmint.mint,
+            vault: fixture.vault,
+            system_program: system_program::ID,
+        },
+        batcher::instruction::InitializeBatcher {
+            min_batch_age_slots: 0,
+            direction: batcher::BatchDirection::Redeem,
+        },
+    );
+    context.process_and_validate_instruction(
+        &swapped,
+        &[batcher_error(batcher::BatcherError::JoinMintVaultMismatch)],
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Cost snapshots
 // ---------------------------------------------------------------------------
@@ -1790,101 +2489,115 @@ fn assert_batcher_cost(profile: &str, ix: &Instruction, result: &InstructionResu
 }
 
 /// One fixed-key run through open/join/dispatch/claim, snapshotting each
-/// instruction's cost profile. Fixed fixture keys keep the PDA bump searches —
-/// part of the measured compute — stable across runs.
-#[test]
-fn cost_snapshot_batcher_lifecycle() {
-    let fixture = BatcherFixture::fixed(0x61);
-    let context = mollusk().with_context(fixture.accounts(0, 0));
-    let mut ledger = CleartextLedger::default();
-    fixture.seed_ledger(&mut ledger, 1_000, 2_000);
-
+/// instruction's cost profile under `prefix`. Fixed fixture keys keep the PDA
+/// bump searches — part of the measured compute — stable across runs. No
+/// settle snapshot: its redemption-marker PDA seed is runtime-derived (the
+/// burned handle), so its bump search is not key-stable.
+fn snapshot_lifecycle(
+    fixture: &BatcherFixture,
+    context: &Ctx,
+    ledger: &mut CleartextLedger,
+    prefix: &str,
+) {
     context
-        .process_and_validate_instruction(&initialize_batcher_ix(&fixture, 0), &[Check::success()]);
-    let keys = BatchKeys::new(&fixture, 0);
-    ensure_open_batch_accounts(&context, &keys);
-    let open = open_batch_ix(&fixture, &keys, None);
+        .process_and_validate_instruction(&initialize_batcher_ix(fixture, 0), &[Check::success()]);
+    let keys = BatchKeys::new(fixture, 0);
+    ensure_open_batch_accounts(context, &keys);
+    let open = open_batch_ix(fixture, &keys, None);
     let open_result = context.process_and_validate_instruction(&open, &[Check::success()]);
-    assert_batcher_cost("open_batch", &open, &open_result);
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.deposit_balance_value).current_handle,
-        0,
-    );
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.shares_balance_value).current_handle,
-        0,
-    );
+    assert_batcher_cost(&format!("{prefix}open_batch"), &open, &open_result);
+    seed_open_batch_balances(context, &keys, ledger);
 
     let amount_handle = handle_for_chain(0x71, BALANCE_FHE_TYPE);
     ledger.seed_amount(amount_handle, 300);
     ensure_system_accounts(
-        &context,
+        context,
         &[
-            keys.deposit_record(fixture.alice.user),
-            fixture.alice.deposit_transferred_value,
-            keys.pending_deposit_value(fixture.alice.user),
+            keys.join_record(fixture.alice.user),
+            fixture.user_join(&fixture.alice).transferred_value,
+            keys.pending_join_value(fixture.alice.user),
         ],
     );
     let join = join_ix(
-        &fixture,
+        fixture,
         &keys,
         &fixture.alice,
         amount_attestation_for(
             amount_handle,
             fixture.alice.user,
-            fixture.deposit_mint.compute_signer,
+            fixture.join_mint().compute_signer,
         ),
     );
     let join_result = context.process_and_validate_instruction(&join, &[Check::success()]);
-    ledger.evaluate_fhe_cpis(&context, &join_result);
-    assert_batcher_cost("join", &join, &join_result);
+    ledger.evaluate_fhe_cpis(context, &join_result);
+    assert_batcher_cost(&format!("{prefix}join"), &join, &join_result);
 
-    ensure_system_accounts(&context, &[keys.burned_amount_value]);
-    let dispatch = dispatch_ix(&fixture, &keys);
+    ensure_system_accounts(context, &[keys.burned_amount_value]);
+    let dispatch = dispatch_ix(fixture, &keys);
     let dispatch_result = context.process_and_validate_instruction(&dispatch, &[Check::success()]);
-    ledger.evaluate_fhe_cpis(&context, &dispatch_result);
-    assert_batcher_cost("dispatch", &dispatch, &dispatch_result);
+    ledger.evaluate_fhe_cpis(context, &dispatch_result);
+    assert_batcher_cost(&format!("{prefix}dispatch"), &dispatch, &dispatch_result);
 
-    let burned_handle = read_batch(&context, keys.batch).burned_total_handle;
-    run_settle(&context, &fixture, &keys, &mut ledger, burned_handle, 300);
+    let burned_handle = read_batch(context, keys.batch).burned_total_handle;
+    run_settle(context, fixture, &keys, ledger, burned_handle, 300);
 
     ensure_system_accounts(
-        &context,
+        context,
         &[
             keys.claim_amount_value(fixture.alice.user),
-            keys.shares_transferred_value,
+            keys.payout_transferred_value,
         ],
     );
-    let claim = claim_ix(&fixture, &keys, &fixture.alice);
+    let claim = claim_ix(fixture, &keys, &fixture.alice);
     let claim_result = context.process_and_validate_instruction(&claim, &[Check::success()]);
-    ledger.evaluate_fhe_cpis(&context, &claim_result);
-    assert_batcher_cost("claim", &claim, &claim_result);
+    ledger.evaluate_fhe_cpis(context, &claim_result);
+    assert_batcher_cost(&format!("{prefix}claim"), &claim, &claim_result);
+}
+
+#[test]
+fn cost_snapshot_batcher_lifecycle() {
+    let fixture = BatcherFixture::fixed(batcher::BatchDirection::Deposit, 0x61);
+    let context = mollusk().with_context(fixture.accounts(0, 0));
+    let mut ledger = CleartextLedger::default();
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
+    snapshot_lifecycle(&fixture, &context, &mut ledger, "");
+}
+
+#[test]
+fn cost_snapshot_batcher_redeem_lifecycle() {
+    let fixture = BatcherFixture::fixed(batcher::BatchDirection::Redeem, 0x51);
+    let context = mollusk().with_context(redeem_accounts(&fixture, 1_000, 1_000, 1_000));
+    let mut ledger = CleartextLedger::default();
+    fixture.seed_ledger(&mut ledger, (0, 600), (0, 400), (0, 1_000));
+    snapshot_lifecycle(&fixture, &context, &mut ledger, "redeem_");
 }
 
 // ---------------------------------------------------------------------------
-// Known limitation: dust-total batches cannot settle (pinned behavior)
+// Known limitation: dust-total DEPOSIT batches cannot settle (pinned behavior)
 // ---------------------------------------------------------------------------
 
-/// A batch whose certified total floors to zero shares at the vault's price
-/// cannot settle: `demo_vault::deposit` rejects `ZeroShares`, the settle
+/// A deposit batch whose certified total floors to zero shares at the vault's
+/// price cannot settle: `demo_vault::deposit` rejects `ZeroShares`, the settle
 /// reverts atomically (nothing paid out, no marker written), and the batch
 /// stays Dispatched forever — the demo vault's price only rises, so no retry
 /// can ever succeed. An attacker holding ~all vault shares can manufacture
 /// this near-free by `harvest`-donating to pump the price (the donation
 /// accrues to their own shares). This test pins today's behavior so the
-/// future cancel-and-refund settle branch has a failing test to flip.
+/// future cancel-and-refund settle branch (fhevm-internal#1773) has a failing
+/// test to flip. The redeem direction has no analog — see
+/// `mollusk_redeem_one_share_dust_settles_at_extreme_price`.
 #[test]
 fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
-    let fixture = BatcherFixture::new();
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     // Share price ~20_000 underlying per share (e.g. after an adversarial
     // harvest donation): 2_000_000 assets backing 100 shares.
     let context = mollusk().with_context(fixture.accounts(2_000_000, 100));
     let mut ledger = CleartextLedger::default();
-    fixture.seed_ledger(&mut ledger, 1_000, 2_000);
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
     ledger.seed_amount(
-        read_encrypted_value(&context, keys.deposit_balance_value).current_handle,
+        read_encrypted_value(&context, keys.join_balance_value).current_handle,
         0,
     );
 
@@ -1904,7 +2617,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
     let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, 100);
     let proof = single_burn_public_decrypt_proof(keys.burned_amount_value, burned_handle);
     let redemption_record =
-        token::burn_redemption_address(fixture.deposit_mint.mint, burned_handle).0;
+        token::burn_redemption_address(fixture.join_mint().mint, burned_handle).0;
     ensure_system_accounts(&context, &[redemption_record]);
     let ix = settle_ix(
         &fixture,
@@ -1926,8 +2639,8 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
     // underlying released, vault untouched.
     let batch = read_batch(&context, keys.batch);
     assert_eq!(batch.status, batcher::BatchStatus::Dispatched);
-    assert_eq!(batch.total_deposited, 0);
-    assert_eq!(read_spl_amount(&context, keys.underlying_tokens), 0);
+    assert_eq!(batch.total_joined, 0);
+    assert_eq!(read_spl_amount(&context, keys.join_underlying), 0);
     assert_eq!(
         read_spl_amount(&context, fixture.vault_token_account),
         2_000_000
@@ -1942,22 +2655,20 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
 /// realistically shaped cert/proof data) as (a) a legacy `Transaction` and
 /// (b) a v0 `VersionedTransaction` whose non-payer accounts load through one
 /// address lookup table, across cert thresholds and proof depths. Legacy
-/// settle never fits one packet (the 34-account meta list alone approaches
+/// settle never fits one packet (the ~35-account meta list alone approaches
 /// the limit); v0+ALT fits comfortably at every reachable batcher shape —
 /// the batch's burned lineage always holds exactly one leaf, so its proof
 /// depth is 0 regardless of the KMS threshold. The deep-proof row is the
 /// out-of-domain bound where even v0+ALT would need a split settle.
-#[test]
-fn settle_transaction_size_needs_v0_lookup_table_and_fits() {
-    let fixture = BatcherFixture::fixed(0x91);
-    let keys = BatchKeys::new(&fixture, 0);
+fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
+    let keys = BatchKeys::new(fixture, 0);
     let burned_handle = handle_for_chain(0x92, BALANCE_FHE_TYPE);
     let redemption_record =
-        token::burn_redemption_address(fixture.deposit_mint.mint, burned_handle).0;
+        token::burn_redemption_address(fixture.join_mint().mint, burned_handle).0;
 
     let settle_with = |threshold: usize, proof_depth: usize| -> Instruction {
         settle_ix(
-            &fixture,
+            fixture,
             &keys,
             800,
             vec![[0u8; 65]; threshold],
@@ -2015,8 +2726,9 @@ fn settle_transaction_size_needs_v0_lookup_table_and_fits() {
         let legacy = legacy_size(&ix);
         let v0 = v0_with_lookup_table_size(&ix);
         println!(
-            "settle wire size t={threshold} depth={depth}: legacy={legacy}B v0+ALT={v0}B \
+            "settle wire size ({:?}) t={threshold} depth={depth}: legacy={legacy}B v0+ALT={v0}B \
              (packet limit {})",
+            fixture.direction,
             solana_packet::PACKET_DATA_SIZE
         );
         sizes.push((threshold, depth, legacy, v0));
@@ -2040,24 +2752,40 @@ fn settle_transaction_size_needs_v0_lookup_table_and_fits() {
     }
 }
 
+#[test]
+fn settle_transaction_size_needs_v0_lookup_table_and_fits() {
+    assert_settle_wire_sizes(&BatcherFixture::fixed(
+        batcher::BatchDirection::Deposit,
+        0x91,
+    ));
+}
+
+#[test]
+fn redeem_settle_transaction_size_needs_v0_lookup_table_and_fits() {
+    assert_settle_wire_sizes(&BatcherFixture::fixed(
+        batcher::BatchDirection::Redeem,
+        0x81,
+    ));
+}
+
 // ---------------------------------------------------------------------------
-// Preloaded shares must not poison the rate (settle prices the delta)
+// Preloaded shares must not poison the batch (settle prices the delta)
 // ---------------------------------------------------------------------------
 
 /// SPL destinations cannot refuse incoming transfers, so an attacker can push
-/// vault shares into the PDA-owned `batch_share_tokens` account before
-/// settlement. Settle must price and wrap only the vault-minted delta across
-/// its deposit leg: with balance-based accounting, this preload (~18.75e9 x
-/// the batch total in rate units, above the u64 rate bound of ~18.45e9) would
-/// make `freeze_share_rate` overflow and permanently brick the batch. The
+/// vault shares into the PDA-owned `batch_payout_underlying` account of a
+/// deposit batch before settlement. Settle must price and wrap only the
+/// vault-minted delta across its deposit leg: with balance-based accounting,
+/// this preload would have inflated the batch's payout accounting (and, under
+/// the old rate math, overflowed the u64 rate and bricked the batch). The
 /// attacker acquires the shares through a genuine demo-vault deposit and a
 /// genuine SPL transfer — no seeded shortcuts.
 #[test]
 fn mollusk_preloaded_shares_do_not_poison_the_rate() {
-    // Large enough that (PRELOAD + 800) * RATE_SCALE / 800 > u64::MAX, so the
-    // old balance-based computation would have failed with ShareRateOverflow.
+    // Large enough that (PRELOAD + 800) * RATE_SCALE / 800 > u64::MAX, so a
+    // balance-based rate would have left the u64 domain entirely.
     const PRELOAD: u64 = 15_000_000_000_000;
-    let fixture = BatcherFixture::new();
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let attacker = Pubkey::new_unique();
     let attacker_underlying = Pubkey::new_unique();
     let attacker_shares = Pubkey::new_unique();
@@ -2074,17 +2802,10 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
     );
     let context = mollusk().with_context(accounts);
     let mut ledger = CleartextLedger::default();
-    fixture.seed_ledger(&mut ledger, 1_000, 2_000);
+    fixture.seed_ledger(&mut ledger, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.deposit_balance_value).current_handle,
-        0,
-    );
-    ledger.seed_amount(
-        read_encrypted_value(&context, keys.shares_balance_value).current_handle,
-        0,
-    );
+    seed_open_batch_balances(&context, &keys, &mut ledger);
     run_join(
         &context,
         &fixture,
@@ -2123,43 +2844,44 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
     context.process_and_validate_instruction(&attacker_deposit, &[Check::success()]);
     assert_eq!(read_spl_amount(&context, attacker_shares), PRELOAD);
 
-    // ... and pushes the whole share balance into the batch's share account.
+    // ... and pushes the whole share balance into the batch's payout account.
     let preload_transfer = spl_token::instruction::transfer(
         &spl_token::id(),
         &attacker_shares,
-        &keys.share_tokens,
+        &keys.payout_underlying,
         &attacker,
         &[],
         PRELOAD,
     )
     .unwrap();
     context.process_and_validate_instruction(&preload_transfer, &[Check::success()]);
-    assert_eq!(read_spl_amount(&context, keys.share_tokens), PRELOAD);
+    assert_eq!(read_spl_amount(&context, keys.payout_underlying), PRELOAD);
 
     let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
     run_settle(&context, &fixture, &keys, &mut ledger, burned_handle, 800);
 
-    // Settle succeeded and the frozen rate reflects only the vault-minted
-    // delta: 800 in, 800 shares out at the (still ~1:1) price, rate exactly
-    // RATE_SCALE. The preloaded shares sit in the account, unwrapped, inert.
+    // Settle succeeded and the recorded payout reflects only the vault-minted
+    // delta: 800 in, 800 shares out at the (still ~1:1) price, informational
+    // rate exactly RATE_SCALE. The preloaded shares sit in the account,
+    // unwrapped, inert.
     let settled = read_batch(&context, keys.batch);
     assert_eq!(settled.status, batcher::BatchStatus::Settled);
-    assert_eq!(settled.total_deposited, 800);
-    assert_eq!(settled.shares_received, 800);
-    assert_eq!(settled.share_rate, batcher::RATE_SCALE);
-    assert_eq!(read_spl_amount(&context, keys.share_tokens), PRELOAD);
-    assert_eq!(ledger.u64_at(&context, keys.shares_balance_value), 800);
+    assert_eq!(settled.total_joined, 800);
+    assert_eq!(settled.payout_received, 800);
+    assert_eq!(settled.payout_rate, batcher::RATE_SCALE);
+    assert_eq!(read_spl_amount(&context, keys.payout_underlying), PRELOAD);
+    assert_eq!(ledger.u64_at(&context, keys.payout_balance_value), 800);
 
     // Claims pay out exactly as in the clean lifecycle.
     run_claim(&context, &fixture, &keys, &fixture.alice, &mut ledger);
     run_claim(&context, &fixture, &keys, &fixture.bob, &mut ledger);
     assert_eq!(
-        ledger.u64_at(&context, fixture.alice.shares_balance_value),
+        ledger.u64_at(&context, fixture.alice.shares.balance_value),
         300
     );
     assert_eq!(
-        ledger.u64_at(&context, fixture.bob.shares_balance_value),
+        ledger.u64_at(&context, fixture.bob.shares.balance_value),
         500
     );
-    assert_eq!(ledger.u64_at(&context, keys.shares_balance_value), 0);
+    assert_eq!(ledger.u64_at(&context, keys.payout_balance_value), 0);
 }
