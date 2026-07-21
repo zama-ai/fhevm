@@ -10,22 +10,36 @@ name: pr-preview-destroy
 # of leaking. Postgres (coprocessor + kms-connector) is plain in-cluster
 # StatefulSets, not a Crossplane claim, so it's already gone the moment the
 # namespace is - see coprocessor-infra/values-postgres-coprocessor-e2e.yaml.
+#
+# Triggers (both mirror pr-preview-deploy.yml's labels: pr-preview-e2e /
+# pr-preview-e2e-build / pr-preview-e2e-tests):
+#   - closed:    PR merged/closed -> always attempt teardown (no-op if none).
+#   - unlabeled: a preview label was removed AND no preview label remains, i.e.
+#     the label that keeps the env alive is gone. Removing only -build/-tests
+#     while pr-preview-e2e stays does NOT tear down (the env is still wanted).
 ##############################################################################
 
 on:
   pull_request:
-    types: [closed]
+    types: [closed, unlabeled]
 
 permissions: {}
 
 jobs:
   destroy:
     name: destroy
-    # Only bother if this PR could plausibly have a preview namespace: it
-    # was merged/closed after having carried the pr-preview-e2e label at
-    # some point. We can't easily check label history here, so we just
-    # attempt the teardown unconditionally and no-op if the namespace
-    # doesn't exist.
+    # On `closed` we attempt teardown unconditionally (can't cheaply check
+    # label history; the namespace step no-ops if nothing exists). On
+    # `unlabeled` we only tear down when a preview label was removed AND none
+    # remains: all three preview labels share the 'pr-preview-e2e' prefix, so
+    # `contains(label.name, 'pr-preview-e2e')` matches the removed one and
+    # `!contains(toJSON(labels.*.name), 'pr-preview-e2e')` confirms no preview
+    # label is left (removing -build/-tests while -e2e stays keeps the env).
+    if: >-
+      github.event.action == 'closed' ||
+      (github.event.action == 'unlabeled' &&
+      contains(github.event.label.name, 'pr-preview-e2e') &&
+      !contains(toJSON(github.event.pull_request.labels.*.name), 'pr-preview-e2e'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # The comment step needs to write to the PR; the workflow-level
@@ -35,10 +49,11 @@ jobs:
     env:
       # MUST match pr-preview-deploy.yml's namespace derivation. Both use the PR
       # AUTHOR (pull_request.user.login), not github.actor: on deploy github.actor
-      # is whoever pushed/labeled, and on this `closed` event it's whoever closed
-      # the PR - those can differ, which would target a namespace that was never
-      # created and leak the real one. The PR author is identical across both
-      # events, so teardown always hits the namespace deploy created.
+      # is whoever pushed/labeled, and on the closed/unlabeled event here it's
+      # whoever closed the PR or removed the label - those can differ, which would
+      # target a namespace that was never created and leak the real one. The PR
+      # author is identical across all those events, so teardown always hits the
+      # namespace deploy created.
       NAMESPACE: fhevm-ci-${{ github.event.pull_request.user.login }}-${{ github.event.pull_request.number }}
       TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
     steps:
