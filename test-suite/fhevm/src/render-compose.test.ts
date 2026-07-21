@@ -343,7 +343,7 @@ describe("render-compose", () => {
     });
   });
 
-  test("builds every coprocessor and kms-connector image from its own per-image Dockerfile", async () => {
+  test("builds coprocessor and kms-connector images from the branch-local workspace Dockerfiles", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
       await writeFile(envPath("coprocessor"), "\n");
@@ -353,44 +353,52 @@ describe("render-compose", () => {
       type BuildDoc = { services: Record<string, { build?: { dockerfile?: string; target?: string } }> };
       const coprocessor = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as BuildDoc;
       const connector = YAML.parse(await readFile(composePath("kms-connector"), "utf8")) as BuildDoc;
-      const dockerfileFor = (doc: BuildDoc, service: string) => doc.services[service]?.build?.dockerfile ?? "";
-      expect(dockerfileFor(coprocessor, "coprocessor-host-listener")).toContain(
-        "coprocessor/fhevm-engine/host-listener/Dockerfile",
-      );
-      expect(dockerfileFor(coprocessor, "coprocessor-host-listener-poller")).toContain(
-        "coprocessor/fhevm-engine/host-listener/Dockerfile",
-      );
-      expect(dockerfileFor(coprocessor, "coprocessor-tfhe-worker")).toContain(
-        "coprocessor/fhevm-engine/tfhe-worker/Dockerfile",
-      );
-      expect(dockerfileFor(coprocessor, "coprocessor-transaction-sender")).toContain(
-        "coprocessor/fhevm-engine/transaction-sender/Dockerfile",
-      );
-      expect(dockerfileFor(coprocessor, "coprocessor-db-migration")).toContain(
-        "coprocessor/fhevm-engine/db-migration/Dockerfile",
-      );
-      expect(dockerfileFor(connector, "kms-connector-kms-worker")).toContain(
-        "kms-connector/crates/kms-worker/Dockerfile",
-      );
-      expect(dockerfileFor(connector, "kms-connector-db-migration")).toContain("kms-connector/connector-db/Dockerfile");
-      // No spec points at the deleted Dockerfile.workspace files, and every Rust image builds the
-      // canonical `prod` runtime stage.
-      for (const doc of [coprocessor, connector]) {
-        for (const service of Object.values(doc.services)) {
-          if (!service.build) continue;
-          expect(service.build.dockerfile ?? "").not.toContain("Dockerfile.workspace");
-          expect(service.build.target).toBe("prod");
-        }
+      const buildFor = (doc: BuildDoc, service: string) => doc.services[service]?.build ?? {};
+      // Every coprocessor image builds from the shared workspace Dockerfile (one cargo pass for
+      // all binaries) with a per-image runtime target.
+      const coprocessorTargets: Record<string, string> = {
+        "coprocessor-db-migration": "db-migration",
+        "coprocessor-host-listener": "host-listener",
+        "coprocessor-host-listener-poller": "host-listener",
+        "coprocessor-host-listener-consumer": "host-listener",
+        "coprocessor-gw-listener": "gw-listener",
+        "coprocessor-tfhe-worker": "tfhe-worker",
+        "coprocessor-zkproof-worker": "zkproof-worker",
+        "coprocessor-sns-worker": "sns-worker",
+        "coprocessor-transaction-sender": "transaction-sender",
+      };
+      for (const [service, target] of Object.entries(coprocessorTargets)) {
+        const build = buildFor(coprocessor, service);
+        expect(build.dockerfile).toContain("coprocessor/fhevm-engine/Dockerfile.workspace");
+        expect(build.target).toBe(target);
       }
+      // The kms-connector worker images build from their shared workspace Dockerfile; connector-db
+      // was never workspace-built (sqlx-cli install, not a workspace member) and keeps its own
+      // per-image Dockerfile.
+      const connectorTargets: Record<string, string> = {
+        "kms-connector-gw-listener": "gw-listener",
+        "kms-connector-kms-worker": "kms-worker",
+        "kms-connector-tx-sender": "tx-sender",
+      };
+      for (const [service, target] of Object.entries(connectorTargets)) {
+        const build = buildFor(connector, service);
+        expect(build.dockerfile).toContain("kms-connector/Dockerfile.workspace");
+        expect(build.target).toBe(target);
+      }
+      const connectorDb = buildFor(connector, "kms-connector-db-migration");
+      expect(connectorDb.dockerfile).toContain("kms-connector/connector-db/Dockerfile");
+      expect(connectorDb.target).toBe("prod");
     });
   });
 
   describe("registry build-cache wiring", () => {
     const BUILDCACHE_ENV = { FHEVM_BUILDCACHE_TAG: "buildcache-test" } as const;
 
-    // Renders the coprocessor override with the given env applied for the duration of the
-    // generation (same harness shape as the sccache tests below).
-    const renderCoprocessor = async (env: Record<string, string>) => {
+    const buildCacheState: State = { ...state, overrides: [{ group: "coprocessor" }, { group: "kms-connector" }] };
+
+    // Renders the coprocessor + kms-connector overrides with the given env applied for the
+    // duration of the generation (same harness shape as the sccache tests below).
+    const renderOverrides = async (env: Record<string, string>) => {
       const saved = new Map<string, string | undefined>();
       for (const key of Object.keys({ ...BUILDCACHE_ENV })) {
         saved.set(key, process.env[key]);
@@ -400,8 +408,11 @@ describe("render-compose", () => {
         process.env[key] = value;
       }
       try {
-        await generateComposeOverrides(inheritedScenarioState, stackSpecForState(inheritedScenarioState));
-        return await readFile(composePath("coprocessor"), "utf8");
+        await generateComposeOverrides(buildCacheState, stackSpecForState(buildCacheState));
+        return {
+          coprocessor: await readFile(composePath("coprocessor"), "utf8"),
+          connector: await readFile(composePath("kms-connector"), "utf8"),
+        };
       } finally {
         for (const [key, value] of saved) {
           if (value === undefined) {
@@ -418,41 +429,52 @@ describe("render-compose", () => {
         await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
         await writeFile(envPath("coprocessor"), "\n");
         await writeFile(envPath("coprocessor.1"), "\n");
-        const raw = await renderCoprocessor({});
-        expect(raw).not.toContain("cache_from");
-        expect(raw).not.toContain("buildcache");
+        const rendered = await renderOverrides({});
+        for (const raw of [rendered.coprocessor, rendered.connector]) {
+          expect(raw).not.toContain("cache_from");
+          expect(raw).not.toContain("buildcache");
+        }
       });
     });
 
-    test("adds only a per-image registry cache_from when FHEVM_BUILDCACHE_TAG is set", async () => {
+    test("adds a per-image registry cache_from only for per-image Dockerfile builds", async () => {
       await withTempStateDir(async () => {
         await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
         await writeFile(envPath("coprocessor"), "\n");
         await writeFile(envPath("coprocessor.1"), "\n");
-        const withoutEnv = await renderCoprocessor({});
-        const withEnv = await renderCoprocessor({ ...BUILDCACHE_ENV });
+        const withoutEnv = await renderOverrides({});
+        const withEnv = await renderOverrides({ ...BUILDCACHE_ENV });
 
         type BuildDoc = { services: Record<string, { build?: { cache_from?: string[] } }> };
-        const enabled = YAML.parse(withEnv) as BuildDoc;
+        const connector = YAML.parse(withEnv.connector) as BuildDoc;
 
-        // The cache ref is the service's own image repository at the cache tag, matching what
+        // The publish workflow exports per-image build caches; those cannot hit against the
+        // branch-local workspace Dockerfiles, so workspace-built services get no cache_from and
+        // a set FHEVM_BUILDCACHE_TAG stays harmless.
+        expect(withEnv.coprocessor).not.toContain("cache_from");
+        expect(connector.services["kms-connector-kms-worker"]?.build?.cache_from).toBeUndefined();
+
+        // connector-db still builds from its per-image Dockerfile, so its cache ref is the
+        // service's own image repository at the cache tag, matching what
         // solana-images-publish.yml exports.
-        expect(enabled.services["coprocessor-host-listener"]?.build?.cache_from).toEqual([
-          "ghcr.io/zama-ai/fhevm/coprocessor/host-listener:buildcache-test",
-        ]);
-        expect(enabled.services["coprocessor-tfhe-worker"]?.build?.cache_from).toEqual([
-          "ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:buildcache-test",
+        expect(connector.services["kms-connector-db-migration"]?.build?.cache_from).toEqual([
+          "ghcr.io/zama-ai/fhevm/kms-connector/db-migration:buildcache-test",
         ]);
 
         // Structural proof of graceful degradation: strip the cache_from additions from the
-        // enabled document and it is identical to the disabled one.
-        const stripped = YAML.parse(withEnv) as BuildDoc;
-        for (const service of Object.values(stripped.services)) {
-          if (service.build) {
-            delete service.build.cache_from;
+        // enabled documents and they are identical to the disabled ones.
+        for (const [enabledRaw, disabledRaw] of [
+          [withEnv.coprocessor, withoutEnv.coprocessor],
+          [withEnv.connector, withoutEnv.connector],
+        ] as const) {
+          const stripped = YAML.parse(enabledRaw) as BuildDoc;
+          for (const service of Object.values(stripped.services)) {
+            if (service.build) {
+              delete service.build.cache_from;
+            }
           }
+          expect(stripped).toEqual(YAML.parse(disabledRaw) as BuildDoc);
         }
-        expect(stripped).toEqual(YAML.parse(withoutEnv) as BuildDoc);
       });
     });
   });

@@ -1,0 +1,315 @@
+# =============================================================================
+# BRANCH-LOCAL (feature/solana) E2E BUILD FILE — DELETE AT MERGE-BACK TO MAIN.
+# Main's release CI builds each image from its per-binary Dockerfile
+# (coprocessor/fhevm-engine/*/Dockerfile), and so does this branch's
+# solana-images-publish.yml. This file exists only so the e2e stack's
+# `--override` compose builds compile all coprocessor binaries in ONE cargo
+# pass instead of eight sequential full-workspace compilations (measured:
+# ~41 min of cargo, 71 min run vs 44 min baseline).
+# =============================================================================
+# =============================================================================
+# UNIFIED COPROCESSOR DOCKERFILE (LOCAL BUILDS)
+# =============================================================================
+# This Dockerfile builds ALL coprocessor workspace binaries in a single builder
+# stage, ensuring dependencies (especially tfhe-rs) are compiled exactly ONCE.
+# Individual runtime images are produced via multi-stage targets.
+#
+# LOCAL vs CI BUILDS:
+#   - LOCAL: Uses this Dockerfile.workspace via docker-compose for faster builds
+#            (shared builder stage, single tfhe-rs compilation)
+#   - CI:    Uses individual Dockerfiles (coprocessor/*/Dockerfile) for granular
+#            caching and independent service builds
+#
+# Usage (standalone):
+#   docker build --target tfhe-worker -t tfhe-worker:latest .
+#   docker build --target host-listener -t host-listener:latest .
+#   docker build --target gw-listener -t gw-listener:latest .
+#   docker build --target sns-worker -t sns-worker:latest .
+#   docker build --target transaction-sender -t transaction-sender:latest .
+#   docker build --target zkproof-worker -t zkproof-worker:latest .
+#   docker build --target db-migration -t db-migration:latest .
+#
+# Usage (via docker-compose, recommended for local dev):
+#   cd test-suite/fhevm
+#   ./fhevm-cli deploy --build --local
+#
+# =============================================================================
+
+# =============================================================================
+# Stage 0: Build Solidity contracts (required for host-listener, gw-listener)
+# =============================================================================
+FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
+
+USER root
+WORKDIR /app
+
+# Copy root lockfile for workspace resolution
+COPY package.json package-lock.json ./
+
+# Copy host-contracts for host-listener
+COPY host-contracts ./host-contracts
+
+# Compile host-contracts
+RUN cp host-contracts/.env.example host-contracts/.env && \
+    npm ci --workspace=host-contracts --include-workspace-root=false && \
+    cd host-contracts && \
+    HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && \
+    npx hardhat compile
+
+# Copy gateway-contracts for gw-listener
+WORKDIR /app
+COPY gateway-contracts ./gateway-contracts
+
+# Compile gateway-contracts
+WORKDIR /app/gateway-contracts
+RUN npm ci && \
+    DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
+
+# =============================================================================
+# Stage 1: Build ALL Rust workspace binaries
+# =============================================================================
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
+
+ARG CARGO_PROFILE=release
+ARG BUILD_ID=unknown
+ARG SCCACHE_BUCKET
+ARG SCCACHE_REGION=eu-west-3
+ARG SCCACHE_S3_PREFIX
+ARG SCCACHE_VERSION=v0.15.0
+ENV SCCACHE_IDLE_TIMEOUT=0
+ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
+ENV SCCACHE_REGION=${SCCACHE_REGION}
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
+ENV AWS_REGION=${SCCACHE_REGION}
+
+USER root
+WORKDIR /app
+
+# TODO(sccache): temporary inline install for testing; remove once sccache
+# ships in the rust-glibc golden image and rely on that instead.
+# Skipped entirely (no network fetch) when SCCACHE_BUCKET is unset, the same
+# signal the build hook below uses, so the disabled path stays a plain build.
+RUN set -eux; \
+    if [ -z "${SCCACHE_BUCKET}" ]; then echo "SCCACHE_BUCKET unset; skipping sccache install"; exit 0; fi; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64)  triple=x86_64-unknown-linux-musl ;; \
+        aarch64) triple=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
+    chmod +x /usr/local/bin/sccache; \
+    sccache --version
+
+# Copy contract artifacts from contract_builder stage
+COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
+COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
+
+# Copy Rust sources and dependencies
+# TODO fix
+COPY listener ./listener
+COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
+COPY coprocessor/proto ./coprocessor/proto
+COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY gateway-contracts/contracts ./gateway-contracts/contracts
+COPY host-contracts/contracts ./host-contracts/contracts
+# The Solana branch adds tfhe-worker dev-deps on solana/programs/{zama-host,
+# confidential-token}; the whole-workspace build must resolve their manifests, so
+# the Solana sources must be present. .dockerignore excludes solana/target.
+COPY solana ./solana
+COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
+
+WORKDIR /app/coprocessor/fhevm-engine
+
+# Build entire workspace - tfhe compiles ONCE here
+# NOTE: We use cache mounts for incremental compilation. Because cache mounts
+# are NOT committed to the image layer, we must copy binaries to /out during
+# the same RUN instruction for COPY --from to work in later stages.
+#
+# gw-listener, transaction-sender, and host-listener each call Solc::find_or_install(0.8.28) in
+# their build script. Under the parallel `cargo build --workspace` they race on svm's shared solc
+# binary (one writes it while another execs it -> ETXTBSY, "Text file busy"). So build gw-listener
+# first, serially, to install solc 0.8.28 once; the workspace build then finds it already present
+# instead of re-downloading. gw-listener does not depend on tfhe, so this serial step stays small.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
+    --mount=type=secret,id=sccache_aws_access_key_id \
+    --mount=type=secret,id=sccache_aws_secret_access_key \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then \
+      export RUSTC_WRAPPER=sccache; \
+      export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
+      export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
+    fi && \
+    cargo fetch && \
+    SQLX_OFFLINE=true cargo build --profile=${CARGO_PROFILE} -p gw-listener && \
+    SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
+    mkdir -p /out && \
+    cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \
+    cp target/${CARGO_PROFILE}/host_listener /out/ && \
+    cp target/${CARGO_PROFILE}/host_listener_poller /out/ && \
+    cp target/${CARGO_PROFILE}/host_listener_consumer /out/ && \
+    cp target/${CARGO_PROFILE}/gw_listener /out/ && \
+    cp target/${CARGO_PROFILE}/sns_worker /out/ && \
+    cp target/${CARGO_PROFILE}/transaction_sender /out/ && \
+    cp target/${CARGO_PROFILE}/zkproof_worker /out/ && \
+    cp target/${CARGO_PROFILE}/resolve_database_url /out/
+
+# =============================================================================
+# Stage 1b: Build sqlx-cli for db-migration
+# =============================================================================
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS sqlx_builder
+
+ARG SCCACHE_BUCKET
+ARG SCCACHE_REGION=eu-west-3
+ARG SCCACHE_S3_PREFIX
+ARG SCCACHE_VERSION=v0.15.0
+ENV SCCACHE_IDLE_TIMEOUT=0
+ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
+ENV SCCACHE_REGION=${SCCACHE_REGION}
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
+ENV AWS_REGION=${SCCACHE_REGION}
+
+USER root
+WORKDIR /app
+
+# TODO(sccache): temporary inline install for testing; remove once sccache
+# ships in the rust-glibc golden image and rely on that instead.
+# Skipped entirely (no network fetch) when SCCACHE_BUCKET is unset, the same
+# signal the build hook below uses, so the disabled path stays a plain build.
+RUN set -eux; \
+    if [ -z "${SCCACHE_BUCKET}" ]; then echo "SCCACHE_BUCKET unset; skipping sccache install"; exit 0; fi; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64)  triple=x86_64-unknown-linux-musl ;; \
+        aarch64) triple=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
+    chmod +x /usr/local/bin/sccache; \
+    sccache --version
+
+# Install sqlx-cli
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=secret,id=sccache_aws_access_key_id \
+    --mount=type=secret,id=sccache_aws_secret_access_key \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then \
+      export RUSTC_WRAPPER=sccache; \
+      export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
+      export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
+    fi && \
+    cargo install sqlx-cli --version 0.7.2 \
+    --no-default-features --features postgres,rustls --locked && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi
+
+# =============================================================================
+# Stage 2a: tfhe-worker runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS tfhe-worker
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/tfhe_worker /usr/local/bin/tfhe_worker
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/tfhe_worker"]
+
+# =============================================================================
+# Stage 2b: host-listener runtime (includes both host_listener and host_listener_poller)
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS host-listener
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/host_listener /usr/local/bin/host_listener
+COPY --from=builder --chown=fhevm:fhevm /out/host_listener_poller /usr/local/bin/host_listener_poller
+COPY --from=builder --chown=fhevm:fhevm /out/host_listener_consumer /usr/local/bin/host_listener_consumer
+
+USER fhevm:fhevm
+
+# No CMD - compose specifies the command (host_listener or host_listener_poller)
+
+# =============================================================================
+# Stage 2c: gw-listener runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS gw-listener
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/gw_listener /usr/local/bin/gw_listener
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/gw_listener"]
+
+# =============================================================================
+# Stage 2d: sns-worker runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS sns-worker
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/sns_worker /usr/local/bin/sns_worker
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/sns_worker"]
+
+# =============================================================================
+# Stage 2e: transaction-sender runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS transaction-sender
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/transaction_sender /usr/local/bin/transaction_sender
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/transaction_sender"]
+
+# =============================================================================
+# Stage 2f: zkproof-worker runtime
+# =============================================================================
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS zkproof-worker
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/zkproof_worker /usr/local/bin/zkproof_worker
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/zkproof_worker"]
+
+# =============================================================================
+# Stage 2g: db-migration runtime (special: Postgres-based image)
+# =============================================================================
+FROM cgr.dev/zama.ai/postgres:17 AS db-migration
+
+# Copy sqlx-cli from sqlx_builder
+COPY --from=sqlx_builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
+COPY --from=builder /out/resolve_database_url /usr/local/bin/resolve_database_url
+
+# Copy migrations and initialization script from source
+COPY coprocessor/fhevm-engine/db-migration/initialize_db.sh /initialize_db.sh
+COPY coprocessor/fhevm-engine/db-migration/prepare_database_url.sh /prepare_database_url.sh
+COPY coprocessor/fhevm-engine/db-migration/migrations /migrations
+COPY coprocessor/fhevm-engine/db-migration/db-scripts /db-scripts
+COPY coprocessor/fhevm-engine/db-migration/revert_coprocessor_db_state.sh /revert_coprocessor_db_state.sh
+
+# Copy user/group from builder for consistency
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+
+# Set ownership
+RUN chown -R fhevm:fhevm /initialize_db.sh /prepare_database_url.sh /migrations /db-scripts /revert_coprocessor_db_state.sh
+
+USER fhevm:fhevm
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD psql --version || exit 1
+
+ENTRYPOINT ["/bin/bash", "-c"]
