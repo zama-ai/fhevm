@@ -22,8 +22,9 @@ struct Args {
     #[arg(long)]
     database_url: Option<DatabaseURL>,
 
-    /// Postgres pool size.
-    #[arg(long, default_value_t = 4)]
+    /// Postgres pool size. The controller holds several long-lived listeners
+    /// (main loop + host/gateway readiness), so it needs headroom above those.
+    #[arg(long, default_value_t = 16)]
     database_pool_size: u32,
 
     /// Fallback poll interval (seconds) used while waiting for notifications.
