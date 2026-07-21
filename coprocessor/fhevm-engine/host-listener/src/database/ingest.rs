@@ -717,8 +717,9 @@ async fn notify_coprocessor_upgrade_proposed(
             gw_dry_run_started     = FALSE,
             last_error         = NULL,
             updated_at         = NOW()
-        WHERE upgrade_state.state IN ('LIVE', 'PAUSED')
-           OR upgrade_state.status IN ('completed', 'failed')
+        WHERE (upgrade_state.state IN ('LIVE', 'PAUSED')
+            OR upgrade_state.status IN ('completed', 'failed'))
+          AND upgrade_state.proposal_id IS DISTINCT FROM EXCLUDED.proposal_id
         "#,
     )
     .bind(stack_role)
@@ -1248,5 +1249,69 @@ mod tests {
             "gw_dry_run_started must be reset for the new proposal"
         );
         assert_eq!(row.try_get::<i64, _>("gw_start_block").unwrap(), 5);
+    }
+
+    // Replaying the same event on a finished row is a no-op — no reactivation, no notify.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_upsert_replayed_completed_proposal_is_noop() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use sqlx::Row;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        // A completed GCS cycle for proposal 1.
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block, updated_at
+            )
+            VALUES ('GCS', 'LIVE', 'completed', $1, 'v1', 100, 200, 1, NOW())
+            "#,
+        )
+        .bind(&U256::from(1u64).to_be_bytes::<32>()[..])
+        .execute(&pool)
+        .await
+        .expect("seed");
+
+        // Reprocess the very same proposal (id 1).
+        let event = ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::from(1u64),
+            softwareVersion: "v1".to_string(),
+            chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
+                chainId: 1,
+                startBlock: 100,
+                endBlock: 200,
+            }],
+            gwStartBlock: 1,
+        };
+
+        let mut tx = pool.begin().await.expect("tx");
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            true, // GCS listener
+            &event,
+        )
+        .await
+        .expect("no-op ok");
+        tx.commit().await.expect("commit");
+
+        // Row unchanged: the completed proposal was not reactivated.
+        let row = sqlx::query(
+            "SELECT state, status FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("row");
+        assert_eq!(row.try_get::<String, _>("state").unwrap(), "LIVE");
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "completed");
     }
 }
