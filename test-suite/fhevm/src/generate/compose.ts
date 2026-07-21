@@ -140,7 +140,7 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     }),
   },
   "listener-core": {
-    "listener-publisher-for-anvil": buildSpec("../../../listener", "Dockerfile"),
+    "listener-publisher-for-anvil": buildSpec("../../..", "listener/Dockerfile"),
   },
   relayer: {
     "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile"),

@@ -1,35 +1,40 @@
 # syntax=docker/dockerfile:1
 
-# ── Planner (generate dependency recipe) ─────────────────────────────
-FROM rust:1.92-slim-bookworm AS planner
-RUN cargo install cargo-chef
-WORKDIR /app
-COPY . .
-RUN cargo chef prepare --recipe-path recipe.json
+# RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see listener-docker-build.yml).
+# The default below is the fallback for local docker-compose builds, which do NOT inject it.
+ARG RUST_IMAGE_VERSION=1.97.1
 
-# ── Builder (cook deps, then build app) ──────────────────────────────
-FROM rust:1.92-slim-bookworm AS builder
-RUN apt-get update \
-    && apt-get install -y pkg-config libssl-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && cargo install cargo-chef
+# ── Builder (golden rust-glibc image ships the pinned toolchain + build deps) ──
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
+
+# Build as root; the golden image already provides the toolchain, build deps
+# (openssl-dev, gcc, build-base, ...) and the unprivileged fhevm user.
+USER root
+
+WORKDIR /app
+COPY listener/ /app/
+
 ENV SQLX_OFFLINE=true
+
+# Build with BuildKit caches for cargo registry and target directory
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/app/target,sharing=locked \
+    cargo build --release -p listener_core --features iam-auth && \
+    cp target/release/listener_core /tmp/listener_core
+
+# ── Runtime (minimal Chainguard glibc) ──────────────────────────────────
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /tmp/listener_core /app/listener_core
+COPY --from=builder --chown=fhevm:fhevm /app/crates/listener_core/migrations/ /app/migrations/
+
+USER fhevm:fhevm
 WORKDIR /app
 
-# Cook dependencies (cached unless Cargo.toml/Cargo.lock change)
-COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
-
-# Build application
-COPY . .
-RUN cargo build --release -p listener_core --features iam-auth
-
-# ── Runtime ──────────────────────────────────────────────────────────
-FROM gcr.io/distroless/cc-debian12:nonroot AS prod
-COPY --from=builder /app/target/release/listener_core /app/listener_core
-COPY --from=builder /app/crates/listener_core/migrations/ /app/migrations/
-WORKDIR /app
 ENTRYPOINT ["/app/listener_core"]
 CMD ["--config", "/config.yaml"]
 
+# ── Dev (alias of prod; required because common-docker.yml builds --target dev) ──
 FROM prod AS dev
