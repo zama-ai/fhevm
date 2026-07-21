@@ -40,7 +40,7 @@ everything below uses Solana-native building blocks.
    └────┘ └────┘ └────┘            (adds while                     mint shares
                                     encrypted)                        │
    ┌────────────────────────◄──────────────────────────────────────┘
-   │  each user gets encrypted shares: e(amount) × public share rate
+   │  each user's encrypted cut: e(amount) × batch shares ÷ batch total
 ```
 
 ## How a deposit works, step by step
