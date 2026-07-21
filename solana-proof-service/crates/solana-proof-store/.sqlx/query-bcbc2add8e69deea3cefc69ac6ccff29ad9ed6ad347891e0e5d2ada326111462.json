@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT checkpoint_slot, checkpoint_block_hash\n            FROM solana_proof_progress\n            WHERE singleton = 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "checkpoint_slot",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "checkpoint_block_hash",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "bcbc2add8e69deea3cefc69ac6ccff29ad9ed6ad347891e0e5d2ada326111462"
+}

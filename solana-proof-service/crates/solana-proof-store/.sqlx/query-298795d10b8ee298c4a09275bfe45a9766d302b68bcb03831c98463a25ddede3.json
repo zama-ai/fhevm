@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT commitment\n            FROM solana_proof_leaves\n            WHERE lineage = $1\n            ORDER BY leaf_index ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "commitment",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "298795d10b8ee298c4a09275bfe45a9766d302b68bcb03831c98463a25ddede3"
+}

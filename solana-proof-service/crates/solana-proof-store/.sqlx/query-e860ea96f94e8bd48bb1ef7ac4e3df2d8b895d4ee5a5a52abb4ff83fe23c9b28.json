@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO solana_proof_blocks (\n                slot,\n                block_hash,\n                parent_slot,\n                parent_hash,\n                block_time,\n                block_height,\n                executed_transaction_count\n            ) VALUES ($1, $2, $3, $4, $5, $6, $7)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e860ea96f94e8bd48bb1ef7ac4e3df2d8b895d4ee5a5a52abb4ff83fe23c9b28"
+}

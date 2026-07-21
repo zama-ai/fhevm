@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT transaction_index, signature, succeeded, is_vote\n            FROM solana_proof_transactions\n            WHERE block_slot = $1\n            ORDER BY transaction_index ASC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "transaction_index",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "signature",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "succeeded",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_vote",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "56f03ac50a4f9f859807a8c100778f6ac7f41b7a547ec53f150d3a436a995b39"
+}

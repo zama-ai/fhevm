@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE solana_proof_progress\n            SET\n                integrity_halted = TRUE,\n                integrity_halt_reason = $1,\n                updated_at = NOW()\n            WHERE singleton = 1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c92897bce4652213511bbf58f479aaa6ffaa4cd6273338b2c2974a6c78ee5bf8"
+}

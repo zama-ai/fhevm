@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE solana_proof_progress\n            SET\n                checkpoint_slot = $1,\n                checkpoint_block_hash = $2,\n                history_start_slot = CASE\n                    WHEN $3 THEN $1\n                    ELSE history_start_slot\n                END,\n                history_start_block_hash = CASE\n                    WHEN $3 THEN $2\n                    ELSE history_start_block_hash\n                END,\n                history_complete = CASE\n                    WHEN $3 THEN FALSE\n                    ELSE history_complete\n                END,\n                updated_at = NOW()\n            WHERE singleton = 1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "52811aa1ee09cdb698721d04ea106588ef9bbd8482871e70a712b532f3908207"
+}

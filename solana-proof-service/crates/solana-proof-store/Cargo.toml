@@ -1,0 +1,27 @@
+[package]
+name = "solana-proof-store"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Atomic PostgreSQL store and sequential ingest runner for Solana ACL MMR proofs"
+
+[dependencies]
+borsh = { workspace = true }
+futures = { workspace = true }
+sha2 = { workspace = true }
+solana-proof-source = { path = "../solana-proof-source" }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+zama-host = { workspace = true }
+zama-solana-acl = { workspace = true }
+
+[dev-dependencies]
+anchor-lang = "1.0.2"
+borsh = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

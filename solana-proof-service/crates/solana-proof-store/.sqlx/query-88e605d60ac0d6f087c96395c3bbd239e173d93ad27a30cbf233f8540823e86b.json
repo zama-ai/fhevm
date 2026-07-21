@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE solana_proof_progress\n            SET history_complete = $1, updated_at = NOW()\n            WHERE singleton = 1\n              AND integrity_halted = FALSE\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "88e605d60ac0d6f087c96395c3bbd239e173d93ad27a30cbf233f8540823e86b"
+}

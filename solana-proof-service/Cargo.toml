@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/solana-proof-source"]
+members = [
+    "crates/solana-proof-source",
+    "crates/solana-proof-store",
+]
 
 [workspace.package]
 authors = ["Zama"]
@@ -8,13 +11,25 @@ edition = "2021"
 license = "BSD-3-Clause-Clear"
 
 [workspace.dependencies]
+borsh = { version = "1", features = ["derive"] }
 bs58 = "0.5.1"
 futures = "0.3.32"
+hex = "0.4.3"
 sha2 = "0.10"
+sqlx = { version = "0.8.6", default-features = false, features = [
+    "macros",
+    "migrate",
+    "postgres",
+    "runtime-tokio",
+] }
 thiserror = "2.0.18"
-tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "time"] }
+tokio-util = "0.7.18"
 # tls-webpki-roots: Channel::connect must accept https:// Yellowstone endpoints
 # (plaintext still works for local geyser).
 tonic = { version = "0.12.3", features = ["tls-webpki-roots"] }
+tracing = "0.1.44"
 yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v5.0.1+solana.2.1.21", default-features = false, features = ["tonic", "tonic-compression"] }
+zama-host = { path = "../solana/programs/zama-host", features = ["no-entrypoint"] }
+zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 zama-solana-transaction = { path = "../solana/crates/zama-solana-transaction" }

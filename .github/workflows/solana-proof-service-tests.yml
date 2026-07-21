@@ -31,6 +31,8 @@ jobs:
               - .github/workflows/solana-proof-service-tests.yml
               - solana-proof-service/**
               - solana/crates/zama-solana-transaction/**
+              - solana/crates/zama-solana-acl/**
+              - solana/programs/zama-host/**
 
   tests:
     name: solana-proof-service-tests/tests
@@ -59,3 +61,60 @@ jobs:
       - name: Tests
         working-directory: solana-proof-service
         run: make test
+
+  test-db:
+    name: solana-proof-service-tests/test-db
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.rust-changed == 'true' }}
+    permissions:
+      contents: 'read'
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    services:
+      postgres:
+        # Match relayer-tests pin.
+        image: cgr.dev/zama.ai/postgres:17.9@sha256:d42847b7c5f9ece73655164588b2387dcd5fadd618ea64761c19d3484498cef0
+        credentials:
+          username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as solana-e2e / relayer-tests
+          password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as solana-e2e / relayer-tests
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: solana_proof_service
+        ports:
+          - 5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d solana_proof_service"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SQLX_OFFLINE: 'true'
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: solana_proof_service
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Set database URL
+        env:
+          DB_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          echo "DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}" >> "$GITHUB_ENV"
+
+      - name: Setup Rust toolchain file
+        run: cp solana-proof-service/rust-toolchain.toml .
+
+      - name: Rust setup
+        uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          workspaces: solana-proof-service
+          key: rust-test-db-solana-proof-service
+
+      - name: Postgres integration tests
+        working-directory: solana-proof-service
+        run: make test-db
