@@ -33,7 +33,9 @@ const Configuration = {
         'charts',
         'common',
         'relayer',
-        'listener'
+        'listener',
+        'solana',
+        'solana-proof-service'
       ]
     ],
   },
