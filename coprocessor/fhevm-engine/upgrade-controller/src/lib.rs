@@ -1040,6 +1040,9 @@ async fn rollback_dry_run(pool: &Pool<Postgres>, end_block: i64) -> Result<bool,
     Ok(true)
 }
 
+/// GCS row fields reconcile reads: (state, host_chain_id, start_block, gw_start_block).
+type ReconcileRow = (String, Option<i64>, Option<i64>, Option<i64>);
+
 /// Advance the upgrade from durable state: re-arm readiness, resume a cutover, or
 /// cut over on both latches. `resume_activated` is boot-only.
 async fn reconcile(
@@ -1051,7 +1054,7 @@ async fn reconcile(
     if !gcs_mode {
         return Ok(());
     }
-    let row: Option<(String, Option<i64>, Option<i64>, Option<i64>)> = sqlx::query_as(
+    let row: Option<ReconcileRow> = sqlx::query_as(
         "SELECT state, host_chain_id, start_block, gw_start_block
            FROM upgrade_state WHERE stack_role = 'GCS' AND status = 'in_progress'",
     )
