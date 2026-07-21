@@ -23,13 +23,13 @@ pub struct ProtocolConfigArgs {
     pub address: String,
 
     #[arg(
-        id = "ethereum_chain_id",
-        long = "ethereum-chain-id",
-        value_name = "ETHEREUM_CHAIN_ID",
-        env = "ETHEREUM_CHAIN_ID",
-        help = "Ethereum host chain id. The listener decodes \
-                ProtocolConfig.CoprocessorUpgradeProposed only when its own chain id matches. \
-                Omit on listeners that don't run against the Ethereum host chain."
+        id = "canonical_protocol_config_chain_id",
+        long = "canonical-protocol-config-chain-id",
+        value_name = "CANONICAL_PROTOCOL_CONFIG_CHAIN_ID",
+        env = "CANONICAL_PROTOCOL_CONFIG_CHAIN_ID",
+        help = "Chain id of the canonical chain hosting the ProtocolConfig contract. \
+                The listener decodes ProtocolConfig.CoprocessorUpgradeProposed only when its \
+                own chain id matches. Omit on listeners that don't run against the canonical chain."
     )]
     pub chain_id: Option<u64>,
 }
@@ -48,21 +48,21 @@ impl ProtocolConfigArgs {
     }
 }
 
-/// True iff `ethereum_chain_id == Some(chain_id)`. Rejects `Some(0)`; logs the resolved role.
+/// True iff `canonical_protocol_config_chain_id == Some(chain_id)`. Rejects `Some(0)`; logs the resolved role.
 pub fn resolve_protocol_config_listener(
-    ethereum_chain_id: Option<u64>,
+    canonical_protocol_config_chain_id: Option<u64>,
     chain_id: u64,
 ) -> Result<bool> {
-    if matches!(ethereum_chain_id, Some(0)) {
+    if matches!(canonical_protocol_config_chain_id, Some(0)) {
         return Err(anyhow!(
-            "--ethereum-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
+            "--canonical-protocol-config-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
         ));
     }
-    let is_listener = ethereum_chain_id == Some(chain_id);
+    let is_listener = canonical_protocol_config_chain_id == Some(chain_id);
     info!(
         is_protocol_config_listener = is_listener,
         chain_id,
-        ethereum_chain_id = ?ethereum_chain_id,
+        canonical_protocol_config_chain_id = ?canonical_protocol_config_chain_id,
         "Resolved ProtocolConfig listener role",
     );
     Ok(is_listener)

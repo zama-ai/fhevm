@@ -81,9 +81,10 @@ commonConfig:
   kmsGenerationContractAddress: {}  # optional — e.g. 0x...
   protocolConfigContractAddress: {}  # optional — e.g. 0x...
 
-  # Ethereum host chain id. Only the host-listener whose own chain id matches
-  # this value decodes ProtocolConfig.CoprocessorUpgradeProposed events.
-  ethereumChainId: ""
+  # Chain id of the canonical chain hosting the ProtocolConfig contract. Only
+  # the host-listener whose own chain id matches this value decodes
+  # ProtocolConfig.CoprocessorUpgradeProposed events.
+  canonicalProtocolConfigChainId: ""
 
   # Coprocessor stack version baked into the service images (the value printed
   # by `<binary> --stack-version`). When set, it is surfaced as the

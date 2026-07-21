@@ -61,4 +61,4 @@ jobs:
       - name: "Run JS/TS tests"
         run: npm --workspace=host-contracts run test
       - name: "Run forge tests"
-        run: "cd host-contracts && forge soldeer install && forge test"
+        run: "cd host-contracts && PROVISION_BRIDGE_PROXY=true HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && forge soldeer install && forge test"

@@ -52,6 +52,14 @@ struct Args {
 
     #[arg(
         long,
+        default_value = None,
+        help = "Initial sync block used only when no poller state exists yet; an existing anchor always wins (can be negative from last block)",
+        allow_hyphen_values = true
+    )]
+    seed_start_block: Option<i64>,
+
+    #[arg(
+        long,
         default_value_t = 15,
         help = "Depth behind the head considered final (in blocks)"
     )]
@@ -175,7 +183,7 @@ async fn main() -> anyhow::Result<()> {
 
     if matches!(args.protocol_config.chain_id, Some(0)) {
         return Err(anyhow::anyhow!(
-            "--ethereum-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
+            "--canonical-protocol-config-chain-id=0 is not a valid chain id; omit the flag to disable ProtocolConfig decoding"
         ));
     }
     let protocol_config_address = args.protocol_config.parsed_address()?;
@@ -220,12 +228,13 @@ async fn main() -> anyhow::Result<()> {
         max_http_retries: args.max_http_retries,
         rpc_compute_units_per_second: args.rpc_compute_units_per_second,
         health_port: args.health_port,
+        seed_start_block: args.seed_start_block,
         dependence_cache_size: args.dependence_cache_size,
         dependence_by_connexity: args.dependence_by_connexity,
         dependence_cross_block: args.dependence_cross_block,
         dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         gcs_mode,
-        ethereum_chain_id: args.protocol_config.chain_id,
+        canonical_protocol_config_chain_id: args.protocol_config.chain_id,
     };
 
     run_poller(config).await

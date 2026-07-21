@@ -3,6 +3,8 @@ import type {
   GeneratePrivateKeyReturnType,
   GetPublicKeyParameters,
   GetPublicKeyReturnType,
+  HashTypedDataParameters,
+  HashTypedDataReturnType,
   MnemonicToAccountParameters,
   MnemonicToAccountReturnType,
   RecoverAddressParameters,
@@ -21,8 +23,8 @@ import {
   recoverTypedDataAddress,
   signTypedData,
 } from './ethereum.js';
-import { bytesToHex } from '../../core/base/bytes.js';
-import { recoverAddress } from 'viem';
+import { asBytes32Hex, bytesToHex } from '../../core/base/bytes.js';
+import { hashTypedData, recoverAddress } from 'viem';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -55,6 +57,16 @@ export const cleartextEthereumModule: CleartextEthereumModuleFactory = () => {
       },
       recoverAddress: (parameters: RecoverAddressParameters): Promise<RecoverAddressReturnType> => {
         return recoverAddress(parameters) as Promise<ChecksummedAddress>;
+      },
+      hashTypedData: (parameters: HashTypedDataParameters): HashTypedDataReturnType => {
+        return asBytes32Hex(
+          hashTypedData({
+            domain: parameters.domain,
+            types: parameters.types as Record<string, Array<{ name: string; type: string }>>,
+            primaryType: parameters.primaryType,
+            message: parameters.message,
+          }),
+        );
       },
     }),
   });

@@ -184,12 +184,13 @@ async fn poller_catches_up_to_safe_tip(
         max_http_retries: 0,
         rpc_compute_units_per_second: 1000,
         health_port: 18081,
+        seed_start_block: Some(0),
         dependence_cache_size: 10_000,
         dependence_by_connexity: false,
         dependence_cross_block: false,
         dependent_ops_max_per_chain: 0,
         gcs_mode: false,
-        ethereum_chain_id: Some(chain_id.as_u64()),
+        canonical_protocol_config_chain_id: Some(chain_id.as_u64()),
     };
 
     let poller_handle = tokio::spawn(run_poller(config));

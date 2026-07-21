@@ -17,12 +17,12 @@ import type { TkmsPrivateKey } from '../../types/tkms-p.js';
 import type { BytesHex } from '../../types/primitives.js';
 import type { KmsSigncryptedShare, KmsSigncryptedSharesMetadata } from '../../types/kms-p.js';
 import type { ClearValue } from '../../types/encryptedTypes-p.js';
-import { assertIsKmsExtraData } from '../../kms/kmsExtraData.js';
 import { ensure0x, remove0x } from '../../base/string.js';
 import { getMetadata, getShares } from '../../kms/KmsSigncryptedShares-p.js';
 import { asBytesHex, bytesToHex, hexToBytes } from '../../base/bytes.js';
 import { bigintToClearValueType } from '../../handle/FheType.js';
 import { createClearValue } from '../../handle/ClearValue.js';
+import { assertIsKmsExtraDataBytesHex } from '../../kms/kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -71,8 +71,8 @@ export async function decryptAndReconstruct(
     }
   }
 
-  const extraData: BytesHex = ensure0x(firstExtraData);
-  assertIsKmsExtraData(extraData, {});
+  const extraDataBytesHex: BytesHex = ensure0x(firstExtraData);
+  assertIsKmsExtraDataBytesHex(extraDataBytesHex, {});
 
   for (let i = 0; i < sharesArray.length; ++i) {
     const s = sharesArray[i];
@@ -100,13 +100,13 @@ export async function decryptAndReconstruct(
   }
 
   const maskedCleartexts = decoded[0] as bigint[];
-  const signedExtraData = decoded[1] as BytesHex;
+  const signedExtraDataBytesHex = decoded[1] as BytesHex;
 
   const cleartexts: bigint[] = _xorUnmaskWithPublicKey(publicKeySecp256k1, maskedCleartexts);
 
-  if (extraData !== signedExtraData) {
+  if (extraDataBytesHex !== signedExtraDataBytesHex) {
     throw new Error(
-      `extraData mismatch: share extraData="${extraData}" does not match the signed payload's extraData="${signedExtraData}".`,
+      `extraData mismatch: share extraData="${extraDataBytesHex}" does not match the signed payload's extraData="${signedExtraDataBytesHex}".`,
     );
   }
 

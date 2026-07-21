@@ -1,12 +1,13 @@
-import type { BytesHex, ChecksummedAddress, Uint8Number } from '../types/primitives.js';
+import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { KmsExtraData } from '../types/kms-p.js';
 import { getHostContractVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import { createCachedFetch } from '../base/cachedFetch.js';
-import { assertIsKmsExtraData, fromKmsExtraData } from '../kms/kmsExtraData.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
 import { isUint8 } from '../base/uint.js';
 import { getContextSignersAndThresholdFromExtraDataAbi } from './abi-fragments/fragments.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
+import { assertIsKmsExtraData } from '../kms/kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -17,7 +18,7 @@ type Context = {
 
 type Parameters = {
   readonly kmsVerifierAddress: ChecksummedAddress;
-  readonly extraData: BytesHex;
+  readonly extraData: KmsExtraData;
 };
 
 type ReturnType = {
@@ -30,9 +31,9 @@ type ReturnType = {
 const cachedGetKmsContextSignersAndThresholdFromExtraData = createCachedFetch<Context, Parameters, ReturnType>({
   executeFn: _getKmsContextSignersAndThresholdFromExtraData,
   cacheKeyFn: (context, params) => {
-    const { kmsContextId } = fromKmsExtraData(params.extraData);
-    const contextIdHex = kmsContextId.toString(16).padStart(64, '0');
-    return `${context.runtime.uid.toLowerCase()}:${params.kmsVerifierAddress.toLowerCase()}:${contextIdHex}`;
+    const kmsContextId = params.extraData.kmsContextId;
+    const kmsContextIdHex = kmsContextId.toString(16).padStart(64, '0');
+    return `${context.runtime.uid.toLowerCase()}:${params.kmsVerifierAddress.toLowerCase()}:${kmsContextIdHex}`;
   },
   // Permanent cache: signers and threshold are immutable per context ID.
 });
@@ -76,10 +77,12 @@ async function _getKmsContextSignersAndThresholdFromExtraData(
 
   const trustedClient = getTrustedClient(context);
 
+  const extraDataBytesHex = parameters.extraData.toBytesHex();
+
   const res = await context.runtime.ethereum.readContract(trustedClient, {
     address: parameters.kmsVerifierAddress,
     abi: getContextSignersAndThresholdFromExtraDataAbi,
-    args: [parameters.extraData],
+    args: [extraDataBytesHex],
     functionName: getContextSignersAndThresholdFromExtraDataAbi[0].name,
   });
 

@@ -108,6 +108,12 @@ async function main(): Promise<void> {
   const client = createFhevmClient({ chain: sepolia, provider });
   console.log('  uid:', client.uid);
 
+  // Preload WASM and resolve protocol/TFHE/TKMS versions before encrypting or
+  // decrypting. `await client.ready` (or `await client.init()`) is required
+  // before encryptValues / generateTransportKeyPair / decryptValue.
+  await client.ready;
+  console.log('  ready');
+
   // ════════════════════════════════════════════════════════════════════════
   // ENCRYPTION
   // ════════════════════════════════════════════════════════════════════════
@@ -185,7 +191,7 @@ async function main(): Promise<void> {
       transportKeyPair,
       contractAddresses: [FHE_COUNTER_ADDRESS],
       startTimestamp: now,
-      durationDays: 1,
+      durationSeconds: 24 * 60 * 60,
       signerAddress: wallet.address,
       signer: wallet,
     });

@@ -1,20 +1,22 @@
-import type { BytesHex, ChecksummedAddress, Uint256BigInt, Uint8Number } from '../types/primitives.js';
+import type { ChecksummedAddress, Uint256BigInt, Uint8Number } from '../types/primitives.js';
 import type { kmsBrand } from '../types/kms.js';
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { KmsExtraData } from '../types/kms-p.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { addressToChecksummedAddress } from '../base/address.js';
 import { DuplicateSignerError, ThresholdSignerError, UnknownSignerError } from '../errors/SignersError.js';
 import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
-import {
-  assertIsKmsExtraData,
-  EXTRA_DATA_V0,
-  EXTRA_DATA_V1,
-  EXTRA_DATA_V2,
-  toKmsExtraData,
-} from '../kms/kmsExtraData.js';
 import { assertIsNonEmptyString, ensure0x } from '../base/string.js';
+import {
+  assertIsKmsExtraDataBytesHex,
+  createKmsExtraData,
+  equalsKmsExtraData,
+  fromKmsExtraDataBytesHex,
+  isKmsExtraData,
+  validateKmsExtraDataParams,
+} from '../kms/kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -124,6 +126,8 @@ export function createKmsSignersContext(
 ): KmsSignersContext {
   const { kmsVerifierAddress: address, kmsContextId, kmsEpochId, kmsSigners, kmsSignerThreshold } = parameters;
 
+  validateKmsExtraDataParams({ kmsContextId: parameters.kmsContextId, kmsEpochId: parameters.kmsEpochId });
+
   return new KmsSignersContextImpl(PRIVATE_TOKEN, owner, {
     address: addressToChecksummedAddress(address),
     kmsContextId,
@@ -135,31 +139,12 @@ export function createKmsSignersContext(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export function kmsSignersContextToExtraData(kmsSignersContext: KmsSignersContext): BytesHex {
+export function kmsSignersContextToExtraData(kmsSignersContext: KmsSignersContext): KmsExtraData {
   assertIsKmsSignersContext(kmsSignersContext, {});
-
-  if (kmsSignersContext.id === 0n) {
-    return toKmsExtraData({
-      version: EXTRA_DATA_V0,
-      kmsContextId: 0n as Uint256BigInt,
-      kmsEpochId: 0n as Uint256BigInt,
-    });
-  }
-
-  if (kmsSignersContext.epochId === 0n) {
-    return toKmsExtraData({
-      version: EXTRA_DATA_V1,
-      kmsContextId: kmsSignersContext.id,
-      kmsEpochId: 0n as Uint256BigInt,
-    });
-  }
-
-  return toKmsExtraData({
-    version: EXTRA_DATA_V2,
-    kmsContextId: kmsSignersContext.id,
-    kmsEpochId: kmsSignersContext.epochId,
-  });
+  return createKmsExtraData({ kmsContextId: kmsSignersContext.id, kmsEpochId: kmsSignersContext.epochId });
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Asserts that the given `extraData` is a valid KMS extra data string and
@@ -176,15 +161,23 @@ export function assertExtraDataMatchesKmsSingersContext(
   options: { subject?: string } & ErrorMetadataParams,
 ): void {
   const { extraData, kmsSignersContext } = parameters;
-  assertIsNonEmptyString(extraData);
 
-  const sanitizedExtraData = ensure0x(extraData);
-  assertIsKmsExtraData(sanitizedExtraData, options);
+  let sanitizedExtraData: KmsExtraData;
+  if (isKmsExtraData(extraData)) {
+    sanitizedExtraData = extraData;
+  } else {
+    assertIsNonEmptyString(extraData);
+    const sanitizedExtraDataBytesHex = ensure0x(extraData);
+    assertIsKmsExtraDataBytesHex(sanitizedExtraDataBytesHex, options);
+    sanitizedExtraData = fromKmsExtraDataBytesHex(sanitizedExtraDataBytesHex);
+  }
 
   const expectedExtraData = kmsSignersContextToExtraData(kmsSignersContext);
 
-  if (sanitizedExtraData !== expectedExtraData) {
-    throw new Error(`extraData "${extraData}" does not match KmsSignersContext extraData "${expectedExtraData}".`);
+  if (!equalsKmsExtraData(sanitizedExtraData, expectedExtraData)) {
+    throw new Error(
+      `extraData "${sanitizedExtraData.toBytesHex()}" does not match KmsSignersContext extraData "${expectedExtraData.toBytesHex()}".`,
+    );
   }
 }
 
