@@ -229,41 +229,39 @@ scDeploy:
 scUpgrade:
   enabled: false
 
-  # Configuration for old contracts (used during upgrade process)
-  # Set the tag to the version currently deployed on the target chain: the
-  # initContainer copies its contracts to /app/oldContracts, referenced by the
-  # --current-implementation flags below.
+  # Configuration for old contracts (used during upgrade process).
+  # The initContainer copies this image's contracts to /app/oldContracts; the
+  # --current-implementation flags below use them as the upgrade's storage-layout
+  # baseline. Set the tag to the host version deployed on the target chain.
+  #
+  # Host sources were unchanged across 0.13.x (0.13.1-0.13.3 were gateway/tooling
+  # patches), so any 0.13.x tag resolves to the same host implementation; v0.13.0
+  # is the baseline here. Gateway deployments instead use
+  # ghcr.io/zama-ai/fhevm/gateway-contracts at v0.13.1.
   oldContracts:
     image:
       name: ghcr.io/zama-ai/fhevm/host-contracts
-      tag: v0.13.1
+      tag: v0.13.0
 
   # Note: The upgrade process uses the new contracts image from scDeploy.image
 
-  # Upgrade commands executed during contract upgrade.
-  #
-  # Only upgrade contracts whose implementation changed in the release: every
-  # task:upgradeX calls the new reinitializeVX, so re-running it on a contract
-  # whose REINITIALIZER_VERSION did not bump reverts with InvalidInitialization.
-  # Reference lists below are for 0.13.1 -> 0.14.0.
-  #
-  # Common optional flags: --use-internal-proxy-address true (resolve proxies
-  # from the mounted addresses/ dir instead of env), --verify-contract false
-  # (skip block explorer verification).
   upgradeCommands:
     # =========================================================================
     # ==========================  GATEWAY =====================================
     # =========================================================================
     # Decryption is the only gateway contract changed in 0.14.0
-    # (reinitializer 6 -> 7, reinitializeV6 takes no arguments).
+    # (reinitializer 6 -> 7, reinitializeV6 takes no arguments). Gateway
+    # deployments take oldContracts from gateway-contracts:v0.13.1 (see note above).
     - npx hardhat task:upgradeDecryption --current-implementation oldContracts/Decryption.sol:Decryption --new-implementation contracts/Decryption.sol:Decryption
 
     # =========================================================================
     # ==========================  HOST    =====================================
     # =========================================================================
-    # InputVerifier and PauserSet are unchanged in 0.14.0: do not upgrade them.
-    # The 0.13.x MIGRATION_* env block and the task:*FromMigration /
-    # task:assertKmsMigrationSucceeded tasks were removed in 0.14.0.
+    # ConfidentialBridge is new in 0.14.0: provision its empty proxy FIRST,
+    # before task:upgradeACL, because the new ACL bakes the bridge address in as
+    # a compile-time constant. task:deployBridge (last) upgrades that proxy to
+    # the real implementation (no-op without a LayerZero endpoint).
+    - npx hardhat task:deployEmptyProxyForConfidentialBridge
 
     # reinitializeV2 requires the per-node KMS_NODE_* env vars plus
     # KMS_SOFTWARE_VERSION and KMS_PCR_VALUES (thresholds read from storage).
@@ -279,6 +277,10 @@ scUpgrade:
     - npx hardhat task:upgradeFHEVMExecutor --current-implementation oldContracts/FHEVMExecutor.sol:FHEVMExecutor --new-implementation contracts/FHEVMExecutor.sol:FHEVMExecutor
 
     - npx hardhat task:upgradeACL --current-implementation oldContracts/ACL.sol:ACL --new-implementation contracts/ACL.sol:ACL
+
+    # Upgrades the bridge empty proxy (provisioned above) to the real
+    # ConfidentialBridge; skips when no LayerZero endpoint is configured.
+    - npx hardhat task:deployBridge
 
 # -----------------------------------------------------------------------------
 # KMS context switch (0.14.0, operational — not part of deploy/upgrade)
