@@ -1,5 +1,5 @@
 //! Solana host listener: reconstructs coprocessor work from confirmed Yellowstone
-//! transaction updates and ingests it into the shared database.
+//! sealed blocks and ingests it into the shared database.
 
 use std::{str::FromStr, time::Duration};
 
@@ -15,7 +15,7 @@ use fhevm_engine_common::{chain_id::ChainId, telemetry, utils::DatabaseURL};
 use host_listener::{
     cmd::DEFAULT_DEPENDENCE_CACHE_SIZE,
     database::tfhe_event_propagate::Database,
-    solana_grpc_listener::{run, SolanaGrpcListenerConfig},
+    solana_grpc_listener::{run, SolanaGrpcListenerConfig, StartPosition},
     solana_reconstruct::{parse_host_config, HOST_CONFIG_SEED},
 };
 
@@ -121,10 +121,10 @@ async fn main() -> Result<()> {
         &SolanaGrpcListenerConfig {
             grpc_url: args.grpc_url,
             x_token: args.grpc_x_token,
-            rpc_fallback_url: args.url,
             program_id: program_id.to_string(),
             chain_id: host_config_chain_id,
         },
+        StartPosition::Tip,
         cancel,
     )
     .await

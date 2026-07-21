@@ -10,7 +10,7 @@
     "channel_capacity": "100_000",
     "unary_concurrency_limit": 100,
     "unary_disabled": false,
-    "replay_stored_slots": 0,
+    "replay_stored_slots": 256,
     "filter_name_size_limit": 128,
     "filter_names_size_limit": 4096,
     "filter_names_cleanup_interval": "1s",
