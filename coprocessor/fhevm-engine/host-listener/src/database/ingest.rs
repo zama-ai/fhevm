@@ -672,6 +672,24 @@ async fn notify_coprocessor_upgrade_proposed(
         return Ok(());
     };
 
+    // uint64 contract fields can exceed i64::MAX; reject out-of-range values so a bad
+    // proposal is skipped instead of failing the whole block ingest.
+    let (Ok(start_block), Ok(end_block), Ok(gw_start_block)) = (
+        i64::try_from(window.startBlock),
+        i64::try_from(window.endBlock),
+        i64::try_from(event.gwStartBlock),
+    ) else {
+        warn!(
+            listener_chain_id,
+            proposal_id = %proposal_id_hex,
+            start_block = window.startBlock,
+            end_block = window.endBlock,
+            gw_start_block = event.gwStartBlock,
+            "Rejecting CoprocessorUpgradeProposed: block field exceeds i64 range"
+        );
+        return Ok(());
+    };
+
     // Guarded singleton upsert in the decode tx (durable); NOTIFY below fires only when a row applied.
     let stack_role = if gcs_mode { "GCS" } else { "BCS" };
     let result = sqlx::query(
@@ -706,9 +724,9 @@ async fn notify_coprocessor_upgrade_proposed(
     .bind(stack_role)
     .bind(&proposal_id_bytes[..])
     .bind(&event.softwareVersion)
-    .bind(window.startBlock as i64)
-    .bind(window.endBlock as i64)
-    .bind(event.gwStartBlock as i64)
+    .bind(start_block)
+    .bind(end_block)
+    .bind(gw_start_block)
     .bind(listener_chain_id as i64)
     .execute(&mut **tx)
     .await?;
@@ -735,9 +753,9 @@ async fn notify_coprocessor_upgrade_proposed(
     let payload = serde_json::json!({
         "proposal_id":        &proposal_id_hex,
         "chain_id":           listener_chain_id as i64,
-        "start_block":        window.startBlock as i64,
-        "end_block":          window.endBlock as i64,
-        "gw_start_block":     event.gwStartBlock as i64,
+        "start_block":        start_block,
+        "end_block":          end_block,
+        "gw_start_block":     gw_start_block,
         "version":            &event.softwareVersion,
     });
 
