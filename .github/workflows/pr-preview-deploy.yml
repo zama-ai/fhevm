@@ -1243,6 +1243,37 @@ jobs:
           done
           sleep 60
 
+      - name: Deploy coprocessor-poller (per-party key/CRS activation)
+        # One poller release PER COPROCESSOR PARTY (coprocessor-poller-<i>), the
+        # DB-side background processor that, on a pending kms_key_activation /
+        # kms_crs_activation row, DOWNLOADS the ServerKey/PublicKey/CRS material
+        # from the KMS public-vault S3 and fills the `keys`/`crs` tables the
+        # tfhe/zkproof/sns workers read (see values-coprocessor-poller-e2e.yaml).
+        # Mirrors zama-zws/gitops's eth-coproc-listener-poller. Neither the
+        # listener producer nor the host-listener-consumer performs that S3
+        # download - only the poller does.
+        #
+        # ORDER MATTERS: this MUST run BEFORE "Trigger KMS keygen" below. The
+        # poller anchors at MAX(block) of the (currently empty) coprocessor DB,
+        # i.e. block 0 on a fresh anvil, and finalizes blocks IN ORDER as it
+        # walks forward. Started before keygen it finalizes the keygen blocks the
+        # moment they are mined, so `keys`/`crs` populate within seconds. Started
+        # AFTER keygen it would anchor past those blocks and have to grind the
+        # entire finalization backlog back down first (minutes), during which the
+        # activation gate (block_status='finalized') is unmet and every worker
+        # fails "No keys found in database". Shares postgres-coprocessor-<i> with
+        # the coprocessor-<i> release, which already ran dbMigration (this release
+        # has dbMigration disabled).
+        run: |
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            helm upgrade --install "coprocessor-poller-${i}" "${COPROCESSOR_CHART}" --version "${COPROCESSOR_CHART_VERSION}" \
+              -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-poller-e2e.yaml \
+              --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
+              --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
+              --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" &
+          done
+          wait
+
       - name: Create kms-connector-tx-sender secrets
         env:
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}

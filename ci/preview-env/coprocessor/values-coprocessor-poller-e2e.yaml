@@ -1,0 +1,105 @@
+# coprocessor chart values overlay deploying ONLY the host-listener POLLER, as a
+# dedicated release per coprocessor party (coprocessor-poller-<i>). Mirrors
+# zama-zws/gitops's eth-coproc-listener-poller app (a standalone release with
+# everything but the poller disabled).
+#
+# WHY a separate release (not a role inside values-coprocessor-e2e.yaml): the
+# poller is the DB-side background processor. It polls the coprocessor DB over
+# HTTP RPC and, on a pending kms_key_activation_events / crs row, DOWNLOADS the
+# ServerKey/PublicKey/CRS material from the KMS public-vault S3 (storage_urls in
+# that row) and fills the `keys` / `crs` tables. The dedicated `listener`
+# producer + the coprocessor's host-listener-consumer only RECORD the activation
+# event (status=pending); neither performs the S3 download. Without the poller
+# those rows stay pending forever, `keys` is empty, and every tfhe/zkproof worker
+# fails "Missing keys: No keys found in database" - so no FHE op, no input
+# verification, and the e2e tests time out.
+#
+# Deployed as (per party i, see pr-preview-deploy.yml):
+#   helm upgrade --install coprocessor-poller-<i> \
+#     oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor \
+#     -n <namespace> -f this-file \
+#     --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-<i>:5432" \
+#     --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-<i>" \
+#     --set-string "hostListenerPollerShared.image.tag=<coprocessor_host_listener tag>"
+#
+# The main coprocessor-<i> release already ran dbMigration and seeded host_chains,
+# so dbMigration is disabled here (a second migration Job would also fail seeding
+# host_chains, which needs the chains[] env the migration Job derives).
+commonConfig:
+  # Same in-cluster Postgres the coprocessor-<i> release uses (postgres-coprocessor-<i>,
+  # overridden per party via --set). Shared DB: the poller writes the same `keys`
+  # table the workers read.
+  databaseUser: {value: "zama"}
+  databasePassword: {value: "zama"}
+  databaseEndpoint: {value: "postgres-coprocessor:5432"}
+  databaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e"
+  databaseAuthMode: password
+  # The poller reads the host chain over HTTP RPC (not WebSocket).
+  hostChainWsUrl: "ws://anvil-host-anvil-node:8545"
+  hostChainHttpUrl: "http://anvil-host-anvil-node:8545"
+  aclContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
+  fhevmExecutorContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
+  kmsGenerationContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+  protocolConfigContractAddress:
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+
+# Migration + real-time listener already handled by the coprocessor-<i> release.
+dbMigration:
+  enabled: false
+hostListenerShared:
+  enabled: false
+
+hostListenerPollerShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
+  replicas: 1
+  # IRSA SA (coprocessor-<i>, from coprocessor-infra-<i>) - REQUIRED: the poller
+  # downloads key material from S3, so it needs the bucket-scoped IAM role.
+  # Overridden per party via --set in the workflow.
+  serviceAccountName: coprocessor
+  # --dependence-cross-block matches the production poller (resolves FHE-op
+  # dependencies spanning blocks). --finality-lag kept small: single-node anvil
+  # never reorgs, so events don't need to be held back (prod uses 15 on a live
+  # chain). --seed-start-block was a removed v0.11.0-era flag; the v0.13.0 poller
+  # starts cleanly with no prior state on a fresh e2e namespace.
+  extraArgs:
+    - --log-level=INFO
+    - --dependence-cross-block
+    - --finality-lag=1
+  # Light DB/RPC poller - no FHE compute, so the generic zws-pool node pool (same
+  # as the listener / Redis / Postgres releases), not the heavy coprocessor pool.
+  resources:
+    requests: {cpu: "500m", memory: 1Gi}
+    limits: {cpu: "1", memory: 2Gi}
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
+
+# Every other role is owned by the coprocessor-<i> release; keep them off here.
+hostListenerCatchupOnlyShared:
+  enabled: false
+hostListenerConsumerShared:
+  enabled: false
+gwListener: {enabled: false}
+tfheWorker: {enabled: false}
+zkProofWorker: {enabled: false}
+snsWorker: {enabled: false}
+txSender: {enabled: false}
+
+chains:
+  - name: host
+    chainId: "12345"
+    wsUrl: "ws://anvil-host-anvil-node:8545"
+    httpUrl: "http://anvil-host-anvil-node:8545"
+    aclContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
+    fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
+    kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+    protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+    # Only the poller role in this release.
+    hostListener: {enabled: false, useLegacyName: true}
+    hostListenerPoller: {enabled: true, useLegacyName: true}
+    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
+    hostListenerConsumer: {enabled: false, useLegacyName: true}

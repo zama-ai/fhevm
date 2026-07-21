@@ -80,13 +80,14 @@ hostListenerShared:
 #=======================================================
 hostListenerPollerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
-  # --seed-start-block was a v0.11.0-era flag ("no poller state for this
-  # chain and no --seed-start-block"); at v0.13.0 the poller binary
-  # (src/bin/poller.rs) has no such argument at all anymore ("unexpected
-  # argument '--seed-start-block' found") - confirmed via `git grep
-  # seed_start_block` at the v0.13.0 tag returning zero hits anywhere in
-  # coprocessor/. No replacement needed: it starts cleanly with no prior
-  # state on a fresh e2e namespace either way.
+  # NOTE: the poller is NOT run inside this coprocessor release. It is the
+  # DB-side background processor that downloads key/CRS material from the KMS
+  # public-vault S3 on pending kms_key_activation_events (the consumer only
+  # records the event; only the poller does the S3 download that fills the
+  # `keys`/`crs` tables). It is deployed as its OWN release per party
+  # (coprocessor-poller-<i>, ../coprocessor/values-coprocessor-poller-e2e.yaml),
+  # mirroring zama-zws/gitops's eth-coproc-listener-poller app - so it stays
+  # disabled in chains[] below.
   serviceAccountName: coprocessor
 hostListenerCatchupOnlyShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
@@ -263,15 +264,20 @@ chains:
     fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
     kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
     protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
-    # Built-in producer path DISABLED: the dedicated `listener` chart
-    # (listener-<i>, ../listener/values-listener-e2e.yaml) is the producer now.
-    # It indexes the host chain and publishes to coprocessor-redis-<i>, and the
-    # hostListenerConsumer below is what ingests those events into the DB. This
-    # mirrors zama-zws/gitops's producer(listener)/broker(redis)/consumer split.
+    # Built-in real-time (WebSocket) producer DISABLED: the dedicated `listener`
+    # chart (listener-<i>, ../listener/values-listener-e2e.yaml) is the producer
+    # now. It indexes the host chain and publishes to coprocessor-redis-<i>, and
+    # the hostListenerConsumer below ingests those events into the DB. This
+    # mirrors zama-zws/gitops's producer(listener)/broker(redis)/consumer/poller
+    # split (eth-listener + eth-coproc-listener-{consumer,poller}).
     hostListener: {enabled: false, useLegacyName: true}
+    # Poller runs as its OWN release (coprocessor-poller-<i>), not here - see the
+    # hostListenerPollerShared note above and values-coprocessor-poller-e2e.yaml.
     hostListenerPoller: {enabled: false, useLegacyName: true}
+    # Catchup-only stays off: it backfills historical blocks on a live chain
+    # (prod mainnet); a fresh per-PR anvil has no history to catch up on.
     hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
-    # The only host-chain event path: reads this party's Redis broker (filled by
+    # Real-time host-chain event path: reads this party's Redis broker (filled by
     # listener-<i>) and writes decoded ACL/executor/kms-generation events to the
     # coprocessor DB. brokerUrl is set in hostListenerConsumerShared above.
     hostListenerConsumer: {enabled: true, useLegacyName: true}

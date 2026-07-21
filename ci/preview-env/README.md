@@ -39,8 +39,9 @@ ci/preview-env/
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
 │   └── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
 ├── coprocessor/
-│   ├── values-coprocessor-e2e.yaml       # coprocessor overlay (one release per party: coprocessor-<i>)
-│   └── values-coprocessor-redis-e2e.yaml # iamguarded Redis overlay: per-party host-listener-consumer broker (coprocessor-redis-<i>)
+│   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
+│   ├── values-coprocessor-poller-e2e.yaml # coprocessor overlay, poller-only release: S3 key/CRS download -> keys/crs tables (coprocessor-poller-<i>)
+│   └── values-coprocessor-redis-e2e.yaml  # iamguarded Redis overlay: per-party host-listener-consumer broker (coprocessor-redis-<i>)
 ├── listener/
 │   ├── values-listener-e2e.yaml          # listener chart overlay: per-party host-chain event producer (listener-<i>)
 │   └── values-postgres-listener-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to the listener's cursor DB
@@ -165,9 +166,22 @@ self-contained `hostListener`. Per party `i`:
   where each listener has its own ElastiCache.
 - **`coprocessor-<i>`'s `hostListenerConsumer`** reads that Redis broker and writes the
   decoded ACL / executor / kms-generation events (it has those addresses via its chain
-  config) into the coprocessor DB. The coprocessor chart's built-in `hostListener` +
-  `hostListenerPoller` are **disabled** in `values-coprocessor-e2e.yaml` — the `listener`
-  chart replaces them as the producer.
+  config) into the coprocessor DB. The coprocessor chart's built-in `hostListener` is
+  **disabled** in `values-coprocessor-e2e.yaml` — the `listener` chart replaces it as the
+  producer.
+- **`coprocessor-poller-<i>`** (`charts/coprocessor` with only `hostListenerPoller`
+  enabled, `values-coprocessor-poller-e2e.yaml`) is the DB-side background processor,
+  deployed as its own release per party (mirrors gitops `eth-coproc-listener-poller`).
+  Neither the producer nor the consumer downloads key material: they only record the
+  `kms_key_activation` / `kms_crs_activation` event as `pending`. The poller polls the
+  host chain, finalizes blocks, and on a pending activation whose block is finalized it
+  **downloads** the ServerKey/PublicKey/CRS from the KMS public-vault S3 (needs the IRSA
+  SA, hence `serviceAccountName=coprocessor-<i>`) and fills the `keys` / `crs` tables the
+  tfhe/zkproof/sns workers read. Without it those tables stay empty and every worker
+  fails "No keys found in database". It **must be deployed before the keygen trigger** so
+  it anchors near genesis (`MAX(block)` of the empty DB = 0) and finalizes the keygen
+  blocks in order as they are mined — deployed after keygen it anchors past them and has
+  to grind the whole finalization backlog back down first.
 
 > This producer path is newer to the preview than the old DB-only `hostListener`. Three
 > things to validate on the first real multi-run (adjust the preview-env values, not the
