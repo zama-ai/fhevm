@@ -74,10 +74,7 @@ impl std::fmt::Debug for YellowstoneSourceConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("YellowstoneSourceConfig")
             .field("grpc_url", &self.grpc_url)
-            .field(
-                "x_token",
-                &self.x_token.as_ref().map(|_| "[REDACTED]"),
-            )
+            .field("x_token", &self.x_token.as_ref().map(|_| "[REDACTED]"))
             .field("program_id", &self.program_id)
             .finish()
     }
