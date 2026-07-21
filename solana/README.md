@@ -20,7 +20,7 @@ programs/confidential-token     App program. Minimal confidential-token / cUSDC 
                                 spirit): wrap, transfer, burn, redeem, disclose. Drives zama-host by CPI.
 programs/confidential-batcher   Confidential batcher (DD-042): aggregates encrypted deposits per
                                 batch, reveals only each batch's KMS-certified total to the public
-                                demo-vault, and pays encrypted shares at the batch's public rate.
+                                demo-vault, and pays each user their exact proportional cut, encrypted.
                                 Its `join` keeps the app-driven composition pattern: it CPIs
                                 `confidential_transfer` with the user as sole signer — the
                                 replacement for EVM transfer-and-call callbacks.
