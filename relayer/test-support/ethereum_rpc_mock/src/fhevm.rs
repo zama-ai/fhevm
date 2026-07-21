@@ -1060,7 +1060,6 @@ fn build_user_decrypt_response(
         vec![
             Decryption::UserDecryptionResponse::SIGNATURE_HASH,
             B256::from(decryption_id),
-            B256::from(U256::from(0)), // indexShare topic
         ],
     )
 }
@@ -1110,11 +1109,6 @@ fn build_public_decrypt_response(
         vec![
             Decryption::PublicDecryptionResponse::SIGNATURE_HASH,
             B256::from(decryption_id),
-            if success {
-                B256::from([1u8; 32])
-            } else {
-                B256::ZERO
-            },
         ],
     )
 }
@@ -1206,7 +1200,6 @@ fn build_individual_user_decrypt_response(
         vec![
             Decryption::UserDecryptionResponse::SIGNATURE_HASH,
             B256::from(decryption_id),
-            B256::from(U256::from(index_share)),
         ],
     )
 }
