@@ -136,6 +136,12 @@ env:
   COPROCESSOR_VERSION: "v0.13.1"
   COPROCESSOR_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor
   COPROCESSOR_CHART_VERSION: "0.13.0"
+  # Number of independent coprocessor parties to deploy (own Postgres, S3
+  # bucket and tx-sender/signer identity each; registered on the gateway with a
+  # majority threshold). Mirrors NB_KMS_CORE's per-party loops below. Default 1
+  # keeps the single-coprocessor topology; workflow_dispatch overrides it via
+  # the nb_coprocessor input.
+  NB_COPROCESSOR: "3"
   #=====KMS CONNECTOR=========================================================
   # v0.13.1-hotfix.kmsconnector.1 + chart 1.5.2 is the known-good pairing
   # confirmed running in production (zama-zws/gitops's mpc-testnet). Deliberate
@@ -179,12 +185,6 @@ env:
   KMS_REPO_REF: "v0.13.20"
   KMS_CORE_TAG: "v0.13.20"
   NB_KMS_CORE: "4"
-  # Number of independent coprocessor parties to deploy (own Postgres, S3
-  # bucket and tx-sender/signer identity each; registered on the gateway with a
-  # majority threshold). Mirrors NB_KMS_CORE's per-party loops below. Default 1
-  # keeps the single-coprocessor topology; workflow_dispatch overrides it via
-  # the nb_coprocessor input.
-  NB_COPROCESSOR: "1"
   #=====REDIS================================================================
   # In-cluster Redis used as each coprocessor party's host-listener-consumer
   # broker (redis://coprocessor-redis-<i>-master:6379), one per party. Same
