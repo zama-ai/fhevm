@@ -76,6 +76,31 @@ contract EthereumConfigTest is Test {
         assertTrue(testFhevmContract.confidentialProtocolId() == ZamaConfig.getConfidentialProtocolId());
     }
 
+    function test_ZamaConfigPolygonAmoy() public {
+        vm.chainId(80002);
+
+        TestFHEVMContract testFhevmContract = new TestFHEVMContract();
+        CoprocessorConfig memory cfg = testFhevmContract.getCoprocessorConfig();
+        // chainid == 80002
+        CoprocessorConfig memory amoyCfg = ZamaConfig.getEthereumCoprocessorConfig();
+
+        assertTrue(cfg.ACLAddress == 0xD99Cb9Fc3c42c87f2A4A12e8Fd60318d6bDdf985);
+        assertTrue(cfg.CoprocessorAddress == 0x89420269f61e4db00545cd99da0aEcA7fF0912f9);
+        assertTrue(cfg.KMSVerifierAddress == 0xCD1D89E311bce4C8DEa9a0857a0c9A4E153D4041);
+
+        assertTrue(cfg.ACLAddress == amoyCfg.ACLAddress);
+        assertTrue(cfg.CoprocessorAddress == amoyCfg.CoprocessorAddress);
+        assertTrue(cfg.KMSVerifierAddress == amoyCfg.KMSVerifierAddress);
+    }
+
+    function test_ZamaProtocolIdPolygonAmoy() public {
+        vm.chainId(80002);
+
+        TestFHEVMContract testFhevmContract = new TestFHEVMContract();
+        assertTrue(testFhevmContract.confidentialProtocolId() == 80002);
+        assertTrue(testFhevmContract.confidentialProtocolId() == ZamaConfig.getConfidentialProtocolId());
+    }
+
     function test_ZamaConfigLocalChainId() public {
         vm.chainId(31337);
 
