@@ -369,11 +369,16 @@ jobs:
       - build-coprocessor
       - build-relayer
       - build-test-suite
-    # always(): build-* jobs are legitimately skipped when build_images is
-    # off, which would otherwise skip this job too (actions/runner#2205). The
-    # check-labels.result guard keeps always() from masking a real failure.
+    # !cancelled() (not always()): build-* jobs are legitimately skipped when
+    # build_images is off, which would otherwise skip this job too via GitHub's
+    # implicit success() over the needs graph (actions/runner#2205). Any status
+    # function disables that implicit success() - but always() also forces the
+    # job to run through a workflow CANCEL, so a UI/queue cancel wasn't honored.
+    # !cancelled() keeps the skipped-needs behavior while letting a cancel stop
+    # this job. The check-labels.result guard still keeps it from masking a real
+    # upstream failure.
     if: >-
-      always() &&
+      !cancelled() &&
       needs.check-labels.outputs.should_deploy == 'true' &&
       needs.check-labels.result == 'success'
     runs-on: ubuntu-latest
@@ -532,12 +537,16 @@ jobs:
   deploy:
     name: deploy
     needs: [check-labels, resolve-tags]
-    # always() required: without it GitHub ANDs success() across the whole
-    # needs graph (actions/runner#2205), including build-* jobs that are
-    # skipped when build_images is off, silently no-oping deploy. Requiring
-    # resolve-tags' own success keeps a real failure from slipping through.
+    # !cancelled() (not always()): without a status function GitHub ANDs
+    # success() across the whole needs graph (actions/runner#2205), including
+    # build-* jobs that are skipped when build_images is off, silently no-oping
+    # deploy. always() would fix that but also forces deploy to run through a
+    # workflow CANCEL - so a UI/queue cancel started (or kept) this long job
+    # anyway. !cancelled() keeps the skipped-needs behavior yet lets a cancel
+    # stop it. Requiring resolve-tags' own success keeps a real failure from
+    # slipping through.
     if: >-
-      always() &&
+      !cancelled() &&
       needs.check-labels.outputs.should_deploy == 'true' &&
       needs.resolve-tags.result == 'success'
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
