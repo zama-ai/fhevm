@@ -112,7 +112,7 @@ set the `namespace` input to the **exact** namespace from your deploy run's
 summary (e.g. `fhevm-ci-alice-987654`). It must start with `fhevm-ci-` (a guard
 refuses anything else, so it can't nuke an unrelated namespace).
 
-**Fallback (either kind).** If a run can't reach the cluster, do it yourself:
+**Fallback.** If a run can't reach the cluster, do it yourself:
 
 ```bash
 helm list -n <namespace> --short | xargs -r -L1 helm uninstall -n <namespace>

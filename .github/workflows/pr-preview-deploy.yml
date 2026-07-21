@@ -227,7 +227,7 @@ env:
   # with COPROCESSOR_VERSION's host_listener_consumer (matching broker payload).
   LISTENER_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/listener
   LISTENER_CHART_VERSION: "0.1.1"
-  LISTENER_VERSION: "cc8fc16-dev"
+  LISTENER_VERSION: "v0.13.3"
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
 
