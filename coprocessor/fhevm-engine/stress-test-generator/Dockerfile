@@ -34,6 +34,13 @@ COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY host-contracts/contracts/ ./host-contracts/contracts/
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
+# Solana path-dependencies of the fhevm-engine workspace (host-listener and
+# tfhe-worker manifests reference them; `cargo build -p <crate>` loads every
+# member manifest). Same copy set as the other fhevm-engine Dockerfiles.
+COPY solana/Cargo.toml ./solana/Cargo.toml
+COPY solana/crates ./solana/crates
+COPY solana/programs ./solana/programs
+COPY solana/runtime-tests ./solana/runtime-tests
 
 WORKDIR /app/coprocessor/fhevm-engine
 

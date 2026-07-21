@@ -167,6 +167,12 @@ jobs:
           SCCACHE_S3_PREFIX: sccache/fhevm-coprocessor
           AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 cache creds scoped to this step's env, same pattern as the registry logins above
           AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 cache creds scoped to this step's env, same pattern as the registry logins above
+          # Registry layer cache for the source-built Rust images: fhevm-cli adds a compose
+          # `cache_from` per built service pointing at the per-image cache manifests that
+          # solana-images-publish.yml exports under this tag (writes stay in that workflow, which
+          # has packages:write). Reads are plain registry pulls; a missing manifest is a non-fatal
+          # BuildKit warning, and unsetting this reverts to today's uncached builds.
+          FHEVM_BUILDCACHE_TAG: buildcache-feature-solana
           # Override selection computed above (empty on workflow_dispatch or if the step was
           # skipped, in which case clean-e2e.sh keeps its build-everything default).
           SOLANA_E2E_OVERRIDES: ${{ steps.select-overrides.outputs.overrides }}

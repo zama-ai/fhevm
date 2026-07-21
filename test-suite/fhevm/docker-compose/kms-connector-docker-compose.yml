@@ -1,17 +1,13 @@
 # =============================================================================
-# KMS-CONNECTOR BUILD CACHING STRATEGY
+# KMS-CONNECTOR BUILD STRATEGY
 # =============================================================================
-# The 3 Rust services (gw-listener, kms-worker, tx-sender) share a single
-# Dockerfile.workspace with multi-stage targets. When docker-compose builds
-# them in parallel, each service is a separate BuildKit invocation.
-#
-# To avoid cache write conflicts (multiple processes writing to same directory),
-# we use a SINGLE EXPORTER pattern:
-#   - ALL services: cache_from (read from shared cache) ✓
-#   - ONLY gw-listener: cache_to (write to shared cache) ✓
-#   - Other services: no cache_to (read-only)
-#
-# gw-listener is chosen as the exporter arbitrarily (first alphabetically).
+# Each Rust service (gw-listener, kms-worker, tx-sender) builds from its own
+# per-crate Dockerfile (kms-connector/crates/<crate>/Dockerfile, target `prod`)
+# -- the same recipes main's kms-connector-docker-build.yml publishes from.
+# Identical COPY/RUN prefixes across the images are deduplicated by BuildKit
+# content-addressing within a run; cross-run reuse comes from the registry
+# layer cache (`cache_from`, injected by fhevm-cli when FHEVM_BUILDCACHE_TAG is
+# set) plus the sccache compiler cache.
 # =============================================================================
 
 services:

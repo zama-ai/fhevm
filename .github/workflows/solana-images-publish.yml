@@ -9,6 +9,9 @@ name: solana-images-publish
 # Tags per image:
 #   ghcr.io/zama-ai/<image>:feature-solana                  floating, tracks the branch tip
 #   ghcr.io/zama-ai/<image>:feature-solana-<full-sha>       immutable, per pushed commit
+#   ghcr.io/zama-ai/<image>:buildcache-feature-solana       BuildKit registry cache manifest
+#                                                           (mode=max; read by solana-e2e's
+#                                                           source builds via FHEVM_BUILDCACHE_TAG)
 #
 # solana-e2e.yml's select-overrides step consumes ONLY the immutable tags: PRs that leave a
 # component group's source untouched pull the base commit's image instead of rebuilding it.
@@ -56,45 +59,45 @@ jobs:
             context: .
           - name: coprocessor-db-migration
             image: fhevm/coprocessor/db-migration
-            dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+            dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
             context: .
-            target: db-migration
+            target: prod
             sccache: true
           - name: coprocessor-host-listener
             image: fhevm/coprocessor/host-listener
-            dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+            dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
             context: .
-            target: host-listener
+            target: prod
             sccache: true
           - name: coprocessor-gw-listener
             image: fhevm/coprocessor/gw-listener
-            dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+            dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
             context: .
-            target: gw-listener
+            target: prod
             sccache: true
           - name: coprocessor-tfhe-worker
             image: fhevm/coprocessor/tfhe-worker
-            dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+            dockerfile: coprocessor/fhevm-engine/tfhe-worker/Dockerfile
             context: .
-            target: tfhe-worker
+            target: prod
             sccache: true
           - name: coprocessor-zkproof-worker
             image: fhevm/coprocessor/zkproof-worker
-            dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+            dockerfile: coprocessor/fhevm-engine/zkproof-worker/Dockerfile
             context: .
-            target: zkproof-worker
+            target: prod
             sccache: true
           - name: coprocessor-sns-worker
             image: fhevm/coprocessor/sns-worker
-            dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+            dockerfile: coprocessor/fhevm-engine/sns-worker/Dockerfile
             context: .
-            target: sns-worker
+            target: prod
             sccache: true
           - name: coprocessor-tx-sender
             image: fhevm/coprocessor/tx-sender
-            dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+            dockerfile: coprocessor/fhevm-engine/transaction-sender/Dockerfile
             context: .
-            target: transaction-sender
+            target: prod
             sccache: true
           - name: relayer
             image: fhevm/relayer
@@ -108,27 +111,28 @@ jobs:
             image: fhevm/kms-connector/db-migration
             dockerfile: kms-connector/connector-db/Dockerfile
             context: .
+            target: prod
             build_args: "RUST_IMAGE_VERSION=1.91.0"
             sccache: true
           - name: kms-connector-gw-listener
             image: fhevm/kms-connector/gw-listener
-            dockerfile: kms-connector/Dockerfile.workspace
+            dockerfile: kms-connector/crates/gw-listener/Dockerfile
             context: .
-            target: gw-listener
+            target: prod
             build_args: "RUST_IMAGE_VERSION=1.91.0"
             sccache: true
           - name: kms-connector-kms-worker
             image: fhevm/kms-connector/kms-worker
-            dockerfile: kms-connector/Dockerfile.workspace
+            dockerfile: kms-connector/crates/kms-worker/Dockerfile
             context: .
-            target: kms-worker
+            target: prod
             build_args: "RUST_IMAGE_VERSION=1.91.0"
             sccache: true
           - name: kms-connector-tx-sender
             image: fhevm/kms-connector/tx-sender
-            dockerfile: kms-connector/Dockerfile.workspace
+            dockerfile: kms-connector/crates/tx-sender/Dockerfile
             context: .
-            target: tx-sender
+            target: prod
             build_args: "RUST_IMAGE_VERSION=1.91.0"
             sccache: true
     steps:
@@ -175,6 +179,14 @@ jobs:
           AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 creds scoped to this step's env, same pattern as solana-e2e.yml
           AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 creds scoped to this step's env, same pattern as solana-e2e.yml
           SHA: ${{ github.sha }}
+          # Per-image BuildKit registry cache. This workflow is the only cache WRITER (it has
+          # packages:write and runs only on pushes to the feature branch); solana-e2e's --override
+          # builds READ the same refs via compose `cache_from` when FHEVM_BUILDCACHE_TAG is set.
+          # mode=max exports intermediate (builder-stage) layers, which is the whole point: a PR
+          # whose inputs match the branch tip skips the contract and cargo layers entirely.
+          # image-manifest + oci-mediatypes make the cache manifest ghcr-compatible. A missing
+          # cache ref on the first run is a non-fatal BuildKit warning.
+          BUILDCACHE_TAG: buildcache-feature-solana
         run: |
           set -euo pipefail
           args=(--file "$DOCKERFILE")
@@ -194,6 +206,10 @@ jobs:
               --secret "id=sccache_aws_secret_access_key,env=AWS_SECRET_KEY_S3_USER"
             )
           fi
+          args+=(
+            --cache-from "type=registry,ref=ghcr.io/zama-ai/$IMAGE:$BUILDCACHE_TAG"
+            --cache-to "type=registry,ref=ghcr.io/zama-ai/$IMAGE:$BUILDCACHE_TAG,mode=max,image-manifest=true,oci-mediatypes=true"
+          )
           docker buildx build "${args[@]}" \
             --tag "ghcr.io/zama-ai/$IMAGE:feature-solana" \
             --tag "ghcr.io/zama-ai/$IMAGE:feature-solana-$SHA" \
