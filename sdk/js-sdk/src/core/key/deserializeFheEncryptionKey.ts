@@ -1,6 +1,6 @@
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FheEncryptionKeyWasm, FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
-import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { createFheEncryptionKeyWasm } from './FheEncryptionKeyWasm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -8,24 +8,27 @@ import { createFheEncryptionKeyWasm } from './FheEncryptionKeyWasm-p.js';
 export async function deserializeFheEncryptionKey(
   context: {
     readonly runtime: WithEncrypt;
-    readonly tfheVersion: TfheVersion;
   },
-  parameters: FheEncryptionKeyBytes,
+  parameters: {
+    readonly keyBytes: FheEncryptionKeyBytes;
+    readonly fhevmContext: FhevmClientFrozenContext;
+  },
 ): Promise<FheEncryptionKeyWasm> {
+  const { keyBytes, fhevmContext } = parameters;
   const publicKeyNative = await context.runtime.encrypt.deserializeFheEncryptionPublicKey({
-    publicKeyBytes: parameters.publicKeyBytes,
-    tfheVersion: context.tfheVersion,
+    publicKeyBytes: keyBytes.publicKeyBytes,
+    tfheVersion: fhevmContext.tfheVersion,
   });
 
   const crsNative = await context.runtime.encrypt.deserializeFheEncryptionCrs({
-    crsBytes: parameters.crsBytes,
-    tfheVersion: context.tfheVersion,
+    crsBytes: keyBytes.crsBytes,
+    tfheVersion: fhevmContext.tfheVersion,
   });
 
   return createFheEncryptionKeyWasm(new WeakRef(context.runtime), {
     publicKey: publicKeyNative,
     crs: crsNative,
-    metadata: parameters.metadata,
-    tfheVersion: context.tfheVersion,
+    metadata: keyBytes.metadata,
+    tfheVersion: fhevmContext.tfheVersion,
   });
 }

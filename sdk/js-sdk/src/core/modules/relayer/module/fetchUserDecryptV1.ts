@@ -21,6 +21,30 @@ export async function fetchUserDecryptV1(
     throw new Error('Empty handle contract pairs');
   }
 
+  // ---------------------------------------------------------------------------
+  // Migration hazard: extraData v2 vs a lagging (v13) relayer
+  // ---------------------------------------------------------------------------
+  // This path forwards `extraData` to the relayer verbatim (see `relayerPayload`
+  // below). Protocol upgrades roll out in stages, so a v13 -> v14 migration has a
+  // window where the host-contracts are already v14 — the current KMS context is
+  // encoded as extraData **v2** (`0x02 | contextId(32) | epochId(32)`) — while the
+  // relayer still runs v13 and does not recognize the v2 encoding.
+  //
+  // In that window the relayer rejects a v2 `extraData` in its request validation,
+  // BEFORE it ever reaches the gateway/KMS (the v13 relayer only accepts `0x00`,
+  // `0x01`, and — where implemented — `0x02`; an unknown/older build fails it):
+  //
+  //   RelayerErrorBase: User decryption: Relayer API error
+  //   [validation_failed]: Validation failed for 1 field in the request: extraData
+  //   status: 400
+  //   url: https://relayer.<env>.zama.cloud/v2/user-decrypt   (HTTP API v2, unrelated to extraData v2)
+  //
+  // Rollout ordering: the relayer must be upgraded to accept extraData v2 BEFORE
+  // clients start emitting v2 permits. A v13-capped SDK avoids this by only ever
+  // emitting v1 extraData; but a v2 permit produced elsewhere (a v14 client, or a
+  // forced-v2 permit) routed through this v1 path will hit the 400 above.
+  // ---------------------------------------------------------------------------
+
   // retrieve chainId using handles
   const contractsChainId = firstHandleContractPair.handle.chainId.toString();
 

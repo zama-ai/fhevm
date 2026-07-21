@@ -4,6 +4,7 @@ import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.
 import type { TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 import type { Eip712Like } from '../../types/kms.js';
 import { parseSignedDecryptionPermit as parseSignedDecryptionPermit_ } from '../../kms/SignedDecryptionPermit-p.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -35,5 +36,7 @@ export async function parseSignedDecryptionPermit(
 ): Promise<ParseSignedDecryptionPermitReturnType> {
   const { serializedPermit, transportKeyPair: transportKeyPair } = parameters;
 
-  return parseSignedDecryptionPermit_(fhevm, transportKeyPair, serializedPermit);
+  const fhevmContext = await initPublicAction(fhevm);
+
+  return parseSignedDecryptionPermit_(fhevm, { transportKeyPair, permit: serializedPermit, fhevmContext });
 }

@@ -5,6 +5,7 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { KmsSignDecryptionPermitContext, KmsSignDecryptionPermitParameters } from './SignedDecryptionPermit-p.js';
 import type { KmsExtraData } from '../types/kms-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
 import { assertRecordBytes65HexProperty } from '../base/bytes.js';
 import { addressToChecksummedAddress, assertIsAddress, assertRecordAddressProperty } from '../base/address.js';
@@ -139,9 +140,13 @@ export async function signDecryptionPermitV2(
 
 export async function parseSignedDecryptionPermitV2(
   context: KmsSignDecryptionPermitContext,
-  transportKeyPair: TransportKeyPair,
-  permit: unknown,
+  parameters: {
+    readonly transportKeyPair: TransportKeyPair;
+    readonly permit: unknown;
+    readonly fhevmContext: FhevmClientFrozenContext;
+  },
 ): Promise<SignedDecryptionPermitV2> {
+  const { transportKeyPair, permit } = parameters;
   assertIsTransportKeyPair(transportKeyPair, {});
 
   const permitName = 'permit-v2';
@@ -191,6 +196,7 @@ export async function createUnsignedDecryptionPermitEip712V2(
     signerAddress: signerAddressArg,
     transportKeyPair,
     delegatorAddress: delegatorAddressArg,
+    fhevmContext,
   } = parameters;
 
   assertIsUintNumber(durationSecondsParam, { subject: 'durationSeconds' });
@@ -229,14 +235,15 @@ export async function createUnsignedDecryptionPermitEip712V2(
   const kmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    fhevmContext,
   });
 
-  const extraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
+  const kmsContextExtraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
 
   // A unified (v2) permit requires protocol v14+ extraData (context id + epoch id).
   assert(
-    extraData.version >= EXTRA_DATA_V2,
-    `createUnsignedDecryptionPermitEip712V2 error: Invalid extraData version extraData=${extraData.toBytesHex()}`,
+    kmsContextExtraData.ge(EXTRA_DATA_V2),
+    `createUnsignedDecryptionPermitEip712V2 error: Invalid extraData version extraData=${kmsContextExtraData.bytesHex}`,
   );
 
   // RFC-016: round startTimestamp down to the nearest minute. This absorbs small clock skew
@@ -251,7 +258,7 @@ export async function createUnsignedDecryptionPermitEip712V2(
     allowedContracts: contractAddresses, // [] = permissive, [...] = specific
     durationSeconds,
     startTimestamp: roundedStartTimestamp,
-    extraData,
+    extraData: kmsContextExtraData,
     publicKey: transportKeyPair.publicKey,
   };
 

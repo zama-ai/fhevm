@@ -4,6 +4,7 @@ import type { CleartextEthereumModule } from '../../ethereum/types-ct.js';
 import type { TrustedClient } from '../../ethereum/types.js';
 import type { RelayerClientWithRuntime } from '../types.js';
 import type { KmsSignersContext } from '../../../types/kmsSignersContext.js';
+import type { FhevmClientFrozenContext } from '../../../types/fhevmClientFrozenContext-p.js';
 import { remove0x } from '../../../base/string.js';
 import { addressToChecksummedAddress } from '../../../base/address.js';
 import { createCachedFetch } from '../../../base/cachedFetch.js';
@@ -38,12 +39,16 @@ const plaintextsAbi = [
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function isForgeFhevmV1(relayerClient: RelayerClientWithRuntime): Promise<boolean> {
+export async function isForgeFhevmV1(
+  relayerClient: RelayerClientWithRuntime,
+  fhevmContext: FhevmClientFrozenContext,
+): Promise<boolean> {
   const currentKmsSignersContext: KmsSignersContext = await readCurrentKmsSignersContext(relayerClient, {
     kmsVerifierAddress: relayerClient.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: relayerClient.chain.fhevm.contracts.protocolConfig?.address as
       | ChecksummedAddress
       | undefined,
+    fhevmContext,
   });
   return currentKmsSignersContext.signers.length === 1 && isForgeFhevmV1KmsSigner(currentKmsSignersContext.signers[0]);
 }
@@ -108,35 +113,6 @@ export async function readPlaintexts(
   }
   return cleartexts;
 }
-
-// /**
-//  * Reads the registered KMS signer set and threshold from the standard KMSVerifier
-//  * (which forge-fhevm implements). These replace the `signers` / `threshold` the
-//  * `Cleartext*KMSVerifier` view used to return.
-//  */
-// export async function readKmsSignersAndThreshold(
-//   relayerClient: RelayerClientWithRuntime,
-//   trustedClient: TrustedClient,
-// ): Promise<{ signers: readonly ChecksummedAddress[]; threshold: bigint }> {
-//   const kmsVerifierAddress = relayerClient.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress;
-
-//   const signersRes = await relayerClient.runtime.ethereum.readContract(trustedClient, {
-//     abi: getKmsSignersAbi,
-//     address: kmsVerifierAddress,
-//     args: [],
-//     functionName: getKmsSignersAbi[0].name,
-//   });
-
-//   const thresholdRes = await relayerClient.runtime.ethereum.readContract(trustedClient, {
-//     abi: getThresholdAbi,
-//     address: kmsVerifierAddress,
-//     args: [],
-//     functionName: getThresholdAbi[0].name,
-//   });
-
-//   const signers = (signersRes as readonly Address[]).map(addressToChecksummedAddress);
-//   return { signers, threshold: asUint32BigInt(thresholdRes) };
-// }
 
 /**
  * Reversible mask that replicates `CleartextKMSVerifier._xorMaskWithPublicKey`:

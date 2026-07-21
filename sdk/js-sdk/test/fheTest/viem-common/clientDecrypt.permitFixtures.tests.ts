@@ -212,7 +212,7 @@ export function defineClientDecryptPermitFixturesTests(parameters: {
           >[0]['transportKeyPair'],
         });
 
-        return client.serializeSignedDecryptionPermit({ signedPermit: parsed }) as SerializedPermit;
+        return (await client.serializeSignedDecryptionPermit({ signedPermit: parsed })) as SerializedPermit;
       }
 
       it(
@@ -234,9 +234,9 @@ export function defineClientDecryptPermitFixturesTests(parameters: {
               'unless the chain deployment itself changed; regenerating hides serialization regressions.',
             generatedBySdkVersion: readSdkVersion(),
             chainName,
-            transportKeyPair: serializeTransportKeyPair(client, {
+            transportKeyPair: (await serializeTransportKeyPair(client, {
               transportKeyPair,
-            }) as PermitFixtureFile['transportKeyPair'],
+            })) as PermitFixtureFile['transportKeyPair'],
             permits: {
               selfV1ExtraDataV0: await buildFixturePermit(client, transportKeyPair, { extraData: '0x00' as Hex }),
               selfV1ExtraDataV1: await buildFixturePermit(client, transportKeyPair, {

@@ -12,7 +12,7 @@ import { abiEncodeClearValues, createClearValueArray } from '../handle/ClearValu
 import { toClearValueType } from '../handle/FheType.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
 import { verifyKmsPublicDecryptEip712 } from './verifyKmsPublicDecryptEip712-p.js';
-import { EXTRA_DATA_V0 } from './kmsExtraData-p.js';
+import { toKmsSignedExtraDataBytesHex } from './kmsExtraData-p.js';
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -127,7 +127,7 @@ export async function createPublicDecryptionProof(
   //
   ////////////////////////////////////////////////////////////////////////////
 
-  const signedExtraDataBytesHex = extraData.version === EXTRA_DATA_V0 ? ('0x' as BytesHex) : extraData.toBytesHex();
+  const signedExtraDataBytesHex = toKmsSignedExtraDataBytesHex(extraData);
 
   //////////////////////////////////////////////////////////////////////////////
   // Compute the proof as numSigners + KMS signatures + extraData

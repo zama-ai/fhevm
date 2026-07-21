@@ -1,8 +1,9 @@
 import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { getCurrentKmsContextAndEpochAbi } from './abi-fragments/fragments.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
-import { getHostContractVersion, isVersionStrictlyBefore } from './HostContractVersion-p.js';
+import { isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import { assertIsUint256 } from '../base/uint.js';
 import { CACHE_TTL_15MIN, createCachedFetch } from '../base/cachedFetch.js';
 
@@ -15,6 +16,7 @@ type Context = {
 
 type Parameters = {
   readonly protocolConfigAddress: ChecksummedAddress;
+  readonly fhevmContext: FhevmClientFrozenContext;
 };
 
 type ReturnType = { readonly contextId: Uint256BigInt; readonly epochId: Uint256BigInt };
@@ -48,7 +50,7 @@ export function getCurrentKmsContextAndEpoch(
 }
 
 async function _getCurrentKmsContextAndEpoch(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const protocolConfigVersion = await getHostContractVersion(context, { address: parameters.protocolConfigAddress });
+  const protocolConfigVersion = parameters.fhevmContext.hostContractVersion('ProtocolConfig');
 
   // getCurrentKmsContextAndEpoch requires ProtocolConfig >= v0.2.0 (protocol v0.14.0)
   if (isVersionStrictlyBefore(protocolConfigVersion, { major: 0, minor: 2 })) {

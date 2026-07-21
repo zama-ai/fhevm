@@ -7,16 +7,16 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } from '../types/relayer.js';
 import type { SignedDecryptionPermit, SignedDecryptionPermitV1 } from '../types/signedDecryptionPermit.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
 import { createKmsSigncryptedShares } from './KmsSigncryptedShares-p.js';
-import { readKmsSignersContextFromExtraData } from '../host-contracts/readKmsSignersContext-p.js';
+import { readKmsSignersContextFromPermitExtraData } from '../host-contracts/readKmsSignersContext-p.js';
 import { assertIsSignedDecryptionPermit } from './SignedDecryptionPermit-p.js';
 import { assertKmsDecryptionBitLimit } from './utils.js';
 import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
 import { checkDelegation } from '../host-contracts/checkDelegation.js';
-import { resolveFhevmTkmsVersion } from '../runtime/resolveFhevmVersions-p.js';
-import { fromKmsExtraDataBytesHex } from './kmsExtraData-p.js';
+import { createKmsExtraDataFromBytesHex } from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -33,6 +33,7 @@ type Parameters = {
     readonly contractAddress: ChecksummedAddress;
   }>;
   readonly signedPermit: SignedDecryptionPermit;
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerUserDecryptOptions | RelayerDelegatedUserDecryptOptions | undefined;
 };
 
@@ -63,7 +64,7 @@ export function assertPermitV1IncludesContractAddresses(
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const { options, pairs } = parameters;
+  const { options, pairs, fhevmContext } = parameters;
 
   if (parameters.signedPermit.version !== 1) {
     throw Error(`fetchKmsSigncryptedSharesV1 requires a v1 permit, got v${parameters.signedPermit.version}`);
@@ -71,9 +72,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
 
   const signedPermitV1: SignedDecryptionPermitV1 = parameters.signedPermit;
 
-  // This helper must support base clients, where TKMS is not mandatory
-  // and tkmsVersion may not be initialized in the CoreFhevm instance yet.
-  const tkmsVersion = await resolveFhevmTkmsVersion(context);
+  const tkmsVersion = fhevmContext.tkmsVersion;
 
   // Check: every requested contractAddress is listed in the permit
   assertPermitV1IncludesContractAddresses(
@@ -143,16 +142,21 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
   // Not required because a signedPermit is guaranteed to be verified.
 
   // 9. Fetch `KmsSignersContext` on-chain (cached)
-  const extraData = fromKmsExtraDataBytesHex(signedPermitV1.eip712.message.extraData);
-  const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContextFromExtraData(context, {
+  const signedPermitExtraData = createKmsExtraDataFromBytesHex(signedPermitV1.eip712.message.extraData);
+
+  // It is critical to fetch the exact kms signers associated with the extra data
+  const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContextFromPermitExtraData(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-    extraData,
+    extraData: signedPermitExtraData,
+    fhevmContext,
   });
 
   // 10. Fetch `KmsSigncryptedShares` from the relayer
   let shares: readonly KmsSigncryptedShare[];
 
+  // The relayer forwards the eip712 and its signature to the KMS
+  // The KMS does verify the user's EIP-712 signature server-side
   if (signedPermitV1.eip712.primaryType === 'DelegatedUserDecryptRequestVerification') {
     shares = await context.runtime.relayer.fetchDelegatedUserDecrypt(context, {
       version: 1,
@@ -162,6 +166,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
         kmsDecryptEip712Message: signedPermitV1.eip712.message,
         kmsDecryptEip712Signature: signature,
       },
+      fhevmContext,
       options: relayerOptions as RelayerDelegatedUserDecryptOptions,
     });
   } else {
@@ -173,6 +178,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
         kmsDecryptEip712Message: signedPermitV1.eip712.message,
         kmsDecryptEip712Signature: signature,
       },
+      fhevmContext,
       options: relayerOptions as RelayerUserDecryptOptions,
     });
   }
@@ -184,6 +190,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
       chainId: context.chain.fhevm.gateway.id,
       verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address,
     }),
+    eip712ExtraData: signedPermitV1.eip712.message.extraData,
     eip712Signature: signature,
     eip712SignerAddress: signerAddress,
     handles,
@@ -215,10 +222,8 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
 
   */
 
-  // 12. The returned KmsSigncryptedShares is guaranteed to be fully verified:
-  // uniform extraData across shares, valid extraData format, and consistency
-  // with the KmsSignersContext (see KmsSigncryptedSharesImpl invariants).
-  return await createKmsSigncryptedShares(context, {
+  // 12. The returned KmsSigncryptedShares as sent by the relayer
+  return createKmsSigncryptedShares({
     metadata: sharesMetadata,
     shares,
   });

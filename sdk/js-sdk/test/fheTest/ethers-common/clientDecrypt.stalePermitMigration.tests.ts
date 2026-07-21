@@ -1,3 +1,4 @@
+import type { TransportKeyPair } from '@fhevm/sdk/actions/decrypt';
 import { ethers } from 'ethers';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
@@ -134,7 +135,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
      */
     async function forgeV1Permit(
       client: Awaited<ReturnType<typeof createReadyClient>>,
-      transportKeyPair: unknown,
+      transportKeyPair: TransportKeyPair,
       opts: {
         readonly extraData: string;
         readonly wallet?: ethers.HDNodeWallet;
@@ -154,7 +155,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
         verifyingContract: ethers.getAddress(config.fhevmChain.fhevm.gateway.contracts.decryption.address),
       };
 
-      const publicKey = (transportKeyPair as { readonly publicKey: string }).publicKey;
+      const publicKey = transportKeyPair.publicKey;
       const contractAddresses = [ethers.getAddress(config.fheTestAddress)];
 
       const message = {
@@ -226,7 +227,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
     /** Signs a fresh permit and returns the extraData the current chain embeds. */
     async function currentPermitExtraData(client: Awaited<ReturnType<typeof createReadyClient>>): Promise<string> {
       const transportKeyPair = await client.generateTransportKeyPair();
-      const signedPermit = await client.signDecryptionPermit({
+      const signedPermit = await client.signLegacyDecryptionPermit({
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,

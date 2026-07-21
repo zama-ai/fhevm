@@ -214,7 +214,7 @@ async function main(): Promise<void> {
 
     step('Create and sign EIP-712 decrypt permit');
     const now = Math.floor(Date.now() / 1000);
-    const signedPermit = await client.signDecryptionPermit({
+    const signedPermit = await client.signLegacyDecryptionPermit({
       transportKeyPair: transportKeyPair,
       contractAddresses: [FHE_COUNTER_ADDRESS],
       startTimestamp: now,

@@ -5,6 +5,7 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { KmsSignDecryptionPermitContext, KmsSignDecryptionPermitParameters } from './SignedDecryptionPermit-p.js';
 import type { KmsExtraData } from '../types/kms-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { verifyKmsUserDecryptEip712V1 } from '../utils-p/decrypt/verifyKmsUserDecryptEip712V1.js';
 import { verifyKmsDelegatedUserDecryptEip712V1 } from '../utils-p/decrypt/verifyKmsDelegatedUserDecryptEip712V1.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
@@ -152,7 +153,8 @@ export async function createUnsignedDecryptionPermitEip712V1(
   context: KmsSignDecryptionPermitContext,
   parameters: Omit<KmsSignDecryptionPermitParameters, 'signer' | 'signerAddress'>,
 ): Promise<KmsDelegatedUserDecryptEip712V1 | KmsUserDecryptEip712V1> {
-  const { contractAddresses, startTimestamp, durationSeconds, transportKeyPair, delegatorAddress } = parameters;
+  const { contractAddresses, startTimestamp, durationSeconds, transportKeyPair, delegatorAddress, fhevmContext } =
+    parameters;
 
   const durationDays = secondsToDays(durationSeconds, { subject: 'durationSeconds' });
 
@@ -165,6 +167,7 @@ export async function createUnsignedDecryptionPermitEip712V1(
   const kmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    fhevmContext,
   });
 
   const extraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);
@@ -198,9 +201,13 @@ export async function createUnsignedDecryptionPermitEip712V1(
 
 export async function parseSignedDecryptionPermitV1(
   context: KmsSignDecryptionPermitContext,
-  transportKeyPair: TransportKeyPair,
-  permit: unknown,
+  parameters: {
+    readonly transportKeyPair: TransportKeyPair;
+    readonly permit: unknown;
+    readonly fhevmContext: FhevmClientFrozenContext;
+  },
 ): Promise<SignedDecryptionPermit> {
+  const { transportKeyPair, permit } = parameters;
   assertIsTransportKeyPair(transportKeyPair, {});
 
   const permitName = 'permit-v1';

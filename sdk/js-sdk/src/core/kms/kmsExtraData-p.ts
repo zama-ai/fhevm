@@ -3,7 +3,7 @@ import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { HostContractVersion } from '../types/hostContract.js';
 import type { KmsExtraData } from '../types/kms-p.js';
 import { asUint256BigInt, asUint8Number } from '../base/uint.js';
-import { asBytes32Hex, assertIsBytesHex } from '../base/bytes.js';
+import { asBytes32Hex, asBytesHex, assertIsBytesHex } from '../base/bytes.js';
 import { isVersionEqual, isVersionStrictlyBefore } from '../host-contracts/HostContractVersion-p.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 
@@ -23,16 +23,18 @@ const PRIVATE_TOKEN = Symbol('KmsExtraData.token');
  * @internal
  */
 export class KmsExtraDataImpl implements KmsExtraData {
-  readonly #version: Uint8Number;
+  readonly #version: Uint8Number | undefined;
   readonly #kmsContextId: Uint256BigInt;
   readonly #kmsEpochId: Uint256BigInt;
+  readonly #kmsExtraData: BytesHex;
 
   constructor(
     privateToken: symbol,
     parameters: {
-      readonly version: Uint8Number;
+      readonly version: Uint8Number | undefined;
       readonly kmsContextId: Uint256BigInt;
       readonly kmsEpochId: Uint256BigInt;
+      readonly kmsExtraData: BytesHex;
     },
   ) {
     if (privateToken !== PRIVATE_TOKEN) {
@@ -41,12 +43,22 @@ export class KmsExtraDataImpl implements KmsExtraData {
 
     this.#kmsContextId = asUint256BigInt(parameters.kmsContextId);
     this.#kmsEpochId = asUint256BigInt(parameters.kmsEpochId);
-    this.#version = asUint8Number(parameters.version);
+    this.#version = parameters.version === undefined ? undefined : asUint8Number(parameters.version);
+    this.#kmsExtraData = asBytesHex(parameters.kmsExtraData);
 
     this.#validate();
   }
 
   #validate(): void {
+    if (this.#version === undefined) {
+      if (this.#kmsContextId !== 0n) {
+        throw new Error('kmsContextId must be 0 for unknown kms extraData');
+      }
+      if (this.#kmsEpochId !== 0n) {
+        throw new Error('kmsEpochId must be 0 for unknown kms extraData');
+      }
+      return;
+    }
     switch (this.#version) {
       case EXTRA_DATA_V0: {
         if (this.#kmsContextId !== 0n) {
@@ -80,8 +92,12 @@ export class KmsExtraDataImpl implements KmsExtraData {
     }
   }
 
-  public get version(): Uint8Number {
+  public get version(): Uint8Number | undefined {
     return this.#version;
+  }
+
+  public get isFutureVersion(): boolean {
+    return this.#version === undefined;
   }
 
   public get kmsContextId(): Uint256BigInt {
@@ -92,51 +108,44 @@ export class KmsExtraDataImpl implements KmsExtraData {
     return this.#kmsEpochId;
   }
 
-  /**
-   * Encodes a KMS context into an extraData format.
-   * v0: `0x00`
-   * v1: `0x01` + 32-byte big-endian context ID.
-   * v2: `0x02` + 32-byte big-endian context ID + 32-byte big-endian epoch ID.
-   */
-  public toBytesHex(): BytesHex {
-    const v = this.#version.toString(16).padStart(2, '0');
+  public get bytesHex(): BytesHex {
+    return this.#kmsExtraData;
+  }
 
-    switch (this.#version) {
-      case EXTRA_DATA_V0: {
-        return `0x${v}` as BytesHex;
-      }
-      case EXTRA_DATA_V1: {
-        const contextId = this.#kmsContextId.toString(16).padStart(64, '0');
-        return `0x${v}${contextId}` as BytesHex;
-      }
-      case EXTRA_DATA_V2: {
-        const contextId = this.#kmsContextId.toString(16).padStart(64, '0');
-        const epochId = this.#kmsEpochId.toString(16).padStart(64, '0');
-        return `0x${v}${contextId}${epochId}` as BytesHex;
-      }
-      default:
-        throw new Error(`Unsupported kms extraData version ${this.#version}`);
-    }
+  public lt(version: number): boolean {
+    return this.#version !== undefined && this.#version < version;
+  }
+  public le(version: number): boolean {
+    return this.#version !== undefined && this.#version <= version;
+  }
+  public gt(version: number): boolean {
+    return this.#version === undefined || this.#version > version;
+  }
+  public ge(version: number): boolean {
+    return this.#version === undefined || this.#version >= version;
   }
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
-export function fromKmsExtraDataBytesHex(extraDataBytesHex: BytesHex): KmsExtraData {
-  if ((extraDataBytesHex as string) === '0x00' || (extraDataBytesHex as string) === '0x') {
-    return new KmsExtraDataImpl(PRIVATE_TOKEN, {
-      version: EXTRA_DATA_V0,
-      kmsContextId: 0n as Uint256BigInt,
-      kmsEpochId: 0n as Uint256BigInt,
-    });
-  }
+export function createKmsExtraDataFromBytesHex(extraDataBytesHex: BytesHex): KmsExtraData {
+  const sanitized: string = (extraDataBytesHex as string) === '0x' ? '0x00' : extraDataBytesHex;
 
-  if (extraDataBytesHex.length <= 4) {
+  if (sanitized.length < 4) {
     throw new Error(`Unsupported kms extraData length ${extraDataBytesHex.length}: must be more than 4 bytes`);
   }
 
   // First byte = version (characters 2-3 after '0x')
-  const version = asUint8Number(Number('0x' + extraDataBytesHex.slice(2, 4)));
+  const version = asUint8Number(Number('0x' + sanitized.slice(2, 4)));
+
+  if (version === EXTRA_DATA_V0) {
+    return new KmsExtraDataImpl(PRIVATE_TOKEN, {
+      version: EXTRA_DATA_V0,
+      kmsContextId: 0n as Uint256BigInt,
+      kmsEpochId: 0n as Uint256BigInt,
+      kmsExtraData: '0x00' as BytesHex,
+    });
+  }
 
   if (version === EXTRA_DATA_V1) {
     // ExtraData v1 format: 1 version byte + 32-byte big-endian context ID = 33 bytes = 66 hex chars + 2 for '0x' = 68
@@ -158,6 +167,7 @@ export function fromKmsExtraDataBytesHex(extraDataBytesHex: BytesHex): KmsExtraD
       version: EXTRA_DATA_V1,
       kmsContextId,
       kmsEpochId: 0n as Uint256BigInt,
+      kmsExtraData: extraDataBytesHex,
     });
   }
 
@@ -184,11 +194,39 @@ export function fromKmsExtraDataBytesHex(extraDataBytesHex: BytesHex): KmsExtraD
     return new KmsExtraDataImpl(PRIVATE_TOKEN, {
       version: EXTRA_DATA_V2,
       kmsContextId,
-      kmsEpochId: kmsEpochId,
+      kmsEpochId,
+      kmsExtraData: extraDataBytesHex,
     });
   }
 
-  throw new Error(`Unsupported kms extraData version ${version}`);
+  return new KmsExtraDataImpl(PRIVATE_TOKEN, {
+    version: undefined,
+    kmsContextId: 0n as Uint256BigInt,
+    kmsEpochId: 0n as Uint256BigInt,
+    kmsExtraData: extraDataBytesHex,
+  });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Returns the `extraData` bytes exactly as they appear on the wire and inside KMS
+ * signatures — i.e. the form the KMS/gateway signs over, NOT the SDK's internal
+ * encoding.
+ *
+ * The only difference is the v0 sentinel: internally the SDK carries it as the
+ * one-byte `0x00`, but the KMS signs v0 as EMPTY bytes (`0x`). Every place that
+ * reconstructs a message the KMS signed — `UserDecryptResponseVerification`
+ * (per-share and wasm request), the public-decryption proof, and the public-decrypt
+ * EIP-712 — must use THIS value, or v0 signatures fail to verify. Concrete versions
+ * (v1, v2, …) and unknown/future versions pass through unchanged.
+ *
+ * This centralizes a rule previously inlined at each call site (KmsSigncryptedShares,
+ * PublicDecryptionProof, verifyKmsPublicDecryptEip712), where any divergence silently
+ * breaks v0 verification.
+ */
+export function toKmsSignedExtraDataBytesHex(extraData: KmsExtraData): BytesHex {
+  return extraData.version === EXTRA_DATA_V0 ? ('0x' as BytesHex) : extraData.bytesHex;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -198,16 +236,20 @@ export function createKmsExtraDataV0(): KmsExtraData {
     version: EXTRA_DATA_V0,
     kmsContextId: 0n as Uint256BigInt,
     kmsEpochId: 0n as Uint256BigInt,
+    kmsExtraData: '0x00' as BytesHex,
   });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export function createKmsExtraDataV1(parameters: { readonly kmsContextId: Uint256BigInt }): KmsExtraData {
+  const v = EXTRA_DATA_V1.toString(16).padStart(2, '0');
+  const contextId = parameters.kmsContextId.toString(16).padStart(64, '0');
   return new KmsExtraDataImpl(PRIVATE_TOKEN, {
     version: EXTRA_DATA_V1,
     kmsContextId: parameters.kmsContextId,
     kmsEpochId: 0n as Uint256BigInt,
+    kmsExtraData: `0x${v}${contextId}` as BytesHex,
   });
 }
 
@@ -217,10 +259,14 @@ export function createKmsExtraDataV2(parameters: {
   readonly kmsContextId: Uint256BigInt;
   readonly kmsEpochId: Uint256BigInt;
 }): KmsExtraData {
+  const v = EXTRA_DATA_V2.toString(16).padStart(2, '0');
+  const contextId = parameters.kmsContextId.toString(16).padStart(64, '0');
+  const epochId = parameters.kmsEpochId.toString(16).padStart(64, '0');
   return new KmsExtraDataImpl(PRIVATE_TOKEN, {
     version: EXTRA_DATA_V2,
     kmsContextId: parameters.kmsContextId,
     kmsEpochId: parameters.kmsEpochId,
+    kmsExtraData: `0x${v}${contextId}${epochId}` as BytesHex,
   });
 }
 
@@ -324,7 +370,7 @@ export function assertIsKmsExtraDataBytesHex(
   assertIsBytesHex(value, options);
 
   // Will valid extraData length too
-  fromKmsExtraDataBytesHex(value);
+  createKmsExtraDataFromBytesHex(value);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -348,17 +394,17 @@ export function isKmsExtraDataCompatibleWithKmsVerifier(
 
   // Protocol v0.11.0
   if (isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 2 })) {
-    return ed.version <= EXTRA_DATA_V0;
+    return ed.version !== undefined && ed.version <= EXTRA_DATA_V0;
   }
 
   // Protocol v0.12.0/v0.13.0
   if (isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 4 })) {
-    return ed.version <= EXTRA_DATA_V1;
+    return ed.version !== undefined && ed.version <= EXTRA_DATA_V1;
   }
 
   // Protocol v0.14.0
   if (isVersionEqual(kmsVerifierVersion, { major: 0, minor: 4, patch: 0 })) {
-    return ed.version <= EXTRA_DATA_V2;
+    return ed.version !== undefined && ed.version <= EXTRA_DATA_V2;
   }
 
   // Protocol v0.14.1+ (beyond the versions this SDK release knows about).

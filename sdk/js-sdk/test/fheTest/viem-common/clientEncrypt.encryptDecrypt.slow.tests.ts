@@ -139,7 +139,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
         await decryptClient.ready;
 
         const transportKeyPair = await decryptClient.generateTransportKeyPair();
-        const signedPermit = await decryptClient.signDecryptionPermit({
+        const signedPermit = await decryptClient.signLegacyDecryptionPermit({
           transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,

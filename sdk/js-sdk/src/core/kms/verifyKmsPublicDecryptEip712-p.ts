@@ -9,7 +9,7 @@ import { recoverSigners } from '../utils-p/runtime/recoverSigners.js';
 import { assertKmsSignerThreshold, kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
 import { kmsPublicDecryptEip712Types } from './kmsPublicDecryptEip712Types.js';
-import { EXTRA_DATA_V0 } from './kmsExtraData-p.js';
+import { toKmsSignedExtraDataBytesHex } from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -39,10 +39,8 @@ export async function verifyKmsPublicDecryptEip712(context: Context, parameters:
   // Warning!!!! Do not use '0x00' here!! Only '0x' is permitted!
   //
   ////////////////////////////////////////////////////////////////////////////
-  let signedExtraDataBytesHex: BytesHex = extraData.toBytesHex();
-  if (extraData.version === EXTRA_DATA_V0) {
-    signedExtraDataBytesHex = '0x' as BytesHex;
-  }
+
+  const signedExtraDataBytesHex: BytesHex = toKmsSignedExtraDataBytesHex(extraData);
 
   const handlesBytes32Hex: readonly Bytes32Hex[] = orderedEncryptedValues.map((h) => h.bytes32Hex);
 
@@ -58,6 +56,7 @@ export async function verifyKmsPublicDecryptEip712(context: Context, parameters:
   // A 'PublicDecryptVerification' KmsEip712Domain uses the gateway chainId!
   //
   //////////////////////////////////////////////////////////////////////////////
+
   const domain = createKmsEip712Domain({
     chainId: context.chain.fhevm.gateway.id,
     verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address,

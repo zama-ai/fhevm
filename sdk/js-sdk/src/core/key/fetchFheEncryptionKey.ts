@@ -2,7 +2,7 @@ import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
-import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { deserializeFheEncryptionKey } from './deserializeFheEncryptionKey.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 
@@ -10,11 +10,11 @@ export async function fetchFheEncryptionKeyWasm(
   context: {
     readonly chain: FhevmChain;
     readonly runtime: WithEncrypt;
-    readonly tfheVersion: TfheVersion;
   },
   parameters: {
     readonly options?: RelayerKeyUrlOptions | undefined;
     readonly ignoreCache?: boolean | undefined;
+    readonly fhevmContext: FhevmClientFrozenContext;
   },
 ): Promise<FheEncryptionKeyWasm> {
   const relayerUrl = context.chain.fhevm.relayerUrl;
@@ -32,7 +32,8 @@ export async function fetchFheEncryptionKeyWasm(
   globalFheEncryptionKeyCache.ensureWasm({
     owner: runtime,
     relayerUrl,
-    deserializeFn: (bytes) => deserializeFheEncryptionKey(context, bytes),
+    deserializeFn: (bytes) =>
+      deserializeFheEncryptionKey(context, { keyBytes: bytes, fhevmContext: parameters.fhevmContext }),
   });
 
   const entry = globalFheEncryptionKeyCache.get(relayerUrl);

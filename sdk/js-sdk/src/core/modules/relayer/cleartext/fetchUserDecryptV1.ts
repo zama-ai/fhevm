@@ -3,6 +3,7 @@ import type { FetchUserDecryptResultItem } from '../../../types/relayer.js';
 import type { CleartextEthereumModule } from '../../ethereum/types-ct.js';
 import type { FetchUserDecryptParametersV1, FetchUserDecryptReturnType, RelayerClientWithRuntime } from '../types.js';
 import type { KmsSignersContext } from '../../../types/kmsSignersContext.js';
+import type { FhevmClientFrozenContext } from '../../../types/fhevmClientFrozenContext-p.js';
 import { remove0x } from '../../../base/string.js';
 import { asUint32BigInt, tryParseUintBigIntString, randomUniqueUints } from '../../../base/uint.js';
 import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
@@ -18,6 +19,7 @@ import { isForgeFhevmV1, readPlaintexts, xorMaskWithPublicKey } from './forgeFhe
 async function runUserDecryptOffChain(
   relayerClient: RelayerClientWithRuntime,
   payload: FetchUserDecryptParametersV1['payload'],
+  fhevmContext: FhevmClientFrozenContext,
 ): Promise<{
   readonly commonKmsSigncryptedSharePayload: BytesHex;
   readonly signersAddress: readonly ChecksummedAddress[];
@@ -39,6 +41,7 @@ async function runUserDecryptOffChain(
     protocolConfigAddress: relayerClient.chain.fhevm.contracts.protocolConfig?.address as
       | ChecksummedAddress
       | undefined,
+    fhevmContext,
   });
   const signersAddress = currentKmsSignersContext.signers;
   const threshold = currentKmsSignersContext.threshold;
@@ -164,7 +167,7 @@ export async function fetchUserDecryptV1(
   parameters: FetchUserDecryptParametersV1,
 ): Promise<FetchUserDecryptReturnType> {
   const cleartextEthereumModule = relayerClient.runtime.ethereum as CleartextEthereumModule;
-  const { payload } = parameters;
+  const { payload, fhevmContext } = parameters;
   const pairs = payload.handleContractPairs;
   const contractAddresses = payload.kmsDecryptEip712Message.contractAddresses;
 
@@ -182,11 +185,11 @@ export async function fetchUserDecryptV1(
     }
   }
 
-  const offChain = await isForgeFhevmV1(relayerClient);
+  const offChain = await isForgeFhevmV1(relayerClient, fhevmContext);
 
   let res;
   if (offChain) {
-    res = await runUserDecryptOffChain(relayerClient, payload);
+    res = await runUserDecryptOffChain(relayerClient, payload, fhevmContext);
   } else {
     res = await runUserDecryptOnChain(relayerClient, payload);
   }
