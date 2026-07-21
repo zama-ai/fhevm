@@ -311,7 +311,7 @@ fn spawn_gcs_dry_run_readiness(
                             return;
                         }
                     }
-                    if let Err(e) = transition_to_gw_dry_run_started(&pool).await {
+                    if let Err(e) = transition_to_gw_dry_run_started(&pool, &proposal_id).await {
                         error!(error = %e, "failed to transition GCS gw_dry_run_started");
                     }
                 }
@@ -782,7 +782,10 @@ async fn prune_gcs_verify_proofs_before_start(
 /// Conditional UPDATE: marks the GCS row's `gw_dry_run_started` and notifies the
 /// zkproof-worker. Only flips a GCS row still in the gw-gateable window with the
 /// flag unset, so a duplicate firing is a no-op.
-async fn transition_to_gw_dry_run_started(pool: &Pool<Postgres>) -> Result<(), Error> {
+async fn transition_to_gw_dry_run_started(
+    pool: &Pool<Postgres>,
+    proposal_id: &[u8],
+) -> Result<(), Error> {
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -790,14 +793,16 @@ async fn transition_to_gw_dry_run_started(pool: &Pool<Postgres>) -> Result<(), E
         WHERE stack_role = 'GCS'
           AND gw_dry_run_started = FALSE
           AND state IN ('UpgradeActivated', 'DryRunStarted')
+          AND proposal_id = $1
         "#,
     )
+    .bind(proposal_id)
     .execute(pool)
     .await?;
 
     if result.rows_affected() == 0 {
         warn!(
-            "transition_to_gw_dry_run_started: GCS row not eligible (already set or past window) — skipping notify"
+            "transition_to_gw_dry_run_started: GCS row not eligible (already set, past window, or other proposal) — skipping notify"
         );
         return Ok(());
     }
@@ -1910,5 +1915,41 @@ mod tests {
             .await
             .expect("transition");
         assert_eq!(gcs_state(&pool).await.0, "DryRunStarted");
+    }
+
+    /// Same guard on the gateway track: a stale proposal must not set gw_dry_run_started.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn gw_transition_ignores_other_proposal() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02]
+        sqlx::query("UPDATE upgrade_state SET gw_dry_run_started = FALSE WHERE stack_role = 'GCS'")
+            .execute(&pool)
+            .await
+            .expect("reset flag");
+
+        let gw_flag = |pool: Pool<Postgres>| async move {
+            let (g,): (bool,) = sqlx::query_as(
+                "SELECT gw_dry_run_started FROM upgrade_state WHERE stack_role = 'GCS'",
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("gw flag");
+            g
+        };
+
+        // Stale proposal: no-op.
+        transition_to_gw_dry_run_started(&pool, &[0x99])
+            .await
+            .expect("gw transition");
+        assert!(
+            !gw_flag(pool.clone()).await,
+            "stale proposal must not release gw"
+        );
+
+        // Matching proposal: releases.
+        transition_to_gw_dry_run_started(&pool, &[0x02])
+            .await
+            .expect("gw transition");
+        assert!(gw_flag(pool.clone()).await, "matching proposal releases gw");
     }
 }
