@@ -11,17 +11,27 @@ name: pr-preview-destroy
 # StatefulSets, not a Crossplane claim, so it's already gone the moment the
 # namespace is - see coprocessor-infra/values-postgres-coprocessor-e2e.yaml.
 #
-# Triggers (both mirror pr-preview-deploy.yml's labels: pr-preview-e2e /
-# pr-preview-e2e-build / pr-preview-e2e-tests):
+# Triggers (the pull_request ones mirror pr-preview-deploy.yml's labels:
+# pr-preview-e2e / pr-preview-e2e-build / pr-preview-e2e-tests):
 #   - closed:    PR merged/closed -> always attempt teardown (no-op if none).
 #   - unlabeled: a preview label was removed AND no preview label remains, i.e.
 #     the label that keeps the env alive is gone. Removing only -build/-tests
 #     while pr-preview-e2e stays does NOT tear down (the env is still wanted).
+#   - workflow_dispatch: manual teardown for envs created by a manual
+#     pr-preview-deploy run (namespace fhevm-ci-<actor>-<suffix|run_id>), which
+#     has no PR event to key off. Pass the exact namespace from the deploy run's
+#     summary.
 ##############################################################################
 
 on:
   pull_request:
     types: [closed, unlabeled]
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: "Exact namespace to destroy (copy from the manual deploy run's summary, e.g. fhevm-ci-<actor>-<suffix|run_id>). Must start with fhevm-ci-."
+        required: true
+        type: string
 
 permissions: {}
 
@@ -36,6 +46,7 @@ jobs:
     # `!contains(toJSON(labels.*.name), 'pr-preview-e2e')` confirms no preview
     # label is left (removing -build/-tests while -e2e stays keeps the env).
     if: >-
+      github.event_name == 'workflow_dispatch' ||
       github.event.action == 'closed' ||
       (github.event.action == 'unlabeled' &&
       contains(github.event.label.name, 'pr-preview-e2e') &&
@@ -45,16 +56,18 @@ jobs:
     # The comment step needs to write to the PR; the workflow-level
     # permissions ({}) don't grant it, so scope it here at the job level.
     permissions:
-      pull-requests: write
+      pull-requests: write # for the comment step
     env:
-      # MUST match pr-preview-deploy.yml's namespace derivation. Both use the PR
-      # AUTHOR (pull_request.user.login), not github.actor: on deploy github.actor
-      # is whoever pushed/labeled, and on the closed/unlabeled event here it's
-      # whoever closed the PR or removed the label - those can differ, which would
-      # target a namespace that was never created and leak the real one. The PR
-      # author is identical across all those events, so teardown always hits the
-      # namespace deploy created.
-      NAMESPACE: fhevm-ci-${{ github.event.pull_request.user.login }}-${{ github.event.pull_request.number }}
+      # pull_request: MUST match pr-preview-deploy.yml's namespace derivation.
+      # Both use the PR AUTHOR (pull_request.user.login), not github.actor: on
+      # deploy github.actor is whoever pushed/labeled, and on the closed/unlabeled
+      # event here it's whoever closed the PR or removed the label - those can
+      # differ, which would target a namespace that was never created and leak the
+      # real one. The PR author is identical across all those events, so teardown
+      # always hits the namespace deploy created.
+      # workflow_dispatch: no PR to derive from, so take the exact namespace the
+      # operator pasted from the manual deploy run's summary.
+      NAMESPACE: ${{ github.event_name == 'workflow_dispatch' && inputs.namespace || format('fhevm-ci-{0}-{1}', github.event.pull_request.user.login, github.event.pull_request.number) }}
       TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
     steps:
       - name: Setup tailscale
@@ -76,6 +89,13 @@ jobs:
 
       - name: Destroy preview namespace
         run: |
+          # Guard against a typo'd dispatch input nuking an unrelated namespace:
+          # all preview envs are fhevm-ci-*, so refuse anything else.
+          if [[ "${NAMESPACE}" != fhevm-ci-* ]]; then
+            echo "::error::Refusing to destroy '${NAMESPACE}': not a fhevm-ci-* preview namespace."
+            exit 1
+          fi
+
           if ! kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
             echo "Namespace ${NAMESPACE} does not exist, nothing to destroy."
             exit 0
@@ -91,9 +111,15 @@ jobs:
           }
 
       - name: Comment on PR
-        if: always()
+        # No PR to comment on for workflow_dispatch - result goes to the summary.
+        if: always() && github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
             :broom: e2e preview environment (namespace `${{ env.NAMESPACE }}`) has been torn down.
+
+      - name: Write teardown result to summary
+        if: always() && github.event_name == 'workflow_dispatch'
+        run: |
+          echo ":broom: e2e preview environment (namespace \`${NAMESPACE}\`) teardown finished." >> "$GITHUB_STEP_SUMMARY"

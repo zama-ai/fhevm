@@ -21,5 +21,4 @@ paths:
     ignore:
       - SC2001 # https://www.shellcheck.net/wiki/SC2001
       - SC2129 # style-only: individually-guarded redirects to $GITHUB_OUTPUT are clearer than one block - https://www.shellcheck.net/wiki/SC2129
-      - SC2016 # single quotes are intentional in kubectl jsonpath / literal templates - https://www.shellcheck.net/wiki/SC2016
       - 'property "result" is not defined in object type.*'

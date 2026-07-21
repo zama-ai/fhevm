@@ -58,9 +58,14 @@ on:
         required: true
         default: "0.6.5"
       nb_coprocessor:
-        description: "Number of coprocessor parties to deploy - e.g. 1, 3 or 5"
+        description: "Number of coprocessor parties to deploy"
         required: true
+        type: choice
         default: "1"
+        options:
+          - "1"
+          - "3"
+          - "5"
       kms_connector_version:
         description: "Image tag for kms-connector images (same override rule as host_contracts_version above)"
         required: true
@@ -78,16 +83,20 @@ on:
         required: true
         default: "v0.13.20"
       nb_kms_core:
-        description: "Number of kms-core parties to deploy (1:1 with kms-connector + dedicated Postgres releases) - e.g. 4 or 13"
+        description: "Number of kms-core parties to deploy (1:1 with kms-connector + dedicated Postgres releases)"
         required: true
+        type: choice
         default: "4"
+        options:
+          - "4"
+          - "13"
       relayer_version:
         description: "Image tag for the relayer/relayer-migrate images (same override rule as host_contracts_version above)"
         required: true
         default: "v0.13.0"
       relayer_sdk_version:
-        description: "Version of the relayer-sdk to test in the e2e test-suite workflow"
-        required: true
+        description: "Version of @zama-fhe/relayer-sdk to test. Set: run both e2e suites (fhevm-sdk then relayer-sdk) sequentially. Empty: run the @fhevm/sdk suite only."
+        required: false
         default: "0.4.4"
       test_suite_version:
         description: "Image tag for the test-suite image (same override rule as host_contracts_version above) - only matters when build_images=false, see env.TEST_SUITE_VERSION's comment"
@@ -97,6 +106,18 @@ on:
         description: "Version of the generic `common` Helm chart, used for postgres-*, relayer-migrate, relayer and test-suite alike"
         required: true
         default: "0.3.3"
+      redis_chart_version:
+        description: "Version of the Redis Helm chart (per-party host-listener-consumer broker)"
+        required: true
+        default: "25.3.8"
+      listener_chart_version:
+        description: "Version of the listener Helm chart (per-party host-chain event producer)"
+        required: true
+        default: "0.1.1"
+      listener_version:
+        description: "Image tag for the listener/listener-core image (external dep, not built here - pair with the coprocessor's host-listener-consumer)"
+        required: true
+        default: "cc8fc16-dev"
 
 concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
@@ -169,6 +190,11 @@ env:
   # tfhe-rs 1.5.x (e.g. v0.13.10). This pinned fallback only matters when
   # build_images is off.
   TEST_SUITE_VERSION: "b858525"
+  # PR-trigger default for the relayer-sdk e2e run (dispatch uses the
+  # relayer_sdk_version input). Non-empty: deploy the @zama-fhe/relayer-sdk
+  # suite too (patched into values-test-suite-workflow-relayer-sdk-e2e.yaml's
+  # RELAYER_SDK_VERSION); empty: run the @fhevm/sdk suite only.
+  RELAYER_SDK_VERSION: ""
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
   #=====KMS==================================================================
@@ -390,144 +416,40 @@ jobs:
       # on workflow_dispatch. Resolved here so both triggers share one path.
       contracts_chart_version: ${{ steps.resolve.outputs.contracts_chart_version }}
       coprocessor_chart_version: ${{ steps.resolve.outputs.coprocessor_chart_version }}
+      coprocessor_infra_chart_version: ${{ steps.resolve.outputs.coprocessor_infra_chart_version }}
       kms_connector_chart_version: ${{ steps.resolve.outputs.kms_connector_chart_version }}
       common_chart_version: ${{ steps.resolve.outputs.common_chart_version }}
+      relayer_sdk_version: ${{ steps.resolve.outputs.relayer_sdk_version }}
+      redis_chart_version: ${{ steps.resolve.outputs.redis_chart_version }}
+      listener_chart_version: ${{ steps.resolve.outputs.listener_chart_version }}
+      listener_version: ${{ steps.resolve.outputs.listener_version }}
       kms_repo_ref: ${{ steps.resolve.outputs.kms_repo_ref }}
       kms_core_tag: ${{ steps.resolve.outputs.kms_core_tag }}
       nb_kms_core: ${{ steps.resolve.outputs.nb_kms_core }}
       nb_coprocessor: ${{ steps.resolve.outputs.nb_coprocessor }}
     steps:
+      # Sparse-checkout just the resolve-tags script so the github-script step
+      # can require() it (this job otherwise has no working tree).
+      - name: Checkout resolve-tags script
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+          sparse-checkout: ci/preview-env/scripts/resolve-tags.cjs
+          sparse-checkout-cone-mode: false
       - id: resolve
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           NEEDS: ${{ toJSON(needs) }}
           EVENT_NAME: ${{ github.event_name }}
-          # `inputs` is always a defined object ({} on pull_request), so the
-          # helpers below can dereference inputs.* without a null-check.
+          # Always a defined object ({} on pull_request), so inputs.* is safe.
           INPUTS: ${{ toJSON(inputs) }}
           ACTOR: ${{ github.actor }}
         with:
           script: |
-            const needs = JSON.parse(process.env.NEEDS);
-            const isDispatch = process.env.EVENT_NAME === 'workflow_dispatch';
-            const inputs = JSON.parse(process.env.INPUTS);
-            const env = process.env;
-
-            // pull_request: this PR's head SHA. workflow_dispatch: tip of the
-            // picked branch (context.sha already resolves to it).
-            const shortSha = isDispatch
-              ? context.sha.substring(0, 7)
-              : context.payload.pull_request.head.sha.substring(0, 7);
-
-            // "success" = this run built+pushed shortSha; anything else
-            // (skipped/unchanged, or build_images off) falls back to the pin.
-            const pick = (result, pinnedVersion) => (result === 'success' ? shortSha : pinnedVersion);
-
-            // Pinned version per component: env default on pull_request, the
-            // matching input on dispatch. One pin backs every sub-image of a
-            // family (e.g. all kms-connector binaries), except host/gateway
-            // contracts, which version independently.
-            const pinned = (envVar, dispatchInput) => (isDispatch ? dispatchInput : envVar);
-            const hostContractsPin = pinned(env.HOST_CONTRACTS_VERSION, inputs.host_contracts_version);
-            const gatewayContractsPin = pinned(env.GATEWAY_CONTRACTS_VERSION, inputs.gateway_contracts_version);
-            const kmsConnectorPin = pinned(env.KMS_CONNECTOR_VERSION, inputs.kms_connector_version);
-            const coprocessorPin = pinned(env.COPROCESSOR_VERSION, inputs.coprocessor_version);
-            const relayerPin = pinned(env.RELAYER_VERSION, inputs.relayer_version);
-            const testSuitePin = pinned(env.TEST_SUITE_VERSION, inputs.test_suite_version);
-
-            const tags = {
-              host_contracts: pick(needs['build-host-contracts'].outputs.build_result, hostContractsPin),
-              gateway_contracts: pick(needs['build-gateway-contracts'].outputs.build_result, gatewayContractsPin),
-              kms_connector_db_migration: pick(needs['build-kms-connector'].outputs.db_migration_build_result, kmsConnectorPin),
-              kms_connector_gw_listener: pick(needs['build-kms-connector'].outputs.gw_listener_build_result, kmsConnectorPin),
-              kms_connector_kms_worker: pick(needs['build-kms-connector'].outputs.kms_worker_build_result, kmsConnectorPin),
-              kms_connector_tx_sender: pick(needs['build-kms-connector'].outputs.tx_sender_build_result, kmsConnectorPin),
-              coprocessor_db_migration: pick(needs['build-coprocessor'].outputs.db_migration_build_result, coprocessorPin),
-              coprocessor_gw_listener: pick(needs['build-coprocessor'].outputs.gw_listener_build_result, coprocessorPin),
-              coprocessor_host_listener: pick(needs['build-coprocessor'].outputs.host_listener_build_result, coprocessorPin),
-              coprocessor_sns_worker: pick(needs['build-coprocessor'].outputs.sns_worker_build_result, coprocessorPin),
-              coprocessor_tfhe_worker: pick(needs['build-coprocessor'].outputs.tfhe_worker_build_result, coprocessorPin),
-              coprocessor_tx_sender: pick(needs['build-coprocessor'].outputs.tx_sender_build_result, coprocessorPin),
-              coprocessor_zkproof_worker: pick(needs['build-coprocessor'].outputs.zkproof_worker_build_result, coprocessorPin),
-              relayer_migrate: pick(needs['build-relayer'].outputs.relayer_migrate_build_result, relayerPin),
-              relayer: pick(needs['build-relayer'].outputs.relayer_build_result, relayerPin),
-              test_suite: pick(needs['build-test-suite'].outputs.build_result, testSuitePin),
-            };
-
-            // Namespace: PR number on pull_request; on dispatch, this run's id
-            // (unique) or the optional namespace_suffix. On pull_request the
-            // actor segment is the PR AUTHOR (pull_request.user.login), NOT
-            // github.actor: github.actor is whoever triggered this run (pusher/
-            // labeler), which can differ from whoever closes the PR later. Since
-            // pr-preview-destroy.yml derives the namespace on the `closed` event,
-            // both must key off the same stable field - the PR author is
-            // identical across both events. Keep the two in sync.
-            const namespace = isDispatch
-              ? `fhevm-ci-${env.ACTOR}-${inputs.namespace_suffix || context.runId}`
-              : `fhevm-ci-${context.payload.pull_request.user.login}-${context.payload.pull_request.number}`;
-
-            // Chart/ref versions: env on pull_request, matching input on dispatch.
-            const chartVersions = {
-              contracts_chart_version: isDispatch ? inputs.contracts_chart_version : env.CONTRACTS_CHART_VERSION,
-              coprocessor_chart_version: isDispatch ? inputs.coprocessor_chart_version : env.COPROCESSOR_CHART_VERSION,
-              kms_connector_chart_version: isDispatch ? inputs.kms_connector_chart_version : env.KMS_CONNECTOR_CHART_VERSION,
-              // Backs postgres-*/relayer-migrate/relayer/test-suite (common chart).
-              common_chart_version: isDispatch ? inputs.common_chart_version : env.COMMON_CHART_VERSION,
-              kms_repo_ref: isDispatch ? inputs.kms_repo_ref : env.KMS_REPO_REF,
-              kms_core_tag: isDispatch ? inputs.kms_core_version : env.KMS_CORE_TAG,
-              // Parties count (1:1 with kms-connector + Postgres releases).
-              nb_kms_core: isDispatch ? inputs.nb_kms_core : env.NB_KMS_CORE,
-              // Independent coprocessor parties (1:1 with coprocessor +
-              // coprocessor-infra + Postgres releases).
-              nb_coprocessor: isDispatch ? inputs.nb_coprocessor : env.NB_COPROCESSOR,
-            };
-
-            core.info(`Resolved tags: ${JSON.stringify(tags, null, 2)}`);
-            core.info(`Resolved namespace: ${namespace}`);
-            core.info(`Resolved chart versions: ${JSON.stringify(chartVersions, null, 2)}`);
-            core.setOutput('short_sha', shortSha);
-            core.setOutput('tags_json', JSON.stringify(tags));
-            core.setOutput('namespace', namespace);
-            for (const [key, value] of Object.entries(chartVersions)) {
-              core.setOutput(key, value);
-            }
-
-            // Deployment plan summary: earliest point every version (chart +
-            // image) is known together.
-            await core.summary
-              .addHeading(
-                isDispatch
-                  ? `fhevm e2e preview - deployment plan (manual dispatch, ${namespace}, ${shortSha})`
-                  : `fhevm e2e preview - deployment plan (PR #${context.payload.pull_request.number}, ${shortSha})`
-              )
-              .addHeading('Helm charts', 3)
-              .addTable([
-                [{data: 'Component', header: true}, {data: 'Chart', header: true}, {data: 'Version', header: true}],
-                ['anvil-node (host + gateway chains)', env.ANVIL_NODE_CHART, env.ANVIL_NODE_CHART_VERSION],
-                ['contracts (host/gateway/keygen)', env.CONTRACTS_CHART, chartVersions.contracts_chart_version],
-                ['coprocessor', env.COPROCESSOR_CHART, chartVersions.coprocessor_chart_version],
-                ['kms-connector', env.KMS_CONNECTOR_CHART, chartVersions.kms_connector_chart_version],
-                ['coprocessor-infra (Crossplane S3)', env.COPROCESSOR_INFRA_CHART, env.COPROCESSOR_INFRA_CHART_VERSION],
-                ['postgres-* / relayer-migrate / relayer / test-suite (common chart)', env.COMMON_CHART, chartVersions.common_chart_version],
-              ])
-              .addHeading('Dedicated KMS (zama-ai/kms)', 3)
-              .addTable([
-                [{data: 'Component', header: true}, {data: 'Ref / tag', header: true}],
-                ['kms repo ref (deploy scripts + tkms-infra/kms-core charts)', chartVersions.kms_repo_ref],
-                ['kms-core image tag', chartVersions.kms_core_tag],
-                ['number of parties (kms-core / kms-connector / Postgres, 1:1)', chartVersions.nb_kms_core],
-                ['number of coprocessor parties (coprocessor / coprocessor-infra / Postgres, 1:1)', chartVersions.nb_coprocessor],
-              ])
-              .addHeading('Images', 3)
-              .addRaw(
-                `Short SHA \`${shortSha}\` for components built this run (build_images=\`${needs['check-labels'].outputs.build_images}\`) ` +
-                  `and actually changed, otherwise the pinned version shown per component below.\n\n`
-              )
-              .addTable([
-                [{data: 'Component', header: true}, {data: 'Tag', header: true}],
-                ...Object.entries(tags).map(([component, tag]) => [component, tag]),
-              ])
-              .write();
+            // Absolute path: github-script resolves relative require() from its
+            // own bundle dir, not the workspace, so anchor on GITHUB_WORKSPACE.
+            const resolveTags = require(`${process.env.GITHUB_WORKSPACE}/ci/preview-env/scripts/resolve-tags.cjs`)
+            await resolveTags({ core, context })
 
   ##########################################################################
   # Deploy the full stack to the per-PR namespace on the zws-dev cluster:
@@ -563,8 +485,13 @@ jobs:
       # same defaults through.
       CONTRACTS_CHART_VERSION: ${{ needs.resolve-tags.outputs.contracts_chart_version }}
       COPROCESSOR_CHART_VERSION: ${{ needs.resolve-tags.outputs.coprocessor_chart_version }}
+      COPROCESSOR_INFRA_CHART_VERSION: ${{ needs.resolve-tags.outputs.coprocessor_infra_chart_version }}
       KMS_CONNECTOR_CHART_VERSION: ${{ needs.resolve-tags.outputs.kms_connector_chart_version }}
       COMMON_CHART_VERSION: ${{ needs.resolve-tags.outputs.common_chart_version }}
+      RELAYER_SDK_VERSION: ${{ needs.resolve-tags.outputs.relayer_sdk_version }}
+      REDIS_CHART_VERSION: ${{ needs.resolve-tags.outputs.redis_chart_version }}
+      LISTENER_CHART_VERSION: ${{ needs.resolve-tags.outputs.listener_chart_version }}
+      LISTENER_VERSION: ${{ needs.resolve-tags.outputs.listener_version }}
       KMS_REPO_REF: ${{ needs.resolve-tags.outputs.kms_repo_ref }}
       KMS_CORE_TAG: ${{ needs.resolve-tags.outputs.kms_core_tag }}
       NB_KMS_CORE: ${{ needs.resolve-tags.outputs.nb_kms_core }}
@@ -578,40 +505,17 @@ jobs:
         with:
           persist-credentials: false
 
-      ######################################################################
-      # TOOLING
-      ######################################################################
-      - name: Setup tailscale
-        uses: tailscale/github-action@84a3f23bb4d843bcf4da6cf824ec1be473daf4de # v3.2.3
+      # Tooling + cluster access (tailscale, helm/kubectl/yq, kubeconfig, Harbor).
+      - name: Setup preview tooling
+        uses: ./.github/actions/setup-preview-tooling
         with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:fhevm-ci
-
-      - name: Setup helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede
-
-      - name: Setup yq
-        run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-
-      - name: Configure kubeconfig for the Tailscale cluster
-        run: tailscale configure kubeconfig "${TAILSCALE_HOSTNAME}"
-
-      # ======================================================================
-      # DOCKER BUILD STATUS HANDLING
-      # ======================================================================
-      - name: Login to zws GitHub Container Registry
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          registry: ${{ secrets.HARBOR_URL }}
-          username: ${{ secrets.HARBOR_READ_LOGIN }}
-          password: ${{ secrets.HARBOR_READ_TOKEN }}
+          ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          ts-tags: tag:fhevm-ci
+          tailscale-hostname: ${{ env.TAILSCALE_HOSTNAME }}
+          harbor-url: ${{ secrets.HARBOR_URL }}
+          harbor-username: ${{ secrets.HARBOR_READ_LOGIN }}
+          harbor-token: ${{ secrets.HARBOR_READ_TOKEN }}
 
       ######################################################################
       # NAMESPACE: destroy-then-recreate every run, cascading deletion of any
@@ -763,127 +667,42 @@ jobs:
           fi
           echo "s3_endpoint=${s3_endpoint}" >> "$GITHUB_OUTPUT"
 
-          signers_json=$(S3_ENDPOINT="${s3_endpoint}" node -e '
-            const n = parseInt(process.env.NB_KMS_CORE, 10);
-            const base = process.env.S3_ENDPOINT.replace(/\/+$/, "");
-            const fallback = process.env.FALLBACK_HANDLE;
-
-            // Newest object under PUB-p<i>/VerfAddress/, or the fallback handle
-            // when listing is not permitted (falls back to a plain GET).
-            async function resolveHandle(i) {
-              const url = `${base}?list-type=2&prefix=PUB-p${i}/VerfAddress/`;
-              try {
-                const res = await fetch(url);
-                if (!res.ok) return fallback;
-                const xml = await res.text();
-                const items = [...xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)]
-                  .map((m) => {
-                    const key = (m[1].match(/<Key>([^<]+)<\/Key>/) || [])[1];
-                    const lm = (m[1].match(/<LastModified>([^<]+)<\/LastModified>/) || [])[1];
-                    return { key, lm: lm ? Date.parse(lm) : 0 };
-                  })
-                  .filter((o) => o.key && /\/VerfAddress\/[^/]+$/.test(o.key));
-                if (!items.length) return fallback;
-                items.sort((a, b) => b.lm - a.lm);
-                return items[0].key.split("/").pop();
-              } catch (e) {
-                return fallback;
-              }
-            }
-
-            (async () => {
-              const out = [];
-              for (let i = 1; i <= n; i++) {
-                const handle = await resolveHandle(i);
-                const url = `${base}/PUB-p${i}/VerfAddress/${handle}`;
-                const res = await fetch(url);
-                if (!res.ok) {
-                  console.error(`::error::failed to fetch signer for party ${i} at ${url} (HTTP ${res.status})`);
-                  process.exit(1);
-                }
-                const signer = (await res.text()).trim();
-                if (!/^0x[0-9a-fA-F]{40}$/.test(signer)) {
-                  console.error(`::error::party ${i} VerfAddress at ${url} is not a valid address: "${signer}"`);
-                  process.exit(1);
-                }
-                console.error(`Party ${i}: handle=${handle} signer=${signer}`);
-                out.push({ party: i, signer });
-              }
-              // N parties must map to N DISTINCT signers. A duplicate means the
-              // shared bucket handed the same identity to multiple parties (stale
-              // or wrong handle) - registering that would scramble the on-chain
-              // signer<->tx-sender pairing and revert prepKeygenResponse.
-              const uniq = new Set(out.map((o) => o.signer.toLowerCase()));
-              if (uniq.size !== out.length) {
-                console.error(`::error::discovered signers are not distinct (stale/shared identity in the public vault): ${JSON.stringify(out)}`);
-                process.exit(1);
-              }
-              process.stdout.write(JSON.stringify(out));
-            })();
-          ')
+          signers_json=$(S3_ENDPOINT="${s3_endpoint}" node ci/preview-env/scripts/discover-kms-signers.mjs)
           echo "signers_json=${signers_json}" >> "$GITHUB_OUTPUT"
 
-      ######################################################################
-      # The per-party "tx sender" is fhevm's own wallet for submitting KMS
-      # responses on-chain. kms's deploy has no equivalent to discover, so we
-      # derive NB_KMS_CORE wallets from the same well-known Foundry/Hardhat
-      # mnemonic the anvil chains use, at HD indices 10..10+N-1 (offset 10 to
-      # avoid indices already used elsewhere in this namespace). Both chains
-      # pre-fund 120 accounts, covering up to 13 parties.
-      #
-      # ethers because it's the one HD-wallet tool not already needed elsewhere.
-      ######################################################################
+      # TX-SENDER WALLETS: derive fhevm's own on-chain identities from the
+      # well-known Foundry/Hardhat mnemonic (both anvil chains pre-fund 120
+      # accounts). Install ethers once; NODE_PATH lets the script's
+      # require('ethers') find it (CJS resolves from the script dir, not cwd).
+      - name: Install ethers for wallet derivation
+        run: |
+          mkdir -p /tmp/wallet-tools && cd /tmp/wallet-tools
+          npm install --silent --no-save ethers@6
+
       - name: Derive KMS tx-sender wallets
         id: kms-wallets
-        run: |
-          mkdir -p /tmp/kms-wallets && cd /tmp/kms-wallets
-          npm install --silent --no-save ethers@6
-          node -e "
-          const { ethers } = require('ethers');
-          const fs = require('fs');
-          const mnemonic = ethers.Mnemonic.fromPhrase('test test test test test test test test test test test junk');
-          const n = parseInt(process.env.NB_KMS_CORE, 10);
-          const wallets = [];
-          for (let i = 0; i < n; i++) {
-            const party = i + 1;
-            const path = \`m/44'/60'/0'/0/\${10 + i}\`;
-            const wallet = ethers.HDNodeWallet.fromMnemonic(mnemonic, path);
-            wallets.push({ party, address: wallet.address, privateKey: wallet.privateKey });
-          }
-          console.log('Derived', n, 'KMS tx-sender wallets:', wallets.map((w) => \`party \${w.party}: \${w.address}\`).join(', '));
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'wallets_json=' + JSON.stringify(wallets) + '\n');
-          "
+        # KMS tx-senders (submit KMS responses on-chain). Offset 10 to avoid
+        # indices used elsewhere in this namespace.
+        env:
+          NODE_PATH: /tmp/wallet-tools/node_modules
+          COUNT: ${{ env.NB_KMS_CORE }}
+          HD_OFFSET: "10"
+          OUTPUT_KEY: wallets_json
+          LABEL: KMS tx-sender
+        run: node ci/preview-env/scripts/derive-wallets.cjs
 
-      ######################################################################
-      # Each independent coprocessor party also needs its own on-chain identity
-      # (the tx-sender both signs the InputVerification EIP-712 response and
-      # sends the tx). Derive NB_COPROCESSOR wallets from the SAME mnemonic, at
-      # HD indices 20..20+N-1 - offset 20 so they never collide with the test
-      # signers (alice..eve = #0..#4), the host/ACL owner (#9), or the KMS
-      # tx-senders (#10..). Both anvil chains pre-fund 120 accounts. Each party
-      # reuses one address for both tx-sender and signer, matching the current
-      # single-party convention in values-coprocessor-e2e.yaml.
-      ######################################################################
       - name: Derive coprocessor tx-sender wallets
         id: coproc-wallets
-        run: |
-          mkdir -p /tmp/coproc-wallets && cd /tmp/coproc-wallets
-          npm install --silent --no-save ethers@6
-          node -e "
-          const { ethers } = require('ethers');
-          const fs = require('fs');
-          const mnemonic = ethers.Mnemonic.fromPhrase('test test test test test test test test test test test junk');
-          const n = parseInt(process.env.NB_COPROCESSOR, 10);
-          const wallets = [];
-          for (let i = 0; i < n; i++) {
-            const party = i + 1;
-            const path = \`m/44'/60'/0'/0/\${20 + i}\`;
-            const wallet = ethers.HDNodeWallet.fromMnemonic(mnemonic, path);
-            wallets.push({ party, address: wallet.address, privateKey: wallet.privateKey });
-          }
-          console.log('Derived', n, 'coprocessor tx-sender wallets:', wallets.map((w) => \`party \${w.party}: \${w.address}\`).join(', '));
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'wallets_json=' + JSON.stringify(wallets) + '\n');
-          "
+        # Per-party coprocessor identity (tx-sender = signer). Offset 20 so they
+        # never collide with the test signers (#0..#4), the ACL owner (#9), or
+        # the KMS tx-senders (#10..).
+        env:
+          NODE_PATH: /tmp/wallet-tools/node_modules
+          COUNT: ${{ env.NB_COPROCESSOR }}
+          HD_OFFSET: "20"
+          OUTPUT_KEY: wallets_json
+          LABEL: coprocessor tx-sender
+        run: node ci/preview-env/scripts/derive-wallets.cjs
 
       ######################################################################
       # BLOCKCHAIN: per-PR anvil host + gateway chains, fully isolated.
@@ -923,36 +742,9 @@ jobs:
           wait
 
       - name: Wait for coprocessor-infra to reconcile
-        run: |
-          max_wait=420; elapsed=0; interval=10
-          ready=false
-          # Gate ONLY on the coprocessor party buckets, named
-          # coprocessor-infra-<i>-coprocessor-bucket (exactly one per party, so
-          # NB_COPROCESSOR of them). The namespace also holds unrelated s3 claims
-          # we must NOT couple to here - notably the KMS party bucket
-          # (kms-party-*) - so we filter by name prefix rather than counting all
-          # `kubectl get s3`. Counting the expected number explicitly also rejects
-          # the "claims not created yet" case, where an empty list would otherwise
-          # look ready. `|| true` guards grep's exit 1 on zero matches under set -e.
-          expected="${NB_COPROCESSOR}"
-          while [[ $elapsed -lt $max_wait ]]; do
-            rows=$(kubectl get s3 -n "${NAMESPACE}" --no-headers \
-                -o custom-columns=NAME:.metadata.name,READY:'.status.conditions[?(@.type=="Ready")].status' 2>/dev/null \
-                | grep '^coprocessor-infra-' || true)
-            total=$(printf '%s' "${rows}" | grep -c . || true)
-            ready_count=$(printf '%s\n' "${rows}" | awk '$2=="True"{c++} END{print c+0}')
-            if [[ "${total}" -eq "${expected}" && "${ready_count}" -eq "${expected}" ]]; then
-              ready=true; echo "coprocessor-infra buckets ready (${ready_count}/${expected})"; break
-            fi
-            echo "Still waiting for coprocessor-infra buckets... (${ready_count}/${expected} Ready, ${total} present, ${elapsed}s/${max_wait}s)"
-            sleep "$interval"; elapsed=$((elapsed + interval))
-          done
-          kubectl get s3 -n "${NAMESPACE}" -o wide || true
-          if [[ "${ready}" != "true" ]]; then
-            echo "::error::coprocessor-infra buckets not all Ready (${expected} expected) after ${max_wait}s - see conditions/events above (or below via kubectl describe)"
-            kubectl describe s3 -n "${NAMESPACE}" || true
-            exit 1
-          fi
+        env:
+          NAME_PREFIX: coprocessor-infra-
+        run: bash ci/preview-env/scripts/wait-crossplane-s3.sh
 
       ######################################################################
       # CONTRACTS: gateway first, then host (needs gateway's Decryption /
@@ -961,103 +753,12 @@ jobs:
       - name: Wire real KMS node info into gateway-contracts values
         id: gateway-contracts-values
         env:
+          TARGET: gateway
           SIGNERS_JSON: ${{ steps.kms-identity.outputs.signers_json }}
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
           COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
           S3_ENDPOINT: ${{ steps.kms-identity.outputs.s3_endpoint }}
-        run: |
-          # NB_KMS_CORE real parties. Threshold formulas mirror kms's BFT-MPC
-          # defaults: t=floor((N-1)/3), majority=t+1, reconstruct=N-t. TODO:
-          # reconfirm this scaling against kms's own formula at N > 4.
-          n="${NB_KMS_CORE}"
-          t=$(( (n - 1) / 3 ))
-          majority=$(( t + 1 ))
-          reconstruct=$(( n - t ))
-
-          generated=/tmp/values-gateway-contracts-e2e.generated.yaml
-          cp ci/preview-env/gateway-chain/values-gateway-contracts-e2e.yaml "${generated}"
-
-          # Register the NB_COPROCESSOR independent coprocessors on-chain. Each
-          # party i has its own S3 bucket (created by coprocessor-infra-<i>, its
-          # name in ConfigMap coprocessor-<i>) and its own tx-sender/signer
-          # identity (from the coprocessor wallets step). The KMS worker reads
-          # COPROCESSOR_S3_BUCKET_URL_<idx> from GatewayConfig and fetches each
-          # ciphertext at <url>/<hex-digest> for user/public decryption; the
-          # sns-worker stores ct128 objects keyed by the bare hex digest at the
-          # bucket ROOT (no "ct128/" prefix), so each URL is the bare bucket root
-          # (region fixed to eu-west-1, see values-coprocessor-infra-e2e.yaml).
-          # COPROCESSOR_THRESHOLD is a simple majority of N.
-          nc="${NB_COPROCESSOR}"
-          coproc_threshold=$(( nc / 2 + 1 ))
-          yq -i "
-            .scDeploy.env += [
-              {\"name\": \"NUM_COPROCESSORS\", \"value\": \"${nc}\"},
-              {\"name\": \"COPROCESSOR_THRESHOLD\", \"value\": \"${coproc_threshold}\"}
-            ]
-          " "${generated}"
-          for i in $(seq 1 "${nc}"); do
-            idx=$((i - 1))
-            bucket=$(kubectl get configmap "coprocessor-${i}" -n "${NAMESPACE}" -o jsonpath='{.data.S3_BUCKET_NAME}')
-            if [[ -z "${bucket}" ]]; then
-              echo "::error::coprocessor-${i} ConfigMap has no S3_BUCKET_NAME key - is coprocessor-infra-${i} reconciled? (kubectl get configmap coprocessor-${i} -n ${NAMESPACE})"
-              exit 1
-            fi
-            coproc_addr=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}")
-            if [[ -z "${coproc_addr}" || "${coproc_addr}" == "null" ]]; then
-              echo "::error::no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"; exit 1
-            fi
-            coproc_s3_url="https://${bucket}.s3.eu-west-1.amazonaws.com"
-            # tx-sender and signer are the same address per party (matches the
-            # single-party convention in values-coprocessor-e2e.yaml).
-            yq -i "
-              .scDeploy.env += [
-                {\"name\": \"COPROCESSOR_TX_SENDER_ADDRESS_${idx}\", \"value\": \"${coproc_addr}\"},
-                {\"name\": \"COPROCESSOR_SIGNER_ADDRESS_${idx}\", \"value\": \"${coproc_addr}\"},
-                {\"name\": \"COPROCESSOR_S3_BUCKET_URL_${idx}\", \"value\": \"${coproc_s3_url}\"}
-              ]
-            " "${generated}"
-            echo "Registered coprocessor party ${i}: tx-sender/signer=${coproc_addr}, S3=${coproc_s3_url}"
-          done
-
-          yq -i "
-            .scDeploy.env += [
-              {\"name\": \"NUM_KMS_NODES\", \"value\": \"${n}\"},
-              {\"name\": \"PUBLIC_DECRYPTION_THRESHOLD\", \"value\": \"${reconstruct}\"},
-              {\"name\": \"USER_DECRYPTION_THRESHOLD\", \"value\": \"${reconstruct}\"},
-              {\"name\": \"KMS_GENERATION_THRESHOLD\", \"value\": \"${majority}\"},
-              {\"name\": \"MPC_THRESHOLD\", \"value\": \"${t}\"}
-            ]
-          " "${generated}"
-
-          # KMS_NODE_STORAGE_URL_x is deliberately the bare bucket root (no
-          # "/PUB-p<i>"): all parties share one bucket, and host-listener's S3
-          # client only handles a bare bucket URL (a party prefix makes it
-          # treat "PUB-p<i>" as a second bucket and 404). Every party publishes
-          # under its own prefix in that one bucket, so a prefix-less listing
-          # finds a match; matches zws-dev's own gw-sc-deploy registration.
-          for i in $(seq 1 "${n}"); do
-            idx=$((i - 1))
-            signer=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .signer' <<<"${SIGNERS_JSON}")
-            tx_sender=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${WALLETS_JSON}")
-            if [[ -z "${signer}" || "${signer}" == "null" ]]; then
-              echo "::error::no discovered signer for party ${i} in signers_json=${SIGNERS_JSON}"; exit 1
-            fi
-            if [[ -z "${tx_sender}" || "${tx_sender}" == "null" ]]; then
-              echo "::error::no derived tx-sender wallet for party ${i} in wallets_json=${WALLETS_JSON}"; exit 1
-            fi
-            yq -i "
-              .scDeploy.env += [
-                {\"name\": \"KMS_TX_SENDER_ADDRESS_${idx}\", \"value\": \"${tx_sender}\"},
-                {\"name\": \"KMS_SIGNER_ADDRESS_${idx}\", \"value\": \"${signer}\"},
-                {\"name\": \"KMS_NODE_IP_ADDRESS_${idx}\", \"value\": \"kms-core-${i}-core-${i}\"},
-                {\"name\": \"KMS_NODE_STORAGE_URL_${idx}\", \"value\": \"${S3_ENDPOINT}\"}
-              ]
-            " "${generated}"
-          done
-          # Force scDeploy.env[].value to double-quoted strings: yq drops quotes
-          # on plain scalars, and a bare hex address is valid YAML hex-int syntax.
-          yq -i '(.scDeploy.env[] | select(has("value")) | .value) style="double"' "${generated}"
-          echo "values_file=${generated}" >> "$GITHUB_OUTPUT"
+        run: bash ci/preview-env/scripts/wire-contracts-values.sh
 
       - name: Deploy gateway-contracts
         env:
@@ -1072,90 +773,18 @@ jobs:
 
       - name: Wire real KMS node info into host-contracts values
         id: host-contracts-values
+        # Mirrors the gateway wiring, with host-contracts' own field names
+        # (KMS_NODE_IP_x vs KMS_NODE_IP_ADDRESS_x, KMS_GEN_THRESHOLD vs
+        # KMS_GENERATION_THRESHOLD) and only the coprocessor SIGNER on-chain (the
+        # host InputVerifier verifies each proof against COPROCESSOR_SIGNER_x, so
+        # they must be the SAME derived wallets the gateway registered).
         env:
+          TARGET: host
           SIGNERS_JSON: ${{ steps.kms-identity.outputs.signers_json }}
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
           COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
           S3_ENDPOINT: ${{ steps.kms-identity.outputs.s3_endpoint }}
-        run: |
-          # Mirrors the gateway-contracts wiring above, with host-contracts' own
-          # field names (KMS_NODE_IP_x vs KMS_NODE_IP_ADDRESS_x, KMS_GEN_THRESHOLD
-          # vs KMS_GENERATION_THRESHOLD).
-          n="${NB_KMS_CORE}"
-          t=$(( (n - 1) / 3 ))
-          majority=$(( t + 1 ))
-          reconstruct=$(( n - t ))
-
-          generated=/tmp/values-host-contracts-e2e.generated.yaml
-          cp ci/preview-env/host-chain/values-host-contracts-e2e.yaml "${generated}"
-
-          # Register the NB_COPROCESSOR coprocessor SIGNERS on the host chain too:
-          # the host InputVerifier verifies each coprocessor's input-proof
-          # signature against COPROCESSOR_SIGNER_ADDRESS_<idx>, so these must be
-          # the SAME derived wallets registered on the gateway (and used as each
-          # coprocessor tx-sender's signing key) - otherwise host-side input
-          # verification rejects every proof. Host needs only the signer (no
-          # tx-sender / S3 URL, unlike the gateway).
-          nc="${NB_COPROCESSOR}"
-          coproc_threshold=$(( nc / 2 + 1 ))
-          yq -i "
-            .scDeploy.env += [
-              {\"name\": \"NUM_COPROCESSORS\", \"value\": \"${nc}\"},
-              {\"name\": \"COPROCESSOR_THRESHOLD\", \"value\": \"${coproc_threshold}\"}
-            ]
-          " "${generated}"
-          for i in $(seq 1 "${nc}"); do
-            idx=$((i - 1))
-            coproc_addr=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}")
-            if [[ -z "${coproc_addr}" || "${coproc_addr}" == "null" ]]; then
-              echo "::error::no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"; exit 1
-            fi
-            yq -i "
-              .scDeploy.env += [
-                {\"name\": \"COPROCESSOR_SIGNER_ADDRESS_${idx}\", \"value\": \"${coproc_addr}\"}
-              ]
-            " "${generated}"
-            echo "Registered host-side coprocessor party ${i} signer=${coproc_addr}"
-          done
-
-          yq -i "
-            .scDeploy.env += [
-              {\"name\": \"NUM_KMS_NODES\", \"value\": \"${n}\"},
-              {\"name\": \"PUBLIC_DECRYPTION_THRESHOLD\", \"value\": \"${reconstruct}\"},
-              {\"name\": \"USER_DECRYPTION_THRESHOLD\", \"value\": \"${reconstruct}\"},
-              {\"name\": \"KMS_GEN_THRESHOLD\", \"value\": \"${majority}\"},
-              {\"name\": \"MPC_THRESHOLD\", \"value\": \"${t}\"}
-            ]
-          " "${generated}"
-
-          # KMS_NODE_STORAGE_URL_x is the bare bucket root - see the gateway
-          # wiring step above for why.
-          for i in $(seq 1 "${n}"); do
-            idx=$((i - 1))
-            signer=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .signer' <<<"${SIGNERS_JSON}")
-            tx_sender=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${WALLETS_JSON}")
-            if [[ -z "${signer}" || "${signer}" == "null" ]]; then
-              echo "::error::no discovered signer for party ${i} in signers_json=${SIGNERS_JSON}"; exit 1
-            fi
-            if [[ -z "${tx_sender}" || "${tx_sender}" == "null" ]]; then
-              echo "::error::no derived tx-sender wallet for party ${i} in wallets_json=${WALLETS_JSON}"; exit 1
-            fi
-            yq -i "
-              .scDeploy.env += [
-                {\"name\": \"KMS_TX_SENDER_ADDRESS_${idx}\", \"value\": \"${tx_sender}\"},
-                {\"name\": \"KMS_SIGNER_ADDRESS_${idx}\", \"value\": \"${signer}\"},
-                {\"name\": \"KMS_NODE_IP_${idx}\", \"value\": \"kms-core-${i}-core-${i}\"},
-                {\"name\": \"KMS_NODE_STORAGE_URL_${idx}\", \"value\": \"${S3_ENDPOINT}\"},
-                {\"name\": \"KMS_NODE_PARTY_ID_${idx}\", \"value\": \"${i}\"},
-                {\"name\": \"KMS_NODE_MPC_IDENTITY_${idx}\", \"value\": \"kms-core-${i}\"},
-                {\"name\": \"KMS_NODE_CA_CERT_${idx}\", \"value\": \"0x706c616365686f6c6465722d63612d636572742d6532652d7370696b65\"},
-                {\"name\": \"KMS_NODE_STORAGE_PREFIX_${idx}\", \"value\": \"PUB-p${i}\"}
-              ]
-            " "${generated}"
-          done
-          # hex-address values must stay double-quoted strings - see gateway step.
-          yq -i '(.scDeploy.env[] | select(has("value")) | .value) style="double"' "${generated}"
-          echo "values_file=${generated}" >> "$GITHUB_OUTPUT"
+        run: bash ci/preview-env/scripts/wire-contracts-values.sh
 
       - name: Deploy host-contracts
         env:
@@ -1409,17 +1038,6 @@ jobs:
               '(.additionalResources[] | select(.object.kind == "Workflow") | .object.spec.templates[] | select(.name == "run-test") | .script.image) = strenv(E2E_IMAGE)' \
               "$1"
           }
-          wait_wf() {
-            local wf="$1" max_wait=7200 elapsed=0 interval=30 phase=""
-            while [[ $elapsed -lt $max_wait ]]; do
-              phase=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
-              case "${phase}" in
-                Succeeded|Failed|Error) break ;;
-                *) echo "[${wf}] phase='${phase:-<none>}' (${elapsed}s/${max_wait}s)"; sleep "${interval}"; elapsed=$((elapsed + interval)) ;;
-              esac
-            done
-            echo "[${wf}] final phase: ${phase:-<timed out>}"
-          }
 
           # A prior run in a reused namespace may leave completed Workflows of the
           # same names; delete both so these installs re-trigger fresh runs.
@@ -1439,16 +1057,25 @@ jobs:
           echo "Deploying @fhevm/sdk workflow (image ${E2E_IMAGE})..."
           helm upgrade --install test-suite-workflow "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
             -n "${NAMESPACE}" -f "${f1}"
-          wait_wf e2e-test-suite-fhevm-sdk
+          bash ci/preview-env/scripts/wait-workflow.sh e2e-test-suite-fhevm-sdk
 
-          # Release 2 (@zama-fhe/relayer-sdk): no RBAC of its own, reuses release 1's.
+          # Release 2 (@zama-fhe/relayer-sdk): only when a version is set, else the
+          # @fhevm/sdk suite runs alone. No RBAC of its own, reuses release 1's.
+          if [[ -z "${RELAYER_SDK_VERSION}" ]]; then
+            echo "RELAYER_SDK_VERSION empty - skipping the @zama-fhe/relayer-sdk suite."
+            exit 0
+          fi
           f2=$(mktemp --suffix=.yaml)
           cp ci/preview-env/test-suite/values-test-suite-workflow-relayer-sdk-e2e.yaml "${f2}"
           patch_image "${f2}"
+          # Wire the resolved relayer-sdk version into the run-test RELAYER_SDK_VERSION env.
+          yq -i \
+            '(.additionalResources[] | select(.object.kind == "Workflow") | .object.spec.templates[] | select(.name == "run-test") | .script.env[] | select(.name == "RELAYER_SDK_VERSION") | .value) = strenv(RELAYER_SDK_VERSION)' \
+            "${f2}"
           echo "Deploying @zama-fhe/relayer-sdk workflow (image ${E2E_IMAGE})..."
           helm upgrade --install test-suite-workflow-relayer "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
             -n "${NAMESPACE}" -f "${f2}"
-          wait_wf e2e-test-suite-relayer-sdk
+          bash ci/preview-env/scripts/wait-workflow.sh e2e-test-suite-relayer-sdk
 
       - name: Wait for e2e workflow and build report
         id: e2e_report
@@ -1463,105 +1090,7 @@ jobs:
           COPROCESSOR_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).coprocessor_host_listener }}
           RELAYER_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).relayer }}
           KMS_CONNECTOR_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).kms_connector_gw_listener }}
-        run: |
-          set -euo pipefail
-          # SDK matrix: one Workflow per SDK, deployed as two separate helm releases
-          # (values-test-suite-workflow-e2e.yaml + values-test-suite-workflow-relayer-sdk-e2e.yaml).
-          # Both are already terminal here (the deploy step waited on each); read
-          # their node statuses and emit a per-SDK result table into a combined report.
-          wfs=(e2e-test-suite-fhevm-sdk e2e-test-suite-relayer-sdk)
-          sdk_label() {
-            case "$1" in
-              e2e-test-suite-fhevm-sdk) echo "@fhevm/sdk (RELAYER_SDK_VERSION=\"\")" ;;
-              e2e-test-suite-relayer-sdk) echo "@zama-fhe/relayer-sdk" ;;
-              *) echo "$1" ;;
-            esac
-          }
-
-          sections=$(mktemp --suffix=.md)
-          overall_failed=0
-          for wf in "${wfs[@]}"; do
-            # Poll the overall phase. continueOn.failed keeps failed tests from
-            # failing the DAG, so the terminal phase is (almost) always Succeeded;
-            # per-test pass/fail is read from the node statuses below.
-            max_wait=7200; elapsed=0; interval=30; phase=""
-            while [[ $elapsed -lt $max_wait ]]; do
-              phase=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
-              case "${phase}" in
-                Succeeded|Failed|Error) break ;;
-                *) echo "[${wf}] phase='${phase:-<none>}' (${elapsed}s/${max_wait}s)"; sleep "${interval}"; elapsed=$((elapsed + interval)) ;;
-              esac
-            done
-            echo "[${wf}] final phase: ${phase:-<timed out>}"
-
-            wf_json=$(kubectl get workflow "${wf}" -n "${NAMESPACE}" -o json 2>/dev/null || echo '{}')
-
-            # Per-test phase table from the run-test pod nodes.
-            rows=$(jq -r '
-              (.status.nodes // {}) | to_entries
-              | map(.value | select(.templateName == "run-test"))
-              | sort_by(.displayName)
-              | .[] | "| \(.displayName) | \(.phase) |"' <<<"${wf_json}")
-            failed=$(jq -r '
-              [(.status.nodes // {}) | to_entries[] | .value
-               | select(.templateName == "run-test")
-               | select(.phase != "Succeeded")] | length' <<<"${wf_json}")
-            total=$(jq -r '
-              [(.status.nodes // {}) | to_entries[] | .value
-               | select(.templateName == "run-test")] | length' <<<"${wf_json}")
-            if [[ -z "${rows}" ]]; then rows="| _(no test nodes found)_ | ${phase:-Unknown} |"; fi
-
-            if [[ "${phase}" != "Succeeded" && "${phase}" != "Failed" && "${phase}" != "Error" ]]; then
-              sub="### :warning: $(sdk_label "${wf}") - timed out after ${max_wait}s"
-              overall_failed=$((overall_failed + 1))
-            elif [[ "${failed}" -gt 0 ]]; then
-              sub="### :x: $(sdk_label "${wf}") - ${failed}/${total} failed"
-              overall_failed=$((overall_failed + failed))
-            else
-              sub="### :white_check_mark: $(sdk_label "${wf}") - all ${total} passed"
-            fi
-
-            {
-              echo "${sub}"
-              echo
-              echo "Workflow \`${wf}\`."
-              echo
-              echo "| Test | Result |"
-              echo "| --- | --- |"
-              echo "${rows}"
-              echo
-            } >> "${sections}"
-          done
-
-          if [[ "${overall_failed}" -gt 0 ]]; then
-            header="## :x: Automated e2e tests (SDK matrix): ${overall_failed} failure(s)"
-          else
-            header="## :white_check_mark: Automated e2e tests (SDK matrix): all passed"
-          fi
-
-          report=$(mktemp --suffix=.md)
-          {
-            echo "${header}"
-            echo
-            echo "Namespace \`${NAMESPACE}\` on zws-dev."
-            echo
-            cat "${sections}"
-            echo "<details><summary>Resolved component versions</summary>"
-            echo
-            echo "| Component | Version |"
-            echo "| --- | --- |"
-            echo "| test-suite | \`${TEST_SUITE_TAG}\` |"
-            echo "| host-contracts | \`${HOST_CONTRACTS_TAG}\` |"
-            echo "| gateway-contracts | \`${GATEWAY_CONTRACTS_TAG}\` |"
-            echo "| coprocessor | \`${COPROCESSOR_TAG}\` |"
-            echo "| relayer | \`${RELAYER_TAG}\` |"
-            echo "| kms-connector | \`${KMS_CONNECTOR_TAG}\` |"
-            echo "| kms-core | \`${KMS_CORE_TAG}\` (parties: ${NB_KMS_CORE}) |"
-            echo "</details>"
-          } > "${report}"
-
-          echo "report_path=${report}" >> "$GITHUB_OUTPUT"
-          cat "${report}" >> "$GITHUB_STEP_SUMMARY"
+        run: bash ci/preview-env/scripts/build-e2e-report.sh
 
       - name: Comment e2e results on PR
         if: env.AUTOMATED_TESTS == 'true' && github.event_name == 'pull_request'

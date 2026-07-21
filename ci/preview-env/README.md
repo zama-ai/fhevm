@@ -1,5 +1,9 @@
 # fhevm ephemeral PR-preview e2e config
 
+> **New here?** Read [`101-preview-env.md`](./101-preview-env.md) first — a short,
+> practical guide to launching a preview from a PR label or a manual dispatch.
+> This README covers the internals (what is deployed and why).
+
 Config for the per-PR e2e preview environment, additive to the default docker-compose path
 driven by `test-suite/fhevm` (`fhevm-cli`). Mirrors the layout and conventions of
 [`zama-ai/kms/ci/kube-testing`](https://github.com/zama-ai/kms/tree/main/ci/kube-testing) +
@@ -206,3 +210,4 @@ self-contained `hostListener`. Per party `i`:
   `zama-ai/kms`'s own `ci/scripts/deploy.sh` defaults to).
 - Add support for changing the coprocessor's tfhe-worker instance type (e.g. GPU vs CPU nodepool
   selection).
+- Add multichain support

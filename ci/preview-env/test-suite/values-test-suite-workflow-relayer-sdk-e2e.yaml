@@ -317,9 +317,9 @@ additionalResources:
                 - name: RELAYER_URL
                   value: "http://relayer:3000/v2"
                 # Non-empty => instance.ts uses the @zama-fhe/relayer-sdk code path.
-                # NOTE: this only toggles the code path at runtime; the actual
-                # relayer-sdk version tested is whatever the image baked at build time
-                # (Dockerfile ARG RELAYER_SDK_VERSION).
+                # Patched at deploy time to the workflow's resolved relayer_sdk_version
+                # (dispatch input, else env.RELAYER_SDK_VERSION); this literal is only
+                # the standalone-apply fallback.
                 - name: RELAYER_SDK_VERSION
                   value: "0.4.4"
               resources:
