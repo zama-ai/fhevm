@@ -339,9 +339,9 @@ pub const CUTOVER_LOCK_ID: i64 = 0x4648_4556_4355_5456;
 /// drops. Without the lock a green write committing between cutover's merge read
 /// and its `DROP SCHEMA gcs CASCADE` would be neither merged nor preserved (a
 /// silent-loss window); holding the shared lock makes cutover's exclusive request
-/// block until the write commits, so it is merged before the drop. They skip only
-/// the [`is_retired`] re-check: a green binary is strictly newer than the live
-/// stack, so it can never be retired (`is_retired` is always `false` for it).
+/// block until the write commits, so it is merged before the drop. They skip the
+/// [`is_retired`] re-check (a green binary is never retired), but stop writing once
+/// their dry-run is rolled back (row `PAUSED`).
 pub async fn cutover_gate(
     tx: &mut Transaction<'_, Postgres>,
     gcs_mode: bool,
@@ -351,7 +351,13 @@ pub async fn cutover_gate(
         .execute(&mut **tx)
         .await?;
     if gcs_mode {
-        return Ok(false);
+        // Skip the write once the dry-run is rolled back (row PAUSED), so a stale
+        // in-flight batch can't land in the reset schema.
+        return sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM upgrade_state WHERE stack_role = 'GCS' AND state = 'PAUSED')",
+        )
+        .fetch_one(&mut **tx)
+        .await;
     }
     is_retired(tx).await
 }
