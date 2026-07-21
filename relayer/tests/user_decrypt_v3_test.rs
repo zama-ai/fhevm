@@ -429,9 +429,8 @@ async fn v3_rejects_untagged_context_id_extra_data() {
         &url,
         helpers::create_v3_envelope(),
         |p: &mut serde_json::Value| {
-            p["attestedPayload"]["extraData"] = json!(
-                "0x010000000000000000000000000000000000000000000000000000000000000001"
-            );
+            p["attestedPayload"]["extraData"] =
+                json!("0x010000000000000000000000000000000000000000000000000000000000000001");
         },
         expect_v2_validation_error(
             "attestedPayload.extraData",
