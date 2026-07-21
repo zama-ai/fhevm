@@ -25,6 +25,7 @@ import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
 import { buildKmsThresholdOverride, kmsRenderOptionsFor } from "./kms-core";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
+import { buildCacheEnabled, buildCacheTag } from "../utils/build-cache";
 import {
   sccacheBuildArgs,
   sccacheBuildSecretIds,
@@ -87,50 +88,55 @@ const buildSpec = (context: string, dockerfile: string, extra: Record<string, un
   dockerfile: resolveComposePath(dockerfile),
   ...extra,
 });
+// Each image builds from its own per-binary Dockerfile (the same recipes main's docker-build
+// workflows publish from), not a shared Dockerfile.workspace: a per-image build compiles only
+// what that image needs, and identical COPY/RUN prefixes across images are deduplicated by
+// BuildKit content-addressing within a run and by the registry layer cache across runs.
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
   coprocessor: {
-    "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "db-migration",
+    "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/db-migration/Dockerfile", {
+      target: "prod",
     }),
-    "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "host-listener",
+    "coprocessor-host-listener": buildSpec("../../..", "coprocessor/fhevm-engine/host-listener/Dockerfile", {
+      target: "prod",
     }),
-    "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "host-listener",
+    "coprocessor-host-listener-poller": buildSpec("../../..", "coprocessor/fhevm-engine/host-listener/Dockerfile", {
+      target: "prod",
     }),
-    "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "host-listener",
+    "coprocessor-host-listener-consumer": buildSpec("../../..", "coprocessor/fhevm-engine/host-listener/Dockerfile", {
+      target: "prod",
     }),
-    "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "gw-listener",
+    "coprocessor-gw-listener": buildSpec("../../..", "coprocessor/fhevm-engine/gw-listener/Dockerfile", {
+      target: "prod",
     }),
-    "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "tfhe-worker",
+    "coprocessor-tfhe-worker": buildSpec("../../..", "coprocessor/fhevm-engine/tfhe-worker/Dockerfile", {
+      target: "prod",
     }),
-    "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "zkproof-worker",
+    "coprocessor-zkproof-worker": buildSpec("../../..", "coprocessor/fhevm-engine/zkproof-worker/Dockerfile", {
+      target: "prod",
     }),
-    "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "sns-worker",
+    "coprocessor-sns-worker": buildSpec("../../..", "coprocessor/fhevm-engine/sns-worker/Dockerfile", {
+      target: "prod",
     }),
-    "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
-      target: "transaction-sender",
+    "coprocessor-transaction-sender": buildSpec("../../..", "coprocessor/fhevm-engine/transaction-sender/Dockerfile", {
+      target: "prod",
     }),
   },
   "kms-connector": {
     "kms-connector-db-migration": buildSpec("../../..", "kms-connector/connector-db/Dockerfile", {
+      target: "prod",
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
-    "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
-      target: "gw-listener",
+    "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/crates/gw-listener/Dockerfile", {
+      target: "prod",
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
-    "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
-      target: "kms-worker",
+    "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/crates/kms-worker/Dockerfile", {
+      target: "prod",
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
-    "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
-      target: "tx-sender",
+    "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/crates/tx-sender/Dockerfile", {
+      target: "prod",
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
   },
@@ -192,6 +198,24 @@ const withSccacheBuild = (component: string, build: Record<string, unknown> | un
   next.args = { ...existingArgs, ...sccacheBuildArgs() };
   const existingSecrets = Array.isArray(next.secrets) ? (next.secrets as string[]) : [];
   next.secrets = [...existingSecrets, ...sccacheBuildSecretIds()];
+  return next;
+};
+
+/**
+ * Adds a registry `cache_from` entry (the per-image BuildKit cache manifest that
+ * solana-images-publish.yml exports) when FHEVM_BUILDCACHE_TAG is set. The cache ref is the
+ * service's own image repository at the cache tag, so the compose reader and the publish-workflow
+ * writer stay aligned without a name map. Scoped to the same Rust components as sccache (the
+ * builds the publish workflow exports caches for). A no-op otherwise, so the generated compose is
+ * byte-identical when FHEVM_BUILDCACHE_TAG is unset.
+ */
+const withRegistryBuildCache = (component: string, image: unknown, build: Record<string, unknown> | undefined) => {
+  if (!build || !buildCacheEnabled() || !SCCACHE_BUILD_COMPONENTS.has(component) || typeof image !== "string") {
+    return build;
+  }
+  const next = structuredClone(build);
+  const existing = Array.isArray(next.cache_from) ? (next.cache_from as string[]) : [];
+  next.cache_from = [...existing, rewriteImageTag(image, buildCacheTag())];
   return next;
 };
 
@@ -414,7 +438,11 @@ const applyCoprocessorSource = (
 ) => {
   if (locallyBuilt) {
     service.image = retagLocal(service.image, localInstanceTag(instance.index));
-    service.build = withSccacheBuild("coprocessor", localBuildSpecFor("coprocessor", serviceName));
+    service.build = withRegistryBuildCache(
+      "coprocessor",
+      service.image,
+      withSccacheBuild("coprocessor", localBuildSpecFor("coprocessor", serviceName)),
+    );
     return;
   }
   if (instance.source.mode === "registry") {
@@ -506,7 +534,11 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
       next.env_file = [envFileValue];
       applyBuildPolicy(next, overridden.has(name));
       if (party === 1 && overridden.has(name)) {
-        const build = withSccacheBuild("kms-connector", localBuildSpecFor("kms-connector", name));
+        const build = withRegistryBuildCache(
+          "kms-connector",
+          next.image,
+          withSccacheBuild("kms-connector", localBuildSpecFor("kms-connector", name)),
+        );
         if (build) {
           next.build = build;
         }
@@ -548,7 +580,11 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     }
     const next = structuredClone(service);
     applyBuildPolicy(next, true);
-    const build = withSccacheBuild(component, localBuildSpecFor(component, name));
+    const build = withRegistryBuildCache(
+      component,
+      next.image,
+      withSccacheBuild(component, localBuildSpecFor(component, name)),
+    );
     if (build) {
       next.build = build;
     }

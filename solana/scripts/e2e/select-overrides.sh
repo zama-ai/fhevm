@@ -65,12 +65,14 @@ images_for() {
 }
 
 # Path -> groups map. Derived from the docker build inputs of each image:
-#   - coprocessor (coprocessor/fhevm-engine/Dockerfile.workspace COPY lines): coprocessor/,
-#     listener/, gateway-contracts/, host-contracts/, shared/ciphertext-attestation, solana Rust
-#     tree, root package files. The solana crates/programs reach the binaries through
-#     host-listener/Cargo.toml (zama-host, zama-solana-acl, zama-solana-transaction) and
-#     tfhe-worker/Cargo.toml (confidential-token, zama-host, zama-fhe).
-#   - kms-connector (kms-connector/Dockerfile.workspace + connector-db/Dockerfile COPY lines):
+#   - coprocessor (coprocessor/fhevm-engine/*/Dockerfile COPY lines — every engine image copies
+#     the same workspace-wide input set): coprocessor/, listener/, gateway-contracts/,
+#     host-contracts/, shared/ciphertext-attestation, the solana Rust tree (Cargo.toml + crates/
+#     + programs/ + runtime-tests/), root package files. The solana crates/programs reach the
+#     binaries through host-listener/Cargo.toml (zama-host, zama-solana-acl,
+#     zama-solana-transaction) and tfhe-worker/Cargo.toml (confidential-token, zama-host,
+#     zama-fhe).
+#   - kms-connector (kms-connector/crates/*/Dockerfile + connector-db/Dockerfile COPY lines):
 #     kms-connector/, both rust_bindings, shared/, and ONLY solana/crates/zama-solana-acl of the
 #     solana tree (its Cargo.toml deliberately avoids workspace inheritance), hence the dedicated
 #     zama-solana-acl rule below instead of the general solana fan-out.
@@ -78,10 +80,11 @@ images_for() {
 #     rust_bindings, shared/user-decryption-signature, whole solana Rust tree (zama-host +
 #     transitive path deps via relayer/Cargo.toml).
 #   - gateway-contracts / host-contracts images: their own trees + root package files.
-# Non-Rust solana/ paths (scripts, geyser, docs, runtime-tests, test-fixtures) are copied into
-# builder stages at most but never reach the runtime images, so they trigger no rebuild. Programs
-# that no image consumes (demo-vault, confidential-deposit-app) are none-ruled explicitly; any
-# FUTURE program falls into the general solana/programs/* rule and is over-built by default.
+# Non-Rust solana/ paths (scripts, geyser, docs, test-fixtures) are no longer copied into any
+# builder stage, and runtime-tests sources are copied only for cargo workspace resolution and are
+# never compiled into a runtime image, so none of them trigger a rebuild. Programs that no image
+# consumes (demo-vault, confidential-deposit-app) are none-ruled explicitly; any FUTURE program
+# falls into the general solana/programs/* rule and is over-built by default.
 groups_for_path() {
   local path="$1"
   case "$path" in
@@ -98,7 +101,7 @@ groups_for_path() {
     # On-chain-only demo programs: no docker image compiles them (checked against the Cargo.tomls
     # and Dockerfile COPY lines cited above).
     solana/programs/demo-vault/*|solana/programs/confidential-deposit-app/*) echo "" ;;
-    # The one solana crate the kms-connector image consumes (Dockerfile.workspace line ~72).
+    # The one solana crate the kms-connector images consume (kms-connector/crates/*/Dockerfile).
     solana/crates/zama-solana-acl/*) echo "coprocessor kms-connector relayer" ;;
     solana/programs/*|solana/crates/*|solana/Cargo.toml|solana/Cargo.lock) echo "coprocessor relayer" ;;
     *) echo "" ;;

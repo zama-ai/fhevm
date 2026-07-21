@@ -1,19 +1,14 @@
 services:
   # =============================================================================
-  # COPROCESSOR BUILD CACHING STRATEGY
+  # COPROCESSOR BUILD STRATEGY
   # =============================================================================
-  # All coprocessor services share a single Dockerfile.workspace with multi-stage
-  # targets. When docker-compose builds them in parallel, each service is a separate
-  # BuildKit invocation.
-  #
-  # To avoid cache write conflicts (multiple processes writing to same directory),
-  # we use a SINGLE EXPORTER pattern:
-  #   - ALL services: cache_from (read from shared cache) ✓
-  #   - ONLY tfhe-worker: cache_to (write to shared cache) ✓
-  #   - Other services: no cache_to (read-only)
-  #
-  # tfhe-worker is chosen as the exporter because it's typically the largest build
-  # and shares all common layers with other services.
+  # Each service builds from its own per-image Dockerfile
+  # (coprocessor/fhevm-engine/<binary>/Dockerfile, target `prod`) -- the same
+  # recipes main's coprocessor-docker-build.yml publishes from. Identical
+  # COPY/RUN prefixes across the images are deduplicated by BuildKit
+  # content-addressing within a run; cross-run reuse comes from the registry
+  # layer cache (`cache_from`, injected by fhevm-cli when FHEVM_BUILDCACHE_TAG
+  # is set) plus the sccache compiler cache.
   # =============================================================================
 
   coprocessor-db-migration:

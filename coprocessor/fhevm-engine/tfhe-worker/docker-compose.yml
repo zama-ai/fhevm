@@ -22,8 +22,8 @@ services:
     container_name: db-migration
     build:
       context: ../../../.
-      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
-      target: db-migration
+      dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
+      target: prod
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/coprocessor
       ACL_CONTRACT_ADDRESS: "0x339EcE85B9E11a3A3AA557582784a15d7F82AAf2"
