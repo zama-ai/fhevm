@@ -144,8 +144,9 @@ pub mod confidential_token {
     }
 
     /// Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.
-    /// Verifies the KMS `PublicDecryptVerification` certificate against the CURRENT KMS context plus
-    /// an exact-handle MMR public-decrypt proof, then pays out `cleartext_amount` and writes the
+    /// Verifies the KMS `PublicDecryptVerification` certificate against the context the cert names
+    /// (any live, non-destroyed context, EVM-parity rotation grace) plus an exact-handle MMR
+    /// public-decrypt proof, then pays out `cleartext_amount` and writes the
     /// permanent per-handle `BurnRedemption` marker. See `instructions::redeem_burned_amount`.
     pub fn redeem_burned_amount(
         ctx: Context<RedeemBurnedAmount>,

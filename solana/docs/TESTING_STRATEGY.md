@@ -30,7 +30,7 @@ all fail closed (see the `*_rejects_*` mollusk tests).
    expired-request rejection, and handle supersession. Token disclosure is now the thin `disclose_secp`
    consumer of the host `verify_public_decrypt` verifier (DD-040); `token_mollusk` covers its happy path
    (amount + balance), after-supersession consume, idempotency / no-replay-marker, foreign-proof
-   rejection surfaced from the host, and mint-domain binding. The verifier's own negatives (rotated
+   rejection surfaced from the host, and mint-domain binding. The verifier's own negatives (destroyed
    context, sub-threshold cert, handle/proof mismatch, non-canonical context, survives-supersede) live
    in `host_mollusk` (#3220). There are no more `request_disclose_*` / `disclose_*_secp` witness-bound
    disclosure tests. Because Mollusk

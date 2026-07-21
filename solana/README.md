@@ -61,7 +61,7 @@ Live end-to-end run against a local validator (mainnet-safe, validator pinned to
 ```bash
 bash scripts/e2e/clean-e2e.sh              # bring up fhevm-cli + Solana side-stack
 bash scripts/e2e/full-vertical.sh          # compute -> public-decrypt -> user-decrypt
-bash scripts/e2e/adversarial-l4.sh         # negative: relayer-bypass + context-rotation rejection
+bash scripts/e2e/adversarial-l4.sh         # negative: relayer-bypass + context-mismatch cert-reuse rejection
 ```
 
 ## Integrating an app

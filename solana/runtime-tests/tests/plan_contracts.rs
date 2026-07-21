@@ -119,7 +119,7 @@ fn token_idl_removed_operator_surface_and_splits_payer_from_owner() {
     );
 
     // There is no per-mint verifier-set rotation surface; redemption verifies a secp256k1 KMS cert
-    // against the host's current KMS context through the stateless `verify_public_decrypt` CPI.
+    // against the live KMS context the cert names through the stateless `verify_public_decrypt` CPI.
     for removed in ["update_mint_verifier_sets", "migrate_mint_verifier_sets"] {
         assert!(
             !instructions.iter().any(|name| name == removed),
@@ -272,7 +272,7 @@ fn token_idl_drops_transfer_and_call_callback_surface() {
 fn token_redeem_consumes_stateless_verifier_with_lineage_and_deny_binding() {
     // The BurnRedemptionRequest witness lifecycle was dissolved (fhevm-internal#1763): redeem is now
     // a single thin consumer that binds the burned lineage (`assert_burned_amount_lineage`), CPIs the
-    // stateless host `verify_public_decrypt` against the CURRENT KMS context, asserts the certified
+    // stateless host `verify_public_decrypt` against the live KMS context the cert names, asserts the certified
     // cleartext equals the claimed amount, consults the deny-list explicitly at payout, and writes
     // the permanent per-handle replay marker.
     for required in [

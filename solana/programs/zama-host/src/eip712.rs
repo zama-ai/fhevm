@@ -121,7 +121,7 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 /// by the low-64-bit id (the bootstrap `define_kms_context` registers that u64). So the low 8 bytes
 /// are taken as the context id; the high tag bytes are not part of the on-chain id. This does not
 /// weaken context binding: the full `extra_data` is still signed by the KMS, and the resolved id
-/// must equal the on-chain `kms_context.context_id`, so a rotated/mismatched context still fails.
+/// must equal the on-chain `kms_context.context_id`, so a mismatched context still fails.
 pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: u64) -> Option<u64> {
     match extra_data.first() {
         None | Some(0) => Some(current_context_id),

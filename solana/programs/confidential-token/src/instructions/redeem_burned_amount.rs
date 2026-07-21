@@ -6,8 +6,9 @@
 //! transaction, CPIs the stateless `zama_host::verify_public_decrypt`, and asserts the handle the
 //! host proved public equals the `burned_handle` it pinned and that the certified cleartext equals
 //! the claimed `cleartext_amount`. There is no request witness, no request-time KMS context pin, and
-//! no expiry: the certificate is verified against the host's CURRENT `KmsContext` (context rotation
-//! fails closed one layer down in the host verifier).
+//! no expiry: the certificate is verified against the live `KmsContext` its signed extra_data names
+//! (any non-destroyed context, fhevm-internal#1765; `destroy_kms_context` is the revocation lever,
+//! one layer down in the host verifier).
 //!
 //! ## Act-once IS enforced here
 //!
@@ -78,7 +79,8 @@ pub struct RedeemBurnedAmount<'info> {
         bump = host_config.bump,
     )]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// KMS context PDA for the host's current context id (validated by the verifier CPI).
+    /// KMS context PDA for the id the certificate commits to (any live context; validated by the
+    /// verifier CPI).
     pub kms_context: Box<Account<'info, zama_host::KmsContext>>,
     /// CHECK: canonical deny-list record for the signer when the host grant deny-list is enabled;
     /// consulted read-only by `assert_redeem_subject_not_denied`. Absent (must be `None`) when the
@@ -93,7 +95,7 @@ pub struct RedeemBurnedAmount<'info> {
 }
 
 /// Redeems a previously burned encrypted amount from the underlying-token vault after the host
-/// verifier certifies the burned handle's cleartext against the current KMS context.
+/// verifier certifies the burned handle's cleartext against the live KMS context the cert names.
 pub fn redeem_burned_amount(
     ctx: Context<RedeemBurnedAmount>,
     burned_handle: [u8; 32],
@@ -152,9 +154,10 @@ pub fn redeem_burned_amount(
         ctx.accounts.deny_subject_record.as_ref(),
     )?;
 
-    // Verify the KMS certificate against the CURRENT KMS context plus the exact-handle MMR proof.
-    // The wrapper asserts the returned handle equals `burned_handle`; we additionally require the
-    // certified cleartext to equal the claimed `cleartext_amount`.
+    // Verify the KMS certificate against the context the cert names (any live, non-destroyed
+    // context, EVM-parity rotation grace) plus the exact-handle MMR proof. The wrapper asserts the
+    // returned handle equals `burned_handle`; we additionally require the certified cleartext to
+    // equal the claimed `cleartext_amount`.
     let certified_cleartext = fhe::verify_public_decrypt(fhe::VerifyPublicDecrypt {
         expected_handle: burned_handle,
         cleartext: kms_decrypted_result_bytes(cleartext_amount),

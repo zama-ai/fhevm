@@ -17,7 +17,7 @@
 //! two consume paths that are now thin consumers of the stateless host `verify_public_decrypt`
 //! (DD-040): `redeem_burned_amount` and `disclose_secp` authorize by an MMR public-decrypt proof
 //! against the pinned handle rather than the live lineage handle, so their after-supersession,
-//! foreign-proof, current-context-rotation, and (for redeem) deny/marker/destination behaviour is
+//! foreign-proof, live/destroyed-context, and (for redeem) deny/marker/destination behaviour is
 //! exercised directly here. The old suite's coverage of `wrap_usdc`, `confidential_burn`,
 //! `request_disclose_balance`/`request_disclose_amount`, and the `poc`-gated `create_random_amount`
 //! was not ported 1:1 for this pass: none
@@ -2160,7 +2160,8 @@ fn mollusk_confidential_transfer_rejects_balance_wrong_token_account_app_account
 //
 // The BurnRedemptionRequest witness lifecycle was dissolved (fhevm-internal#1763): redeem is now a
 // single thin consumer of the stateless host `verify_public_decrypt`, verifying the KMS cert
-// against the CURRENT KMS context plus an exact-handle MMR public-decrypt proof, then paying out
+// against the live KMS context it names (any non-destroyed context, fhevm-internal#1765) plus an
+// exact-handle MMR public-decrypt proof, then paying out
 // and writing the permanent per-handle marker.
 //
 // Vector 2 (burn-stranding) fix, unchanged: every burn is born publicly decryptable at the burn
@@ -2199,8 +2200,50 @@ fn kms_public_decrypt_cert_signed_by(
     (signatures, extra_data)
 }
 
+/// A cert committing an explicit KMS context id via v1 `extra_data` (EVM `_extractContextId`
+/// parity), for the rotation-grace tests: a cert minted under an old-but-still-live context.
+fn kms_public_decrypt_cert_for_context(
+    handle: [u8; 32],
+    cleartext_amount: u64,
+    context_id: u64,
+) -> (Vec<[u8; 65]>, Vec<u8>) {
+    let extra_data = support::kms_cert::context_extra_data_v1(context_id);
+    let signatures = support::kms_cert::kms_public_decrypt_cert_signed_by(
+        handle,
+        cleartext_u256(cleartext_amount),
+        GATEWAY_CHAIN_ID,
+        &DECRYPTION_CONTRACT,
+        &extra_data,
+        &[kms_signing_key()],
+    );
+    (signatures, extra_data)
+}
+
 fn kms_context_account(context_id: u64) -> Account {
     kms_context_account_with_signers(context_id, &[secp_evm_address(&kms_signing_key())], 1)
+}
+
+/// Like [`kms_context_account`] but marked `destroyed`, for the revocation-lever test.
+fn destroyed_kms_context_account(context_id: u64) -> Account {
+    let (_, bump) = host::kms_context_address(context_id);
+    Account {
+        lamports: 1_000_000_000,
+        data: serialized_account(host::KmsContext {
+            context_id,
+            signers: vec![secp_evm_address(&kms_signing_key())],
+            thresholds: host::KmsThresholds {
+                public_decryption: 1,
+                user_decryption: 1,
+                kms_gen: 1,
+                mpc: 1,
+            },
+            destroyed: true,
+            bump,
+        }),
+        owner: host::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
 }
 
 /// Builds a `KmsContext` account registering `signers` with `public_decryption` threshold set to
@@ -2823,12 +2866,11 @@ fn mollusk_redeem_rejects_foreign_public_decrypt_proof() {
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
 }
 
-/// Current-context fail-closed: a cert whose KMS context has rotated out (`host_config`'s current id
-/// no longer matches the passed `kms_context` account / cert) is rejected by the host verifier with
-/// `InvalidKmsContext`, so no rotated-out signer set can cash out. This is the context-rotation
-/// rejection observed one layer up at the redeem boundary.
+/// Accept-any-live-context (EVM parity): a cert committing the fixture's context id 9 still redeems
+/// after the operator rotates the host's current context to 10, because context 9's account persists
+/// and is not destroyed. Redemption accepts any live context, so the payout goes through.
 #[test]
-fn mollusk_redeem_rejects_rotated_out_kms_context() {
+fn mollusk_redeem_accepts_live_rotated_out_kms_context() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
@@ -2836,9 +2878,8 @@ fn mollusk_redeem_rejects_rotated_out_kms_context() {
 
     let mut accounts = fixture.accounts(1_000);
     seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
-    // Rotate the host's current context id away from the fixture's seeded `kms_context` account
-    // (still at id 9). The cert was signed for the fixture context; the host now requires the
-    // current id, so the passed context is stale.
+    // Rotate the host's current context id to 10; the fixture's context-9 account stays live in the
+    // account set. The cert commits id 9, so verification binds to that still-live context.
     accounts.insert(
         fixture.host_config,
         host_config_account_with_kms_context(
@@ -2850,7 +2891,58 @@ fn mollusk_redeem_rejects_rotated_out_kms_context() {
     let context = burn_redeem_mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
-    let (signatures, extra_data) = kms_public_decrypt_cert(first_handle, cleartext_amount);
+    let (signatures, extra_data) =
+        kms_public_decrypt_cert_for_context(first_handle, cleartext_amount, fixture.kms_context_id);
+    let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(redemption_record, system_account(0));
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            first_handle,
+            cleartext_amount,
+            signatures,
+            extra_data,
+            proof,
+            redemption_record,
+            None,
+        ),
+        &[Check::success()],
+    );
+    assert_eq!(
+        read_spl_amount(&context, fixture.destination_usdc),
+        cleartext_amount
+    );
+    assert_eq!(
+        read_spl_amount(&context, fixture.vault_usdc),
+        1_000 - cleartext_amount
+    );
+}
+
+/// Destroy is the revocation lever: a cert committing context id 9 is rejected once that context is
+/// destroyed, so no destroyed signer set can cash out. Rejected by the host verifier with
+/// `InvalidKmsContext`, surfaced one layer up at the redeem boundary; the vault is untouched.
+#[test]
+fn mollusk_redeem_rejects_destroyed_kms_context() {
+    let fixture = BurnRedeemFixture::new();
+    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let second_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let (proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_handle, second_handle, 0);
+
+    let mut accounts = fixture.accounts(1_000);
+    seed_two_burn_lineage(&fixture, &mut accounts, second_handle, expected_peaks);
+    // The fixture's context 9 has been destroyed (rotated for compromise, then revoked).
+    accounts.insert(
+        fixture.kms_context,
+        destroyed_kms_context_account(fixture.kms_context_id),
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let cleartext_amount = 500;
+    let (signatures, extra_data) =
+        kms_public_decrypt_cert_for_context(first_handle, cleartext_amount, fixture.kms_context_id);
     let redemption_record = token::burn_redemption_address(fixture.mint, first_handle).0;
     context
         .account_store
@@ -3291,7 +3383,7 @@ fn mollusk_redeem_rejects_wrong_lineage_label() {
 // generic thin instruction CPIs the stateless host `verify_public_decrypt`,
 // asserts the proven handle equals the caller-pinned handle, and emits a
 // token-scoped `HandleDisclosedEvent`. The host verifier's own negatives
-// (rotated-out context, sub-threshold cert, handle/proof mismatch, non-canonical
+// (destroyed context, sub-threshold cert, handle/proof mismatch, non-canonical
 // context, survives-supersede) are covered directly in `host_mollusk.rs` and are
 // deliberately NOT duplicated here — the token tests cover only what the token
 // layer adds: the mint-domain binding, the disclosed event, the pinned-handle
@@ -3300,7 +3392,7 @@ fn mollusk_redeem_rejects_wrong_lineage_label() {
 
 /// Self-contained fixture for the disclose consume vertical: one owner, one
 /// confidential mint, a balance lineage, and one token-scoped amount lineage.
-/// The cert is verified against the host's CURRENT KMS context, so the fixture's
+/// The fixture's v0 certs resolve to the host's current KMS context, so the fixture's
 /// `current_kms_context_id` and seeded `kms_context` share `kms_context_id`.
 struct DiscloseFixture {
     owner: Pubkey,
@@ -4522,7 +4614,7 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
     );
 
     // 13 registered KMS signers, public-decrypt threshold 7; the cert is signed by 7 of them. The
-    // host verifier checks the cert against the CURRENT context (the fixture's), so override that
+    // v0 cert resolves to the CURRENT context (the fixture's), so override that
     // context account with the 13-signer / threshold-7 set.
     let keys: Vec<k256::ecdsa::SigningKey> = (0..13).map(|i| kms_signing_key_n(0x60 + i)).collect();
     let registered: Vec<[u8; 20]> = keys.iter().map(secp_evm_address).collect();

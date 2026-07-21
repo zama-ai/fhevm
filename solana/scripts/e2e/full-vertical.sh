@@ -486,16 +486,16 @@ CEXTRA="$(echo "$cr" | python3 -c "import sys,json;print(json.load(sys.stdin)['r
 echo "    burned amount cleartext=$CLEARTEXT (KMS PublicDecryptVerification cert)"
 
 # Redeem: the thin token redeem_burned_amount CPIs the stateless host verify_public_decrypt (KMS cert
-# verified against the CURRENT KMS context + the burned handle's MMR public-leaf proof), consults the
+# verified against the LIVE KMS context the cert names + the burned handle's MMR public-leaf proof), consults the
 # deny-list at payout, writes the permanent per-handle replay marker, and releases from the SPL vault.
 # No request witness (fhevm-internal#1763).
 redout="$(lc CONSUME_REDEEM=1 BURNED_ACL="$BURNED_ACL" BURNED_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
    KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 PROOF="$BURNED_PROOF_BYTES")" || true
 echo "$redout" | grep -q 'OK redeem_burned_amount' || fail "redeem_burned_amount: $(echo "$redout" | tail -3)"
-echo "    redeem_burned_amount OK -- host verify_public_decrypt (current KMS context) released $CLEARTEXT USDC base units"
+echo "    redeem_burned_amount OK -- host verify_public_decrypt (live cert-named KMS context) released $CLEARTEXT USDC base units"
 
 # Disclose: the thin token disclose_secp CPIs the stateless host verify_public_decrypt (KMS cert
-# verified against the CURRENT KMS context + the burned handle's MMR public-leaf proof) and emits
+# verified against the live cert-named KMS context + the burned handle's MMR public-leaf proof) and emits
 # the cleartext on-chain. Idempotent by design — no witness, no consume-once.
 disout="$(lc CONSUME_DISCLOSE=1 MINT="$MINT" TS_ACL="$BURNED_ACL" TS_HANDLE="$BURNED_HANDLE" CLEARTEXT="$CLEARTEXT" \
    KMS_SIG="$KMS_SIG" EXTRA="$CEXTRA" KMS_CTX_ID=1 PROOF="$BURNED_PROOF_BYTES")" || true

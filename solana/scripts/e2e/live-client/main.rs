@@ -142,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // CONSUME_DISCLOSE: consume the KMS PublicDecryptVerification cert via the thin token
     // `disclose_secp`, which CPIs the stateless host `verify_public_decrypt` (verified against the
-    // CURRENT KMS context) and emits the disclosed cleartext.
+    // live cert-named KMS context) and emits the disclosed cleartext.
     if std::env::var("CONSUME_DISCLOSE").is_ok() {
         consume_disclose(&token, &payer, host_config)?;
         return Ok(());
@@ -156,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // CONSUME_REDEEM: redeem a KMS-certified burned amount from the SPL vault via the thin token
     // `redeem_burned_amount`, which CPIs the stateless host `verify_public_decrypt` (KMS
-    // PublicDecryptVerification EIP-712 cert verified against the CURRENT KMS context + an MMR
+    // PublicDecryptVerification EIP-712 cert verified against the live cert-named KMS context + an MMR
     // public-leaf inclusion proof), consults the deny-list at payout, writes the permanent per-handle
     // replay marker, and releases the cleartext amount of underlying USDC to the owner. The
     // vault-releasing Consume seam; no request witness (fhevm-internal#1763).
@@ -1218,7 +1218,7 @@ fn consume_seal(
 
 /// Consume step 2: publish a KMS-certified cleartext via the thin token `disclose_secp`, which CPIs
 /// the stateless host `verify_public_decrypt` (KMS `PublicDecryptVerification` EIP-712 cert verified
-/// against the CURRENT KMS context + an MMR public-leaf inclusion proof), asserts the proven handle
+/// against the live cert-named KMS context + an MMR public-leaf inclusion proof), asserts the proven handle
 /// equals the pinned handle, and emits the disclosed cleartext. Idempotent by design (no replay
 /// marker). Inputs via env: MINT, TS_ACL, TS_HANDLE, CLEARTEXT, KMS_SIG, EXTRA, KMS_CTX_ID, PROOF.
 fn consume_disclose(
@@ -1558,7 +1558,7 @@ fn consume_burn(
 
 /// Redeem the KMS-certified burned amount from the SPL vault via the thin token
 /// `redeem_burned_amount`, which CPIs the stateless host `verify_public_decrypt` (KMS
-/// PublicDecryptVerification EIP-712 cert verified against the CURRENT KMS context + an MMR
+/// PublicDecryptVerification EIP-712 cert verified against the live cert-named KMS context + an MMR
 /// public-leaf inclusion proof), asserts the proven handle equals the pinned burned handle and the
 /// certified cleartext equals the claimed amount, consults the deny-list at payout, writes the
 /// permanent per-handle replay marker, and releases the cleartext amount of underlying USDC to the
@@ -1650,7 +1650,7 @@ fn consume_redeem(
         })
         .send()?;
     println!("OK redeem_burned_amount: {sig}");
-    println!("  KMS PublicDecryptVerification cert verified on-chain via host verify_public_decrypt (current KMS context); released {cleartext} USDC base units to {destination_usdc}");
+    println!("  KMS PublicDecryptVerification cert verified on-chain via host verify_public_decrypt (live cert-named KMS context); released {cleartext} USDC base units to {destination_usdc}");
     Ok(())
 }
 

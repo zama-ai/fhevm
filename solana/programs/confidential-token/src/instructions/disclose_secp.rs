@@ -10,9 +10,10 @@
 //! The request side is no longer a token instruction: an allowed subject (the balance owner, or any
 //! subject on a token amount lineage) seals the public-decrypt leaf by calling the host
 //! `make_handle_public` instruction directly. There is no per-request PDA, no `kms_context_id` pin,
-//! and no `expires_slot` — the certificate is verified against the host's CURRENT `KmsContext`
-//! (context rotation fails closed, one layer down in the host verifier), and any deadline the app
-//! wants lives in the app's own state machine.
+//! and no `expires_slot` — the certificate is verified against the `KmsContext` the cert names (any
+//! live, non-destroyed context, EVM-parity rotation grace; `destroy_kms_context` is the revocation
+//! lever, one layer down in the host verifier), and any deadline the app wants lives in the app's own
+//! state machine.
 //!
 //! ## Act-once is intentionally NOT enforced here
 //!
@@ -43,7 +44,8 @@ pub struct DiscloseSecp<'info> {
         bump = host_config.bump,
     )]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
-    /// KMS context PDA for the host's current context id (validated by the verifier CPI).
+    /// KMS context PDA for the id the certificate commits to (any live context; validated by the
+    /// verifier CPI).
     pub kms_context: Box<Account<'info, zama_host::KmsContext>>,
     /// ZamaHost program used for the stateless verifier CPI.
     pub zama_program: Program<'info, ZamaHost>,

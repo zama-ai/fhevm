@@ -21,17 +21,21 @@ pub struct VerifyPublicDecrypt<'a, 'info> {
     pub encrypted_value: AccountInfo<'info>,
     /// Host config carrying the current KMS context id and gateway EIP-712 domain.
     pub host_config: &'a Account<'info, HostConfig>,
-    /// KMS context PDA for the host's current context id.
+    /// KMS context PDA for the id the certificate commits to (any live context).
     pub kms_context: AccountInfo<'info>,
     /// ZamaHost program account.
     pub zama_program: &'a Program<'info, ZamaHost>,
 }
 
-/// CPIs the stateless host `verify_public_decrypt`, then reads the `(handle, cleartext)` it wrote to
-/// `return_data`, asserting the return came from ZamaHost and that the proven handle equals the
-/// caller-pinned `expected_handle`. Returns the certified 32-byte cleartext. The host verifies the
-/// KMS certificate against the CURRENT KMS context and the MMR proof against the lineage's peaks;
-/// this wrapper adds only the return-data integrity + pinned-handle checks.
+/// CPIs the stateless host `verify_public_decrypt`, then reads the `(handle, cleartext, context_id)`
+/// it wrote to `return_data`, asserting the return came from ZamaHost and that the proven handle
+/// equals the caller-pinned `expected_handle`. Returns the certified 32-byte cleartext. The host
+/// verifies the KMS certificate against the context the cert names (any live, non-destroyed context)
+/// and the MMR proof against the lineage's peaks; this wrapper adds only the return-data integrity +
+/// pinned-handle checks. It deliberately does NOT constrain the returned context id: token
+/// disclosure and redemption accept any live context, matching EVM's valid-until-destroyed rotation
+/// grace (`destroy_kms_context` is the revocation lever). The verified id is available at
+/// `return_data[64..72]` (little-endian u64) for a consumer that wants a current-only policy.
 pub(crate) fn verify_public_decrypt(request: VerifyPublicDecrypt<'_, '_>) -> Result<[u8; 32]> {
     let expected_handle = request.expected_handle;
     cpi::verify_public_decrypt(
@@ -58,7 +62,7 @@ pub(crate) fn verify_public_decrypt(request: VerifyPublicDecrypt<'_, '_>) -> Res
         ConfidentialTokenError::VerifierReturnDataInvalid
     );
     require!(
-        data.len() == 64,
+        data.len() == 72,
         ConfidentialTokenError::VerifierReturnDataInvalid
     );
     let mut returned_handle = [0u8; 32];
@@ -68,6 +72,8 @@ pub(crate) fn verify_public_decrypt(request: VerifyPublicDecrypt<'_, '_>) -> Res
         ConfidentialTokenError::DisclosedHandleMismatch
     );
     let mut returned_cleartext = [0u8; 32];
-    returned_cleartext.copy_from_slice(&data[32..]);
+    returned_cleartext.copy_from_slice(&data[32..64]);
+    // `data[64..72]` is the verified context id (little-endian u64); token disclosure and redemption
+    // accept any live context (EVM parity), so it is not constrained here.
     Ok(returned_cleartext)
 }
