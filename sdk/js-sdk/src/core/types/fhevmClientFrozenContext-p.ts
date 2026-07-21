@@ -62,7 +62,7 @@ export declare const fhevmClientFrozenContextBrand: unique symbol;
  *
  * A context may carry only the versions an operation needs. The plain accessors
  * (`protocolVersion`, `tfheVersion`, `hostContractVersion(name)`, …) **throw** if
- * the requested version was not resolved, so a mis-scoped call fails fast rather
+ * the requested version was not resolved, so a miss-scoped call fails fast rather
  * than silently proceeding on an absent value. Use the `has*` predicates or the
  * `try*` accessors to probe without throwing.
  */
