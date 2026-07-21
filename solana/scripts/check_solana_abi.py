@@ -85,6 +85,7 @@ PINNED_SCHEMAS = [
     # permanent per-handle `BurnRedemption` replay marker remains as durable token state.
     ("confidential_token", "account", "BurnRedemption", True),
     ("confidential_token", "instruction_args", "confidential_burn", True),
+    ("confidential_token", "instruction_args", "confidential_burn_from_value", True),
     ("confidential_token", "instruction_args", "confidential_transfer", True),
     ("confidential_token", "instruction_args", "confidential_transfer_from_value", True),
     # create_random_amount / create_random_bounded_amount are `poc`-gated demo helpers and are

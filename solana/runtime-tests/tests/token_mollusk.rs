@@ -2317,8 +2317,17 @@ struct BurnRedeemFixture {
 
 impl BurnRedeemFixture {
     fn new() -> Self {
-        let owner = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
+        Self::with_keys(
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+        )
+    }
+
+    /// Fixed-key variant for cost snapshots and the PDA-owner CPI-driver test: PDA bump searches are
+    /// part of the measured compute, and the owner must be a chosen program PDA, so the addresses
+    /// must not change between runs.
+    fn with_keys(owner: Pubkey, mint: Pubkey, underlying_mint: Pubkey) -> Self {
         let compute_signer = token::compute_signer_address(mint).0;
         let host_config = host::host_config_address().0;
         let token_account = token::token_account_address(mint, owner).0;
@@ -2328,7 +2337,6 @@ impl BurnRedeemFixture {
             token::total_supply_encrypted_value_address(mint, total_supply_authority).0;
         let burned_amount_value =
             token::encrypted_value_address(mint, token_account, token::burned_amount_label()).0;
-        let underlying_mint = Pubkey::new_unique();
         let vault_authority = token::vault_authority_address(mint).0;
         let vault_usdc = token::vault_token_account_address(mint, underlying_mint);
         let destination_usdc = Pubkey::new_unique();
@@ -2475,6 +2483,78 @@ fn confidential_burn_ix(
         },
         token::instruction::ConfidentialBurn { amount_attestation },
     )
+}
+
+/// Builds a `confidential_burn_from_value` instruction: the amount is taken from the existing
+/// on-chain `EncryptedValue` at `amount_value` (a computed or received handle) rather than a fresh
+/// attestation. `owner` signs as the burn authority (it must own `token_account` and be in the
+/// amount value's subject set) and `payer` pays rent; splitting them lets `owner` be a program PDA.
+fn confidential_burn_from_value_ix(
+    fixture: &BurnRedeemFixture,
+    owner: Pubkey,
+    payer: Pubkey,
+    amount_value: Pubkey,
+) -> Instruction {
+    anchor_ix(
+        token::id(),
+        token::accounts::ConfidentialBurnFromValue {
+            owner,
+            payer,
+            mint: fixture.mint,
+            token_account: fixture.token_account,
+            compute_signer: fixture.compute_signer,
+            total_supply_authority: fixture.total_supply_authority,
+            balance_value: fixture.balance_value,
+            total_supply_value: fixture.total_supply_value,
+            burned_amount_value: fixture.burned_amount_value,
+            amount_value,
+            zama_event_authority: event_authority(host::id()),
+            zama_program: host::id(),
+            host_config: fixture.host_config,
+            system_program: system_program::ID,
+            hcu_block_meter: None,
+            hcu_trusted_app_record: None,
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::ConfidentialBurnFromValue {},
+    )
+}
+
+/// Seeds a spendable amount lineage (a stand-in for a computed/received `euint64` handle) at the
+/// canonical PDA `(mint, app_account, label)` with the given subjects and current handle into the
+/// burn fixture's account map, returning its address.
+fn seed_burn_amount_value(
+    fixture: &BurnRedeemFixture,
+    accounts: &mut HashMap<Pubkey, Account>,
+    app_account: Pubkey,
+    label: [u8; 32],
+    handle: [u8; 32],
+    subjects: &[Pubkey],
+) -> Pubkey {
+    let (address, value) = new_encrypted_value(fixture.mint, app_account, label, handle, subjects);
+    accounts.insert(address, encrypted_value_account(&value));
+    address
+}
+
+/// Builds a single-leaf public-decrypt inclusion proof for `fixture.burned_amount_value` after one
+/// burn (the sole leaf, at index 0, is `burned_handle`'s public-decrypt commitment), returning it
+/// with the lineage peaks the burn wrote. Mirrors `two_burn_lineage_proof` for the one-burn case.
+fn single_burn_public_decrypt_proof(
+    fixture: &BurnRedeemFixture,
+    burned_handle: [u8; 32],
+) -> host::instructions::MmrInclusionProof {
+    let acct = fixture.burned_amount_value.to_bytes();
+    let leaves = vec![zama_solana_acl::public_decrypt_leaf_commitment(
+        acct,
+        0,
+        burned_handle,
+    )];
+    let proof = zama_solana_acl::mmr_build_proof(&leaves, 0).expect("proof for the sole burn leaf");
+    host::instructions::MmrInclusionProof {
+        leaf_index: proof.leaf_index,
+        siblings: proof.siblings,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4479,5 +4559,487 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
         result.compute_units_consumed < 400_000,
         "7-of-13 disclose consumed {} CU, exceeds the 400k ceiling",
         result.compute_units_consumed
+    );
+}
+
+// ---------------------------------------------------------------------------
+// confidential_burn_from_value (burn an existing encrypted amount, fhevm-internal#1755)
+//
+// The burn-side analog of confidential_transfer_from_value (#1680 / #3238): burn an amount given as
+// an existing durable handle the owner may use, instead of a fresh coprocessor attestation. The
+// burned-amount output shape is byte-identical to the attestation path (born publicly decryptable at
+// its canonical burned_amount lineage), so redeem_burned_amount consumes it unchanged.
+// ---------------------------------------------------------------------------
+
+/// Happy path: burn part of a balance from an existing computed/received `euint64` handle, no
+/// attestation attached. The burned delta is born publicly decryptable exactly as the attestation
+/// path, the balance and encrypted total supply decrement by the burned amount, and the amount value
+/// itself is read-only (never superseded, never consumed).
+#[test]
+fn mollusk_burn_from_value_burns_existing_amount() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(1_000);
+    let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let amount_value = seed_burn_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.initial_balance, 1_000);
+    cleartext.seed_amount(fixture.initial_total_supply, 5_000);
+    cleartext.seed_amount(amount_handle, 250);
+
+    let burn =
+        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
+
+    // Three durable outputs rotate — balance, burned_amount, total_supply — and the amount is not one.
+    assert_eq!(durable_outputs, 3);
+    assert_eq!(cleartext.balance(&context, fixture.token_account), 750);
+    assert_eq!(
+        cleartext.u64_at(&context, fixture.total_supply_value),
+        4_750
+    );
+
+    // The burned delta is born publicly decryptable: the first burn creates the lineage and appends
+    // exactly one public-decrypt leaf for the just-bound burned handle (DD-036 / Vector 2), identical
+    // to the attestation path.
+    let burned = read_encrypted_value(&context, fixture.burned_amount_value);
+    assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 250);
+    assert_eq!(burned.leaf_count, 1);
+    assert_eq!(burned.subjects, vec![fixture.owner, fixture.compute_signer]);
+    let public_leaf = zama_solana_acl::public_decrypt_leaf_commitment(
+        fixture.burned_amount_value.to_bytes(),
+        0,
+        burned.current_handle,
+    );
+    assert_eq!(
+        burned.peaks,
+        zama_solana_acl::mmr_peaks_from_leaves(&[public_leaf])
+    );
+
+    // The amount value is read-only: current handle, history, and subjects all unchanged.
+    let amount_after = read_encrypted_value(&context, amount_value);
+    assert_eq!(amount_after.current_handle, amount_handle);
+    assert_eq!(amount_after.leaf_count, 0);
+    assert_eq!(
+        amount_after.subjects,
+        vec![fixture.owner, fixture.compute_signer]
+    );
+}
+
+/// Whole-balance alias regression (the #3238 aliasing class): burning the entire balance uses the
+/// account's own balance lineage AS the amount, so `amount_value` aliases the `balance` output. The
+/// eval plan merges them into one slot, and the dedup skips pushing the amount a second time, so the
+/// burn settles without tripping duplicate-account resolution.
+#[test]
+fn mollusk_burn_from_value_whole_balance_alias() {
+    let fixture = BurnRedeemFixture::new();
+    let accounts = fixture.accounts(1_000);
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.initial_balance, 1_000);
+    cleartext.seed_amount(fixture.initial_total_supply, 5_000);
+
+    // Amount aliased to the account's own balance lineage: burn the whole balance.
+    let burn = confidential_burn_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        fixture.balance_value,
+    );
+    let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
+
+    assert_eq!(durable_outputs, 3);
+    assert_eq!(cleartext.balance(&context, fixture.token_account), 0);
+    assert_eq!(
+        cleartext.u64_at(&context, fixture.total_supply_value),
+        4_000
+    );
+    assert_eq!(
+        cleartext.u64_at(&context, fixture.burned_amount_value),
+        1_000
+    );
+}
+
+/// Re-burning the burned-amount lineage (the second alias branch): the second burn spends the
+/// `burned_amount` lineage itself as the amount, so `amount_value` aliases the `burned_amount` output
+/// this frame writes. The eval plan merges the aliased slot (read at the old handle, superseded to
+/// the new delta), and the dedup skips pushing the amount a second time — the `amount == burned_amount
+/// lineage` branch. Mirrors `mollusk_transfer_from_value_resends_transferred_amount_that_is_also_this_output`.
+#[test]
+fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(1_000);
+    let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let amount_value = seed_burn_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.initial_balance, 1_000);
+    cleartext.seed_amount(fixture.initial_total_supply, 5_000);
+    cleartext.seed_amount(amount_handle, 250);
+
+    // First burn (250) creates the burned_amount lineage: balance 750, total_supply 4750, burned 250.
+    let first =
+        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let first_result = context.process_and_validate_instruction(&first, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &first_result);
+    let first_burned = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
+    assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 250);
+
+    // Second burn spends the burned_amount lineage itself as the amount — which is also this burn's
+    // burned_amount output account (the alias the dedup must merge, not double-push).
+    let again = confidential_burn_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        fixture.burned_amount_value,
+    );
+    let again_result = context.process_and_validate_instruction(&again, &[Check::success()]);
+    let durable_outputs = cleartext.evaluate_fhe_cpi(&context, &again_result);
+
+    // Conservation: the second burn's amount equals the previous burned delta (250), so the balance
+    // and encrypted total supply each drop by another 250, and the new burned delta is again 250.
+    assert_eq!(durable_outputs, 3);
+    assert_eq!(cleartext.balance(&context, fixture.token_account), 500);
+    assert_eq!(
+        cleartext.u64_at(&context, fixture.total_supply_value),
+        4_500
+    );
+    assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 250);
+
+    // The burned_amount lineage stays a well-formed two-burn MMR: both burns' handles are present as
+    // public-decrypt leaves (public(H1)@0 and public(H2)@3), so each remains permanently redeemable
+    // (DD-036 / Vector 2) even though the second burn also read H1 as its amount operand.
+    let second_burned = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
+    let lineage = read_encrypted_value(&context, fixture.burned_amount_value);
+    assert_eq!(lineage.current_handle, second_burned);
+    assert_eq!(lineage.leaf_count, 4);
+    let (_proof, expected_peaks) = two_burn_lineage_proof(&fixture, first_burned, second_burned, 0);
+    assert_eq!(lineage.peaks, expected_peaks);
+}
+
+/// PDA-owner CPI driver: the batcher path burns as a program PDA that owns the token account and
+/// authorizes the burn via `invoke_signed`. The callee sees only `owner.is_signer` — identical
+/// whether a keypair or a program's PDA signed — so the path is exercised by marking the owner PDA a
+/// signer and paying rent from a separate keypair (the driver's fee payer, as `invoke_signed`
+/// would). The spend gate and owner check both accept the PDA owner.
+#[test]
+fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
+    // A program PDA stands in for the batcher authority that owns the token account.
+    let driver_program = Pubkey::new_from_array([0x42; 32]);
+    let (pda_owner, _bump) = Pubkey::find_program_address(&[b"batcher"], &driver_program);
+    let fixture = BurnRedeemFixture::with_keys(
+        pda_owner,
+        Pubkey::new_from_array([0x21; 32]),
+        Pubkey::new_from_array([0x22; 32]),
+    );
+    let mut accounts = fixture.accounts(1_000);
+    // A separate keypair pays rent, exactly as invoke_signed would — the PDA is not the fee payer.
+    let payer = Pubkey::new_unique();
+    accounts.insert(payer, system_account(5_000_000_000));
+    let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let amount_value = seed_burn_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[pda_owner, fixture.compute_signer],
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.initial_balance, 1_000);
+    cleartext.seed_amount(fixture.initial_total_supply, 5_000);
+    cleartext.seed_amount(amount_handle, 400);
+
+    let burn = confidential_burn_from_value_ix(&fixture, pda_owner, payer, amount_value);
+    let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &result);
+
+    assert_eq!(cleartext.balance(&context, fixture.token_account), 600);
+    assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 400);
+    // The burned lineage is owned by the PDA owner and the compute signer.
+    assert_eq!(
+        read_encrypted_value(&context, fixture.burned_amount_value).subjects,
+        vec![pda_owner, fixture.compute_signer]
+    );
+}
+
+/// Downstream compatibility: a burned handle produced by the from-value path feeds
+/// `redeem_burned_amount` unchanged. The burned output shape (born-public, canonical `burned_amount`
+/// lineage, audience owner + compute) is identical to the attestation path, so the KMS-cert +
+/// single-leaf public-decrypt-proof redeem consumes it and pays out the vault.
+#[test]
+fn mollusk_burn_from_value_burned_handle_redeems() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(1_000);
+    let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    let amount_value = seed_burn_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    // Burn 500 from the existing amount handle; the born-public burned handle is the new lineage handle.
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.initial_balance, 1_000);
+    cleartext.seed_amount(fixture.initial_total_supply, 5_000);
+    cleartext.seed_amount(amount_handle, 500);
+    let burn =
+        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let burn_result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &burn_result);
+    let burned_handle = read_encrypted_value(&context, fixture.burned_amount_value).current_handle;
+
+    // Redeem the burned handle with a real KMS cert + single-leaf public-decrypt inclusion proof.
+    let cleartext_amount = 500;
+    let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, cleartext_amount);
+    let proof = single_burn_public_decrypt_proof(&fixture, burned_handle);
+    let redemption_record = token::burn_redemption_address(fixture.mint, burned_handle).0;
+    context
+        .account_store
+        .borrow_mut()
+        .insert(redemption_record, system_account(0));
+    context.process_and_validate_instruction(
+        &redeem_burned_amount_ix(
+            &fixture,
+            burned_handle,
+            cleartext_amount,
+            signatures,
+            extra_data,
+            proof,
+            redemption_record,
+            None,
+        ),
+        &[Check::success()],
+    );
+
+    assert_eq!(
+        read_spl_amount(&context, fixture.destination_usdc),
+        cleartext_amount
+    );
+    assert_eq!(
+        read_spl_amount(&context, fixture.vault_usdc),
+        1_000 - cleartext_amount
+    );
+}
+
+/// A signer outside the amount handle's subject set is rejected by the token's spend gate with its
+/// own distinct error, before any host CPI — even though it owns the debited token account.
+#[test]
+fn mollusk_burn_from_value_rejects_non_subject_signer() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(1_000);
+    let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    // The amount's subjects are a stranger + compute; the owner (and signer) is NOT a subject, so it
+    // may not burn the amount even though it owns the balance.
+    let stranger = Pubkey::new_unique();
+    let amount_value = seed_burn_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[stranger, fixture.compute_signer],
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let burn =
+        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    context.process_and_validate_instruction(
+        &burn,
+        &[token_error(
+            token::ConfidentialTokenError::AmountSpendSubjectMismatch,
+        )],
+    );
+
+    // Balance untouched.
+    assert_eq!(
+        read_encrypted_value(&context, fixture.balance_value).current_handle,
+        fixture.initial_balance
+    );
+}
+
+/// The amount handle must be euint64. A non-balance-typed amount is rejected early by the token for a
+/// clear error, before the host's binary type validation would reject the same handle deeper.
+#[test]
+fn mollusk_burn_from_value_rejects_non_euint64_amount() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(1_000);
+    // FHE type 0 (ebool), not euint64.
+    let amount_handle = handle_for_chain(42, 0);
+    let amount_value = seed_burn_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let burn =
+        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    context.process_and_validate_instruction(
+        &burn,
+        &[token_error(
+            token::ConfidentialTokenError::AmountHandleTypeMismatch,
+        )],
+    );
+}
+
+/// The signing owner must own the debited token account. A signer that is a subject of the amount
+/// (so the spend gate passes) but is not the token account owner is rejected with `OwnerMismatch`.
+#[test]
+fn mollusk_burn_from_value_rejects_owner_not_token_account_owner() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(1_000);
+    let wrong_owner = Pubkey::new_unique();
+    accounts.insert(wrong_owner, system_account(5_000_000_000));
+    let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
+    // wrong_owner is a subject (spend gate passes) but does not own the token account.
+    let amount_value = seed_burn_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[wrong_owner, fixture.compute_signer],
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let burn = confidential_burn_from_value_ix(&fixture, wrong_owner, wrong_owner, amount_value);
+    context.process_and_validate_instruction(
+        &burn,
+        &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
+    );
+}
+
+/// Done-when (cross-app): an amount handle whose subjects lack the mint's compute subject fails at
+/// the host's compute-read check; after a single `allow_subjects` grant of the compute subject the
+/// same burn succeeds (EVM `FHE.allow(handle, token)` shape).
+#[test]
+fn mollusk_burn_from_value_cross_app_requires_compute_subject_grant() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(1_000);
+    let amount_handle = handle_for_chain(60, BALANCE_FHE_TYPE);
+    // A handle from another app: the owner may spend it, but the mint's compute subject is not yet
+    // allowed on it.
+    let amount_value = seed_burn_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner],
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+
+    let burn =
+        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    // Without the grant, the host rejects the durable operand at its compute-read check.
+    context.process_and_validate_instruction(
+        &burn,
+        &[host_error(host::errors::ZamaHostError::SubjectNotFound)],
+    );
+
+    // The handle's owner grants the mint's compute subject.
+    let grant = allow_subject_ix(
+        fixture.owner,
+        fixture.owner,
+        amount_value,
+        fixture.host_config,
+        fixture.compute_signer,
+    );
+    context.process_and_validate_instruction(&grant, &[Check::success()]);
+
+    // The same burn now succeeds.
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.initial_balance, 1_000);
+    cleartext.seed_amount(fixture.initial_total_supply, 5_000);
+    cleartext.seed_amount(amount_handle, 300);
+    let burn_again =
+        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+    let result = context.process_and_validate_instruction(&burn_again, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &result);
+    assert_eq!(cleartext.balance(&context, fixture.token_account), 700);
+    assert_eq!(cleartext.u64_at(&context, fixture.burned_amount_value), 300);
+}
+
+/// The from-value burn carries no 190-byte attestation, so its instruction data is strictly SMALLER
+/// than the fresh-attested burn's — the measured wire-size win for a contract-driven batch burn.
+#[test]
+fn burn_from_value_instruction_is_smaller_than_attested_arm() {
+    let fixture = BurnRedeemFixture::new();
+    let amount_handle = handle_for_chain(70, BALANCE_FHE_TYPE);
+    let attested = confidential_burn_ix(
+        &fixture,
+        amount_attestation_for(amount_handle, fixture.owner, fixture.compute_signer),
+    );
+    let from_value = confidential_burn_from_value_ix(
+        &fixture,
+        fixture.owner,
+        fixture.owner,
+        Pubkey::new_unique(),
+    );
+    assert!(
+        from_value.data.len() < attested.data.len(),
+        "from_value arm ({} bytes) must be smaller than the attested arm ({} bytes)",
+        from_value.data.len(),
+        attested.data.len(),
+    );
+}
+
+#[test]
+fn cost_snapshot_confidential_burn_from_value() {
+    let fixture = BurnRedeemFixture::with_keys(
+        Pubkey::new_from_array([0x11; 32]),
+        Pubkey::new_from_array([0x12; 32]),
+        Pubkey::new_from_array([0x13; 32]),
+    );
+    let mut accounts = fixture.accounts(1_000);
+    let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
+    let amount_value = seed_burn_amount_value(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::transfer_amount_label(),
+        amount_handle,
+        &[fixture.owner, fixture.compute_signer],
+    );
+    let context = burn_redeem_mollusk().with_context(accounts);
+    let burn =
+        confidential_burn_from_value_ix(&fixture, fixture.owner, fixture.owner, amount_value);
+
+    let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+
+    cost_snapshot::assert_cost_snapshot(
+        "token_mollusk",
+        "confidential_burn_from_value/direct",
+        &burn,
+        &result,
     );
 }

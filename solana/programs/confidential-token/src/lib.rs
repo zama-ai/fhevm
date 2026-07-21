@@ -36,8 +36,9 @@ pub use instructions::CreateRandomAmount;
 use instructions::*;
 /// Re-export instruction account contexts for compatibility with existing tests.
 pub use instructions::{
-    ConfidentialBurn, ConfidentialTransfer, ConfidentialTransferFromValue, DiscloseSecp,
-    InitializeMint, InitializeTokenAccount, RedeemBurnedAmount, WrapUsdc,
+    ConfidentialBurn, ConfidentialBurnFromValue, ConfidentialTransfer,
+    ConfidentialTransferFromValue, DiscloseSecp, InitializeMint, InitializeTokenAccount,
+    RedeemBurnedAmount, WrapUsdc,
 };
 /// Re-export account layouts and helper functions used by clients and tests.
 pub use state::*;
@@ -95,6 +96,19 @@ pub mod confidential_token {
         amount_attestation: zama_host::CoprocessorInputAttestation,
     ) -> Result<()> {
         instructions::confidential_burn(ctx, amount_attestation)
+    }
+
+    /// Burns an encrypted amount taken from an existing on-chain `EncryptedValue` (a computed or
+    /// received handle) instead of a freshly attested client-side encryption — the burn-side analog
+    /// of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn a
+    /// batch's computed encrypted total, then requests the KMS burn certificate. The signing owner
+    /// must be in the amount value's subject set (the token spend gate); the amount is spent
+    /// read-only, and the burned-amount output is born publicly decryptable exactly as in
+    /// `confidential_burn`, so `redeem_burned_amount` consumes it unchanged.
+    pub fn confidential_burn_from_value<'info>(
+        ctx: Context<'info, ConfidentialBurnFromValue<'info>>,
+    ) -> Result<()> {
+        instructions::confidential_burn_from_value(ctx)
     }
 
     /// Transfers an encrypted amount by rotating the sender and recipient balance handles.
