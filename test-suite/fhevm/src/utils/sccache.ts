@@ -1,7 +1,7 @@
 /**
  * Shared sccache build wiring for the source-built Rust images.
  *
- * The coprocessor and kms-connector Dockerfiles (Dockerfile.workspace) activate the sccache
+ * The per-image coprocessor and kms-connector Dockerfiles activate the sccache
  * compiler cache ONLY when SCCACHE_BUCKET is set at build time; otherwise they run a plain cargo
  * build. So every helper here is gated on SCCACHE_BUCKET being present in the environment. With it
  * unset (local dev, forks) nothing is emitted: the generated compose documents and the resulting

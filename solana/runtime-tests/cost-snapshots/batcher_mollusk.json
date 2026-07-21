@@ -1,0 +1,34 @@
+{
+  "claim": {
+    "compute_units": 327538,
+    "unique_accounts": 22,
+    "instruction_data_bytes": 8,
+    "cpi_instructions": 12,
+    "total_cpi_instruction_data_bytes": 2267,
+    "max_cpi_instruction_data_bytes": 1065
+  },
+  "dispatch": {
+    "compute_units": 470073,
+    "unique_accounts": 18,
+    "instruction_data_bytes": 8,
+    "cpi_instructions": 9,
+    "total_cpi_instruction_data_bytes": 1721,
+    "max_cpi_instruction_data_bytes": 969
+  },
+  "join": {
+    "compute_units": 429421,
+    "unique_accounts": 20,
+    "instruction_data_bytes": 223,
+    "cpi_instructions": 14,
+    "total_cpi_instruction_data_bytes": 2877,
+    "max_cpi_instruction_data_bytes": 1427
+  },
+  "open_batch": {
+    "compute_units": 250964,
+    "unique_accounts": 24,
+    "instruction_data_bytes": 16,
+    "cpi_instructions": 20,
+    "total_cpi_instruction_data_bytes": 1472,
+    "max_cpi_instruction_data_bytes": 249
+  }
+}

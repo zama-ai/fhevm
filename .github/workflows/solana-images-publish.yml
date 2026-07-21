@@ -1,0 +1,216 @@
+name: solana-images-publish
+
+# Publishes branch-scoped images for the five component groups that solana-e2e otherwise builds
+# from source on every PR (#1766 step 3). Each image is built with the SAME Dockerfile, target,
+# build args, and sccache wiring that fhevm-cli's --override compose builds use (the
+# COMPONENT_BUILD_SPECS table in test-suite/fhevm/src/generate/compose.ts), so a pulled image is
+# interchangeable with a source build of the same commit.
+#
+# Tags per image:
+#   ghcr.io/zama-ai/<image>:feature-solana                  floating, tracks the branch tip
+#   ghcr.io/zama-ai/<image>:feature-solana-<full-sha>       immutable, per pushed commit
+#   ghcr.io/zama-ai/<image>:buildcache-feature-solana       BuildKit registry cache manifest
+#                                                           (mode=max; read by solana-e2e's
+#                                                           source builds via FHEVM_BUILDCACHE_TAG)
+#
+# solana-e2e.yml's select-overrides step consumes ONLY the immutable tags: PRs that leave a
+# component group's source untouched pull the base commit's image instead of rebuilding it.
+# The floating tag is published for humans (manual debugging / docker pull convenience) and is
+# never consumed by selection — with fail-fast:false one failed matrix leg can leave a floating
+# tag one push behind its siblings, so consuming it could mix components across branch commits.
+on:
+  push:
+    branches: [feature/solana]
+  workflow_dispatch:
+
+permissions: {}
+
+# Queue pushes instead of racing: the floating tag must end on the newest commit. GitHub keeps
+# only the latest pending run per group, so intermediate commits may publish no immutable tag;
+# select-overrides falls back to building from source when a base-commit tag set is incomplete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish/${{ matrix.name }}
+    # extras=s3-cache provisions the sccache S3 bucket access (same as solana-e2e.yml); the Rust
+    # workspace images share main's sccache cache so rebuilds are mostly cache hits.
+    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=100gb/extras=s3-cache
+    timeout-minutes: 90
+    permissions:
+      contents: "read" # checkout
+      packages: "write" # push repo-owned images to ghcr.io
+    strategy:
+      fail-fast: false
+      matrix:
+        # Mirrors COMPONENT_BUILD_SPECS in test-suite/fhevm/src/generate/compose.ts: same
+        # dockerfile/context/target/args as the --override source builds. `sccache: true` marks
+        # the specs fhevm-cli routes through withSccacheBuild (coprocessor + kms-connector).
+        include:
+          - name: gateway-contracts
+            image: fhevm/gateway-contracts
+            dockerfile: gateway-contracts/Dockerfile
+            context: gateway-contracts
+          - name: host-contracts
+            image: fhevm/host-contracts
+            dockerfile: host-contracts/Dockerfile
+            context: .
+          - name: coprocessor-db-migration
+            image: fhevm/coprocessor/db-migration
+            dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
+            context: .
+            target: prod
+            sccache: true
+          - name: coprocessor-host-listener
+            image: fhevm/coprocessor/host-listener
+            dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
+            context: .
+            target: prod
+            sccache: true
+          - name: coprocessor-gw-listener
+            image: fhevm/coprocessor/gw-listener
+            dockerfile: coprocessor/fhevm-engine/gw-listener/Dockerfile
+            context: .
+            target: prod
+            sccache: true
+          - name: coprocessor-tfhe-worker
+            image: fhevm/coprocessor/tfhe-worker
+            dockerfile: coprocessor/fhevm-engine/tfhe-worker/Dockerfile
+            context: .
+            target: prod
+            sccache: true
+          - name: coprocessor-zkproof-worker
+            image: fhevm/coprocessor/zkproof-worker
+            dockerfile: coprocessor/fhevm-engine/zkproof-worker/Dockerfile
+            context: .
+            target: prod
+            sccache: true
+          - name: coprocessor-sns-worker
+            image: fhevm/coprocessor/sns-worker
+            dockerfile: coprocessor/fhevm-engine/sns-worker/Dockerfile
+            context: .
+            target: prod
+            sccache: true
+          - name: coprocessor-tx-sender
+            image: fhevm/coprocessor/tx-sender
+            dockerfile: coprocessor/fhevm-engine/transaction-sender/Dockerfile
+            context: .
+            target: prod
+            sccache: true
+          - name: relayer
+            image: fhevm/relayer
+            dockerfile: relayer/docker/relayer/Dockerfile
+            context: .
+          - name: relayer-migrate
+            image: fhevm/relayer-migrate
+            dockerfile: relayer/docker/relayer-migrate/Dockerfile
+            context: .
+          - name: kms-connector-db-migration
+            image: fhevm/kms-connector/db-migration
+            dockerfile: kms-connector/connector-db/Dockerfile
+            context: .
+            target: prod
+            build_args: "RUST_IMAGE_VERSION=1.91.0"
+            sccache: true
+          - name: kms-connector-gw-listener
+            image: fhevm/kms-connector/gw-listener
+            dockerfile: kms-connector/crates/gw-listener/Dockerfile
+            context: .
+            target: prod
+            build_args: "RUST_IMAGE_VERSION=1.91.0"
+            sccache: true
+          - name: kms-connector-kms-worker
+            image: fhevm/kms-connector/kms-worker
+            dockerfile: kms-connector/crates/kms-worker/Dockerfile
+            context: .
+            target: prod
+            build_args: "RUST_IMAGE_VERSION=1.91.0"
+            sccache: true
+          - name: kms-connector-tx-sender
+            image: fhevm/kms-connector/tx-sender
+            dockerfile: kms-connector/crates/tx-sender/Dockerfile
+            context: .
+            target: prod
+            build_args: "RUST_IMAGE_VERSION=1.91.0"
+            sccache: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: "false"
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Login to ghcr.io
+        # GITHUB_TOKEN with packages:write pushes repo-owned fhevm/* images (same pattern as
+        # re-tag-docker-image.yml). Also covers pulling the gci base images.
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          command: |
+            echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+      - name: Login to cgr.dev
+        # Chainguard base images (glibc-dynamic, postgres, rust) used by every runtime stage.
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as solana-e2e.yml
+          password: ${{ secrets.CGR_PASSWORD }} # zizmor: ignore[secrets-outside-env] registry creds, same pattern as solana-e2e.yml
+
+      - name: Build and push
+        env:
+          IMAGE: ${{ matrix.image }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          CONTEXT: ${{ matrix.context }}
+          TARGET: ${{ matrix.target || '' }}
+          EXTRA_BUILD_ARGS: ${{ matrix.build_args || '' }}
+          USE_SCCACHE: ${{ matrix.sccache && 'true' || 'false' }}
+          # Same gating as solana-e2e.yml: activate sccache only when BOTH S3 creds are present,
+          # so a fork/misconfigured run degrades to a plain (slower) build instead of failing.
+          SCCACHE_BUCKET: ${{ secrets.AWS_ACCESS_KEY_S3_USER != '' && secrets.AWS_SECRET_KEY_S3_USER != '' && 'gh-actions-cache-eu-west-3' || '' }} # zizmor: ignore[secrets-outside-env] gates the bucket on both creds being present, same pattern as solana-e2e.yml
+          SCCACHE_REGION: eu-west-3
+          SCCACHE_S3_PREFIX: sccache/fhevm-coprocessor
+          AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 creds scoped to this step's env, same pattern as solana-e2e.yml
+          AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }} # zizmor: ignore[secrets-outside-env] sccache S3 creds scoped to this step's env, same pattern as solana-e2e.yml
+          SHA: ${{ github.sha }}
+          # Per-image BuildKit registry cache. This workflow is the only cache WRITER (it has
+          # packages:write and runs only on pushes to the feature branch); solana-e2e's --override
+          # builds READ the same refs via compose `cache_from` when FHEVM_BUILDCACHE_TAG is set.
+          # mode=max exports intermediate (builder-stage) layers, which is the whole point: a PR
+          # whose inputs match the branch tip skips the contract and cargo layers entirely.
+          # image-manifest + oci-mediatypes make the cache manifest ghcr-compatible. A missing
+          # cache ref on the first run is a non-fatal BuildKit warning.
+          BUILDCACHE_TAG: buildcache-feature-solana
+        run: |
+          set -euo pipefail
+          args=(--file "$DOCKERFILE")
+          if [ -n "$TARGET" ]; then
+            args+=(--target "$TARGET")
+          fi
+          for arg in $EXTRA_BUILD_ARGS; do
+            args+=(--build-arg "$arg")
+          done
+          if [ "$USE_SCCACHE" = "true" ] && [ -n "$SCCACHE_BUCKET" ]; then
+            # Same build args + BuildKit secret ids as test-suite/fhevm/src/utils/sccache.ts.
+            args+=(
+              --build-arg "SCCACHE_BUCKET=$SCCACHE_BUCKET"
+              --build-arg "SCCACHE_REGION=$SCCACHE_REGION"
+              --build-arg "SCCACHE_S3_PREFIX=$SCCACHE_S3_PREFIX"
+              --secret "id=sccache_aws_access_key_id,env=AWS_ACCESS_KEY_S3_USER"
+              --secret "id=sccache_aws_secret_access_key,env=AWS_SECRET_KEY_S3_USER"
+            )
+          fi
+          args+=(
+            --cache-from "type=registry,ref=ghcr.io/zama-ai/$IMAGE:$BUILDCACHE_TAG"
+            --cache-to "type=registry,ref=ghcr.io/zama-ai/$IMAGE:$BUILDCACHE_TAG,mode=max,image-manifest=true,oci-mediatypes=true"
+          )
+          docker buildx build "${args[@]}" \
+            --tag "ghcr.io/zama-ai/$IMAGE:feature-solana" \
+            --tag "ghcr.io/zama-ai/$IMAGE:feature-solana-$SHA" \
+            --push "$CONTEXT"

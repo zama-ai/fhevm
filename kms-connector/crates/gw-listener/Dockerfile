@@ -1,34 +1,77 @@
 # syntax=docker/dockerfile:1
 
-ARG RUST_IMAGE_VERSION
+ARG RUST_IMAGE_VERSION=1.91.0
 
 # Stage 1: Build gw-listener
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 # The profile used to run `cargo build`
 ARG CARGO_PROFILE=release
+ARG SCCACHE_BUCKET
+ARG SCCACHE_REGION=eu-west-3
+ARG SCCACHE_S3_PREFIX
+ARG SCCACHE_VERSION=v0.15.0
+ENV SCCACHE_IDLE_TIMEOUT=0
+ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
+ENV SCCACHE_REGION=${SCCACHE_REGION}
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
+ENV AWS_REGION=${SCCACHE_REGION}
 
 # Use root user for build stage
 USER root
 
 WORKDIR /app
 
-# Copy git directory to include commit hash in build info
-COPY .git ./.git
+# TODO(sccache): temporary inline install for testing; remove once sccache
+# ships in the rust-glibc golden image and rely on that instead.
+# Skipped entirely (no network fetch) when SCCACHE_BUCKET is unset, the same
+# signal the build hook below uses, so the disabled path stays a plain build.
+RUN set -eux; \
+    if [ -z "${SCCACHE_BUCKET}" ]; then echo "SCCACHE_BUCKET unset; skipping sccache install"; exit 0; fi; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64)  triple=x86_64-unknown-linux-musl ;; \
+        aarch64) triple=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
+    chmod +x /usr/local/bin/sccache; \
+    sccache --version
 
 # Copy sources
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared ./shared
 COPY kms-connector ./kms-connector
+# kms-worker depends on zama-solana-acl via `../solana/crates/zama-solana-acl`
+# (see kms-connector/Cargo.toml). The crate is standalone (no workspace
+# inheritance), so copying just it satisfies the path dependency.
+COPY solana/crates/zama-solana-acl ./solana/crates/zama-solana-acl
 
-# Build with improved caching
+# Build with improved caching. The build scripts shell out to git for version
+# metadata; the build context may come from a git worktree (where .git is a
+# file), so instead of copying .git we synthesize a minimal repo with a build
+# tag. This also keeps per-commit .git churn out of the layer-cache key.
 WORKDIR /app/kms-connector
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/kms-connector/target,sharing=locked \
-    git config --global --add safe.directory /app && \
+    --mount=type=secret,id=sccache_aws_access_key_id \
+    --mount=type=secret,id=sccache_aws_secret_access_key \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then \
+      export RUSTC_WRAPPER=sccache; \
+      export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
+      export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
+    fi && \
+    git config --global --add safe.directory '*' && \
+    git config --global user.email build@local && \
+    git config --global user.name build && \
+    git init -q /app && \
+    git -C /app commit --allow-empty -q -m build && \
+    git -C /app tag -a v0.0.0-build -m build && \
     cargo fetch && \
     cargo build --profile=${CARGO_PROFILE} -p gw-listener && \
+    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     cp target/${CARGO_PROFILE}/gw-listener /tmp/gw-listener
 
 # Stage 2: Runtime image
