@@ -34,18 +34,45 @@ pub struct InnerInstructionGroupFixture {
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum ExpectedOutcome {
     Accept {
-        instructions: Vec<ExpectedInstruction>,
+        instructions: Vec<ExpectedInstructionFixture>,
     },
     Reject,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-pub struct ExpectedInstruction {
+#[derive(Debug, Deserialize)]
+pub struct ExpectedInstructionFixture {
     pub program_tag: u8,
     pub account_tags: Vec<u8>,
     pub data: Vec<u8>,
     pub top_level_index: u32,
-    pub is_inner: bool,
+    pub stack_height: u32,
+}
+
+impl ExpectedInstructionFixture {
+    pub fn resolve(&self) -> ExpectedInstruction {
+        ExpectedInstruction {
+            program: fixture_key(self.program_tag),
+            accounts: self.account_tags.iter().copied().map(fixture_key).collect(),
+            data: self.data.clone(),
+            top_level_index: self.top_level_index,
+            stack_height: self.stack_height,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ExpectedInstruction {
+    pub program: [u8; 32],
+    pub accounts: Vec<[u8; 32]>,
+    pub data: Vec<u8>,
+    pub top_level_index: u32,
+    pub stack_height: u32,
+}
+
+/// Expands a compact fixture tag into a full, deliberately nonuniform key.
+/// Full-key comparisons then catch truncation or partial-key adapter bugs.
+pub fn fixture_key(tag: u8) -> [u8; 32] {
+    std::array::from_fn(|index| tag.wrapping_add(index as u8))
 }
 
 pub fn transaction_decoding_fixtures() -> Vec<TransactionDecodingFixture> {

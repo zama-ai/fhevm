@@ -157,6 +157,7 @@ jobs:
               # Keep this list aligned with non-excluded solana/Cargo.toml workspace members.
               def components: [
                 {label: "zama-solana-acl", path: "/crates/zama-solana-acl/"},
+                {label: "zama-solana-transaction", path: "/crates/zama-solana-transaction/"},
                 {label: "solana-ed25519-instruction", path: "/crates/solana-ed25519-instruction/"},
                 {label: "zama-fhe", path: "/crates/zama-fhe/"},
                 {label: "zama-host", path: "/programs/zama-host/"},

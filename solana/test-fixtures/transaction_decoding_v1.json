@@ -39,21 +39,21 @@
           "account_tags": [3, 2],
           "data": [10, 11],
           "top_level_index": 0,
-          "is_inner": false
+          "stack_height": 1
         },
         {
           "program_tag": 3,
           "account_tags": [1, 4],
           "data": [13],
           "top_level_index": 0,
-          "is_inner": true
+          "stack_height": 2
         },
         {
           "program_tag": 2,
           "account_tags": [4],
           "data": [12],
           "top_level_index": 1,
-          "is_inner": false
+          "stack_height": 1
         }
       ]
     }
@@ -108,35 +108,35 @@
           "account_tags": [],
           "data": [],
           "top_level_index": 0,
-          "is_inner": false
+          "stack_height": 1
         },
         {
           "program_tag": 1,
           "account_tags": [],
           "data": [],
           "top_level_index": 0,
-          "is_inner": true
+          "stack_height": 2
         },
         {
           "program_tag": 1,
           "account_tags": [],
           "data": [],
           "top_level_index": 0,
-          "is_inner": true
+          "stack_height": 3
         },
         {
           "program_tag": 1,
           "account_tags": [],
           "data": [],
           "top_level_index": 0,
-          "is_inner": true
+          "stack_height": 3
         },
         {
           "program_tag": 1,
           "account_tags": [],
           "data": [],
           "top_level_index": 0,
-          "is_inner": true
+          "stack_height": 2
         }
       ]
     }
