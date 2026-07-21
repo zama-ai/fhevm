@@ -11,6 +11,11 @@ use fhevm_gateway_bindings::gateway_config::GatewayConfig;
 use sqlx::{Pool, Postgres};
 use tracing::{info, warn};
 
+use crate::metrics::{
+    REGISTRY_LAST_SUCCESS_UNIX_SECONDS, REGISTRY_REFRESH_SUCCESS_COUNTER,
+    REGISTRY_SNAPSHOT_BLOCK_NUMBER,
+};
+
 const REGISTRY_REFRESH_ADVISORY_LOCK: i64 = 0x0047_5743_4f50_524f;
 pub(crate) const EVENT_GATEWAY_CONFIG_COPROCESSORS_UPDATED: &str =
     "event_gateway_config_coprocessors_updated";
@@ -41,7 +46,58 @@ where
     P: Provider<Ethereum>,
 {
     let snapshot = fetch_coprocessor_registry(provider, gateway_config_address).await?;
-    if persist_coprocessor_registry(db_pool, &snapshot).await? {
+    persist_fetched_snapshot(db_pool, &snapshot).await
+}
+
+pub(crate) async fn refresh_coprocessor_registry_at_block<P>(
+    provider: &P,
+    gateway_config_address: Address,
+    db_pool: &Pool<Postgres>,
+    snapshot_block_number: u64,
+    snapshot_block_hash: B256,
+) -> anyhow::Result<()>
+where
+    P: Provider<Ethereum>,
+{
+    let canonical_block = provider
+        .get_block_by_number(BlockNumberOrTag::Number(snapshot_block_number))
+        .await?
+        .with_context(|| {
+            format!("Gateway block {snapshot_block_number} disappeared while reading GatewayConfig")
+        })?;
+    if canonical_block.header.hash != snapshot_block_hash {
+        bail!(
+            "GatewayConfig event block {snapshot_block_number} hash {snapshot_block_hash} is no longer canonical (current hash {})",
+            canonical_block.header.hash,
+        );
+    }
+
+    let snapshot = fetch_coprocessor_registry_at_block(
+        provider,
+        gateway_config_address,
+        snapshot_block_number,
+        snapshot_block_hash,
+    )
+    .await?;
+    persist_fetched_snapshot(db_pool, &snapshot).await
+}
+
+async fn persist_fetched_snapshot(
+    db_pool: &Pool<Postgres>,
+    snapshot: &CoprocessorRegistrySnapshot,
+) -> anyhow::Result<()> {
+    let persistence = persist_coprocessor_registry(db_pool, snapshot).await?;
+    REGISTRY_REFRESH_SUCCESS_COUNTER.inc();
+    REGISTRY_LAST_SUCCESS_UNIX_SECONDS.set(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            .try_into()
+            .unwrap_or(i64::MAX),
+    );
+    REGISTRY_SNAPSHOT_BLOCK_NUMBER.set(persistence.snapshot_block_number);
+    if persistence.updated {
         info!(
             gateway_chain_id = snapshot.gateway_chain_id,
             gateway_config_address = %snapshot.gateway_config_address,
@@ -55,6 +111,12 @@ where
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RegistryPersistence {
+    pub(crate) updated: bool,
+    pub(crate) snapshot_block_number: i64,
+}
+
 async fn fetch_coprocessor_registry<P>(
     provider: &P,
     gateway_config_address: Address,
@@ -62,16 +124,34 @@ async fn fetch_coprocessor_registry<P>(
 where
     P: Provider<Ethereum>,
 {
-    let gateway_chain_id = i64::try_from(provider.get_chain_id().await?)
-        .context("Gateway chain ID exceeds PostgreSQL BIGINT")?;
-    let snapshot_block_number_u64 = provider.get_block_number().await?;
+    let snapshot_block_number = provider.get_block_number().await?;
     let snapshot_block = provider
-        .get_block_by_number(BlockNumberOrTag::Number(snapshot_block_number_u64))
+        .get_block_by_number(BlockNumberOrTag::Number(snapshot_block_number))
         .await?
         .context("latest Gateway block disappeared while reading GatewayConfig")?;
-    let snapshot_block_number = i64::try_from(snapshot_block_number_u64)
+    fetch_coprocessor_registry_at_block(
+        provider,
+        gateway_config_address,
+        snapshot_block_number,
+        snapshot_block.header.hash,
+    )
+    .await
+}
+
+async fn fetch_coprocessor_registry_at_block<P>(
+    provider: &P,
+    gateway_config_address: Address,
+    snapshot_block_number: u64,
+    snapshot_block_hash: B256,
+) -> anyhow::Result<CoprocessorRegistrySnapshot>
+where
+    P: Provider<Ethereum>,
+{
+    let gateway_chain_id = i64::try_from(provider.get_chain_id().await?)
+        .context("Gateway chain ID exceeds PostgreSQL BIGINT")?;
+    let db_snapshot_block_number = i64::try_from(snapshot_block_number)
         .context("Gateway block number exceeds PostgreSQL BIGINT")?;
-    let at_block = BlockId::hash_canonical(snapshot_block.header.hash);
+    let at_block = BlockId::hash_canonical(snapshot_block_hash);
     let gateway_config = GatewayConfig::new(gateway_config_address, provider);
 
     let tx_senders = gateway_config
@@ -118,8 +198,8 @@ where
     let snapshot = CoprocessorRegistrySnapshot {
         gateway_chain_id,
         gateway_config_address,
-        snapshot_block_number,
-        snapshot_block_hash: snapshot_block.header.hash,
+        snapshot_block_number: db_snapshot_block_number,
+        snapshot_block_hash,
         coprocessor_threshold,
         coprocessors,
     };
@@ -130,7 +210,7 @@ where
 pub(crate) async fn persist_coprocessor_registry(
     db_pool: &Pool<Postgres>,
     snapshot: &CoprocessorRegistrySnapshot,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<RegistryPersistence> {
     validate_snapshot(snapshot)?;
     let mut transaction = db_pool.begin().await?;
     sqlx::query!(
@@ -167,7 +247,10 @@ pub(crate) async fn persist_coprocessor_registry(
             "Ignoring older GatewayConfig coprocessor registry snapshot"
         );
         transaction.commit().await?;
-        return Ok(false);
+        return Ok(RegistryPersistence {
+            updated: false,
+            snapshot_block_number: current.snapshot_block_number,
+        });
     }
 
     sqlx::query!("DELETE FROM public.gateway_config_coprocessors")
@@ -207,7 +290,10 @@ pub(crate) async fn persist_coprocessor_registry(
     .execute(transaction.as_mut())
     .await?;
     transaction.commit().await?;
-    Ok(true)
+    Ok(RegistryPersistence {
+        updated: true,
+        snapshot_block_number: snapshot.snapshot_block_number,
+    })
 }
 
 fn validate_snapshot(snapshot: &CoprocessorRegistrySnapshot) -> anyhow::Result<()> {
@@ -300,7 +386,7 @@ mod tests {
             .await?;
 
         let initial = snapshot();
-        assert!(persist_coprocessor_registry(&pool, &initial).await?);
+        assert!(persist_coprocessor_registry(&pool, &initial).await?.updated);
         let rows = sqlx::query!(
             r#"
             SELECT tx_sender_address,
@@ -324,7 +410,9 @@ mod tests {
         older.snapshot_block_number = 99;
         older.snapshot_block_hash = B256::repeat_byte(0x19);
         older.coprocessors[0].s3_bucket_url = "https://stale.example".into();
-        assert!(!persist_coprocessor_registry(&pool, &older).await?);
+        let ignored = persist_coprocessor_registry(&pool, &older).await?;
+        assert!(!ignored.updated);
+        assert_eq!(ignored.snapshot_block_number, initial.snapshot_block_number);
         let urls = sqlx::query_scalar!(
             "SELECT s3_bucket_url FROM public.gateway_config_coprocessors ORDER BY tx_sender_address",
         )
@@ -343,7 +431,7 @@ mod tests {
         newer.snapshot_block_hash = B256::repeat_byte(0x21);
         newer.coprocessor_threshold = 1;
         newer.coprocessors.truncate(1);
-        assert!(persist_coprocessor_registry(&pool, &newer).await?);
+        assert!(persist_coprocessor_registry(&pool, &newer).await?.updated);
         let current = sqlx::query!(
             r#"
             SELECT COUNT(*) AS "count!",

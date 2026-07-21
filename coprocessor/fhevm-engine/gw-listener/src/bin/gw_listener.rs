@@ -110,6 +110,14 @@ struct Conf {
     )]
     gateway_config_address: Option<Address>,
 
+    #[arg(
+        long,
+        default_value = "30m",
+        value_parser = parse_duration,
+        help = "Periodic GatewayConfig registry reconciliation interval"
+    )]
+    gateway_config_refresh_interval: Duration,
+
     /// How long to wait for the gateway to emit a consensus event after the
     /// first submission is seen. Wall-clock duration — the default of 5 minutes
     /// accommodates coprocessors that may be stuck for a few minutes.
@@ -228,6 +236,7 @@ async fn main() -> anyhow::Result<()> {
         log_last_processed_every_number_of_updates: conf.log_last_processed_every_number_of_updates,
         ciphertext_commits_address: conf.ciphertext_commits_address,
         gateway_config_address: conf.gateway_config_address,
+        gateway_config_refresh_interval: conf.gateway_config_refresh_interval,
         drift_no_consensus_timeout: conf.drift_no_consensus_timeout,
         drift_post_consensus_grace: conf.drift_post_consensus_grace,
         drift_auto_revert_grace_period: conf.drift_auto_revert_grace_period,
