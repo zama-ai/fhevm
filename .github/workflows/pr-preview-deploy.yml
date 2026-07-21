@@ -917,28 +917,30 @@ jobs:
         run: |
           max_wait=420; elapsed=0; interval=10
           ready=false
-          # Exactly one s3 claim per coprocessor party must EXIST and be Ready.
-          # Counting the expected number explicitly (rather than "no non-True
-          # line") is required because an empty `kubectl get s3` - i.e. the claims
-          # haven't been created yet - would otherwise look "ready" (grep -qv
-          # matches nothing) and let contract deploy race ahead before the
-          # per-party bucket ConfigMaps exist. `|| true` guards grep's exit 1 on
-          # zero matches under the shell's default set -e / pipefail.
+          # Gate ONLY on the coprocessor party buckets, named
+          # coprocessor-infra-<i>-coprocessor-bucket (exactly one per party, so
+          # NB_COPROCESSOR of them). The namespace also holds unrelated s3 claims
+          # we must NOT couple to here - notably the KMS party bucket
+          # (kms-party-*) - so we filter by name prefix rather than counting all
+          # `kubectl get s3`. Counting the expected number explicitly also rejects
+          # the "claims not created yet" case, where an empty list would otherwise
+          # look ready. `|| true` guards grep's exit 1 on zero matches under set -e.
           expected="${NB_COPROCESSOR}"
           while [[ $elapsed -lt $max_wait ]]; do
-            total=$(kubectl get s3 -n "${NAMESPACE}" --no-headers 2>/dev/null | wc -l | tr -d ' ')
-            ready_count=$(kubectl get s3 -n "${NAMESPACE}" \
-                -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null \
-                | grep -c '^True$' || true)
+            rows=$(kubectl get s3 -n "${NAMESPACE}" --no-headers \
+                -o custom-columns=NAME:.metadata.name,READY:'.status.conditions[?(@.type=="Ready")].status' 2>/dev/null \
+                | grep '^coprocessor-infra-' || true)
+            total=$(printf '%s' "${rows}" | grep -c . || true)
+            ready_count=$(printf '%s\n' "${rows}" | awk '$2=="True"{c++} END{print c+0}')
             if [[ "${total}" -eq "${expected}" && "${ready_count}" -eq "${expected}" ]]; then
-              ready=true; echo "coprocessor-infra resources ready (${ready_count}/${expected})"; break
+              ready=true; echo "coprocessor-infra buckets ready (${ready_count}/${expected})"; break
             fi
-            echo "Still waiting for coprocessor-infra resources... (${ready_count}/${expected} Ready, ${total} present, ${elapsed}s/${max_wait}s)"
+            echo "Still waiting for coprocessor-infra buckets... (${ready_count}/${expected} Ready, ${total} present, ${elapsed}s/${max_wait}s)"
             sleep "$interval"; elapsed=$((elapsed + interval))
           done
           kubectl get s3 -n "${NAMESPACE}" -o wide || true
           if [[ "${ready}" != "true" ]]; then
-            echo "::error::coprocessor-infra resources not all Ready (${expected} expected) after ${max_wait}s - see conditions/events above (or below via kubectl describe)"
+            echo "::error::coprocessor-infra buckets not all Ready (${expected} expected) after ${max_wait}s - see conditions/events above (or below via kubectl describe)"
             kubectl describe s3 -n "${NAMESPACE}" || true
             exit 1
           fi
