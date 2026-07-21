@@ -342,4 +342,98 @@ describe("render-compose", () => {
       );
     });
   });
+
+  describe("sccache build wiring", () => {
+    const SCCACHE_ENV = {
+      SCCACHE_BUCKET: "gh-actions-cache-eu-west-3",
+      SCCACHE_REGION: "eu-west-3",
+      SCCACHE_S3_PREFIX: "sccache/fhevm-coprocessor",
+      AWS_ACCESS_KEY_S3_USER: "test-access-key",
+      AWS_SECRET_KEY_S3_USER: "test-secret-key",
+    } as const;
+
+    // Renders the coprocessor override with the given sccache env applied for the duration of the
+    // generation. Both renders below run inside the SAME temp state dir so the only differences are
+    // the sccache additions (env_file paths embed the temp dir and would otherwise differ).
+    const renderCoprocessor = async (env: Record<string, string>) => {
+      const saved = new Map<string, string | undefined>();
+      for (const key of Object.keys({ ...SCCACHE_ENV })) {
+        saved.set(key, process.env[key]);
+        delete process.env[key];
+      }
+      for (const [key, value] of Object.entries(env)) {
+        process.env[key] = value;
+      }
+      try {
+        await generateComposeOverrides(inheritedScenarioState, stackSpecForState(inheritedScenarioState));
+        return await readFile(composePath("coprocessor"), "utf8");
+      } finally {
+        for (const [key, value] of saved) {
+          if (value === undefined) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        }
+      }
+    };
+
+    test("emits compose with no sccache tokens when SCCACHE_BUCKET is unset", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await writeFile(envPath("coprocessor.1"), "\n");
+        const raw = await renderCoprocessor({});
+        expect(raw).not.toContain("SCCACHE");
+        expect(raw).not.toContain("sccache_aws");
+        expect(raw).not.toMatch(/^secrets:/m);
+      });
+    });
+
+    test("adds only the sccache build args + secrets when SCCACHE_BUCKET is set", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await writeFile(envPath("coprocessor.1"), "\n");
+        const withoutEnv = await renderCoprocessor({});
+        const withEnv = await renderCoprocessor({ ...SCCACHE_ENV });
+
+        type BuildDoc = {
+          secrets?: Record<string, unknown>;
+          services: Record<string, { build?: { args?: Record<string, string>; secrets?: string[] } }>;
+        };
+        const enabled = YAML.parse(withEnv) as BuildDoc;
+
+        // Top-level secrets map BuildKit ids to the CI credential env vars.
+        expect(enabled.secrets).toEqual({
+          sccache_aws_access_key_id: { environment: "AWS_ACCESS_KEY_S3_USER" },
+          sccache_aws_secret_access_key: { environment: "AWS_SECRET_KEY_S3_USER" },
+        });
+        const hostListener = enabled.services["coprocessor-host-listener"]?.build;
+        expect(hostListener?.args).toMatchObject({
+          SCCACHE_BUCKET: "gh-actions-cache-eu-west-3",
+          SCCACHE_REGION: "eu-west-3",
+          SCCACHE_S3_PREFIX: "sccache/fhevm-coprocessor",
+        });
+        expect(hostListener?.secrets).toEqual(["sccache_aws_access_key_id", "sccache_aws_secret_access_key"]);
+
+        // Structural proof of graceful degradation: strip the sccache additions from the enabled
+        // document and it is identical to the disabled one.
+        const stripped = YAML.parse(withEnv) as BuildDoc;
+        delete stripped.secrets;
+        for (const service of Object.values(stripped.services)) {
+          if (service.build) {
+            for (const key of ["SCCACHE_BUCKET", "SCCACHE_REGION", "SCCACHE_S3_PREFIX"]) {
+              delete service.build.args?.[key];
+            }
+            if (service.build.args && Object.keys(service.build.args).length === 0) {
+              delete service.build.args;
+            }
+            delete service.build.secrets;
+          }
+        }
+        expect(stripped).toEqual(YAML.parse(withoutEnv) as BuildDoc);
+      });
+    });
+  });
 });
