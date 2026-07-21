@@ -384,7 +384,8 @@ Replaced because it transliterated an EVM workaround Solana doesn't need: a cont
 incoming transfer on EVM, so the token calls it back. On Solana signer authority propagates through
 CPI, so a receiving app drives its **own** atomic `deposit` that CPIs `confidential_transfer` — the
 user signs once, no operator, no callback, no refund leg (the all-or-zero transferred amount is the
-accept signal). See the `confidential-deposit-app` reference program. Token-2022 transfer hooks were
+accept signal). See `confidential-batcher::join`, which evolved the `confidential-deposit-app`
+reference this decision introduced. Token-2022 transfer hooks were
 rejected as a substitute: they are privilege-stripped veto tools, not receiver callbacks
 (FUTURE_DESIGN §4). Some enum/error/event variants from the old flow remain inert to preserve Anchor
 discriminants (FUTURE_DESIGN §6).
@@ -1794,3 +1795,33 @@ entire balance aliases the amount lineage with the balance lineage).
 Didactic companion: `CONFIDENTIAL_VAULTS.md`. Relates to DD-039 (HCU metering identity), DD-040
 (pull-oracle public decrypt), DD-041 (packet envelope — batch transactions stay within the measured
 fit table).
+
+Deposit path implemented (fhevm-internal#1757): `programs/confidential-batcher` (evolved in place
+from the `confidential-deposit-app` reference) with `initialize_batcher` / `open_batch` / `join` /
+`quit` / `dispatch` / `settle` / `claim`. Refinements over the sketch above, all mechanism-level:
+the per-batch authority PDA is one identity that owns both batch token accounts, is the batcher's
+eval `compute_subject` AND `app_account_authority`, and signs every token CPI via `invoke_signed`;
+`join` moves the amount with the ATTESTED `confidential_transfer` arm (a wallet user's fresh
+encryption is a fromExternal input; `confidential_transfer_from_value` remains the mechanism for
+`quit` refunds and `claim` payouts, whose amounts ARE existing computed handles); deposit/claim
+lineages carry the relevant mint's compute signer in their audience from birth, so the token's eval
+can read them with no `allow_subjects` round trip; "next batch opens immediately" is a
+permissionless `open_batch` gated only on the previous batch no longer being pending, rather than
+being folded into `dispatch` (keeps each instruction inside one transaction envelope); and the rate
+is fixed-point at `RATE_SCALE = 10^9` with both divisions rounding down, so the sum of claims can
+never exceed the wrapped shares (the claim MulDiv's 128-bit intermediate and euint64 result are
+bounded by `shares * RATE_SCALE`). Settle prices and wraps only the vault-minted share DELTA across
+its deposit leg — never the share account's raw balance — because SPL destinations cannot refuse
+incoming transfers: a preloaded share balance stays inert instead of inflating the rate past u64 and
+bricking the batch (pinned by `mollusk_preloaded_shares_do_not_poison_the_rate`).
+
+Known deposit-path limitation (open): a batch whose certified total floors to zero shares at the
+vault's current price cannot settle — `demo_vault::deposit` rejects `ZeroShares`, settle reverts
+atomically (retryable but never to success, since the demo vault's price only rises), and the batch
+is stuck Dispatched with its deposits burned. An attacker holding ~all vault shares can brick
+sub-price-P batches near-free by `harvest`-donating P (the donation accrues to their own shares);
+the loss per batch is bounded below one share's worth. Behavior is pinned by
+`mollusk_dust_total_settle_reverts_and_batch_stays_dispatched`. The intended fix is a
+cancel-and-refund settle branch: wrap the redeemed underlying back into the batch's confidential
+account and refund each user's encrypted deposit via `confidential_transfer_from_value` (quit's
+mechanism) — not implemented in the deposit-path PR.

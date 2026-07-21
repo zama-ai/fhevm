@@ -162,7 +162,7 @@ jobs:
                 {label: "zama-fhe", path: "/crates/zama-fhe/"},
                 {label: "zama-host", path: "/programs/zama-host/"},
                 {label: "confidential-token", path: "/programs/confidential-token/"},
-                {label: "confidential-deposit-app", path: "/programs/confidential-deposit-app/"},
+                {label: "confidential-batcher", path: "/programs/confidential-batcher/"},
                 {label: "demo-vault", path: "/programs/demo-vault/"}
               ];
               def line_parts($report; $path):

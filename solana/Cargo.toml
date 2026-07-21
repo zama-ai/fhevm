@@ -5,7 +5,7 @@ members = [
     "crates/zama-fhe",
     "crates/zama-solana-acl",
     "crates/zama-solana-transaction",
-    "programs/confidential-deposit-app",
+    "programs/confidential-batcher",
     "programs/confidential-token",
     "programs/demo-vault",
     "programs/zama-host",

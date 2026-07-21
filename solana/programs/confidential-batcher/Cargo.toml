@@ -1,0 +1,34 @@
+[package]
+name = "confidential-batcher"
+version = "0.1.0"
+description = "Confidential batcher: aggregates encrypted deposits and reveals only each batch's total to a public share-mint vault"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "confidential_batcher"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = [
+    "anchor-lang/idl-build",
+    "anchor-spl/idl-build",
+    "confidential-token/idl-build",
+    "demo-vault/idl-build",
+    "zama-host/idl-build",
+]
+
+[dependencies]
+anchor-lang = { version = "1.0.2", features = ["init-if-needed"] }
+anchor-spl = { version = "1.0.2", default-features = false, features = ["associated_token", "token", "token_2022"] }
+confidential-token = { path = "../confidential-token", features = ["cpi"] }
+demo-vault = { path = "../demo-vault", features = ["cpi"] }
+solana-sha256-hasher = "3.1.0"
+zama-fhe = { path = "../../crates/zama-fhe", features = ["cpi"] }
+zama-host = { path = "../zama-host", features = ["cpi"] }

@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-confidential_deposit_app = "8JdZ2wLbRJtc969bcY6rqSRUKFovxHeKhWPmQaLhHojd"
+confidential_batcher = "415fK9iaJJzMHbwkGD4pWgAmDkMvp7Wbd9TTPUtyRX1g"
 confidential_token = "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
 demo_vault = "C6TBzPBWPJYY3fbsDV63nnT3s9vEjaWQAqdeAZpzowH7"
 zama_host = "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"

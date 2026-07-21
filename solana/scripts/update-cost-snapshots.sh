@@ -8,7 +8,7 @@
 #
 # When: after an intentional compute-unit / account-shape / ix-data change that
 # should update the committed baselines in runtime-tests/cost-snapshots/.
-# Writes: runtime-tests/cost-snapshots/{host,token}_mollusk.json
+# Writes: runtime-tests/cost-snapshots/{host,token,vault,batcher}_mollusk.json
 #
 # Requires Solana CLI and Anchor versions matching CI
 # (.github/workflows/solana-tests.yml). Override EXPECTED_SOLANA only for
@@ -102,4 +102,6 @@ ZAMA_UPDATE_COST_SNAPSHOT=1 \
 
 echo "updated: runtime-tests/cost-snapshots/host_mollusk.json"
 echo "updated: runtime-tests/cost-snapshots/token_mollusk.json"
+echo "updated: runtime-tests/cost-snapshots/vault_mollusk.json"
+echo "updated: runtime-tests/cost-snapshots/batcher_mollusk.json"
 echo "review the JSON diff and commit it with the intentional CU change"
