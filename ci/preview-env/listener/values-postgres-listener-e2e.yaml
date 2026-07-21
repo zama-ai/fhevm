@@ -1,0 +1,88 @@
+# In-cluster Postgres for the blockchain `listener` (producer), for the fhevm
+# e2e preview namespace. One instance PER COPROCESSOR PARTY
+# (postgres-listener-<i>), mirroring zama-zws/gitops's production topology where
+# each eth-listener instance has its OWN database (`APP_DATABASE__DB_URL=.../listener`
+# on its own RDS - see values/eth-blockchain/eth-listener/values-*-zws-dev.yaml).
+#
+# Why a DEDICATED DB (separate from postgres-coprocessor-<i>): the listener-core
+# binary self-migrates and manages its own cursor/catchup tables in a `listener`
+# database, independent of the coprocessor schema (`fhevm_e2e`). The broker
+# (Redis) - not this DB - carries the event payload to the coprocessor's
+# host-listener-consumer, so the two never share a database (confirmed against
+# gitops: listener uses db `listener`, the coproc consumer uses the coprocessor
+# db). Keeping them separate avoids any migration/table-name collision.
+#
+# Same generic `common` chart + official postgres image as the other in-cluster
+# Postgres releases here (see ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's
+# header for the full "why not Bitnami / why not RDS" story). fullnameOverride
+# is set per-party at deploy time (postgres-listener-<i>); the default below is
+# the single-party (N=1) shape for standalone use.
+#
+# Deployed as (per party i):
+#   helm upgrade --install postgres-listener-<i> \
+#     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
+#     -n <namespace> -f this-file --set-string fullnameOverride=postgres-listener-<i>
+fullnameOverride: postgres-listener
+
+statefulset:
+  enabled: true
+  # PVC (not emptyDir) so the listener's catchup cursor survives a pod restart
+  # instead of replaying from scratch. Namespaced, torn down with the namespace.
+  # volumeClaimTemplates is immutable on an existing StatefulSet, so flipping
+  # this requires a fresh deploy (delete the sts/namespace first).
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      mountPath: /var/lib/postgresql/data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+
+image:
+  repository: postgres
+  tag: "17-alpine"
+  pullPolicy: IfNotPresent
+
+env:
+  - {name: POSTGRES_USER, value: "zama"}
+  - {name: POSTGRES_PASSWORD, value: "zama"}
+  # The listener-core binary connects to this database (see the listener
+  # overlay's APP_DATABASE__DB_URL). Kept distinct from coprocessor's fhevm_e2e.
+  - {name: POSTGRES_DB, value: "listener"}
+  # Subdirectory, not the mount root: avoids initdb's "directory exists but is
+  # not empty" complaint on volume backends that seed a lost+found dir.
+  - {name: PGDATA, value: "/var/lib/postgresql/data/pgdata"}
+
+service:
+  enabled: true
+  ports:
+    - {name: tcp-postgresql, port: 5432}
+
+readinessProbe:
+  exec: {command: ["pg_isready", "-U", "zama"]}
+  initialDelaySeconds: 5
+  periodSeconds: 5
+livenessProbe:
+  exec: {command: ["pg_isready", "-U", "zama"]}
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "1"
+    memory: "1Gi"
+
+# Pins onto the zws-pool Karpenter node pool - same convention as the other
+# in-cluster Postgres releases.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

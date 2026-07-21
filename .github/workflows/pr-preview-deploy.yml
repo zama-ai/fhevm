@@ -179,6 +179,29 @@ env:
   KMS_REPO_REF: "v0.13.20"
   KMS_CORE_TAG: "v0.13.20"
   NB_KMS_CORE: "4"
+  # Number of independent coprocessor parties to deploy (own Postgres, S3
+  # bucket and tx-sender/signer identity each; registered on the gateway with a
+  # majority threshold). Mirrors NB_KMS_CORE's per-party loops below. Default 1
+  # keeps the single-coprocessor topology; workflow_dispatch overrides it via
+  # the nb_coprocessor input.
+  NB_COPROCESSOR: "1"
+  #=====REDIS================================================================
+  # In-cluster Redis used as each coprocessor party's host-listener-consumer
+  # broker (redis://coprocessor-redis-<i>-master:6379), one per party. Same
+  # iamguarded chart the gitops coprocessor-redis app uses
+  # (values/coproc/coprocessor-redis).
+  REDIS_CHART: oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
+  REDIS_CHART_VERSION: "25.3.8"
+  #=====LISTENER=============================================================
+  # Dedicated blockchain-event producer (listener/listener-core), one release
+  # per coprocessor party (listener-<i>). Indexes the host chain and publishes
+  # to that party's Redis; the coprocessor host-listener-consumer reads it. Same
+  # chart + role as gitops's eth-blockchain/eth-listener. LISTENER_VERSION is
+  # the image tag (pinned to the tag gitops's eth-listener runs); it must pair
+  # with COPROCESSOR_VERSION's host_listener_consumer (matching broker payload).
+  LISTENER_CHART: oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/listener
+  LISTENER_CHART_VERSION: "0.1.1"
+  LISTENER_VERSION: "cc8fc16-dev"
   #=====TAILSCALE============================================================
   TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
 
@@ -274,7 +297,17 @@ jobs:
       attestations: 'write' # Required to create build attestations
       packages: 'write' # Required to publish Docker images
       id-token: 'write' # Required for OIDC authentication
-    secrets: inherit
+    # Explicit secrets (not `secrets: inherit`): every reusable *-docker-build
+    # workflow declares exactly these six required secrets, so we forward only
+    # those (via the &docker_secrets anchor reused by the other build jobs)
+    # instead of handing the called workflow every parent secret.
+    secrets: &docker_secrets
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
 
   build-gateway-contracts:
     name: build/gateway-contracts
@@ -282,7 +315,7 @@ jobs:
     if: *should_build_images
     uses: ./.github/workflows/gateway-contracts-docker-build.yml
     permissions: *docker_permissions
-    secrets: inherit
+    secrets: *docker_secrets
 
   build-kms-connector:
     name: build/kms-connector
@@ -290,7 +323,7 @@ jobs:
     if: *should_build_images
     uses: ./.github/workflows/kms-connector-docker-build.yml
     permissions: *docker_permissions
-    secrets: inherit
+    secrets: *docker_secrets
 
   build-coprocessor:
     name: build/coprocessor
@@ -298,7 +331,7 @@ jobs:
     if: *should_build_images
     uses: ./.github/workflows/coprocessor-docker-build.yml
     permissions: *docker_permissions
-    secrets: inherit
+    secrets: *docker_secrets
 
   build-relayer:
     name: build/relayer
@@ -306,7 +339,7 @@ jobs:
     if: *should_build_images
     uses: ./.github/workflows/relayer-docker-build.yml
     permissions: *docker_permissions
-    secrets: inherit
+    secrets: *docker_secrets
 
   build-test-suite:
     name: build/test-suite
@@ -318,7 +351,7 @@ jobs:
       needs.check-labels.outputs.build_images == 'true'
     uses: ./.github/workflows/test-suite-docker-build.yml
     permissions: *docker_permissions
-    secrets: inherit
+    secrets: *docker_secrets
 
   ##########################################################################
   # Resolve one real tag per image: this run's 7-char short SHA if it just
@@ -357,6 +390,7 @@ jobs:
       kms_repo_ref: ${{ steps.resolve.outputs.kms_repo_ref }}
       kms_core_tag: ${{ steps.resolve.outputs.kms_core_tag }}
       nb_kms_core: ${{ steps.resolve.outputs.nb_kms_core }}
+      nb_coprocessor: ${{ steps.resolve.outputs.nb_coprocessor }}
     steps:
       - id: resolve
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -416,10 +450,16 @@ jobs:
             };
 
             // Namespace: PR number on pull_request; on dispatch, this run's id
-            // (unique) or the optional namespace_suffix.
+            // (unique) or the optional namespace_suffix. On pull_request the
+            // actor segment is the PR AUTHOR (pull_request.user.login), NOT
+            // github.actor: github.actor is whoever triggered this run (pusher/
+            // labeler), which can differ from whoever closes the PR later. Since
+            // pr-preview-destroy.yml derives the namespace on the `closed` event,
+            // both must key off the same stable field - the PR author is
+            // identical across both events. Keep the two in sync.
             const namespace = isDispatch
               ? `fhevm-ci-${env.ACTOR}-${inputs.namespace_suffix || context.runId}`
-              : `fhevm-ci-${env.ACTOR}-${context.payload.pull_request.number}`;
+              : `fhevm-ci-${context.payload.pull_request.user.login}-${context.payload.pull_request.number}`;
 
             // Chart/ref versions: env on pull_request, matching input on dispatch.
             const chartVersions = {
@@ -432,6 +472,9 @@ jobs:
               kms_core_tag: isDispatch ? inputs.kms_core_version : env.KMS_CORE_TAG,
               // Parties count (1:1 with kms-connector + Postgres releases).
               nb_kms_core: isDispatch ? inputs.nb_kms_core : env.NB_KMS_CORE,
+              // Independent coprocessor parties (1:1 with coprocessor +
+              // coprocessor-infra + Postgres releases).
+              nb_coprocessor: isDispatch ? inputs.nb_coprocessor : env.NB_COPROCESSOR,
             };
 
             core.info(`Resolved tags: ${JSON.stringify(tags, null, 2)}`);
@@ -468,6 +511,7 @@ jobs:
                 ['kms repo ref (deploy scripts + tkms-infra/kms-core charts)', chartVersions.kms_repo_ref],
                 ['kms-core image tag', chartVersions.kms_core_tag],
                 ['number of parties (kms-core / kms-connector / Postgres, 1:1)', chartVersions.nb_kms_core],
+                ['number of coprocessor parties (coprocessor / coprocessor-infra / Postgres, 1:1)', chartVersions.nb_coprocessor],
               ])
               .addHeading('Images', 3)
               .addRaw(
@@ -515,6 +559,7 @@ jobs:
       KMS_REPO_REF: ${{ needs.resolve-tags.outputs.kms_repo_ref }}
       KMS_CORE_TAG: ${{ needs.resolve-tags.outputs.kms_core_tag }}
       NB_KMS_CORE: ${{ needs.resolve-tags.outputs.nb_kms_core }}
+      NB_COPROCESSOR: ${{ needs.resolve-tags.outputs.nb_coprocessor }}
       # Gate for the automated e2e test workflow (see the test-suite-workflow
       # deploy + report steps): dispatch input or the pr-preview-e2e-tests label.
       AUTOMATED_TESTS: ${{ needs.check-labels.outputs.automated_tests }}
@@ -623,9 +668,16 @@ jobs:
       # dependencies and ready in seconds.
       ######################################################################
       - name: Deploy in-cluster Postgres for coprocessor
+        # One instance PER COPROCESSOR PARTY (postgres-coprocessor-<i>): each
+        # independent coprocessor gets its own DB, same as postgres-connector-<i>
+        # below. fullnameOverride per release; launched in parallel (seconds each).
         run: |
-          helm upgrade --install postgres-coprocessor "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/coprocessor-infra/values-postgres-coprocessor-e2e.yaml --wait
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            helm upgrade --install "postgres-coprocessor-${i}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+              -n "${NAMESPACE}" -f ci/preview-env/coprocessor-infra/values-postgres-coprocessor-e2e.yaml \
+              --set-string "fullnameOverride=postgres-coprocessor-${i}" --wait &
+          done
+          wait
 
       - name: Deploy in-cluster Postgres for kms-connector
         # One instance PER PARTY (postgres-connector-<i>): one kms-connector
@@ -636,6 +688,18 @@ jobs:
             helm upgrade --install "postgres-connector-${i}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
               -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-postgres-connector-e2e.yaml \
               --set-string "fullnameOverride=postgres-connector-${i}" --wait &
+          done
+          wait
+
+      - name: Deploy in-cluster Postgres for listener
+        # One instance PER COPROCESSOR PARTY (postgres-listener-<i>): the
+        # dedicated listener producer keeps its own cursor DB, separate from the
+        # coprocessor DB (see listener/values-postgres-listener-e2e.yaml).
+        run: |
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            helm upgrade --install "postgres-listener-${i}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+              -n "${NAMESPACE}" -f ci/preview-env/listener/values-postgres-listener-e2e.yaml \
+              --set-string "fullnameOverride=postgres-listener-${i}" --wait &
           done
           wait
 
@@ -782,6 +846,37 @@ jobs:
           "
 
       ######################################################################
+      # Each independent coprocessor party also needs its own on-chain identity
+      # (the tx-sender both signs the InputVerification EIP-712 response and
+      # sends the tx). Derive NB_COPROCESSOR wallets from the SAME mnemonic, at
+      # HD indices 20..20+N-1 - offset 20 so they never collide with the test
+      # signers (alice..eve = #0..#4), the host/ACL owner (#9), or the KMS
+      # tx-senders (#10..). Both anvil chains pre-fund 120 accounts. Each party
+      # reuses one address for both tx-sender and signer, matching the current
+      # single-party convention in values-coprocessor-e2e.yaml.
+      ######################################################################
+      - name: Derive coprocessor tx-sender wallets
+        id: coproc-wallets
+        run: |
+          mkdir -p /tmp/coproc-wallets && cd /tmp/coproc-wallets
+          npm install --silent --no-save ethers@6
+          node -e "
+          const { ethers } = require('ethers');
+          const fs = require('fs');
+          const mnemonic = ethers.Mnemonic.fromPhrase('test test test test test test test test test test test junk');
+          const n = parseInt(process.env.NB_COPROCESSOR, 10);
+          const wallets = [];
+          for (let i = 0; i < n; i++) {
+            const party = i + 1;
+            const path = \`m/44'/60'/0'/0/\${20 + i}\`;
+            const wallet = ethers.HDNodeWallet.fromMnemonic(mnemonic, path);
+            wallets.push({ party, address: wallet.address, privateKey: wallet.privateKey });
+          }
+          console.log('Derived', n, 'coprocessor tx-sender wallets:', wallets.map((w) => \`party \${w.party}: \${w.address}\`).join(', '));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'wallets_json=' + JSON.stringify(wallets) + '\n');
+          "
+
+      ######################################################################
       # BLOCKCHAIN: per-PR anvil host + gateway chains, fully isolated.
       ######################################################################
       - name: Deploy anvil-host
@@ -804,26 +899,46 @@ jobs:
       # rather than rely on `helm --wait` alone.
       ######################################################################
       - name: Deploy coprocessor-infra (Crossplane S3)
+        # One release PER COPROCESSOR PARTY (coprocessor-infra-<i>): each gets its
+        # own S3 bucket, its own IRSA ServiceAccount (coprocessor-<i>, consumed by
+        # that party's S3-touching workers) and its own bucket ConfigMap
+        # (coprocessor-<i>, holding S3_BUCKET_NAME). Per-party names come from
+        # --set; the base values file stays single.
         run: |
-          helm upgrade --install coprocessor-infra "${COPROCESSOR_INFRA_CHART}" --version "${COPROCESSOR_INFRA_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/coprocessor-infra/values-coprocessor-infra-e2e.yaml --wait
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            helm upgrade --install "coprocessor-infra-${i}" "${COPROCESSOR_INFRA_CHART}" --version "${COPROCESSOR_INFRA_CHART_VERSION}" \
+              -n "${NAMESPACE}" -f ci/preview-env/coprocessor-infra/values-coprocessor-infra-e2e.yaml \
+              --set "coprocessorBucket.irsa.serviceAccountName=coprocessor-${i}" \
+              --set "coprocessorBucket.configMapTargetRef.name=coprocessor-${i}" --wait &
+          done
+          wait
 
       - name: Wait for coprocessor-infra to reconcile
         run: |
           max_wait=420; elapsed=0; interval=10
           ready=false
+          # Exactly one s3 claim per coprocessor party must EXIST and be Ready.
+          # Counting the expected number explicitly (rather than "no non-True
+          # line") is required because an empty `kubectl get s3` - i.e. the claims
+          # haven't been created yet - would otherwise look "ready" (grep -qv
+          # matches nothing) and let contract deploy race ahead before the
+          # per-party bucket ConfigMaps exist. `|| true` guards grep's exit 1 on
+          # zero matches under the shell's default set -e / pipefail.
+          expected="${NB_COPROCESSOR}"
           while [[ $elapsed -lt $max_wait ]]; do
-            if kubectl get s3 -n "${NAMESPACE}" \
+            total=$(kubectl get s3 -n "${NAMESPACE}" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+            ready_count=$(kubectl get s3 -n "${NAMESPACE}" \
                 -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null \
-                | grep -qv True; then
-              echo "Still waiting for coprocessor-infra resources... (${elapsed}s/${max_wait}s)"
-              sleep "$interval"; elapsed=$((elapsed + interval)); continue
+                | grep -c '^True$' || true)
+            if [[ "${total}" -eq "${expected}" && "${ready_count}" -eq "${expected}" ]]; then
+              ready=true; echo "coprocessor-infra resources ready (${ready_count}/${expected})"; break
             fi
-            ready=true; echo "coprocessor-infra resources ready"; break
+            echo "Still waiting for coprocessor-infra resources... (${ready_count}/${expected} Ready, ${total} present, ${elapsed}s/${max_wait}s)"
+            sleep "$interval"; elapsed=$((elapsed + interval))
           done
           kubectl get s3 -n "${NAMESPACE}" -o wide || true
           if [[ "${ready}" != "true" ]]; then
-            echo "::error::coprocessor-infra resources not Ready after ${max_wait}s - see conditions/events above (or below via kubectl describe)"
+            echo "::error::coprocessor-infra resources not all Ready (${expected} expected) after ${max_wait}s - see conditions/events above (or below via kubectl describe)"
             kubectl describe s3 -n "${NAMESPACE}" || true
             exit 1
           fi
@@ -837,6 +952,7 @@ jobs:
         env:
           SIGNERS_JSON: ${{ steps.kms-identity.outputs.signers_json }}
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
+          COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
           S3_ENDPOINT: ${{ steps.kms-identity.outputs.s3_endpoint }}
         run: |
           # NB_KMS_CORE real parties. Threshold formulas mirror kms's BFT-MPC
@@ -850,25 +966,47 @@ jobs:
           generated=/tmp/values-gateway-contracts-e2e.generated.yaml
           cp ci/preview-env/gateway-chain/values-gateway-contracts-e2e.yaml "${generated}"
 
-          # Register the real coprocessor S3 bucket (created by coprocessor-infra,
-          # deployed above) as the on-chain ciphertext URL, replacing the
-          # placeholder baked into the values file. The KMS worker reads
-          # COPROCESSOR_S3_BUCKET_URL_0 from GatewayConfig and fetches each
-          # ciphertext at <url>/<hex-digest> for user/public decryption. The
+          # Register the NB_COPROCESSOR independent coprocessors on-chain. Each
+          # party i has its own S3 bucket (created by coprocessor-infra-<i>, its
+          # name in ConfigMap coprocessor-<i>) and its own tx-sender/signer
+          # identity (from the coprocessor wallets step). The KMS worker reads
+          # COPROCESSOR_S3_BUCKET_URL_<idx> from GatewayConfig and fetches each
+          # ciphertext at <url>/<hex-digest> for user/public decryption; the
           # sns-worker stores ct128 objects keyed by the bare hex digest at the
-          # bucket ROOT (no "ct128/" prefix - confirmed via the S3 listing), so
-          # this must be the bare bucket root, matching dev's registration which
-          # is also path-less (values-zws-dev.yaml). A stale placeholder host or
-          # a trailing /ct128 both 404. Region is fixed to eu-west-1 (see
-          # values-coprocessor-infra-e2e.yaml).
-          bucket=$(kubectl get configmap coprocessor -n "${NAMESPACE}" -o jsonpath='{.data.S3_BUCKET_NAME}')
-          if [[ -z "${bucket}" ]]; then
-            echo "::error::coprocessor ConfigMap has no S3_BUCKET_NAME key - is coprocessor-infra reconciled? (kubectl get configmap coprocessor -n ${NAMESPACE})"
-            exit 1
-          fi
-          coproc_s3_url="https://${bucket}.s3.eu-west-1.amazonaws.com"
-          yq -i "(.scDeploy.env[] | select(.name == \"COPROCESSOR_S3_BUCKET_URL_0\") | .value) = \"${coproc_s3_url}\"" "${generated}"
-          echo "Registered coprocessor S3 bucket URL: ${coproc_s3_url}"
+          # bucket ROOT (no "ct128/" prefix), so each URL is the bare bucket root
+          # (region fixed to eu-west-1, see values-coprocessor-infra-e2e.yaml).
+          # COPROCESSOR_THRESHOLD is a simple majority of N.
+          nc="${NB_COPROCESSOR}"
+          coproc_threshold=$(( nc / 2 + 1 ))
+          yq -i "
+            .scDeploy.env += [
+              {\"name\": \"NUM_COPROCESSORS\", \"value\": \"${nc}\"},
+              {\"name\": \"COPROCESSOR_THRESHOLD\", \"value\": \"${coproc_threshold}\"}
+            ]
+          " "${generated}"
+          for i in $(seq 1 "${nc}"); do
+            idx=$((i - 1))
+            bucket=$(kubectl get configmap "coprocessor-${i}" -n "${NAMESPACE}" -o jsonpath='{.data.S3_BUCKET_NAME}')
+            if [[ -z "${bucket}" ]]; then
+              echo "::error::coprocessor-${i} ConfigMap has no S3_BUCKET_NAME key - is coprocessor-infra-${i} reconciled? (kubectl get configmap coprocessor-${i} -n ${NAMESPACE})"
+              exit 1
+            fi
+            coproc_addr=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}")
+            if [[ -z "${coproc_addr}" || "${coproc_addr}" == "null" ]]; then
+              echo "::error::no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"; exit 1
+            fi
+            coproc_s3_url="https://${bucket}.s3.eu-west-1.amazonaws.com"
+            # tx-sender and signer are the same address per party (matches the
+            # single-party convention in values-coprocessor-e2e.yaml).
+            yq -i "
+              .scDeploy.env += [
+                {\"name\": \"COPROCESSOR_TX_SENDER_ADDRESS_${idx}\", \"value\": \"${coproc_addr}\"},
+                {\"name\": \"COPROCESSOR_SIGNER_ADDRESS_${idx}\", \"value\": \"${coproc_addr}\"},
+                {\"name\": \"COPROCESSOR_S3_BUCKET_URL_${idx}\", \"value\": \"${coproc_s3_url}\"}
+              ]
+            " "${generated}"
+            echo "Registered coprocessor party ${i}: tx-sender/signer=${coproc_addr}, S3=${coproc_s3_url}"
+          done
 
           yq -i "
             .scDeploy.env += [
@@ -911,9 +1049,13 @@ jobs:
           echo "values_file=${generated}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy gateway-contracts
+        env:
+          # Via env (not inline ${{ }}) so the step-output value is never
+          # interpolated into the shell script itself (zizmor template-injection).
+          VALUES_FILE: ${{ steps.gateway-contracts-values.outputs.values_file }}
         run: |
           helm upgrade --install gateway-contracts "${CONTRACTS_CHART}" --version "${CONTRACTS_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f "${{ steps.gateway-contracts-values.outputs.values_file }}" \
+            -n "${NAMESPACE}" -f "${VALUES_FILE}" \
             --set-string "scDeploy.image.tag=$(jq -r .gateway_contracts <<<"${TAGS_JSON}")" \
             --wait --wait-for-jobs --timeout=10m
 
@@ -922,6 +1064,7 @@ jobs:
         env:
           SIGNERS_JSON: ${{ steps.kms-identity.outputs.signers_json }}
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
+          COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
           S3_ENDPOINT: ${{ steps.kms-identity.outputs.s3_endpoint }}
         run: |
           # Mirrors the gateway-contracts wiring above, with host-contracts' own
@@ -934,6 +1077,36 @@ jobs:
 
           generated=/tmp/values-host-contracts-e2e.generated.yaml
           cp ci/preview-env/host-chain/values-host-contracts-e2e.yaml "${generated}"
+
+          # Register the NB_COPROCESSOR coprocessor SIGNERS on the host chain too:
+          # the host InputVerifier verifies each coprocessor's input-proof
+          # signature against COPROCESSOR_SIGNER_ADDRESS_<idx>, so these must be
+          # the SAME derived wallets registered on the gateway (and used as each
+          # coprocessor tx-sender's signing key) - otherwise host-side input
+          # verification rejects every proof. Host needs only the signer (no
+          # tx-sender / S3 URL, unlike the gateway).
+          nc="${NB_COPROCESSOR}"
+          coproc_threshold=$(( nc / 2 + 1 ))
+          yq -i "
+            .scDeploy.env += [
+              {\"name\": \"NUM_COPROCESSORS\", \"value\": \"${nc}\"},
+              {\"name\": \"COPROCESSOR_THRESHOLD\", \"value\": \"${coproc_threshold}\"}
+            ]
+          " "${generated}"
+          for i in $(seq 1 "${nc}"); do
+            idx=$((i - 1))
+            coproc_addr=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}")
+            if [[ -z "${coproc_addr}" || "${coproc_addr}" == "null" ]]; then
+              echo "::error::no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"; exit 1
+            fi
+            yq -i "
+              .scDeploy.env += [
+                {\"name\": \"COPROCESSOR_SIGNER_ADDRESS_${idx}\", \"value\": \"${coproc_addr}\"}
+              ]
+            " "${generated}"
+            echo "Registered host-side coprocessor party ${i} signer=${coproc_addr}"
+          done
+
           yq -i "
             .scDeploy.env += [
               {\"name\": \"NUM_KMS_NODES\", \"value\": \"${n}\"},
@@ -974,9 +1147,13 @@ jobs:
           echo "values_file=${generated}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy host-contracts
+        env:
+          # Via env (not inline ${{ }}) so the step-output value is never
+          # interpolated into the shell script itself (zizmor template-injection).
+          VALUES_FILE: ${{ steps.host-contracts-values.outputs.values_file }}
         run: |
           helm upgrade --install host-contracts "${CONTRACTS_CHART}" --version "${CONTRACTS_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f "${{ steps.host-contracts-values.outputs.values_file }}" \
+            -n "${NAMESPACE}" -f "${VALUES_FILE}" \
             --set-string "scDeploy.image.tag=$(jq -r .host_contracts <<<"${TAGS_JSON}")" \
             --wait --wait-for-jobs --timeout=10m
 
@@ -992,20 +1169,76 @@ jobs:
       # in the values files) + real dedicated-KMS endpoints. DB endpoints are
       # already static in the values files (in-cluster Postgres).
       ######################################################################
-      - name: Deploy coprocessor
+      - name: Deploy coprocessor-redis (per-party host-listener-consumer broker)
+        # One Redis PER COPROCESSOR PARTY (coprocessor-redis-<i>): the broker
+        # between that party's listener producer and its host-listener-consumer
+        # (see values-coprocessor-redis-e2e.yaml). Deployed before the listener +
+        # coprocessor releases so redis://coprocessor-redis-<i>-master:6379
+        # resolves when they start.
         run: |
-          helm upgrade --install coprocessor "${COPROCESSOR_CHART}" --version "${COPROCESSOR_CHART_VERSION}" \
-            -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
-            --set-string "dbMigration.image.tag=$(jq -r .coprocessor_db_migration <<<"${TAGS_JSON}")" \
-            --set-string "gwListener.image.tag=$(jq -r .coprocessor_gw_listener <<<"${TAGS_JSON}")" \
-            --set-string "hostListenerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
-            --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
-            --set-string "hostListenerCatchupOnlyShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
-            --set-string "hostListenerConsumerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
-            --set-string "snsWorker.image.tag=$(jq -r .coprocessor_sns_worker <<<"${TAGS_JSON}")" \
-            --set-string "tfheWorker.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")" \
-            --set-string "txSender.image.tag=$(jq -r .coprocessor_tx_sender <<<"${TAGS_JSON}")" \
-            --set-string "zkProofWorker.image.tag=$(jq -r .coprocessor_zkproof_worker <<<"${TAGS_JSON}")"
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            helm upgrade --install "coprocessor-redis-${i}" "${REDIS_CHART}" --version "${REDIS_CHART_VERSION}" \
+              -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-redis-e2e.yaml \
+              --set-string "fullnameOverride=coprocessor-redis-${i}" --wait &
+          done
+          wait
+
+      - name: Deploy listener (per-party host-chain event producer)
+        # One listener PER COPROCESSOR PARTY (listener-<i>): indexes the host
+        # chain and publishes events to that party's Redis (coprocessor-redis-<i>),
+        # which the coprocessor host-listener-consumer then ingests. Replaces the
+        # coprocessor chart's built-in hostListener/poller (disabled in
+        # values-coprocessor-e2e.yaml). Its own cursor DB is postgres-listener-<i>.
+        run: |
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            helm upgrade --install "listener-${i}" "${LISTENER_CHART}" --version "${LISTENER_CHART_VERSION}" \
+              -n "${NAMESPACE}" -f ci/preview-env/listener/values-listener-e2e.yaml \
+              --set-string "image.tag=${LISTENER_VERSION}" \
+              --set-string "env[0].value=postgresql://zama:zama@postgres-listener-${i}:5432/listener?sslmode=disable" \
+              --set-string "env[1].value=redis://coprocessor-redis-${i}-master:6379" &
+          done
+          wait
+
+      - name: Deploy coprocessor
+        # One release PER COPROCESSOR PARTY (coprocessor-<i>), each with its own
+        # Postgres (postgres-coprocessor-<i>), IRSA SA + S3 bucket ConfigMap
+        # (coprocessor-<i>, from coprocessor-infra-<i>) and tx-sender identity
+        # (the derived coprocessor wallet, same address registered on the gateway
+        # as COPROCESSOR_*_ADDRESS_<i-1>) and its own Redis broker
+        # (coprocessor-redis-<i>). Image tags are shared across parties.
+        env:
+          COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
+        run: |
+          for i in $(seq 1 "${NB_COPROCESSOR}"); do
+            privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")
+            if [[ -z "${privkey}" || "${privkey}" == "null" ]]; then
+              echo "::error::no derived coprocessor wallet for party ${i} in coproc_wallets_json=${COPROC_WALLETS_JSON}"; exit 1
+            fi
+            helm upgrade --install "coprocessor-${i}" "${COPROCESSOR_CHART}" --version "${COPROCESSOR_CHART_VERSION}" \
+              -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
+              --set-string "fullnameOverride=coprocessor-${i}" \
+              --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
+              --set-string "hostListenerShared.serviceAccountName=coprocessor-${i}" \
+              --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
+              --set-string "hostListenerCatchupOnlyShared.serviceAccountName=coprocessor-${i}" \
+              --set-string "hostListenerConsumerShared.serviceAccountName=coprocessor-${i}" \
+              --set-string "tfheWorker.serviceAccountName=coprocessor-${i}" \
+              --set-string "zkProofWorker.serviceAccountName=coprocessor-${i}" \
+              --set-string "snsWorker.serviceAccountName=coprocessor-${i}" \
+              --set "snsWorker.config.s3BucketName.valueFrom.configMapKeyRef.name=coprocessor-${i}" \
+              --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379" \
+              --set-string "txSender.wallet.secret.value=${privkey}" \
+              --set-string "dbMigration.image.tag=$(jq -r .coprocessor_db_migration <<<"${TAGS_JSON}")" \
+              --set-string "gwListener.image.tag=$(jq -r .coprocessor_gw_listener <<<"${TAGS_JSON}")" \
+              --set-string "hostListenerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
+              --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
+              --set-string "hostListenerCatchupOnlyShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
+              --set-string "hostListenerConsumerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
+              --set-string "snsWorker.image.tag=$(jq -r .coprocessor_sns_worker <<<"${TAGS_JSON}")" \
+              --set-string "tfheWorker.image.tag=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")" \
+              --set-string "txSender.image.tag=$(jq -r .coprocessor_tx_sender <<<"${TAGS_JSON}")" \
+              --set-string "zkProofWorker.image.tag=$(jq -r .coprocessor_zkproof_worker <<<"${TAGS_JSON}")"
+          done
           sleep 60
 
       - name: Create kms-connector-tx-sender secrets
@@ -1314,11 +1547,15 @@ jobs:
           body: |
             :rocket: **e2e preview environment deployed** in namespace `${{ env.NAMESPACE }}` on zws-dev.
 
+            Topology: **${{ env.NB_KMS_CORE }}** KMS core ${{ env.NB_KMS_CORE == '1' && 'party' || 'parties' }} · **${{ env.NB_COPROCESSOR }}** coprocessor ${{ env.NB_COPROCESSOR == '1' && 'party' || 'parties' }} (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, `listener` producer, Redis broker and host-listener-consumer).
+
             Connect:
             ```bash
             tailscale configure kubeconfig ${{ env.TAILSCALE_HOSTNAME }}
             kubectl get pods -n ${{ env.NAMESPACE }}
             ```
+
+            > Note: each coprocessor party requests substantial `tfhe`/`sns` worker capacity on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the cluster resources needed. Default stays 1.
 
             This environment is destroyed automatically when the PR is closed
             (see pr-preview-destroy.yml), or on the next push to this PR.
@@ -1330,6 +1567,8 @@ jobs:
             echo "### :rocket: e2e preview environment deployed"
             echo
             echo "Namespace \`${NAMESPACE}\` on zws-dev."
+            echo
+            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
             echo
             echo "Connect:"
             echo '```bash'

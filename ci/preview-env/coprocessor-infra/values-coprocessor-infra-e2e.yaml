@@ -19,10 +19,13 @@
 #     oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra \
 #     -n <namespace> -f this-file
 #
-# Release name is fixed to "coprocessor-infra" by the deploy workflow, which
-# makes the resulting resource names deterministic (chart default naming,
-# see templates/_helpers.tpl's "coprocessor-bucket.fullname"):
-#   - S3 bucket ConfigMap: coprocessor (S3_ENDPOINT / S3_URI_KEY keys)
+# One release PER COPROCESSOR PARTY: the deploy workflow installs this file N
+# times (NB_COPROCESSOR) as coprocessor-infra-<i>, overriding
+# coprocessorBucket.irsa.serviceAccountName and coprocessorBucket.configMapTargetRef.name
+# to coprocessor-<i> via --set so each party gets its own S3 bucket, IRSA SA and
+# bucket ConfigMap. The defaults below (serviceAccountName/name: coprocessor)
+# are the single-party (N=1-shaped) fallback for standalone use:
+#   - per-party S3 bucket ConfigMap: coprocessor-<i> (S3_BUCKET_NAME key)
 region: eu-west-1
 environment: fhevm-ci
 

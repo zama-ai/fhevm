@@ -76,10 +76,15 @@ scDeploy:
         configMapKeyRef:
           name: gw-sc-addresses
           key: input_verification.address
-    - {name: NUM_COPROCESSORS, value: "1"}
-    - {name: COPROCESSOR_THRESHOLD, value: "1"}
-    # Same mocked coprocessor identity as gateway-contracts.
-    - {name: COPROCESSOR_SIGNER_ADDRESS_0, value: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"}
+    # NUM_COPROCESSORS / COPROCESSOR_THRESHOLD / COPROCESSOR_SIGNER_ADDRESS_x are
+    # appended dynamically for the NB_COPROCESSOR coprocessor parties by the
+    # "Wire real KMS node info into host-contracts values" step in
+    # pr-preview-deploy.yml, from the SAME derived coprocessor wallets registered
+    # on the gateway (COPROCESSOR_SIGNER_ADDRESS_<idx>). The host InputVerifier
+    # verifies the coprocessor's input-proof signatures against these, so they
+    # MUST match the wallet the coprocessor tx-sender actually signs with - not a
+    # static mock, or host-chain input verification rejects every proof. Not set
+    # statically here so the two never duplicate/conflict.
     # NUM_KMS_NODES / KMS_TX_SENDER_ADDRESS_x / KMS_SIGNER_ADDRESS_x / KMS_NODE_IP_x /
     # KMS_NODE_STORAGE_URL_x / KMS_NODE_PARTY_ID_x / KMS_NODE_MPC_IDENTITY_x /
     # KMS_NODE_CA_CERT_x / KMS_NODE_STORAGE_PREFIX_x / the 4 threshold fields are

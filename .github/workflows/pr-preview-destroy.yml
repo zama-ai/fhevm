@@ -28,8 +28,18 @@ jobs:
     # doesn't exist.
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The comment step needs to write to the PR; the workflow-level
+    # permissions ({}) don't grant it, so scope it here at the job level.
+    permissions:
+      pull-requests: write
     env:
-      NAMESPACE: fhevm-ci-${{ github.actor }}-${{ github.event.pull_request.number }}
+      # MUST match pr-preview-deploy.yml's namespace derivation. Both use the PR
+      # AUTHOR (pull_request.user.login), not github.actor: on deploy github.actor
+      # is whoever pushed/labeled, and on this `closed` event it's whoever closed
+      # the PR - those can differ, which would target a namespace that was never
+      # created and leak the real one. The PR author is identical across both
+      # events, so teardown always hits the namespace deploy created.
+      NAMESPACE: fhevm-ci-${{ github.event.pull_request.user.login }}-${{ github.event.pull_request.number }}
       TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
     steps:
       - name: Setup tailscale

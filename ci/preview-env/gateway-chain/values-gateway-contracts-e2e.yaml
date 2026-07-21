@@ -70,21 +70,15 @@ scDeploy:
     # KMS_NODE_IP_ADDRESS_x / KMS_NODE_STORAGE_URL_x / the 4 threshold fields
     # are appended dynamically for NB_KMS_CORE parties - see header note.
     - {name: KMS_CONTEXT_ID, value: "3166189940082864718613269121331309980362851143201109172953918312716374638593"}
-    - {name: NUM_COPROCESSORS, value: "1"}
-    - {name: COPROCESSOR_THRESHOLD, value: "1"}
-    # PLACEHOLDER: single mocked coprocessor identity for this minimal scenario.
-    - {name: COPROCESSOR_TX_SENDER_ADDRESS_0, value: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"}
-    - {name: COPROCESSOR_SIGNER_ADDRESS_0, value: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"}
-    # OVERWRITTEN AT DEPLOY TIME: the "Wire real KMS node info into
-    # gateway-contracts values" step in pr-preview-deploy.yml replaces this
-    # value with the real coprocessor-infra S3 bucket ROOT url, read from the
-    # "coprocessor" ConfigMap's S3_BUCKET_NAME key (created by the
-    # crossplane/coprocessor-infra chart, deployed just before the contracts).
-    # The KMS worker fetches each ciphertext at <url>/<hex-digest> during
-    # decryption (ct128 objects are stored keyed by bare digest at the bucket
-    # root, no "ct128/" prefix), so a stale placeholder host - or a trailing
-    # path - 404s. This literal only matters for standalone validity.
-    - {name: COPROCESSOR_S3_BUCKET_URL_0, value: "https://placeholder-coprocessor-bucket.s3.eu-west-1.amazonaws.com"}
+    # NUM_COPROCESSORS / COPROCESSOR_THRESHOLD / COPROCESSOR_TX_SENDER_ADDRESS_x /
+    # COPROCESSOR_SIGNER_ADDRESS_x / COPROCESSOR_S3_BUCKET_URL_x are appended
+    # dynamically for the NB_COPROCESSOR independent coprocessor parties by the
+    # "Wire real KMS node info into gateway-contracts values" step in
+    # pr-preview-deploy.yml: each party's tx-sender/signer comes from the derived
+    # coprocessor wallets and its S3 bucket ROOT url from that party's
+    # coprocessor-<i> ConfigMap (S3_BUCKET_NAME key, written by
+    # crossplane/coprocessor-infra-<i>). Threshold is a simple majority of N.
+    # Not set statically here so the two never duplicate/conflict.
     - {name: NUM_CUSTODIANS, value: "1"}
     # PLACEHOLDER: mocked custodian identity + throwaway encryption key (test data only, taken
     # from fhevm-cli's own .env.gateway-sc template - not a real custodian key).
