@@ -1,4 +1,6 @@
 //! Dispatches a batch: burns its full encrypted balance for KMS certification.
+//! Direction-free — the burn is always on the join mint (confidential
+//! underlying for deposit batchers, confidential shares for redeem batchers).
 //!
 //! Permissionless after `min_batch_age_slots`. The batch account's own balance
 //! lineage IS the burn amount (`confidential_burn_from_value`'s whole-balance
@@ -23,15 +25,15 @@ pub struct Dispatch<'info> {
     pub batch_authority: UncheckedAccount<'info>,
     /// Confidential mint whose encrypted total supply the burn decreases.
     #[account(mut)]
-    pub deposit_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: deposit mint compute-signer PDA; validated by the token CPI.
-    pub deposit_compute_signer: UncheckedAccount<'info>,
+    pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
+    /// CHECK: join mint compute-signer PDA; validated by the token CPI.
+    pub join_compute_signer: UncheckedAccount<'info>,
     /// CHECK: mint-scoped total-supply authority PDA; validated by the token CPI.
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential deposit token account; validated by the
+    /// CHECK: batch's confidential join token account; validated by the
     /// token CPI and pinned below.
     #[account(mut)]
-    pub batch_deposit_token_account: UncheckedAccount<'info>,
+    pub batch_join_token_account: UncheckedAccount<'info>,
     /// CHECK: batch's stable balance lineage — read as the burn amount AND
     /// superseded as the burn's balance output (the whole-balance alias).
     #[account(mut)]
@@ -64,8 +66,8 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
         BatcherError::BatchNotPending
     );
     require_keys_eq!(
-        ctx.accounts.deposit_confidential_mint.key(),
-        ctx.accounts.batcher.deposit_confidential_mint,
+        ctx.accounts.join_confidential_mint.key(),
+        ctx.accounts.batcher.join_confidential_mint,
         BatcherError::ConfidentialMintMismatch
     );
     let now = Clock::get()?.slot;
@@ -77,11 +79,11 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
             .saturating_add(ctx.accounts.batcher.min_batch_age_slots),
         BatcherError::BatchTooYoung
     );
-    let mint_key = ctx.accounts.deposit_confidential_mint.key();
+    let mint_key = ctx.accounts.join_confidential_mint.key();
     let batch_key = ctx.accounts.batch.key();
     let batch_authority = ctx.accounts.batch_authority.key();
     require_keys_eq!(
-        ctx.accounts.batch_deposit_token_account.key(),
+        ctx.accounts.batch_join_token_account.key(),
         ct::token_account_address(mint_key, batch_authority).0,
         BatcherError::DerivedAccountMismatch
     );
@@ -93,9 +95,9 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
         ct::cpi::accounts::ConfidentialBurnFromValue {
             owner: ctx.accounts.batch_authority.to_account_info(),
             payer: ctx.accounts.payer.to_account_info(),
-            mint: ctx.accounts.deposit_confidential_mint.to_account_info(),
-            token_account: ctx.accounts.batch_deposit_token_account.to_account_info(),
-            compute_signer: ctx.accounts.deposit_compute_signer.to_account_info(),
+            mint: ctx.accounts.join_confidential_mint.to_account_info(),
+            token_account: ctx.accounts.batch_join_token_account.to_account_info(),
+            compute_signer: ctx.accounts.join_compute_signer.to_account_info(),
             total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),
             balance_value: ctx.accounts.batch_balance_value.to_account_info(),
             total_supply_value: ctx.accounts.total_supply_value.to_account_info(),

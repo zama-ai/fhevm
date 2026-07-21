@@ -1,10 +1,13 @@
 //! Opens the next batch: the `Batch` account, its per-batch authority, its own
-//! confidential token accounts (deposit and shares side), and its plain SPL
-//! accounts for settle's redeem/deposit/wrap legs.
+//! confidential token accounts (join and payout side), and its plain SPL
+//! accounts for settle's redeem/vault/wrap legs.
 //!
 //! One batch, one token account: the burned/revealed total is exactly this
 //! batch's sum, so dust from an earlier batch can never leak into it (the EVM
 //! batcher documents the inter-batch dust leak this prevents).
+//!
+//! Direction-free: the join/payout roles are fixed by the batcher config, so
+//! deposit and redeem batches open identically.
 
 use super::*;
 
@@ -34,50 +37,52 @@ pub struct OpenBatch<'info> {
     /// the funding it receives here.
     #[account(mut, seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump)]
     pub batch_authority: UncheckedAccount<'info>,
-    /// Confidential mint users deposit through the batcher.
-    pub deposit_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: deposit mint compute-signer PDA; validated by the token CPI.
-    pub deposit_compute_signer: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential deposit token account; created by the token CPI.
+    /// Confidential mint users join batches with.
+    pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
+    /// CHECK: join mint compute-signer PDA; validated by the token CPI.
+    pub join_compute_signer: UncheckedAccount<'info>,
+    /// CHECK: batch's confidential join token account; created by the token CPI.
     #[account(mut)]
-    pub batch_deposit_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch deposit balance lineage; created by the host CPI.
+    pub batch_join_token_account: UncheckedAccount<'info>,
+    /// CHECK: batch join balance lineage; created by the host CPI.
     #[account(mut)]
-    pub batch_deposit_balance_value: UncheckedAccount<'info>,
-    /// Confidential mint wrapping the vault's share mint.
-    pub shares_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: shares mint compute-signer PDA; validated by the token CPI.
-    pub shares_compute_signer: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential shares token account; created by the token CPI.
+    pub batch_join_balance_value: UncheckedAccount<'info>,
+    /// Confidential mint claims pay out in.
+    pub payout_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
+    /// CHECK: payout mint compute-signer PDA; validated by the token CPI.
+    pub payout_compute_signer: UncheckedAccount<'info>,
+    /// CHECK: batch's confidential payout token account; created by the token CPI.
     #[account(mut)]
-    pub batch_shares_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch shares balance lineage; created by the host CPI.
+    pub batch_payout_token_account: UncheckedAccount<'info>,
+    /// CHECK: batch payout balance lineage; created by the host CPI.
     #[account(mut)]
-    pub batch_shares_balance_value: UncheckedAccount<'info>,
-    /// Vault underlying SPL mint (the deposit confidential mint's underlying).
-    pub underlying_mint: Box<Account<'info, SplMint>>,
-    /// Vault share SPL mint (the shares confidential mint's underlying).
-    pub share_mint: Box<Account<'info, SplMint>>,
-    /// Batch's plain SPL account for redeemed underlying tokens at settle.
+    pub batch_payout_balance_value: UncheckedAccount<'info>,
+    /// SPL mint the join confidential mint wraps (vault underlying for deposit
+    /// batchers, vault shares for redeem batchers).
+    pub join_underlying_mint: Box<Account<'info, SplMint>>,
+    /// SPL mint the payout confidential mint wraps (vault shares for deposit
+    /// batchers, vault underlying for redeem batchers).
+    pub payout_underlying_mint: Box<Account<'info, SplMint>>,
+    /// Batch's plain SPL account receiving the redeemed batch total at settle.
     #[account(
         init,
         payer = payer,
-        seeds = [BATCH_UNDERLYING_SEED, batch.key().as_ref()],
+        seeds = [BATCH_JOIN_UNDERLYING_SEED, batch.key().as_ref()],
         bump,
-        token::mint = underlying_mint,
+        token::mint = join_underlying_mint,
         token::authority = batch_authority,
     )]
-    pub batch_underlying_tokens: Box<Account<'info, TokenAccount>>,
-    /// Batch's plain SPL account for received vault shares at settle.
+    pub batch_join_underlying: Box<Account<'info, TokenAccount>>,
+    /// Batch's plain SPL account receiving the vault leg's output at settle.
     #[account(
         init,
         payer = payer,
-        seeds = [BATCH_SHARE_TOKENS_SEED, batch.key().as_ref()],
+        seeds = [BATCH_PAYOUT_UNDERLYING_SEED, batch.key().as_ref()],
         bump,
-        token::mint = share_mint,
+        token::mint = payout_underlying_mint,
         token::authority = batch_authority,
     )]
-    pub batch_share_tokens: Box<Account<'info, TokenAccount>>,
+    pub batch_payout_underlying: Box<Account<'info, TokenAccount>>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).
@@ -98,24 +103,24 @@ pub struct OpenBatch<'info> {
 pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> Result<()> {
     let index = ctx.accounts.batcher.next_batch_index;
     require_keys_eq!(
-        ctx.accounts.deposit_confidential_mint.key(),
-        ctx.accounts.batcher.deposit_confidential_mint,
+        ctx.accounts.join_confidential_mint.key(),
+        ctx.accounts.batcher.join_confidential_mint,
         BatcherError::ConfidentialMintMismatch
     );
     require_keys_eq!(
-        ctx.accounts.shares_confidential_mint.key(),
-        ctx.accounts.batcher.shares_confidential_mint,
+        ctx.accounts.payout_confidential_mint.key(),
+        ctx.accounts.batcher.payout_confidential_mint,
         BatcherError::ConfidentialMintMismatch
     );
     require_keys_eq!(
-        ctx.accounts.underlying_mint.key(),
-        ctx.accounts.deposit_confidential_mint.underlying_mint,
-        BatcherError::DepositMintVaultMismatch
+        ctx.accounts.join_underlying_mint.key(),
+        ctx.accounts.join_confidential_mint.underlying_mint,
+        BatcherError::JoinMintVaultMismatch
     );
     require_keys_eq!(
-        ctx.accounts.share_mint.key(),
-        ctx.accounts.shares_confidential_mint.underlying_mint,
-        BatcherError::SharesMintVaultMismatch
+        ctx.accounts.payout_underlying_mint.key(),
+        ctx.accounts.payout_confidential_mint.underlying_mint,
+        BatcherError::PayoutMintVaultMismatch
     );
     match (&ctx.accounts.previous_batch, index) {
         (None, 0) => {}
@@ -146,16 +151,16 @@ pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> R
     let authority_seeds = authority.seeds();
     for (mint, compute_signer, token_account, balance_value) in [
         (
-            &ctx.accounts.deposit_confidential_mint,
-            &ctx.accounts.deposit_compute_signer,
-            &ctx.accounts.batch_deposit_token_account,
-            &ctx.accounts.batch_deposit_balance_value,
+            &ctx.accounts.join_confidential_mint,
+            &ctx.accounts.join_compute_signer,
+            &ctx.accounts.batch_join_token_account,
+            &ctx.accounts.batch_join_balance_value,
         ),
         (
-            &ctx.accounts.shares_confidential_mint,
-            &ctx.accounts.shares_compute_signer,
-            &ctx.accounts.batch_shares_token_account,
-            &ctx.accounts.batch_shares_balance_value,
+            &ctx.accounts.payout_confidential_mint,
+            &ctx.accounts.payout_compute_signer,
+            &ctx.accounts.batch_payout_token_account,
+            &ctx.accounts.batch_payout_balance_value,
         ),
     ] {
         ct::cpi::initialize_token_account(
@@ -195,9 +200,9 @@ pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> R
     batch.authority_bump = ctx.bumps.batch_authority;
     batch.bump = ctx.bumps.batch;
     batch.burned_total_handle = [0; 32];
-    batch.total_deposited = 0;
-    batch.shares_received = 0;
-    batch.share_rate = 0;
+    batch.total_joined = 0;
+    batch.payout_received = 0;
+    batch.payout_rate = 0;
 
     let batcher = &mut ctx.accounts.batcher;
     batcher.next_batch_index = index
