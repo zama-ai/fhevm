@@ -338,7 +338,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let client =
         ListenerConsumer::new(&broker, chain_id.as_u64(), &consumer_id);
 
-    let db = Database::new_with_gcs_mode(
+    let mut db = Database::new_with_gcs_mode(
         &config.database_url,
         chain_id,
         config.dependence_cache_size,
@@ -382,6 +382,8 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     // this (blue) stack is retired and `stack_mode` flips to paused; the
     // consume handler then drops incoming blocks without writing to the DB.
     let stack_mode = StackMode::new(config.gcs_mode);
+    // So the upsert's stack_role follows a cutover, not the startup role.
+    db.set_stack_mode(stack_mode.clone());
     {
         let pool = db.pool().await;
         let stack_mode = stack_mode.clone();

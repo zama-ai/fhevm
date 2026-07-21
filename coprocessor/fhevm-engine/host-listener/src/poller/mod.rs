@@ -262,6 +262,8 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     // this (blue) stack is retired and `stack_mode` flips to paused, turning
     // the poll loop below into a no-op (stops polling/producing blocks).
     let stack_mode = StackMode::new(config.gcs_mode);
+    // So the upsert's stack_role follows a cutover, not the startup role.
+    db.set_stack_mode(stack_mode.clone());
     {
         let pool = db.pool().await;
         let stack_mode = stack_mode.clone();

@@ -1162,6 +1162,8 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     // this (blue) stack is retired and `stack_mode` flips to paused, turning
     // the ingest loop below into a no-op (no DB writes).
     let stack_mode = StackMode::new(gcs_mode);
+    // So the upsert's stack_role follows a cutover, not the startup role.
+    db.set_stack_mode(stack_mode.clone());
     {
         let pool = db.pool().await;
         let stack_mode = stack_mode.clone();
