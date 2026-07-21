@@ -52,11 +52,10 @@ pub async fn run_sequential_ingest(
             ));
         }
 
+        // Do not reset backoff on subscribe alone: a flaky stream that
+        // connects then dies immediately would otherwise spin at 200ms forever.
         let subscription = match source.subscribe(checkpoint).await {
-            Ok(subscription) => {
-                backoff = Duration::from_millis(200);
-                subscription
-            }
+            Ok(subscription) => subscription,
             Err(YellowstoneSourceError::Retryable(message)) => {
                 warn!(%message, ?backoff, "yellowstone subscribe failed; backing off");
                 tokio::select! {
@@ -69,7 +68,7 @@ pub async fn run_sequential_ingest(
             Err(error) => return Err(RunnerError::Source(error)),
         };
 
-        match drive_subscription(subscription, store, &cancel).await {
+        match drive_subscription(subscription, store, &cancel, &mut backoff).await {
             Ok(()) => return Ok(()),
             Err(RunnerError::Source(YellowstoneSourceError::Retryable(message))) => {
                 warn!(%message, ?backoff, "yellowstone stream failed; reconnecting");
@@ -88,7 +87,9 @@ async fn drive_subscription(
     mut subscription: YellowstoneSubscription,
     store: &SqlProofStore,
     cancel: &CancellationToken,
+    backoff: &mut Duration,
 ) -> Result<(), RunnerError> {
+    const INITIAL_BACKOFF: Duration = Duration::from_millis(200);
     loop {
         let block = tokio::select! {
             _ = cancel.cancelled() => {
@@ -115,9 +116,12 @@ async fn drive_subscription(
 
         match store.apply_completed_block(&block).await? {
             ApplyOutcome::Applied => {
+                // Meaningful stream progress — safe to collapse reconnect delay.
+                *backoff = INITIAL_BACKOFF;
                 info!(slot = block.slot, "applied completed block");
             }
             ApplyOutcome::AlreadyApplied => {
+                *backoff = INITIAL_BACKOFF;
                 info!(slot = block.slot, "exact replay no-op");
             }
             ApplyOutcome::RecoveryRequired { reason } => {

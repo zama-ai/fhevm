@@ -182,13 +182,14 @@ pub fn apply_instruction(
                 .as_mut()
                 .ok_or(ReplayError::UnknownLineage(*encrypted_value))?;
             validate_previous_state(state, *encrypted_value, *previous_handle, previous_subjects)?;
-            if state.subjects.as_slice() != output_subjects.as_slice() {
-                return Err(ReplayError::PreviousStateMismatch(*encrypted_value));
-            }
+            // Historical leaves seal against the pre-rotation audience. On-chain
+            // `fhe_eval` may rotate subjects on the durable output; adopt
+            // `output_subjects` only after emitting the superseded leaf set.
             let mut events = vec![LineageEvent::handle_superseded(
                 *previous_handle,
                 &state.subjects,
             )];
+            state.subjects = output_subjects.clone();
             match make_public_handle {
                 Some(handle) => {
                     state.current_handle = Some(*handle);
@@ -525,6 +526,41 @@ mod tests {
             reconstructed.leaves[0],
             &proof
         ));
+    }
+
+    #[test]
+    fn fhe_eval_subject_rotation_seals_old_audience_then_adopts_output_subjects() {
+        let ev = pk(0x06);
+        let owner = pk(0x30);
+        let spender = pk(0x31);
+        let create = DecodedInstruction::CreateEncryptedValue {
+            encrypted_value: ev,
+            handle: pk(0x10),
+            subjects: vec![SubjectGrant { subject: owner }],
+        };
+        let eval_update = DecodedInstruction::FheEvalUpdateEncryptedValue {
+            encrypted_value: ev,
+            previous_handle: pk(0x10),
+            previous_subjects: vec![owner],
+            output_subjects: vec![owner, spender],
+            make_public_handle: None,
+        };
+
+        let (state, events) = replay(&[create, eval_update]).unwrap();
+
+        assert_eq!(
+            events,
+            vec![LineageEvent::handle_superseded(pk(0x10), &[owner])]
+        );
+        let state = state.unwrap();
+        assert_eq!(state.current_handle, None);
+        assert_eq!(state.subjects, vec![owner, spender]);
+
+        let reconstructed = reconstruct(ev, &events).unwrap();
+        assert_eq!(
+            reconstructed.leaves,
+            vec![historical_access_leaf_commitment(ev, 0, pk(0x10), owner)]
+        );
     }
 
     #[test]
