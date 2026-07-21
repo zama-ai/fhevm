@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE block_consensus_drift_handle\n               SET status = 'resolved',\n                   last_observed_target_id = $6,\n                   last_observed_local_manifest_digest = $7,\n                   last_local_manifest_revision = $8,\n                   last_observed_at = NOW(),\n                   resolved_target_id = $6,\n                   resolved_local_manifest_digest = $7,\n                   resolved_local_manifest_revision = $8,\n                   resolved_at = NOW(),\n                   updated_at = NOW()\n             WHERE local_publisher = $1\n               AND version = $2\n               AND coprocessor_context_id = $3\n               AND host_chain_id = $4\n               AND block_hash = $5\n               AND status = 'unresolved'\n               AND last_observed_target_id <= $6\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "29cd6d0b5f4eeb95833e7c26605ecbb707d807d3630aafcce119fb3a823c972a"
+}
