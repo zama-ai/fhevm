@@ -5,6 +5,8 @@
 //! `unanimity_consensus` channel is produced by `consensus-detector` once every
 //! operator publishes the same state commitment at the upgrade's `end_block`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
@@ -177,6 +179,7 @@ fn decode_hex(s: &str) -> Result<Vec<u8>, Error> {
 pub async fn handle_upgrade_activated(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
+    readiness: &Arc<AtomicBool>,
     gcs_mode: bool,
     raw_payload: &str,
 ) -> Result<(), Error> {
@@ -255,6 +258,7 @@ pub async fn handle_upgrade_activated(
         spawn_gcs_dry_run_readiness(
             pool,
             cancel,
+            readiness,
             payload.chain_id,
             payload.start_block,
             payload.gw_start_block,
@@ -265,23 +269,36 @@ pub async fn handle_upgrade_activated(
 }
 
 /// Spawn the GCS readiness gates (gateway + host) that release the workers and flip
-/// the row to `DryRunStarted`. Fire-and-forget, so `reconcile` can re-arm it on restart.
+/// the row to `DryRunStarted`. `readiness` keeps one attempt running at a time, so a
+/// re-arm recovers a stopped task without piling up tasks.
 fn spawn_gcs_dry_run_readiness(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
+    readiness: &Arc<AtomicBool>,
     chain_id: i64,
     start_block: i64,
     gw_start_block: i64,
 ) {
-    // Gateway gate for the zkproof-worker: gw_start_block is a Gateway block, a
-    // separate clock from the host start_block, so it gets its own task.
+    if readiness
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
     {
-        let pool = pool.clone();
-        let cancel = cancel.child_token();
-        tokio::spawn(async move {
-            match wait_until_gw_dry_run_ready(pool.clone(), cancel, gw_start_block).await {
+        return; // already running
+    }
+    info!(
+        chain_id,
+        start_block, gw_start_block, "arming GCS dry-run readiness"
+    );
+    let pool = pool.clone();
+    let gw_cancel = cancel.child_token();
+    let host_cancel = cancel.child_token();
+    let readiness = readiness.clone();
+    tokio::spawn(async move {
+        // Gateway gate for the zkproof-worker: gw_start_block is a Gateway block,
+        // a separate clock from the host start_block.
+        let gw_gate = async {
+            match wait_until_gw_dry_run_ready(pool.clone(), gw_cancel, gw_start_block).await {
                 Ok(true) => {
-                    // Prune pre-start proofs so the snapshot starts clean, then release.
                     match prune_gcs_verify_proofs_before_start(&pool, gw_start_block).await {
                         Ok(deleted) => info!(
                             gw_start_block,
@@ -302,15 +319,10 @@ fn spawn_gcs_dry_run_readiness(
                 ),
                 Err(e) => error!(error = %e, "GCS gateway dry-run readiness loop failed"),
             }
-        });
-    }
-
-    // Host gate: wait until BCS settles up to start_block, prune, then flip to DryRunStarted.
-    {
-        let pool = pool.clone();
-        let cancel = cancel.child_token();
-        tokio::spawn(async move {
-            match wait_until_dry_run_ready(pool.clone(), cancel, chain_id, start_block).await {
+        };
+        // Host gate: wait until BCS settles up to start_block, prune, then flip to DryRunStarted.
+        let host_gate = async {
+            match wait_until_dry_run_ready(pool.clone(), host_cancel, chain_id, start_block).await {
                 Ok(true) => {
                     match prune_gcs_computations_before_start(&pool, chain_id, start_block).await {
                         Ok(deleted) => info!(
@@ -333,8 +345,10 @@ fn spawn_gcs_dry_run_readiness(
                 ),
                 Err(e) => error!(error = %e, "GCS dry-run readiness loop failed"),
             }
-        });
-    }
+        };
+        tokio::join!(gw_gate, host_gate);
+        readiness.store(false, Ordering::SeqCst);
+    });
 }
 
 /// Create the GCS schema with an empty copy of each duplicated table. Returns
@@ -1044,12 +1058,13 @@ async fn rollback_dry_run(pool: &Pool<Postgres>, end_block: i64) -> Result<bool,
 type ReconcileRow = (String, Option<i64>, Option<i64>, Option<i64>);
 
 /// Advance the upgrade from durable state: re-arm readiness, resume a cutover, or
-/// cut over on both latches. `resume_activated` is boot-only.
+/// cut over once both consensus signals are in. A stopped readiness task is
+/// recovered on the next tick (`readiness` keeps it to one attempt at a time).
 async fn reconcile(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
+    readiness: &Arc<AtomicBool>,
     gcs_mode: bool,
-    resume_activated: bool,
 ) -> Result<(), Error> {
     if !gcs_mode {
         return Ok(());
@@ -1064,13 +1079,12 @@ async fn reconcile(
         return Ok(());
     };
     match state.as_str() {
-        // Restart mid-activation dropped the readiness tasks; re-arm them.
-        "UpgradeActivated" if resume_activated => {
+        // Re-arm readiness (no-op if already running).
+        "UpgradeActivated" => {
             if let (Some(chain_id), Some(start), Some(gw_start)) =
                 (host_chain_id, start_block, gw_start_block)
             {
-                info!("reconcile: GCS in UpgradeActivated — re-arming dry-run readiness");
-                spawn_gcs_dry_run_readiness(pool, cancel, chain_id, start, gw_start);
+                spawn_gcs_dry_run_readiness(pool, cancel, readiness, chain_id, start, gw_start);
             }
         }
         "UpgradeAuthorized" => {
@@ -1340,8 +1354,11 @@ pub async fn run(
     listener.listen_all(channels).await?;
     info!(?channels, "Listening for notifications");
 
+    // Keeps readiness to one attempt at a time.
+    let readiness = Arc::new(AtomicBool::new(false));
+
     // Boot reconcile: recover an upgrade whose NOTIFY was missed while down (LISTEN already registered).
-    if let Err(e) = reconcile(&pool, &cancel, config.gcs_mode, true).await {
+    if let Err(e) = reconcile(&pool, &cancel, &readiness, config.gcs_mode).await {
         error!(error = %e, "boot reconcile failed");
     }
 
@@ -1364,7 +1381,7 @@ pub async fn run(
 
                         let result = match channel {
                             UPGRADE_ACTIVATED_CHANNEL => {
-                                handle_upgrade_activated(&pool, &cancel, config.gcs_mode, payload).await
+                                handle_upgrade_activated(&pool, &cancel, &readiness, config.gcs_mode, payload).await
                             }
                             UNANIMITY_CONSENSUS_CHANNEL => {
                                 // Emitted by consensus-detector when every operator publishes
@@ -1394,7 +1411,7 @@ pub async fn run(
             }
             _ = poll.tick() => {
                 // Fallback for a missed NOTIFY: re-derive the next step from the row.
-                if let Err(e) = reconcile(&pool, &cancel, config.gcs_mode, false).await {
+                if let Err(e) = reconcile(&pool, &cancel, &readiness, config.gcs_mode).await {
                     error!(error = %e, "poll reconcile failed");
                 }
             }
@@ -1482,7 +1499,8 @@ mod tests {
         .to_string();
 
         let cancel = CancellationToken::new();
-        handle_upgrade_activated(&pool, &cancel, false, &payload)
+        let readiness = Arc::new(AtomicBool::new(false));
+        handle_upgrade_activated(&pool, &cancel, &readiness, false, &payload)
             .await
             .expect("handler ok");
 
@@ -1772,9 +1790,14 @@ mod tests {
         seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
         create_gcs_schema(&pool).await.expect("create gcs schema");
 
-        reconcile(&pool, &CancellationToken::new(), true, false)
-            .await
-            .expect("reconcile");
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicBool::new(false)),
+            true,
+        )
+        .await
+        .expect("reconcile");
 
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
         let (sv,): (String,) =
@@ -1792,9 +1815,14 @@ mod tests {
         seed_gcs_row(&pool, "DryRunStarted", "in_progress").await; // latches TRUE
         create_gcs_schema(&pool).await.expect("create gcs schema");
 
-        reconcile(&pool, &CancellationToken::new(), true, false)
-            .await
-            .expect("reconcile");
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicBool::new(false)),
+            true,
+        )
+        .await
+        .expect("reconcile");
 
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
     }
@@ -1805,9 +1833,14 @@ mod tests {
         let (_instance, pool) = test_pool().await;
         seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
 
-        reconcile(&pool, &CancellationToken::new(), false, false)
-            .await
-            .expect("reconcile");
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicBool::new(false)),
+            false,
+        )
+        .await
+        .expect("reconcile");
 
         assert_eq!(gcs_state(&pool).await.0, "UpgradeAuthorized");
     }
@@ -1836,5 +1869,29 @@ mod tests {
             gcs_state(&pool).await,
             ("DryRunStarted".into(), "in_progress".into())
         );
+    }
+
+    /// GCS writes stop once the dry-run is rolled back, so no stale rows land in the reset schema.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn gcs_write_fenced_after_rollback() {
+        use fhevm_engine_common::versioning::cutover_gate;
+        let (_instance, pool) = test_pool().await;
+
+        let gate = |state: &'static str| {
+            let pool = pool.clone();
+            async move {
+                seed_gcs_row(&pool, state, "in_progress").await;
+                let mut tx = pool.begin().await.expect("begin");
+                let skip = cutover_gate(&mut tx, true).await.expect("gate");
+                tx.rollback().await.expect("rollback");
+                skip
+            }
+        };
+
+        assert!(
+            !gate("DryRunStarted").await,
+            "write allowed while dry-running"
+        );
+        assert!(gate("PAUSED").await, "write fenced after rollback");
     }
 }
