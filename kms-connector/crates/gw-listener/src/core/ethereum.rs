@@ -6,7 +6,7 @@ use crate::{
     monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER},
 };
 use alloy::{
-    eips::BlockNumberOrTag,
+    eips::{BlockId, BlockNumberOrTag},
     network::Ethereum,
     primitives::{B256, U256},
     providers::Provider,
@@ -114,6 +114,7 @@ where
         let active = self
             .protocol_config_contract
             .getCurrentKmsContextAndEpoch()
+            .block(BlockId::finalized())
             .call()
             .await?;
 
@@ -138,6 +139,7 @@ where
             let is_valid_context = self
                 .protocol_config_contract
                 .isValidKmsContext(context_id)
+                .block(BlockId::finalized())
                 .call()
                 .await?;
             if !is_valid_context {
@@ -169,6 +171,7 @@ where
                 && self
                     .protocol_config_contract
                     .isValidEpochForContext(context_id, epoch_id)
+                    .block(BlockId::finalized())
                     .call()
                     .await?;
             if !epoch_valid {
