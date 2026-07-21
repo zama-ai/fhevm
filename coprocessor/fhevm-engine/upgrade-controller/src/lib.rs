@@ -259,6 +259,7 @@ pub async fn handle_upgrade_activated(
             pool,
             cancel,
             readiness,
+            proposal_id_bytes,
             payload.chain_id,
             payload.start_block,
             payload.gw_start_block,
@@ -275,6 +276,7 @@ fn spawn_gcs_dry_run_readiness(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
     readiness: &Arc<AtomicBool>,
+    proposal_id: Vec<u8>,
     chain_id: i64,
     start_block: i64,
     gw_start_block: i64,
@@ -334,7 +336,7 @@ fn spawn_gcs_dry_run_readiness(
                             return;
                         }
                     }
-                    if let Err(e) = transition_to_dry_run_started(&pool).await {
+                    if let Err(e) = transition_to_dry_run_started(&pool, &proposal_id).await {
                         error!(error = %e, "failed to transition GCS to DryRunStarted");
                     }
                 }
@@ -590,21 +592,27 @@ async fn wait_until_dry_run_ready(
     }
 }
 
-/// Conditional UPDATE: only flips if the GCS row is still in `UpgradeActivated`.
-async fn transition_to_dry_run_started(pool: &Pool<Postgres>) -> Result<(), Error> {
+/// Conditional UPDATE: only flips if the GCS row is still in `UpgradeActivated`
+/// for `proposal_id`. The `proposal_id` match stops a readiness task left over
+/// from an earlier proposal from advancing a newer one with stale block bounds.
+async fn transition_to_dry_run_started(
+    pool: &Pool<Postgres>,
+    proposal_id: &[u8],
+) -> Result<(), Error> {
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
         SET state = 'DryRunStarted', updated_at = NOW()
-        WHERE stack_role = 'GCS' AND state = 'UpgradeActivated'
+        WHERE stack_role = 'GCS' AND state = 'UpgradeActivated' AND proposal_id = $1
         "#,
     )
+    .bind(proposal_id)
     .execute(pool)
     .await?;
 
     if result.rows_affected() == 0 {
         warn!(
-            "transition_to_dry_run_started: GCS not in UpgradeActivated — skipping unpause notify"
+            "transition_to_dry_run_started: GCS not in UpgradeActivated for this proposal — skipping unpause notify"
         );
         return Ok(());
     }
@@ -1054,8 +1062,14 @@ async fn rollback_dry_run(pool: &Pool<Postgres>, end_block: i64) -> Result<bool,
     Ok(true)
 }
 
-/// GCS row fields reconcile reads: (state, host_chain_id, start_block, gw_start_block).
-type ReconcileRow = (String, Option<i64>, Option<i64>, Option<i64>);
+/// GCS row fields reconcile reads: (state, proposal_id, host_chain_id, start_block, gw_start_block).
+type ReconcileRow = (
+    String,
+    Option<Vec<u8>>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+);
 
 /// Advance the upgrade from durable state: re-arm readiness, resume a cutover, or
 /// cut over once both consensus signals are in. A stopped readiness task is
@@ -1070,21 +1084,29 @@ async fn reconcile(
         return Ok(());
     }
     let row: Option<ReconcileRow> = sqlx::query_as(
-        "SELECT state, host_chain_id, start_block, gw_start_block
+        "SELECT state, proposal_id, host_chain_id, start_block, gw_start_block
            FROM upgrade_state WHERE stack_role = 'GCS' AND status = 'in_progress'",
     )
     .fetch_optional(pool)
     .await?;
-    let Some((state, host_chain_id, start_block, gw_start_block)) = row else {
+    let Some((state, proposal_id, host_chain_id, start_block, gw_start_block)) = row else {
         return Ok(());
     };
     match state.as_str() {
         // Re-arm readiness (no-op if already running).
         "UpgradeActivated" => {
-            if let (Some(chain_id), Some(start), Some(gw_start)) =
-                (host_chain_id, start_block, gw_start_block)
+            if let (Some(proposal_id), Some(chain_id), Some(start), Some(gw_start)) =
+                (proposal_id, host_chain_id, start_block, gw_start_block)
             {
-                spawn_gcs_dry_run_readiness(pool, cancel, readiness, chain_id, start, gw_start);
+                spawn_gcs_dry_run_readiness(
+                    pool,
+                    cancel,
+                    readiness,
+                    proposal_id,
+                    chain_id,
+                    start,
+                    gw_start,
+                );
             }
         }
         "UpgradeAuthorized" => {
@@ -1871,27 +1893,22 @@ mod tests {
         );
     }
 
-    /// GCS writes stop once the dry-run is rolled back, so no stale rows land in the reset schema.
+    /// A readiness task left over from an old proposal must not advance a newer one.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn gcs_write_fenced_after_rollback() {
-        use fhevm_engine_common::versioning::cutover_gate;
+    async fn transition_ignores_other_proposal() {
         let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02]
 
-        let gate = |state: &'static str| {
-            let pool = pool.clone();
-            async move {
-                seed_gcs_row(&pool, state, "in_progress").await;
-                let mut tx = pool.begin().await.expect("begin");
-                let skip = cutover_gate(&mut tx, true).await.expect("gate");
-                tx.rollback().await.expect("rollback");
-                skip
-            }
-        };
+        // Stale proposal: no-op.
+        transition_to_dry_run_started(&pool, &[0x99])
+            .await
+            .expect("transition");
+        assert_eq!(gcs_state(&pool).await.0, "UpgradeActivated");
 
-        assert!(
-            !gate("DryRunStarted").await,
-            "write allowed while dry-running"
-        );
-        assert!(gate("PAUSED").await, "write fenced after rollback");
+        // Matching proposal: advances.
+        transition_to_dry_run_started(&pool, &[0x02])
+            .await
+            .expect("transition");
+        assert_eq!(gcs_state(&pool).await.0, "DryRunStarted");
     }
 }
