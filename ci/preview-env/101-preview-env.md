@@ -73,7 +73,8 @@ same value used on PR runs when left at its default.
 - **Namespace:** `fhevm-ci-<actor>-<namespace_suffix | run-id>`.
 - **Results:** run summary (deployment plan + e2e report if `automated_tests`).
 - **Teardown:** **manual** — a dispatch env is not tied to a PR, so nothing
-  destroys it automatically. Delete the namespace (or re-run to reuse it).
+  destroys it automatically. Run **pr-preview-destroy** with the namespace (see
+  [Destroy an environment](#destroy-an-environment)), or re-run to reuse it.
 
 ---
 
@@ -92,6 +93,35 @@ kubectl get pods -n <namespace>          # e.g. fhevm-ci-alice-1234
 - **Without:** the stack is deployed with an idle test-suite Job — run tests
   yourself against the namespace, or re-label with `pr-preview-e2e-tests`.
 
+## Destroy an environment
+
+Teardown means: `helm uninstall` every release in the namespace (so Crossplane
+claims — coprocessor S3 buckets, KMS S3 vaults/enclave nodegroups — are released
+and their AWS resources deprovisioned instead of leaking) then delete the
+namespace. All handled by
+[`pr-preview-destroy.yml`](../../.github/workflows/pr-preview-destroy.yml).
+
+**PR env (automatic).** Nothing to do — the env is torn down when you:
+- **close/merge** the PR, or
+- **remove** the `pr-preview-e2e` label (removing only `-build`/`-tests` while
+  `pr-preview-e2e` stays keeps the env alive).
+
+**Manual (dispatch) env.** A dispatch env has no PR to key off, so tear it down
+by hand: GitHub → **Actions** → **pr-preview-destroy** → **Run workflow**, and
+set the `namespace` input to the **exact** namespace from your deploy run's
+summary (e.g. `fhevm-ci-alice-987654`). It must start with `fhevm-ci-` (a guard
+refuses anything else, so it can't nuke an unrelated namespace).
+
+**Fallback (either kind).** If a run can't reach the cluster, do it yourself:
+
+```bash
+helm list -n <namespace> --short | xargs -r -L1 helm uninstall -n <namespace>
+kubectl delete namespace <namespace>
+```
+
+> A namespace can sit in `Terminating` for a few minutes while Crossplane
+> finalizers release the AWS resources — that's expected, not a stuck delete.
+
 ## Gotchas
 
 - **`build_images=false` ⇒ pinned versions.** A plain `pr-preview-e2e` label does
@@ -101,4 +131,5 @@ kubectl get pods -n <namespace>          # e.g. fhevm-ci-alice-1234
   and teardown always agree.
 - **`nb_coprocessor > 1` is expensive** (each party is a full stack with its own
   workers/Postgres/S3). Keep it `1` unless you're specifically testing multi-party.
-- **Manual (dispatch) envs never auto-destroy** — clean up the namespace yourself.
+- **Manual (dispatch) envs never auto-destroy** — run **pr-preview-destroy** with
+  the namespace to clean up (see [Destroy an environment](#destroy-an-environment)).
