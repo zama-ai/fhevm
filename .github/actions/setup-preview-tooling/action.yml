@@ -54,7 +54,10 @@ runs:
 
     - name: Configure kubeconfig for the Tailscale cluster
       shell: bash
-      run: tailscale configure kubeconfig "${{ inputs.tailscale-hostname }}"
+      # Via env, not inline ${{ }}, so the hostname can't be treated as code.
+      env:
+        TAILSCALE_HOSTNAME: ${{ inputs.tailscale-hostname }}
+      run: tailscale configure kubeconfig "${TAILSCALE_HOSTNAME}"
 
     - name: Login to zws GitHub Container Registry
       uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
