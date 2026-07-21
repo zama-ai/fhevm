@@ -691,10 +691,12 @@ async fn notify_coprocessor_upgrade_proposed(
             end_block          = EXCLUDED.end_block,
             gw_start_block     = EXCLUDED.gw_start_block,
             host_chain_id      = EXCLUDED.host_chain_id,
-            -- Fresh window: clear both consensus latches so a prior upgrade's
-            -- observations can't authorize this one's cutover.
+            -- Fresh window: clear the consensus latches and the gw gate flag so a
+            -- prior cycle's state can't authorize this cutover or release the
+            -- zkproof-worker before this window's Gateway readiness check.
             host_consensus_reached = FALSE,
             gw_consensus_reached   = FALSE,
+            gw_dry_run_started     = FALSE,
             last_error         = NULL,
             updated_at         = NOW()
         WHERE upgrade_state.state IN ('LIVE', 'PAUSED')
@@ -1160,5 +1162,77 @@ mod tests {
             "UpgradeActivated"
         );
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+    }
+
+    // A new GCS proposal must reset gw_dry_run_started so the worker isn't released early.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn upgrade_upsert_resets_gw_dry_run_started_for_new_gcs_proposal() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use sqlx::Row;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        // Seed a completed GCS row from a prior cycle with gw_dry_run_started TRUE.
+        sqlx::query(
+            r#"
+            INSERT INTO upgrade_state (
+                stack_role, state, status, proposal_id, version,
+                start_block, end_block, gw_start_block,
+                gw_dry_run_started, updated_at
+            )
+            VALUES ('GCS', 'LIVE', 'completed', $1, 'v1', 100, 200, 1, TRUE, NOW())
+            "#,
+        )
+        .bind(&U256::from(1u64).to_be_bytes::<32>()[..])
+        .execute(&pool)
+        .await
+        .expect("seed");
+
+        let event = ProtocolConfig::CoprocessorUpgradeProposed {
+            proposalId: U256::from(2u64),
+            softwareVersion: "v2".to_string(),
+            chainUpgradeWindows: vec![ProtocolConfig::ChainUpgradeWindow {
+                chainId: 1,
+                startBlock: 300,
+                endBlock: 400,
+            }],
+            gwStartBlock: 5,
+        };
+
+        let mut tx = pool.begin().await.expect("tx");
+        notify_coprocessor_upgrade_proposed(
+            &mut tx,
+            ChainId::try_from(1_u64).expect("chain id"),
+            true, // GCS listener
+            &event,
+        )
+        .await
+        .expect("upsert ok");
+        tx.commit().await.expect("commit");
+
+        let row = sqlx::query(
+            "SELECT state, gw_dry_run_started, gw_start_block FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("row");
+        assert_eq!(
+            row.try_get::<String, _>("state").unwrap(),
+            "UpgradeActivated"
+        );
+        assert!(
+            !row.try_get::<bool, _>("gw_dry_run_started").unwrap(),
+            "gw_dry_run_started must be reset for the new proposal"
+        );
+        assert_eq!(row.try_get::<i64, _>("gw_start_block").unwrap(), 5);
     }
 }
