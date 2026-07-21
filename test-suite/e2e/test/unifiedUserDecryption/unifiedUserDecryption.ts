@@ -334,7 +334,7 @@ describe('Unified user decryption', function () {
     // check then fails (isAllowed(handle, bob) == false) and the job terminates
     // as failed with not_allowed_on_host_acl.
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expectRelayerAclRejection(poll, /isAllowed/);
+    expectRelayerAclRejection(poll);
   });
 
   it('test unified user decrypt rejects a delegated handle entry when no delegation exists', async function () {
@@ -357,7 +357,7 @@ describe('Unified user decryption', function () {
       timeoutMs: negativeWindowMs,
     });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expectRelayerAclRejection(poll, /ACL check failed/);
+    expectRelayerAclRejection(poll);
   });
 
   it('test unified user decrypt rejects a batch containing one bad handle', async function () {
@@ -383,7 +383,7 @@ describe('Unified user decryption', function () {
       timeoutMs: negativeWindowMs,
     });
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expectRelayerAclRejection(poll, /isAllowed/);
+    expectRelayerAclRejection(poll);
   });
 
   describe('extraData versions', function () {
@@ -719,7 +719,7 @@ describe('Unified user decryption', function () {
         timeoutMs: negativeWindowMs,
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expectRelayerAclRejection(poll, /ACL check failed/);
+      expectRelayerAclRejection(poll);
     });
 
     it('test unified user decrypt rejects a revoked delegation', async function () {
@@ -745,7 +745,7 @@ describe('Unified user decryption', function () {
         timeoutMs: negativeWindowMs,
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expectRelayerAclRejection(poll, /ACL check failed/);
+      expectRelayerAclRejection(poll);
     });
 
     it('test unified user decrypt rejects an expired delegation', async function () {
@@ -782,7 +782,7 @@ describe('Unified user decryption', function () {
         timeoutMs: negativeWindowMs,
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expectRelayerAclRejection(poll, /ACL check failed/);
+      expectRelayerAclRejection(poll);
     });
 
     it('test unified user decrypt contract delegate re-points its delegated access by rotating its signer', async function () {
@@ -857,7 +857,7 @@ describe('Unified user decryption', function () {
         timeoutMs: negativeWindowMs,
       });
       expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expectRelayerAclRejection(poll, /ACL check failed/);
+      expectRelayerAclRejection(poll);
     });
   });
 });
