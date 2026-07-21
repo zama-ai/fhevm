@@ -108,6 +108,10 @@ export const MINIO_INTERNAL_URL = `http://minio:${MINIO_PORT}`;
 export const MINIO_EXTERNAL_URL = `http://localhost:${MINIO_PORT}`;
 export const POSTGRES_HOST = `db:${POSTGRES_PORT}`;
 export const COPROCESSOR_DB_CONTAINER = "coprocessor-and-kms-db";
+
+/** Per-operator coprocessor DB name: instance 0 → `coprocessor`, N → `coprocessor_N`. */
+export const coprocessorDatabaseName = (instanceIndex: number) =>
+  instanceIndex === 0 ? "coprocessor" : `coprocessor_${instanceIndex}`;
 export const KMS_CORE_CONTAINER = "kms-core";
 export const TEST_SUITE_CONTAINER = "fhevm-test-suite-e2e-debug";
 export const KEYGEN_ID_SELECTOR = "0xd52f10eb";
@@ -294,6 +298,9 @@ export const TEST_GREP: Record<string, string> = {
   "operators": "test operator|FHEVM manual operations",
   "hcu-block-cap": "block cap scenarios",
   "erc20": "should transfer tokens between two users.",
+  "cross-cutover-setup": "\\[cross-cutover-setup\\]",
+  "cross-cutover-transfer": "\\[cross-cutover-transfer\\]",
+  "cross-cutover-verify": "\\[cross-cutover-verify\\]",
   "negative-acl": "negative-acl",
   "multi-chain-isolation": "Multi-Chain State Isolation",
   "confidential-bridge": "Confidential Bridge",

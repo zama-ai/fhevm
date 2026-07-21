@@ -16,11 +16,10 @@ import {
   supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
-import { driftDatabaseName } from "../drift";
 import { serviceNameList } from "../generate/compose";
 import { generateRuntime } from "../generate";
 import { resolveScenarioForOptions, stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
-import { effectiveOverrides, hasLocalCoprocessorInstance, listScenarioSummaries } from "../scenario/resolve";
+import { effectiveOverrides, listScenarioSummaries } from "../scenario/resolve";
 import { run, runStreaming } from "../utils/process";
 import { loadState, markStep, saveState } from "../state/state";
 import {
@@ -66,8 +65,8 @@ import {
   SCHEMA_COUPLED_GROUPS,
   STATE_DIR,
   TEST_SUITE_CONTAINER,
+  coprocessorDatabaseName,
   coprocessorHostKey,
-  dockerArgs,
   envPath,
   gatewayAddressesPath,
   hostChainAddressesPath,
@@ -101,12 +100,13 @@ import {
   writeJson,
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
-import { kmsConnectorEnvName } from "../kms-party";
+import { kmsConnectorEnvName, kmsCoreName } from "../kms-party";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
   kmsConnectorHealthContainers,
   castBool,
   coprocessorHealthContainers,
+  waitForCoprocessorDbMigrations,
   discoverKmsSigners,
   dockerInspect,
   ensureMaterial,
@@ -200,7 +200,8 @@ export const assertDockerMemory = async (scenario: State["scenario"]) => {
   const memBytes = parseInt(result.stdout.trim(), 10);
   if (isNaN(memBytes)) return;
 
-  const minGb = scenario.hostChains.length > 1 && scenario.topology.count > 1 ? 32 : 16;
+  const count = scenario.kind === "coprocessor-consensus" ? scenario.topology.count : 2;
+  const minGb = scenario.hostChains.length > 1 && count > 1 ? 32 : 16;
   if (memBytes >= (minGb - 1) * 1024 ** 3) return;
 
   const reportedGb = Math.round((memBytes / 1024 ** 3) * 2) / 2;
@@ -253,8 +254,10 @@ const describeOverride = (item: { group: string; services?: string[] }) =>
   `${item.group}${item.services?.length ? `[${item.services.join(",")}]` : ""}`;
 
 /** Computes the user-visible override set after scenario expansion. */
-const visibleOverrides = (state: Pick<State, "overrides" | "scenario">) =>
-  effectiveOverrides(state.overrides, state.scenario);
+const visibleOverrides = (state: Pick<State, "overrides" | "scenario">) => {
+  if (state.scenario.kind === "blue-green") return state.overrides;
+  return effectiveOverrides(state.overrides, state.scenario);
+};
 
 /** Builds human-readable warnings for risky override combinations. */
 const overrideWarnings = (overrides: LocalOverride[], target?: string) => {
@@ -433,7 +436,9 @@ const assertSchemaCompatibility = async (
   if (allowSchemaMismatch || !SCHEMA_GUARD_TARGETS.has(bundle.target)) {
     return;
   }
-  for (const item of partialSchemaOverrides(effectiveOverrides(overrides, scenario))) {
+  const scenarioForOverrides =
+    scenario.kind === "coprocessor-consensus" ? effectiveOverrides(overrides, scenario) : overrides;
+  for (const item of partialSchemaOverrides(scenarioForOverrides)) {
     await assertSchemaRepoStable(
       item.group,
       bundle,
@@ -452,7 +457,9 @@ const coprocessorDbSeeded = async (database: string) => {
 
 const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
   (await Promise.all(
-    Array.from({ length: topologyForState(state).count }, (_, index) => driftDatabaseName(index)).map(coprocessorDbSeeded),
+    Array.from({ length: topologyForState(state).count }, (_, index) => coprocessorDatabaseName(index)).map(
+      coprocessorDbSeeded,
+    ),
   )).every(Boolean);
 
 const restartZkproofWorker = async (index: number, reason: string) => {
@@ -475,7 +482,7 @@ const upsertHostChainInCoprocessorDb = async (
   index: number,
   logPrefix: string,
 ) => {
-  const dbName = driftDatabaseName(index);
+  const dbName = coprocessorDatabaseName(index);
   const chainHost = state.discovery?.hosts[chain.key] ?? {};
   const aclAddress = chainHost.ACL_CONTRACT_ADDRESS ?? "";
   console.log(`${logPrefix} registering ${chain.key} in ${dbName}`);
@@ -822,9 +829,18 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     case "coprocessor": {
       const skipMigration = await coprocessorDbsSeeded(state);
-      const services = skipMigration ? coprocessorHealthContainers(state) : serviceNameList(state, "coprocessor");
-      await stepComposeUp("coprocessor", state, services, { noDeps: skipMigration });
-      await waitForCoprocessorServices(state, skipMigration);
+      if (skipMigration) {
+        await stepComposeUp("coprocessor", state, coprocessorHealthContainers(state), { noDeps: true });
+      } else {
+        // Migrations before workers, so a GCS fleet isn't started before the versioning baseline is seeded.
+        const allServices = serviceNameList(state, "coprocessor");
+        const migrationServices = allServices.filter((name) => name.endsWith("db-migration"));
+        const runtimeServices = allServices.filter((name) => !name.endsWith("db-migration"));
+        await stepComposeUp("coprocessor", state, migrationServices);
+        await waitForCoprocessorDbMigrations(state);
+        await stepComposeUp("coprocessor", state, runtimeServices, { noDeps: true });
+      }
+      await waitForCoprocessorServices(state, true);
       if (requiresLegacyHostChainSeedShim(state)) {
         await applyLegacyHostChainSeedShim(state);
       }
@@ -1302,9 +1318,11 @@ export const status = async () => {
     );
     if (state.scenario.origin !== "default") {
       console.log(`[scenario] ${state.scenario.origin}${state.scenario.sourcePath ? ` ${state.scenario.sourcePath}` : ""}`);
-      for (const instance of state.scenario.instances) {
-        const source = instance.source.mode === "registry" ? `registry:${instance.source.tag}` : instance.source.mode;
-        console.log(`[coprocessor-${instance.index}] ${source}`);
+      if (state.scenario.kind === "coprocessor-consensus") {
+        for (const instance of state.scenario.instances) {
+          const source = instance.source.mode === "registry" ? `registry:${instance.source.tag}` : instance.source.mode;
+          console.log(`[coprocessor-${instance.index}] ${source}`);
+        }
       }
     }
     console.log(`[steps] ${state.completedSteps.join(", ") || "none"}`);
@@ -1632,6 +1650,91 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
   for (const step of plan.steps) {
     await markStep(nextState, step);
   }
+};
+
+type ThresholdKmsNodeUpgradeOperations = {
+  composeUp: typeof composeUp;
+  ensureRuntimeArtifacts: typeof ensureRuntimeArtifacts;
+  generateRuntime: typeof generateRuntime;
+  loadState: typeof loadState;
+  projectContainers: typeof projectContainers;
+  saveState: typeof saveState;
+  waitForContainer: typeof waitForContainer;
+};
+
+const thresholdKmsNodeUpgradeOperations: ThresholdKmsNodeUpgradeOperations = {
+  composeUp,
+  ensureRuntimeArtifacts,
+  generateRuntime,
+  loadState,
+  projectContainers,
+  saveState,
+  waitForContainer,
+};
+
+/** Recreates exactly one serving threshold KMS core with the CORE_VERSION from a lock file. */
+export const upgradeThresholdKmsNode = async (
+  nodeId: number,
+  options: { lockFile: string },
+  operations: ThresholdKmsNodeUpgradeOperations = thresholdKmsNodeUpgradeOperations,
+) => {
+  const state = await operations.loadState();
+  if (!state || !(await operations.projectContainers()).length) {
+    throw new PreflightError("Stack is not running; start a threshold KMS scenario first");
+  }
+  if (state.scenario.kms.mode !== "threshold") {
+    throw new PreflightError("upgradeKmsNode requires a threshold-mode KMS cluster");
+  }
+  if (!Number.isInteger(nodeId) || nodeId < 1 || nodeId > state.scenario.kms.committeeSize) {
+    throw new PreflightError(
+      `upgradeKmsNode expects a serving node id between 1 and ${state.scenario.kms.committeeSize}; received ${nodeId}`,
+    );
+  }
+  if (!state.completedSteps.includes("base")) {
+    throw new PreflightError("upgradeKmsNode requires a stack that has completed the base step");
+  }
+
+  await operations.ensureRuntimeArtifacts(state, "upgrade");
+  const lockedState = (await applyRuntimeUpgradeLock(state, "kms-core", ["CORE_VERSION"], options.lockFile)).state;
+  await assertSchemaCompatibility(lockedState.versions, lockedState.overrides, lockedState.scenario, false);
+
+  const targetVersion = lockedState.versions.env.CORE_VERSION;
+  if (!targetVersion?.trim()) {
+    throw new PreflightError("upgradeKmsNodes requires CORE_VERSION in its lock file");
+  }
+  const versionByNodeId = Object.fromEntries(
+    Array.from({ length: state.scenario.kms.parties }, (_, index) => {
+      const id = index + 1;
+      return [id, state.kmsCoreVersionByNodeId?.[id] ?? state.versions.env.CORE_VERSION];
+    }),
+  );
+  versionByNodeId[nodeId] = targetVersion;
+  const servingNodesAtTarget = Array.from(
+    { length: state.scenario.kms.committeeSize },
+    (_, index) => versionByNodeId[index + 1] === targetVersion,
+  ).every(Boolean);
+  const globalVersion = servingNodesAtTarget ? targetVersion : state.versions.env.CORE_VERSION;
+  const perNodeVersions = Object.fromEntries(
+    Object.entries(versionByNodeId).filter(([, version]) => version !== globalVersion),
+  );
+  const nextState: State = servingNodesAtTarget
+    ? {
+        ...lockedState,
+        kmsCoreVersionByNodeId: Object.keys(perNodeVersions).length ? perNodeVersions : undefined,
+      }
+    : {
+        ...state,
+        kmsCoreVersionByNodeId: perNodeVersions,
+        updatedAt: new Date().toISOString(),
+      };
+
+  await operations.saveState(nextState);
+  await operations.generateRuntime(nextState, stackSpecForState(nextState));
+
+  const container = kmsCoreName(nodeId);
+  console.log(`[upgrade] KMS node ${nodeId} (${container})`);
+  await operations.composeUp("core-threshold", [container], { noDeps: true, forceRecreate: true });
+  await operations.waitForContainer(container, "healthy");
 };
 
 const RESUME_HINT_BLOCKERS = new Set([

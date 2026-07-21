@@ -1,13 +1,11 @@
 use crate::types::ProtocolEventKind;
-use alloy::{
-    primitives::{Address, B256, U256},
-    sol_types::SolEvent,
-};
+use alloy::{primitives::B256, sol_types::SolEvent};
 use anyhow::anyhow;
+// Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest_0 as PublicDecryptionRequest, SnsCiphertextMaterial,
-    UserDecryptionRequest_0 as UserDecryptionRequest,
-    UserDecryptionRequest_1 as UserDecryptionRequestV2,
+    PublicDecryptionRequest_1 as PublicDecryptionRequest,
+    UserDecryptionRequest_2 as UserDecryptionRequest,
+    UserDecryptionRequest_3 as UserDecryptionRequestV2,
 };
 use fhevm_host_bindings::{
     kms_generation::{
@@ -22,46 +20,6 @@ use fhevm_host_bindings::{
 };
 use sqlx::postgres::PgNotification;
 use std::{fmt::Display, str::FromStr};
-
-/// Struct representing how `SnsCiphertextMaterial` are stored in the database.
-#[derive(sqlx::Type, Clone, Debug, Default, PartialEq)]
-#[sqlx(type_name = "sns_ciphertext_material")]
-pub struct SnsCiphertextMaterialDbItem {
-    pub ct_handle: [u8; 32],
-    pub key_id: [u8; 32],
-    pub sns_ciphertext_digest: [u8; 32],
-    pub coprocessor_tx_sender_addresses: Vec<[u8; 20]>,
-}
-
-impl From<&SnsCiphertextMaterial> for SnsCiphertextMaterialDbItem {
-    fn from(value: &SnsCiphertextMaterial) -> Self {
-        Self {
-            ct_handle: *value.ctHandle,
-            key_id: value.keyId.to_le_bytes(),
-            sns_ciphertext_digest: *value.snsCiphertextDigest,
-            coprocessor_tx_sender_addresses: value
-                .coprocessorTxSenderAddresses
-                .iter()
-                .map(|a| *a.0)
-                .collect(),
-        }
-    }
-}
-
-impl From<&SnsCiphertextMaterialDbItem> for SnsCiphertextMaterial {
-    fn from(value: &SnsCiphertextMaterialDbItem) -> Self {
-        Self {
-            ctHandle: value.ct_handle.into(),
-            keyId: U256::from_le_bytes(value.key_id),
-            snsCiphertextDigest: value.sns_ciphertext_digest.into(),
-            coprocessorTxSenderAddresses: value
-                .coprocessor_tx_sender_addresses
-                .iter()
-                .map(Address::from)
-                .collect(),
-        }
-    }
-}
 
 /// Struct representing the `ParamsType` enum in the database.
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]

@@ -15,7 +15,7 @@ use connector_utils::{
             InsertRequestOptions, TestEventType, check_no_uncompleted_request_in_db,
             check_request_failed_in_db, insert_rand_request,
         },
-        rand::{rand_digest, rand_sns_ct},
+        rand::{rand_digest, rand_handle},
         setup::{
             DbInstance, TestInstance, TestInstanceBuilder, erc1271_magic_response,
             init_host_chains_acl_contracts_mock,
@@ -57,17 +57,17 @@ async fn test_decryption_context_not_found(
     // context-validation stage, before any ciphertext interaction.
     let asserter = Asserter::new();
     mock_copro_registry_load(&asserter, "http://unused-bucket-url");
-    let sns_ct = rand_sns_ct();
+    let handle = rand_handle();
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
-        .with_sns_ct_materials(vec![sns_ct.clone()])
+        .with_ct_handles(vec![handle])
         .with_tx_hash(tx_hash)
         .with_context_id(unknown_context_id);
 
     for _ in 0..MAX_DECRYPTION_ATTEMPTS {
         if matches!(event_type, TestEventType::UserDecryption) {
             // Mocking `get_transaction_by_hash` call result
-            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
             asserter.push_success(&mock_tx);
         }
         // The unknown context falls back to on-chain validation: `isValidKmsContext` → false
@@ -100,8 +100,7 @@ async fn test_decryption_context_not_found(
         }
         _ => vec![],
     };
-    let acl_contracts_mock =
-        init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
 
     // No KMS mocks needed - request should fail before reaching KMS
     let kms_mock_server = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");
@@ -112,7 +111,7 @@ async fn test_decryption_context_not_found(
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
-        ct_attestation: testing_ct_attestation_config(false),
+        ct_attestation: testing_ct_attestation_config(),
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
@@ -170,10 +169,10 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
     // context-validation stage, before any ciphertext interaction.
     let asserter = Asserter::new();
     mock_copro_registry_load(&asserter, "http://unused-bucket-url");
-    let sns_ct = rand_sns_ct();
+    let handle = rand_handle();
     let tx_hash = rand_digest();
     let insert_options = InsertRequestOptions::new()
-        .with_sns_ct_materials(vec![sns_ct.clone()])
+        .with_ct_handles(vec![handle])
         .with_tx_hash(tx_hash);
     // Default context_id = TESTING_KMS_CONTEXT
 
@@ -183,7 +182,7 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
             asserter.push_success(&false.abi_encode());
         }
         TestEventType::UserDecryption => {
-            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, sns_ct.ctHandle)?;
+            let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
             asserter.push_success(&mock_tx);
         }
         TestEventType::UserDecryptionV2 => (),
@@ -208,8 +207,7 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
         TestEventType::UserDecryption => vec![true.abi_encode(); 2],
         _ => vec![],
     };
-    let acl_contracts_mock =
-        init_host_chains_acl_contracts_mock(sns_ct.ctHandle.as_slice(), acl_responses);
+    let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
 
     let kms_mock_server = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");
     kms_mock_server.start().await?;
@@ -219,7 +217,7 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
         max_decryption_attempts: MAX_DECRYPTION_ATTEMPTS,
         db_fast_event_polling: Duration::from_millis(500),
-        ct_attestation: testing_ct_attestation_config(false),
+        ct_attestation: testing_ct_attestation_config(),
         ..Default::default()
     };
     let kms_worker = init_kms_worker(
