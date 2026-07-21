@@ -18,9 +18,14 @@ programs/zama-host              Protocol host program. Owns canonical `Encrypted
                                 host events (the ACL lifecycle itself is event-free; see DD-033).
 programs/confidential-token     App program. Minimal confidential-token / cUSDC wrapper (ERC7984
                                 spirit): wrap, transfer, burn, redeem, disclose. Drives zama-host by CPI.
-programs/confidential-deposit-app  Reference app showing Solana-native composition: its `deposit`
-                                CPIs `confidential_transfer` with the user as sole signer — the
+programs/confidential-batcher   Confidential batcher (DD-042): aggregates encrypted deposits per
+                                batch, reveals only each batch's KMS-certified total to the public
+                                demo-vault, and pays encrypted shares at the batch's public rate.
+                                Its `join` keeps the app-driven composition pattern: it CPIs
+                                `confidential_transfer` with the user as sole signer — the
                                 replacement for EVM transfer-and-call callbacks.
+programs/demo-vault             Minimal public share-mint vault (assets in, shares out, price =
+                                assets/shares) the batcher fronts; plain SPL only.
 crates/zama-fhe                 App-facing SDK: typed `EvalBuilder`, `Encrypted<T>`, `DurableSlot`,
                                 `AccessPolicy`, and a `cpi`-feature account resolver for `fhe_eval` plans.
 crates/solana-ed25519-instruction  Ed25519 instruction-sysvar helpers.
@@ -76,7 +81,7 @@ An app program drives compute by CPI into `zama-host`, using `crates/zama-fhe`:
 - Compose atomic multi-account effects (e.g. debit sender + credit receiver) as one `fhe_eval` frame
   with per-output authority signer witnesses, using `EvalBuilder` + `DurableSlot`.
 - To receive confidential funds, expose your own instruction that CPIs `confidential_transfer` with
-  the user as sole signer (authority propagates through the CPI). See `confidential-deposit-app`.
+  the user as sole signer (authority propagates through the CPI). See `confidential-batcher::join`.
   There is no receiver-callback / transfer-and-call path — that EVM workaround is not needed on Solana.
 
 ## Read before changing behavior

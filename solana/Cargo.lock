@@ -974,11 +974,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "confidential-deposit-app"
+name = "confidential-batcher"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "anchor-spl",
  "confidential-token",
+ "demo-vault",
+ "solana-sha256-hasher",
+ "zama-fhe",
  "zama-host",
 ]
 
@@ -4970,6 +4974,7 @@ dependencies = [
  "anchor-spl",
  "base64 0.22.1",
  "bincode",
+ "confidential-batcher",
  "confidential-token",
  "demo-vault",
  "k256",

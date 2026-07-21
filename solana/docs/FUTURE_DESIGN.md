@@ -47,7 +47,7 @@ signature-backed authority design — not hidden operator compatibility in the t
 
 There is **no Solana analog by design**. The EVM transfer-and-call callback (a contract can't observe
 an incoming transfer, so the token calls it back) was removed (DD-011); Solana apps drive their own
-atomic `deposit` that CPIs `confidential_transfer` (see `confidential-deposit-app`).
+atomic join/deposit that CPIs `confidential_transfer` (see `confidential-batcher::join`).
 
 **Requirement, if ever needed:** the only Solana idiom for token-driven receiver logic is a
 Token-2022-style transfer hook, which is a **veto-only** primitive (it can reject a transfer, not run
