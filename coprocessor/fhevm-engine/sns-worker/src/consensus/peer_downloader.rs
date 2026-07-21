@@ -1,8 +1,12 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use alloy_primitives::{Address, B256, U256};
+#[cfg(test)]
+use alloy_primitives::B256;
+use alloy_primitives::{Address, U256};
 use aws_sdk_s3::Client;
-use ciphertext_attestation::manifest::{ManifestReference, ManifestVersion, SignedManifest};
+use ciphertext_attestation::manifest::ManifestReference;
+#[cfg(test)]
+use ciphertext_attestation::manifest::ManifestVersion;
 use fhevm_engine_common::{
     pg_pool::{PostgresPoolManager, ServiceError},
     versioning::StackMode,
@@ -11,175 +15,42 @@ use sqlx::{PgPool, Postgres, Transaction};
 use tokio::{task::JoinHandle, time::MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
-use url::Url;
 
 use crate::ExecutionError;
 
-use super::consensus_analysis::{evaluate_quorum, VerificationOutcome};
+use super::consensus_analysis::{evaluate_quorum, QuorumEvaluation, VerificationOutcome};
 use super::drift_findings::apply_evaluation_to_drift_handles;
 use super::manifest_archive::{
-    load_manifest_by_reference, load_tip_eligible_manifest, store_authenticated_manifest,
-    AuthenticatedManifest,
+    load_manifest_by_reference, load_manifest_revision, load_tip_eligible_manifest,
+    store_authenticated_manifest, AuthenticatedManifest,
+};
+use super::metrics::{
+    DRIFT_LOCALIZATION_INCOMPLETE, PEER_MANIFEST_ARCHIVED, PEER_MANIFEST_DOWNLOAD_FAILURE,
+    VERIFICATION_FAILURE, VERIFICATION_OUTCOMES,
+};
+use super::peer_manifest_source::{
+    referenced_manifest_object_key, PeerDownloadRequest, PeerManifestObject, PeerManifestSource,
+    S3PeerManifestSource,
+};
+#[cfg(test)]
+use super::peer_manifest_source::{s3_bucket_location, S3BucketLocation};
+use super::verification_scope::VerificationScope;
+use super::verification_utils::{
+    address, b256, downloader_worker_id, duration_micros, internal, manifest_version, u256,
 };
 
 const DOWNLOAD_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const DOWNLOAD_LEASE: Duration = Duration::from_secs(5 * 60);
-const PEER_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
-const MAX_LIST_PAGES_PER_ATTEMPT: usize = 10;
-
-#[derive(Clone, Debug)]
-pub(crate) struct PeerManifestObject {
-    pub object_key: String,
-    pub signed_bytes: Vec<u8>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct PeerDownloadRequest {
-    pub publisher: Address,
-    pub s3_bucket_url: String,
-    pub version: ManifestVersion,
-    pub coprocessor_context_id: U256,
-    pub host_chain_id: i64,
-    pub publication_block_number: i64,
-    pub publication_block_hash: B256,
-    pub known_revisions: HashSet<u64>,
-}
-
-pub(crate) trait PeerManifestSource: Send + Sync {
-    async fn fetch_manifests(
-        &self,
-        request: &PeerDownloadRequest,
-    ) -> Result<Vec<PeerManifestObject>, ExecutionError>;
-}
-
-#[derive(Clone)]
-pub(crate) struct S3PeerManifestSource {
-    client: Arc<Client>,
-}
-
-impl S3PeerManifestSource {
-    pub(crate) fn new(client: Arc<Client>) -> Self {
-        Self { client }
-    }
-}
-
-impl PeerManifestSource for S3PeerManifestSource {
-    async fn fetch_manifests(
-        &self,
-        request: &PeerDownloadRequest,
-    ) -> Result<Vec<PeerManifestObject>, ExecutionError> {
-        debug!(
-            publisher = %request.publisher,
-            bucket_url = request.s3_bucket_url,
-            "Listing numbered peer manifest revisions"
-        );
-        let location = s3_bucket_location(&request.s3_bucket_url)?;
-        let bucket = location.bucket.clone();
-        let registered_prefix = location.key_prefix.clone();
-        let prefix = location.object_key(manifest_prefix(request));
-        let mut continuation_token = None;
-        let mut keys = Vec::new();
-        let mut fully_listed = false;
-
-        for _ in 0..MAX_LIST_PAGES_PER_ATTEMPT {
-            let mut list = self
-                .client
-                .list_objects_v2()
-                .bucket(&bucket)
-                .prefix(&prefix);
-            if let Some(token) = continuation_token.as_deref() {
-                list = list.continuation_token(token);
-            }
-            let response = list.send().await.map_err(|err| {
-                ExecutionError::S3TransientError(format!(
-                    "failed to list peer manifest prefix {prefix} in {bucket}: {err}"
-                ))
-            })?;
-            for object in response.contents() {
-                let Some(key) = object.key() else {
-                    continue;
-                };
-                let Some(revision) = revision_below_prefix(key, &prefix) else {
-                    continue;
-                };
-                if !request.known_revisions.contains(&revision) {
-                    let canonical_key = if registered_prefix.is_empty() {
-                        key.to_owned()
-                    } else {
-                        key.strip_prefix(&format!("{registered_prefix}/"))
-                            .unwrap_or(key)
-                            .to_owned()
-                    };
-                    keys.push((revision, key.to_owned(), canonical_key));
-                }
-            }
-            if response.is_truncated() != Some(true) {
-                fully_listed = true;
-                break;
-            }
-            continuation_token = response.next_continuation_token().map(ToOwned::to_owned);
-            if continuation_token.is_none() {
-                break;
-            }
-        }
-        if !fully_listed {
-            return Err(ExecutionError::S3TransientError(format!(
-                "peer manifest prefix {prefix} in {bucket} exceeded the bounded listing budget"
-            )));
-        }
-
-        keys.sort_unstable_by_key(|(revision, _, _)| *revision);
-        keys.dedup_by_key(|(revision, _, _)| *revision);
-        let mut manifests = Vec::with_capacity(keys.len());
-        for (_, s3_object_key, canonical_object_key) in keys {
-            let body = self
-                .client
-                .get_object()
-                .bucket(&bucket)
-                .key(&s3_object_key)
-                .send()
-                .await
-                .map_err(|err| {
-                    ExecutionError::S3TransientError(format!(
-                        "failed to download peer manifest {s3_object_key} from {bucket}: {err}"
-                    ))
-                })?
-                .body
-                .collect()
-                .await
-                .map_err(|err| {
-                    ExecutionError::S3TransientError(format!(
-                        "failed to read peer manifest {s3_object_key} from {bucket}: {err}"
-                    ))
-                })?
-                .into_bytes()
-                .to_vec();
-            manifests.push(PeerManifestObject {
-                object_key: canonical_object_key,
-                signed_bytes: body,
-            });
-        }
-        Ok(manifests)
-    }
-}
-
-#[derive(Clone, Debug)]
-struct VerificationScope {
-    local_publisher: Address,
-    version: ManifestVersion,
-    coprocessor_context_id: U256,
-    host_chain_id: i64,
-    publication_block_number: i64,
-    publication_block_hash: B256,
-    revision: u64,
-    local_manifest_digest: B256,
-}
+const PEER_LIST_TIMEOUT: Duration = Duration::from_secs(30);
+const PEER_OBJECT_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_PREDECESSORS_PER_ATTEMPT: usize = 256;
 
 #[derive(Clone, Debug)]
 struct ClaimedPeer {
     publisher: Address,
     s3_bucket_url: String,
     known_revisions: HashSet<u64>,
+    resume_revision: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -258,8 +129,12 @@ async fn run_peer_manifest_downloader<S: PeerManifestSource>(
                     );
                 }
                 Ok(None) => break,
-                Err(ExecutionError::DbError(err)) => return Err(ExecutionError::DbError(err)),
+                Err(ExecutionError::DbError(err)) => {
+                    VERIFICATION_FAILURE.inc();
+                    return Err(ExecutionError::DbError(err));
+                }
                 Err(err) => {
+                    VERIFICATION_FAILURE.inc();
                     error!(error = %err, "Peer manifest verification attempt failed");
                     break;
                 }
@@ -275,113 +150,17 @@ pub(crate) async fn schedule_manifest_verification(
     retry_delay: Duration,
     retry_count: u32,
 ) -> Result<i64, ExecutionError> {
-    let payload = &local.signed.payload;
-    let host_chain_id = i64_from_u256("manifest host chain id", payload.host_chain_id)?;
-    let publication_block_number = i64_from_u256(
-        "manifest publication block number",
-        payload.publication_block_number,
-    )?;
-    let revision = i64::try_from(payload.revision)
-        .map_err(|_| internal("manifest revision exceeds BIGINT"))?;
-    let delay_micros = duration_micros("verification delay", verification_delay)?;
-    let retry_delay_micros = duration_micros("verification retry delay", retry_delay)?;
-    let max_attempts = retry_count
-        .checked_add(1)
-        .and_then(|attempts| i32::try_from(attempts).ok())
-        .ok_or_else(|| internal("verification retry count exceeds INTEGER"))?;
-    let context = payload.coprocessor_context_id.to_be_bytes::<32>();
-
-    let inserted = sqlx::query!(
-        r#"
-        INSERT INTO block_consensus_verification_target (
-            local_publisher,
-            version,
-            coprocessor_context_id,
-            host_chain_id,
-            publication_block_number,
-            publication_block_hash,
-            revision,
-            local_manifest_digest,
-            eligible_at,
-            next_attempt_at,
-            retry_delay_micros,
-            max_attempts
-        )
-        VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8,
-            NOW() + $9::BIGINT * INTERVAL '1 microsecond',
-            NOW() + $9::BIGINT * INTERVAL '1 microsecond',
-            $10, $11
-        )
-        ON CONFLICT (
-            local_publisher,
-            version,
-            coprocessor_context_id,
-            host_chain_id,
-            publication_block_number,
-            publication_block_hash,
-            revision
-        ) DO NOTHING
-        RETURNING id
-        "#,
-        payload.publisher.as_slice(),
-        i16::from(u8::from(payload.version)),
-        context.as_slice(),
-        host_chain_id,
-        publication_block_number,
-        payload.publication_block_hash.as_slice(),
-        revision,
-        local.digest.as_slice(),
-        delay_micros,
-        retry_delay_micros,
-        max_attempts,
+    super::verification_schedule::schedule_manifest_verification(
+        trx,
+        local,
+        verification_delay,
+        retry_delay,
+        retry_count,
     )
-    .fetch_optional(trx.as_mut())
-    .await?;
-
-    let target_id = if let Some(row) = inserted {
-        row.id
-    } else {
-        let row = sqlx::query!(
-            r#"
-            SELECT id, local_manifest_digest
-              FROM block_consensus_verification_target
-             WHERE local_publisher = $1
-               AND version = $2
-               AND coprocessor_context_id = $3
-               AND host_chain_id = $4
-               AND publication_block_number = $5
-               AND publication_block_hash = $6
-               AND revision = $7
-            "#,
-            payload.publisher.as_slice(),
-            i16::from(u8::from(payload.version)),
-            context.as_slice(),
-            host_chain_id,
-            publication_block_number,
-            payload.publication_block_hash.as_slice(),
-            revision,
-        )
-        .fetch_one(trx.as_mut())
-        .await?;
-        let stored_digest = b256(
-            "stored verification target manifest digest",
-            &row.local_manifest_digest,
-        )?;
-        if stored_digest != local.digest {
-            return Err(internal(format!(
-                "verification target for publisher {} revision {} has conflicting digest",
-                payload.publisher, payload.revision,
-            )));
-        }
-        row.id
-    };
-
-    bind_target_to_current_registry(trx, target_id).await?;
-    Ok(target_id)
+    .await
 }
 
-pub(crate) async fn run_peer_manifest_download_once<S: PeerManifestSource>(
+async fn run_peer_manifest_download_once<S: PeerManifestSource>(
     pool: &PgPool,
     source: &S,
     worker_id: &str,
@@ -420,7 +199,7 @@ async fn bind_one_waiting_target(pool: &PgPool) -> Result<(), ExecutionError> {
     Ok(())
 }
 
-async fn bind_target_to_current_registry(
+pub(super) async fn bind_target_to_current_registry(
     trx: &mut Transaction<'_, Postgres>,
     target_id: i64,
 ) -> Result<bool, ExecutionError> {
@@ -707,10 +486,12 @@ pub(crate) async fn claim_due_target(
                     .map_err(|_| internal("archived peer manifest revision is negative"))
             })
             .collect::<Result<HashSet<_>, _>>()?;
+        let resume_revision = known_revisions.iter().max().copied();
         peers.push(ClaimedPeer {
             publisher,
             s3_bucket_url: peer.s3_bucket_url,
             known_revisions,
+            resume_revision,
         });
     }
     trx.commit().await?;
@@ -731,45 +512,41 @@ async fn download_claimed_peer<S: PeerManifestSource>(
     claim: &VerificationClaim,
     peer: &ClaimedPeer,
 ) -> Result<(), ExecutionError> {
-    let request = PeerDownloadRequest {
-        publisher: peer.publisher,
-        s3_bucket_url: peer.s3_bucket_url.clone(),
-        version: claim.scope.version,
-        coprocessor_context_id: claim.scope.coprocessor_context_id,
-        host_chain_id: claim.scope.host_chain_id,
-        publication_block_number: claim.scope.publication_block_number,
-        publication_block_hash: claim.scope.publication_block_hash,
-        known_revisions: peer.known_revisions.clone(),
-    };
-    let fetch = tokio::time::timeout(PEER_FETCH_TIMEOUT, source.fetch_manifests(&request)).await;
-    let objects = match fetch {
-        Err(_) => {
-            let err = ExecutionError::S3TransientError(format!(
-                "peer manifest fetch timed out after {PEER_FETCH_TIMEOUT:?}"
-            ));
-            record_peer_failure(pool, claim, peer.publisher, &err.to_string()).await?;
-            warn!(
-                target_id = claim.target_id,
-                publisher = %peer.publisher,
-                error = %err,
-                "Peer manifest download failed"
-            );
-            return Ok(());
+    let mut request = peer_download_request(claim, peer);
+    if let Some(revision) = peer.resume_revision {
+        let mut trx = pool.begin().await?;
+        require_active_lease(&mut trx, claim).await?;
+        let archived = load_manifest_revision(
+            &mut trx,
+            peer.publisher,
+            claim.scope.version,
+            claim.scope.coprocessor_context_id,
+            claim.scope.host_chain_id,
+            claim.scope.publication_block_number,
+            claim.scope.publication_block_hash,
+            i64::try_from(revision).map_err(|_| internal("peer revision exceeds BIGINT"))?,
+        )
+        .await?;
+        trx.commit().await?;
+        if let Some(archived) = archived {
+            if !archive_missing_predecessors(pool, source, claim, peer, &request, &archived).await?
+            {
+                return Ok(());
+            }
+            request.known_revisions.extend(0..=revision);
         }
-        Ok(Ok(objects)) => objects,
-        Ok(Err(err)) => {
-            record_peer_failure(pool, claim, peer.publisher, &err.to_string()).await?;
-            warn!(
-                target_id = claim.target_id,
-                publisher = %peer.publisher,
-                error = %err,
-                "Peer manifest download failed"
-            );
-            return Ok(());
-        }
+    }
+
+    let Some(object_keys) = list_peer_manifests(pool, source, claim, peer, &request).await? else {
+        return Ok(());
     };
 
-    for object in objects {
+    for object_key in object_keys {
+        let Some(object) =
+            fetch_peer_manifest(pool, source, claim, peer, &request, &object_key).await?
+        else {
+            return Ok(());
+        };
         let mut trx = pool.begin().await?;
         require_active_lease(&mut trx, claim).await?;
         let stored = match store_authenticated_manifest(
@@ -793,7 +570,7 @@ async fn download_claimed_peer<S: PeerManifestSource>(
                 return Ok(());
             }
         };
-        if !manifest_matches_scope(&stored.manifest.signed, &claim.scope) {
+        if !claim.scope.matches_manifest(&stored.manifest.signed) {
             let error = format!(
                 "peer manifest {} does not match verification target {}",
                 object.object_key, claim.target_id,
@@ -802,8 +579,18 @@ async fn download_claimed_peer<S: PeerManifestSource>(
             record_peer_failure(pool, claim, peer.publisher, &error).await?;
             return Ok(());
         }
-        let revision = i64::try_from(stored.manifest.signed.payload.revision)
+        let revision = stored.manifest.signed.payload.revision;
+        trx.commit().await?;
+        PEER_MANIFEST_ARCHIVED.inc();
+        if !archive_missing_predecessors(pool, source, claim, peer, &request, &stored.manifest)
+            .await?
+        {
+            return Ok(());
+        }
+        let revision = i64::try_from(revision)
             .map_err(|_| internal("downloaded manifest revision exceeds BIGINT"))?;
+        let mut trx = pool.begin().await?;
+        require_active_lease(&mut trx, claim).await?;
         sqlx::query!(
             r#"
             UPDATE block_consensus_peer_download
@@ -820,6 +607,10 @@ async fn download_claimed_peer<S: PeerManifestSource>(
         .execute(trx.as_mut())
         .await?;
         trx.commit().await?;
+        // The newest authenticated tip recursively retrieves its complete
+        // supersession and history graph. Older listed keys are therefore
+        // redundant and may legitimately have been signed before key rotation.
+        break;
     }
 
     let mut trx = pool.begin().await?;
@@ -844,12 +635,173 @@ async fn download_claimed_peer<S: PeerManifestSource>(
     Ok(())
 }
 
+fn peer_download_request(claim: &VerificationClaim, peer: &ClaimedPeer) -> PeerDownloadRequest {
+    PeerDownloadRequest {
+        publisher: peer.publisher,
+        s3_bucket_url: peer.s3_bucket_url.clone(),
+        version: claim.scope.version,
+        coprocessor_context_id: claim.scope.coprocessor_context_id,
+        host_chain_id: claim.scope.host_chain_id,
+        publication_block_number: claim.scope.publication_block_number,
+        publication_block_hash: claim.scope.publication_block_hash,
+        known_revisions: peer.known_revisions.clone(),
+    }
+}
+
+async fn list_peer_manifests<S: PeerManifestSource>(
+    pool: &PgPool,
+    source: &S,
+    claim: &VerificationClaim,
+    peer: &ClaimedPeer,
+    request: &PeerDownloadRequest,
+) -> Result<Option<Vec<String>>, ExecutionError> {
+    let result = tokio::time::timeout(PEER_LIST_TIMEOUT, source.list_manifests(request)).await;
+    let error = match result {
+        Ok(Ok(object_keys)) => return Ok(Some(object_keys)),
+        Ok(Err(error)) => error,
+        Err(_) => ExecutionError::S3TransientError(format!(
+            "peer manifest listing timed out after {PEER_LIST_TIMEOUT:?}"
+        )),
+    };
+
+    record_peer_failure(pool, claim, peer.publisher, &error.to_string()).await?;
+    warn!(
+        target_id = claim.target_id,
+        publisher = %peer.publisher,
+        error = %error,
+        "Peer manifest download failed"
+    );
+    Ok(None)
+}
+
+async fn fetch_peer_manifest<S: PeerManifestSource>(
+    pool: &PgPool,
+    source: &S,
+    claim: &VerificationClaim,
+    peer: &ClaimedPeer,
+    request: &PeerDownloadRequest,
+    object_key: &str,
+) -> Result<Option<PeerManifestObject>, ExecutionError> {
+    let result = tokio::time::timeout(
+        PEER_OBJECT_TIMEOUT,
+        source.fetch_manifest(request, object_key),
+    )
+    .await;
+    let error = match result {
+        Ok(Ok(object)) => return Ok(Some(object)),
+        Ok(Err(error)) => error,
+        Err(_) => ExecutionError::S3TransientError(format!(
+            "peer manifest object fetch timed out after {PEER_OBJECT_TIMEOUT:?}"
+        )),
+    };
+    record_peer_failure(pool, claim, peer.publisher, &error.to_string()).await?;
+    warn!(
+        target_id = claim.target_id,
+        publisher = %peer.publisher,
+        object_key,
+        error = %error,
+        "Peer manifest object download failed"
+    );
+    Ok(None)
+}
+
+async fn archive_missing_predecessors<S: PeerManifestSource>(
+    pool: &PgPool,
+    source: &S,
+    claim: &VerificationClaim,
+    peer: &ClaimedPeer,
+    request: &PeerDownloadRequest,
+    manifest: &AuthenticatedManifest,
+) -> Result<bool, ExecutionError> {
+    let mut pending = Vec::new();
+    if let Some(reference) = manifest.signed.payload.previous_manifest.clone() {
+        pending.push(reference);
+    }
+    if let Some(reference) = manifest.signed.payload.supersedes.clone() {
+        pending.push(reference);
+    }
+    let mut visited = HashSet::new();
+
+    while let Some(reference) = pending.pop() {
+        let identity = (
+            reference.publisher,
+            reference.block_hash,
+            reference.revision,
+            reference.manifest_digest,
+        );
+        if !visited.insert(identity) {
+            continue;
+        }
+        if visited.len() > MAX_PREDECESSORS_PER_ATTEMPT {
+            return Err(internal(format!(
+                "peer manifest predecessor chain exceeds {MAX_PREDECESSORS_PER_ATTEMPT} objects"
+            )));
+        }
+
+        let mut trx = pool.begin().await?;
+        require_active_lease(&mut trx, claim).await?;
+        if let Some(stored) = load_manifest_by_reference(
+            &mut trx,
+            request.version,
+            request.coprocessor_context_id,
+            request.host_chain_id,
+            &reference,
+        )
+        .await?
+        {
+            trx.commit().await?;
+            enqueue_manifest_references(&mut pending, &stored);
+            continue;
+        }
+        trx.commit().await?;
+
+        let object_key = referenced_manifest_object_key(request, &reference);
+        let Some(object) =
+            fetch_peer_manifest(pool, source, claim, peer, request, &object_key).await?
+        else {
+            return Ok(false);
+        };
+        let mut trx = pool.begin().await?;
+        require_active_lease(&mut trx, claim).await?;
+        let stored = store_authenticated_manifest(
+            &mut trx,
+            reference.publisher,
+            &object.object_key,
+            &object.signed_bytes,
+        )
+        .await?;
+        if stored.manifest.digest != reference.manifest_digest {
+            return Err(internal(format!(
+                "downloaded predecessor {} does not match its signed reference",
+                object.object_key
+            )));
+        }
+        trx.commit().await?;
+        PEER_MANIFEST_ARCHIVED.inc();
+        enqueue_manifest_references(&mut pending, &stored.manifest);
+    }
+    Ok(true)
+}
+
+fn enqueue_manifest_references(
+    pending: &mut Vec<ManifestReference>,
+    manifest: &AuthenticatedManifest,
+) {
+    if let Some(reference) = manifest.signed.payload.previous_manifest.clone() {
+        pending.push(reference);
+    }
+    if let Some(reference) = manifest.signed.payload.supersedes.clone() {
+        pending.push(reference);
+    }
+}
+
 async fn record_peer_failure(
     pool: &PgPool,
     claim: &VerificationClaim,
     publisher: Address,
     error: &str,
 ) -> Result<(), ExecutionError> {
+    PEER_MANIFEST_DOWNLOAD_FAILURE.inc();
     let mut trx = pool.begin().await?;
     require_active_lease(&mut trx, claim).await?;
     sqlx::query!(
@@ -909,7 +861,50 @@ async fn finish_claim(
 ) -> Result<VerificationRunResult, ExecutionError> {
     let mut trx = pool.begin().await?;
     require_active_lease(&mut trx, claim).await?;
+    let manifests = load_claim_manifests(&mut trx, claim).await?;
+    let evaluation = evaluate_quorum(
+        &manifests,
+        claim.scope.local_publisher,
+        claim.required_quorum,
+    );
+    let localization_complete = apply_evaluation_to_drift_handles(
+        &mut trx,
+        claim.target_id,
+        &manifests,
+        claim.scope.local_publisher,
+        &evaluation,
+    )
+    .await?;
+    super::verification_evidence::persist_verification_evidence(
+        &mut trx,
+        claim.target_id,
+        claim.attempt,
+        claim.required_quorum,
+        &evaluation,
+        localization_complete,
+    )
+    .await?;
+    persist_claim_outcome(&mut trx, claim, &evaluation).await?;
+    trx.commit().await?;
+    VERIFICATION_OUTCOMES
+        .with_label_values(&[evaluation.outcome.as_db_str()])
+        .inc();
+    if !localization_complete {
+        DRIFT_LOCALIZATION_INCOMPLETE.inc();
+    }
+    Ok(VerificationRunResult {
+        target_id: claim.target_id,
+        attempt: claim.attempt,
+        outcome: evaluation.outcome,
+    })
+}
+
+async fn load_claim_manifests(
+    trx: &mut Transaction<'_, Postgres>,
+    claim: &VerificationClaim,
+) -> Result<Vec<AuthenticatedManifest>, ExecutionError> {
     let local_reference = ManifestReference {
+        publisher: claim.scope.local_publisher,
         block_number: U256::from(
             u64::try_from(claim.scope.publication_block_number)
                 .map_err(|_| internal("publication block number is negative"))?,
@@ -919,8 +914,7 @@ async fn finish_claim(
         manifest_digest: claim.scope.local_manifest_digest,
     };
     let local = load_manifest_by_reference(
-        &mut trx,
-        claim.scope.local_publisher,
+        trx,
         claim.scope.version,
         claim.scope.coprocessor_context_id,
         claim.scope.host_chain_id,
@@ -928,17 +922,17 @@ async fn finish_claim(
     )
     .await?
     .ok_or_else(|| internal("verification target local manifest is absent from archive"))?;
-    let peer_rows = sqlx::query_scalar!(
+    let peer_publishers = sqlx::query_scalar!(
         "SELECT publisher FROM block_consensus_peer_download WHERE target_id = $1",
         claim.target_id,
     )
     .fetch_all(trx.as_mut())
     .await?;
     let mut manifests = vec![local];
-    for publisher in peer_rows {
-        let publisher = address("peer download publisher", &publisher)?;
+    for publisher_bytes in peer_publishers {
+        let publisher = address("peer download publisher", &publisher_bytes)?;
         if let Some(manifest) = load_tip_eligible_manifest(
-            &mut trx,
+            trx,
             publisher,
             claim.scope.version,
             claim.scope.coprocessor_context_id,
@@ -951,20 +945,14 @@ async fn finish_claim(
             manifests.push(manifest);
         }
     }
-    let evaluation = evaluate_quorum(
-        &manifests,
-        claim.scope.local_publisher,
-        claim.required_quorum,
-    );
-    apply_evaluation_to_drift_handles(
-        &mut trx,
-        claim.target_id,
-        &manifests,
-        claim.scope.local_publisher,
-        &evaluation,
-    )
-    .await?;
-    let attempt = claim.attempt;
+    Ok(manifests)
+}
+
+async fn persist_claim_outcome(
+    trx: &mut Transaction<'_, Postgres>,
+    claim: &VerificationClaim,
+    evaluation: &QuorumEvaluation,
+) -> Result<(), ExecutionError> {
     let target = sqlx::query!(
         "SELECT max_attempts, retry_delay_micros FROM block_consensus_verification_target WHERE id = $1",
         claim.target_id,
@@ -973,15 +961,13 @@ async fn finish_claim(
     .await?;
     let max_attempts = target.max_attempts;
     let retry_delay_micros = target.retry_delay_micros;
-    // A drift result is immediately persisted and reportable, but the target
-    // keeps its bounded retry budget so a newly published peer revision can
-    // demonstrate remission. Only full consensus ends polling early.
-    let terminal = evaluation.outcome == VerificationOutcome::Consensus;
-    let state = if terminal {
+    let state = if evaluation.outcome == VerificationOutcome::Consensus {
         "complete"
-    } else if attempt >= max_attempts {
+    } else if claim.attempt >= max_attempts {
         "exhausted"
     } else {
+        // Drift is reportable immediately, but retries remain available so a
+        // newer peer revision can demonstrate remission.
         "pending"
     };
     sqlx::query!(
@@ -1007,7 +993,7 @@ async fn finish_claim(
         "#,
         claim.target_id,
         &claim.worker_id,
-        attempt,
+        claim.attempt,
         state,
         evaluation.outcome.as_db_str(),
         evaluation.quorum_scope_count,
@@ -1016,148 +1002,7 @@ async fn finish_claim(
     )
     .execute(trx.as_mut())
     .await?;
-    trx.commit().await?;
-    Ok(VerificationRunResult {
-        target_id: claim.target_id,
-        attempt,
-        outcome: evaluation.outcome,
-    })
-}
-
-fn manifest_matches_scope(manifest: &SignedManifest, scope: &VerificationScope) -> bool {
-    let payload = &manifest.payload;
-    payload.version == scope.version
-        && payload.coprocessor_context_id == scope.coprocessor_context_id
-        && payload.host_chain_id
-            == u64::try_from(scope.host_chain_id)
-                .map(U256::from)
-                .unwrap_or(U256::MAX)
-        && payload.publication_block_number
-            == u64::try_from(scope.publication_block_number)
-                .map(U256::from)
-                .unwrap_or(U256::MAX)
-        && payload.publication_block_hash == scope.publication_block_hash
-}
-
-fn manifest_prefix(request: &PeerDownloadRequest) -> String {
-    format!(
-        "manifests/v{}/{}/{}/{}/{}/",
-        u8::from(request.version),
-        request.coprocessor_context_id,
-        request.host_chain_id,
-        request.publication_block_number,
-        hex::encode(request.publication_block_hash),
-    )
-}
-
-fn revision_below_prefix(key: &str, prefix: &str) -> Option<u64> {
-    key.strip_prefix(prefix)?.parse().ok()
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct S3BucketLocation {
-    bucket: String,
-    key_prefix: String,
-}
-
-impl S3BucketLocation {
-    fn object_key(&self, suffix: String) -> String {
-        if self.key_prefix.is_empty() {
-            suffix
-        } else {
-            format!("{}/{suffix}", self.key_prefix)
-        }
-    }
-}
-
-fn s3_bucket_location(bucket_url: &str) -> Result<S3BucketLocation, ExecutionError> {
-    let url = Url::parse(bucket_url)
-        .map_err(|err| internal(format!("invalid peer S3 bucket URL {bucket_url}: {err}")))?;
-    let host = url
-        .host_str()
-        .ok_or_else(|| internal(format!("peer S3 bucket URL {bucket_url} has no host")))?;
-    let segments = url
-        .path_segments()
-        .map(|segments| {
-            segments
-                .filter(|segment| !segment.is_empty())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let first_host_label = host.split('.').next().unwrap_or_default();
-    let virtual_hosted = url.scheme() == "s3"
-        || host.contains(".s3.")
-        || host.contains(".s3-")
-        || host.ends_with(".s3.amazonaws.com");
-    let (bucket, key_segments) = if virtual_hosted {
-        (first_host_label, segments.as_slice())
-    } else {
-        let Some((bucket, key_segments)) = segments.split_first() else {
-            return Err(internal(format!(
-                "cannot determine bucket name from peer S3 URL {bucket_url}"
-            )));
-        };
-        (*bucket, key_segments)
-    };
-    if bucket.is_empty() || bucket == "s3" {
-        return Err(internal(format!(
-            "cannot determine bucket name from peer S3 URL {bucket_url}"
-        )));
-    }
-    Ok(S3BucketLocation {
-        bucket: bucket.to_owned(),
-        key_prefix: key_segments.join("/"),
-    })
-}
-
-fn downloader_worker_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    format!("{}-{nanos}", std::process::id())
-}
-
-fn duration_micros(field: &str, duration: Duration) -> Result<i64, ExecutionError> {
-    i64::try_from(duration.as_micros())
-        .map_err(|_| internal(format!("{field} exceeds PostgreSQL interval precision")))
-}
-
-fn manifest_version(value: i16) -> Result<ManifestVersion, ExecutionError> {
-    let value = u8::try_from(value).map_err(|_| internal("manifest version is outside uint8"))?;
-    ManifestVersion::try_from(value)
-        .map_err(|err| internal(format!("stored manifest version is invalid: {err}")))
-}
-
-fn i64_from_u256(field: &str, value: U256) -> Result<i64, ExecutionError> {
-    i64::try_from(value).map_err(|_| internal(format!("{field} exceeds BIGINT")))
-}
-
-fn u256(field: &str, value: &[u8]) -> Result<U256, ExecutionError> {
-    let bytes: [u8; 32] = value
-        .try_into()
-        .map_err(|_| internal(format!("{field} must be 32 bytes, got {}", value.len())))?;
-    Ok(U256::from_be_bytes(bytes))
-}
-
-fn b256(field: &str, value: &[u8]) -> Result<B256, ExecutionError> {
-    let bytes: [u8; 32] = value
-        .try_into()
-        .map_err(|_| internal(format!("{field} must be 32 bytes, got {}", value.len())))?;
-    Ok(B256::from(bytes))
-}
-
-fn address(field: &str, value: &[u8]) -> Result<Address, ExecutionError> {
-    let bytes: [u8; 20] = value
-        .try_into()
-        .map_err(|_| internal(format!("{field} must be 20 bytes, got {}", value.len())))?;
-    Ok(Address::from(bytes))
-}
-
-fn internal(message: impl Into<String>) -> ExecutionError {
-    ExecutionError::InternalError(message.into())
+    Ok(())
 }
 
 #[cfg(test)]

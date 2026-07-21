@@ -10,7 +10,10 @@ use sqlx::{Postgres, Transaction};
 use crate::ExecutionError;
 
 use super::{
-    consensus_analysis::{CommitmentScope, QuorumEvaluation, VerificationOutcome},
+    consensus_analysis::{
+        detailed_scope, CommitmentGroup, CommitmentScope, QuorumEvaluation, ScopeEvaluation,
+        VerificationOutcome,
+    },
     manifest_archive::{load_manifest_by_reference, AuthenticatedManifest},
 };
 
@@ -87,112 +90,144 @@ async fn attributed_findings(
 ) -> Result<(Vec<DriftHandleFinding>, bool), ExecutionError> {
     let mut findings = Vec::new();
     let mut localization_complete = true;
-    for scope in &evaluation.scopes {
-        let Some(local_digest) = scope.local_digest else {
+    for scope_evaluation in &evaluation.scopes {
+        let Some(local_digest) = scope_evaluation.local_digest else {
             continue;
         };
-        if scope.groups.len() <= 1 {
+        if scope_evaluation.groups.len() <= 1 {
             continue;
         }
-        for observed_group in scope
+        for observed_group in scope_evaluation
             .groups
             .iter()
             .filter(|group| group.digest != local_digest)
         {
-            let observed_has_quorum = scope.quorum_digest == Some(observed_group.digest);
-            match &scope.scope {
-                CommitmentScope::Detailed { .. } => {
-                    let observed_publisher =
-                        observed_group.publishers.first().copied().ok_or_else(|| {
-                            internal("observed digest has no representative publisher")
-                        })?;
-                    let local_manifest = manifest_for_detailed_scope(
-                        manifests,
-                        local_publisher,
-                        &scope.scope,
-                        local_digest,
-                    )
-                    .ok_or_else(|| internal("local detailed manifest is missing"))?;
-                    let observed_manifest = manifest_for_detailed_scope(
-                        manifests,
-                        observed_publisher,
-                        &scope.scope,
-                        observed_group.digest,
-                    )
-                    .ok_or_else(|| internal("observed detailed manifest is missing"))?;
-                    findings.extend(compare_ranges(
-                        &local_manifest.signed.payload.detailed_range,
-                        &observed_manifest.signed.payload.detailed_range,
-                        observed_publisher,
-                        observed_manifest.digest,
-                        observed_group.digest,
-                        observed_has_quorum,
-                    )?);
-                }
-                CommitmentScope::Historical { .. } => {
-                    let local_manifest = manifest_for_historical_scope(
-                        manifests,
-                        local_publisher,
-                        &scope.scope,
-                        local_digest,
-                    )
-                    .ok_or_else(|| internal("local historical manifest is missing"))?;
-                    let local_range =
-                        historical_range(&local_manifest.signed.payload, &scope.scope)
-                            .ok_or_else(|| internal("local historical range is missing"))?;
-                    let Some(local_blocks) =
-                        load_historical_blocks(trx, local_manifest, local_range).await?
-                    else {
-                        localization_complete = false;
-                        continue;
-                    };
-                    let mut localized = None;
-                    for observed_publisher in &observed_group.publishers {
-                        let observed_manifest = manifest_for_historical_scope(
-                            manifests,
-                            *observed_publisher,
-                            &scope.scope,
-                            observed_group.digest,
-                        )
-                        .ok_or_else(|| internal("observed historical manifest is missing"))?;
-                        let observed_range =
-                            historical_range(&observed_manifest.signed.payload, &scope.scope)
-                                .ok_or_else(|| internal("observed historical range is missing"))?;
-                        if let Some(observed_blocks) =
-                            load_historical_blocks(trx, observed_manifest, observed_range).await?
-                        {
-                            localized = Some((
-                                *observed_publisher,
-                                observed_manifest,
-                                observed_range,
-                                observed_blocks,
-                            ));
-                            break;
-                        }
-                    }
-                    let Some((
-                        observed_publisher,
-                        observed_manifest,
-                        observed_range,
-                        observed_blocks,
-                    )) = localized
-                    else {
-                        localization_complete = false;
-                        continue;
-                    };
-                    findings.extend(compare_ranges(
-                        &detailed_from_historical(local_range, local_blocks),
-                        &detailed_from_historical(observed_range, observed_blocks),
-                        observed_publisher,
-                        observed_manifest.digest,
-                        observed_group.digest,
-                        observed_has_quorum,
-                    )?);
-                }
+            let localized = localize_disagreement(
+                trx,
+                manifests,
+                local_publisher,
+                scope_evaluation,
+                observed_group,
+            )
+            .await?;
+            match localized {
+                Some(group_findings) => findings.extend(group_findings),
+                None => localization_complete = false,
             }
         }
     }
     Ok((findings, localization_complete))
+}
+
+async fn localize_disagreement(
+    trx: &mut Transaction<'_, Postgres>,
+    manifests: &[AuthenticatedManifest],
+    local_publisher: Address,
+    scope_evaluation: &ScopeEvaluation,
+    observed_group: &CommitmentGroup,
+) -> Result<Option<Vec<DriftHandleFinding>>, ExecutionError> {
+    let local_digest = scope_evaluation
+        .local_digest
+        .expect("caller selected a scope with a local digest");
+    let observed_has_quorum = scope_evaluation.quorum_digest == Some(observed_group.digest);
+    match &scope_evaluation.scope {
+        CommitmentScope::Detailed { .. } => detailed_findings(
+            manifests,
+            local_publisher,
+            &scope_evaluation.scope,
+            local_digest,
+            observed_group,
+            observed_has_quorum,
+        )
+        .map(Some),
+        CommitmentScope::Historical { .. } => {
+            historical_findings(
+                trx,
+                manifests,
+                local_publisher,
+                &scope_evaluation.scope,
+                local_digest,
+                observed_group,
+                observed_has_quorum,
+            )
+            .await
+        }
+    }
+}
+
+fn detailed_findings(
+    manifests: &[AuthenticatedManifest],
+    local_publisher: Address,
+    scope: &CommitmentScope,
+    local_digest: B256,
+    observed_group: &CommitmentGroup,
+    observed_has_quorum: bool,
+) -> Result<Vec<DriftHandleFinding>, ExecutionError> {
+    let observed_publisher = observed_group
+        .publishers
+        .first()
+        .copied()
+        .ok_or_else(|| internal("observed digest has no representative publisher"))?;
+    let local_manifest =
+        manifest_for_detailed_scope(manifests, local_publisher, scope, local_digest)
+            .ok_or_else(|| internal("local detailed manifest is missing"))?;
+    let observed_manifest =
+        manifest_for_detailed_scope(manifests, observed_publisher, scope, observed_group.digest)
+            .ok_or_else(|| internal("observed detailed manifest is missing"))?;
+    compare_ranges(
+        &local_manifest.signed.payload.detailed_range,
+        &observed_manifest.signed.payload.detailed_range,
+        observed_publisher,
+        observed_manifest.digest,
+        observed_group.digest,
+        observed_has_quorum,
+    )
+}
+
+async fn historical_findings(
+    trx: &mut Transaction<'_, Postgres>,
+    manifests: &[AuthenticatedManifest],
+    local_publisher: Address,
+    scope: &CommitmentScope,
+    local_digest: B256,
+    observed_group: &CommitmentGroup,
+    observed_has_quorum: bool,
+) -> Result<Option<Vec<DriftHandleFinding>>, ExecutionError> {
+    let local_manifest =
+        manifest_for_historical_scope(manifests, local_publisher, scope, local_digest)
+            .ok_or_else(|| internal("local historical manifest is missing"))?;
+    let local_range = historical_range(&local_manifest.signed.payload, scope)
+        .ok_or_else(|| internal("local historical range is missing"))?;
+    let Some(local_blocks) = load_historical_blocks(trx, local_manifest, local_range).await? else {
+        return Ok(None);
+    };
+
+    for observed_publisher in &observed_group.publishers {
+        let observed_manifest = manifest_for_historical_scope(
+            manifests,
+            *observed_publisher,
+            scope,
+            observed_group.digest,
+        )
+        .ok_or_else(|| internal("observed historical manifest is missing"))?;
+        let observed_range = historical_range(&observed_manifest.signed.payload, scope)
+            .ok_or_else(|| internal("observed historical range is missing"))?;
+        let Some(observed_blocks) =
+            load_historical_blocks(trx, observed_manifest, observed_range).await?
+        else {
+            continue;
+        };
+        return compare_ranges(
+            &detailed_from_historical(local_range, local_blocks),
+            &detailed_from_historical(observed_range, observed_blocks),
+            *observed_publisher,
+            observed_manifest.digest,
+            observed_group.digest,
+            observed_has_quorum,
+        )
+        .map(Some);
+    }
+    Ok(None)
 }
 
 fn manifest_for_detailed_scope<'a>(
@@ -206,14 +241,6 @@ fn manifest_for_detailed_scope<'a>(
         payload.publisher == publisher
             && payload.detailed_range.digest == digest
             && detailed_scope(&payload.detailed_range).as_ref() == Some(scope)
-    })
-}
-
-fn detailed_scope(detailed: &DetailedRange) -> Option<CommitmentScope> {
-    detailed.blocks.last().map(|end| CommitmentScope::Detailed {
-        first: detailed.first_block_number,
-        last: detailed.last_block_number,
-        end_block_hash: end.block_hash,
     })
 }
 
@@ -301,7 +328,6 @@ async fn load_historical_blocks(
         };
         let Some(previous) = load_manifest_by_reference(
             trx,
-            payload.publisher,
             payload.version,
             payload.coprocessor_context_id,
             i64_from_u256("manifest host chain id", payload.host_chain_id)?,
@@ -595,8 +621,8 @@ async fn upsert_finding(
                resolved_local_manifest_revision = NULL,
                resolved_at = NULL,
                updated_at = NOW()
-         WHERE block_consensus_drift_handle.last_local_manifest_revision
-                   <= EXCLUDED.last_local_manifest_revision
+         WHERE block_consensus_drift_handle.last_observed_target_id
+                   <= EXCLUDED.last_observed_target_id
         "#,
         payload.publisher.as_slice(),
         version,
@@ -665,7 +691,7 @@ async fn resolve_covered_findings(
                AND host_chain_id = $4
                AND block_hash = $5
                AND status = 'unresolved'
-               AND last_local_manifest_revision <= $8
+               AND last_observed_target_id <= $6
             "#,
             payload.publisher.as_slice(),
             version,

@@ -80,6 +80,7 @@ pub struct BlockReference {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManifestReference {
+    pub publisher: Address,
     pub block_number: U256,
     pub block_hash: B256,
     pub revision: u64,
@@ -215,101 +216,10 @@ pub fn dyadic_range_digest(
 
 impl ManifestPayload {
     pub fn validate(&self) -> Result<(), ManifestError> {
-        let blocks = &self.detailed_range.blocks;
-        let Some(first) = blocks.first() else {
-            return Err(invalid("detailed range must contain at least one block"));
-        };
-        let last = blocks.last().expect("checked non-empty");
-
-        if first.block_number != self.detailed_range.first_block_number
-            || last.block_number != self.detailed_range.last_block_number
-        {
-            return Err(invalid(
-                "detailed range bounds do not match its block entries",
-            ));
-        }
-        if last.block_number != self.publication_block_number
-            || last.block_hash != self.publication_block_hash
-            || last.parent_block_hash != self.publication_parent_block_hash
-        {
-            return Err(invalid(
-                "detailed range does not end at the publication block",
-            ));
-        }
-
-        for (index, block) in blocks.iter().enumerate() {
-            validate_descriptors(&block.ciphertexts)?;
-            let expected = block_content_digest(
-                self.version,
-                self.coprocessor_context_id,
-                self.host_chain_id,
-                block.block_number,
-                block.block_hash,
-                &block.ciphertexts,
-            )?;
-            if expected != block.block_content_digest {
-                return Err(invalid(format!(
-                    "block {} content digest does not match its descriptors",
-                    block.block_number
-                )));
-            }
-
-            if let Some(previous) = index.checked_sub(1).map(|i| &blocks[i])
-                && (block.block_number != previous.block_number + U256::ONE
-                    || block.parent_block_hash != previous.block_hash)
-            {
-                return Err(invalid("detailed range is not one contiguous lineage"));
-            }
-        }
-
-        let block_digests: Vec<_> = blocks
-            .iter()
-            .map(|block| block.block_content_digest)
-            .collect();
-        let expected = detailed_range_digest(
-            self.version,
-            self.coprocessor_context_id,
-            self.host_chain_id,
-            self.detailed_range.first_block_number,
-            self.detailed_range.last_block_number,
-            &block_digests,
-        );
-        if expected != self.detailed_range.digest {
-            return Err(invalid("detailed range digest does not match its blocks"));
-        }
-
+        validate_detailed_range(self)?;
         validate_history(&self.detailed_range, &self.historical_ranges)?;
-
-        match (
-            &self.previous_manifest,
-            self.detailed_range.first_block_number,
-        ) {
-            (Some(previous), first_number)
-                if previous.block_number + U256::ONE == first_number
-                    && previous.block_hash == first.parent_block_hash => {}
-            (Some(_), _) => {
-                return Err(invalid(
-                    "previous manifest does not immediately precede the detailed range",
-                ));
-            }
-            (None, _) => {}
-        }
-
-        match (&self.supersedes, self.revision) {
-            (None, 0) => {}
-            (Some(reference), revision)
-                if revision > 0
-                    && reference.block_number == self.publication_block_number
-                    && reference.block_hash == self.publication_block_hash
-                    && reference.revision == revision - 1 => {}
-            _ => {
-                return Err(invalid(
-                    "manifest revision has an invalid supersession reference",
-                ));
-            }
-        }
-
-        Ok(())
+        validate_predecessor_reference(self)?;
+        validate_supersession_reference(self)
     }
 
     /// Canonical, fixed-order bytes committed by the manifest signature.
@@ -373,6 +283,115 @@ impl ManifestPayload {
             signature: signature.as_bytes().to_vec(),
         })
     }
+}
+
+fn validate_detailed_range(payload: &ManifestPayload) -> Result<(), ManifestError> {
+    let detailed_range = &payload.detailed_range;
+    let blocks = &detailed_range.blocks;
+    let Some(first) = blocks.first() else {
+        return Err(invalid("detailed range must contain at least one block"));
+    };
+    let last = blocks.last().expect("checked non-empty");
+
+    if first.block_number != detailed_range.first_block_number
+        || last.block_number != detailed_range.last_block_number
+    {
+        return Err(invalid(
+            "detailed range bounds do not match its block entries",
+        ));
+    }
+    if last.block_number != payload.publication_block_number
+        || last.block_hash != payload.publication_block_hash
+        || last.parent_block_hash != payload.publication_parent_block_hash
+    {
+        return Err(invalid(
+            "detailed range does not end at the publication block",
+        ));
+    }
+
+    for (index, block) in blocks.iter().enumerate() {
+        validate_descriptors(&block.ciphertexts)?;
+        let expected = block_content_digest(
+            payload.version,
+            payload.coprocessor_context_id,
+            payload.host_chain_id,
+            block.block_number,
+            block.block_hash,
+            &block.ciphertexts,
+        )?;
+        if expected != block.block_content_digest {
+            return Err(invalid(format!(
+                "block {} content digest does not match its descriptors",
+                block.block_number
+            )));
+        }
+
+        if let Some(previous) = index.checked_sub(1).map(|i| &blocks[i])
+            && (block.block_number != previous.block_number + U256::ONE
+                || block.parent_block_hash != previous.block_hash)
+        {
+            return Err(invalid("detailed range is not one contiguous lineage"));
+        }
+    }
+
+    let block_digests: Vec<_> = blocks
+        .iter()
+        .map(|block| block.block_content_digest)
+        .collect();
+    let expected = detailed_range_digest(
+        payload.version,
+        payload.coprocessor_context_id,
+        payload.host_chain_id,
+        detailed_range.first_block_number,
+        detailed_range.last_block_number,
+        &block_digests,
+    );
+    if expected != detailed_range.digest {
+        return Err(invalid("detailed range digest does not match its blocks"));
+    }
+
+    Ok(())
+}
+
+fn validate_predecessor_reference(payload: &ManifestPayload) -> Result<(), ManifestError> {
+    let first = payload
+        .detailed_range
+        .blocks
+        .first()
+        .expect("detailed range was validated as non-empty");
+    match (
+        &payload.previous_manifest,
+        payload.detailed_range.first_block_number,
+    ) {
+        (Some(previous), first_number)
+            if previous.block_number + U256::ONE == first_number
+                && previous.block_hash == first.parent_block_hash => {}
+        (Some(_), _) => {
+            return Err(invalid(
+                "previous manifest does not immediately precede the detailed range",
+            ));
+        }
+        (None, _) => {}
+    }
+    Ok(())
+}
+
+fn validate_supersession_reference(payload: &ManifestPayload) -> Result<(), ManifestError> {
+    match (&payload.supersedes, payload.revision) {
+        (None, 0) => {}
+        (Some(reference), revision)
+            if revision > 0
+                && reference.block_number == payload.publication_block_number
+                && reference.block_hash == payload.publication_block_hash
+                && reference.revision == revision - 1 => {}
+        _ => {
+            return Err(invalid(
+                "manifest revision has an invalid supersession reference",
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 impl SignedManifest {
@@ -460,7 +479,7 @@ fn validate_history(
     Ok(())
 }
 
-fn canonical_history_scale(upper: U256, previous_scale: u32) -> Result<u32, ManifestError> {
+pub fn canonical_history_scale(upper: U256, previous_scale: u32) -> Result<u32, ManifestError> {
     let larger_scale = previous_scale
         .checked_add(1)
         .ok_or_else(|| invalid("historical range scale overflow"))?;
@@ -526,6 +545,7 @@ fn push_manifest_reference(out: &mut Vec<u8>, reference: Option<&ManifestReferen
     match reference {
         Some(reference) => {
             out.push(1);
+            out.extend_from_slice(reference.publisher.as_slice());
             push_u256(out, reference.block_number);
             out.extend_from_slice(reference.block_hash.as_slice());
             push_u256(out, U256::from(reference.revision));
@@ -533,6 +553,9 @@ fn push_manifest_reference(out: &mut Vec<u8>, reference: Option<&ManifestReferen
         }
         None => {
             out.push(0);
+            // Preserve the version-1 no-reference encoding. The publisher is
+            // appended only for present references, whose presence byte makes
+            // the variable width unambiguous to the canonical hash.
             out.extend_from_slice(&[0; 128]);
         }
     }
@@ -775,6 +798,7 @@ mod tests {
         let mut payload = payload(Address::ZERO);
         payload.revision = 2;
         payload.supersedes = Some(ManifestReference {
+            publisher: payload.publisher,
             block_number: payload.publication_block_number,
             block_hash: payload.publication_block_hash,
             revision: 0,
@@ -790,6 +814,27 @@ mod tests {
 
         payload.supersedes.as_mut().unwrap().revision = 1;
         payload.validate().unwrap();
+    }
+
+    #[test]
+    fn manifest_reference_publisher_is_committed() {
+        let mut first = payload(Address::ZERO);
+        first.revision = 1;
+        first.supersedes = Some(ManifestReference {
+            publisher: address!("00112233445566778899aabbccddeeff00112233"),
+            block_number: first.publication_block_number,
+            block_hash: first.publication_block_hash,
+            revision: 0,
+            manifest_digest: B256::repeat_byte(0x42),
+        });
+        let mut second = first.clone();
+        second.supersedes.as_mut().unwrap().publisher =
+            address!("10112233445566778899aabbccddeeff00112233");
+
+        assert_ne!(
+            first.canonical_digest().unwrap(),
+            second.canonical_digest().unwrap(),
+        );
     }
 
     #[tokio::test]

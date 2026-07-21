@@ -5,7 +5,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use ciphertext_attestation::{
     manifest::{
         block_content_digest, detailed_range_digest, BlockCiphertextDescriptor, DetailedRange,
-        HistoricalRange, ManifestBlockEntry, ManifestPayload,
+        HistoricalRange, ManifestBlockEntry, ManifestPayload, SignedManifest,
     },
     CiphertextFormat,
 };
@@ -28,6 +28,7 @@ struct FakePeerSource {
     objects: Mutex<HashMap<Address, Vec<PeerManifestObject>>>,
     list_calls: Mutex<HashMap<Address, usize>>,
     body_downloads: Mutex<HashMap<Address, usize>>,
+    fail_on_download_number: Mutex<HashMap<Address, usize>>,
 }
 
 impl FakePeerSource {
@@ -66,20 +67,34 @@ impl FakePeerSource {
             .copied()
             .unwrap_or_default()
     }
+
+    fn fail_on_download(&self, publisher: Address, download_number: usize) {
+        self.fail_on_download_number
+            .lock()
+            .expect("lock fake failures")
+            .insert(publisher, download_number);
+    }
+
+    fn clear_download_failure(&self, publisher: Address) {
+        self.fail_on_download_number
+            .lock()
+            .expect("lock fake failures")
+            .remove(&publisher);
+    }
 }
 
 impl PeerManifestSource for FakePeerSource {
-    async fn fetch_manifests(
+    async fn list_manifests(
         &self,
         request: &PeerDownloadRequest,
-    ) -> Result<Vec<PeerManifestObject>, ExecutionError> {
+    ) -> Result<Vec<String>, ExecutionError> {
         *self
             .list_calls
             .lock()
             .expect("lock fake list calls")
             .entry(request.publisher)
             .or_default() += 1;
-        let objects = self
+        let mut object_keys = self
             .objects
             .lock()
             .expect("lock fake objects")
@@ -95,15 +110,119 @@ impl PeerManifestSource for FakePeerSource {
                     .and_then(|revision| revision.parse::<u64>().ok())
                     .is_some_and(|revision| !request.known_revisions.contains(&revision))
             })
+            .map(|object| object.object_key)
             .collect::<Vec<_>>();
-        *self
+        object_keys.sort_unstable_by_key(|key| {
+            std::cmp::Reverse(
+                key.rsplit('/')
+                    .next()
+                    .and_then(|revision| revision.parse::<u64>().ok())
+                    .unwrap_or_default(),
+            )
+        });
+        Ok(object_keys)
+    }
+
+    async fn fetch_manifest(
+        &self,
+        request: &PeerDownloadRequest,
+        object_key: &str,
+    ) -> Result<PeerManifestObject, ExecutionError> {
+        let download_number = self
             .body_downloads
             .lock()
             .expect("lock fake body downloads")
             .entry(request.publisher)
-            .or_default() += objects.len();
-        Ok(objects)
+            .and_modify(|count| *count += 1)
+            .or_insert(1)
+            .to_owned();
+        if self
+            .fail_on_download_number
+            .lock()
+            .expect("lock fake failures")
+            .get(&request.publisher)
+            .is_some_and(|fail_at| *fail_at == download_number)
+        {
+            return Err(ExecutionError::S3TransientError(format!(
+                "simulated crash while downloading {object_key}"
+            )));
+        }
+        self.objects
+            .lock()
+            .expect("lock fake objects")
+            .get(&request.publisher)
+            .and_then(|objects| {
+                objects
+                    .iter()
+                    .find(|object| object.object_key == object_key)
+                    .cloned()
+            })
+            .ok_or_else(|| internal(format!("missing fake peer object {object_key}")))
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "database-backed crash between numbered peer revisions"]
+#[serial]
+async fn retry_preserves_revisions_committed_before_mid_peer_crash() {
+    let (_instance, pool) = setup_download_db().await;
+    let signers = test_signers();
+    seed_registry(&pool, &signers[..2], 2).await;
+    let local = sign_payload(&signers[0], payload(signers[0].address(), 1)).await;
+    schedule_local(&pool, &local, 1).await;
+
+    let revision_zero = sign_payload(&signers[1], payload(signers[1].address(), 1)).await;
+    let revision_one = sign_payload(
+        &signers[1],
+        revision_payload(
+            signers[1].address(),
+            1,
+            1,
+            Some(manifest_reference(&revision_zero)),
+        ),
+    )
+    .await;
+    let revision_two = sign_payload(
+        &signers[1],
+        revision_payload(
+            signers[1].address(),
+            1,
+            2,
+            Some(manifest_reference(&revision_one)),
+        ),
+    )
+    .await;
+    let source = Arc::new(FakePeerSource::default());
+    source.set_manifests(
+        signers[1].address(),
+        &[revision_zero, revision_one, revision_two],
+    );
+    source.fail_on_download(signers[1].address(), 2);
+
+    let first_wave = concurrent_wave(&pool, &source).await;
+    assert_eq!(completed_runs(&first_wave), 1, "{first_wave:?}");
+    assert_eq!(
+        archive_count(&pool).await,
+        2,
+        "local plus revision zero survive"
+    );
+
+    source.clear_download_failure(signers[1].address());
+    sqlx::query(
+        "UPDATE block_consensus_verification_target
+            SET next_attempt_at = NOW() - INTERVAL '1 second'
+          WHERE state = 'pending'",
+    )
+    .execute(&pool)
+    .await
+    .expect("make recovery attempt due");
+
+    let second_wave = concurrent_wave(&pool, &source).await;
+    assert_eq!(completed_runs(&second_wave), 1, "{second_wave:?}");
+    assert!(second_wave.iter().all(Result::is_ok), "{second_wave:?}");
+    assert_eq!(archive_count(&pool).await, 4);
+    assert_eq!(source.body_downloads(signers[1].address()), 4);
+    assert_target(&pool, "complete", "consensus", 2).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -349,6 +468,21 @@ async fn concurrent_retry_downloads_new_peer_revision_and_resolves_drift() {
     .expect("load peer-revision remission state");
     assert_eq!(states.try_get::<i64, _>("resolved").unwrap(), unresolved);
     assert_eq!(states.try_get::<i64, _>("unresolved").unwrap(), 0);
+    let evidence = sqlx::query(
+        "SELECT
+             (SELECT COUNT(*) FROM block_consensus_verification_attempt) AS attempts,
+             (SELECT COUNT(*) FROM block_consensus_verification_scope) AS scopes,
+             (SELECT COUNT(*) FROM block_consensus_verification_scope_member) AS members,
+             (SELECT COUNT(*) FROM block_consensus_verification_attempt
+               WHERE outcome = 'drift' AND localization_complete) AS localized_drift",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("load durable verification evidence");
+    assert_eq!(evidence.try_get::<i64, _>("attempts").unwrap(), 2);
+    assert!(evidence.try_get::<i64, _>("scopes").unwrap() > 0);
+    assert!(evidence.try_get::<i64, _>("members").unwrap() > 0);
+    assert_eq!(evidence.try_get::<i64, _>("localized_drift").unwrap(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -692,6 +826,95 @@ async fn detailed_consensus_does_not_hide_localized_historical_drift() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "database-backed incomplete historical localization simulation"]
+#[serial]
+async fn concurrent_workers_do_not_invent_findings_when_historical_bodies_are_missing() {
+    let (_instance, pool) = setup_download_db().await;
+    let signers = test_signers();
+    seed_registry(&pool, &signers, 2).await;
+
+    let predecessor_block_number = 42;
+    let predecessor_block_hash = B256::repeat_byte(0xa9);
+    let current_block_number = 43;
+    let current_block_hash = B256::repeat_byte(0xaa);
+    let local_predecessor = sign_payload(
+        &signers[0],
+        payload_at(
+            signers[0].address(),
+            0x31,
+            predecessor_block_number,
+            predecessor_block_hash,
+        ),
+    )
+    .await;
+    let mut quorum_predecessors = Vec::new();
+    for signer in &signers[1..] {
+        quorum_predecessors.push(
+            sign_payload(
+                signer,
+                payload_at(
+                    signer.address(),
+                    0x32,
+                    predecessor_block_number,
+                    predecessor_block_hash,
+                ),
+            )
+            .await,
+        );
+    }
+
+    // Only the current tips are made available. Their signed historical roots
+    // prove that the predecessor content differs, but none of the referenced
+    // predecessor bodies is archived or downloadable for handle localization.
+    let local = sign_payload(
+        &signers[0],
+        payload_with_history(
+            signers[0].address(),
+            0x41,
+            current_block_number,
+            current_block_hash,
+            &local_predecessor,
+        ),
+    )
+    .await;
+    schedule_local(&pool, &local, 0).await;
+
+    let source = Arc::new(FakePeerSource::default());
+    for (signer, predecessor) in signers[1..].iter().zip(&quorum_predecessors) {
+        let current = sign_payload(
+            signer,
+            payload_with_history(
+                signer.address(),
+                0x41,
+                current_block_number,
+                current_block_hash,
+                predecessor,
+            ),
+        )
+        .await;
+        source.set_manifest(signer.address(), &current);
+    }
+
+    let outcomes = concurrent_wave(&pool, &source).await;
+    assert!(outcomes.iter().all(Result::is_ok), "{outcomes:?}");
+    assert_eq!(completed_runs(&outcomes), 1, "{outcomes:?}");
+    let result = outcomes
+        .iter()
+        .find_map(|outcome| outcome.as_ref().ok().copied().flatten())
+        .expect("one worker completed incomplete historical verification");
+    assert_eq!(result.outcome, VerificationOutcome::Drift);
+    assert_target(&pool, "exhausted", "drift", 1).await;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM block_consensus_drift_handle")
+            .fetch_one(&pool)
+            .await
+            .expect("count findings after incomplete localization"),
+        0,
+        "missing historical bodies must not be interpreted as missing or drifted handles",
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 #[ignore = "database-backed one-drifter replay and remission simulation"]
 #[serial]
 async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
@@ -967,6 +1190,18 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
         assert!(row.try_get::<bool, _>("resolution_missing").unwrap());
     }
 
+    // Revision numbers are local to one publication identity. Simulate a
+    // finding last observed through an older identity at a high revision: the
+    // newer target below must still resolve it even though its revision is
+    // lower. Drift state is ordered by monotonic target ID, not revision.
+    sqlx::query(
+        "UPDATE block_consensus_drift_handle
+            SET last_local_manifest_revision = 99",
+    )
+    .execute(&pool)
+    .await
+    .expect("simulate a higher revision from an older publication identity");
+
     let mut replayed_manifests = Vec::new();
     for (block, drifted) in blocks.iter().zip(&drifted_manifests) {
         let replayed = sign_payload(
@@ -1156,29 +1391,39 @@ async fn s3_source_lists_all_numbered_revisions_and_skips_known_bodies() {
     }
 
     let source = S3PeerManifestSource::new(client);
-    let downloaded = source
-        .fetch_manifests(&PeerDownloadRequest {
-            publisher: signer.address(),
-            s3_bucket_url: format!(
-                "http://localhost:{}/{bucket}/operator-1",
-                localstack.host_port
-            ),
-            version: ManifestVersion::V1,
-            coprocessor_context_id: TEST_CONTEXT_ID,
-            host_chain_id: TEST_CHAIN_ID,
-            publication_block_number: TEST_BLOCK_NUMBER,
-            publication_block_hash: test_block_hash(),
-            known_revisions: HashSet::from([1]),
-        })
+    let request = PeerDownloadRequest {
+        publisher: signer.address(),
+        s3_bucket_url: format!(
+            "http://localhost:{}/{bucket}/operator-1",
+            localstack.host_port
+        ),
+        version: ManifestVersion::V1,
+        coprocessor_context_id: TEST_CONTEXT_ID,
+        host_chain_id: TEST_CHAIN_ID,
+        publication_block_number: TEST_BLOCK_NUMBER,
+        publication_block_hash: test_block_hash(),
+        known_revisions: HashSet::from([1]),
+    };
+    let object_keys = source
+        .list_manifests(&request)
         .await
-        .expect("list and download unknown peer revisions");
+        .expect("list unknown peer revisions");
+    let mut downloaded = Vec::new();
+    for object_key in object_keys {
+        downloaded.push(
+            source
+                .fetch_manifest(&request, &object_key)
+                .await
+                .expect("download peer revision"),
+        );
+    }
 
     assert_eq!(
         downloaded
             .iter()
             .map(|object| object.object_key.rsplit('/').next().unwrap())
             .collect::<Vec<_>>(),
-        ["0", "2"],
+        ["2", "0"],
     );
     assert!(downloaded
         .iter()
@@ -1487,6 +1732,7 @@ fn descriptor_payload_at(
 
 fn manifest_reference(manifest: &SignedManifest) -> ManifestReference {
     ManifestReference {
+        publisher: manifest.payload.publisher,
         block_number: manifest.payload.publication_block_number,
         block_hash: manifest.payload.publication_block_hash,
         revision: manifest.payload.revision,

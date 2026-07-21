@@ -10,6 +10,11 @@ CREATE TABLE IF NOT EXISTS block_consensus
     block_content_digest BYTEA NULL
         CHECK (block_content_digest IS NULL OR OCTET_LENGTH(block_content_digest) = 32),
     descriptor_count BIGINT NULL CHECK (descriptor_count IS NULL OR descriptor_count >= 0),
+    publication_cadence BIGINT NOT NULL CHECK (publication_cadence > 0),
+    manifest_required BOOLEAN GENERATED ALWAYS AS (
+        MOD(block_number, publication_cadence) = 0
+    ) STORED,
+    children_discovery_complete BOOLEAN NOT NULL DEFAULT FALSE,
 
     detailed_range_start BIGINT NULL
         CHECK (detailed_range_start IS NULL OR detailed_range_start >= 0),
@@ -17,6 +22,8 @@ CREATE TABLE IF NOT EXISTS block_consensus
         CHECK (detailed_range_digest IS NULL OR OCTET_LENGTH(detailed_range_digest) = 32),
 
     manifest_revision BIGINT NOT NULL DEFAULT 0 CHECK (manifest_revision >= 0),
+    last_manifest_publisher BYTEA NULL
+        CHECK (last_manifest_publisher IS NULL OR OCTET_LENGTH(last_manifest_publisher) = 20),
     manifest_digest BYTEA NULL
         CHECK (manifest_digest IS NULL OR OCTET_LENGTH(manifest_digest) = 32),
     manifest_published BOOLEAN NOT NULL DEFAULT FALSE,
@@ -30,6 +37,7 @@ CREATE TABLE IF NOT EXISTS block_consensus
         (
             manifest_published
             AND manifest_digest IS NOT NULL
+            AND last_manifest_publisher IS NOT NULL
             AND manifest_published_at IS NOT NULL
             AND detailed_range_start IS NOT NULL
             AND detailed_range_digest IS NOT NULL
@@ -222,6 +230,69 @@ CREATE TABLE IF NOT EXISTS block_consensus_peer_download
     PRIMARY KEY (target_id, publisher)
 );
 
+-- Immutable audit record for every completed verification attempt. The target
+-- row keeps only the latest state; these rows retain the exact decision and
+-- whether handle-level localization could be completed.
+CREATE TABLE IF NOT EXISTS block_consensus_verification_attempt
+(
+    target_id BIGINT NOT NULL
+        REFERENCES block_consensus_verification_target(id) ON DELETE CASCADE,
+    attempt INTEGER NOT NULL CHECK (attempt > 0),
+    outcome TEXT NOT NULL CHECK (outcome IN (
+        'unknown',
+        'unknown_but_equal',
+        'consensus',
+        'drift',
+        'partial_consensus'
+    )),
+    quorum_scope_count INTEGER NOT NULL CHECK (quorum_scope_count >= 0),
+    local_drift_scope_count INTEGER NOT NULL CHECK (local_drift_scope_count >= 0),
+    localization_complete BOOLEAN NOT NULL,
+    evaluated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    PRIMARY KEY (target_id, attempt)
+);
+
+-- One row per commitment scope, followed by its exact publisher/digest groups.
+-- This makes no-quorum and split-brain decisions inspectable without parsing
+-- logs or re-downloading immutable manifests.
+CREATE TABLE IF NOT EXISTS block_consensus_verification_scope
+(
+    target_id BIGINT NOT NULL,
+    attempt INTEGER NOT NULL,
+    scope_index INTEGER NOT NULL CHECK (scope_index >= 0),
+    scope_kind TEXT NOT NULL CHECK (scope_kind IN ('detailed', 'historical')),
+    first_block_number BIGINT NOT NULL CHECK (first_block_number >= 0),
+    last_block_number BIGINT NOT NULL CHECK (last_block_number >= first_block_number),
+    scale INTEGER NULL CHECK (scale IS NULL OR scale >= 0),
+    end_block_hash BYTEA NOT NULL CHECK (OCTET_LENGTH(end_block_hash) = 32),
+    local_digest BYTEA NULL
+        CHECK (local_digest IS NULL OR OCTET_LENGTH(local_digest) = 32),
+    quorum_digest BYTEA NULL
+        CHECK (quorum_digest IS NULL OR OCTET_LENGTH(quorum_digest) = 32),
+
+    PRIMARY KEY (target_id, attempt, scope_index),
+    FOREIGN KEY (target_id, attempt)
+        REFERENCES block_consensus_verification_attempt(target_id, attempt)
+        ON DELETE CASCADE,
+    CHECK ((scope_kind = 'detailed') = (scale IS NULL))
+);
+
+CREATE TABLE IF NOT EXISTS block_consensus_verification_scope_member
+(
+    target_id BIGINT NOT NULL,
+    attempt INTEGER NOT NULL,
+    scope_index INTEGER NOT NULL,
+    digest BYTEA NOT NULL CHECK (OCTET_LENGTH(digest) = 32),
+    publisher BYTEA NOT NULL CHECK (OCTET_LENGTH(publisher) = 20),
+    group_has_quorum BOOLEAN NOT NULL,
+
+    PRIMARY KEY (target_id, attempt, scope_index, digest, publisher),
+    FOREIGN KEY (target_id, attempt, scope_index)
+        REFERENCES block_consensus_verification_scope(target_id, attempt, scope_index)
+        ON DELETE CASCADE
+);
+
 -- Mutable local view of handle-level drift against one observed peer result.
 -- observed_has_quorum separates actionable remediation evidence from a
 -- below-quorum divergence. Immutable manifests and verification targets remain
@@ -389,3 +460,12 @@ ON block_consensus (host_chain_id, parent_block_hash);
 
 CREATE INDEX IF NOT EXISTS idx_block_consensus_height
 ON block_consensus (host_chain_id, block_number);
+
+CREATE INDEX IF NOT EXISTS idx_block_consensus_pending_manifest
+ON block_consensus (host_chain_id, block_number, block_hash)
+WHERE block_content_digest IS NULL
+   OR (manifest_required AND NOT manifest_published);
+
+CREATE INDEX IF NOT EXISTS idx_block_consensus_open_discovery
+ON block_consensus (host_chain_id, block_number, block_hash)
+WHERE NOT children_discovery_complete;

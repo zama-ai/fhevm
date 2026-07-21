@@ -188,7 +188,6 @@ pub(crate) async fn store_authenticated_manifest(
 
 pub(crate) async fn load_manifest_by_reference(
     trx: &mut Transaction<'_, Postgres>,
-    publisher: Address,
     version: ManifestVersion,
     coprocessor_context_id: U256,
     host_chain_id: i64,
@@ -200,7 +199,7 @@ pub(crate) async fn load_manifest_by_reference(
         .map_err(|_| internal("manifest revision exceeds BIGINT"))?;
     let manifest = load_manifest_revision(
         trx,
-        publisher,
+        reference.publisher,
         version,
         coprocessor_context_id,
         host_chain_id,
@@ -215,7 +214,7 @@ pub(crate) async fn load_manifest_by_reference(
     if manifest.digest != reference.manifest_digest {
         return Err(internal(format!(
             "stored manifest digest does not match reference for publisher {} revision {}",
-            publisher, reference.revision,
+            reference.publisher, reference.revision,
         )));
     }
     Ok(Some(manifest))
@@ -307,17 +306,15 @@ pub(crate) async fn load_tip_eligible_manifest(
     let context = coprocessor_context_id.to_be_bytes::<32>();
     let rows = sqlx::query!(
         r#"
-        SELECT manifest_digest, object_key, signed_manifest
+        SELECT publisher, manifest_digest, object_key, signed_manifest
           FROM block_consensus_manifest
-         WHERE publisher = $1
-           AND version = $2
-           AND coprocessor_context_id = $3
-           AND host_chain_id = $4
-           AND publication_block_number = $5
-           AND publication_block_hash = $6
-         ORDER BY revision
+         WHERE version = $1
+           AND coprocessor_context_id = $2
+           AND host_chain_id = $3
+           AND publication_block_number = $4
+           AND publication_block_hash = $5
+         ORDER BY revision, publisher
         "#,
-        publisher.as_slice(),
         i16::from(u8::from(version)),
         context.as_slice(),
         host_chain_id,
@@ -327,14 +324,15 @@ pub(crate) async fn load_tip_eligible_manifest(
     .fetch_all(trx.as_mut())
     .await?;
 
-    let mut tip: Option<AuthenticatedManifest> = None;
+    let mut manifests = Vec::with_capacity(rows.len());
     for row in rows {
+        let stored_publisher = address("stored manifest publisher", &row.publisher)?;
         let object_key = row.object_key;
         let signed_bytes = row.signed_manifest;
-        let candidate = authenticate_manifest_object(publisher, &object_key, &signed_bytes)?;
+        let candidate = authenticate_manifest_object(stored_publisher, &object_key, &signed_bytes)?;
         if !matches_archive_scope(
             &candidate,
-            publisher,
+            stored_publisher,
             version,
             coprocessor_context_id,
             host_chain_id,
@@ -343,26 +341,49 @@ pub(crate) async fn load_tip_eligible_manifest(
         ) {
             return Err(internal(format!(
                 "stored manifest body does not match its archive identity for publisher {} key {}",
-                publisher, object_key,
+                stored_publisher, object_key,
             )));
         }
         let stored_digest = b256("stored manifest digest", &row.manifest_digest)?;
         if candidate.digest != stored_digest {
             return Err(internal(format!(
                 "stored manifest digest is corrupt for publisher {} key {}",
-                publisher, object_key,
+                stored_publisher, object_key,
             )));
         }
-
-        match tip.as_ref() {
-            None if candidate.signed.payload.revision == 0 => tip = Some(candidate),
-            Some(previous) if supersedes_authenticated_predecessor(&candidate, previous) => {
-                tip = Some(candidate);
-            }
-            _ => break,
-        }
+        manifests.push(candidate);
     }
-    Ok(tip)
+
+    Ok(manifests
+        .iter()
+        .enumerate()
+        .filter(|(_, manifest)| manifest.signed.payload.publisher == publisher)
+        .filter(|(index, _)| has_complete_supersession_chain(*index, &manifests))
+        .max_by_key(|(_, manifest)| manifest.signed.payload.revision)
+        .map(|(_, manifest)| manifest.clone()))
+}
+
+fn has_complete_supersession_chain(mut index: usize, manifests: &[AuthenticatedManifest]) -> bool {
+    loop {
+        let candidate = &manifests[index];
+        if candidate.signed.payload.revision == 0 {
+            return candidate.signed.payload.supersedes.is_none();
+        }
+        let Some(reference) = candidate.signed.payload.supersedes.as_ref() else {
+            return false;
+        };
+        let Some(previous_index) = manifests.iter().position(|previous| {
+            previous.signed.payload.publisher == reference.publisher
+                && previous.signed.payload.publication_block_number == reference.block_number
+                && previous.signed.payload.publication_block_hash == reference.block_hash
+                && previous.signed.payload.revision == reference.revision
+                && previous.digest == reference.manifest_digest
+                && supersedes_authenticated_predecessor(candidate, previous)
+        }) else {
+            return false;
+        };
+        index = previous_index;
+    }
 }
 
 #[allow(
@@ -377,7 +398,8 @@ fn supersedes_authenticated_predecessor(
     let previous_payload = &previous.signed.payload;
     payload.revision == previous_payload.revision + 1
         && payload.supersedes.as_ref().is_some_and(|reference| {
-            reference.block_number == previous_payload.publication_block_number
+            reference.publisher == previous_payload.publisher
+                && reference.block_number == previous_payload.publication_block_number
                 && reference.block_hash == previous_payload.publication_block_hash
                 && reference.revision == previous_payload.revision
                 && reference.manifest_digest == previous.digest
@@ -417,6 +439,13 @@ fn b256(field: &str, value: &[u8]) -> Result<B256, ExecutionError> {
         .try_into()
         .map_err(|_| internal(format!("{field} must be 32 bytes, got {}", value.len())))?;
     Ok(B256::from(value))
+}
+
+fn address(field: &str, value: &[u8]) -> Result<Address, ExecutionError> {
+    let value: [u8; 20] = value
+        .try_into()
+        .map_err(|_| internal(format!("{field} must be 20 bytes, got {}", value.len())))?;
+    Ok(Address::from(value))
 }
 
 fn internal(message: impl Into<String>) -> ExecutionError {

@@ -79,7 +79,7 @@ mod tests {
         let right = node(6, 1, 6, 5);
         assert!(left.is_left_sibling_of(&right));
 
-        let mut wrong_lineage = right.clone();
+        let mut wrong_lineage = right;
         wrong_lineage.start_parent_block_hash = B256::repeat_byte(0xff);
         assert!(!left.is_left_sibling_of(&wrong_lineage));
         assert!(!node(2, 1, 2, 1).is_left_sibling_of(&left));

@@ -219,6 +219,21 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         conflict_cols: &[],
     },
     CoprocessorTable {
+        name: "block_consensus_verification_attempt",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_consensus_verification_scope",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_consensus_verification_scope_member",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
         name: "block_consensus_drift_handle",
         duplicated: true,
         conflict_cols: &[],

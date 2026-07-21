@@ -148,7 +148,6 @@ pub struct HealthCheckConfig {
 pub struct ConsensusConfig {
     pub publish_manifest: bool,
     pub verify_others_party_manifests: bool,
-    pub publication_cadence: u64,
     pub verification_delay: Duration,
     pub verification_retry_delay: Duration,
     pub verification_retry_count: u32,
@@ -159,7 +158,6 @@ impl Default for ConsensusConfig {
         Self {
             publish_manifest: false,
             verify_others_party_manifests: false,
-            publication_cadence: 1,
             verification_delay: Duration::from_secs(5 * 60),
             verification_retry_delay: Duration::from_secs(60),
             verification_retry_count: 5,
@@ -1063,6 +1061,10 @@ pub async fn run_all(
             "Starting gauge update routine"
         );
         spawn_gauge_update_routine(Duration::from_secs(interval_secs.into()), pg_mngr.pool());
+        consensus::metrics::spawn_consensus_gauge_updates(
+            Duration::from_secs(interval_secs.into()),
+            pg_mngr.pool(),
+        );
     }
     let signer: CoproSigner = match conf.signer_type {
         SignerType::PrivateKey => {

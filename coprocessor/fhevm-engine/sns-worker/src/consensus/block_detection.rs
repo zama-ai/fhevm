@@ -3,6 +3,8 @@ use fhevm_engine_common::utils::to_hex;
 use sqlx::{Postgres, Transaction};
 use tracing::debug;
 
+use super::cadence::manifest_publication_cadence;
+
 pub(crate) async fn ensure_block_consensus_row(
     trx: &mut Transaction<'_, Postgres>,
     task: &HandleItem,
@@ -29,7 +31,8 @@ pub(crate) async fn ensure_block_consensus_row(
             SELECT b.chain_id,
                    b.block_number,
                    b.block_hash,
-                   b.parent_hash
+                   b.parent_hash,
+                   $4::BIGINT AS publication_cadence
               FROM host_chain_blocks_valid b
              WHERE b.chain_id = $1
                AND b.block_number = $2
@@ -43,12 +46,14 @@ pub(crate) async fn ensure_block_consensus_row(
                 host_chain_id,
                 block_number,
                 block_hash,
-                parent_block_hash
+                parent_block_hash,
+                publication_cadence
             )
             SELECT chain_id,
                    block_number,
                    block_hash,
-                   parent_hash
+                   parent_hash,
+                   publication_cadence
               FROM source
             ON CONFLICT (host_chain_id, block_hash) DO NOTHING
             RETURNING 1
@@ -59,6 +64,7 @@ pub(crate) async fn ensure_block_consensus_row(
         task.host_chain_id.as_i64(),
         block_number,
         &task.producer_block_hash,
+        manifest_publication_cadence(task.host_chain_id.as_i64()),
     )
     .fetch_one(trx.as_mut())
     .await?;

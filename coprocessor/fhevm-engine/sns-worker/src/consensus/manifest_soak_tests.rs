@@ -1,7 +1,7 @@
 use super::*;
 use crate::consensus::manifest_archive::{manifest_object_key, store_authenticated_manifest};
 use alloy::signers::local::PrivateKeySigner;
-use ciphertext_attestation::manifest::SignedManifest;
+use ciphertext_attestation::manifest::{dyadic_range_digest, SignedManifest};
 use serial_test::serial;
 use sqlx::{PgPool, Row};
 use std::{
@@ -173,7 +173,6 @@ async fn run_concurrent_manifest_simulation(block_count_env: &str, inject_missin
         workers.push(tokio::spawn(concurrent_manifest_worker(
             worker_id,
             pool.clone(),
-            cadence,
             Arc::clone(&signer),
             Arc::clone(&producer_done),
             Arc::clone(&start_barrier),
@@ -351,7 +350,6 @@ async fn run_concurrent_reorg_simulation() {
         workers.push(tokio::spawn(concurrent_manifest_worker(
             worker_id,
             pool.clone(),
-            cadence,
             Arc::clone(&signer),
             Arc::clone(&producer_done),
             Arc::clone(&start_barrier),
@@ -461,7 +459,6 @@ async fn run_concurrent_reorg_simulation() {
 async fn concurrent_manifest_worker(
     worker_id: usize,
     pool: PgPool,
-    cadence: i64,
     signer: Arc<PrivateKeySigner>,
     producer_done: Arc<AtomicBool>,
     start_barrier: Arc<Barrier>,
@@ -469,7 +466,7 @@ async fn concurrent_manifest_worker(
 ) {
     start_barrier.wait().await;
     loop {
-        let chains = pending_chain_ids(&pool, cadence)
+        let chains = pending_chain_ids(&pool)
             .await
             .expect("list pending chains from concurrent worker");
         if chains.is_empty() {
@@ -487,10 +484,9 @@ async fn concurrent_manifest_worker(
                 .await
                 .expect("begin concurrent publisher transaction");
             let cursor = ManifestProgressCursor::start();
-            let Some(block) =
-                lock_next_block_to_progress(&mut trx, host_chain_id, cadence, &cursor)
-                    .await
-                    .expect("call production manifest chain lock")
+            let Some(block) = lock_next_block_to_progress(&mut trx, host_chain_id, &cursor)
+                .await
+                .expect("call production manifest chain lock")
             else {
                 stats.busy_locks.fetch_add(1, Ordering::AcqRel);
                 trx.rollback().await.expect("rollback busy publisher");
@@ -548,6 +544,7 @@ async fn concurrent_manifest_worker(
                 mark_manifest_published(
                     &mut trx,
                     &block,
+                    signer.address(),
                     detailed_range_start,
                     detailed_range_digest,
                     manifest_digest,
@@ -592,6 +589,7 @@ fn assert_generated_manifests_are_canonical(
         assert_manifest_is_canonical(&signed.payload, expected_blocks, previous.as_ref());
         let digest = signed.digest().expect("digest stored concurrent manifest");
         previous = Some(ManifestReference {
+            publisher: signed.payload.publisher,
             block_number: signed.payload.publication_block_number,
             block_hash: signed.payload.publication_block_hash,
             revision: signed.payload.revision,
@@ -608,7 +606,8 @@ async fn wait_for_published_manifest_reference(
     tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             let row = sqlx::query(
-                "SELECT manifest_revision, manifest_digest, manifest_published
+                "SELECT manifest_revision, manifest_digest, last_manifest_publisher,
+                        manifest_published
                    FROM block_consensus
                   WHERE host_chain_id = $1
                     AND block_number = $2
@@ -625,7 +624,9 @@ async fn wait_for_published_manifest_reference(
                 let digest: Option<Vec<u8>> = row.get("manifest_digest");
                 if published {
                     let digest = digest.expect("published predecessor has a manifest digest");
+                    let publisher: Vec<u8> = row.get("last_manifest_publisher");
                     return ManifestReference {
+                        publisher: Address::from_slice(&publisher),
                         block_number: U256::from(block_number as u64),
                         block_hash,
                         revision: u64::try_from(row.get::<i64, _>("manifest_revision"))
@@ -817,6 +818,7 @@ fn assert_reorg_manifests_are_canonical(
         let previous =
             expected_previous_manifest(publication, manifests, &expected_by_hash, cadence);
         let expected_previous_reference = previous.map(|manifest| ManifestReference {
+            publisher: manifest.payload.publisher,
             block_number: manifest.payload.publication_block_number,
             block_hash: manifest.payload.publication_block_hash,
             revision: manifest.payload.revision,
@@ -1303,13 +1305,15 @@ async fn insert_consensus_block(
 ) {
     sqlx::query(
         "INSERT INTO block_consensus (
-             host_chain_id, block_number, block_hash, parent_block_hash
-         ) VALUES ($1, $2, $3, $4)",
+             host_chain_id, block_number, block_hash, parent_block_hash,
+             publication_cadence
+         ) VALUES ($1, $2, $3, $4, $5)",
     )
     .bind(SOAK_CHAIN_ID)
     .bind(block_number)
     .bind(block_hash.as_slice())
     .bind(parent_block_hash.as_slice())
+    .bind(SOAK_CADENCE)
     .execute(pool)
     .await
     .expect("insert synthetic consensus block");

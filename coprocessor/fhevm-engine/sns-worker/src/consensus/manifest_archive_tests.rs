@@ -159,6 +159,33 @@ async fn concurrent_peer_archive_retains_revisions_and_does_not_select_a_gap() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "database-backed manifest signer rotation simulation"]
+#[serial]
+async fn tip_selection_follows_supersession_across_signer_rotation() {
+    let (_instance, pool) = setup_archive_db().await;
+    let old_signer = PrivateKeySigner::random();
+    let current_signer = PrivateKeySigner::random();
+    let revision_zero = sign_payload(&old_signer, payload(old_signer.address(), 1, 0, None)).await;
+    let revision_one = sign_payload(
+        &current_signer,
+        payload(
+            current_signer.address(),
+            1,
+            1,
+            Some(manifest_reference(&revision_zero)),
+        ),
+    )
+    .await;
+
+    assert_single_insert(concurrent_store(&pool, &revision_zero, TEST_WORKERS).await);
+    assert_single_insert(concurrent_store(&pool, &revision_one, TEST_WORKERS).await);
+    assert_eq!(
+        load_tip_revision(&pool, current_signer.address()).await,
+        Some(1),
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 #[ignore = "database-backed concurrent peer manifest equivocation simulation"]
 #[serial]
 async fn concurrent_peer_archive_rejects_equivocation_at_one_numbered_key() {
@@ -312,6 +339,7 @@ async fn sign_payload(signer: &PrivateKeySigner, payload: ManifestPayload) -> Si
 
 fn manifest_reference(manifest: &SignedManifest) -> ManifestReference {
     ManifestReference {
+        publisher: manifest.payload.publisher,
         block_number: manifest.payload.publication_block_number,
         block_hash: manifest.payload.publication_block_hash,
         revision: manifest.payload.revision,
