@@ -73,8 +73,7 @@ pub async fn run_sequential_ingest(
             Err(error) => return Err(RunnerError::Source(error)),
         };
 
-        match drive_subscription(subscription, store, &cancel, &mut backoff, on_progress).await
-        {
+        match drive_subscription(subscription, store, &cancel, &mut backoff, on_progress).await {
             Ok(()) => return Ok(()),
             Err(RunnerError::Source(YellowstoneSourceError::Retryable(message))) => {
                 warn!(%message, ?backoff, "yellowstone stream failed; reconnecting");
