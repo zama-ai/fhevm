@@ -252,83 +252,89 @@ pub async fn handle_upgrade_activated(
     // Only GCS gates on the pre-snapshot completeness check; BCS keeps
     // serving live traffic untouched until cutover.
     if gcs_mode {
-        let chain_id = payload.chain_id;
-        let start_block = payload.start_block;
-
-        // Gateway-side gate for the zkproof-worker, run concurrently with the
-        // host-chain readiness loop below. The zkproof-worker switches its
-        // re-randomization strategy at `gw_start_block` (a Gateway block), which
-        // is a different clock from the host-chain `start_block` that releases
-        // the tfhe-/sns-workers — so it gets its own readiness task and its own
-        // release notify. Spawned (not awaited) so it makes progress while the
-        // host-chain loop blocks this handler.
-        {
-            let pool = pool.clone();
-            let cancel = cancel.child_token();
-            let gw_start_block = payload.gw_start_block;
-            tokio::spawn(async move {
-                match wait_until_gw_dry_run_ready(pool.clone(), cancel, gw_start_block).await {
-                    Ok(true) => {
-                        // Prune pre-start proofs so the dry-run snapshot starts
-                        // cleanly at gw_start_block, then release the worker.
-                        match prune_gcs_verify_proofs_before_start(&pool, gw_start_block).await {
-                            Ok(deleted) => info!(
-                                gw_start_block,
-                                deleted, "pruned pre-gw_start_block rows from gcs.verify_proofs"
-                            ),
-                            Err(e) => {
-                                error!(error = %e, "failed to prune gcs.verify_proofs; skipping gw release");
-                                return;
-                            }
-                        }
-                        if let Err(e) = transition_to_gw_dry_run_started(&pool).await {
-                            error!(error = %e, "failed to transition GCS gw_dry_run_started");
-                        }
-                    }
-                    Ok(false) => info!(
-                        gw_start_block,
-                        "gw readiness loop exited without satisfying readiness — skipping prune and release"
-                    ),
-                    Err(e) => error!(error = %e, "GCS gateway dry-run readiness loop failed"),
-                }
-            });
-        }
-
-        // 1. Wait until BCS has fully settled every computation up to start_block.
-        match wait_until_dry_run_ready(pool.clone(), cancel.child_token(), chain_id, start_block)
-            .await
-        {
-            Ok(true) => {
-                // 2. Prune: the GCS stack tails the chain before activation, so
-                //    gcs.computations may hold rows for blocks below start_block.
-                //    Clear them — after readiness, before the internal
-                //    upgrade-activated spawn — so the dry-run snapshot begins
-                //    cleanly at start_block.
-                let deleted =
-                    prune_gcs_computations_before_start(pool, chain_id, start_block).await?;
-                info!(
-                    chain_id,
-                    start_block, deleted, "pruned pre-start_block rows from gcs.computations"
-                );
-
-                // 3. Spawn upgrade_activated internally: flip the GCS row to
-                //    DryRunStarted, releasing the GCS stack into the dry-run.
-                transition_to_dry_run_started(pool).await?;
-            }
-            Ok(false) => {
-                info!(
-                    chain_id,
-                    start_block,
-                    "readiness loop exited without satisfying readiness — skipping prune and transition"
-                );
-            }
-            Err(e) => {
-                error!(error = %e, "GCS dry-run readiness loop failed");
-            }
-        }
+        spawn_gcs_dry_run_readiness(
+            pool,
+            cancel,
+            payload.chain_id,
+            payload.start_block,
+            payload.gw_start_block,
+        );
     }
 
     Ok(())
+}
+
+/// Spawn the GCS readiness gates (gateway + host) that release the workers and flip
+/// the row to `DryRunStarted`. Fire-and-forget, so `reconcile` can re-arm it on restart.
+fn spawn_gcs_dry_run_readiness(
+    pool: &Pool<Postgres>,
+    cancel: &CancellationToken,
+    chain_id: i64,
+    start_block: i64,
+    gw_start_block: i64,
+) {
+    // Gateway gate for the zkproof-worker: gw_start_block is a Gateway block, a
+    // separate clock from the host start_block, so it gets its own task.
+    {
+        let pool = pool.clone();
+        let cancel = cancel.child_token();
+        tokio::spawn(async move {
+            match wait_until_gw_dry_run_ready(pool.clone(), cancel, gw_start_block).await {
+                Ok(true) => {
+                    // Prune pre-start proofs so the snapshot starts clean, then release.
+                    match prune_gcs_verify_proofs_before_start(&pool, gw_start_block).await {
+                        Ok(deleted) => info!(
+                            gw_start_block,
+                            deleted, "pruned pre-gw_start_block rows from gcs.verify_proofs"
+                        ),
+                        Err(e) => {
+                            error!(error = %e, "failed to prune gcs.verify_proofs; skipping gw release");
+                            return;
+                        }
+                    }
+                    if let Err(e) = transition_to_gw_dry_run_started(&pool).await {
+                        error!(error = %e, "failed to transition GCS gw_dry_run_started");
+                    }
+                }
+                Ok(false) => info!(
+                    gw_start_block,
+                    "gw readiness loop exited without satisfying readiness — skipping prune and release"
+                ),
+                Err(e) => error!(error = %e, "GCS gateway dry-run readiness loop failed"),
+            }
+        });
+    }
+
+    // Host gate: wait until BCS settles up to start_block, prune, then flip to DryRunStarted.
+    {
+        let pool = pool.clone();
+        let cancel = cancel.child_token();
+        tokio::spawn(async move {
+            match wait_until_dry_run_ready(pool.clone(), cancel, chain_id, start_block).await {
+                Ok(true) => {
+                    match prune_gcs_computations_before_start(&pool, chain_id, start_block).await {
+                        Ok(deleted) => info!(
+                            chain_id,
+                            start_block, deleted, "pruned pre-start_block rows from gcs.computations"
+                        ),
+                        Err(e) => {
+                            error!(error = %e, "failed to prune gcs.computations; skipping transition");
+                            return;
+                        }
+                    }
+                    if let Err(e) = transition_to_dry_run_started(&pool).await {
+                        error!(error = %e, "failed to transition GCS to DryRunStarted");
+                    }
+                }
+                Ok(false) => info!(
+                    chain_id,
+                    start_block,
+                    "readiness loop exited without satisfying readiness — skipping prune and transition"
+                ),
+                Err(e) => error!(error = %e, "GCS dry-run readiness loop failed"),
+            }
+        });
+    }
 }
 
 /// Create the GCS schema with an empty copy of each duplicated table. Returns
@@ -1003,8 +1009,9 @@ async fn try_cutover_if_consensus(pool: &Pool<Postgres>) -> Result<(), Error> {
     execute_cutover(pool).await
 }
 
-/// Roll back a dry-run: PAUSED/failed, reset schema, wake workers. Only while dry-running; returns whether it acted.
-async fn rollback_dry_run(pool: &Pool<Postgres>) -> Result<bool, Error> {
+/// Roll back a dry-run: PAUSED/failed, reset schema, wake workers. Scoped to the
+/// `end_block` window so a stale re-emitted timeout can't reset a newer attempt. Returns whether it acted.
+async fn rollback_dry_run(pool: &Pool<Postgres>, end_block: i64) -> Result<bool, Error> {
     let mut tx = pool.begin().await?;
     let claimed = sqlx::query(
         r#"
@@ -1014,8 +1021,10 @@ async fn rollback_dry_run(pool: &Pool<Postgres>) -> Result<bool, Error> {
                host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
                gw_dry_run_started = FALSE, updated_at = NOW()
          WHERE stack_role = 'GCS' AND state IN ('UpgradeActivated', 'DryRunStarted')
+           AND end_block = $1
         "#,
     )
+    .bind(end_block)
     .execute(&mut *tx)
     .await?;
     if claimed.rows_affected() == 0 {
@@ -1031,21 +1040,36 @@ async fn rollback_dry_run(pool: &Pool<Postgres>) -> Result<bool, Error> {
     Ok(true)
 }
 
-/// Advance the upgrade from durable state (boot + poll): resume an interrupted
-/// cutover, or cut over once both latches are set.
-async fn reconcile(pool: &Pool<Postgres>, gcs_mode: bool) -> Result<(), Error> {
+/// Advance the upgrade from durable state: re-arm readiness, resume a cutover, or
+/// cut over on both latches. `resume_activated` is boot-only.
+async fn reconcile(
+    pool: &Pool<Postgres>,
+    cancel: &CancellationToken,
+    gcs_mode: bool,
+    resume_activated: bool,
+) -> Result<(), Error> {
     if !gcs_mode {
         return Ok(());
     }
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT state FROM upgrade_state WHERE stack_role = 'GCS' AND status = 'in_progress'",
+    let row: Option<(String, Option<i64>, Option<i64>, Option<i64>)> = sqlx::query_as(
+        "SELECT state, host_chain_id, start_block, gw_start_block
+           FROM upgrade_state WHERE stack_role = 'GCS' AND status = 'in_progress'",
     )
     .fetch_optional(pool)
     .await?;
-    let Some((state,)) = row else {
+    let Some((state, host_chain_id, start_block, gw_start_block)) = row else {
         return Ok(());
     };
     match state.as_str() {
+        // Restart mid-activation dropped the readiness tasks; re-arm them.
+        "UpgradeActivated" if resume_activated => {
+            if let (Some(chain_id), Some(start), Some(gw_start)) =
+                (host_chain_id, start_block, gw_start_block)
+            {
+                info!("reconcile: GCS in UpgradeActivated — re-arming dry-run readiness");
+                spawn_gcs_dry_run_readiness(pool, cancel, chain_id, start, gw_start);
+            }
+        }
         "UpgradeAuthorized" => {
             info!("reconcile: GCS in UpgradeAuthorized — resuming cutover");
             execute_cutover(pool).await?;
@@ -1251,7 +1275,7 @@ pub async fn handle_unanimity_consensus_timeout(
     let payload: UnanimityConsensusPayload =
         serde_json::from_str(raw_payload).map_err(|e| Error::Payload(e.to_string()))?;
 
-    if rollback_dry_run(pool).await? {
+    if rollback_dry_run(pool, payload.block_height).await? {
         warn!(
             chain_id = payload.chain_id,
             block_height = payload.block_height,
@@ -1314,7 +1338,7 @@ pub async fn run(
     info!(?channels, "Listening for notifications");
 
     // Boot reconcile: recover an upgrade whose NOTIFY was missed while down (LISTEN already registered).
-    if let Err(e) = reconcile(&pool, config.gcs_mode).await {
+    if let Err(e) = reconcile(&pool, &cancel, config.gcs_mode, true).await {
         error!(error = %e, "boot reconcile failed");
     }
 
@@ -1367,7 +1391,7 @@ pub async fn run(
             }
             _ = poll.tick() => {
                 // Fallback for a missed NOTIFY: re-derive the next step from the row.
-                if let Err(e) = reconcile(&pool, config.gcs_mode).await {
+                if let Err(e) = reconcile(&pool, &cancel, config.gcs_mode, false).await {
                     error!(error = %e, "poll reconcile failed");
                 }
             }
@@ -1745,7 +1769,9 @@ mod tests {
         seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
         create_gcs_schema(&pool).await.expect("create gcs schema");
 
-        reconcile(&pool, true).await.expect("reconcile");
+        reconcile(&pool, &CancellationToken::new(), true, false)
+            .await
+            .expect("reconcile");
 
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
         let (sv,): (String,) =
@@ -1763,7 +1789,9 @@ mod tests {
         seed_gcs_row(&pool, "DryRunStarted", "in_progress").await; // latches TRUE
         create_gcs_schema(&pool).await.expect("create gcs schema");
 
-        reconcile(&pool, true).await.expect("reconcile");
+        reconcile(&pool, &CancellationToken::new(), true, false)
+            .await
+            .expect("reconcile");
 
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
     }
@@ -1774,8 +1802,36 @@ mod tests {
         let (_instance, pool) = test_pool().await;
         seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
 
-        reconcile(&pool, false).await.expect("reconcile");
+        reconcile(&pool, &CancellationToken::new(), false, false)
+            .await
+            .expect("reconcile");
 
         assert_eq!(gcs_state(&pool).await.0, "UpgradeAuthorized");
+    }
+
+    /// A stale timeout from a different window must not roll back the current dry-run.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_timeout_ignores_other_window() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await; // end_block = 200
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+
+        // Timeout for a different window (block_height 999 != end_block 200).
+        let payload =
+            serde_json::json!({ "chain_id": 1_i64, "block_height": 999_i64, "block_hash": "0x00" })
+                .to_string();
+        handle_unanimity_consensus_timeout(&pool, true, &payload)
+            .await
+            .expect("handler ok");
+
+        assert!(
+            marker_exists(&pool).await,
+            "a timeout for another window must not reset the schema"
+        );
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("DryRunStarted".into(), "in_progress".into())
+        );
     }
 }
