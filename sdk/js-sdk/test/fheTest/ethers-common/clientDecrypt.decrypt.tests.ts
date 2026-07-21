@@ -117,7 +117,7 @@ export function defineClientDecryptDecryptTests(parameters: {
       const keyPair = await client.generateTransportKeyPair();
       expect(keyPair).toBeDefined();
 
-      const serialized = client.serializeTransportKeyPair({ transportKeyPair: keyPair });
+      const serialized = await client.serializeTransportKeyPair({ transportKeyPair: keyPair });
       expect(serialized.publicKey).toBeDefined();
       expect(serialized.privateKey).toBeDefined();
 
@@ -130,7 +130,9 @@ export function defineClientDecryptDecryptTests(parameters: {
       // Round-trip: the parsed key pair carries the same public key and
       // re-serializes identically.
       expect(parsed.publicKey).toBe(keyPair.publicKey);
-      expect(client.serializeTransportKeyPair({ transportKeyPair: parsed }).publicKey).toBe(serialized.publicKey);
+      expect((await client.serializeTransportKeyPair({ transportKeyPair: parsed })).publicKey).toBe(
+        serialized.publicKey,
+      );
     });
 
     it('should serialize, parse and verify a legacy decryption permit', async () => {
@@ -151,7 +153,7 @@ export function defineClientDecryptDecryptTests(parameters: {
       });
       expect(legacySignedPermit.version).toBe(1);
 
-      const serialized = client.serializeSignedDecryptionPermit({ signedPermit: legacySignedPermit });
+      const serialized = await client.serializeSignedDecryptionPermit({ signedPermit: legacySignedPermit });
       expect(serialized.version).toBe(1);
       expect(serialized.eip712).toBeDefined();
 

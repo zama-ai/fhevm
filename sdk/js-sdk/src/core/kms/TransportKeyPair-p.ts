@@ -5,6 +5,7 @@ import type { TkmsPrivateKey } from '../types/tkms-p.js';
 import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import type { NativeClient, OptionalNativeClient } from '../types/coreFhevmClient.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assertIsBytesOrBytesHex, bytesToHexLarge, hexToBytesFaster } from '../base/bytes.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
@@ -196,13 +197,17 @@ export function assertIsTransportKeyPair(
 ////////////////////////////////////////////////////////////////////////////////
 
 /** Generates a fresh {@link TransportKeyPair}. */
-export async function generateTransportKeyPair(context: {
-  readonly runtime: WithDecrypt;
-  readonly chain: FhevmChain;
-  readonly client: NativeClient;
-  readonly tkmsVersion: TkmsVersion;
-}): Promise<TransportKeyPair & { readonly tkmsVersion: string }> {
-  const tkmsVersion = context.tkmsVersion;
+export async function generateTransportKeyPair(
+  context: {
+    readonly runtime: WithDecrypt;
+    readonly chain: FhevmChain;
+    readonly client: NativeClient;
+  },
+  parameters: {
+    readonly fhevmContext: FhevmClientFrozenContext;
+  },
+): Promise<TransportKeyPair & { readonly tkmsVersion: string }> {
+  const tkmsVersion = parameters.fhevmContext.tkmsVersion;
 
   const tkmsPrivateKey = await context.runtime.decrypt.generateTkmsPrivateKey({ tkmsVersion });
   try {
@@ -238,8 +243,12 @@ export function toTransportKeyPair(
     readonly chain: FhevmChain;
     readonly client?: OptionalNativeClient;
   },
-  value: unknown,
+  parameters: {
+    readonly value: unknown;
+    readonly fhevmContext: FhevmClientFrozenContext;
+  },
 ): TransportKeyPair {
+  const { value } = parameters;
   if (isTransportKeyPair(value)) {
     return value;
   }
@@ -287,13 +296,16 @@ export function toTransportKeyPair(
  *
  * @throws {InvalidTypeError} If `value` is not a valid {@link TransportKeyPair}.
  */
-export function serializeTransportKeyPair(value: TransportKeyPair): {
+export function serializeTransportKeyPair(parameters: {
+  readonly transportKeyPair: TransportKeyPair;
+  readonly fhevmContext: FhevmClientFrozenContext;
+}): {
   publicKey: BytesHex;
   privateKey: BytesHex;
   tkmsVersion?: string;
 } {
-  assertIsTransportKeyPair(value, {});
-  return (value as TransportKeyPairImpl)[SerializeFn](PRIVATE_TOKEN);
+  assertIsTransportKeyPair(parameters.transportKeyPair, {});
+  return (parameters.transportKeyPair as TransportKeyPairImpl)[SerializeFn](PRIVATE_TOKEN);
 }
 
 /**
@@ -304,13 +316,14 @@ export function serializeTransportKeyPair(value: TransportKeyPair): {
  * @throws If the runtime does not match or the key verification fails.
  */
 export async function transportKeyPairToTkmsPrivateKey(
-  context: { readonly runtime: FhevmRuntime; readonly tkmsVersion: TkmsVersion },
-  value: TransportKeyPair,
+  context: { readonly runtime: FhevmRuntime },
+  parameters: { readonly transportKeyPair: TransportKeyPair; readonly fhevmContext: FhevmClientFrozenContext },
 ): Promise<TkmsPrivateKey> {
-  assertIsTransportKeyPair(value, {});
-  return await (value as TransportKeyPairImpl)[GetTkmsPrivateKeyFn](
+  const { transportKeyPair, fhevmContext } = parameters;
+  assertIsTransportKeyPair(transportKeyPair, {});
+  return await (transportKeyPair as TransportKeyPairImpl)[GetTkmsPrivateKeyFn](
     PRIVATE_TOKEN,
     context.runtime,
-    context.tkmsVersion,
+    fhevmContext.tkmsVersion,
   );
 }

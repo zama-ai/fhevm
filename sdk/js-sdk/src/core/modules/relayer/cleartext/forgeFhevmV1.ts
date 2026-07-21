@@ -4,6 +4,7 @@ import type { CleartextEthereumModule } from '../../ethereum/types-ct.js';
 import type { TrustedClient } from '../../ethereum/types.js';
 import type { RelayerClientWithRuntime } from '../types.js';
 import type { KmsSignersContext } from '../../../types/kmsSignersContext.js';
+import type { FhevmClientFrozenContext } from '../../../types/fhevmClientFrozenContext-p.js';
 import { remove0x } from '../../../base/string.js';
 import { addressToChecksummedAddress } from '../../../base/address.js';
 import { createCachedFetch } from '../../../base/cachedFetch.js';
@@ -38,12 +39,16 @@ const plaintextsAbi = [
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function isForgeFhevmV1(relayerClient: RelayerClientWithRuntime): Promise<boolean> {
+export async function isForgeFhevmV1(
+  relayerClient: RelayerClientWithRuntime,
+  fhevmContext: FhevmClientFrozenContext,
+): Promise<boolean> {
   const currentKmsSignersContext: KmsSignersContext = await readCurrentKmsSignersContext(relayerClient, {
     kmsVerifierAddress: relayerClient.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: relayerClient.chain.fhevm.contracts.protocolConfig?.address as
       | ChecksummedAddress
       | undefined,
+    fhevmContext,
   });
   return currentKmsSignersContext.signers.length === 1 && isForgeFhevmV1KmsSigner(currentKmsSignersContext.signers[0]);
 }

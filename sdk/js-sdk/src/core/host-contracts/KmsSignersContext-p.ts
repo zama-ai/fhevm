@@ -28,7 +28,8 @@ class KmsSignersContextImpl implements KmsSignersContext {
   readonly #kmsEpochId: Uint256BigInt;
   readonly #kmsSigners: ChecksummedAddress[];
   readonly #kmsSignersSet: Set<string>;
-  readonly #kmsSignerThreshold: Uint8Number;
+  readonly #kmsPublicDecryptThreshold: Uint8Number;
+  readonly #kmsMpcThreshold: Uint8Number | undefined;
 
   constructor(
     privateToken: symbol,
@@ -39,6 +40,7 @@ class KmsSignersContextImpl implements KmsSignersContext {
       readonly kmsEpochId: Uint256BigInt;
       readonly kmsSigners: ChecksummedAddress[];
       readonly kmsSignerThreshold: Uint8Number;
+      readonly kmsMpcThreshold?: Uint8Number | undefined;
     },
   ) {
     if (privateToken !== PRIVATE_TOKEN) {
@@ -49,7 +51,8 @@ class KmsSignersContextImpl implements KmsSignersContext {
     this.#kmsContextId = parameters.kmsContextId;
     this.#kmsEpochId = parameters.kmsEpochId;
     this.#kmsSigners = [...parameters.kmsSigners];
-    this.#kmsSignerThreshold = parameters.kmsSignerThreshold;
+    this.#kmsPublicDecryptThreshold = parameters.kmsSignerThreshold;
+    this.#kmsMpcThreshold = parameters.kmsMpcThreshold;
     this.#kmsSignersSet = new Set(this.#kmsSigners.map((addr) => addr.toLowerCase()));
 
     Object.freeze(this.#kmsSigners);
@@ -73,7 +76,11 @@ class KmsSignersContextImpl implements KmsSignersContext {
   }
 
   public get threshold(): Uint8Number {
-    return this.#kmsSignerThreshold;
+    return this.#kmsPublicDecryptThreshold;
+  }
+
+  public get mpcThreshold(): Uint8Number | undefined {
+    return this.#kmsMpcThreshold;
   }
 
   public has(signer: string): boolean {
@@ -97,7 +104,8 @@ class KmsSignersContextImpl implements KmsSignersContext {
       id: this.#kmsContextId,
       epochId: this.#kmsEpochId,
       signers: this.#kmsSigners,
-      threshold: this.#kmsSignerThreshold,
+      threshold: this.#kmsPublicDecryptThreshold,
+      ...(this.#kmsMpcThreshold ? { mpcThreshold: this.#kmsMpcThreshold } : {}),
     };
   }
 }
@@ -116,9 +124,17 @@ export function createKmsSignersContext(
     readonly kmsEpochId: Uint256BigInt;
     readonly kmsSigners: readonly ChecksummedAddress[];
     readonly kmsSignerThreshold: Uint8Number;
+    readonly kmsMpcThreshold?: Uint8Number | undefined;
   },
 ): KmsSignersContext {
-  const { kmsVerifierAddress: address, kmsContextId, kmsEpochId, kmsSigners, kmsSignerThreshold } = parameters;
+  const {
+    kmsVerifierAddress: address,
+    kmsContextId,
+    kmsEpochId,
+    kmsSigners,
+    kmsSignerThreshold,
+    kmsMpcThreshold,
+  } = parameters;
 
   validateKmsExtraDataParams({ kmsContextId: parameters.kmsContextId, kmsEpochId: parameters.kmsEpochId });
 
@@ -128,6 +144,7 @@ export function createKmsSignersContext(
     kmsEpochId,
     kmsSignerThreshold: Number(kmsSignerThreshold) as Uint8Number,
     kmsSigners: kmsSigners.map(addressToChecksummedAddress),
+    kmsMpcThreshold,
   });
 }
 

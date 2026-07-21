@@ -1,6 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
 
-import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import type { WithDecrypt } from '../types/coreFhevmRuntime.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
@@ -9,6 +8,7 @@ import type { ChecksummedAddress, TypedValue } from '../types/primitives.js';
 import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } from '../types/relayer.js';
 import type { SignedDecryptionPermit } from '../types/signedDecryptionPermit.js';
 import type { TransportKeyPair } from './TransportKeyPair-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { SDK_PROTOCOL_API_MAJOR_VERSION, SDK_PROTOCOL_API_MINOR_VERSION } from '../runtime/sdkProtocolApiVersion.js';
 import { decryptKmsSigncryptedShares } from './decryptKmsSigncryptedShares-p.js';
 import { fetchKmsSigncryptedSharesV1 } from './fetchKmsSigncryptedSharesV1-p.js';
@@ -20,7 +20,6 @@ type Context = {
   readonly chain: FhevmChain;
   readonly runtime: WithDecrypt;
   readonly client: NonNullable<object>;
-  readonly tkmsVersion: TkmsVersion;
   readonly options: { readonly batchRpcCalls: boolean };
 };
 
@@ -36,6 +35,7 @@ type Parameters = {
   readonly signedPermit: SignedDecryptionPermit;
   readonly transportKeyPair: TransportKeyPair;
   readonly options?: RelayerUserDecryptOptions | RelayerDelegatedUserDecryptOptions | undefined;
+  readonly fhevmContext: FhevmClientFrozenContext;
 };
 
 export type ReturnType = readonly TypedValue[];
@@ -43,7 +43,7 @@ export type ReturnType = readonly TypedValue[];
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function decryptValuesFromPairs(fhevm: Context, parameters: Parameters): Promise<ReturnType> {
-  const { transportKeyPair: transportKeyPair } = parameters;
+  const { transportKeyPair: transportKeyPair, fhevmContext } = parameters;
 
   let kmsSigncryptedShares: KmsSigncryptedShares;
 
@@ -86,6 +86,7 @@ export async function decryptValuesFromPairs(fhevm: Context, parameters: Paramet
   // Using the `KmsSigncryptedShares` decrypt and reconstruct clear values
   return decryptKmsSigncryptedShares(fhevm, {
     kmsSigncryptedShares,
-    transportKeyPair: transportKeyPair,
+    transportKeyPair,
+    fhevmContext,
   });
 }

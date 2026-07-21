@@ -47,6 +47,8 @@ describe('parseSignedDecryptionPermitV2', () => {
     // The first thing parse does is validate the transport key pair; a plain
     // object is not a genuine TransportKeyPair instance, so it must throw
     // without touching the chain.
-    await expect(parseSignedDecryptionPermitV2({} as never, {} as never, permit)).rejects.toThrow();
+    await expect(
+      parseSignedDecryptionPermitV2({} as never, { transportKeyPair: {} as never, permit, fhevmContext: {} as never }),
+    ).rejects.toThrow();
   });
 });

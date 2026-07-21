@@ -3,6 +3,7 @@ import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { TransportKeyPair } from '../../kms/TransportKeyPair-p.js';
 import { toTransportKeyPair } from '../../kms/TransportKeyPair-p.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -14,10 +15,10 @@ export type ParseTransportKeyPairParameters = {
 
 export type ParseTransportKeyPairReturnType = TransportKeyPair;
 
-// eslint-disable-next-line @typescript-eslint/require-await
 export async function parseTransportKeyPair(
   fhevm: Fhevm<FhevmChain, FhevmRuntime, OptionalNativeClient>,
   parameters: ParseTransportKeyPairParameters,
 ): Promise<ParseTransportKeyPairReturnType> {
-  return toTransportKeyPair(fhevm, parameters);
+  const fhevmContext = await initPublicAction(fhevm);
+  return toTransportKeyPair(fhevm, { value: parameters, fhevmContext });
 }

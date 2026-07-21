@@ -43,7 +43,7 @@ import {
   type DecryptPublicValuesWithSignaturesParameters,
   type DecryptPublicValuesWithSignaturesReturnType,
 } from '../../actions/base/decryptPublicValuesWithSignatures.js';
-import { ensureResolvedProtocolVersion } from '../../runtime/resolveFhevmVersions-p.js';
+import { ensureFrozenContext } from '../../frozenContext/ensureFrozenContext-p.js';
 import {
   signLegacyDecryptionPermit,
   type SignLegacyDecryptionPermitParameters,
@@ -152,11 +152,11 @@ export type BaseActions = {
   /** Serializes an e2e transport key pair to hex strings for storage. */
   readonly serializeTransportKeyPair: (
     parameters: SerializeTransportKeyPairParameters,
-  ) => SerializeTransportKeyPairReturnType;
+  ) => Promise<SerializeTransportKeyPairReturnType>;
   /** Serializes a signed decryption permit to a plain object for storage or transmission. */
   readonly serializeSignedDecryptionPermit: (
     parameters: SerializeSignedDecryptionPermitParameters,
-  ) => SerializeSignedDecryptionPermitReturnType;
+  ) => Promise<SerializeSignedDecryptionPermitReturnType>;
   /** Parses and verifies a previously serialized signed decryption permit. */
   readonly parseSignedDecryptionPermit: (
     parameters: ParseSignedDecryptionPermitParameters,
@@ -187,7 +187,8 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
 ////////////////////////////////////////////////////////////////////////////////
 
 async function _initBase(fhevm: FhevmBase<FhevmChain>): Promise<void> {
-  await ensureResolvedProtocolVersion(fhevm);
+  // Resolve the frozen version basis once and cache it on the client.
+  await ensureFrozenContext(fhevm);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

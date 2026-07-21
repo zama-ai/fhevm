@@ -2,13 +2,13 @@ import type { FhevmBase } from '../types/coreFhevmClient.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { ChecksummedAddress } from '../types/primitives.js';
 import type { HostContractVersion } from '../types/hostContract.js';
-import type { FhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { addressToChecksummedAddress, asAddress } from '../base/address.js';
 import { executeWithBatching } from '../base/promise.js';
 import { assertIsHostContractVersionOf, getHostContractVersion } from '../host-contracts/HostContractVersion-p.js';
 import { hyperWasmResolveTfheModuleVersion, hyperWasmResolveTkmsModuleVersion } from '../runtime/HyperWasmSolver-p.js';
 import { protocolContextFromAclVersion } from '../runtime/ProtocolVersionResolver-p.js';
-import { createFhevmClientFrozenContext } from './createFhevmClientFrozenContext-p.js';
+import { createFhevmClientFrozenContext } from './FhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -46,9 +46,7 @@ import { createFhevmClientFrozenContext } from './createFhevmClientFrozenContext
  *
  * @internal
  */
-export async function resolveFhevmClientFrozenContext(
-  fhevm: FhevmBase<FhevmChain>,
-): Promise<FhevmClientFrozenContext> {
+export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChain>): Promise<FhevmClientFrozenContext> {
   const aclAddress: ChecksummedAddress = addressToChecksummedAddress(
     asAddress(fhevm.chain.fhevm.contracts.acl.address),
   );

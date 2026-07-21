@@ -5,6 +5,7 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { KmsSignDecryptionPermitContext, KmsSignDecryptionPermitParameters } from './SignedDecryptionPermit-p.js';
 import type { KmsExtraData } from '../types/kms-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assertRecordNonNullableProperty } from '../base/record.js';
 import { assertRecordBytes65HexProperty } from '../base/bytes.js';
 import { addressToChecksummedAddress, assertIsAddress, assertRecordAddressProperty } from '../base/address.js';
@@ -139,9 +140,13 @@ export async function signDecryptionPermitV2(
 
 export async function parseSignedDecryptionPermitV2(
   context: KmsSignDecryptionPermitContext,
-  transportKeyPair: TransportKeyPair,
-  permit: unknown,
+  parameters: {
+    readonly transportKeyPair: TransportKeyPair;
+    readonly permit: unknown;
+    readonly fhevmContext: FhevmClientFrozenContext;
+  },
 ): Promise<SignedDecryptionPermitV2> {
+  const { transportKeyPair, permit } = parameters;
   assertIsTransportKeyPair(transportKeyPair, {});
 
   const permitName = 'permit-v2';
@@ -191,6 +196,7 @@ export async function createUnsignedDecryptionPermitEip712V2(
     signerAddress: signerAddressArg,
     transportKeyPair,
     delegatorAddress: delegatorAddressArg,
+    fhevmContext,
   } = parameters;
 
   assertIsUintNumber(durationSecondsParam, { subject: 'durationSeconds' });
@@ -229,6 +235,7 @@ export async function createUnsignedDecryptionPermitEip712V2(
   const kmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    fhevmContext,
   });
 
   const kmsContextExtraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);

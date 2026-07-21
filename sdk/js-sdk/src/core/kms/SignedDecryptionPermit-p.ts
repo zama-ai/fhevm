@@ -5,6 +5,8 @@ import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { NativeSigner } from '../modules/ethereum/types.js';
 import type { TransportKeyPair } from './TransportKeyPair-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { BytesHex } from '../types/primitives.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import {
   isSignedDecryptionPermitV1,
@@ -16,8 +18,9 @@ import {
   parseSignedDecryptionPermitV2,
   signDecryptionPermitV2,
 } from './SignedDecryptionPermitV2-p.js';
-import { isRecordUintNumberProperty } from '../base/uint.js';
+import { isRecordUintNumberProperty, isUintNumber } from '../base/uint.js';
 import { SDK_PROTOCOL_API_MAJOR_VERSION, SDK_PROTOCOL_API_MINOR_VERSION } from '../runtime/sdkProtocolApiVersion.js';
+import { createKmsExtraDataFromBytesHex, EXTRA_DATA_V2 } from './kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -135,6 +138,7 @@ export type KmsSignDecryptionPermitParameters = {
   readonly signer: NativeSigner;
   readonly delegatorAddress?: string | undefined;
   readonly transportKeyPair: TransportKeyPair;
+  readonly fhevmContext: FhevmClientFrozenContext;
 };
 
 /**
@@ -219,26 +223,77 @@ function _normalizeSerializedPermitDomainChainId(permit: unknown): unknown {
   };
 }
 
+/**
+ * Reads the `extraData` version carried by a serialized permit, or `undefined` when
+ * the permit exposes no decodable `extraData` (missing, wrong type, or malformed —
+ * left to the downstream permit validation to report with proper context).
+ *
+ * Navigates `permit.eip712.message.extraData` defensively (the permit is untrusted
+ * input). Used to enforce the SDK protocol-API cap at parse time — see the CRITICAL
+ * RULE in `readKmsSignersContext-p.ts`.
+ */
+function _parsePermitExtraDataVersion(permit: unknown): number | undefined {
+  const extraData = (
+    permit as { readonly eip712?: { readonly message?: { readonly extraData?: unknown } } } | null | undefined
+  )?.eip712?.message?.extraData;
+  if (typeof extraData !== 'string') {
+    return undefined;
+  }
+  try {
+    return createKmsExtraDataFromBytesHex(extraData as BytesHex).version;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function parseSignedDecryptionPermit(
   context: KmsSignDecryptionPermitContext,
-  transportKeyPair: TransportKeyPair,
-  permit: unknown,
+  parameters: {
+    readonly transportKeyPair: TransportKeyPair;
+    readonly permit: unknown;
+    readonly fhevmContext: FhevmClientFrozenContext;
+  },
 ): Promise<SignedDecryptionPermit> {
+  const { transportKeyPair, permit, fhevmContext } = parameters;
   // Accept permits revived from a JSON string (chainId serialized as a string).
   const sanitizedPermit = _normalizeSerializedPermitDomainChainId(permit);
 
   const hasVersion = isRecordUintNumberProperty(sanitizedPermit, 'version');
 
   // if no version, interpret as permit v1
-  const version: number = hasVersion ? sanitizedPermit.version : 1;
+  const sanitizedVersion: number = hasVersion ? sanitizedPermit.version : 1;
+
+  // check valid version number
+  if (!isUintNumber(sanitizedVersion) || sanitizedVersion > 2 || sanitizedVersion === 0) {
+    throw new Error(`Unsupported permit version: ${sanitizedVersion}. Supported versions are 1 and 2.`);
+  }
+
+  // version is 1 or 2
+  const version: 1 | 2 = sanitizedVersion as 1 | 2;
+
+  // Enforce the SDK protocol-API cap (see the CRITICAL RULE in readKmsSignersContext-p.ts):
+  // a v13-capped SDK must never accept a v2 permit, because a v13 relayer rejects it.
+  // A v2 can arrive two independent ways; each is rejected here with its own message,
+  // up front, instead of an opaque relayer 400 later (mirrors decryptValuesFromPairs).
+  if (SDK_PROTOCOL_API_MAJOR_VERSION === 0 && SDK_PROTOCOL_API_MINOR_VERSION <= 13) {
+    // (a) A V2-format permit.
+    if (version > 1) {
+      throw new Error(
+        `Refusing to parse a V2-format decryption permit (version ${version}): this SDK is capped at protocol API v0.${SDK_PROTOCOL_API_MINOR_VERSION} and only supports V1 permits. V2 permits require an SDK on protocol API v0.14.0 or later.`,
+      );
+    }
+    const extraDataVersion = _parsePermitExtraDataVersion(sanitizedPermit);
+    // (b) A v2 extraData — including one carried inside a V1-format permit.
+    if (extraDataVersion !== undefined && extraDataVersion >= EXTRA_DATA_V2) {
+      throw new Error(
+        `Refusing to parse a permit carrying extraData v2: this SDK is capped at protocol API v0.${SDK_PROTOCOL_API_MINOR_VERSION} and only accepts extraData v0/v1 (a v13 relayer rejects extraData v2). Use an SDK on protocol API v0.14.0 or later.`,
+      );
+    }
+  }
 
   if (version === 1) {
-    return await parseSignedDecryptionPermitV1(context, transportKeyPair, sanitizedPermit);
+    return await parseSignedDecryptionPermitV1(context, { transportKeyPair, permit: sanitizedPermit, fhevmContext });
   }
 
-  if (version === 2) {
-    return await parseSignedDecryptionPermitV2(context, transportKeyPair, sanitizedPermit);
-  }
-
-  throw new Error(`Unsupported permit version: ${version}. Supported versions are 1 and 2.`);
+  return await parseSignedDecryptionPermitV2(context, { transportKeyPair, permit: sanitizedPermit, fhevmContext });
 }

@@ -4,6 +4,7 @@ import type { VerifiedInputProof } from '../types/inputProof.js';
 import type { ZkProof } from '../types/zkProof-p.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { InputProofError } from '../errors/InputProofError.js';
 import { assertHandleArrayEquals } from '../handle/FhevmHandle.js';
 import { createInputProofFromInputHandles } from './InputProof-p.js';
@@ -21,6 +22,7 @@ type Context = {
 
 type Parameters = {
   readonly zkProof: ZkProof;
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerInputProofOptions | undefined;
 };
 
@@ -29,7 +31,7 @@ type ReturnType = VerifiedInputProof;
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function fetchVerifiedInputProof(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const { zkProof, options } = parameters;
+  const { zkProof, options, fhevmContext } = parameters;
 
   assertIsZkProof(zkProof, {});
 
@@ -55,6 +57,7 @@ export async function fetchVerifiedInputProof(context: Context, parameters: Para
         zkProof,
       },
       options: relayerOptions,
+      fhevmContext,
     });
 
   // 3. Check that the handles and the one in the fetch result
@@ -74,5 +77,5 @@ export async function fetchVerifiedInputProof(context: Context, parameters: Para
     },
   });
 
-  return await verifyInputProof(context, { inputProof });
+  return await verifyInputProof(context, { inputProof, fhevmContext });
 }

@@ -14,6 +14,7 @@ import type {
 
 export interface KmsSigncryptedSharesMetadata {
   readonly kmsSignersContext: KmsSignersContext;
+  readonly eip712ExtraData: BytesHex;
   readonly eip712Domain: KmsEip712Domain;
   readonly eip712Signature: Bytes65Hex;
   readonly eip712SignerAddress: ChecksummedAddress;

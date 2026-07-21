@@ -209,6 +209,28 @@ export function createKmsExtraDataFromBytesHex(extraDataBytesHex: BytesHex): Kms
 
 ////////////////////////////////////////////////////////////////////////////////
 
+/**
+ * Returns the `extraData` bytes exactly as they appear on the wire and inside KMS
+ * signatures — i.e. the form the KMS/gateway signs over, NOT the SDK's internal
+ * encoding.
+ *
+ * The only difference is the v0 sentinel: internally the SDK carries it as the
+ * one-byte `0x00`, but the KMS signs v0 as EMPTY bytes (`0x`). Every place that
+ * reconstructs a message the KMS signed — `UserDecryptResponseVerification`
+ * (per-share and wasm request), the public-decryption proof, and the public-decrypt
+ * EIP-712 — must use THIS value, or v0 signatures fail to verify. Concrete versions
+ * (v1, v2, …) and unknown/future versions pass through unchanged.
+ *
+ * This centralizes a rule previously inlined at each call site (KmsSigncryptedShares,
+ * PublicDecryptionProof, verifyKmsPublicDecryptEip712), where any divergence silently
+ * breaks v0 verification.
+ */
+export function toKmsSignedExtraDataBytesHex(extraData: KmsExtraData): BytesHex {
+  return extraData.version === EXTRA_DATA_V0 ? ('0x' as BytesHex) : extraData.bytesHex;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 export function createKmsExtraDataV0(): KmsExtraData {
   return new KmsExtraDataImpl(PRIVATE_TOKEN, {
     version: EXTRA_DATA_V0,

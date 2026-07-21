@@ -9,6 +9,7 @@ import { readFhevmExecutorContractData } from './readFhevmExecutorContractData.j
 import { readInputVerifierContractData } from './readInputVerifierContractData.js';
 import { readKmsVerifierContractData } from './readKmsVerifierContractData.js';
 import { resolveChainId } from './resolveChainId.js';
+import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // resolveFhevmConfig
@@ -70,6 +71,9 @@ export async function resolveFhevmConfig(
   if (protocolConfigAddress !== undefined) {
     assertIsAddress(protocolConfigAddress, {});
   }
+
+  // no context needed
+  await initPublicAction(fhevm);
 
   const id: Uint64BigInt = await resolveChainId(fhevm, parameters);
   const fhevmExecutorData = await _resolveFhevmExecutor(fhevm, parameters.fhevm.contracts);

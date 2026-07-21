@@ -1,124 +1,286 @@
-import type { FhevmProtocolContext, ProtocolVersionResolution, PubKeyCrsVersionResolution } from '../types/coreFhevmClient.js';
+import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { HostContractName, HostContractVersion } from '../types/hostContract.js';
+import type {
+  FhevmProtocolContext,
+  ProtocolVersionResolution,
+  PubKeyCrsVersionResolution,
+} from '../types/coreFhevmClient.js';
 import type { TfheVersion, TkmsVersion } from '../types/moduleVersions.js';
+import type { FhevmClientFrozenContext, fhevmClientFrozenContextBrand } from '../types/fhevmClientFrozenContext-p.js';
+import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
+
+////////////////////////////////////////////////////////////////////////////////
+
+const PRIVATE_TOKEN = Symbol('FhevmClientFrozenContext.token');
 
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Brand for {@link FhevmClientFrozenContext}. Prevents a structurally-similar
- * plain object from being passed where a genuine, SDK-produced context is
- * expected — instances are only ever created by the SDK.
+ * The already-resolved versions used to build a {@link FhevmClientFrozenContext}.
+ *
+ * Every field is optional: a context only needs to carry the versions a given
+ * operation actually consumes — an encrypt path resolves `tfheVersion` (and the
+ * `protocol`/`ACL` versions it derives from) but never `tkmsVersion` or the
+ * KMSVerifier version; a public-decrypt path is the opposite. Resolving only the
+ * needed subset keeps the number of on-chain `getVersion()` reads minimal.
+ *
+ * Values passed here are assumed to already have been read/derived consistently
+ * (ideally in a single batched round-trip). This type performs no I/O.
  */
-export declare const fhevmClientFrozenContextBrand: unique symbol;
+export type CreateFhevmClientFrozenContextParameters = {
+  readonly hostContractVersions?: Partial<Record<HostContractName, HostContractVersion>> | undefined;
+  readonly protocolVersion?: ProtocolVersionResolution | undefined;
+  readonly pubKeyCrsVersion?: PubKeyCrsVersionResolution | undefined;
+  readonly tfheVersion?: TfheVersion | undefined;
+  readonly tkmsVersion?: TkmsVersion | undefined;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
-// FhevmClientFrozenContext (exposed contract)
+// FhevmClientFrozenContextImpl
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * An immutable, self-consistent snapshot of the **version basis** a single FHEVM
- * operation resolves against: the raw host-contract versions (ACL, KMSVerifier,
- * InputVerifier, ProtocolConfig, …) plus the versions derived from them
- * (protocol, PubKey/CRS, TFHE, TKMS).
+ * Private implementation of {@link FhevmClientFrozenContext}. Constructed only
+ * via {@link createFhevmClientFrozenContext}, frozen on construction, and
+ * verified elsewhere via `instanceof` (see {@link isFhevmClientFrozenContext}).
  *
- * ### Why this exists
- *
- * These versions are otherwise read from several places with mismatched
- * lifetimes: `protocol`/`tfhe`/`tkms` are resolved once per client and frozen,
- * while the host-contract `getVersion()` reads are TTL-cached, so they can drift
- * out of sync within a single client (e.g. a KMSVerifier read refreshing past
- * the protocol version the loaded WASM was selected for). This object is the
- * single source of truth: resolve the needed subset once, freeze it, and thread
- * it through every internal function **instead of** passing individual
- * `TfheVersion` / `TkmsVersion` / protocol-version arguments. Everything then
- * branches off one coherent snapshot.
- *
- * ### IMPORTANT — a public action must never call another public action
- *
- * The frozen context is resolved **once**, at a public (`fhevm`-first) action's
- * entry point, and threaded through `context` into internal (`context`-taking)
- * helpers only. This is safe — and needs no re-entrancy / reuse machinery —
- * *precisely because* no public action calls another public action: every action
- * delegates to internal implementations instead, so a nested public action can
- * never be reached mid-operation and the context is therefore built exactly once
- * and never rebuilt.
- *
- * Preserve this invariant. If one public action needs another's behavior,
- * extract the shared logic into a `context`-taking internal helper and call that
- * from both — never call the public action from an action. (The `host`
- * chain-discovery tier is the sole exception: `resolveFhevmConfig` fans out to
- * sibling host actions, but host actions run before a chain is resolved and never
- * carry a frozen context, so the invariant is unaffected there.)
- *
- * ### Scope (intentional)
- *
- * This holds the version basis **only** — quasi-immutable data that changes only
- * on a contract upgrade. It deliberately does NOT hold per-block-mutable state
- * (KMS context id / epoch, signer sets, ACL allowances): that state has a
- * different lifetime and is resolved where it is used. Keeping the two apart is
- * what lets this snapshot ignore reorgs.
- *
- * ### Partial resolution
- *
- * A context may carry only the versions an operation needs. The plain accessors
- * (`protocolVersion`, `tfheVersion`, `hostContractVersion(name)`, …) **throw** if
- * the requested version was not resolved, so a mis-scoped call fails fast rather
- * than silently proceeding on an absent value. Use the `has*` predicates or the
- * `try*` accessors to probe without throwing.
+ * @internal
  */
-export type FhevmClientFrozenContext = {
-  readonly [fhevmClientFrozenContextBrand]: never;
+class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
+  declare readonly [fhevmClientFrozenContextBrand]: never;
+
+  readonly #hostContractVersions: Readonly<Partial<Record<HostContractName, HostContractVersion>>>;
+  readonly #protocolVersion: ProtocolVersionResolution | undefined;
+  readonly #pubKeyCrsVersion: PubKeyCrsVersionResolution | undefined;
+  readonly #tfheVersion: TfheVersion | undefined;
+  readonly #tkmsVersion: TkmsVersion | undefined;
+
+  constructor(privateToken: symbol, parameters: CreateFhevmClientFrozenContextParameters) {
+    if (privateToken !== PRIVATE_TOKEN) {
+      throw new Error('Use createFhevmClientFrozenContext() instead');
+    }
+    // Defensive copy so a later mutation of the caller's object can't alter the snapshot.
+    this.#hostContractVersions = Object.freeze({ ...(parameters.hostContractVersions ?? {}) });
+    this.#protocolVersion = parameters.protocolVersion;
+    this.#pubKeyCrsVersion = parameters.pubKeyCrsVersion;
+    this.#tfheVersion = parameters.tfheVersion;
+    this.#tkmsVersion = parameters.tkmsVersion;
+
+    Object.freeze(this);
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // Host contract versions (raw on-chain getVersion() results)
   //////////////////////////////////////////////////////////////////////////////
 
-  hasHostContractVersion(name: HostContractName): boolean;
+  public hasHostContractVersion(name: HostContractName): boolean {
+    return this.#hostContractVersions[name] !== undefined;
+  }
+
   /** @throws If `name`'s version was not resolved in this context. */
-  hostContractVersion<name extends HostContractName>(name: name): HostContractVersion<name>;
-  tryHostContractVersion<name extends HostContractName>(name: name): HostContractVersion<name> | undefined;
+  public hostContractVersion<name extends HostContractName>(name: name): HostContractVersion<name> {
+    const version = this.#hostContractVersions[name];
+    if (version === undefined) {
+      throw new Error(`FhevmClientFrozenContext: host contract version '${name}' was not resolved in this context.`);
+    }
+    return version as HostContractVersion<name>;
+  }
+
+  public tryHostContractVersion<name extends HostContractName>(name: name): HostContractVersion<name> | undefined {
+    return this.#hostContractVersions[name] as HostContractVersion<name> | undefined;
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // Protocol version
   //////////////////////////////////////////////////////////////////////////////
 
-  readonly hasProtocolVersion: boolean;
+  public get hasProtocolVersion(): boolean {
+    return this.#protocolVersion !== undefined;
+  }
+
   /** @throws If the protocol version was not resolved in this context. */
-  readonly protocolVersion: ProtocolVersionResolution;
-  readonly tryProtocolVersion: ProtocolVersionResolution | undefined;
+  public get protocolVersion(): ProtocolVersionResolution {
+    if (this.#protocolVersion === undefined) {
+      throw new Error('FhevmClientFrozenContext: protocolVersion was not resolved in this context.');
+    }
+    return this.#protocolVersion;
+  }
+
+  public get tryProtocolVersion(): ProtocolVersionResolution | undefined {
+    return this.#protocolVersion;
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // PubKey/CRS version
   //////////////////////////////////////////////////////////////////////////////
 
-  readonly hasPubKeyCrsVersion: boolean;
+  public get hasPubKeyCrsVersion(): boolean {
+    return this.#pubKeyCrsVersion !== undefined;
+  }
+
   /** @throws If the PubKey/CRS version was not resolved in this context. */
-  readonly pubKeyCrsVersion: PubKeyCrsVersionResolution;
-  readonly tryPubKeyCrsVersion: PubKeyCrsVersionResolution | undefined;
+  public get pubKeyCrsVersion(): PubKeyCrsVersionResolution {
+    if (this.#pubKeyCrsVersion === undefined) {
+      throw new Error('FhevmClientFrozenContext: pubKeyCrsVersion was not resolved in this context.');
+    }
+    return this.#pubKeyCrsVersion;
+  }
+
+  public get tryPubKeyCrsVersion(): PubKeyCrsVersionResolution | undefined {
+    return this.#pubKeyCrsVersion;
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // Protocol context (protocol + PubKey/CRS bundle)
   //////////////////////////////////////////////////////////////////////////////
 
-  readonly hasProtocolContext: boolean;
-  /** @throws If either the protocol or PubKey/CRS version was not resolved. */
-  readonly protocolContext: FhevmProtocolContext;
+  public get hasProtocolContext(): boolean {
+    return this.#protocolVersion !== undefined && this.#pubKeyCrsVersion !== undefined;
+  }
+
+  /**
+   * The {@link FhevmProtocolContext} bundle (protocol + PubKey/CRS versions),
+   * as consumed by the WASM version resolver.
+   *
+   * @throws If either the protocol or PubKey/CRS version was not resolved.
+   */
+  public get protocolContext(): FhevmProtocolContext {
+    return Object.freeze({
+      protocolVersion: this.protocolVersion,
+      pubKeyCrsVersion: this.pubKeyCrsVersion,
+    });
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // TFHE / TKMS module versions
   //////////////////////////////////////////////////////////////////////////////
 
-  readonly hasTfheVersion: boolean;
-  /** @throws If the TFHE version was not resolved in this context. */
-  readonly tfheVersion: TfheVersion;
-  readonly tryTfheVersion: TfheVersion | undefined;
+  public get hasTfheVersion(): boolean {
+    return this.#tfheVersion !== undefined;
+  }
 
-  readonly hasTkmsVersion: boolean;
+  /** @throws If the TFHE version was not resolved in this context. */
+  public get tfheVersion(): TfheVersion {
+    if (this.#tfheVersion === undefined) {
+      throw new Error('FhevmClientFrozenContext: tfheVersion was not resolved in this context.');
+    }
+    return this.#tfheVersion;
+  }
+
+  public get tryTfheVersion(): TfheVersion | undefined {
+    return this.#tfheVersion;
+  }
+
+  public get hasTkmsVersion(): boolean {
+    return this.#tkmsVersion !== undefined;
+  }
+
   /** @throws If the TKMS version was not resolved in this context. */
-  readonly tkmsVersion: TkmsVersion;
-  readonly tryTkmsVersion: TkmsVersion | undefined;
+  public get tkmsVersion(): TkmsVersion {
+    if (this.#tkmsVersion === undefined) {
+      throw new Error('FhevmClientFrozenContext: tkmsVersion was not resolved in this context.');
+    }
+    return this.#tkmsVersion;
+  }
+
+  public get tryTkmsVersion(): TkmsVersion | undefined {
+    return this.#tkmsVersion;
+  }
 
   //////////////////////////////////////////////////////////////////////////////
 
-  toJSON(): Record<string, unknown>;
-};
+  public toJSON(): Record<string, unknown> {
+    return {
+      hostContractVersions: this.#hostContractVersions,
+      protocolVersion: this.#protocolVersion,
+      pubKeyCrsVersion: this.#pubKeyCrsVersion,
+      tfheVersion: this.#tfheVersion,
+      tkmsVersion: this.#tkmsVersion,
+    };
+  }
+}
+
+// Prevent prototype pollution and external subclassing/instantiation tricks.
+Object.freeze(FhevmClientFrozenContextImpl);
+Object.freeze(FhevmClientFrozenContextImpl.prototype);
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Builds an immutable {@link FhevmClientFrozenContext} from already-resolved
+ * versions. Pure — performs no I/O. Pass only the versions the caller resolved.
+ */
+export function createFhevmClientFrozenContext(
+  parameters: CreateFhevmClientFrozenContextParameters,
+): FhevmClientFrozenContext {
+  return new FhevmClientFrozenContextImpl(PRIVATE_TOKEN, parameters);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Returns a fully deep, independent copy of a {@link FhevmClientFrozenContext}.
+ *
+ * The clone shares **no references** with the source: the host-contract-versions
+ * record and every {@link HostContractVersion} / version-resolution object inside
+ * it are copied (these are flat records, so a spread is a complete copy; version
+ * strings are immutable). Mutating any part of one context can never affect the
+ * other. The result is a new frozen context, built through the same
+ * {@link createFhevmClientFrozenContext} path.
+ *
+ * @throws {InvalidTypeError} If `value` is not a {@link FhevmClientFrozenContext}.
+ */
+export function cloneFhevmClientFrozenContext(value: FhevmClientFrozenContext): FhevmClientFrozenContext {
+  assertIsFhevmClientFrozenContext(value, {});
+
+  // toJSON() exposes the full internal state (the exact constructor-parameter shape).
+  const state = value.toJSON() as {
+    readonly hostContractVersions?: Partial<Record<HostContractName, HostContractVersion>> | undefined;
+    readonly protocolVersion?: ProtocolVersionResolution | undefined;
+    readonly pubKeyCrsVersion?: PubKeyCrsVersionResolution | undefined;
+    readonly tfheVersion?: TfheVersion | undefined;
+    readonly tkmsVersion?: TkmsVersion | undefined;
+  };
+
+  const hostContractVersions: Partial<Record<HostContractName, HostContractVersion>> = {};
+  const entries = Object.entries(state.hostContractVersions ?? {}) as Array<
+    [HostContractName, HostContractVersion | undefined]
+  >;
+  for (const [name, version] of entries) {
+    if (version !== undefined) {
+      hostContractVersions[name] = { ...version };
+    }
+  }
+
+  return createFhevmClientFrozenContext({
+    hostContractVersions,
+    protocolVersion: state.protocolVersion === undefined ? undefined : { ...state.protocolVersion },
+    pubKeyCrsVersion: state.pubKeyCrsVersion === undefined ? undefined : { ...state.pubKeyCrsVersion },
+    tfheVersion: state.tfheVersion,
+    tkmsVersion: state.tkmsVersion,
+  });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+export function isFhevmClientFrozenContext(value: unknown): value is FhevmClientFrozenContext {
+  return value instanceof FhevmClientFrozenContextImpl;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+export function assertIsFhevmClientFrozenContext(
+  value: unknown,
+  options: { readonly subject?: string } & ErrorMetadataParams,
+): asserts value is FhevmClientFrozenContext {
+  if (!isFhevmClientFrozenContext(value)) {
+    throw new InvalidTypeError(
+      {
+        subject: options.subject,
+        type: typeof value,
+        expectedType: 'FhevmClientFrozenContext',
+      },
+      options,
+    );
+  }
+}

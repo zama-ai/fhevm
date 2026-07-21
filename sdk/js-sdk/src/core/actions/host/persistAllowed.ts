@@ -1,7 +1,9 @@
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { Bytes32Hex, ChecksummedAddress } from '../../types/primitives.js';
 import { persistAllowedAbi } from '../../host-contracts/abi-fragments/fragments.js';
-import { getTrustedClient } from '../../runtime/CoreFhevm-p.js';
+import { getTrustedClient, initPublicAction } from '../../runtime/CoreFhevm-p.js';
+import { toFhevmHandle } from '../../handle/FhevmHandle.js';
+import { assertIsAddress } from '../../base/address.js';
 
 export type PersistAllowedParameters = {
   readonly address: ChecksummedAddress;
@@ -20,10 +22,17 @@ export async function persistAllowed(
   const trustedClient = getTrustedClient(fhevm);
   const address = parameters.address;
 
+  const handle = toFhevmHandle(parameters.args.handle);
+  assertIsAddress(address, {});
+  assertIsAddress(parameters.args.account, {});
+
+  // no context needed
+  await initPublicAction(fhevm);
+
   const res = await fhevm.runtime.ethereum.readContract(trustedClient, {
     address: address,
     abi: persistAllowedAbi,
-    args: [parameters.args.handle, parameters.args.account],
+    args: [handle.bytes32Hex, parameters.args.account],
     functionName: persistAllowedAbi[0].name,
   });
 

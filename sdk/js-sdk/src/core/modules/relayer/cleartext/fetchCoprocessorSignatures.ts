@@ -6,6 +6,7 @@ import type {
   RelayerClientWithRuntime,
 } from '../types.js';
 import type { CoprocessorSignersContext } from '../../../types/coprocessorSignersContext.js';
+import type { FhevmClientFrozenContext } from '../../../types/fhevmClientFrozenContext-p.js';
 import { asUint32BigInt, asUint64BigInt, randomUniqueUints } from '../../../base/uint.js';
 import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
 import { getCoprocessorSignersPrivateKeyMap } from './signers.js';
@@ -84,6 +85,7 @@ async function runInputProofOnChain(
 async function runInputProofOffChain(
   relayerClient: RelayerClientWithRuntime,
   payload: FetchCoprocessorSignaturesParameters['payload'],
+  fhevmContext: FhevmClientFrozenContext,
 ): Promise<{
   readonly digest: BytesHex;
   readonly signersAddress: readonly ChecksummedAddress[];
@@ -98,6 +100,7 @@ async function runInputProofOffChain(
   // recompute the digest off-chain below (mirroring CleartextInputVerifier.inputProof).
   const coprocessorSignersContext: CoprocessorSignersContext = await readCoprocessorSignersContext(relayerClient, {
     address: relayerClient.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
+    fhevmContext,
   });
 
   // The 'InputVerification' domain uses the gateway chainId + gateway
@@ -135,13 +138,13 @@ export async function fetchCoprocessorSignatures(
   parameters: FetchCoprocessorSignaturesParameters,
 ): Promise<FetchCoprocessorSignaturesReturnType> {
   const cleartextEthereumModule = relayerClient.runtime.ethereum as CleartextEthereumModule;
-  const { payload } = parameters;
+  const { payload, fhevmContext } = parameters;
 
-  const offChain = await isForgeFhevmV1(relayerClient);
+  const offChain = await isForgeFhevmV1(relayerClient, fhevmContext);
 
   let res;
   if (offChain) {
-    res = await runInputProofOffChain(relayerClient, payload);
+    res = await runInputProofOffChain(relayerClient, payload, fhevmContext);
   } else {
     res = await runInputProofOnChain(relayerClient, payload);
   }

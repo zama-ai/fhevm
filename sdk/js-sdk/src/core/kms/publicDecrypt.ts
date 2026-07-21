@@ -2,13 +2,13 @@ import type { RelayerPublicDecryptOptions } from '../types/relayer.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { ChecksummedAddress, Uint64BigInt } from '../types/primitives.js';
 import type { PublicDecryptionProof } from '../types/publicDecryptionProof-p.js';
-import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
 import type { KmsExtraData } from '../types/kms-p.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
 import { assertKmsDecryptionBitLimit } from '../kms/utils.js';
-import { readCurrentKmsSignersContext, reconcileKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
+import { readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
 import { createPublicDecryptionProof } from '../kms/PublicDecryptionProof-p.js';
 import { checkAllowedForDecryption } from '../host-contracts/checkAllowedForDecryption.js';
@@ -25,6 +25,7 @@ type Context = {
 type Parameters = {
   readonly originToken: symbol;
   readonly handles: readonly Handle[];
+  readonly fhevmContext: FhevmClientFrozenContext;
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
 
@@ -33,7 +34,7 @@ type ReturnType = PublicDecryptionProof;
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function publicDecrypt(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const { handles, options, originToken } = parameters;
+  const { handles, options, originToken, fhevmContext } = parameters;
 
   // Request side: build dynamic extraData from current context ID
   // Contrary to the userDecrypt flow, the publicDecrypt doesn't require for an
@@ -42,6 +43,7 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
   const requestedKmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    fhevmContext,
   });
 
   const requestedExtraData: KmsExtraData = kmsSignersContextToExtraData(requestedKmsSignersContext);
@@ -75,32 +77,24 @@ export async function publicDecrypt(context: Context, parameters: Parameters): P
   const {
     orderedAbiEncodedClearValues,
     kmsPublicDecryptEip712Signatures,
-    extraData: relayerExtraDataBytesHex,
+    // ignore returned relayer extraData as we never trust the relayer
+    // extraData: relayerExtraDataBytesHex,
   } = await context.runtime.relayer.fetchPublicDecrypt(context, {
     payload: {
       orderedHandles,
       extraData: requestedExtraData.bytesHex,
     },
     options: relayerOptions,
+    fhevmContext,
   });
 
-  // 6. Reconcile the relayer's KMS context against the one we requested.
-  //    Pins on contextId (mirrors gateway Decryption.sol DecryptionContextMismatch);
-  //    rejects a substituted context, epoch deliberately ignored.
-  const reconciledKmsSignersContext: KmsSignersContext = await reconcileKmsSignersContext(context, {
-    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-    relayerKmsExtraDataBytesHex: relayerExtraDataBytesHex,
-    requestedKmsSignersContext: requestedKmsSignersContext,
-  });
-
-  // 7. Verify and Compute PublicDecryptionProof
+  // 6. Verify and Compute PublicDecryptionProof
   const publicDecryptionProof: PublicDecryptionProof = await createPublicDecryptionProof(context, {
     originToken,
     orderedHandles: orderedHandles,
     orderedAbiEncodedClearValues,
     kmsPublicDecryptEip712Signatures,
-    kmsSignersContext: reconciledKmsSignersContext,
+    kmsSignersContext: requestedKmsSignersContext,
   });
 
   return publicDecryptionProof;

@@ -49,8 +49,17 @@ export type KmsSignersContext = {
   readonly epochId: Uint256BigInt;
   /** Ordered list of KMS node addresses for this context. No duplicates or null addresses. */
   readonly signers: readonly ChecksummedAddress[];
-  /** Minimum number of KMS decryption shares required. Non-zero, at most `signers.length`. */
+  /**
+   * Minimum number of KMS decryption shares required for a public decryption.
+   * Non-zero, at most `signers.length`.
+   */
   readonly threshold: Uint8Number;
+  /**
+   * Minimum number of KMS decryption shares required for a user decryption.
+   * Differs from the `threshold`
+   * (available in protocol v13+)
+   */
+  readonly mpcThreshold?: Uint8Number | undefined;
   /** Returns `true` if the given address is one of the signers for this context. */
   has(signer: string): boolean;
 } & Kms;

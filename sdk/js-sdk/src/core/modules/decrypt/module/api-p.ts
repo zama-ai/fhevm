@@ -30,12 +30,12 @@ import type { ChecksummedAddress } from '../../../types/primitives.js';
 import { uint32ToBytes32 } from '../../../base/uint.js';
 import { createClearValue } from '../../../handle/ClearValue.js';
 import { bytesToClearValueType } from '../../../handle/FheType.js';
-import { ensure0x, remove0x } from '../../../base/string.js';
+import { remove0x } from '../../../base/string.js';
 import { bytesToHexLarge } from '../../../base/bytes.js';
 import { WasmScope } from '../../../base/wasmScope.js';
 import { initTkmsModule } from './init-p.js';
 import { getMetadata, getShares } from '../../../kms/KmsSigncryptedShares-p.js';
-import { assertIsKmsExtraDataBytesHex } from '../../../kms/kmsExtraData-p.js';
+import { createKmsExtraDataFromBytesHex, toKmsSignedExtraDataBytesHex } from '../../../kms/kmsExtraData-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -281,18 +281,23 @@ export async function decryptAndReconstruct(
       throw new Error('Expected at least one signcrypted share.');
     }
 
-    const firstExtraDataBytesHex = firstShare.extraData;
-    for (let i = 1; i < sharesArray.length; i++) {
-      const share = sharesArray[i];
-      if (share !== undefined && share.extraData !== firstExtraDataBytesHex) {
-        throw new Error(
-          `Mismatched extraData across shares: share[0]="${firstExtraDataBytesHex}" vs share[${i}]="${share.extraData}".`,
-        );
-      }
-    }
+    // const firstExtraDataBytesHex = firstShare.extraData;
+    // for (let i = 1; i < sharesArray.length; i++) {
+    //   const share = sharesArray[i];
+    //   if (share !== undefined && share.extraData !== firstExtraDataBytesHex) {
+    //     throw new Error(
+    //       `Mismatched extraData across shares: share[0]="${firstExtraDataBytesHex}" vs share[${i}]="${share.extraData}".`,
+    //     );
+    //   }
+    // }
 
-    const extraDataBytesHex: BytesHex = ensure0x(firstExtraDataBytesHex);
-    assertIsKmsExtraDataBytesHex(extraDataBytesHex, {});
+    // The permit's raw signed extraData. The v0 sentinel is carried here as '0x00',
+    // but the KMS signs its UserDecryptResponseVerification over EMPTY bytes ('0x') for
+    // v0 — so it MUST be normalized before the wasm rebuilds that message, otherwise
+    // every share signature fails to verify and the quorum is never met.
+    const requestExtraDataBytesHex: BytesHex = toKmsSignedExtraDataBytesHex(
+      createKmsExtraDataFromBytesHex(metadata.eip712ExtraData),
+    );
 
     const aggRespWasmArg: ReadonlyArray<Omit<KmsSigncryptedShare, 'extraData'> & { extra_data: BytesHexNo0x }> =
       sharesArray.map((s) => {
@@ -339,8 +344,25 @@ export async function decryptAndReconstruct(
     };
 
     //////////////////////////////////////////////////////////////////////////////
-    // Important:
-    // assume the KMS Signers have the correct order
+    // Signer order → party-id mapping
+    // ===============================
+    // The wasm client verifies each KMS response by looking up the expected signer
+    // address by the response's own `party_id`
+    // (recovered_address == server_addresses[party_id], see the
+    // UserDecryptResponseVerification check in the tkms lib). So it needs a correct
+    // `party_id -> address` table, which we build here from the on-chain signer set.
+    //
+    // The plain `index + 1` mapping is correct because the KMSVerifier contract
+    // guarantees `signers[i]` is the address of KMS party `i + 1` — i.e. the
+    // returned `signers` array is ordered by party id (party ids are 1-indexed).
+    // No reordering or separate party-id source is required.
+    //
+    // This ordering guarantee is load-bearing: if it ever changed, honest shares
+    // would be rejected (the party_id → address lookup would point at the wrong
+    // signer) — a liveness failure, NOT a forgery risk. A permuted table can only
+    // reject valid shares; it can never make a forged share verify, since each
+    // response must still recover to a genuine signer address and party ids must
+    // be distinct.
     //////////////////////////////////////////////////////////////////////////////
     // NOT tracked: these are moved (consumed) into new_client below, which takes
     // Vec<ServerIdAddr> by value — freeing them after the move would be a double-free.
@@ -357,12 +379,15 @@ export async function decryptAndReconstruct(
     );
 
     const requestWasmArg = {
+      // unused according to KMS documentation
       signature: remove0x(metadata.eip712Signature),
       client_address: clientAddress,
       enc_key: remove0x(publicEncKeyMlKem512WasmBytesHex),
       ciphertext_handles: metadata.handles.map((h) => h.bytes32HexNo0x),
       eip712_verifying_contract: metadata.eip712Domain.verifyingContract,
-      extra_data: remove0x(extraDataBytesHex),
+      // The extraData from the user's signed EIP-712 permit, normalized to the form
+      // the KMS actually signs over (v0 sentinel -> empty bytes).
+      extra_data: remove0x(requestExtraDataBytesHex),
     };
 
     //
@@ -382,6 +407,15 @@ export async function decryptAndReconstruct(
     //
     // Warning! this `threshold` differs from KMSVerifier.getThreshold()
     //
+
+    // IMPORTANT NOTICE ABOUT `threshold`
+    // ----------------------------------
+    // July 20th 2026 - From KMS Team -
+    // The `threshold` argument is left `undefined` and is not meant to be used
+    // in the foreseeable future because we can always derive the threshold (t)
+    // from the number of signers (n) using n = 3*t + 1.
+    // If this is not true in the future then the threshold argument
+    // will be needed.
 
     // 1. Call kms module to decrypt & reconstruct clear values.
     // Owned: the returned Vec<TypedPlaintext> — track each so they are freed.

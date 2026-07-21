@@ -1,7 +1,7 @@
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { Uint64BigInt } from '../../types/primitives.js';
 import { assertIsUint64, asUint64BigInt } from '../../base/uint.js';
-import { getTrustedClient } from '../../runtime/CoreFhevm-p.js';
+import { getTrustedClient, initPublicAction } from '../../runtime/CoreFhevm-p.js';
 
 export type ResolveChainIdParameters = {
   readonly id?: number | bigint | undefined;
@@ -24,6 +24,9 @@ export async function resolveChainId(
 
   assertIsUint64(id, {});
   const resolvedId = BigInt(id) as Uint64BigInt;
+
+  // no context needed
+  await initPublicAction(fhevm);
 
   // Id provided, no verification requested → return as-is
   // By default, do not verify
