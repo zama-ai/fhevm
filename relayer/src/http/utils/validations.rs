@@ -107,6 +107,28 @@ pub fn validate_0x_hex_allow_empty(hex_str: &str) -> Result<(), ValidationError>
     validate_0x_hex(hex_str)
 }
 
+/// OpenAPI schema for the decryption `extraData` request field.
+///
+/// Single source of truth for the user-facing description: every request type
+/// carrying the field references this via `#[schema(schema_with = ...)]`.
+/// The accepted formats are specified in [`validate_extra_data_field_decryption`].
+#[allow(deprecated)]
+pub fn extra_data_decryption_schema() -> utoipa::openapi::schema::Object {
+    utoipa::openapi::schema::ObjectBuilder::new()
+        .schema_type(utoipa::openapi::schema::SchemaType::Type(
+            utoipa::openapi::schema::Type::String,
+        ))
+        .description(Some(
+            "Extra data forwarded verbatim to the gateway contract. Accepts `\"0x00\"`, version `0x01` \
+             (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). \
+             contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).",
+        ))
+        // Deprecated `example` (singular) matches what `#[schema(example = ...)]`
+        // emits for every other field; `examples` would render differently in the spec.
+        .example(Some("0x00".into()))
+        .build()
+}
+
 /// Validates the extraData field format for decryption requests.
 ///
 /// Each version has a fixed size; trailing bytes are rejected. New fields are
@@ -130,14 +152,14 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
         s if s.len() == 68 && s.starts_with("0x01") => {
             // Version 1: [0x01 | contextId(32B)] = 33 bytes = 66 hex chars + "0x" prefix = 68 chars
             let bytes = decode_versioned_extra_data(s)?;
-            validate_id_tag(&bytes[1..33], CONTEXT_ID_TAG)
+            validate_id_tag(bytes[1], CONTEXT_ID_TAG)
         }
         s if s.len() == 132 && s.starts_with("0x02") => {
             // Version 2: [0x02 | contextId(32B) | epochId(32B)] = 65 bytes
             // = 130 hex chars + "0x" prefix = 132 chars.
             let bytes = decode_versioned_extra_data(s)?;
-            validate_id_tag(&bytes[1..33], CONTEXT_ID_TAG)?;
-            validate_id_tag(&bytes[33..65], EPOCH_ID_TAG)
+            validate_id_tag(bytes[1], CONTEXT_ID_TAG)?;
+            validate_id_tag(bytes[33], EPOCH_ID_TAG)
         }
         _ => Err(ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())),
@@ -152,9 +174,9 @@ fn decode_versioned_extra_data(extra_data: &str) -> Result<Vec<u8>, ValidationEr
     })
 }
 
-/// Checks that a 32-byte id is tagged with the expected type in its first byte.
-fn validate_id_tag(id: &[u8], expected_tag: u8) -> Result<(), ValidationError> {
-    if id.first() != Some(&expected_tag) {
+/// Checks that an id's type tag (the first byte of the 32-byte id) matches the expected one.
+fn validate_id_tag(tag: u8, expected_tag: u8) -> Result<(), ValidationError> {
+    if tag != expected_tag {
         return Err(ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into()));
     }
