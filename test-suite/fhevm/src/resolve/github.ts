@@ -173,11 +173,14 @@ export const shouldStopPackageTagScan = (
   targetTag?: string,
 ) => (targetTag && tags.has(targetTag)) || payload.length < 100;
 
-/** Returns recent main-branch commit SHAs for fhevm. */
-export const mainCommits = async (limit = 200) => {
-  const commits = await ghPages<{ sha: string }>(`repos/${FHEVM_REPO}/commits?sha=main`, limit);
+/** Returns recent fhevm commit SHAs reachable from a ref (branch, tag, or sha), newest first. */
+export const commitsFrom = async (ref: string, limit = 200) => {
+  const commits = await ghPages<{ sha: string }>(`repos/${FHEVM_REPO}/commits?sha=${ref}`, limit);
   return commits.map((item) => item.sha);
 };
+
+/** Returns recent main-branch commit SHAs for fhevm. */
+export const mainCommits = async (limit = 200) => commitsFrom("main", limit);
 
 /** Returns the published tag set for one GHCR package. A missing (404) package
  * yields an empty set so newly added images without CI builds yet don't block
