@@ -44,6 +44,12 @@ where
             .await
             .map_err(|e| anyhow!("Failed to store current context: {e}"))?;
 
+        // Invalidate cached-valid contexts/epochs
+        self.ethereum_listener
+            .revalidate_context_cache()
+            .await
+            .map_err(|e| anyhow!("Failed to revalidate the KMS context cache: {e}"))?;
+
         join!(
             self.gateway_listener.start(),
             self.ethereum_listener.start()
