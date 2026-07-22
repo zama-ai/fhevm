@@ -8,6 +8,7 @@
 //! peak-equality against confirmed chain state (see `proof`), not this probe.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Serialize;
@@ -15,6 +16,9 @@ use solana_proof_store::{IntegrityStatus, SqlProofStore, StoreError};
 use utoipa::ToSchema;
 
 use crate::ingest_health::{IngestHealth, IngestTerminal, SourceLinkState};
+
+/// Hard ceiling for readiness DB reachability + integrity queries.
+pub const READINESS_DB_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// DB reachability + integrity inputs for [`evaluate_readiness`].
 #[async_trait]
@@ -219,6 +223,22 @@ pub async fn evaluate_readiness<S: ReadinessQueryable>(
     store: &S,
     ingest: &Arc<IngestHealth>,
 ) -> ReadinessReport {
+    match tokio::time::timeout(READINESS_DB_TIMEOUT, evaluate_readiness_db(store, ingest)).await {
+        Ok(report) => report,
+        Err(_) => {
+            tracing::warn!(
+                timeout_secs = READINESS_DB_TIMEOUT.as_secs(),
+                "readiness database probe timed out"
+            );
+            classify_readiness(false, None, ingest)
+        }
+    }
+}
+
+async fn evaluate_readiness_db<S: ReadinessQueryable>(
+    store: &S,
+    ingest: &Arc<IngestHealth>,
+) -> ReadinessReport {
     if !store.database_reachable().await {
         return classify_readiness(false, None, ingest);
     }
@@ -348,6 +368,33 @@ mod tests {
         ingest.mark_crashed("panic");
         let report = classify_readiness(true, Some(&status(true, false)), &ingest);
         assert_eq!(report.status, ReadinessClass::WriterMissing);
+        assert!(!report.ready);
+    }
+
+    struct HangingStore;
+
+    #[async_trait]
+    impl ReadinessQueryable for HangingStore {
+        async fn database_reachable(&self) -> bool {
+            std::future::pending::<()>().await;
+            true
+        }
+
+        async fn integrity_status(&self) -> Result<IntegrityStatus, StoreError> {
+            unreachable!("should time out before integrity")
+        }
+    }
+
+    #[tokio::test]
+    async fn readiness_db_timeout_reports_database_unavailable() {
+        // Temporarily shrink the timeout via the public constant path: we call
+        // the inner evaluator through evaluate_readiness which uses the const.
+        // Use a hanging store and assert the outer timeout fires within a few seconds.
+        let ingest = IngestHealth::new();
+        let started = std::time::Instant::now();
+        let report = evaluate_readiness(&HangingStore, &ingest).await;
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_eq!(report.status, ReadinessClass::DatabaseUnavailable);
         assert!(!report.ready);
     }
 }

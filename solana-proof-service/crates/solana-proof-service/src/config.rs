@@ -122,10 +122,6 @@ fn apply_env_overrides(value: &mut serde_yaml::Value) -> anyhow::Result<()> {
         let Some(path) = key.strip_prefix(&format!("{ENV_PREFIX}{ENV_SEPARATOR}")) else {
             continue;
         };
-        // Config file path is a separate top-level env, not a YAML override.
-        if path.eq_ignore_ascii_case("CONFIG_PATH") {
-            continue;
-        }
         let segments: Vec<&str> = path.split(ENV_SEPARATOR).collect();
         if segments.is_empty() || segments.iter().any(|s| s.is_empty()) {
             anyhow::bail!("invalid {ENV_PREFIX}{ENV_SEPARATOR}* path `{key}`");
@@ -234,6 +230,7 @@ mod tests {
         std::env::remove_var("SOLANA_PROOF__READINESS__TYPO_SECS");
         std::env::remove_var("SOLANA_PROOF__DATABASE__MAX_CONNECTIONS");
         std::env::remove_var("SOLANA_PROOF__YELLOWSTONE__X_TOKEN");
+        std::env::remove_var("SOLANA_PROOF__CONFIG_PATH");
     }
 
     #[test]
@@ -354,6 +351,34 @@ yellowstone:
         );
         // SAFETY: test-only process-local env; serialized by env_lock.
         std::env::set_var("SOLANA_PROOF__READINESS__TYPO_SECS", "5");
+        let err = ServiceConfig::load_from_path(file.path()).unwrap_err();
+        clear_test_env_overrides();
+        assert!(
+            err.to_string().contains("unknown config env override"),
+            "unexpected error: {err}"
+        );
+        file.close().ok();
+    }
+
+    #[test]
+    fn rejects_misspelled_config_path_double_underscore_env() {
+        let _guard = env_lock().lock().unwrap();
+        clear_test_env_overrides();
+        let file = tempfile_config(
+            r#"
+server:
+  bind_address: 127.0.0.1:8080
+database:
+  connection_string: postgres://localhost/solana_proof
+solana:
+  program_id: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+  rpc_url: http://127.0.0.1:8899
+yellowstone:
+  grpc_url: http://127.0.0.1:10000
+"#,
+        );
+        // Valid path env is SOLANA_PROOF_CONFIG_PATH (single underscore after PROOF).
+        std::env::set_var("SOLANA_PROOF__CONFIG_PATH", "/tmp/nope.yaml");
         let err = ServiceConfig::load_from_path(file.path()).unwrap_err();
         clear_test_env_overrides();
         assert!(

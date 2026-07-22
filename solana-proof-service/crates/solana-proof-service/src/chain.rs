@@ -5,6 +5,7 @@
 //! read-only proof path.
 
 use async_trait::async_trait;
+use base64::Engine;
 use serde_json::json;
 
 const SOLANA_PROOF_COMMITMENT: &str = "confirmed";
@@ -98,36 +99,9 @@ fn account_info_params(address: &[u8; 32]) -> serde_json::Value {
 }
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut reverse = [255u8; 256];
-    for (i, &c) in TABLE.iter().enumerate() {
-        reverse[c as usize] = i as u8;
-    }
-    let clean: Vec<u8> = input.bytes().filter(|&b| b != b'=').collect();
-    let mut out = Vec::with_capacity(clean.len() * 3 / 4);
-    for chunk in clean.chunks(4) {
-        let mut buf = [0u8; 4];
-        for (i, &b) in chunk.iter().enumerate() {
-            let v = reverse[b as usize];
-            if v == 255 {
-                return Err(format!("invalid base64 byte {b}"));
-            }
-            buf[i] = v;
-        }
-        let n = chunk.len();
-        let combined = ((buf[0] as u32) << 18)
-            | ((buf[1] as u32) << 12)
-            | ((buf[2] as u32) << 6)
-            | (buf[3] as u32);
-        out.push((combined >> 16) as u8);
-        if n > 2 {
-            out.push((combined >> 8) as u8);
-        }
-        if n > 3 {
-            out.push(combined as u8);
-        }
-    }
-    Ok(out)
+    base64::engine::general_purpose::STANDARD
+        .decode(input)
+        .map_err(|err| err.to_string())
 }
 
 #[async_trait]
@@ -170,5 +144,12 @@ mod tests {
     #[test]
     fn base64_decode_matches_known_vector() {
         assert_eq!(base64_decode("aGVsbG8=").unwrap(), b"hello".to_vec());
+    }
+
+    #[test]
+    fn base64_decode_rejects_malformed_input() {
+        assert!(base64_decode("a").is_err());
+        assert!(base64_decode("====").is_err());
+        assert!(base64_decode("aGVsbG8").is_err()); // missing padding
     }
 }

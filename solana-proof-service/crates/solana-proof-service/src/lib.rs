@@ -8,6 +8,7 @@ pub mod chain;
 pub mod config;
 pub mod http;
 pub mod ingest_health;
+pub mod lifecycle;
 pub mod metrics;
 pub mod proof;
 pub mod readiness;
