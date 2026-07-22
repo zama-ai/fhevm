@@ -16,6 +16,13 @@ use tracing::{info, warn};
 
 use crate::store::{ApplyOutcome, SqlProofStore, StoreError};
 
+/// Backoff floor for the ingest loop: Yellowstone reconnects, and now RPC
+/// recovery retries when the endpoint is unreachable, share this schedule.
+const INGEST_INITIAL_BACKOFF: Duration = Duration::from_millis(200);
+/// Backoff ceiling. An unreachable RPC endpoint is retried indefinitely at this
+/// cadence, so the WARN log fires at most this often — not once per second.
+const INGEST_MAX_BACKOFF: Duration = Duration::from_secs(5);
+
 #[derive(thiserror::Error, Debug)]
 pub enum RunnerError {
     #[error(transparent)]
@@ -81,8 +88,7 @@ pub async fn run_sequential_ingest(
     cancel: CancellationToken,
     hooks: IngestHooks<'_>,
 ) -> Result<(), RunnerError> {
-    let mut backoff = Duration::from_millis(200);
-    const MAX_BACKOFF: Duration = Duration::from_secs(5);
+    let mut backoff = INGEST_INITIAL_BACKOFF;
 
     loop {
         if cancel.is_cancelled() {
@@ -118,9 +124,19 @@ pub async fn run_sequential_ingest(
                     {
                         Ok(Recovered::Filled { confirmed_tip }) => {
                             maybe_mark_history_complete(client, store, confirmed_tip).await?;
+                            // Successful fill is meaningful progress: collapse the
+                            // backoff so a recovery-only cadence does not stay at
+                            // the ceiling between fills.
+                            backoff = INGEST_INITIAL_BACKOFF;
                             continue;
                         }
                         Ok(Recovered::Cancelled) => return Ok(()),
+                        Ok(Recovered::Unreachable(message)) => {
+                            if !back_off_after_unreachable(&message, &cancel, &mut backoff).await {
+                                return Ok(());
+                            }
+                            continue;
+                        }
                         Err(error) => return Err(error),
                     }
                 }
@@ -140,7 +156,7 @@ pub async fn run_sequential_ingest(
                         _ = cancel.cancelled() => return Ok(()),
                         _ = tokio::time::sleep(backoff) => {}
                     }
-                    backoff = (backoff * 2).min(MAX_BACKOFF);
+                    backoff = (backoff * 2).min(INGEST_MAX_BACKOFF);
                     continue;
                 }
                 Err(YellowstoneSourceError::ReplayUnsupported(message)) => {
@@ -169,9 +185,16 @@ pub async fn run_sequential_ingest(
                             if let Some(client) = recovery {
                                 maybe_mark_history_complete(client, store, confirmed_tip).await?;
                             }
+                            backoff = INGEST_INITIAL_BACKOFF;
                             continue;
                         }
                         Recovered::Cancelled => return Ok(()),
+                        Recovered::Unreachable(message) => {
+                            if !back_off_after_unreachable(&message, &cancel, &mut backoff).await {
+                                return Ok(());
+                            }
+                            continue;
+                        }
                     }
                 }
                 Err(error) => return Err(RunnerError::Source(error)),
@@ -189,7 +212,7 @@ pub async fn run_sequential_ingest(
                     _ = cancel.cancelled() => return Ok(()),
                     _ = tokio::time::sleep(backoff) => {}
                 }
-                backoff = (backoff * 2).min(MAX_BACKOFF);
+                backoff = (backoff * 2).min(INGEST_MAX_BACKOFF);
             }
             Err(RunnerError::Source(YellowstoneSourceError::ReplayUnsupported(message))) => {
                 return Err(RunnerError::Source(
@@ -217,9 +240,16 @@ pub async fn run_sequential_ingest(
                         if let Some(client) = recovery {
                             maybe_mark_history_complete(client, store, confirmed_tip).await?;
                         }
+                        backoff = INGEST_INITIAL_BACKOFF;
                         continue;
                     }
                     Recovered::Cancelled => return Ok(()),
+                    Recovered::Unreachable(message) => {
+                        if !back_off_after_unreachable(&message, &cancel, &mut backoff).await {
+                            return Ok(());
+                        }
+                        continue;
+                    }
                 }
             }
             Err(RunnerError::RecoveryRequired {
@@ -243,10 +273,17 @@ pub async fn run_sequential_ingest(
                         if let Some(client) = recovery {
                             maybe_mark_history_complete(client, store, confirmed_tip).await?;
                         }
+                        backoff = INGEST_INITIAL_BACKOFF;
                         // Resubscribe from durable checkpoint (inclusive replay).
                         continue;
                     }
                     Recovered::Cancelled => return Ok(()),
+                    Recovered::Unreachable(message) => {
+                        if !back_off_after_unreachable(&message, &cancel, &mut backoff).await {
+                            return Ok(());
+                        }
+                        continue;
+                    }
                 }
             }
             Err(error) => return Err(error),
@@ -270,6 +307,42 @@ enum Recovered {
         confirmed_tip: u64,
     },
     Cancelled,
+    /// The RPC recovery endpoint was unreachable (transport-level). The endpoint
+    /// may not exist yet (e2e bring-up) or be flapping; the caller backs off and
+    /// retries the loop instead of failing the writer closed.
+    Unreachable(String),
+}
+
+/// Confirmed-tip read outcome, separating a retryable unreachable endpoint from
+/// a terminal read failure so a connection-refused tip read never crashes the
+/// writer at startup.
+enum TipRead {
+    Tip(u64),
+    Unreachable(String),
+    Cancelled,
+}
+
+/// Back off after an unreachable RPC recovery endpoint, growing the delay toward
+/// [`INGEST_MAX_BACKOFF`]. Returns `false` when cancelled during the wait so the
+/// caller can stop; `true` to retry the ingest loop. Logs at WARN once per
+/// backoff interval (not once per failed request).
+async fn back_off_after_unreachable(
+    message: &str,
+    cancel: &CancellationToken,
+    backoff: &mut Duration,
+) -> bool {
+    warn!(
+        %message,
+        ?backoff,
+        "RPC recovery endpoint unreachable; staying unready and retrying with backoff"
+    );
+    tokio::select! {
+        _ = cancel.cancelled() => false,
+        _ = tokio::time::sleep(*backoff) => {
+            *backoff = (*backoff * 2).min(INGEST_MAX_BACKOFF);
+            true
+        }
+    }
 }
 
 struct RecoveryGate<'a> {
@@ -323,7 +396,11 @@ async fn attempt_recovery(
 
     let (to_slot, confirmed_tip) = match hint {
         GapHint::UntilExclusive(Some(gap_end)) if gap_end > checkpoint.slot + 1 => {
-            let confirmed_tip = read_confirmed_tip(client, cancel).await?;
+            let confirmed_tip = match read_confirmed_tip(client, cancel).await? {
+                TipRead::Tip(tip) => tip,
+                TipRead::Unreachable(message) => return Ok(Recovered::Unreachable(message)),
+                TipRead::Cancelled => return Ok(Recovered::Cancelled),
+            };
             (gap_end - 1, confirmed_tip)
         }
         GapHint::UntilExclusive(Some(gap_end)) if gap_end <= checkpoint.slot + 1 => {
@@ -333,7 +410,11 @@ async fn attempt_recovery(
             )));
         }
         GapHint::FromCheckpointForward => {
-            let tip = read_confirmed_tip(client, cancel).await?;
+            let tip = match read_confirmed_tip(client, cancel).await? {
+                TipRead::Tip(tip) => tip,
+                TipRead::Unreachable(message) => return Ok(Recovered::Unreachable(message)),
+                TipRead::Cancelled => return Ok(Recovered::Cancelled),
+            };
             if tip <= checkpoint.slot {
                 return Err(recovery_required(format!(
                     "confirmed tip {tip} is not ahead of checkpoint {}; cannot catch up after replay-unavailable",
@@ -376,18 +457,20 @@ async fn attempt_recovery(
     .await
 }
 
+/// Read the confirmed tip, mapping a transport-unreachable endpoint to a
+/// retryable [`TipRead::Unreachable`] and cancellation to [`TipRead::Cancelled`].
+/// Only integrity/logical read failures (RPC error, invalid, bound, history
+/// unavailable) stay terminal — the boundary the fix pins.
 async fn read_confirmed_tip(
     client: &RpcRecoveryClient,
     cancel: &CancellationToken,
-) -> Result<u64, RunnerError> {
+) -> Result<TipRead, RunnerError> {
     match client.get_confirmed_slot(cancel).await {
-        Ok(tip) => Ok(tip),
-        Err(RecoveryError::Transport(message)) => Err(recovery_required(format!(
-            "RPC recovery transport failure while reading tip: {message}"
+        Ok(tip) => Ok(TipRead::Tip(tip)),
+        Err(RecoveryError::Transport(message)) => Ok(TipRead::Unreachable(format!(
+            "RPC recovery endpoint unreachable while reading tip: {message}"
         ))),
-        Err(RecoveryError::Cancelled) => Err(recovery_required(
-            "RPC recovery cancelled while reading tip".to_owned(),
-        )),
+        Err(RecoveryError::Cancelled) => Ok(TipRead::Cancelled),
         Err(err) => Err(recovery_required(format!(
             "failed to read confirmed tip for recovery: {err}"
         ))),
@@ -404,7 +487,11 @@ async fn recover_bootstrap_from_start(
     if cancel.is_cancelled() {
         return Ok(Recovered::Cancelled);
     }
-    let confirmed_tip = read_confirmed_tip(client, cancel).await?;
+    let confirmed_tip = match read_confirmed_tip(client, cancel).await? {
+        TipRead::Tip(tip) => tip,
+        TipRead::Unreachable(message) => return Ok(Recovered::Unreachable(message)),
+        TipRead::Cancelled => return Ok(Recovered::Cancelled),
+    };
     if confirmed_tip < bootstrap_slot {
         return Err(recovery_required(format!(
             "confirmed tip {confirmed_tip} is behind bootstrap slot {bootstrap_slot}"
@@ -425,17 +512,25 @@ async fn recover_bootstrap_from_start(
     .await
 }
 
+/// Split a recovery list/fetch error along the transport-vs-integrity boundary:
+/// an unreachable endpoint ([`RecoveryError::Transport`]) is a retryable
+/// [`Recovered::Unreachable`], while every integrity/logical class (RPC error,
+/// history unavailable, bound exhausted, invalid data) stays a terminal
+/// [`RunnerError::RecoveryRequired`].
 fn map_recovery_list_error(err: RecoveryError, context: &str) -> Result<Recovered, RunnerError> {
     match err {
         RecoveryError::Cancelled => Ok(Recovered::Cancelled),
+        RecoveryError::Transport(message) => Ok(Recovered::Unreachable(format!(
+            "{context} RPC endpoint unreachable: {message}"
+        ))),
+        RecoveryError::RpcError(message) => Err(recovery_required(format!(
+            "{context} RPC returned an error: {message}"
+        ))),
         RecoveryError::BoundExhausted(message) => Err(recovery_required(format!(
             "{context} bound exhausted: {message}"
         ))),
         RecoveryError::HistoryUnavailable(message) => Err(recovery_required(format!(
             "{context} RPC history unavailable: {message}"
-        ))),
-        RecoveryError::Transport(message) => Err(recovery_required(format!(
-            "{context} RPC transport failure: {message}"
         ))),
         RecoveryError::Invalid(message) => Err(recovery_required(format!(
             "{context} invalid RPC data: {message}"
@@ -504,6 +599,9 @@ async fn recover_range_incremental(range: RecoverRange<'_>) -> Result<Recovered,
         .await?
         {
             Recovered::Cancelled => return Ok(Recovered::Cancelled),
+            // Applying to the store touches no RPC, so it never reports the
+            // endpoint unreachable; propagate defensively rather than panic.
+            unreachable @ Recovered::Unreachable(_) => return Ok(unreachable),
             Recovered::Filled { .. } => {}
         }
     }
@@ -593,7 +691,6 @@ async fn drive_subscription(
     backoff: &mut Duration,
     hooks: &IngestHooks<'_>,
 ) -> Result<(), RunnerError> {
-    const INITIAL_BACKOFF: Duration = Duration::from_millis(200);
     loop {
         let block = tokio::select! {
             _ = cancel.cancelled() => {
@@ -630,14 +727,14 @@ async fn drive_subscription(
         match store.apply_completed_block(&block).await? {
             ApplyOutcome::Applied => {
                 // Meaningful stream progress — safe to collapse reconnect delay.
-                *backoff = INITIAL_BACKOFF;
+                *backoff = INGEST_INITIAL_BACKOFF;
                 info!(slot = block.slot, "applied completed block");
                 if let Some(on_progress) = hooks.on_progress {
                     on_progress(block.slot);
                 }
             }
             ApplyOutcome::AlreadyApplied => {
-                *backoff = INITIAL_BACKOFF;
+                *backoff = INGEST_INITIAL_BACKOFF;
                 info!(slot = block.slot, "exact replay no-op");
                 if let Some(on_progress) = hooks.on_progress {
                     on_progress(block.slot);
@@ -659,12 +756,85 @@ async fn drive_subscription(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solana_proof_source::{history_complete_justified, BlockCheckpoint, CompletedBlock};
+    use solana_proof_source::{
+        history_complete_justified, BlockCheckpoint, CompletedBlock, RecoveryBounds,
+        RpcRecoveryConfig,
+    };
 
     fn cp(slot: u64) -> BlockCheckpoint {
         BlockCheckpoint {
             slot,
             block_hash: [slot as u8; 32],
+        }
+    }
+
+    /// System program id: 32 base58 `1`s decode to 32 zero bytes, so this needs
+    /// no bs58 dev-dependency to build a valid `RpcRecoveryClient`.
+    const VALID_PROGRAM_ID: &str = "11111111111111111111111111111111";
+
+    fn unreachable_recovery_client() -> RpcRecoveryClient {
+        // Port 1 is not listening: `send()` fails with connection-refused, the
+        // exact e2e bring-up condition before the validator exists.
+        RpcRecoveryClient::new(RpcRecoveryConfig {
+            rpc_url: "http://127.0.0.1:1".to_owned(),
+            program_id: VALID_PROGRAM_ID.to_owned(),
+            bounds: RecoveryBounds::default(),
+            bootstrap_slot: None,
+        })
+        .expect("valid recovery client")
+    }
+
+    #[tokio::test]
+    async fn tip_read_when_endpoint_unreachable_is_retryable_not_terminal() {
+        // The startup failure mode: reading the confirmed tip against an RPC
+        // that does not exist yet must yield a retryable Unreachable, never a
+        // terminal RunnerError that would exit the writer and kill the process.
+        let client = unreachable_recovery_client();
+        let cancel = CancellationToken::new();
+        let outcome = read_confirmed_tip(&client, &cancel)
+            .await
+            .expect("transport failure must not be a terminal RunnerError");
+        assert!(
+            matches!(outcome, TipRead::Unreachable(_)),
+            "expected TipRead::Unreachable, got a different outcome"
+        );
+    }
+
+    #[tokio::test]
+    async fn tip_read_respects_cancellation() {
+        let client = unreachable_recovery_client();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let outcome = read_confirmed_tip(&client, &cancel).await.unwrap();
+        assert!(matches!(outcome, TipRead::Cancelled));
+    }
+
+    #[test]
+    fn recovery_error_boundary_transport_retries_integrity_terminates() {
+        // Transport-class unreachability is retryable (stays alive)...
+        assert!(matches!(
+            map_recovery_list_error(RecoveryError::Transport("refused".into()), "recovery"),
+            Ok(Recovered::Unreachable(_))
+        ));
+        // ...cancellation stops cleanly...
+        assert!(matches!(
+            map_recovery_list_error(RecoveryError::Cancelled, "recovery"),
+            Ok(Recovered::Cancelled)
+        ));
+        // ...and every integrity/logical class stays terminal (fail-closed).
+        for terminal in [
+            RecoveryError::RpcError("method not found".into()),
+            RecoveryError::HistoryUnavailable("Block cleaned up".into()),
+            RecoveryError::BoundExhausted("span too wide".into()),
+            RecoveryError::Invalid("malformed block".into()),
+        ] {
+            assert!(
+                matches!(
+                    map_recovery_list_error(terminal.clone(), "recovery"),
+                    Err(RunnerError::RecoveryRequired { .. })
+                ),
+                "expected {terminal:?} to stay terminal"
+            );
         }
     }
 
