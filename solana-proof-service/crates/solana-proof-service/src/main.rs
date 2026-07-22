@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
     let store = SqlProofStore::new(pool, program_id);
     store.migrate().await.context("failed to run migrations")?;
 
-    validate_startup_dependencies(&config, &store)
+    validate_startup_dependencies(&store)
         .await
         .context("startup dependency validation failed")?;
 
@@ -59,7 +59,10 @@ async fn main() -> Result<()> {
     let ingest_handle =
         spawn_ingest_writer(source, store.clone(), Arc::clone(&ingest), cancel.clone());
 
-    let fetcher = Arc::new(RpcChainFetcher::new(config.solana.rpc_url.clone()));
+    let fetcher = Arc::new(RpcChainFetcher::new(
+        config.solana.rpc_url.clone(),
+        program_id,
+    ));
     let state = Arc::new(AppState {
         store,
         fetcher,

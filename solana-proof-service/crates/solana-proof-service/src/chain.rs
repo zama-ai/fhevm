@@ -3,12 +3,18 @@
 //! Deliberately thin: proof serving only needs `getAccountInfo`. Signature /
 //! transaction catch-up belongs to the future bounded recovery adapter, not the
 //! read-only proof path.
+//!
+//! Account payloads travel as Base64 (Base58 is for addresses only). The RPC
+//! response must be `[payload, "base64"]`, the account owner must match the
+//! configured host program, and `decode_on_chain_account` enforces discriminator
+//! + Borsh layout before peaks are trusted.
 
 use async_trait::async_trait;
 use base64::Engine;
 use serde_json::json;
 
 const SOLANA_PROOF_COMMITMENT: &str = "confirmed";
+const EXPECTED_DATA_ENCODING: &str = "base64";
 
 #[derive(thiserror::Error, Debug)]
 pub enum ChainError {
@@ -18,6 +24,8 @@ pub enum ChainError {
     Rpc(String),
     #[error("malformed encoding: {0}")]
     Encoding(String),
+    #[error("account owner mismatch: expected {expected}, got {observed}")]
+    WrongOwner { expected: String, observed: String },
 }
 
 /// The on-chain `EncryptedValue` state needed to verify a reconstructed proof.
@@ -39,12 +47,14 @@ pub trait ChainFetcher: Send + Sync {
 pub struct RpcChainFetcher {
     client: reqwest::Client,
     rpc_url: String,
+    /// Host program id; returned accounts must be owned by this program.
+    program_id: [u8; 32],
 }
 
 impl RpcChainFetcher {
     /// Confirmed JSON-RPC client with explicit connect/request timeouts so a
     /// stalled RPC cannot retain proof handlers indefinitely.
-    pub fn new(rpc_url: String) -> Self {
+    pub fn new(rpc_url: String, program_id: [u8; 32]) -> Self {
         let client = reqwest::Client::builder()
             // Stay inside the outer HTTP proof budget (30s) so timeouts surface as
             // typed `chain_error` rather than racing an empty HTTP 408.
@@ -52,7 +62,11 @@ impl RpcChainFetcher {
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .expect("reqwest client");
-        Self { client, rpc_url }
+        Self {
+            client,
+            rpc_url,
+            program_id,
+        }
     }
 
     async fn call(
@@ -104,6 +118,59 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
         .map_err(|err| err.to_string())
 }
 
+/// Fail-closed parse of `getAccountInfo` `result.value`.
+///
+/// Requires `data == [payload, "base64"]`, matching owner, valid Base64, and a
+/// well-formed EncryptedValue account body (discriminator + Borsh).
+fn parse_account_value(
+    value: &serde_json::Value,
+    expected_program_id: &[u8; 32],
+) -> Result<OnChainLineageState, ChainError> {
+    let owner = value
+        .get("owner")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ChainError::Rpc("missing account owner".to_string()))?;
+    let expected = base58_encode(expected_program_id);
+    if owner != expected {
+        return Err(ChainError::WrongOwner {
+            expected,
+            observed: owner.to_owned(),
+        });
+    }
+
+    let data = value
+        .get("data")
+        .ok_or_else(|| ChainError::Rpc("missing account data".to_string()))?;
+    let data_arr = data
+        .as_array()
+        .ok_or_else(|| ChainError::Encoding("account data must be [payload, encoding]".into()))?;
+    if data_arr.len() != 2 {
+        return Err(ChainError::Encoding(
+            "account data must be exactly [payload, encoding]".into(),
+        ));
+    }
+    let payload = data_arr[0]
+        .as_str()
+        .ok_or_else(|| ChainError::Encoding("account data payload must be a string".into()))?;
+    let encoding = data_arr[1]
+        .as_str()
+        .ok_or_else(|| ChainError::Encoding("account data encoding tag must be a string".into()))?;
+    if encoding != EXPECTED_DATA_ENCODING {
+        return Err(ChainError::Encoding(format!(
+            "unexpected account encoding `{encoding}`; expected `{EXPECTED_DATA_ENCODING}`"
+        )));
+    }
+
+    let raw = base64_decode(payload).map_err(ChainError::Encoding)?;
+    // Length/discriminator validation lives in decode_on_chain_account.
+    let decoded = zama_solana_acl::decode_on_chain_account(&raw)
+        .map_err(|e| ChainError::Encoding(format!("account body rejected: {e:?}")))?;
+    Ok(OnChainLineageState {
+        peaks: decoded.peaks,
+        leaf_count: decoded.leaf_count,
+    })
+}
+
 #[async_trait]
 impl ChainFetcher for RpcChainFetcher {
     async fn get_lineage_state(
@@ -116,22 +183,53 @@ impl ChainFetcher for RpcChainFetcher {
         if result.is_null() || result.get("value").map(|v| v.is_null()).unwrap_or(true) {
             return Ok(None);
         }
-        let data_field = result["value"]["data"][0]
-            .as_str()
-            .ok_or_else(|| ChainError::Rpc("missing base64 account data".to_string()))?;
-        let raw = base64_decode(data_field).map_err(ChainError::Encoding)?;
-        let decoded = zama_solana_acl::decode_on_chain_account(&raw)
-            .map_err(|e| ChainError::Rpc(format!("{e:?}")))?;
-        Ok(Some(OnChainLineageState {
-            peaks: decoded.peaks,
-            leaf_count: decoded.leaf_count,
-        }))
+        let value = result
+            .get("value")
+            .ok_or_else(|| ChainError::Rpc("missing account value".to_string()))?;
+        Ok(Some(parse_account_value(value, &self.program_id)?))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
+    use zama_solana_acl::encrypted_value_discriminator;
+
+    fn program_id() -> [u8; 32] {
+        [7u8; 32]
+    }
+
+    fn minimal_account_body() -> Vec<u8> {
+        // Discriminator + empty-ish body is rejected by Borsh; build a tiny
+        // well-formed account via encode path isn't public, so use a body that
+        // passes discriminator then fails Borsh — for success tests we need a
+        // real EncryptedValue. Prefer fixture: discriminator + borsh of zeros
+        // won't work. Use decode tests only for fail-closed paths with a
+        // hand-crafted successful account from acl tests pattern.
+        let disc = encrypted_value_discriminator();
+        // OnChainEncryptedValue: 4x32 + vec subjects + u64 + vec peaks + u8
+        // Empty subjects/peaks: subjects len 0 (4 bytes LE), peaks len 0 (4), bump
+        let mut body = Vec::new();
+        body.extend_from_slice(&disc);
+        body.extend_from_slice(&[0u8; 32]); // acl_domain_key
+        body.extend_from_slice(&[0u8; 32]); // app_account
+        body.extend_from_slice(&[0u8; 32]); // label
+        body.extend_from_slice(&[0u8; 32]); // handle
+        body.extend_from_slice(&0u32.to_le_bytes()); // subjects len
+        body.extend_from_slice(&0u64.to_le_bytes()); // leaf_count
+        body.extend_from_slice(&0u32.to_le_bytes()); // peaks len
+        body.push(0); // bump
+        body
+    }
+
+    fn account_json(owner: &str, payload_b64: &str, encoding: &str) -> serde_json::Value {
+        json!({
+            "owner": owner,
+            "data": [payload_b64, encoding],
+            "lamports": 1,
+        })
+    }
 
     #[test]
     fn account_info_params_pin_confirmed_commitment() {
@@ -151,5 +249,67 @@ mod tests {
         assert!(base64_decode("a").is_err());
         assert!(base64_decode("====").is_err());
         assert!(base64_decode("aGVsbG8").is_err()); // missing padding
+    }
+
+    #[test]
+    fn parse_rejects_unexpected_encoding_tag() {
+        let owner = base58_encode(&program_id());
+        let payload = base64::engine::general_purpose::STANDARD.encode(minimal_account_body());
+        let value = account_json(&owner, &payload, "base58");
+        let err = parse_account_value(&value, &program_id()).unwrap_err();
+        assert!(matches!(err, ChainError::Encoding(_)));
+        assert!(err.to_string().contains("unexpected account encoding"));
+    }
+
+    #[test]
+    fn parse_rejects_malformed_base64_payload() {
+        let owner = base58_encode(&program_id());
+        let value = account_json(&owner, "not-base64!!!", "base64");
+        let err = parse_account_value(&value, &program_id()).unwrap_err();
+        assert!(matches!(err, ChainError::Encoding(_)));
+    }
+
+    #[test]
+    fn parse_rejects_wrong_owner() {
+        let payload = base64::engine::general_purpose::STANDARD.encode(minimal_account_body());
+        let value = account_json(
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            &payload,
+            "base64",
+        );
+        let err = parse_account_value(&value, &program_id()).unwrap_err();
+        assert!(matches!(err, ChainError::WrongOwner { .. }));
+    }
+
+    #[test]
+    fn parse_rejects_non_array_data_shape() {
+        let owner = base58_encode(&program_id());
+        let value = json!({
+            "owner": owner,
+            "data": "aGVsbG8=",
+        });
+        let err = parse_account_value(&value, &program_id()).unwrap_err();
+        assert!(matches!(err, ChainError::Encoding(_)));
+    }
+
+    #[test]
+    fn parse_accepts_valid_account() {
+        let owner = base58_encode(&program_id());
+        let payload = base64::engine::general_purpose::STANDARD.encode(minimal_account_body());
+        let value = account_json(&owner, &payload, "base64");
+        let state = parse_account_value(&value, &program_id()).unwrap();
+        assert_eq!(state.leaf_count, 0);
+        assert!(state.peaks.is_empty());
+    }
+
+    #[test]
+    fn parse_rejects_bad_discriminator() {
+        let owner = base58_encode(&program_id());
+        let mut raw = minimal_account_body();
+        raw[0] ^= 0xff;
+        let payload = base64::engine::general_purpose::STANDARD.encode(raw);
+        let value = account_json(&owner, &payload, "base64");
+        let err = parse_account_value(&value, &program_id()).unwrap_err();
+        assert!(matches!(err, ChainError::Encoding(_)));
     }
 }

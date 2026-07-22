@@ -113,5 +113,7 @@ export DATABASE_URL='postgres://work@127.0.0.1:55432/solana_proof_service'
 make test-db
 ```
 
-Use `NO_DNA=1` for all Solana-related cargo commands (already set in the
-Makefile targets).
+Use `NO_DNA=1` for Solana-related cargo/CLI commands (already set in the
+Makefile targets). It marks the caller as a non-human operator
+([no-dna.org](https://no-dna.org/)) so compatible tools skip interactive
+prompts/spinners and emit machine-friendly output — useful for agents and CI.
