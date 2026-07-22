@@ -3260,7 +3260,7 @@ pub fn perform_fhe_operation_impl(
             };
             let rand_seed = to_be_u128_bit(rand_counter);
             let to_type = to_be_u16_bit(to_type) as i16;
-            generate_random_number(to_type as i16, rand_seed, None)
+            generate_random_number(to_type, rand_seed, None)
         }
         SupportedFheOperations::FheRandBounded => {
             let SupportedFheCiphertexts::Scalar(rand_counter) = &input_operands[0] else {
@@ -3283,7 +3283,7 @@ pub fn perform_fhe_operation_impl(
             };
             let rand_seed = to_be_u128_bit(rand_counter);
             let to_type = to_be_u16_bit(to_type) as i16;
-            generate_random_number(to_type as i16, rand_seed, Some(upper_bound))
+            generate_random_number(to_type, rand_seed, Some(upper_bound))
         }
         SupportedFheOperations::FheGetInputCiphertext => Err(FhevmError::UnsupportedFheTypes {
             fhe_operation: format!("{:?}", fhe_operation),
