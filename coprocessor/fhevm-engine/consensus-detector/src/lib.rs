@@ -19,7 +19,7 @@
 //! each pass only re-requests operators it hasn't heard from — a slow operator
 //! simply fills in on a later tick. The FIRST block on a track whose blob is
 //! unanimous across all operators anchors that track: the service stops polling
-//! it and emits `unanimity_consensus(chain_id, block_height, block_hash)` — and
+//! it and emits a proposal-scoped unanimity event — and
 //! re-emits it each pass until the window closes, so a controller that missed the
 //! NOTIFY still latches. One unanimous non-trivial block is a sufficient anchor
 //! because a determinism-breaking upgrade is systematic — any such block reveals
@@ -138,6 +138,7 @@ pub struct NewBlockPayload {
 /// Payload emitted on `unanimity_consensus` / `unanimity_consensus_timeout`.
 #[derive(Debug, Clone, Serialize)]
 struct UnanimityPayload<'a> {
+    proposal_id: &'a [u8],
     chain_id: i64,
     block_height: i64,
     block_hash: &'a str,
@@ -238,28 +239,34 @@ fn all_slots_filled(slots: &[Option<Vec<u8>>]) -> bool {
     !slots.is_empty() && slots.iter().all(Option::is_some)
 }
 
-/// Returns `(start_block, end_block)` for the GCS dry-run when it's active.
+/// Returns `(proposal_id, start_block, end_block)` for the active GCS dry-run.
 /// `None` otherwise. Scoped to `stack_role = 'GCS'` because BCS also stays
 /// `status='in_progress'` during the upgrade and doesn't own the replay window.
-pub(crate) async fn active_upgrade_window<'e, E>(executor: E) -> Result<Option<(i64, i64)>, Error>
+pub(crate) async fn active_upgrade_window<'e, E>(
+    executor: E,
+) -> Result<Option<(Vec<u8>, i64, i64)>, Error>
 where
     E: Executor<'e, Database = Postgres>,
 {
-    let row: Option<(String, Option<i64>, Option<i64>)> = sqlx::query_as(
-        "SELECT state, start_block, end_block FROM upgrade_state
+    type ActiveWindowRow = (String, Option<Vec<u8>>, Option<i64>, Option<i64>);
+    let row: Option<ActiveWindowRow> = sqlx::query_as(
+        "SELECT state, proposal_id, start_block, end_block FROM upgrade_state
           WHERE stack_role = 'GCS' AND status = 'in_progress'",
     )
     .fetch_optional(executor)
     .await?;
 
-    let Some((state, start_block, end_block)) = row else {
+    let Some((state, proposal_id, start_block, end_block)) = row else {
         return Ok(None);
     };
     if !matches!(state.as_str(), "UpgradeActivated" | "DryRunStarted") {
         debug!(state = %state, "GCS not in UpgradeActivated/DryRunStarted — ignoring");
         return Ok(None);
     }
-    Ok(start_block.zip(end_block))
+    Ok(proposal_id
+        .zip(start_block)
+        .zip(end_block)
+        .map(|((proposal_id, start), end)| (proposal_id, start, end)))
 }
 
 /// Per-track eager consensus state. We only need ONE unanimous block to anchor
@@ -385,7 +392,7 @@ async fn host_consensus_candidates(
     Ok(rows.into_iter().map(|(b,)| b).collect())
 }
 
-/// True once blocks up to `end_block` have been stored. Starts the timeout clock.
+/// True once finalized blocks reach `end_block`.
 async fn host_reached_end_block(
     pool: &Pool<Postgres>,
     host_chain_id: i64,
@@ -393,7 +400,8 @@ async fn host_reached_end_block(
 ) -> Result<bool, Error> {
     let sql = format!(
         "SELECT COALESCE(
-                  (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid WHERE chain_id = $1),
+                  (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid
+                    WHERE chain_id = $1 AND block_status = 'finalized'),
                   -1
                 ) >= $2"
     );
@@ -426,9 +434,8 @@ enum WindowTimeout {
 }
 
 struct WindowState {
-    /// The (start, end) window being tracked; when it changes, both consensus
-    /// tracks and the timeout reset for the new window.
-    tracked_window: Option<(i64, i64)>,
+    /// The proposal and window currently being tracked.
+    tracked_window: Option<(Vec<u8>, i64, i64)>,
     timeout: WindowTimeout,
 }
 
@@ -450,11 +457,11 @@ async fn consensus_pass(
     if window_state.tracked_window != window {
         host.reset();
         gateway.reset();
-        // The upgrade window changed, so reset the timeout for the new one.
+        // Reset the timeout for the new proposal or window.
         window_state.timeout = WindowTimeout::NotArmed;
-        window_state.tracked_window = window;
+        window_state.tracked_window = window.clone();
     }
-    let Some((start, end)) = window else {
+    let Some((proposal_id, start, end)) = window else {
         return Ok(());
     };
 
@@ -488,6 +495,7 @@ async fn consensus_pass(
             notify_unanimity(
                 pool,
                 UNANIMITY_CONSENSUS_CHANNEL,
+                &proposal_id,
                 &NewBlockPayload {
                     chain_id: track.chain_id,
                     block_height: block,
@@ -529,6 +537,7 @@ async fn consensus_pass(
                 notify_unanimity(
                     pool,
                     UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
+                    &proposal_id,
                     &NewBlockPayload {
                         chain_id: host.chain_id,
                         block_height: end,
@@ -547,9 +556,11 @@ async fn consensus_pass(
 async fn notify_unanimity(
     pool: &Pool<Postgres>,
     channel: &str,
+    proposal_id: &[u8],
     payload: &NewBlockPayload,
 ) -> Result<(), Error> {
     let body = serde_json::to_string(&UnanimityPayload {
+        proposal_id,
         chain_id: payload.chain_id,
         block_height: payload.block_height,
         block_hash: &payload.block_hash,

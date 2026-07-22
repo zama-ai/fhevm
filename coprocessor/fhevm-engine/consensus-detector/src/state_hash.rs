@@ -494,7 +494,7 @@ async fn compute_and_upload_state_hashes(
 
     // GCS hashes are only produced during an active upgrade window; BCS hashes
     // are not produced because they would never be uploaded or consumed.
-    if let Some((start, end)) = crate::active_upgrade_window(&mut *tx).await? {
+    if let Some((_, start, end)) = crate::active_upgrade_window(&mut *tx).await? {
         compute_and_insert_gcs(&mut tx, start, end, batch_limit).await?;
 
         // Gateway-inputs track: only once the GCS gw-listener has a watermark and

@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::common::{try_extract_non_retryable_config_error, try_into_array};
-use super::TransactionOperation;
+use super::{begin_live_write, TransactionOperation};
 use alloy::{
     network::{Ethereum, TransactionBuilder},
     primitives::{Address, FixedBytes, U256},
@@ -186,20 +186,7 @@ where
         txn_block_number: Option<i64>,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        // Both writes below target tables execute_cutover merges into `public`.
-        // Operations start only after this sender is live, even when it started
-        // as GCS, so the guard must always apply the live-stack retirement check.
-        // These writes run after the on-chain send as plain database writes, so
-        // the lock is not held across the network call. A blocked write leaves
-        // the database unchanged. See
-        // versioning::begin_write_guarded.
-        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
-            &self.db_pool,
-            false,
-            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
-        )
-        .await?
-        .into_tx() else {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
             info!("Cutover completed — skipping post-send digest/ct128 writes on retired stack");
             return Ok(());
         };
@@ -267,6 +254,9 @@ where
         err: &str,
         current_retry_count: i32,
     ) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
         let compact_hex_handle = to_hex(handle);
         if current_retry_count == self.conf.add_ciphertexts_max_retries - 1 {
             error!(
@@ -292,8 +282,9 @@ where
             err,
             handle,
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -303,6 +294,9 @@ where
         err: &str,
         current_unlimited_retries_count: i32,
     ) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
         let compact_hex_handle = to_hex(handle);
         if current_unlimited_retries_count >= (self.conf.review_after_unlimited_retries as i32) - 1
         {
@@ -329,8 +323,9 @@ where
             err,
             handle,
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -339,6 +334,9 @@ where
         handle: &[u8],
         error: &str,
     ) -> anyhow::Result<()> {
+        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
         sqlx::query!(
             "UPDATE ciphertext_digest
             SET
@@ -350,8 +348,9 @@ where
             error,
             handle,
         )
-        .execute(&self.db_pool)
+        .execute(tx.as_mut())
         .await?;
+        tx.commit().await?;
         Ok(())
     }
 }

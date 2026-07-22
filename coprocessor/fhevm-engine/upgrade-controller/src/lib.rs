@@ -126,11 +126,10 @@ pub struct UpgradeActivatedPayload {
 
 /// Payload published over `unanimity_consensus` by `consensus-detector`.
 ///
-/// `block_height` is matched against the in-DB FSM row's `end_block` to ensure
-/// the event belongs to the upgrade currently in flight — otherwise a late or
-/// replayed event could trigger a cutover for the wrong block window.
+/// `proposal_id` identifies the active upgrade.
 #[derive(Debug, Clone, Deserialize)]
 pub struct UnanimityConsensusPayload {
+    pub proposal_id: Vec<u8>,
     pub chain_id: i64,
     pub block_height: i64,
     pub block_hash: String,
@@ -1037,8 +1036,12 @@ async fn try_cutover_if_consensus(pool: &Pool<Postgres>) -> Result<(), Error> {
 }
 
 /// Roll back a dry-run under the write lock: PAUSED/failed, reset schema, wake workers.
-/// Scoped to `end_block` so a stale timeout cannot reset a newer attempt. Returns whether it acted.
-async fn rollback_dry_run(pool: &Pool<Postgres>, end_block: i64) -> Result<bool, Error> {
+/// Scoped to the proposal and end block. Returns whether it acted.
+async fn rollback_dry_run(
+    pool: &Pool<Postgres>,
+    proposal_id: &[u8],
+    end_block: i64,
+) -> Result<bool, Error> {
     let mut tx = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
         .bind(CUTOVER_LOCK_ID)
@@ -1057,9 +1060,10 @@ async fn rollback_dry_run(pool: &Pool<Postgres>, end_block: i64) -> Result<bool,
                host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
                gw_dry_run_started = FALSE, updated_at = NOW()
          WHERE stack_role = 'GCS' AND state IN ('UpgradeActivated', 'DryRunStarted')
-           AND end_block = $1
+           AND proposal_id = $1 AND end_block = $2
         "#,
     )
+    .bind(proposal_id)
     .bind(end_block)
     .execute(&mut *tx)
     .await?;
@@ -1195,6 +1199,11 @@ pub async fn handle_unanimity_consensus(
         Some((state, start_block, end_block, proposal_id, host_chain_id, gw_start_block))
             if state == "UpgradeActivated" || state == "DryRunStarted" =>
         {
+            if proposal_id.as_deref() != Some(payload.proposal_id.as_slice()) {
+                warn!("event_unanimity_consensus: proposal does not match — ignoring");
+                return Ok(());
+            }
+
             // Classify the event. Host track iff chain_id matches the stored
             // host_chain_id; everything else is the Gateway track. For a legacy
             // row predating host_chain_id, fall back to window membership.
@@ -1216,8 +1225,10 @@ pub async fn handle_unanimity_consensus(
                             "UPDATE upgrade_state SET host_consensus_reached = TRUE, updated_at = NOW()
                               WHERE stack_role = 'GCS'
                                 AND state IN ('UpgradeActivated', 'DryRunStarted')
+                                AND proposal_id = $1
                                 AND NOT host_consensus_reached",
                         )
+                        .bind(&payload.proposal_id)
                         .execute(pool)
                         .await?;
                         if set.rows_affected() > 0 {
@@ -1262,8 +1273,10 @@ pub async fn handle_unanimity_consensus(
                             "UPDATE upgrade_state SET gw_consensus_reached = TRUE, updated_at = NOW()
                               WHERE stack_role = 'GCS'
                                 AND state IN ('UpgradeActivated', 'DryRunStarted')
+                                AND proposal_id = $1
                                 AND NOT gw_consensus_reached",
                         )
+                        .bind(&payload.proposal_id)
                         .execute(pool)
                         .await?;
                         if set.rows_affected() > 0 {
@@ -1328,7 +1341,7 @@ pub async fn handle_unanimity_consensus_timeout(
     let payload: UnanimityConsensusPayload =
         serde_json::from_str(raw_payload).map_err(|e| Error::Payload(e.to_string()))?;
 
-    if rollback_dry_run(pool, payload.block_height).await? {
+    if rollback_dry_run(pool, &payload.proposal_id, payload.block_height).await? {
         warn!(
             chain_id = payload.chain_id,
             block_height = payload.block_height,
@@ -1480,11 +1493,13 @@ mod tests {
     #[test]
     fn parses_unanimity_consensus_payload() {
         let json = r#"{
+            "proposal_id": [2],
             "chain_id": 12345,
             "block_height": 200,
             "block_hash": "0xabc0000000000000000000000000000000000000000000000000000000000001"
         }"#;
         let p: UnanimityConsensusPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(p.proposal_id, vec![2]);
         assert_eq!(p.chain_id, 12345);
         assert_eq!(p.block_height, 200);
         assert_eq!(
@@ -1637,7 +1652,7 @@ mod tests {
     }
 
     fn timeout_payload() -> String {
-        serde_json::json!({ "chain_id": 1_i64, "block_height": 200_i64, "block_hash": "0x00" })
+        serde_json::json!({ "proposal_id": [2], "chain_id": 1_i64, "block_height": 200_i64, "block_hash": "0x00" })
             .to_string()
     }
 
@@ -1891,7 +1906,7 @@ mod tests {
 
         // Timeout for a different window (block_height 999 != end_block 200).
         let payload =
-            serde_json::json!({ "chain_id": 1_i64, "block_height": 999_i64, "block_hash": "0x00" })
+            serde_json::json!({ "proposal_id": [2], "chain_id": 1_i64, "block_height": 999_i64, "block_hash": "0x00" })
                 .to_string();
         handle_unanimity_consensus_timeout(&pool, true, &payload)
             .await
@@ -1905,6 +1920,65 @@ mod tests {
             gcs_state(&pool).await,
             ("DryRunStarted".into(), "in_progress".into())
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_timeout_ignores_other_proposal() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+
+        let payload = serde_json::json!({
+            "proposal_id": [0x99],
+            "chain_id": 1_i64,
+            "block_height": 200_i64,
+            "block_hash": "0x00"
+        })
+        .to_string();
+        handle_unanimity_consensus_timeout(&pool, true, &payload)
+            .await
+            .expect("handler ok");
+
+        assert!(marker_exists(&pool).await);
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("DryRunStarted".into(), "in_progress".into())
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn handle_consensus_ignores_other_proposal() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await;
+        sqlx::query(
+            "UPDATE upgrade_state
+                SET host_consensus_reached = FALSE, gw_consensus_reached = FALSE
+              WHERE stack_role = 'GCS'",
+        )
+        .execute(&pool)
+        .await
+        .expect("reset latches");
+
+        let payload = serde_json::json!({
+            "proposal_id": [0x99],
+            "chain_id": 1_i64,
+            "block_height": 150_i64,
+            "block_hash": "0x00"
+        })
+        .to_string();
+        handle_unanimity_consensus(&pool, true, &payload)
+            .await
+            .expect("handler ok");
+
+        let latches: (bool, bool) = sqlx::query_as(
+            "SELECT host_consensus_reached, gw_consensus_reached
+               FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("latches");
+        assert_eq!(latches, (false, false));
     }
 
     /// A readiness task left over from an old proposal must not advance a newer one.
@@ -2018,7 +2092,8 @@ mod tests {
         };
 
         let rollback_pool = pool.clone();
-        let mut rollback = tokio::spawn(async move { rollback_dry_run(&rollback_pool, 200).await });
+        let mut rollback =
+            tokio::spawn(async move { rollback_dry_run(&rollback_pool, &[0x02], 200).await });
 
         assert!(
             timeout(Duration::from_millis(200), &mut rollback)
