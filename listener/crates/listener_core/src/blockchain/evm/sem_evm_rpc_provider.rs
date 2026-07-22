@@ -124,7 +124,7 @@ impl SemEvmRpcProvider {
 
     /// Internal helper to acquire permit and execute a raw JSON-RPC request.
     /// This ensures every single call respects the concurrency limit.
-    async fn raw_request<T: DeserializeOwned + Send + Sync + alloy_json_rpc::RpcRecv>(
+    async fn raw_request<T: DeserializeOwned + Send + Sync + alloy::rpc::json_rpc::RpcRecv>(
         &self,
         method: &str,
         params: Value,
