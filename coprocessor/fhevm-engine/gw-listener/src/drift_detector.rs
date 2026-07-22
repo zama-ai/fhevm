@@ -550,11 +550,11 @@ impl DriftDetector {
             return;
         }
 
-        if state.consensus.is_some() {
+        if let Some(consensus) = &state.consensus {
             if !state.local_consensus_checked {
                 return;
             }
-            let consensus_block = state.consensus.as_ref().unwrap().context.block_number;
+            let consensus_block = consensus.context.block_number;
             POST_CONSENSUS_COMPLETION_BLOCKS_HISTOGRAM
                 .observe(state.last_seen_block.saturating_sub(consensus_block) as f64);
             self.open_handles.remove(&handle);

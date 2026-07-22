@@ -1,4 +1,4 @@
-use alloy_provider::Provider;
+use alloy::providers::Provider;
 use axum::{
     extract::State,
     http::StatusCode,

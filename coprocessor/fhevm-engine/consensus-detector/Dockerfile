@@ -1,5 +1,7 @@
 # Stage 1: Build Consensus Detector
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.91.0 AS builder
+# RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
+ARG RUST_IMAGE_VERSION
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 ARG CARGO_PROFILE=release
 
