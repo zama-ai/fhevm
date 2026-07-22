@@ -31,7 +31,6 @@
 //     decrypt the same handle via the SDK and assert the known plaintext;
 //     wallet-owned handles (`userAddress` = a contract) cannot be decrypted
 //     through the public SDK, so those positives assert `succeeded` only.
-
 import { expect } from 'chai';
 import { TypedDataEncoder } from 'ethers';
 import type { Signer, TypedDataDomain } from 'ethers';
@@ -110,11 +109,14 @@ export interface UnifiedDecryptRequest {
  *  - `erc1271`: `ownerSigner` (an owner key) signs; `userAddress` is the smart-wallet
  *     address, so the KMS/relayer verify via the wallet's `isValidSignature`.
  *  - `empty`: no signature (`0x`) — the Safe `approveHash` / `signedMessages` flow.
+ *  - `raw`: a pre-built signature blob forwarded verbatim — multisig concatenations
+ *     (see `buildMultisigSignature`) and deliberately malformed blobs for negatives.
  */
 export type SignMode =
   | { readonly kind: 'eoa'; readonly signer: Signer }
   | { readonly kind: 'erc1271'; readonly ownerSigner: Signer }
-  | { readonly kind: 'empty' };
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'raw'; readonly signature: string };
 
 export interface PostResult {
   readonly httpStatus: number;
@@ -191,8 +193,7 @@ export function chainIdFromHandle(ctHandle: string): number {
  * chain. Backdating by a small margin absorbs clock skew in both directions
  * without materially shortening the (days-long) validity windows used in tests.
  */
-export const backdatedStartTimestamp = (marginSeconds = 60): number =>
-  Math.floor(Date.now() / 1000) - marginSeconds;
+export const backdatedStartTimestamp = (marginSeconds = 60): number => Math.floor(Date.now() / 1000) - marginSeconds;
 
 function domainOf(cfg: UnifiedConfig, chainId: number): TypedDataDomain {
   return {
@@ -237,9 +238,43 @@ export function computeUnifiedDigest(cfg: UnifiedConfig, req: UnifiedDecryptRequ
   return TypedDataEncoder.hash(domainOf(cfg, chainId), UNIFIED_USER_DECRYPT_TYPES, messageOf(req));
 }
 
+/**
+ * Build a Safe-style static multisig signature: each owner signs the unified
+ * EIP-712 struct, and the 65-byte parts are concatenated sorted ascending by
+ * signer address (Safe's canonical encoding — the ordering doubles as dedup).
+ * Submit the result via SignMode `{kind: 'raw'}`. `order: 'descending'`
+ * deliberately mis-orders the parts for ordering negatives; passing the same
+ * signer twice yields a duplicated-part blob (sorting is a no-op on equal keys).
+ */
+export async function buildMultisigSignature(
+  cfg: UnifiedConfig,
+  req: UnifiedDecryptRequest,
+  owners: readonly Signer[],
+  opts?: { readonly order?: 'ascending' | 'descending' },
+): Promise<string> {
+  const chainId = requestChainId(req);
+  const domain = domainOf(cfg, chainId);
+  const message = messageOf(req);
+  const parts = await Promise.all(
+    owners.map(async (owner) => ({
+      address: (await owner.getAddress()).toLowerCase(),
+      signature: await owner.signTypedData(domain, UNIFIED_USER_DECRYPT_TYPES, message),
+    })),
+  );
+  // Lowercase-hex string order equals numeric address order for equal-length hex.
+  parts.sort((a, b) => a.address.localeCompare(b.address));
+  if (opts?.order === 'descending') {
+    parts.reverse();
+  }
+  return `0x${parts.map((p) => p.signature.slice(2)).join('')}`;
+}
+
 async function signRequest(cfg: UnifiedConfig, req: UnifiedDecryptRequest, mode: SignMode): Promise<string> {
   if (mode.kind === 'empty') {
     return '0x';
+  }
+  if (mode.kind === 'raw') {
+    return ensure0x(mode.signature);
   }
   if (mode.kind === 'eoa') {
     // 'eoa' means "the user signs for themselves" — a mismatched signer would
@@ -426,9 +461,7 @@ export function isSignatureRejection(post: PostResult): boolean {
   const err = (post.raw as { error?: { details?: Array<{ field?: string; issue?: string }> } }).error;
   return (err?.details ?? []).some(
     (d) =>
-      d.field === 'signature' &&
-      typeof d.issue === 'string' &&
-      d.issue.toLowerCase().includes('signature is invalid'),
+      d.field === 'signature' && typeof d.issue === 'string' && d.issue.toLowerCase().includes('signature is invalid'),
   );
 }
 
@@ -461,10 +494,6 @@ export function directHandle(ctHandle: string, contractAddress: string, userAddr
 }
 
 /** Build a delegated handle entry (`ownerAddress` is the delegator). */
-export function delegatedHandle(
-  ctHandle: string,
-  contractAddress: string,
-  ownerAddress: string,
-): UnifiedHandleEntry {
+export function delegatedHandle(ctHandle: string, contractAddress: string, ownerAddress: string): UnifiedHandleEntry {
   return { ctHandle, contractAddress, ownerAddress };
 }

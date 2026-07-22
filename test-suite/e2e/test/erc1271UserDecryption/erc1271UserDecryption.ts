@@ -1,13 +1,18 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { ERC1271ApproveHashWallet, ERC1271OwnerWallet, ERC1271RejectWallet, UserDecrypt } from '../../types';
+import {
+  ERC1271ApproveHashWallet,
+  ERC1271MultisigWallet,
+  ERC1271OwnerWallet,
+  ERC1271RejectWallet,
+  UserDecrypt,
+} from '../../types';
 import { createInstances, relayerApiKey, relayerUrl, verifyingContractAddressDecryption } from '../instance';
-import { Signers, getSigners, initSigners } from '../signers';
-import { FhevmInstances } from '../types';
 import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
 import {
   backdatedStartTimestamp,
+  buildMultisigSignature,
   computeUnifiedDigest,
   directHandle,
   isSignatureRejection,
@@ -15,6 +20,8 @@ import {
   requestUnifiedUserDecrypt,
   submitUnifiedRequest,
 } from '../sdk/unified/unifiedUserDecrypt';
+import { Signers, getSigners, initSigners } from '../signers';
+import { FhevmInstances } from '../types';
 
 // Trivially-encrypted value each mock wallet stores; the exact plaintext is
 // irrelevant — a `succeeded` job proves the ERC-1271 signature was accepted and
@@ -52,13 +59,26 @@ describe('ERC-1271 user decryption', function () {
   let approveWalletAddress: string;
   let rejectWallet: ERC1271RejectWallet;
   let rejectWalletAddress: string;
+  let multisig2of3: ERC1271MultisigWallet;
+  let multisig2of3Address: string;
+  let multisig3of3: ERC1271MultisigWallet;
+  let multisig3of3Address: string;
 
   before(async function () {
     this.timeout(180_000);
-    await initSigners(3);
+    // 5, not 3: the multisig tests use dave (owner) and eve (non-owner), and
+    // sibling suites that touch dave/eve all pass 5. The count only limits
+    // funding under HARDHAT_PARALLEL (signers.ts funds all 5 otherwise), and
+    // `initSigners` funds only on its FIRST call per process — matching 5
+    // keeps combined parallel runs safe whichever suite's before() runs first.
+    await initSigners(5);
     signers = await getSigners();
     instances = await createInstances(signers);
-    cfg = { relayerUrl, decryptionContractAddress: verifyingContractAddressDecryption, apiKey: relayerApiKey || undefined };
+    cfg = {
+      relayerUrl,
+      decryptionContractAddress: verifyingContractAddressDecryption,
+      apiKey: relayerApiKey || undefined,
+    };
 
     // A normal dapp contract with an alice-owned handle (for the EOA fast path).
     const userDecryptFactory = await ethers.getContractFactory('UserDecrypt');
@@ -87,6 +107,20 @@ describe('ERC-1271 user decryption', function () {
     rejectWalletAddress = await rejectWallet.getAddress();
     await (await rejectWallet.connect(signers.alice).initValue(KNOWN_VALUE)).wait();
 
+    // ERC-1271 multisig wallets (Safe-style concatenated signatures): owners
+    // bob/carol/dave only ever sign typed data offline — they pay no gas.
+    const multisigFactory = await ethers.getContractFactory('ERC1271MultisigWallet');
+    const multisigOwners = [signers.bob.address, signers.carol.address, signers.dave.address];
+    multisig2of3 = await multisigFactory.connect(signers.alice).deploy(multisigOwners, 2);
+    await multisig2of3.waitForDeployment();
+    multisig2of3Address = await multisig2of3.getAddress();
+    await (await multisig2of3.connect(signers.alice).initValue(KNOWN_VALUE)).wait();
+
+    multisig3of3 = await multisigFactory.connect(signers.alice).deploy(multisigOwners, 3);
+    await multisig3of3.waitForDeployment();
+    multisig3of3Address = await multisig3of3.getAddress();
+    await (await multisig3of3.connect(signers.alice).initValue(KNOWN_VALUE)).wait();
+
     publicKey = (await instances.alice.generateKeypair()).publicKey;
   });
 
@@ -101,10 +135,15 @@ describe('ERC-1271 user decryption', function () {
       startTimestamp: backdatedStartTimestamp(),
       durationSeconds: DURATION_SECONDS,
     };
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'eoa', signer: signers.alice }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'eoa', signer: signers.alice },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
     // Decrypt the same handle through the public SDK and assert the known plaintext.
@@ -128,10 +167,15 @@ describe('ERC-1271 user decryption', function () {
       durationSeconds: DURATION_SECONDS,
     };
     // bob is the wallet owner; he signs, but userAddress is the wallet contract.
-    const { post, poll } = await requestUnifiedUserDecrypt(cfg, req, { kind: 'erc1271', ownerSigner: signers.bob }, {
-      waitForTerminal: true,
-      timeoutMs: POSITIVE_TIMEOUT_MS,
-    });
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'erc1271', ownerSigner: signers.bob },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
   });
@@ -269,6 +313,122 @@ describe('ERC-1271 user decryption', function () {
     };
     // Empty signature is only valid for a contract (ERC-1271); an EOA must be rejected.
     const { post } = await submitUnifiedRequest(cfg, req, { kind: 'empty' });
+    expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
+  });
+
+  // Multisig (Safe-style static encoding): the signature is a concatenation of
+  // 65-byte {r,s,v} owner parts sorted strictly ascending by signer address.
+  // The blob is longer than a single ECDSA signature, so `ecrecover` on it is
+  // impossible — every layer must forward it opaquely to the wallet's
+  // `isValidSignature`. Bad blobs are rejected synchronously (400) by the
+  // relayer's pre-check; the KMS Connector runs the same shared verifier again
+  // before the KMS produces shares.
+
+  /**
+   * A request for a multisig wallet's stored handle with a FRESH re-encryption
+   * key: the relayer dedups accepted jobs on a content hash that EXCLUDES the
+   * signature, so a second positive differing only in its multisig blob would
+   * collapse onto the first job and pass vacuously. (Definitively-bad
+   * signatures are 400-rejected by the pre-check before dedup is consulted —
+   * the fresh key just keeps every request, negative included, independent.)
+   */
+  async function freshMultisigRequest(
+    wallet: ERC1271MultisigWallet,
+    walletAddress: string,
+  ): Promise<UnifiedDecryptRequest> {
+    const handle = await wallet.value();
+    const freshKey = (await instances.alice.generateKeypair()).publicKey;
+    return {
+      handles: [directHandle(handle, walletAddress, walletAddress)],
+      userAddress: walletAddress,
+      allowedContracts: [],
+      publicKey: freshKey,
+      startTimestamp: backdatedStartTimestamp(),
+      durationSeconds: DURATION_SECONDS,
+    };
+  }
+
+  it('test erc1271 user decrypt multisig 2-of-3 concatenated owner signatures succeed', async function () {
+    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+    const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
+    const signature = await buildMultisigSignature(cfg, req, [signers.bob, signers.carol]);
+    // Two 65-byte parts: the whole point is a >65-byte opaque blob end to end.
+    expect(signature.length).to.equal(2 + 130 * 2);
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'raw', signature },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
+    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+  });
+
+  it('test erc1271 user decrypt multisig 3-of-3 concatenated owner signatures succeed', async function () {
+    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
+    const req = await freshMultisigRequest(multisig3of3, multisig3of3Address);
+    const signature = await buildMultisigSignature(cfg, req, [signers.bob, signers.carol, signers.dave]);
+    // Three parts (195 bytes) through relayer -> gateway calldata -> event -> connector.
+    expect(signature.length).to.equal(2 + 195 * 2);
+    const { post, poll } = await requestUnifiedUserDecrypt(
+      cfg,
+      req,
+      { kind: 'raw', signature },
+      {
+        waitForTerminal: true,
+        timeoutMs: POSITIVE_TIMEOUT_MS,
+      },
+    );
+    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+  });
+
+  it('test erc1271 user decrypt multisig rejects a blob below threshold (1 of 3 parts)', async function () {
+    const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
+    // A single owner part is exactly 65 bytes: `ecrecover` parses it but
+    // recovers bob, not the wallet, so verification falls through to
+    // ERC-1271 — where one part is below the threshold of two.
+    const signature = await buildMultisigSignature(cfg, req, [signers.bob]);
+    const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
+    expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
+  });
+
+  it('test erc1271 user decrypt multisig rejects a blob containing a non-owner signature', async function () {
+    const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
+    // eve is not an owner; her part is well-formed but recovers a non-owner.
+    const signature = await buildMultisigSignature(cfg, req, [signers.bob, signers.eve]);
+    const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
+    expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
+  });
+
+  it('test erc1271 user decrypt multisig rejects a duplicated owner signature (threshold inflation)', async function () {
+    const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
+    // Two copies of bob's part: the strictly-ascending signer rule is what
+    // stops one owner from inflating the approval count to the threshold.
+    const signature = await buildMultisigSignature(cfg, req, [signers.bob, signers.bob]);
+    const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
+    expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
+  });
+
+  it('test erc1271 user decrypt multisig rejects parts in descending signer order', async function () {
+    const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
+    // Valid owner parts, deliberately mis-ordered: Safe's canonical encoding
+    // requires ascending signer addresses.
+    const signature = await buildMultisigSignature(cfg, req, [signers.bob, signers.carol], { order: 'descending' });
+    const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
+    expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
+  });
+
+  it('test erc1271 user decrypt multisig rejects a garbage blob that is not 65-byte aligned', async function () {
+    const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
+    // 100 bytes: not a valid ECDSA signature and not 65-byte aligned — every
+    // layer must hand it to the wallet without choking, and the wallet's
+    // alignment guard must answer with a non-magic value (no revert).
+    const signature = `0x${'11'.repeat(100)}`;
+    const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
     expect(isSignatureRejection(post), JSON.stringify(post.raw)).to.equal(true);
   });
 });
