@@ -3,10 +3,14 @@ import type { Bytes65Hex, BytesHex, ChecksummedAddress } from './primitives.js';
 
 /**
  * Common fields shared by all signed decryption permit versions.
+ *
+ * @typeParam Signature - The permit signature hex type. Defaults to the strict
+ *   65-byte {@link Bytes65Hex} used by the EOA path; the unified V2 permit widens
+ *   it to a variable-length {@link BytesHex} to carry ERC-1271 blobs.
  */
-export type SignedDecryptionPermitBase = {
+export type SignedDecryptionPermitBase<Signature extends BytesHex = Bytes65Hex> = {
   /** The EIP-712 signature. */
-  readonly signature: Bytes65Hex;
+  readonly signature: Signature;
   /** The account that signed the permit. */
   readonly signerAddress: ChecksummedAddress;
   /**
@@ -53,9 +57,13 @@ export type SignedDecryptionPermitV1 = SignedDecryptionPermitBase & {
  * a separate delegated variant. The `encryptedDataOwnerAddress` is read from
  * `eip712.message.userAddress` and may differ from `signerAddress`.
  *
+ * The `signature` is widened to a variable-length {@link BytesHex} so it can
+ * carry an ERC-1271 smart-contract-wallet blob; a normal EOA permit still uses
+ * the strict 65-byte shape.
+ *
  * Discriminate from {@link SignedDecryptionPermitV1} with `permit.version === 2`.
  */
-export type SignedDecryptionPermitV2 = SignedDecryptionPermitBase & {
+export type SignedDecryptionPermitV2 = SignedDecryptionPermitBase<BytesHex> & {
   readonly version: 2;
   readonly eip712: KmsUserDecryptEip712V2;
 };

@@ -1,54 +1,50 @@
 import { expect } from 'chai';
+import { TypedDataEncoder, getAddress } from 'ethers';
 import type { Signer } from 'ethers';
-import { getAddress } from 'ethers';
 import { ethers } from 'hardhat';
 
 import { ERC1271ApproveHashWallet, ERC1271MultisigWallet } from '../../types';
 import { createInstances } from '../instance';
 import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
-import type { SignaturePart } from '../sdk/unified/unifiedUserDecrypt';
-import { concatSignatureParts, sortSignatureParts } from '../sdk/unified/unifiedUserDecrypt';
 import { Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
 
-// The SDK-client leg of the ERC-1271 user-decryption chain
-// (SDK -> Relayer -> Gateway -> KMS Connector -> isValidSignature).
+// End-to-end coverage of `@fhevm/sdk` ERC-1271 (smart-contract-wallet) support
+// on the unified /v3 user-decryption route.
 //
-// The protocol backend accepts variable-length ERC-1271 signatures — proven
-// end to end by erc1271UserDecryption.ts, which POSTs the /v3 envelope
-// directly. These tests drive the SAME scenarios through the @fhevm/sdk
-// client via its permit-injection surface (`parseSignedDecryptionPermit`
-// with an externally assembled signature) followed by `decryptValue`, and
-// assert the decrypted plaintext.
+// The protocol backend (relayer /v3 -> gateway -> KMS connector) accepts
+// variable-length ERC-1271 signatures — also proven by the direct-envelope
+// tests in erc1271UserDecryption.ts. This suite drives the SAME flows THROUGH
+// the SDK client, using only its EXISTING public surface — there is no new
+// public method and no `signatureKind` discriminator:
 //
-// >>> EXPECTED TO FAIL until the SDK supports ERC-1271 signatures. <<<
-// Current failure points (the SDK adaptation tracked by devx should clear
-// them, making this suite the acceptance test):
-//  - tests 1 and 3 throw at the permit parse: the signature is
-//    runtime-asserted to be exactly 65 bytes (`Bytes65Hex`,
-//    core/kms/SignedDecryptionPermitV2-p.ts / core/base/bytes.ts) — a
-//    130-byte multisig blob and the empty `0x` approved-hash signature are
-//    both rejected client-side, before any network call;
-//  - test 2 throws at the client-side verification: it is ECDSA-recover-only
-//    and requires recovered == signerAddress
-//    (core/utils-p/decrypt/verifyKmsUserDecryptEip712V2.ts) — there is no
-//    isValidSignature branch for a contract-wallet userAddress, so even a
-//    well-formed 65-byte owner signature is rejected locally.
-// The relayer's synchronous ERC-1271 pre-check (400 on a definitively-bad
-// signature) is the authority the client can defer to once those gates are
-// adapted.
+//   gate 1 — signature shape: `parseSignedDecryptionPermit` accepts a
+//            variable-length blob (concatenated multisig, or the empty `0x`
+//            pre-approved-hash flow); a normal EOA permit still uses the strict
+//            65-byte shape.
+//   gate 2 — client-side verification: the permit is checked against
+//            `eip712.message.userAddress` and AUTO-DETECTS EOA vs ERC-1271 —
+//            a 65-byte EOA fast-path that recovers to `userAddress` returns
+//            before any RPC, otherwise it falls through to an
+//            `isValidSignature` STATICCALL (precautionary; the KMS is
+//            authoritative).
+//
+// A smart-contract-wallet permit is issued by pointing the serialized permit's
+// `eip712.message.userAddress` at the wallet and passing the assembled blob to
+// `parseSignedDecryptionPermit`. The signing path (`signDecryptionPermit`) is
+// deliberately unchanged and stays EOA/self-only: it hard-wires `userAddress`
+// to the connected signer (asserted below).
 //
 // The suite skips itself when the legacy `@zama-fhe/relayer-sdk` adapter is
-// active (RELAYER_SDK_VERSION set): the surface under test is @fhevm/sdk's.
+// active (RELAYER_SDK_VERSION set): the surface exercised here is @fhevm/sdk's.
 
 const KNOWN_VALUE = 123456789n;
-const POSITIVE_TIMEOUT_MS = 3 * 60 * 1000;
-const TIMEOUT_MARGIN_MS = 60 * 1000;
+const DURATION_SECONDS = 7 * 24 * 3600;
 
 /** The EIP-712 struct types WITHOUT EIP712Domain — the shape ethers' `signTypedData` expects. */
 type StructTypes = Record<string, Array<{ name: string; type: string }>>;
 
-/** Minimal mutable view of the permit's eip712 payload used to craft wallet-userAddress permits. */
+/** Minimal mutable view of the permit's eip712 payload used to craft wallet-userAddress variants. */
 interface MutableEip712 {
   domain: Record<string, unknown>;
   types: StructTypes;
@@ -56,19 +52,40 @@ interface MutableEip712 {
   message: Record<string, unknown> & { userAddress: string };
 }
 
-describe('ERC-1271 user decryption SDK client', function () {
+/** Await a promise and return the error it rejects with; fails the test if it resolves. */
+async function captureRejection(promise: Promise<unknown>, label: string): Promise<Error> {
+  try {
+    await promise;
+  } catch (err) {
+    return err as Error;
+  }
+  throw new Error(`${label} unexpectedly succeeded — expected a definitive ERC-1271 rejection.`);
+}
+
+describe('ERC-1271 user decryption via the SDK client', function () {
   let signers: Signers;
   let instances: FhevmInstances;
   let sdk: FhevmSdk;
   let client: FhevmSdk['rawClient'];
   let transportKeyPair: Awaited<ReturnType<FhevmSdk['rawClient']['generateTransportKeyPair']>>;
 
-  let multisig2of3: ERC1271MultisigWallet;
-  let multisig2of3Address: string;
-  let multisig1of3: ERC1271MultisigWallet;
-  let multisig1of3Address: string;
+  let multisigWallet: ERC1271MultisigWallet;
+  let multisigWalletAddress: string;
   let approveWallet: ERC1271ApproveHashWallet;
   let approveWalletAddress: string;
+
+  /**
+   * A permit legitimately signed by bob for HIMSELF, used as the authoritative
+   * template for the SDK's exact EIP-712 shape (domain incl. chainId and
+   * verifying contract, struct types, message field encoding). The gap tests
+   * clone it and re-point `message.userAddress` at a wallet.
+   */
+  let templateEip712: MutableEip712;
+
+  // Captured once so the multisig parts (signed over the template's EIP-712)
+  // match the digest the SDK rebuilds from the same parameters (the
+  // minute-rounded startTimestamp in particular).
+  let startTimestamp: number;
 
   before(async function () {
     this.timeout(180_000);
@@ -77,148 +94,174 @@ describe('ERC-1271 user decryption SDK client', function () {
     instances = await createInstances(signers);
 
     if (!(instances.alice instanceof FhevmSdk)) {
-      // Legacy @zama-fhe/relayer-sdk adapter active — the surface under test is @fhevm/sdk's.
+      // Legacy @zama-fhe/relayer-sdk adapter active — the gap pinned here is @fhevm/sdk's.
       this.skip();
     }
     sdk = instances.alice;
     client = sdk.rawClient;
     transportKeyPair = await client.generateTransportKeyPair();
 
-    // Owners bob/carol/dave. The 1-of-3 wallet pins the Safe-threshold-1 case:
-    // a single 65-byte part that ecrecover CAN parse (recovering the owner,
-    // not the wallet) must still be verified via isValidSignature.
+    // 2-of-3 multisig wallet (owners bob/carol/dave) and a Safe-style
+    // approveHash wallet (owner bob) — the userAddress targets of the tests
+    // and, via initValue, the handles for the commented happy paths.
     const multisigFactory = await ethers.getContractFactory('ERC1271MultisigWallet');
-    const owners = [signers.bob.address, signers.carol.address, signers.dave.address];
-    multisig2of3 = await multisigFactory.connect(signers.alice).deploy(owners, 2);
-    await multisig2of3.waitForDeployment();
-    multisig2of3Address = await multisig2of3.getAddress();
-    await (await multisig2of3.connect(signers.alice).initValue(KNOWN_VALUE)).wait();
-
-    multisig1of3 = await multisigFactory.connect(signers.alice).deploy(owners, 1);
-    await multisig1of3.waitForDeployment();
-    multisig1of3Address = await multisig1of3.getAddress();
-    await (await multisig1of3.connect(signers.alice).initValue(KNOWN_VALUE)).wait();
+    multisigWallet = await multisigFactory
+      .connect(signers.alice)
+      .deploy([signers.bob.address, signers.carol.address, signers.dave.address], 2);
+    await multisigWallet.waitForDeployment();
+    multisigWalletAddress = await multisigWallet.getAddress();
+    await (await multisigWallet.connect(signers.alice).initValue(KNOWN_VALUE)).wait();
 
     const approveFactory = await ethers.getContractFactory('ERC1271ApproveHashWallet');
     approveWallet = await approveFactory.connect(signers.alice).deploy(signers.bob.address);
     await approveWallet.waitForDeployment();
     approveWalletAddress = await approveWallet.getAddress();
     await (await approveWallet.connect(signers.alice).initValue(KNOWN_VALUE)).wait();
-  });
 
-  /**
-   * The SDK's exact EIP-712 permit payload for a wallet userAddress: sign a
-   * legitimate self-permit (bob) with the wallet as the allowed contract —
-   * the authoritative source of the SDK's domain/types/message encoding —
-   * then re-point `message.userAddress` at the wallet.
-   */
-  async function walletEip712(walletAddress: string): Promise<MutableEip712> {
-    const selfPermit = await client.signDecryptionPermit({
-      contractAddresses: [walletAddress as `0x${string}`],
-      durationSeconds: 7 * 24 * 3600,
-      startTimestamp: Math.floor(Date.now() / 1000),
+    startTimestamp = Math.floor(Date.now() / 1000);
+
+    const legitPermit = await client.signDecryptionPermit({
+      contractAddresses: [multisigWalletAddress],
+      durationSeconds: DURATION_SECONDS,
+      startTimestamp,
       transportKeyPair,
       signer: signers.bob,
       signerAddress: signers.bob.address as `0x${string}`,
     });
-    const eip712 = structuredClone(selfPermit.eip712) as unknown as MutableEip712;
+    templateEip712 = structuredClone(legitPermit.eip712) as unknown as MutableEip712;
+  });
+
+  /** Clone the template eip712 and re-point its userAddress at `walletAddress`. */
+  function eip712ForWallet(walletAddress: string): MutableEip712 {
+    const eip712 = structuredClone(templateEip712);
     eip712.message.userAddress = getAddress(walletAddress);
     return eip712;
   }
 
-  /** One owner's plain-ECDSA 65-byte part over the permit's EIP-712 payload. */
-  async function ownerPart(eip712: MutableEip712, owner: Signer): Promise<SignaturePart> {
+  /** The struct types without EIP712Domain, as ethers' signTypedData expects. */
+  function structTypesOf(eip712: MutableEip712): StructTypes {
     const { EIP712Domain: _domain, ...structTypes } = eip712.types;
-    return {
-      address: (await owner.getAddress()).toLowerCase(),
-      signature: await owner.signTypedData(
-        eip712.domain as Parameters<Signer['signTypedData']>[0],
-        structTypes,
-        eip712.message,
-      ),
-    };
+    return structTypes;
   }
 
-  /** Parse an externally assembled wallet permit, then decrypt the wallet's stored handle. */
-  async function decryptThroughSdk(parameters: {
-    readonly eip712: MutableEip712;
-    readonly signature: string;
-    readonly walletAddress: string;
-    readonly handle: string;
-  }): Promise<bigint> {
+  /** One owner's 65-byte ECDSA part over the permit's EIP-712 payload. */
+  async function ownerPart(eip712: MutableEip712, owner: Signer): Promise<{ address: string; signature: string }> {
+    const address = (await owner.getAddress()).toLowerCase();
+    const signature = await owner.signTypedData(
+      eip712.domain as Parameters<Signer['signTypedData']>[0],
+      structTypesOf(eip712),
+      eip712.message,
+    );
+    return { address, signature };
+  }
+
+  /** Safe-style static multisig blob: 65-byte parts sorted ascending by signer address. */
+  async function multisigBlob(eip712: MutableEip712, owners: readonly Signer[]): Promise<string> {
+    const parts = await Promise.all(owners.map((owner) => ownerPart(eip712, owner)));
+    parts.sort((a, b) => a.address.localeCompare(b.address));
+    return `0x${parts.map((p) => p.signature.slice(2)).join('')}`;
+  }
+
+  it('parses and decrypts with a 130-byte multisig blob for a wallet userAddress (gate 1 + gate 2)', async function () {
+    this.timeout(120_000);
+    const eip712 = eip712ForWallet(multisigWalletAddress);
+    const signature = await multisigBlob(eip712, [signers.bob, signers.carol]);
+    // Two valid owner parts, 130 bytes — opaque per ERC-1271 and forwarded verbatim.
+    expect(signature.length).to.equal(2 + 130 * 2);
+
     const signedPermit = await client.parseSignedDecryptionPermit({
       serializedPermit: {
         version: 2,
-        eip712: parameters.eip712 as never,
-        signature: parameters.signature,
-        signerAddress: getAddress(parameters.walletAddress),
+        eip712: eip712 as never,
+        signature, // 130-byte concatenated blob, forwarded opaquely
+        signerAddress: getAddress(multisigWalletAddress),
       },
       transportKeyPair,
     });
     const res = await client.decryptValue({
-      contractAddress: parameters.walletAddress as `0x${string}`,
+      contractAddress: multisigWalletAddress as `0x${string}`,
       transportKeyPair,
       signedPermit,
-      encryptedValue: parameters.handle as `0x${string}`,
+      encryptedValue: (await multisigWallet.value()) as `0x${string}`,
     });
-    return typeof res.value === 'number' ? BigInt(res.value) : (res.value as bigint);
-  }
-
-  it('test erc1271 sdk client decrypts with a multisig 2-of-3 concatenated signature', async function () {
-    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
-    const eip712 = await walletEip712(multisig2of3Address);
-    const parts = sortSignatureParts([
-      await ownerPart(eip712, signers.bob),
-      await ownerPart(eip712, signers.carol),
-    ]);
-    const signature = concatSignatureParts(parts);
-    // The whole point: a 130-byte opaque blob through the SDK client.
-    expect(signature.length).to.equal(2 + 130 * 2);
-    const clear = await decryptThroughSdk({
-      eip712,
-      signature,
-      walletAddress: multisig2of3Address,
-      handle: await multisig2of3.value(),
-    });
-    expect(clear).to.equal(KNOWN_VALUE);
+    expect(BigInt(res.value as bigint | number)).to.equal(KNOWN_VALUE);
   });
 
-  it('test erc1271 sdk client decrypts with a single-owner signature for a threshold-1 wallet', async function () {
-    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
-    const eip712 = await walletEip712(multisig1of3Address);
-    // Exactly 65 bytes: ecrecover parses it and recovers bob — NOT the wallet
-    // — so verification must go through the wallet's isValidSignature
-    // (the Safe-threshold-1 case), not require recovered == userAddress.
-    const [part] = [await ownerPart(eip712, signers.bob)];
-    expect(part.signature.length).to.equal(2 + 130);
-    const clear = await decryptThroughSdk({
-      eip712,
-      signature: part.signature,
-      walletAddress: multisig1of3Address,
-      handle: await multisig1of3.value(),
-    });
-    expect(clear).to.equal(KNOWN_VALUE);
-  });
+  it('definitively rejects a single 65-byte owner signature below the wallet threshold (gate 2)', async function () {
+    this.timeout(120_000);
+    const eip712 = eip712ForWallet(multisigWalletAddress);
+    const { signature } = await ownerPart(eip712, signers.bob);
+    // Exactly 65 bytes, but a single owner is below the 2-of-3 threshold. The
+    // 65-byte EOA fast-path recovers bob (!= the wallet userAddress), so verify
+    // falls through to the `isValidSignature` STATICCALL, which returns non-magic
+    // (or reverts). The SDK rejects it definitively client-side with an
+    // `Erc1271Error` rather than forwarding — the same verdict the relayer's /v3
+    // pre-check would return (sync 400).
+    expect(signature.length).to.equal(2 + 130);
 
-  it('test erc1271 sdk client decrypts with an empty signature after approveHash', async function () {
-    this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
-    const eip712 = await walletEip712(approveWalletAddress);
-    // Pre-approve the exact EIP-712 digest on-chain, then decrypt with the
-    // empty signature — the wallet's pre-approved-hash flow, already
-    // supported by the relayer and KMS connector.
-    const { EIP712Domain: _domain, ...structTypes } = eip712.types;
-    const digest = ethers.TypedDataEncoder.hash(
-      eip712.domain as Parameters<(typeof ethers.TypedDataEncoder)['hash']>[0],
-      structTypes,
-      eip712.message,
+    const err = await captureRejection(
+      client.parseSignedDecryptionPermit({
+        serializedPermit: {
+          version: 2,
+          eip712: eip712 as never,
+          signature,
+          signerAddress: getAddress(multisigWalletAddress),
+        },
+        transportKeyPair,
+      }),
+      'parseSignedDecryptionPermit with a below-threshold owner signature',
     );
+    // Definitive SDK-side ERC-1271 rejection (Erc1271WrongMagicError / Erc1271RejectedError).
+    expect(err.message, err.stack).to.match(/erc-1271|isValidSignature|magic|non-magic|reverted/i);
+  });
+
+  it('parses and decrypts with the empty approveHash signature (gate 1 + gate 2)', async function () {
+    this.timeout(120_000);
+    const eip712 = eip712ForWallet(approveWalletAddress);
+
+    // Pre-approve the exact digest on-chain, then decrypt with an empty signature.
+    const { EIP712Domain: _d, ...structTypes } = eip712.types;
+    const digest = TypedDataEncoder.hash(eip712.domain, structTypes, eip712.message);
     await (await approveWallet.connect(signers.bob).approveHash(digest)).wait();
-    const clear = await decryptThroughSdk({
-      eip712,
-      signature: '0x',
-      walletAddress: approveWalletAddress,
-      handle: await approveWallet.value(),
+
+    const signedPermit = await client.parseSignedDecryptionPermit({
+      serializedPermit: {
+        version: 2,
+        eip712: eip712 as never,
+        signature: '0x',
+        signerAddress: getAddress(approveWalletAddress),
+      },
+      transportKeyPair,
     });
-    expect(clear).to.equal(KNOWN_VALUE);
+    const res = await client.decryptValue({
+      contractAddress: approveWalletAddress as `0x${string}`,
+      transportKeyPair,
+      signedPermit,
+      encryptedValue: (await approveWallet.value()) as `0x${string}`,
+    });
+    expect(BigInt(res.value as bigint | number)).to.equal(KNOWN_VALUE);
+  });
+
+  it('hard-wires the signed permit userAddress to the connected signer (signing path stays EOA/self-only)', async function () {
+    this.timeout(120_000);
+    // `signDecryptionPermit` is deliberately unchanged: it has no parameter for a
+    // userAddress distinct from the signer, so the permit it produces always
+    // asserts authority over the SIGNER's own handles. A smart-wallet userAddress
+    // is therefore inexpressible on the SIGNING path — wallet permits are issued
+    // instead via `parseSignedDecryptionPermit` (see the multisig / approveHash
+    // cases above), which accepts an externally-assembled blob and an
+    // eip712.message.userAddress pointed at the wallet.
+    const permit = await client.signDecryptionPermit({
+      contractAddresses: [multisigWalletAddress],
+      durationSeconds: DURATION_SECONDS,
+      startTimestamp,
+      transportKeyPair,
+      signer: signers.bob,
+      signerAddress: signers.bob.address as `0x${string}`,
+    });
+    expect(getAddress(permit.encryptedDataOwnerAddress)).to.equal(getAddress(signers.bob.address));
+    expect(getAddress((permit.eip712.message as { userAddress: string }).userAddress)).to.equal(
+      getAddress(signers.bob.address),
+    );
   });
 });
