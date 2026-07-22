@@ -18,7 +18,7 @@ pub async fn validate_startup_dependencies(
         .context("database startup validation failed")?;
 
     // Ensure the service-owned schema is present (migrate is called earlier;
-    // this catches a mis-pointed connection string against an empty cluster).
+    // this catches a mispointed connection string against an empty cluster).
     store
         .integrity_status()
         .await
