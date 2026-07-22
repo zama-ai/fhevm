@@ -1,0 +1,20 @@
+# Local PoC defaults. Override with SOLANA_PROOF__* env vars
+# (e.g. SOLANA_PROOF__DATABASE__CONNECTION_STRING).
+#
+# TODO(prod): do not expose this service on a public network without auth.
+
+server:
+  bind_address: 127.0.0.1:8088
+
+database:
+  connection_string: postgres://work@127.0.0.1:55432/solana_proof_service
+  max_connections: 10
+
+solana:
+  # Replace with the deployed zama-host program id.
+  program_id: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+  rpc_url: http://127.0.0.1:8899
+
+yellowstone:
+  grpc_url: http://127.0.0.1:10000
+  # x_token: optional

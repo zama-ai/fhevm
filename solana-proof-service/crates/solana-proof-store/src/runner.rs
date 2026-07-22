@@ -28,11 +28,24 @@ pub enum RunnerError {
     RecoveryRequired(String),
 }
 
+/// Optional hooks for HTTP readiness (disconnect / apply-or-replay progress).
+#[derive(Default)]
+pub struct IngestHooks<'a> {
+    /// Fired after a block is applied or recognized as an exact replay no-op.
+    /// That is the continuity proof: subscription + durable cursor are usable.
+    pub on_progress: Option<&'a (dyn Fn(u64) + Send + Sync)>,
+    pub on_disconnected: Option<&'a (dyn Fn() + Send + Sync)>,
+}
+
 /// Runs until `cancel` is cancelled or a durable integrity halt is observed.
+///
+/// Progress hooks fire only after Applied / AlreadyApplied so readiness never
+/// treats a bare gRPC subscribe as a live, continuity-checked source.
 pub async fn run_sequential_ingest(
     source: &YellowstoneBlockSource,
     store: &SqlProofStore,
     cancel: CancellationToken,
+    hooks: IngestHooks<'_>,
 ) -> Result<(), RunnerError> {
     let mut backoff = Duration::from_millis(200);
     const MAX_BACKOFF: Duration = Duration::from_secs(5);
@@ -54,23 +67,30 @@ pub async fn run_sequential_ingest(
 
         // Do not reset backoff on subscribe alone: a flaky stream that
         // connects then dies immediately would otherwise spin at 200ms forever.
-        let subscription = match source.subscribe(checkpoint).await {
-            Ok(subscription) => subscription,
-            Err(YellowstoneSourceError::Retryable(message)) => {
-                warn!(%message, ?backoff, "yellowstone subscribe failed; backing off");
-                tokio::select! {
-                    _ = cancel.cancelled() => return Ok(()),
-                    _ = tokio::time::sleep(backoff) => {}
+        // Select on cancel so connect/subscribe cannot outlive shutdown.
+        let subscription = tokio::select! {
+            _ = cancel.cancelled() => return Ok(()),
+            result = source.subscribe(checkpoint) => match result {
+                Ok(subscription) => subscription,
+                Err(YellowstoneSourceError::Retryable(message)) => {
+                    warn!(%message, ?backoff, "yellowstone subscribe failed; backing off");
+                    tokio::select! {
+                        _ = cancel.cancelled() => return Ok(()),
+                        _ = tokio::time::sleep(backoff) => {}
+                    }
+                    backoff = (backoff * 2).min(MAX_BACKOFF);
+                    continue;
                 }
-                backoff = (backoff * 2).min(MAX_BACKOFF);
-                continue;
-            }
-            Err(error) => return Err(RunnerError::Source(error)),
+                Err(error) => return Err(RunnerError::Source(error)),
+            },
         };
 
-        match drive_subscription(subscription, store, &cancel, &mut backoff).await {
+        match drive_subscription(subscription, store, &cancel, &mut backoff, &hooks).await {
             Ok(()) => return Ok(()),
             Err(RunnerError::Source(YellowstoneSourceError::Retryable(message))) => {
+                if let Some(on_disconnected) = hooks.on_disconnected {
+                    on_disconnected();
+                }
                 warn!(%message, ?backoff, "yellowstone stream failed; reconnecting");
                 tokio::select! {
                     _ = cancel.cancelled() => return Ok(()),
@@ -88,6 +108,7 @@ async fn drive_subscription(
     store: &SqlProofStore,
     cancel: &CancellationToken,
     backoff: &mut Duration,
+    hooks: &IngestHooks<'_>,
 ) -> Result<(), RunnerError> {
     const INITIAL_BACKOFF: Duration = Duration::from_millis(200);
     loop {
@@ -119,10 +140,16 @@ async fn drive_subscription(
                 // Meaningful stream progress — safe to collapse reconnect delay.
                 *backoff = INITIAL_BACKOFF;
                 info!(slot = block.slot, "applied completed block");
+                if let Some(on_progress) = hooks.on_progress {
+                    on_progress(block.slot);
+                }
             }
             ApplyOutcome::AlreadyApplied => {
                 *backoff = INITIAL_BACKOFF;
                 info!(slot = block.slot, "exact replay no-op");
+                if let Some(on_progress) = hooks.on_progress {
+                    on_progress(block.slot);
+                }
             }
             ApplyOutcome::RecoveryRequired { reason } => {
                 return Err(RunnerError::RecoveryRequired(reason));

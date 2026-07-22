@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/solana-proof-source",
     "crates/solana-proof-store",
+    "crates/solana-proof-service",
 ]
 
 [workspace.package]
@@ -11,10 +12,22 @@ edition = "2021"
 license = "BSD-3-Clause-Clear"
 
 [workspace.dependencies]
+anyhow = "1.0.100"
+async-trait = "0.1.89"
+axum = "0.8.4"
+base64 = "0.22.1"
 borsh = { version = "1", features = ["derive"] }
 bs58 = "0.5.1"
 futures = "0.3.32"
 hex = "0.4.3"
+prometheus = "0.14.0"
+reqwest = { version = "0.12.23", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+serde_yaml = "0.9.34"
 sha2 = "0.10"
 sqlx = { version = "0.8.6", default-features = false, features = [
     "macros",
@@ -23,12 +36,16 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "runtime-tokio",
 ] }
 thiserror = "2.0.18"
-tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "time", "signal"] }
 tokio-util = "0.7.18"
 # tls-webpki-roots: Channel::connect must accept https:// Yellowstone endpoints
 # (plaintext still works for local geyser).
 tonic = { version = "0.12.3", features = ["tls-webpki-roots"] }
+tower-http = { version = "0.6.6", features = ["trace", "request-id", "util", "uuid"] }
 tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
+utoipa = { version = "5.4.0", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum", "vendored"] }
 yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v5.0.1+solana.2.1.21", default-features = false, features = ["tonic", "tonic-compression"] }
 zama-host = { path = "../solana/programs/zama-host", features = ["no-entrypoint"] }
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }

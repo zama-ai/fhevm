@@ -55,6 +55,11 @@ pub enum StoreError {
     Database(#[from] sqlx::Error),
     #[error("migrate error: {0}")]
     Migrate(#[from] sqlx::migrate::MigrateError),
+    /// Persisted lineage metadata disagrees with leaf rows (torn / corrupt snapshot).
+    #[error(
+        "snapshot inconsistent for lineage (leaf_count {leaf_count} vs {leaf_rows} leaf rows)"
+    )]
+    SnapshotInconsistent { leaf_count: u64, leaf_rows: u64 },
 }
 
 #[derive(Clone)]
@@ -319,11 +324,20 @@ impl SqlProofStore {
             None => None,
         };
 
+        let leaf_count = row.leaf_count as u64;
+        let leaf_rows = leaf_commitments.len() as u64;
+        if leaf_count != leaf_rows {
+            return Err(StoreError::SnapshotInconsistent {
+                leaf_count,
+                leaf_rows,
+            });
+        }
+
         Ok(Some(ProofSnapshot {
             lineage,
             current_handle,
             subjects,
-            leaf_count: row.leaf_count as u64,
+            leaf_count,
             peaks,
             leaves: leaf_commitments,
             last_slot: row.last_slot as u64,
