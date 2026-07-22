@@ -23,6 +23,7 @@ use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::versioning::StackMode;
+use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
 use opentelemetry::trace::{Status, TraceContextExt};
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
@@ -363,7 +364,12 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
     // shared lock + retirement re-check make that airtight instead of relying on
     // the digest-NULL predicate alone. GC only runs for the live (non-GCS) stack,
     // so gcs_mode is false here.
-    let Some(mut trx) = fhevm_engine_common::versioning::begin_write_guarded(pool, false).await?
+    let WriteGuard::Proceed(mut trx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        false,
+        GcsRollbackPolicy::Continue,
+    )
+    .await?
     else {
         info!("Cutover completed — skipping ciphertexts128 GC on retired stack");
         return Ok(());
@@ -440,22 +446,31 @@ async fn fetch_and_execute_sns_tasks(
     uploads_enabled: bool,
     gcs_mode: bool,
 ) -> Result<Option<(bool, usize)>, ExecutionError> {
-    // Cutover safety (BCS only): begin a write tx fenced against cutover before
-    // writing any ct128 / digest rows into the tables execute_cutover merges.
-    // `None` means a committed cutover retired this stack. See
+    // Begin the write tx under the shared controller lock before changing any
+    // ct128 or digest rows. A retired BCS stack stops here; a GCS worker skips
+    // while the dry-run is PAUSED after rollback. See
     // versioning::begin_write_guarded.
-    let mut db_txn =
-        match fhevm_engine_common::versioning::begin_write_guarded(pool, gcs_mode).await {
-            Ok(Some(txn)) => txn,
-            Ok(None) => {
-                info!("Cutover completed — SnS BCS worker stopping");
-                return Ok(None);
-            }
-            Err(err) => {
-                error!(error = %err, "Failed to begin transaction");
-                return Err(err.into());
-            }
-        };
+    let mut db_txn = match fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        gcs_mode,
+        GcsRollbackPolicy::Skip,
+    )
+    .await
+    {
+        Ok(WriteGuard::Proceed(txn)) => txn,
+        Ok(WriteGuard::Stop) => {
+            info!("Cutover completed — SnS BCS worker stopping");
+            return Ok(None);
+        }
+        Ok(WriteGuard::Skip) => {
+            debug!("GCS dry-run rolled back — SnS worker skipping cycle");
+            return Ok(Some((false, 0)));
+        }
+        Err(err) => {
+            error!(error = %err, "Failed to begin transaction");
+            return Err(err.into());
+        }
+    };
 
     let order = if conf.db.lifo {
         Order::Desc

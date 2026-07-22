@@ -186,16 +186,20 @@ where
         txn_block_number: Option<i64>,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        // Cutover safety: both writes below target tables execute_cutover merges
-        // into `public` (ciphertext_digest, ciphertexts128). Gate them behind the
-        // shared cutover lock + retirement re-check so a retired BCS sender cannot
-        // clobber a re-armed digest or delete the merged green ct128. These run
-        // AFTER the on-chain send as plain DB writes, so no advisory lock is held
-        // across the on-chain call. See versioning::cutover_gate.
-        let Some(mut tx) =
-            fhevm_engine_common::versioning::begin_write_guarded(&self.db_pool, self.conf.gcs_mode)
-                .await?
-        else {
+        // Both writes below target tables execute_cutover merges into `public`.
+        // Operations start only after this sender is live, even when it started
+        // as GCS, so the guard must always apply the live-stack retirement check.
+        // These writes run after the on-chain send as plain database writes, so
+        // the lock is not held across the network call. A blocked write leaves
+        // the database unchanged. See
+        // versioning::begin_write_guarded.
+        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+            &self.db_pool,
+            false,
+            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+        )
+        .await?
+        .into_tx() else {
             info!("Cutover completed — skipping post-send digest/ct128 writes on retired stack");
             return Ok(());
         };

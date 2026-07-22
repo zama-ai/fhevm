@@ -9,6 +9,7 @@ use fhevm_engine_common::gcs_activation::{run_gcs_activation_watcher, GCS_NOT_AC
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -232,20 +233,31 @@ async fn tfhe_worker_cycle(
             "acquire_connection"
         );
         let mut conn = pool.acquire().instrument(acq_span).await?;
-        // Cutover safety (BCS only): begin a write tx fenced against cutover —
-        // BEGIN-time retirement fence + shared cutover lock + retirement re-check.
-        // `None` means a committed cutover retired this stack: exit the cycle
-        // cleanly without writing. GCS workers write the gcs schema (not the
-        // cutover target), so the gate is a no-op for them. See
-        // versioning::begin_write_guarded.
+        // Begin a write tx under the shared controller lock. A retired BCS stack
+        // stops here; a GCS worker skips while a rolled-back dry-run is PAUSED.
+        // Holding the lock for the transaction keeps cutover and schema reset
+        // from overlapping its reads and writes. Shared locks still allow worker
+        // replicas to run concurrently. The state check runs after taking the
+        // lock. See versioning::begin_write_guarded.
         let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction");
-        let Some(mut trx) =
-            fhevm_engine_common::versioning::begin_write_guarded_conn(&mut conn, gcs_mode)
-                .instrument(txn_span)
-                .await?
-        else {
-            info!(target: "tfhe_worker", "Cutover completed — BCS worker exiting cycle");
-            return Ok(());
+        let mut trx = match fhevm_engine_common::versioning::begin_write_guarded_conn(
+            &mut conn,
+            gcs_mode,
+            GcsRollbackPolicy::Skip,
+        )
+        .instrument(txn_span)
+        .await?
+        {
+            WriteGuard::Proceed(trx) => trx,
+            WriteGuard::Stop => {
+                info!(target: "tfhe_worker", "Cutover completed — BCS worker exiting cycle");
+                return Ok(());
+            }
+            WriteGuard::Skip => {
+                debug!(target: "tfhe_worker", "GCS dry-run rolled back — skipping cycle");
+                immediately_poll_more_work = false;
+                continue;
+            }
         };
 
         // Query for transactions to execute
