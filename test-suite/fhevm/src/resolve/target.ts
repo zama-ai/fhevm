@@ -11,7 +11,7 @@ import {
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
 } from "../compat/compat";
 import { GitHubApiError } from "../errors";
-import { gitopsFile, mainCommits, packageTags } from "./github";
+import { commitsFrom, gitopsFile, mainCommits, packageTags } from "./github";
 import { NON_NETWORK_COMPANIONS } from "./presets";
 import { LATEST_SUPPORTED_PROFILE } from "../layout";
 import type { VersionBundle, VersionTarget } from "../types";
@@ -104,6 +104,13 @@ const PACKAGE_REPOSITORY_CANDIDATES: Partial<Record<keyof typeof PACKAGE_TO_REPO
   RELAYER_MIGRATE_VERSION: [MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY, LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY],
 };
 
+const SHA_FALLBACK_COMMIT_WINDOW = 500;
+// A missing tag from a flaked re-tag, an in-flight push pipeline, or an is-latest-commit skip
+// sits a handful of commits behind the requested sha (a merge train at most). A published image
+// lagging further than this means the component's publishing is genuinely broken, which a
+// fallback must not paper over.
+export const MAX_FALLBACK_COMMIT_DEPTH = 50;
+
 export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
@@ -164,6 +171,64 @@ const findImageTag = (
 /** Normalizes a full SHA into the short tag form used by repo-owned images. */
 const shortSha = (value: string) => value.toLowerCase().slice(0, 7);
 
+/** Finds the position of the newest commit in an ancestry walk (newest first) that has a
+ * published image tag; -1 when none does. The position is the commit distance behind the walk's
+ * starting sha. */
+export const findPublishedAncestorIndex = (commitShas: string[], publishedTags: Set<string>) =>
+  commitShas.findIndex((sha) => publishedTags.has(shortSha(sha)));
+
+/**
+ * Resolves per-component fallback tags for repo-owned images with no published image at the
+ * requested sha.
+ *
+ * A missing tag is an exceptional state: on every push the docker-build workflows either build a
+ * changed component or re-tag the previous image with the new sha, so a gap means one of those
+ * jobs failed, has not finished, or was skipped for a superseded branch tip. Each affected
+ * component independently falls back to its newest published tag on the requested sha's
+ * ancestry, and the substitution is recorded in `sources`. A fallback deeper than
+ * MAX_FALLBACK_COMMIT_DEPTH fails resolution instead — that lag means the component's publishing
+ * is broken, not flaked.
+ */
+export const resolveMissingRepoTagFallbacks = (options: {
+  requestedTag: string;
+  missingKeys: string[];
+  commitShas: string[];
+  packageTagsMap: Record<string, Set<string>>;
+}): { overrides: Record<string, string>; sources: string[] } => {
+  const overrides: Record<string, string> = {};
+  const sources: string[] = [];
+  for (const key of options.missingKeys) {
+    const ancestorIndex = findPublishedAncestorIndex(options.commitShas, options.packageTagsMap[key] ?? new Set());
+    if (ancestorIndex < 0) {
+      // An empty tag set can mean the GitHub token simply cannot see the package (the versions
+      // API 404s on inaccessible packages), so the registry pull may still succeed with the
+      // runtime's own credentials; keep the pin and record that it is unverified.
+      if (!options.packageTagsMap[key]?.size) {
+        sources.push(`${key}=${options.requestedTag} (unverified: package has no visible published tags)`);
+        continue;
+      }
+      // A non-empty tag set with no tag anywhere on the ancestry proves the lock would be
+      // unpullable; failing here beats the guaranteed `manifest unknown` at e2e time.
+      throw new GitHubApiError(
+        `${key} has no published image for ${options.requestedTag} nor for any of the ` +
+          `${options.commitShas.length} commits behind it. Its docker builds look broken; fix or re-run them ` +
+          `before resolving this baseline, or pin ${key} explicitly to a published tag.`,
+      );
+    }
+    if (ancestorIndex > MAX_FALLBACK_COMMIT_DEPTH) {
+      throw new GitHubApiError(
+        `${key} has no published image for ${options.requestedTag}, and its newest published image is ` +
+          `${ancestorIndex} commits behind — beyond the ${MAX_FALLBACK_COMMIT_DEPTH}-commit fallback limit. ` +
+          `Its docker builds look broken rather than flaked; fix or re-run them before resolving this baseline.`,
+      );
+    }
+    const ancestor = shortSha(options.commitShas[ancestorIndex]);
+    overrides[key] = ancestor;
+    sources.push(`${key}=${ancestor} (fallback: ${options.requestedTag} unpublished)`);
+  }
+  return { overrides, sources };
+};
+
 /** Locates the simple-ACL support floor in fetched main history. */
 export const simpleAclFloor = (commits: string[]) => {
   const floor = commits.indexOf(SIMPLE_ACL_MIN_SHA);
@@ -192,13 +257,14 @@ export const presetBundle = (
   repoVersion: string,
   lockName: string,
   sources: string[] = [],
+  repoKeyOverrides?: Record<string, string>,
 ): VersionBundle => ({
   target,
   lockName,
   env: Object.fromEntries(
     Object.keys(PACKAGE_TO_REPOSITORY).map((key) => {
       const version = REPO_KEYS.has(key)
-        ? repoVersion
+        ? repoKeyOverrides?.[key] ?? repoVersion
         : NON_NETWORK_COMPANIONS[target][key as keyof (typeof NON_NETWORK_COMPANIONS)[typeof target]];
       if (!version) {
         throw new Error(`Missing ${target} preset for ${key}`);
@@ -317,7 +383,52 @@ export const resolveTarget = async (
       throw new GitHubApiError(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
     }
     const tag = shortSha(requested);
-    return presetBundle(target, tag, `sha-${tag}.json`, [`requested-sha=${requested.toLowerCase()}`]);
+    const lockName = `sha-${tag}.json`;
+    const baseSources = [`requested-sha=${requested.toLowerCase()}`];
+
+    // The docker-build workflows re-tag unchanged components on every push, so normally every
+    // repo-owned image is published at the requested sha. Verify that instead of trusting it: a
+    // flaked re-tag or failed build otherwise only surfaces as `manifest unknown` at pull time.
+    let packageTagsMap: Record<string, Set<string>>;
+    try {
+      packageTagsMap = await repoPackageTags(tag);
+    } catch (error) {
+      // GitHub metadata is unavailable (offline, missing scopes): keep the historical unverified
+      // pin so `--target sha` still resolves, and record that the check was skipped.
+      const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      console.log(`[resolve] sha ${tag}: skipping published-image check (${reason})`);
+      return presetBundle(target, tag, lockName, [...baseSources, "published-image-check=skipped"]);
+    }
+    const missingKeys = Object.keys(REPO_PACKAGES).filter((key) => !packageTagsMap[key]?.has(tag));
+    if (!missingKeys.length) {
+      return presetBundle(target, tag, lockName, baseSources);
+    }
+    console.log(
+      `[resolve] sha ${tag}: no published image for ${missingKeys.join(", ")}; looking for published ancestor tags`,
+    );
+    // Unlike the tag fetch above, an ancestry failure here is not skippable: missingKeys proves
+    // the unverified pin would produce an unpullable lock, so resolution must not fall back to it.
+    let commitShas: string[];
+    try {
+      commitShas = await commitsFrom(requested, SHA_FALLBACK_COMMIT_WINDOW);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      throw new GitHubApiError(
+        `${missingKeys.join(", ")} have no published image for ${tag}, and the ancestry lookup for ` +
+          `fallback tags failed (${reason}). Retry once GitHub is reachable, or pin the affected ` +
+          `versions explicitly.`,
+      );
+    }
+    const { overrides, sources } = resolveMissingRepoTagFallbacks({
+      requestedTag: tag,
+      missingKeys,
+      commitShas,
+      packageTagsMap,
+    });
+    for (const source of sources) {
+      console.log(`[resolve] ${source}`);
+    }
+    return presetBundle(target, tag, lockName, [...baseSources, ...sources], overrides);
   }
 
   const [packageTagsMap, commits] = await Promise.all([repoPackageTags(), mainCommits(5000)]);
