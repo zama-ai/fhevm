@@ -5,7 +5,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use solana_proof_source::{YellowstoneBlockSource, YellowstoneSourceConfig};
+use solana_proof_source::{
+    RecoveryBounds, RpcRecoveryClient, RpcRecoveryConfig, YellowstoneBlockSource,
+    YellowstoneSourceConfig,
+};
 use solana_proof_store::{run_sequential_ingest, IngestHooks, SqlProofStore};
 use sqlx::postgres::PgPoolOptions;
 use tokio::sync::Semaphore;
@@ -18,7 +21,7 @@ use solana_proof_service::config::ServiceConfig;
 use solana_proof_service::http::{router, AppState};
 use solana_proof_service::ingest_health::IngestHealth;
 use solana_proof_service::lifecycle::{
-    proof_admission_limit, supervise_http_and_writer, wait_for_shutdown, INGEST_SHUTDOWN_DEADLINE,
+    supervise_http_and_writer, wait_for_shutdown, INGEST_SHUTDOWN_DEADLINE,
 };
 use solana_proof_service::metrics;
 use solana_proof_service::startup_validation::validate_startup_dependencies;
@@ -57,10 +60,26 @@ async fn main() -> Result<()> {
     })
     .context("invalid yellowstone source config")?;
 
-    let ingest_handle =
-        spawn_ingest_writer(source, store.clone(), Arc::clone(&ingest), cancel.clone());
+    let recovery = RpcRecoveryClient::new(RpcRecoveryConfig {
+        rpc_url: config.recovery_rpc_url().to_owned(),
+        program_id: config.solana.program_id.clone(),
+        bounds: RecoveryBounds {
+            max_slots: config.recovery.max_slots_per_attempt,
+            max_blocks: config.recovery.max_blocks_per_attempt,
+        },
+        bootstrap_slot: config.recovery.bootstrap_slot,
+    })
+    .context("invalid recovery config")?;
 
-    let proof_slots = proof_admission_limit(config.database.max_connections);
+    let ingest_handle = spawn_ingest_writer(
+        source,
+        store.clone(),
+        recovery,
+        Arc::clone(&ingest),
+        cancel.clone(),
+    );
+
+    let proof_slots = config.database.proof_admission_limit();
     tracing::info!(
         max_connections = config.database.max_connections,
         proof_admission = proof_slots,
@@ -106,6 +125,7 @@ async fn main() -> Result<()> {
 fn spawn_ingest_writer(
     source: YellowstoneBlockSource,
     store: SqlProofStore,
+    recovery: RpcRecoveryClient,
     ingest_health: Arc<IngestHealth>,
     cancel: CancellationToken,
 ) -> JoinHandle<()> {
@@ -113,9 +133,17 @@ fn spawn_ingest_writer(
         let health = Arc::clone(&ingest_health);
         Arc::new(move |slot: u64| health.mark_progress(slot))
     };
+    let on_recovered_progress: Arc<dyn Fn(u64) + Send + Sync> = {
+        let health = Arc::clone(&ingest_health);
+        Arc::new(move |slot: u64| health.mark_recovered_progress(slot))
+    };
     let on_disconnected: Arc<dyn Fn() + Send + Sync> = {
         let health = Arc::clone(&ingest_health);
         Arc::new(move || health.mark_disconnected())
+    };
+    let on_recovery: Arc<dyn Fn(bool) + Send + Sync> = {
+        let health = Arc::clone(&ingest_health);
+        Arc::new(move |active: bool| health.set_recovery_in_progress(active))
     };
 
     tokio::spawn(async move {
@@ -123,10 +151,13 @@ fn spawn_ingest_writer(
         let result = run_sequential_ingest(
             &source,
             &store,
+            Some(&recovery),
             cancel,
             IngestHooks {
                 on_progress: Some(on_progress.as_ref()),
+                on_recovered_progress: Some(on_recovered_progress.as_ref()),
                 on_disconnected: Some(on_disconnected.as_ref()),
+                on_recovery: Some(on_recovery.as_ref()),
             },
         )
         .await;

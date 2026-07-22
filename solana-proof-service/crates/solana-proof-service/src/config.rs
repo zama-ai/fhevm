@@ -19,7 +19,14 @@ const KNOWN_ENV_PATHS: &[&[&str]] = &[
     &["solana", "rpc_url"],
     &["yellowstone", "grpc_url"],
     &["yellowstone", "x_token"],
+    &["recovery", "rpc_url"],
+    &["recovery", "bootstrap_slot"],
+    &["recovery", "max_slots_per_attempt"],
+    &["recovery", "max_blocks_per_attempt"],
 ];
+
+/// Connections reserved for ingest writer + readiness (not available to proofs).
+pub const RESERVED_DB_CONNECTIONS: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -28,6 +35,8 @@ pub struct ServiceConfig {
     pub database: DatabaseConfig,
     pub solana: SolanaConfig,
     pub yellowstone: YellowstoneConfig,
+    #[serde(default)]
+    pub recovery: RecoveryConfig,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -44,6 +53,20 @@ pub struct DatabaseConfig {
     pub max_connections: u32,
 }
 
+impl DatabaseConfig {
+    /// Proof admission slots so the shared pool always keeps
+    /// [`RESERVED_DB_CONNECTIONS`] free for writer/readiness.
+    ///
+    /// [`ServiceConfig::validate`] enforces `max_connections >=
+    /// RESERVED_DB_CONNECTIONS + 1`, so this never underflows.
+    pub fn proof_admission_limit(&self) -> usize {
+        self.max_connections
+            .checked_sub(RESERVED_DB_CONNECTIONS)
+            .expect("database.max_connections validated >= RESERVED_DB_CONNECTIONS + 1")
+            as usize
+    }
+}
+
 fn default_max_connections() -> u32 {
     10
 }
@@ -53,7 +76,9 @@ fn default_max_connections() -> u32 {
 pub struct SolanaConfig {
     /// Base58 host program id.
     pub program_id: String,
-    /// Confirmed JSON-RPC URL used only for on-chain peak checks (read-only).
+    /// Confirmed JSON-RPC URL used for on-chain peak checks (read-only), and
+    /// as the default bounded-recovery RPC endpoint when `recovery.rpc_url`
+    /// is unset.
     pub rpc_url: String,
 }
 
@@ -63,6 +88,44 @@ pub struct YellowstoneConfig {
     pub grpc_url: String,
     #[serde(default)]
     pub x_token: Option<String>,
+}
+
+/// Bounded confirmed-RPC recovery for parent-chain gaps and Bootstrap A.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecoveryConfig {
+    /// Recovery RPC endpoint; defaults to `solana.rpc_url` when unset.
+    #[serde(default)]
+    pub rpc_url: Option<String>,
+    /// Bootstrap A start slot: `history_complete` may flip only after
+    /// recovery proves continuity from this slot through the confirmed tip.
+    #[serde(default)]
+    pub bootstrap_slot: Option<u64>,
+    /// Max slot span (`to_slot - from_slot + 1`) per recovery attempt.
+    #[serde(default = "default_max_slots_per_attempt")]
+    pub max_slots_per_attempt: u64,
+    /// Max `getBlock` fetches (existing slots) per recovery attempt.
+    #[serde(default = "default_max_blocks_per_attempt")]
+    pub max_blocks_per_attempt: u64,
+}
+
+impl Default for RecoveryConfig {
+    fn default() -> Self {
+        Self {
+            rpc_url: None,
+            bootstrap_slot: None,
+            max_slots_per_attempt: default_max_slots_per_attempt(),
+            max_blocks_per_attempt: default_max_blocks_per_attempt(),
+        }
+    }
+}
+
+fn default_max_slots_per_attempt() -> u64 {
+    256
+}
+
+fn default_max_blocks_per_attempt() -> u64 {
+    128
 }
 
 impl ServiceConfig {
@@ -89,11 +152,11 @@ impl ServiceConfig {
         if self.database.connection_string.trim().is_empty() {
             anyhow::bail!("database.connection_string must not be empty");
         }
-        if self.database.max_connections < crate::lifecycle::RESERVED_DB_CONNECTIONS + 1 {
+        if self.database.max_connections < RESERVED_DB_CONNECTIONS + 1 {
             anyhow::bail!(
                 "database.max_connections must be >= {} ({} reserved for ingest/readiness + at least one proof slot)",
-                crate::lifecycle::RESERVED_DB_CONNECTIONS + 1,
-                crate::lifecycle::RESERVED_DB_CONNECTIONS
+                RESERVED_DB_CONNECTIONS + 1,
+                RESERVED_DB_CONNECTIONS
             );
         }
         if self.solana.rpc_url.trim().is_empty() {
@@ -102,12 +165,31 @@ impl ServiceConfig {
         if self.yellowstone.grpc_url.trim().is_empty() {
             anyhow::bail!("yellowstone.grpc_url must not be empty");
         }
+        if let Some(rpc_url) = &self.recovery.rpc_url {
+            if rpc_url.trim().is_empty() {
+                anyhow::bail!("recovery.rpc_url must not be empty when set");
+            }
+        }
+        if self.recovery.max_slots_per_attempt == 0 {
+            anyhow::bail!("recovery.max_slots_per_attempt must be >= 1");
+        }
+        if self.recovery.max_blocks_per_attempt == 0 {
+            anyhow::bail!("recovery.max_blocks_per_attempt must be >= 1");
+        }
         decode_program_id(&self.solana.program_id)?;
         Ok(())
     }
 
     pub fn program_id_bytes(&self) -> anyhow::Result<[u8; 32]> {
         decode_program_id(&self.solana.program_id)
+    }
+
+    /// Recovery RPC endpoint: `recovery.rpc_url` when set, else `solana.rpc_url`.
+    pub fn recovery_rpc_url(&self) -> &str {
+        self.recovery
+            .rpc_url
+            .as_deref()
+            .unwrap_or(&self.solana.rpc_url)
     }
 }
 
@@ -181,7 +263,9 @@ fn is_numeric_env_path(segments: &[&str]) -> bool {
     let lower: Vec<String> = segments.iter().map(|s| s.to_ascii_lowercase()).collect();
     matches!(
         lower.as_slice(),
-        [a, b] if a == "database" && b == "max_connections"
+        [a, b] if (a == "database" && b == "max_connections")
+            || (a == "recovery"
+                && (b == "bootstrap_slot" || b == "max_slots_per_attempt" || b == "max_blocks_per_attempt"))
     )
 }
 
@@ -256,6 +340,34 @@ yellowstone:
         );
         let config = ServiceConfig::load_from_path(file.path()).unwrap();
         assert_eq!(config.server.bind_address.port(), 8080);
+        assert_eq!(config.recovery.max_slots_per_attempt, 256);
+        assert_eq!(config.recovery.max_blocks_per_attempt, 128);
+        assert_eq!(config.recovery.bootstrap_slot, None);
+        assert_eq!(config.recovery_rpc_url(), "http://127.0.0.1:8899");
+        assert_eq!(config.database.proof_admission_limit(), 8);
+        file.close().ok();
+    }
+
+    #[test]
+    fn rejects_max_connections_below_reserved_plus_one() {
+        let _guard = env_lock().lock().unwrap();
+        clear_test_env_overrides();
+        let file = tempfile_config(
+            r#"
+server:
+  bind_address: 127.0.0.1:8080
+database:
+  connection_string: postgres://localhost/solana_proof
+  max_connections: 2
+solana:
+  program_id: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+  rpc_url: http://127.0.0.1:8899
+yellowstone:
+  grpc_url: http://127.0.0.1:10000
+"#,
+        );
+        let err = ServiceConfig::load_from_path(file.path()).unwrap_err();
+        assert!(err.to_string().contains("max_connections"));
         file.close().ok();
     }
 

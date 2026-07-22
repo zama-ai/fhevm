@@ -151,6 +151,15 @@ pub fn classify_readiness(
         }
     }
 
+    if ingest.recovery_in_progress() {
+        return report(
+            ReadinessClass::RecoveryRequired,
+            Some("bounded RPC recovery in progress".to_owned()),
+            checkpoint_slot,
+            ingest.last_slot(),
+        );
+    }
+
     if !integrity.history_complete {
         return report(
             ReadinessClass::HistoryIncomplete,
@@ -290,12 +299,36 @@ mod tests {
     fn recovery_required_from_ingest_terminal() {
         let ingest = IngestHealth::new();
         ingest.mark_started();
-        ingest.mark_finished(Err(solana_proof_store::RunnerError::RecoveryRequired(
-            "gap".into(),
-        )));
+        ingest.mark_finished(Err(solana_proof_store::RunnerError::RecoveryRequired {
+            reason: "gap".into(),
+            gap_end_slot: Some(42),
+        }));
         let report = classify_readiness(true, Some(&status(true, false)), &ingest);
         assert_eq!(report.status, ReadinessClass::RecoveryRequired);
         assert_eq!(report.reason.as_deref(), Some("gap"));
+    }
+
+    #[test]
+    fn recovery_in_progress_is_recovery_required() {
+        let ingest = IngestHealth::new();
+        ingest.mark_started();
+        ingest.mark_progress(42);
+        ingest.set_recovery_in_progress(true);
+        let report = classify_readiness(true, Some(&status(true, false)), &ingest);
+        assert_eq!(report.status, ReadinessClass::RecoveryRequired);
+        assert!(!report.ready);
+        assert!(report
+            .reason
+            .as_deref()
+            .unwrap_or("")
+            .contains("recovery in progress"));
+        // Recovery demotes the live link; recovered progress alone must not Ready.
+        assert_eq!(ingest.source_link(), SourceLinkState::Disconnected);
+        ingest.set_recovery_in_progress(false);
+        ingest.mark_recovered_progress(43);
+        let after = classify_readiness(true, Some(&status(true, false)), &ingest);
+        assert_eq!(after.status, ReadinessClass::SourceLagging);
+        assert_eq!(after.last_ingest_slot, Some(43));
     }
 
     #[test]

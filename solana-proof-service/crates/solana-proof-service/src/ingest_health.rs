@@ -57,6 +57,7 @@ struct Inner {
 #[derive(Debug)]
 pub struct IngestHealth {
     writer_running: AtomicBool,
+    recovery_in_progress: AtomicBool,
     inner: Mutex<Inner>,
 }
 
@@ -64,6 +65,7 @@ impl IngestHealth {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             writer_running: AtomicBool::new(false),
+            recovery_in_progress: AtomicBool::new(false),
             inner: Mutex::new(Inner {
                 last_slot: None,
                 terminal: None,
@@ -75,9 +77,27 @@ impl IngestHealth {
     /// Writer task entered the ingest loop (not yet continuity-proven).
     pub fn mark_started(&self) {
         self.writer_running.store(true, Ordering::SeqCst);
+        self.recovery_in_progress.store(false, Ordering::SeqCst);
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.terminal = None;
         inner.source_link = SourceLinkState::Connecting;
+    }
+
+    /// Gates readiness to `recovery_required` while bounded RPC recovery runs.
+    /// Demotes a live `Connected` link so recovered progress cannot leave the
+    /// service Ready before Yellowstone resubscribes.
+    pub fn set_recovery_in_progress(&self, active: bool) {
+        self.recovery_in_progress.store(active, Ordering::SeqCst);
+        if active {
+            let mut inner = self.inner.lock().expect("ingest health lock");
+            if matches!(inner.source_link, SourceLinkState::Connected) {
+                inner.source_link = SourceLinkState::Disconnected;
+            }
+        }
+    }
+
+    pub fn recovery_in_progress(&self) -> bool {
+        self.recovery_in_progress.load(Ordering::SeqCst)
     }
 
     /// Live stream dropped; reconnect/backoff is in progress.
@@ -90,20 +110,29 @@ impl IngestHealth {
         }
     }
 
-    /// Applied or exact-replay no-op: subscription + cursor continuity proven.
+    /// Applied or exact-replay no-op on the live Yellowstone subscription:
+    /// subscription + cursor continuity proven.
     pub fn mark_progress(&self, slot: u64) {
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.last_slot = Some(slot);
         inner.source_link = SourceLinkState::Connected;
     }
 
+    /// Durable progress from bounded RPC recovery only. Updates the last known
+    /// slot without claiming Yellowstone continuity.
+    pub fn mark_recovered_progress(&self, slot: u64) {
+        let mut inner = self.inner.lock().expect("ingest health lock");
+        inner.last_slot = Some(slot);
+    }
+
     pub fn mark_finished(&self, result: Result<(), RunnerError>) {
         self.writer_running.store(false, Ordering::SeqCst);
+        self.recovery_in_progress.store(false, Ordering::SeqCst);
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.source_link = SourceLinkState::Idle;
         inner.terminal = Some(match result {
             Ok(()) => IngestTerminal::Cancelled,
-            Err(RunnerError::RecoveryRequired(reason)) => {
+            Err(RunnerError::RecoveryRequired { reason, .. }) => {
                 IngestTerminal::RecoveryRequired { reason }
             }
             Err(RunnerError::IntegrityHalted(reason)) => IngestTerminal::IntegrityHalted { reason },
@@ -119,6 +148,7 @@ impl IngestHealth {
     /// Unexpected writer exit (panic / missed finish / shutdown deadline).
     pub fn mark_crashed(&self, reason: impl Into<String>) {
         self.writer_running.store(false, Ordering::SeqCst);
+        self.recovery_in_progress.store(false, Ordering::SeqCst);
         let mut inner = self.inner.lock().expect("ingest health lock");
         inner.source_link = SourceLinkState::Idle;
         inner.terminal = Some(IngestTerminal::Crashed {

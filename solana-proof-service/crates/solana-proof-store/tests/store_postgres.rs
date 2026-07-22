@@ -438,9 +438,13 @@ async fn parent_slot_mismatch_is_recovery_required_without_domain_writes() {
         .unwrap();
     let gap = block(12, 11, pk(0xA1), pk(0xA2), Vec::new());
     match store.apply_completed_block(&gap).await.unwrap() {
-        ApplyOutcome::RecoveryRequired { reason } => {
+        ApplyOutcome::RecoveryRequired {
+            reason,
+            gap_end_slot,
+        } => {
             assert!(reason.contains("recovery required"));
             assert!(reason.contains("contiguous ingest gap"));
+            assert_eq!(gap_end_slot, 12);
         }
         other => panic!("expected RecoveryRequired, got {other:?}"),
     }
@@ -667,6 +671,85 @@ async fn unknown_pre_bootstrap_lineage_halts() {
         .await
         .unwrap();
     assert_eq!(leaves.0, 0);
+}
+
+#[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
+#[tokio::test]
+async fn recovered_gap_fill_applies_contiguous_parents() {
+    let store = fresh_store().await;
+    // First live block (incomplete bootstrap).
+    assert_eq!(
+        store
+            .apply_completed_block(&block(10, 9, pk(0x90), pk(0xA0), Vec::new()))
+            .await
+            .unwrap(),
+        ApplyOutcome::Applied
+    );
+    assert!(!store.integrity_status().await.unwrap().history_complete);
+
+    // Program-filtered gap: next observed would be slot 12 with parent 11.
+    let observed = block(12, 11, pk(0xB0), pk(0xC0), Vec::new());
+    match store.apply_completed_block(&observed).await.unwrap() {
+        ApplyOutcome::RecoveryRequired {
+            reason,
+            gap_end_slot,
+        } => {
+            assert!(reason.contains("contiguous ingest gap"));
+            assert_eq!(gap_end_slot, 12);
+        }
+        other => panic!("expected RecoveryRequired, got {other:?}"),
+    }
+
+    // Recovered empty intermediate block fills the parent chain.
+    assert_eq!(
+        store
+            .apply_completed_block(&block(11, 10, pk(0xA0), pk(0xB0), Vec::new()))
+            .await
+            .unwrap(),
+        ApplyOutcome::Applied
+    );
+    assert_eq!(
+        store.apply_completed_block(&observed).await.unwrap(),
+        ApplyOutcome::Applied
+    );
+    let status = store.integrity_status().await.unwrap();
+    assert_eq!(status.checkpoint.as_ref().map(|c| c.slot), Some(12));
+    assert!(!status.history_complete);
+
+    // Seam flips only when caller proves start continuity (Bootstrap A).
+    store
+        .set_history_complete_after_recovery(true)
+        .await
+        .unwrap();
+    assert!(store.integrity_status().await.unwrap().history_complete);
+}
+
+#[ignore = "requires DATABASE_URL / SOLANA_PROOF_TEST_DATABASE_URL"]
+#[tokio::test]
+async fn conflicting_recovered_ancestry_halts() {
+    let store = fresh_store().await;
+    store
+        .apply_completed_block(&block(10, 9, pk(0x90), pk(0xA0), Vec::new()))
+        .await
+        .unwrap();
+
+    // Recovered block claims parent slot 10 but wrong parent hash → halt.
+    match store
+        .apply_completed_block(&block(11, 10, pk(0xFF), pk(0xB0), Vec::new()))
+        .await
+        .unwrap()
+    {
+        ApplyOutcome::IntegrityHalted { reason } => {
+            assert!(reason.contains("ancestry") || reason.contains("parent hash"));
+        }
+        other => panic!("expected IntegrityHalted, got {other:?}"),
+    }
+    assert!(store.integrity_status().await.unwrap().integrity_halted);
+    let blocks: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM solana_proof_blocks")
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    assert_eq!(blocks.0, 1);
 }
 
 #[tokio::test]
