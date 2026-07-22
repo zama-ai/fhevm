@@ -1964,7 +1964,7 @@ components:
           example: fhevm-relayer
         version:
           type: string
-          example: 0.9.0
+          example: 0.14.0
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
