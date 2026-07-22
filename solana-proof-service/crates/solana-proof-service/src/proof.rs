@@ -26,9 +26,13 @@ impl ProofSnapshotSource for SqlProofStore {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MmrProofResult {
     pub mmr_proof: Option<MmrProof>,
+    /// Lineage leaf count the proof was built against (matches the confirmed chain read).
     pub leaf_count: u64,
-    /// Backwards-compatible wire name for the lineage `leaf_count` the proof was built against.
-    pub proof_slot: u64,
+    /// Confirmed RPC context slot of the on-chain peak comparison that produced `verified`.
+    pub rpc_context_slot: u64,
+    /// Durable ingest slot at which this lineage's served leaves were last written
+    /// (`solana_proof_lineages.last_slot`). `None` when no snapshot backed the result.
+    pub lineage_last_slot: Option<u64>,
     pub verified: bool,
 }
 
@@ -41,11 +45,19 @@ pub enum ProofError {
     #[error("no on-chain account found for lineage")]
     LineageNotFound,
     #[error("lineage proof data is lagging chain state (leaf_count {leaf_count})")]
-    Lagging { leaf_count: u64 },
+    Lagging {
+        leaf_count: u64,
+        rpc_context_slot: u64,
+        lineage_last_slot: Option<u64>,
+    },
     #[error(
         "lineage proof store diverged from chain (leaf_count {leaf_count}); integrity rebuild required"
     )]
-    CorruptStore { leaf_count: u64 },
+    CorruptStore {
+        leaf_count: u64,
+        rpc_context_slot: u64,
+        lineage_last_slot: Option<u64>,
+    },
     #[error("leaf index {leaf_index} out of range for leaf_count {leaf_count}")]
     LeafIndexOutOfRange { leaf_index: u64, leaf_count: u64 },
 }
@@ -75,17 +87,23 @@ pub async fn build_proof<C: ChainFetcher, S: ProofSnapshotSource>(
     let snapshot = match store.proof_snapshot(lineage).await {
         Ok(snapshot) => snapshot,
         Err(StoreError::SnapshotInconsistent { .. }) => {
-            // Fail closed with the same wire envelope as peak divergence.
+            // Fail closed with the same wire envelope as peak divergence. The torn
+            // snapshot never surfaced a durable slot, so there is no checkpoint to report.
             return Err(ProofError::CorruptStore {
                 leaf_count: on_chain.leaf_count,
+                rpc_context_slot: on_chain.rpc_context_slot,
+                lineage_last_slot: None,
             });
         }
         Err(err) => return Err(ProofError::Store(err)),
     };
     let Some(snapshot) = snapshot else {
-        // Chain has the lineage but the store has not ingested it yet.
+        // Chain has the lineage but the store has not ingested it yet, so this
+        // lineage has no durable slot to report.
         return Err(ProofError::Lagging {
             leaf_count: on_chain.leaf_count,
+            rpc_context_slot: on_chain.rpc_context_slot,
+            lineage_last_slot: None,
         });
     };
 
@@ -97,11 +115,16 @@ fn try_build_from_snapshot(
     on_chain: &OnChainLineageState,
     leaf_index: u64,
 ) -> Result<MmrProofResult, ProofError> {
+    // The snapshot is in hand, so its durable slot is the honest checkpoint for
+    // every result (success or divergence) built from it.
+    let lineage_last_slot = Some(snapshot.last_slot);
     // Internal consistency: recomputed peaks must match the persisted peaks.
     let recomputed = mmr_peaks_from_leaves(&snapshot.leaves);
     if recomputed != snapshot.peaks || snapshot.leaf_count != snapshot.leaves.len() as u64 {
         return Err(ProofError::CorruptStore {
             leaf_count: on_chain.leaf_count,
+            rpc_context_slot: on_chain.rpc_context_slot,
+            lineage_last_slot,
         });
     }
 
@@ -109,6 +132,8 @@ fn try_build_from_snapshot(
         std::cmp::Ordering::Less => {
             return Err(ProofError::Lagging {
                 leaf_count: on_chain.leaf_count,
+                rpc_context_slot: on_chain.rpc_context_slot,
+                lineage_last_slot,
             });
         }
         std::cmp::Ordering::Greater => {
@@ -116,6 +141,8 @@ fn try_build_from_snapshot(
             // Treat as retryable lag, not integrity failure.
             return Err(ProofError::Lagging {
                 leaf_count: on_chain.leaf_count,
+                rpc_context_slot: on_chain.rpc_context_slot,
+                lineage_last_slot,
             });
         }
         std::cmp::Ordering::Equal => {}
@@ -124,6 +151,8 @@ fn try_build_from_snapshot(
     if snapshot.peaks != on_chain.peaks {
         return Err(ProofError::CorruptStore {
             leaf_count: on_chain.leaf_count,
+            rpc_context_slot: on_chain.rpc_context_slot,
+            lineage_last_slot,
         });
     }
 
@@ -136,7 +165,8 @@ fn try_build_from_snapshot(
     Ok(MmrProofResult {
         mmr_proof: Some(proof),
         leaf_count: on_chain.leaf_count,
-        proof_slot: on_chain.leaf_count,
+        rpc_context_slot: on_chain.rpc_context_slot,
+        lineage_last_slot,
         verified: true,
     })
 }
@@ -257,10 +287,17 @@ mod tests {
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let snapshot = snapshot_with_leaves(lineage, vec![leaf]);
-        let on_chain = OnChainLineageState { peaks, leaf_count };
+        let on_chain = OnChainLineageState {
+            peaks,
+            leaf_count,
+            rpc_context_slot: 55,
+        };
         let result = try_build_from_snapshot(&snapshot, &on_chain, 0).unwrap();
         assert!(result.verified);
         assert_eq!(result.leaf_count, 1);
+        assert_eq!(result.rpc_context_slot, 55);
+        // snapshot_with_leaves pins last_slot = 1.
+        assert_eq!(result.lineage_last_slot, Some(1));
         assert!(result.mmr_proof.is_some());
     }
 
@@ -273,7 +310,14 @@ mod tests {
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
-        chain.set(lineage, OnChainLineageState { peaks, leaf_count });
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                rpc_context_slot: 55,
+            },
+        );
         let store = FakeStore::new();
 
         let err = build_proof(&chain, &store, lineage, 100).await.unwrap_err();
@@ -299,9 +343,13 @@ mod tests {
         mmr_append(&mut peaks, &mut leaf_count, leaf1).unwrap();
 
         let snapshot = snapshot_with_leaves(lineage, vec![leaf0]);
-        let on_chain = OnChainLineageState { peaks, leaf_count };
+        let on_chain = OnChainLineageState {
+            peaks,
+            leaf_count,
+            rpc_context_slot: 55,
+        };
         let err = try_build_from_snapshot(&snapshot, &on_chain, 0).unwrap_err();
-        assert!(matches!(err, ProofError::Lagging { leaf_count: 2 }));
+        assert!(matches!(err, ProofError::Lagging { leaf_count: 2, .. }));
     }
 
     #[test]
@@ -322,9 +370,10 @@ mod tests {
         let on_chain = OnChainLineageState {
             peaks: chain_peaks,
             leaf_count: chain_count,
+            rpc_context_slot: 55,
         };
         let err = try_build_from_snapshot(&snapshot, &on_chain, 0).unwrap_err();
-        assert!(matches!(err, ProofError::Lagging { leaf_count: 1 }));
+        assert!(matches!(err, ProofError::Lagging { leaf_count: 1, .. }));
     }
 
     #[test]
@@ -337,9 +386,16 @@ mod tests {
         mmr_append(&mut peaks, &mut leaf_count, other).unwrap();
 
         let snapshot = snapshot_with_leaves(lineage, vec![leaf]);
-        let on_chain = OnChainLineageState { peaks, leaf_count };
+        let on_chain = OnChainLineageState {
+            peaks,
+            leaf_count,
+            rpc_context_slot: 55,
+        };
         let err = try_build_from_snapshot(&snapshot, &on_chain, 0).unwrap_err();
-        assert!(matches!(err, ProofError::CorruptStore { leaf_count: 1 }));
+        assert!(matches!(
+            err,
+            ProofError::CorruptStore { leaf_count: 1, .. }
+        ));
     }
 
     #[test]
@@ -355,9 +411,13 @@ mod tests {
         let on_chain = OnChainLineageState {
             peaks: peaks.clone(),
             leaf_count,
+            rpc_context_slot: 55,
         };
         let err = try_build_from_snapshot(&snapshot, &on_chain, 0).unwrap_err();
-        assert!(matches!(err, ProofError::CorruptStore { leaf_count: 1 }));
+        assert!(matches!(
+            err,
+            ProofError::CorruptStore { leaf_count: 1, .. }
+        ));
     }
 
     #[tokio::test]
@@ -369,12 +429,22 @@ mod tests {
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
-        chain.set(lineage, OnChainLineageState { peaks, leaf_count });
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                rpc_context_slot: 55,
+            },
+        );
         let store = FakeStore::new();
         store.mark_inconsistent(lineage, 1, 0);
 
         let err = build_proof(&chain, &store, lineage, 0).await.unwrap_err();
-        assert!(matches!(err, ProofError::CorruptStore { leaf_count: 1 }));
+        assert!(matches!(
+            err,
+            ProofError::CorruptStore { leaf_count: 1, .. }
+        ));
         assert_eq!(store.reads.load(Ordering::SeqCst), 1);
         assert_eq!(chain.fetches.load(Ordering::SeqCst), 1);
     }
@@ -393,6 +463,7 @@ mod tests {
             OnChainLineageState {
                 peaks: peaks.clone(),
                 leaf_count,
+                rpc_context_slot: 55,
             },
         );
         let store = FakeStore::new();

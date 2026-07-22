@@ -13,7 +13,10 @@ use async_trait::async_trait;
 use base64::Engine;
 use serde_json::json;
 
-const SOLANA_PROOF_COMMITMENT: &str = "confirmed";
+/// Commitment level of the on-chain authorization reads (peak comparison).
+/// Surfaced on proof responses so a consumer knows which confirmed tip the
+/// served proof was validated against.
+pub const SOLANA_PROOF_COMMITMENT: &str = "confirmed";
 const EXPECTED_DATA_ENCODING: &str = "base64";
 
 #[derive(thiserror::Error, Debug)]
@@ -33,6 +36,9 @@ pub enum ChainError {
 pub struct OnChainLineageState {
     pub peaks: Vec<[u8; 32]>,
     pub leaf_count: u64,
+    /// Solana RPC context slot from the `getAccountInfo` response that produced
+    /// this read — the confirmed tip the peak comparison was made against.
+    pub rpc_context_slot: u64,
 }
 
 #[async_trait]
@@ -125,6 +131,7 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 fn parse_account_value(
     value: &serde_json::Value,
     expected_program_id: &[u8; 32],
+    rpc_context_slot: u64,
 ) -> Result<OnChainLineageState, ChainError> {
     let owner = value
         .get("owner")
@@ -168,7 +175,21 @@ fn parse_account_value(
     Ok(OnChainLineageState {
         peaks: decoded.peaks,
         leaf_count: decoded.leaf_count,
+        rpc_context_slot,
     })
+}
+
+/// The confirmed slot the RPC node evaluated `getAccountInfo` at. Required:
+/// binding the served proof to a chain tip is the point of the read, so a
+/// response without it is malformed rather than defaulted.
+fn parse_context_slot(result: &serde_json::Value) -> Result<u64, ChainError> {
+    result
+        .get("context")
+        .and_then(|context| context.get("slot"))
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            ChainError::Rpc("malformed getAccountInfo result: missing context slot".to_string())
+        })
 }
 
 /// Interprets `getAccountInfo` `result`: only explicit `"value": null` means absent.
@@ -179,12 +200,17 @@ fn lineage_from_rpc_result(
     if result.is_null() {
         return Err(ChainError::Rpc("null getAccountInfo result".to_string()));
     }
+    let rpc_context_slot = parse_context_slot(result)?;
     match result.get("value") {
         None => Err(ChainError::Rpc(
             "malformed getAccountInfo result: missing value field".to_string(),
         )),
         Some(value) if value.is_null() => Ok(None),
-        Some(value) => Ok(Some(parse_account_value(value, expected_program_id)?)),
+        Some(value) => Ok(Some(parse_account_value(
+            value,
+            expected_program_id,
+            rpc_context_slot,
+        )?)),
     }
 }
 
@@ -267,7 +293,7 @@ mod tests {
         let owner = base58_encode(&program_id());
         let payload = base64::engine::general_purpose::STANDARD.encode(minimal_account_body());
         let value = account_json(&owner, &payload, "base58");
-        let err = parse_account_value(&value, &program_id()).unwrap_err();
+        let err = parse_account_value(&value, &program_id(), 4242).unwrap_err();
         assert!(matches!(err, ChainError::Encoding(_)));
         assert!(err.to_string().contains("unexpected account encoding"));
     }
@@ -276,7 +302,7 @@ mod tests {
     fn parse_rejects_malformed_base64_payload() {
         let owner = base58_encode(&program_id());
         let value = account_json(&owner, "not-base64!!!", "base64");
-        let err = parse_account_value(&value, &program_id()).unwrap_err();
+        let err = parse_account_value(&value, &program_id(), 4242).unwrap_err();
         assert!(matches!(err, ChainError::Encoding(_)));
     }
 
@@ -288,7 +314,7 @@ mod tests {
             &payload,
             "base64",
         );
-        let err = parse_account_value(&value, &program_id()).unwrap_err();
+        let err = parse_account_value(&value, &program_id(), 4242).unwrap_err();
         assert!(matches!(err, ChainError::WrongOwner { .. }));
     }
 
@@ -299,7 +325,7 @@ mod tests {
             "owner": owner,
             "data": "aGVsbG8=",
         });
-        let err = parse_account_value(&value, &program_id()).unwrap_err();
+        let err = parse_account_value(&value, &program_id(), 4242).unwrap_err();
         assert!(matches!(err, ChainError::Encoding(_)));
     }
 
@@ -308,9 +334,34 @@ mod tests {
         let owner = base58_encode(&program_id());
         let payload = base64::engine::general_purpose::STANDARD.encode(minimal_account_body());
         let value = account_json(&owner, &payload, "base64");
-        let state = parse_account_value(&value, &program_id()).unwrap();
+        let state = parse_account_value(&value, &program_id(), 4242).unwrap();
         assert_eq!(state.leaf_count, 0);
         assert!(state.peaks.is_empty());
+        assert_eq!(state.rpc_context_slot, 4242);
+    }
+
+    #[test]
+    fn valid_account_threads_rpc_context_slot() {
+        let owner = base58_encode(&program_id());
+        let payload = base64::engine::general_purpose::STANDARD.encode(minimal_account_body());
+        let result = json!({
+            "context": { "slot": 918_273 },
+            "value": account_json(&owner, &payload, "base64"),
+        });
+        let state = lineage_from_rpc_result(&result, &program_id())
+            .unwrap()
+            .expect("account present");
+        assert_eq!(state.rpc_context_slot, 918_273);
+    }
+
+    #[test]
+    fn missing_context_slot_is_malformed_rpc() {
+        let owner = base58_encode(&program_id());
+        let payload = base64::engine::general_purpose::STANDARD.encode(minimal_account_body());
+        let result = json!({ "value": account_json(&owner, &payload, "base64") });
+        let err = lineage_from_rpc_result(&result, &program_id()).unwrap_err();
+        assert!(matches!(err, ChainError::Rpc(_)));
+        assert!(err.to_string().contains("missing context slot"));
     }
 
     #[test]
@@ -320,7 +371,7 @@ mod tests {
         raw[0] ^= 0xff;
         let payload = base64::engine::general_purpose::STANDARD.encode(raw);
         let value = account_json(&owner, &payload, "base64");
-        let err = parse_account_value(&value, &program_id()).unwrap_err();
+        let err = parse_account_value(&value, &program_id(), 4242).unwrap_err();
         assert!(matches!(err, ChainError::Encoding(_)));
     }
 

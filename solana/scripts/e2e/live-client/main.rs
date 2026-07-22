@@ -765,13 +765,13 @@ fn proof_service_url() -> String {
     std::env::var("PROOF_SERVICE_URL").unwrap_or_else(|_| "http://127.0.0.1:8088".to_string())
 }
 
-/// JSON mirror of `solana_proof_service::http::MmrProofResponse` (DTO preserved until #1721).
+/// JSON mirror of `solana_proof_service::http::MmrProofResponse`. Only the fields
+/// this client consumes are declared; the response also carries `rpc_context_slot`,
+/// `lineage_last_slot`, `commitment`, and `proof_format_version` (ignored here).
 #[derive(Deserialize)]
 struct ProofServiceMmrProofResponse {
     mmr_proof: Option<ProofServiceMmrProofDto>,
     leaf_count: u64,
-    #[allow(dead_code)]
-    proof_slot: u64,
     verified: bool,
     status: String,
 }
@@ -2763,7 +2763,7 @@ mod tests {
 
     #[test]
     fn retries_only_structured_lagging_response() {
-        let lagging = br#"{"mmr_proof":null,"leaf_count":7,"proof_slot":42,"verified":false,"status":"lagging"}"#;
+        let lagging = br#"{"mmr_proof":null,"leaf_count":7,"rpc_context_slot":42,"commitment":"confirmed","proof_format_version":"v1","verified":false,"status":"lagging"}"#;
         let lagging_error = proof_service_http_error(503, lagging);
         assert_eq!(
             lagging_error,
@@ -2771,7 +2771,7 @@ mod tests {
         );
         assert!(is_proof_service_lagging(&lagging_error));
 
-        let wrong_status = br#"{"mmr_proof":null,"leaf_count":7,"proof_slot":42,"verified":false,"status":"corrupt_cache"}"#;
+        let wrong_status = br#"{"mmr_proof":null,"leaf_count":7,"rpc_context_slot":42,"commitment":"confirmed","proof_format_version":"v1","verified":false,"status":"corrupt_cache"}"#;
         let fatal_error = proof_service_http_error(503, wrong_status);
         assert_eq!(
             fatal_error,

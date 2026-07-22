@@ -28,6 +28,10 @@ use crate::readiness::{evaluate_readiness, ReadinessClass, ReadinessQueryable, R
 /// Hard ceiling for a single proof HTTP request (includes RPC peak check).
 const PROOF_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Proof response wire-format marker. Bump on a breaking DTO change; there is no
+/// negotiation machinery in this PoC — consumers assert the version they expect.
+const PROOF_FORMAT_VERSION: &str = "v1";
+
 /// Shared application state. Generic over the chain fetcher and snapshot source
 /// so handler tests can inject fakes without a live RPC node or Postgres.
 pub struct AppState<C: ChainFetcher, S: ProofSnapshotSource> {
@@ -65,8 +69,18 @@ impl From<&zama_solana_acl::mmr::MmrProof> for MmrProofDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MmrProofResponse {
     pub mmr_proof: Option<MmrProofDto>,
+    /// Lineage leaf count the proof was built against.
     pub leaf_count: u64,
-    pub proof_slot: u64,
+    /// Confirmed Solana RPC context slot of the on-chain peak comparison.
+    pub rpc_context_slot: u64,
+    /// Durable ingest slot at which this lineage's served leaves were last written.
+    /// Omitted when no snapshot backed the response (e.g. store not yet ingested).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lineage_last_slot: Option<u64>,
+    /// Commitment level of the on-chain authorization reads.
+    pub commitment: &'static str,
+    /// Proof response wire-format version.
+    pub proof_format_version: &'static str,
     pub verified: bool,
     pub status: &'static str,
 }
@@ -111,29 +125,42 @@ pub enum HttpError {
 impl IntoResponse for HttpError {
     fn into_response(self) -> Response {
         match self {
-            HttpError::Proof(ProofError::Lagging { leaf_count }) => {
+            HttpError::Proof(ProofError::Lagging {
+                leaf_count,
+                rpc_context_slot,
+                lineage_last_slot,
+            }) => {
                 metrics::record_proof("lagging");
                 (
                     StatusCode::SERVICE_UNAVAILABLE,
                     Json(MmrProofResponse {
                         mmr_proof: None,
                         leaf_count,
-                        proof_slot: leaf_count,
+                        rpc_context_slot,
+                        lineage_last_slot,
+                        commitment: crate::chain::SOLANA_PROOF_COMMITMENT,
+                        proof_format_version: PROOF_FORMAT_VERSION,
                         verified: false,
                         status: "lagging",
                     }),
                 )
                     .into_response()
             }
-            HttpError::Proof(ProofError::CorruptStore { leaf_count }) => {
-                // Wire name preserved for relayer DTO parity until #1721.
+            HttpError::Proof(ProofError::CorruptStore {
+                leaf_count,
+                rpc_context_slot,
+                lineage_last_slot,
+            }) => {
                 metrics::record_proof("corrupt_cache");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(MmrProofResponse {
                         mmr_proof: None,
                         leaf_count,
-                        proof_slot: leaf_count,
+                        rpc_context_slot,
+                        lineage_last_slot,
+                        commitment: crate::chain::SOLANA_PROOF_COMMITMENT,
+                        proof_format_version: PROOF_FORMAT_VERSION,
                         verified: false,
                         status: "corrupt_cache",
                     }),
@@ -234,7 +261,10 @@ pub async fn mmr_proof_handler<C: ChainFetcher, S: ProofSnapshotSource>(
     Ok(Json(MmrProofResponse {
         mmr_proof: result.mmr_proof.as_ref().map(MmrProofDto::from),
         leaf_count: result.leaf_count,
-        proof_slot: result.proof_slot,
+        rpc_context_slot: result.rpc_context_slot,
+        lineage_last_slot: result.lineage_last_slot,
+        commitment: crate::chain::SOLANA_PROOF_COMMITMENT,
+        proof_format_version: PROOF_FORMAT_VERSION,
         verified: result.verified,
         status: "verified",
     }))
@@ -566,7 +596,14 @@ mod tests {
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
-        chain.set(lineage, OnChainLineageState { peaks, leaf_count });
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                rpc_context_slot: 4242,
+            },
+        );
         let store = FakeStore::new();
         store.insert(snapshot_with_leaves(lineage, vec![leaf]));
 
@@ -585,7 +622,12 @@ mod tests {
         assert_eq!(json["status"], "verified");
         assert_eq!(json["verified"], true);
         assert_eq!(json["leaf_count"], 1);
-        assert_eq!(json["proof_slot"], 1);
+        assert_eq!(json["rpc_context_slot"], 4242);
+        // snapshot_with_leaves pins last_slot = 1.
+        assert_eq!(json["lineage_last_slot"], 1);
+        assert_eq!(json["commitment"], "confirmed");
+        assert_eq!(json["proof_format_version"], "v1");
+        assert!(json.get("proof_slot").is_none());
         assert!(json["mmr_proof"].is_object());
     }
 
@@ -600,7 +642,14 @@ mod tests {
         mmr_append(&mut peaks, &mut leaf_count, leaf1).unwrap();
 
         let chain = FakeChain::new();
-        chain.set(lineage, OnChainLineageState { peaks, leaf_count });
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                rpc_context_slot: 4242,
+            },
+        );
         let store = FakeStore::new();
         store.insert(snapshot_with_leaves(lineage, vec![leaf0]));
 
@@ -632,7 +681,14 @@ mod tests {
         mmr_append(&mut peaks, &mut leaf_count, other).unwrap();
 
         let chain = FakeChain::new();
-        chain.set(lineage, OnChainLineageState { peaks, leaf_count });
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                rpc_context_slot: 4242,
+            },
+        );
         let store = FakeStore::new();
         store.insert(snapshot_with_leaves(lineage, vec![leaf]));
 
@@ -663,7 +719,14 @@ mod tests {
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
-        chain.set(lineage, OnChainLineageState { peaks, leaf_count });
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                rpc_context_slot: 4242,
+            },
+        );
         let store = FakeStore::new();
         store.mark_inconsistent(lineage, 1, 0);
 
@@ -715,7 +778,14 @@ mod tests {
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
-        chain.set(lineage, OnChainLineageState { peaks, leaf_count });
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                rpc_context_slot: 4242,
+            },
+        );
         let store = FakeStore::new();
         store.insert(snapshot_with_leaves(lineage, vec![leaf]));
 
@@ -745,7 +815,14 @@ mod tests {
         mmr_append(&mut peaks, &mut leaf_count, leaf).unwrap();
 
         let chain = FakeChain::new();
-        chain.set(lineage, OnChainLineageState { peaks, leaf_count });
+        chain.set(
+            lineage,
+            OnChainLineageState {
+                peaks,
+                leaf_count,
+                rpc_context_slot: 4242,
+            },
+        );
         let store = FakeStore::new();
         store.insert(snapshot_with_leaves(lineage, vec![leaf]));
 
@@ -767,22 +844,39 @@ mod tests {
 
     #[tokio::test]
     async fn lagging_maps_to_503_json_body() {
-        let response = HttpError::Proof(ProofError::Lagging { leaf_count: 3 }).into_response();
+        let response = HttpError::Proof(ProofError::Lagging {
+            leaf_count: 3,
+            rpc_context_slot: 77,
+            lineage_last_slot: Some(9),
+        })
+        .into_response();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let body = json_body(response).await;
         assert_eq!(body["status"], "lagging");
         assert_eq!(body["verified"], false);
         assert_eq!(body["leaf_count"], 3);
+        assert_eq!(body["rpc_context_slot"], 77);
+        assert_eq!(body["lineage_last_slot"], 9);
+        assert_eq!(body["commitment"], "confirmed");
+        assert_eq!(body["proof_format_version"], "v1");
     }
 
     #[tokio::test]
     async fn corrupt_store_maps_to_500_corrupt_cache_json_body() {
-        let response = HttpError::Proof(ProofError::CorruptStore { leaf_count: 3 }).into_response();
+        let response = HttpError::Proof(ProofError::CorruptStore {
+            leaf_count: 3,
+            rpc_context_slot: 77,
+            lineage_last_slot: None,
+        })
+        .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = json_body(response).await;
         assert_eq!(body["status"], "corrupt_cache");
         assert_eq!(body["verified"], false);
         assert_eq!(body["leaf_count"], 3);
+        assert_eq!(body["rpc_context_slot"], 77);
+        // lineage_last_slot omitted when no snapshot backed the error.
+        assert!(body.get("lineage_last_slot").is_none());
     }
 
     #[test]

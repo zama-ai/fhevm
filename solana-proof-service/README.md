@@ -24,17 +24,40 @@ vertical. Multi-replica / prod auth remain later slices.
 | `GET /internal/solana/mmr-proof?encrypted_value=<base58>&leaf_index=<u64>` | Verified MMR proof |
 | `GET /swagger-ui` / `GET /api-docs/openapi.json` | Generated OpenAPI |
 
-Success proof DTO (preserved until #1721):
+Success proof DTO:
 
 ```json
 {
   "mmr_proof": { "leaf_index": 0, "siblings": ["<hex>", "..."] },
   "leaf_count": 1,
-  "proof_slot": 1,
+  "rpc_context_slot": 1234,
+  "lineage_last_slot": 1230,
+  "commitment": "confirmed",
+  "proof_format_version": "v1",
   "verified": true,
   "status": "verified"
 }
 ```
+
+Chain-context fields bind the served proof to observed state so a consumer can
+reason about staleness when the store and the RPC provider see different
+confirmed tips:
+
+- `leaf_count` — lineage leaf count the proof was built against.
+- `rpc_context_slot` — confirmed Solana RPC context slot of the on-chain peak
+  comparison that produced `verified`.
+- `lineage_last_slot` — per-lineage durable ingest slot at which this lineage's
+  served leaves were last written (`solana_proof_lineages.last_slot`). Omitted
+  when no snapshot backed the response (store has not ingested the lineage yet).
+  This is deliberately distinct from the store's GLOBAL durable ingest checkpoint
+  (`solana_proof_progress.checkpoint_slot`); surfacing that global checkpoint on
+  the proof DTO remains a possible follow-up.
+- `commitment` — commitment level of the on-chain authorization reads.
+- `proof_format_version` — response wire-format marker (`v1`).
+
+The `lagging` (503) and `corrupt_cache` (500) envelopes reuse this shape and
+carry `leaf_count` + `rpc_context_slot` (the two tips being compared);
+`lineage_last_slot` appears only when a snapshot was in hand.
 
 The proof path is **read-only**: SQL `proof_snapshot` + confirmed on-chain peak
 check; no request-triggered catch-up writer.
@@ -43,8 +66,7 @@ Invalid `leaf_index` (≥ on-chain `leaf_count`) → HTTP 400 with typed
 `ErrorResponse` (`code: leaf_index_out_of_range`). Lagging store (behind **or
 briefly ahead of** a different confirmed RPC) → HTTP 503 with
 `status: "lagging"`. Equal-count peak divergence or snapshot inconsistency →
-HTTP 500 with `status: "corrupt_cache"` (fail closed; wire name preserved for
-relayer DTO parity until #1721). Other client/server failures use the same
+HTTP 500 with `status: "corrupt_cache"` (fail closed). Other client/server failures use the same
 `ErrorResponse` JSON envelope. Proof routes get an `x-request-id`, a 30s typed
 timeout (`code: timeout`), and a shed-on-saturate concurrency limit sized to
 `max_connections - 2` so ingest and readiness keep reserved DB pool slots
