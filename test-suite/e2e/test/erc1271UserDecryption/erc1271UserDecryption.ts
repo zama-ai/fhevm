@@ -415,7 +415,7 @@ describe('ERC-1271 user decryption', function () {
 
   it('test erc1271 user decrypt multisig rejects parts in descending signer order', async function () {
     const req = await freshMultisigRequest(multisig2of3, multisig2of3Address);
-    // Valid owner parts, deliberately mis-ordered: Safe's canonical encoding
+    // Valid owner parts in descending order: Safe's canonical encoding
     // requires ascending signer addresses.
     const signature = await buildMultisigSignature(cfg, req, [signers.bob, signers.carol], { order: 'descending' });
     const { post } = await submitUnifiedRequest(cfg, req, { kind: 'raw', signature });
