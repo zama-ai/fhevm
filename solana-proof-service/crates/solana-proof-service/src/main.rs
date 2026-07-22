@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use solana_proof_source::{YellowstoneBlockSource, YellowstoneSourceConfig};
 use solana_proof_store::{run_sequential_ingest, IngestHooks, SqlProofStore};
 use sqlx::postgres::PgPoolOptions;
+use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
@@ -17,7 +18,7 @@ use solana_proof_service::config::ServiceConfig;
 use solana_proof_service::http::{router, AppState};
 use solana_proof_service::ingest_health::IngestHealth;
 use solana_proof_service::lifecycle::{
-    supervise_http_and_writer, wait_for_shutdown, INGEST_SHUTDOWN_DEADLINE,
+    proof_admission_limit, supervise_http_and_writer, wait_for_shutdown, INGEST_SHUTDOWN_DEADLINE,
 };
 use solana_proof_service::metrics;
 use solana_proof_service::startup_validation::validate_startup_dependencies;
@@ -59,6 +60,13 @@ async fn main() -> Result<()> {
     let ingest_handle =
         spawn_ingest_writer(source, store.clone(), Arc::clone(&ingest), cancel.clone());
 
+    let proof_slots = proof_admission_limit(config.database.max_connections);
+    tracing::info!(
+        max_connections = config.database.max_connections,
+        proof_admission = proof_slots,
+        "database pool sized with reserved ingest/readiness slots"
+    );
+
     let fetcher = Arc::new(RpcChainFetcher::new(
         config.solana.rpc_url.clone(),
         program_id,
@@ -67,6 +75,7 @@ async fn main() -> Result<()> {
         store,
         fetcher,
         ingest: Arc::clone(&ingest),
+        proof_permits: Arc::new(Semaphore::new(proof_slots)),
     });
     let app = router(state);
 
@@ -75,13 +84,6 @@ async fn main() -> Result<()> {
         .with_context(|| format!("failed to bind {}", config.server.bind_address))?;
     tracing::info!(%config.server.bind_address, "HTTP listening");
 
-    // One token: OS signal, unexpected writer exit, and Axum graceful shutdown.
-    let signal_cancel = cancel.clone();
-    tokio::spawn(async move {
-        shutdown_signal().await;
-        signal_cancel.cancel();
-    });
-
     let shutdown = cancel.clone();
     let server = axum::serve(listener, app)
         .with_graceful_shutdown(async move {
@@ -89,9 +91,11 @@ async fn main() -> Result<()> {
         })
         .into_future();
 
+    // Signal future is part of supervision (not a detached spawn).
     supervise_http_and_writer(
         server,
         ingest_handle,
+        shutdown_signal(),
         &ingest,
         cancel,
         INGEST_SHUTDOWN_DEADLINE,
@@ -141,27 +145,33 @@ fn init_tracing() {
         .init();
 }
 
-async fn shutdown_signal() {
+/// Installs OS signal handlers and waits for the first signal.
+/// Registration failures are returned (not panicked) so supervision can fail closed.
+async fn shutdown_signal() -> Result<()> {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
-            .expect("failed to install Ctrl+C handler");
+            .context("Ctrl+C handler failed")
     };
 
     #[cfg(unix)]
     let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .context("failed to install SIGTERM handler")?;
+        sigterm.recv().await;
+        Ok::<(), anyhow::Error>(())
     };
 
     #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
+    let terminate = async {
+        std::future::pending::<()>().await;
+        Ok::<(), anyhow::Error>(())
+    };
 
     tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
+        result = ctrl_c => result?,
+        result = terminate => result?,
     }
     tracing::info!("shutdown signal received");
+    Ok(())
 }

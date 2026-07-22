@@ -1,7 +1,7 @@
-//! Concurrent HTTP + ingest-writer supervision.
+//! Concurrent HTTP + ingest-writer + shutdown-signal supervision.
 //!
 //! A single [`CancellationToken`] drives signal handling, forced writer-exit
-//! shutdown, and Axum graceful shutdown — no parallel oneshot channel.
+//! shutdown, and Axum graceful shutdown.
 
 use std::future::Future;
 use std::io;
@@ -18,28 +18,46 @@ use crate::ingest_health::IngestHealth;
 /// Bound how long shutdown waits for the ingest writer after cancel.
 pub const INGEST_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(15);
 
-/// Runs the HTTP server future and ingest writer together.
+/// Connections reserved for ingest writer + readiness (not available to proofs).
+pub const RESERVED_DB_CONNECTIONS: u32 = 2;
+
+/// Proof admission slots so the shared pool always keeps
+/// [`RESERVED_DB_CONNECTIONS`] free for writer/readiness.
+pub fn proof_admission_limit(max_connections: u32) -> usize {
+    max_connections
+        .saturating_sub(RESERVED_DB_CONNECTIONS)
+        .max(1) as usize
+}
+
+/// Runs HTTP server, ingest writer, and shutdown signal together.
 ///
-/// - Writer panic/exit while the server is still intended to run cancels the
-///   shared token (HTTP shuts down) and returns an error after the server stops.
+/// - Writer panic/exit while serving cancels the shared token and fails after
+///   HTTP stops.
+/// - Signal completion cancels the token (graceful HTTP shutdown) then joins
+///   the writer.
+/// - Signal registration / handler errors fail the process after cleanup.
 /// - Server completion always cancels and joins the writer (even on server Err).
 pub async fn supervise_http_and_writer(
     server: impl Future<Output = io::Result<()>>,
     mut writer: JoinHandle<()>,
+    shutdown_signal: impl Future<Output = anyhow::Result<()>>,
     health: &IngestHealth,
     cancel: CancellationToken,
     writer_join_deadline: Duration,
 ) -> anyhow::Result<()> {
     let mut server = std::pin::pin!(server);
+    let mut shutdown_signal = std::pin::pin!(shutdown_signal);
 
     enum Stopped {
         Server(io::Result<()>),
         Writer(Result<(), tokio::task::JoinError>),
+        Signal(anyhow::Result<()>),
     }
 
     let stopped = tokio::select! {
         result = &mut server => Stopped::Server(result),
         join = &mut writer => Stopped::Writer(join),
+        signal = &mut shutdown_signal => Stopped::Signal(signal),
     };
 
     match stopped {
@@ -52,7 +70,6 @@ pub async fn supervise_http_and_writer(
         Stopped::Writer(join) => {
             let unexpected = !cancel.is_cancelled();
             record_ingest_join(join, health, unexpected);
-            // Same token Axum graceful-shutdown awaits; force HTTP to stop.
             cancel.cancel();
             let result = server.as_mut().await;
             result.context("HTTP server error")?;
@@ -61,10 +78,18 @@ pub async fn supervise_http_and_writer(
             }
             Ok(())
         }
+        Stopped::Signal(signal_result) => {
+            cancel.cancel();
+            let server_result = server.as_mut().await;
+            await_ingest_writer(writer, health, writer_join_deadline).await;
+            signal_result.context("shutdown signal handler failed")?;
+            server_result.context("HTTP server error")?;
+            Ok(())
+        }
     }
 }
 
-/// Waits until `cancel` is cancelled (signal task or unexpected writer exit).
+/// Waits until `cancel` is cancelled (signal, unexpected writer exit, or stop).
 pub async fn wait_for_shutdown(cancel: CancellationToken) {
     cancel.cancelled().await;
 }
@@ -125,7 +150,7 @@ pub async fn await_ingest_writer(
     }
 }
 
-/// Test helper: pin a server future that completes when `cancel` fires.
+/// Test helper: server future that completes when `cancel` fires.
 #[cfg(test)]
 pub fn server_until_cancel(
     cancel: CancellationToken,
@@ -137,11 +162,24 @@ pub fn server_until_cancel(
 }
 
 #[cfg(test)]
+fn pending_signal() -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> {
+    Box::pin(std::future::pending())
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::ingest_health::IngestTerminal;
     use std::sync::Arc;
     use std::time::Duration;
+
+    #[test]
+    fn proof_admission_reserves_ops_slots() {
+        assert_eq!(proof_admission_limit(10), 8);
+        assert_eq!(proof_admission_limit(3), 1);
+        assert_eq!(proof_admission_limit(2), 1);
+        assert_eq!(proof_admission_limit(1), 1);
+    }
 
     #[tokio::test]
     async fn writer_panic_cancels_and_fails_supervision() {
@@ -157,6 +195,7 @@ mod tests {
         let err = supervise_http_and_writer(
             server,
             writer,
+            pending_signal(),
             &health,
             cancel.clone(),
             Duration::from_secs(2),
@@ -186,6 +225,7 @@ mod tests {
         let err = supervise_http_and_writer(
             server,
             writer,
+            pending_signal(),
             &health,
             cancel.clone(),
             Duration::from_secs(2),
@@ -213,6 +253,7 @@ mod tests {
         let err = supervise_http_and_writer(
             server,
             writer,
+            pending_signal(),
             &health,
             cancel.clone(),
             Duration::from_secs(2),
@@ -222,6 +263,63 @@ mod tests {
         assert!(err.to_string().contains("HTTP server error"));
         assert!(cancel.is_cancelled());
         assert!(matches!(health.terminal(), Some(IngestTerminal::Cancelled)));
+        assert!(!health.writer_running());
+    }
+
+    #[tokio::test]
+    async fn normal_signal_cancels_and_joins_cleanly() {
+        let health = IngestHealth::new();
+        health.mark_started();
+        let cancel = CancellationToken::new();
+        let health_task = Arc::clone(&health);
+        let cancel_task = cancel.clone();
+        let writer = tokio::spawn(async move {
+            cancel_task.cancelled().await;
+            health_task.mark_finished(Ok(()));
+        });
+        let server = server_until_cancel(cancel.clone());
+        let signal = async { Ok(()) };
+
+        supervise_http_and_writer(
+            server,
+            writer,
+            signal,
+            &health,
+            cancel.clone(),
+            Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        assert!(cancel.is_cancelled());
+        assert!(matches!(health.terminal(), Some(IngestTerminal::Cancelled)));
+    }
+
+    #[tokio::test]
+    async fn signal_registration_error_fails_after_cleanup() {
+        let health = IngestHealth::new();
+        health.mark_started();
+        let cancel = CancellationToken::new();
+        let health_task = Arc::clone(&health);
+        let cancel_task = cancel.clone();
+        let writer = tokio::spawn(async move {
+            cancel_task.cancelled().await;
+            health_task.mark_finished(Ok(()));
+        });
+        let server = server_until_cancel(cancel.clone());
+        let signal = async { Err(anyhow::anyhow!("failed to install SIGTERM handler")) };
+
+        let err = supervise_http_and_writer(
+            server,
+            writer,
+            signal,
+            &health,
+            cancel.clone(),
+            Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("shutdown signal handler failed"));
+        assert!(cancel.is_cancelled());
         assert!(!health.writer_running());
     }
 
@@ -237,9 +335,16 @@ mod tests {
         });
         let server = server_until_cancel(cancel.clone());
 
-        supervise_http_and_writer(server, writer, &health, cancel, Duration::from_secs(2))
-            .await
-            .unwrap();
+        supervise_http_and_writer(
+            server,
+            writer,
+            pending_signal(),
+            &health,
+            cancel,
+            Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
         assert!(matches!(health.terminal(), Some(IngestTerminal::Cancelled)));
     }
 
@@ -251,13 +356,12 @@ mod tests {
         let writer = tokio::spawn(async {
             std::future::pending::<()>().await;
         });
-        let server = async {
-            Ok(()) // server finishes first
-        };
+        let server = async { Ok(()) };
 
         supervise_http_and_writer(
             server,
             writer,
+            pending_signal(),
             &health,
             cancel.clone(),
             Duration::from_millis(20),

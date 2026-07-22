@@ -1,12 +1,11 @@
 //! Axum HTTP surface: liveness, readiness, metrics, OpenAPI, and MMR proof.
 
 use std::sync::Arc;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use axum::extract::{Query, Request, State};
 use axum::http::StatusCode;
-use axum::middleware::{from_fn, Next};
+use axum::middleware::{from_fn_with_state, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -28,13 +27,6 @@ use crate::readiness::{evaluate_readiness, ReadinessClass, ReadinessQueryable, R
 
 /// Hard ceiling for a single proof HTTP request (includes RPC peak check).
 const PROOF_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-/// Soft concurrency bound for proof handlers only (ops endpoints stay independent).
-const PROOF_MAX_CONCURRENT_REQUESTS: usize = 128;
-
-fn proof_semaphore() -> &'static Semaphore {
-    static SEM: OnceLock<Semaphore> = OnceLock::new();
-    SEM.get_or_init(|| Semaphore::new(PROOF_MAX_CONCURRENT_REQUESTS))
-}
 
 /// Shared application state. Generic over the chain fetcher and snapshot source
 /// so handler tests can inject fakes without a live RPC node or Postgres.
@@ -42,6 +34,8 @@ pub struct AppState<C: ChainFetcher, S: ProofSnapshotSource> {
     pub store: S,
     pub fetcher: Arc<C>,
     pub ingest: Arc<IngestHealth>,
+    /// Proof admission aligned with DB pool capacity minus reserved ops slots.
+    pub proof_permits: Arc<Semaphore>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -321,8 +315,15 @@ impl<B> MakeSpan<B> for RequestIdMakeSpan {
 }
 
 /// Proof-only: shed when saturated (no unbounded queue) and enforce a typed timeout.
-async fn proof_admission(req: Request, next: Next) -> Response {
-    let Ok(permit) = proof_semaphore().try_acquire() else {
+///
+/// Admission capacity is sized to leave reserved DB connections for ingest and
+/// readiness on the shared pool (see [`crate::lifecycle::proof_admission_limit`]).
+async fn proof_admission<C: ChainFetcher, S: ProofSnapshotSource>(
+    State(state): State<Arc<AppState<C, S>>>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let Ok(permit) = state.proof_permits.try_acquire() else {
         metrics::record_proof("overloaded");
         return error_json(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -359,7 +360,8 @@ where
 /// Builds the HTTP router. Mounts OpenAPI + swagger UI.
 ///
 /// Operational endpoints (liveness / readiness / metrics) are outside the proof
-/// concurrency and timeout gate so health probes cannot be starved by O(n) proofs.
+/// concurrency and timeout gate. Proof admission is also capped below the DB
+/// pool size so ingest/readiness retain reserved connection slots.
 pub fn router<C, S>(state: Arc<AppState<C, S>>) -> Router
 where
     C: ChainFetcher + 'static,
@@ -373,7 +375,10 @@ where
 
     let proof = Router::new()
         .route("/internal/solana/mmr-proof", get(mmr_proof_handler::<C, S>))
-        .layer(from_fn(proof_admission))
+        .layer(from_fn_with_state(
+            Arc::clone(&state),
+            proof_admission::<C, S>,
+        ))
         .with_state(state);
 
     request_id_layers(
@@ -394,7 +399,10 @@ where
     request_id_layers(
         Router::new()
             .route("/internal/solana/mmr-proof", get(mmr_proof_handler::<C, S>))
-            .layer(from_fn(proof_admission))
+            .layer(from_fn_with_state(
+                Arc::clone(&state),
+                proof_admission::<C, S>,
+            ))
             .with_state(state),
     )
 }
@@ -527,6 +535,7 @@ mod tests {
             store,
             fetcher: Arc::new(chain),
             ingest: IngestHealth::new(),
+            proof_permits: Arc::new(Semaphore::new(8)),
         })
     }
 

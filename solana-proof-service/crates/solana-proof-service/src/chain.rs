@@ -171,6 +171,23 @@ fn parse_account_value(
     })
 }
 
+/// Interprets `getAccountInfo` `result`: only explicit `"value": null` means absent.
+fn lineage_from_rpc_result(
+    result: &serde_json::Value,
+    expected_program_id: &[u8; 32],
+) -> Result<Option<OnChainLineageState>, ChainError> {
+    if result.is_null() {
+        return Err(ChainError::Rpc("null getAccountInfo result".to_string()));
+    }
+    match result.get("value") {
+        None => Err(ChainError::Rpc(
+            "malformed getAccountInfo result: missing value field".to_string(),
+        )),
+        Some(value) if value.is_null() => Ok(None),
+        Some(value) => Ok(Some(parse_account_value(value, expected_program_id)?)),
+    }
+}
+
 #[async_trait]
 impl ChainFetcher for RpcChainFetcher {
     async fn get_lineage_state(
@@ -180,13 +197,7 @@ impl ChainFetcher for RpcChainFetcher {
         let result = self
             .call("getAccountInfo", account_info_params(&address))
             .await?;
-        if result.is_null() || result.get("value").map(|v| v.is_null()).unwrap_or(true) {
-            return Ok(None);
-        }
-        let value = result
-            .get("value")
-            .ok_or_else(|| ChainError::Rpc("missing account value".to_string()))?;
-        Ok(Some(parse_account_value(value, &self.program_id)?))
+        lineage_from_rpc_result(&result, &self.program_id)
     }
 }
 
@@ -311,5 +322,28 @@ mod tests {
         let value = account_json(&owner, &payload, "base64");
         let err = parse_account_value(&value, &program_id()).unwrap_err();
         assert!(matches!(err, ChainError::Encoding(_)));
+    }
+
+    #[test]
+    fn null_value_means_account_absent() {
+        let result = json!({ "value": null, "context": { "slot": 1 } });
+        assert!(lineage_from_rpc_result(&result, &program_id())
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn missing_value_field_is_malformed_rpc() {
+        let result = json!({ "context": { "slot": 1 } });
+        let err = lineage_from_rpc_result(&result, &program_id()).unwrap_err();
+        assert!(matches!(err, ChainError::Rpc(_)));
+        assert!(err.to_string().contains("missing value field"));
+    }
+
+    #[test]
+    fn null_result_is_malformed_rpc() {
+        let err = lineage_from_rpc_result(&serde_json::Value::Null, &program_id()).unwrap_err();
+        assert!(matches!(err, ChainError::Rpc(_)));
+        assert!(err.to_string().contains("null getAccountInfo result"));
     }
 }

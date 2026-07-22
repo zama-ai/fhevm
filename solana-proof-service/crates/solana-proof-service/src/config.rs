@@ -89,8 +89,12 @@ impl ServiceConfig {
         if self.database.connection_string.trim().is_empty() {
             anyhow::bail!("database.connection_string must not be empty");
         }
-        if self.database.max_connections == 0 {
-            anyhow::bail!("database.max_connections must be >= 1");
+        if self.database.max_connections < crate::lifecycle::RESERVED_DB_CONNECTIONS + 1 {
+            anyhow::bail!(
+                "database.max_connections must be >= {} ({} reserved for ingest/readiness + at least one proof slot)",
+                crate::lifecycle::RESERVED_DB_CONNECTIONS + 1,
+                crate::lifecycle::RESERVED_DB_CONNECTIONS
+            );
         }
         if self.solana.rpc_url.trim().is_empty() {
             anyhow::bail!("solana.rpc_url must not be empty");

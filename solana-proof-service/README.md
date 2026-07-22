@@ -44,10 +44,12 @@ briefly ahead of** a different confirmed RPC) → HTTP 503 with
 HTTP 500 with `status: "corrupt_cache"` (fail closed; wire name preserved for
 relayer DTO parity until #1721). Other client/server failures use the same
 `ErrorResponse` JSON envelope. Proof routes get an `x-request-id`, a 30s typed
-timeout (`code: timeout`), and a shed-on-saturate concurrency limit
-(`code: overloaded`). Liveness / readiness / metrics are outside that gate so
-probes cannot be starved. Upstream RPC uses a shorter 10s budget so chain
-failures surface as typed `chain_error` inside the HTTP window.
+timeout (`code: timeout`), and a shed-on-saturate concurrency limit sized to
+`max_connections - 2` so ingest and readiness keep reserved DB pool slots
+(`code: overloaded`). Liveness / readiness / metrics are outside the HTTP proof
+gate; readiness DB probes time out after 2s and the pool uses a 2s acquire
+timeout. Upstream RPC uses a shorter 10s budget so chain failures surface as
+typed `chain_error` inside the HTTP window.
 
 **Readiness vs proof trust:** `/health/readiness` is the bootstrap / ingest gate
 (history complete + writer live + at least one Applied / AlreadyApplied on the

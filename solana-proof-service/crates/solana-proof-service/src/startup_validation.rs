@@ -2,7 +2,7 @@
 //!
 //! Fail fast on unreachable database / missing service schema rather than
 //! binding an unready listener. Parsed config fields are already validated by
-//! [`ServiceConfig::validate`] at load time.
+//! [`crate::config::ServiceConfig::validate`] at load time.
 
 use anyhow::{Context, Result};
 use solana_proof_store::SqlProofStore;
