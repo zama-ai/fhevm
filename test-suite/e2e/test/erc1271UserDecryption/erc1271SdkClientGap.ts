@@ -12,7 +12,7 @@ import { FhevmInstances } from '../types';
 // End-to-end coverage of `@fhevm/sdk` ERC-1271 (smart-contract-wallet) support
 // on the unified /v3 user-decryption route.
 //
-// The protocol backend (relayer /v3 -> gateway -> KMS connector) accepts
+// The protocol backend (relayer /v3 -> gateway -> KMS Connector) accepts
 // variable-length ERC-1271 signatures — also proven by the direct-envelope
 // tests in erc1271UserDecryption.ts. This suite drives the SAME flows THROUGH
 // the SDK client, using only its EXISTING public surface — there is no new
@@ -26,8 +26,8 @@ import { FhevmInstances } from '../types';
 //            `eip712.message.userAddress` and AUTO-DETECTS EOA vs ERC-1271 —
 //            a 65-byte EOA fast-path that recovers to `userAddress` returns
 //            before any RPC, otherwise it falls through to an
-//            `isValidSignature` STATICCALL (precautionary; the KMS is
-//            authoritative).
+//            `isValidSignature` STATICCALL (precautionary; the KMS Connector
+//            is authoritative).
 //
 // A smart-contract-wallet permit is issued by pointing the serialized permit's
 // `eip712.message.userAddress` at the wallet and passing the assembled blob to
@@ -39,7 +39,7 @@ import { FhevmInstances } from '../types';
 // contract with `FHE.allow(handle, wallet)`, and the wallet is only the
 // userAddress — the realistic setup (a wallet holding confidential tokens) and
 // the only one expressible through the SDK: both `checkPersistAllowed`
-// (`userAddress != contractAddress`) and the KMS connector (`userAddress`
+// (`userAddress != contractAddress`) and the KMS Connector (`userAddress`
 // listed in `allowedContracts`) reject a wallet decrypting a handle held by
 // itself. That shape stays covered by the raw-envelope protocol suite via
 // permissive `allowedContracts: []`.
@@ -271,13 +271,10 @@ describe('ERC-1271 user decryption via the SDK client', function () {
 
   it('hard-wires the signed permit userAddress to the connected signer (signing path stays EOA/self-only)', async function () {
     this.timeout(120_000);
-    // `signDecryptionPermit` is deliberately unchanged: it has no parameter for a
-    // userAddress distinct from the signer, so the permit it produces always
-    // asserts authority over the SIGNER's own handles. A smart-wallet userAddress
-    // is therefore inexpressible on the SIGNING path — wallet permits are issued
-    // instead via `parseSignedDecryptionPermit` (see the multisig / approveHash
-    // cases above), which accepts an externally-assembled blob and an
-    // eip712.message.userAddress pointed at the wallet.
+    // `signDecryptionPermit` has no parameter for a userAddress distinct from the
+    // signer, so the permit it produces always asserts over the signer's own
+    // handles (wallet permits go through `parseSignedDecryptionPermit` instead —
+    // see the multisig / approveHash cases above).
     const permit = await client.signDecryptionPermit({
       contractAddresses: [multisigWalletAddress],
       durationSeconds: DURATION_SECONDS,

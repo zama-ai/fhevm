@@ -57,9 +57,8 @@ export type SignedDecryptionPermitV1 = SignedDecryptionPermitBase & {
  * a separate delegated variant. The `encryptedDataOwnerAddress` is read from
  * `eip712.message.userAddress` and may differ from `signerAddress`.
  *
- * The `signature` is widened to a variable-length {@link BytesHex} so it can
- * carry an ERC-1271 smart-contract-wallet blob; a normal EOA permit still uses
- * the strict 65-byte shape.
+ * The `signature` is widened to {@link BytesHex} to carry ERC-1271 blobs (see
+ * the `Signature` type parameter on {@link SignedDecryptionPermitBase}).
  *
  * Discriminate from {@link SignedDecryptionPermitV1} with `permit.version === 2`.
  */

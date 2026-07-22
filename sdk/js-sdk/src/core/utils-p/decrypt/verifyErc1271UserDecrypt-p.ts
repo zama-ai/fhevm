@@ -20,9 +20,9 @@ import { getTrustedClient } from '../../runtime/CoreFhevm-p.js';
 export const ERC1271_MAGIC_VALUE = '0x1626ba7e' as const;
 
 /**
- * Gas cap for the `isValidSignature` STATICCALL. Matches the relayer /
- * KMS-connector default (`erc1271_gas_limit = 100000`) so all three layers
- * bound the wallet's verification the same way.
+ * Gas cap for the `isValidSignature` STATICCALL. Matches the relayer / KMS
+ * default (`erc1271_gas_limit = 100000`) so all three layers bound the wallet's
+ * verification the same way.
  */
 export const ERC1271_GAS_LIMIT = 100_000n;
 
@@ -63,8 +63,8 @@ export type VerifyErc1271UserDecryptParameters = {
  * 2. Otherwise STATICCALL `IERC1271(userAddress).isValidSignature(digest, sig)`
  *    and accept iff it returns the magic value `0x1626ba7e`.
  *
- * This check is **precautionary, not authoritative** (the KMS connector runs the
- * same algorithm and gates key release):
+ * This check is **precautionary, not authoritative** (the KMS runs the same
+ * algorithm and gates key release):
  * - A **definitive** local failure (wrong magic / revert / malformed returndata /
  *   empty signature or ecrecover mismatch on an EOA) throws — fail-fast, matching
  *   the relayer's sync 400.

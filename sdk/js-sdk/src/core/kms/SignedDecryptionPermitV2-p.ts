@@ -153,14 +153,9 @@ async function _createSignedDecryptionPermitV2(
     throw Error(`allowedContracts max length of ${MAX_USER_DECRYPT_CONTRACT_ADDRESSES} exceeded`);
   }
 
-  // Auto-detecting verification mirroring the shared crate's `verify_signature`
-  // (`shared/user-decryption-signature/src/lib.rs`): validate the signature
-  // against `eip712.message.userAddress`, with the 65-byte EOA fast path first
-  // (returns before any RPC) and an `IERC1271.isValidSignature` STATICCALL
-  // fall-through for smart-contract wallets. For a normal EOA permit the sig
-  // recovers to `userAddress` (== `signerAddress` on the sign path), so existing
-  // EOA behavior is preserved with no on-chain call. Degrades gracefully when no
-  // read provider is available; the KMS remains authoritative.
+  // Precautionary local check against `eip712.message.userAddress`; auto-detects
+  // EOA vs ERC-1271 (a normal EOA permit stays on the no-RPC fast path). The KMS
+  // remains authoritative — see `verifyErc1271UserDecrypt` for the full contract.
   await verifyErc1271UserDecrypt(context, {
     userAddress: eip712.message.userAddress,
     eip712,

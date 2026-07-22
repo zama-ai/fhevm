@@ -145,8 +145,7 @@ export type FetchUserDecryptParametersV2 = {
       readonly ownerAddress: ChecksummedAddress;
     }>;
     readonly kmsDecryptEip712Message: KmsUserDecryptEip712V2Message;
-    // Variable length on the unified /v3 route: 65-byte EOA signature, ERC-1271
-    // smart-contract-wallet blob, or empty `0x` (pre-approved-hash flow).
+    // Variable length: 65-byte EOA, ERC-1271 blob, or empty `0x`.
     readonly kmsDecryptEip712Signature: BytesHex;
   };
   readonly options?: RelayerUserDecryptOptions | undefined;
