@@ -1337,7 +1337,9 @@ fn run_dispatch(
 }
 
 /// Settles the batch with a real KMS cert over `total`, replaying the wrap's
-/// eval when the batch is non-zero.
+/// eval when the batch is non-zero. Returns settle's consumed compute units so
+/// the fixed-key cost lifecycle can bound them; behavior-test callers ignore
+/// the value (the module policy is that behavior tests never depend on cost).
 fn run_settle(
     context: &Ctx,
     fixture: &BatcherFixture,
@@ -1345,7 +1347,7 @@ fn run_settle(
     ledger: &mut CleartextLedger,
     burned_handle: [u8; 32],
     total: u64,
-) {
+) -> u64 {
     let (signatures, extra_data) = kms_public_decrypt_cert(burned_handle, total);
     let proof = single_burn_public_decrypt_proof(keys.burned_amount_value, burned_handle);
     let redemption_record =
@@ -1365,6 +1367,7 @@ fn run_settle(
         // Only the wrap leg drives an eval at settle.
         assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
     }
+    result.compute_units_consumed
 }
 
 /// Claims for one user, replaying the MulDiv and transfer evals.
@@ -2488,11 +2491,27 @@ fn assert_batcher_cost(profile: &str, ix: &Instruction, result: &InstructionResu
     cost_snapshot::assert_cost_snapshot("batcher_mollusk", profile, ix, result);
 }
 
+// Deterministic upper bounds on settle's compute cost, asserted only in the
+// fixed-key cost lifecycle (see `snapshot_lifecycle`). Settle gets no exact
+// snapshot because its redemption-marker PDA is seeded by the runtime-derived
+// burned handle, so its bump-search cost is not key-stable; a bound still
+// catches a real regression. Baselines measured on the CI-pinned toolchain —
+// deposit settle 302_224..=306_724 CU (vault `deposit` CPI + wrap growth; the
+// handle-derived bump search makes this vary run to run — the same reason no
+// exact snapshot is pinned), redeem settle 369_715 CU (vault `withdraw` CPI)
+// — bounds take the highest observed value plus ~15% headroom rounded up to a
+// clean number, which absorbs the ±10% bump-search variance plus minor
+// legitimate drift while still catching real regressions.
+const SETTLE_DEPOSIT_MAX_COMPUTE_UNITS: u64 = 360_000;
+const SETTLE_REDEEM_MAX_COMPUTE_UNITS: u64 = 430_000;
+
 /// One fixed-key run through open/join/dispatch/claim, snapshotting each
 /// instruction's cost profile under `prefix`. Fixed fixture keys keep the PDA
-/// bump searches — part of the measured compute — stable across runs. No
-/// settle snapshot: its redemption-marker PDA seed is runtime-derived (the
-/// burned handle), so its bump search is not key-stable.
+/// bump searches — part of the measured compute — stable across runs. Settle
+/// gets no exact snapshot: its redemption-marker PDA seed is runtime-derived
+/// (the burned handle), so its bump search is not key-stable; it is instead
+/// covered here by a deterministic upper-bound compute assertion (see
+/// `SETTLE_DEPOSIT_MAX_COMPUTE_UNITS` / `SETTLE_REDEEM_MAX_COMPUTE_UNITS`).
 fn snapshot_lifecycle(
     fixture: &BatcherFixture,
     context: &Ctx,
@@ -2539,7 +2558,19 @@ fn snapshot_lifecycle(
     assert_batcher_cost(&format!("{prefix}dispatch"), &dispatch, &dispatch_result);
 
     let burned_handle = read_batch(context, keys.batch).burned_total_handle;
-    run_settle(context, fixture, &keys, ledger, burned_handle, 300);
+    let settle_compute_units = run_settle(context, fixture, &keys, ledger, burned_handle, 300);
+    let settle_bound = match fixture.direction {
+        batcher::BatchDirection::Deposit => SETTLE_DEPOSIT_MAX_COMPUTE_UNITS,
+        batcher::BatchDirection::Redeem => SETTLE_REDEEM_MAX_COMPUTE_UNITS,
+    };
+    assert!(
+        settle_compute_units < settle_bound,
+        "settle ({:?}) consumed {settle_compute_units} CU, over the {settle_bound} CU upper \
+         bound. If this cost increase is intentional, set the matching \
+         SETTLE_{{DEPOSIT,REDEEM}}_MAX_COMPUTE_UNITS to the new measured value plus ~15% headroom \
+         rounded up to a clean number.",
+        fixture.direction,
+    );
 
     ensure_system_accounts(
         context,
