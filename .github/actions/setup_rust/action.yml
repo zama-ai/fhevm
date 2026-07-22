@@ -1,0 +1,29 @@
+# Custom Rust setup with 0 external dependency: runners already ship rustup, which natively
+# installs the toolchain and components pinned in a rust-toolchain.toml.
+name: Setup Rust
+description: Install the Rust toolchain pinned in `toolchain-dir`'s rust-toolchain.toml, or latest stable Rust if unset.
+
+inputs:
+  toolchain-dir:
+    description: Directory containing the rust-toolchain.toml to install. Falls back to latest stable Rust if unset.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      shell: bash
+      env:
+        TOOLCHAIN_DIR: ${{ inputs.toolchain-dir }}
+      run: |
+        if [[ -n "$TOOLCHAIN_DIR" ]]; then
+          cd "$TOOLCHAIN_DIR"
+          rustup toolchain install
+        else
+          rustup toolchain install stable
+          rustup default stable
+        fi
+        rustc --version
+        echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
+        echo "CARGO_TERM_COLOR=always" >> "$GITHUB_ENV"
