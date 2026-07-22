@@ -2,7 +2,7 @@ import { Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
-import { buildProtocolConfigReinitializeArgs } from './taskDeploy';
+import { assertBridgeEndpointImmutable, buildProtocolConfigReinitializeArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 import { buildUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
@@ -407,20 +407,26 @@ task('task:prepareUpgradeConfidentialBridge')
 
     const preparedUpgrade = await buildUpgradeProposal(hre, {
       proxyAddress,
-      contractName: 'ConfidentialBridge',
+      contractName: 'contracts/bridge/ConfidentialBridge.sol:ConfidentialBridge',
       innerFunctionName: 'initializeFromEmptyProxy',
       decodedArgs: [dstEids, dstChainIds],
       constructorArgs: [lzEndpoint],
       unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
     });
 
+    // The proxy is not upgraded here (the DAO executes the proposal later), so read the endpoint
+    // immutable back off the freshly deployed implementation to confirm LZ_ENDPOINT_ADDRESS was baked
+    // in correctly before the proposal is signed.
+    await assertBridgeEndpointImmutable(
+      hre,
+      preparedUpgrade.newImplementationAddress,
+      lzEndpoint,
+      '[task:prepareUpgradeConfidentialBridge]',
+    );
+
     printUpgradeProposal(preparedUpgrade);
     if (taskArgs.verifyContract) {
-      await verifyProposalImplementation(
-        hre,
-        preparedUpgrade,
-        'contracts/bridge/ConfidentialBridge.sol:ConfidentialBridge',
-      );
+      await verifyProposalImplementation(hre, preparedUpgrade);
     }
     return preparedUpgrade;
   });

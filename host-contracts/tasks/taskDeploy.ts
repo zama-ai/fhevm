@@ -462,7 +462,31 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 // ConfidentialBridge
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
+// Reads the LayerZero endpoint immutable back off a deployed ConfidentialBridge (a proxy after an
+// executed upgrade, or a freshly prepared implementation) and asserts it matches the address we
+// intended to wire. The endpoint is baked into the implementation's constructor as an immutable, so
+// this is the only way to confirm a stale or mistyped LZ_ENDPOINT_ADDRESS did not silently wire the
+// bridge to an unintended endpoint.
+export async function assertBridgeEndpointImmutable(
+  hre: HardhatRuntimeEnvironment,
+  bridgeAddress: string,
+  expectedEndpoint: string,
+  label: string,
+) {
+  const { ethers } = hre;
+  const bridge = await ethers.getContractAt('ConfidentialBridge', bridgeAddress);
+  const actualEndpoint = String(await bridge.endpoint());
+  if (ethers.getAddress(actualEndpoint) !== ethers.getAddress(expectedEndpoint)) {
+    throw new Error(
+      `${label}: LayerZero endpoint immutable mismatch. Expected ${expectedEndpoint}, but ${bridgeAddress} ` +
+        `reports ${actualEndpoint}. Check LZ_ENDPOINT_ADDRESS and redeploy the implementation.`,
+    );
+  }
+  console.log(`${label}: verified LayerZero endpoint immutable = ${actualEndpoint} at ${bridgeAddress}.`);
+}
+
+task('task:deployBridge').setAction(async function (_, hre) {
+  const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
 
@@ -517,6 +541,9 @@ task('task:deployBridge').setAction(async function (_, { ethers, upgrades }) {
     unsafeAllow: ['constructor', 'state-variable-immutable', 'missing-initializer-call'],
     call: { fn: 'initializeFromEmptyProxy', args: [[], []] },
   });
+  // Confirm the endpoint immutable baked into the freshly deployed implementation matches the
+  // address we intended, reading it back off the now-upgraded proxy.
+  await assertBridgeEndpointImmutable(hre, proxyAddress, lzEndpoint, '[task:deployBridge]');
   console.log(`ConfidentialBridge upgraded at ${proxyAddress} (lzEndpoint=${lzEndpoint})`);
 });
 
@@ -771,7 +798,7 @@ task(
 
     printUpgradeProposal(preparedUpgrade);
     if (verifyContract) {
-      await verifyProposalImplementation(hre, preparedUpgrade, 'contracts/ProtocolConfig.sol:ProtocolConfig');
+      await verifyProposalImplementation(hre, preparedUpgrade);
     }
     return preparedUpgrade;
   });
