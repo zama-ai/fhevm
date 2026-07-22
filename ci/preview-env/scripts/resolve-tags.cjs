@@ -67,6 +67,7 @@ module.exports = async ({ core, context }) => {
     kms_core_tag: isDispatch ? inputs.kms_core_version : env.KMS_CORE_TAG,
     nb_kms_core: isDispatch ? inputs.nb_kms_core : env.NB_KMS_CORE,
     nb_coprocessor: isDispatch ? inputs.nb_coprocessor : env.NB_COPROCESSOR,
+    deploy_polygon: isDispatch ? inputs.deploy_polygon : env.DEPLOY_POLYGON,
   };
 
   core.info(`Resolved tags: ${JSON.stringify(tags, null, 2)}`);
@@ -105,6 +106,7 @@ module.exports = async ({ core, context }) => {
       ['kms-core image tag', chartVersions.kms_core_tag],
       ['number of parties (kms-core / kms-connector / Postgres, 1:1)', chartVersions.nb_kms_core],
       ['number of coprocessor parties (coprocessor / coprocessor-infra / Postgres, 1:1)', chartVersions.nb_coprocessor],
+      ['second host chain (Polygon Amoy 80002, reuses ETH KMS key)', chartVersions.deploy_polygon === 'true' ? 'yes' : 'no'],
     ])
     .addHeading('Images', 3)
     .addRaw(

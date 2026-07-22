@@ -1,0 +1,58 @@
+# ADDITIVE overlay for the coprocessor-<i> release, passed as an EXTRA `-f` AFTER
+# values-coprocessor-e2e.yaml ONLY when deploy_polygon=true (see
+# preview-env-deploy.yml). It turns the single-host coprocessor into a multichain
+# one by adding a second chains[] entry (Polygon, 80002) whose
+# host-listener-consumer ingests Polygon events into the SAME shared coprocessor DB.
+#
+# WHY A FULL chains LIST (not just the Polygon entry): Helm REPLACES list-typed
+# values wholesale when a later -f redefines them, so this file must repeat the ETH
+# `host` entry verbatim. It MUST stay in sync with values-coprocessor-e2e.yaml's
+# chains[0]. It cannot live in the base file: dbMigration renders HOST_CHAIN_<i>_ACL
+# via valueFrom for EVERY chains[] entry regardless of enabled, so a Polygon entry
+# pointing at polygon-sc-addresses would crash the migration Job whenever Polygon
+# isn't deployed.
+#
+# useLegacyName: the chart fails if >1 chains entry sets useLegacyName=true, so
+# `host` keeps it (legacy service name) and `polygon` uses false (chain-suffixed
+# names: coprocessor-<i>-host-listener-consumer-polygon).
+commonConfig:
+  # Polygon is a NON-CANONICAL host that mirrors ETH's ProtocolConfig/KMS context
+  # (see values-host-contracts-polygon-e2e.yaml). Point every consumer at the
+  # canonical chain (ETH, 12345) so Polygon reuses the ETH-activated key rather
+  # than expecting its own KMSGeneration/keygen. Harmless for the ETH consumer
+  # (it IS the canonical chain).
+  canonicalProtocolConfigChainId: "12345"
+
+chains:
+  # --- ETH host chain: MUST mirror values-coprocessor-e2e.yaml chains[0] ---
+  - name: host
+    chainId: "12345"
+    wsUrl: "ws://anvil-host-anvil-node:8545"
+    httpUrl: "http://anvil-host-anvil-node:8545"
+    aclContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
+    fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
+    kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+    protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+    hostListener: {enabled: false, useLegacyName: true}
+    hostListenerPoller: {enabled: false, useLegacyName: true}
+    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
+    hostListenerConsumer: {enabled: true, useLegacyName: true}
+  # --- Polygon host chain (80002): reuses the ETH key ---
+  - name: polygon
+    chainId: "80002"
+    wsUrl: "ws://anvil-host-polygon-anvil-node:8545"
+    httpUrl: "http://anvil-host-polygon-anvil-node:8545"
+    aclContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: acl.address}}
+    fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: fhevm_executor.address}}
+    # Polygon has NO KMSGeneration (mirrors ETH's). The consumer template always
+    # renders --kms-generation-address, so point it at the canonical ETH contract:
+    # it doesn't exist on the Polygon RPC, so the consumer simply sees no
+    # kms-generation events there - correct, since Polygon runs no keygen.
+    kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
+    protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: protocol_config.address}}
+    hostListener: {enabled: false, useLegacyName: false}
+    hostListenerPoller: {enabled: false, useLegacyName: false}
+    hostListenerCatchupOnly: {enabled: false, useLegacyName: false}
+    # The Polygon host-chain event path: reads chain 80002's topic from the shared
+    # per-party Redis (published by listener-polygon-<i>) into the shared DB.
+    hostListenerConsumer: {enabled: true, useLegacyName: false}

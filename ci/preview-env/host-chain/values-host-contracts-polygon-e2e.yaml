@@ -1,0 +1,78 @@
+# charts/contracts overlay deploying host-contracts against the SECOND (Polygon)
+# host chain, only when deploy_polygon=true. Companion to the canonical ETH
+# values-host-contracts-e2e.yaml; see that file's header for the shared rationale
+# (gateway wiring, account #9 = ACL owner, dynamic KMS/coprocessor env).
+#
+# KEY DIFFERENCE - Polygon is a NON-CANONICAL host that REUSES the ETH KMS key:
+#   --with-kms-generation false        (KMSGeneration lives only on the canonical
+#                                        ETH host; Polygon has none)
+#   --protocol-config-source canonical (mirror ETH's ProtocolConfig, i.e. its
+#                                        already-activated KMS context/key, onto
+#                                        Polygon - no second DKG, matching the
+#                                        "reuse the ETH activation key" intent)
+# so there is deliberately NO host-trigger-keygen step for Polygon: its coprocessor
+# reads the same shared postgres-coprocessor-<i> the ETH keygen already filled.
+#
+# Deployed as (see preview-env-deploy.yml, gated on deploy_polygon):
+#   helm upgrade --install host-contracts-polygon <contracts chart> -n <ns> -f <generated>
+#   where <generated> is this file after wire-contracts-values.sh (TARGET=host-polygon)
+#   appends the NUM_COPROCESSORS/COPROCESSOR_SIGNER_ADDRESS_x + KMS node env
+#   (task:deployInputVerifier requires them - the Polygon InputVerifier checks the
+#   SAME coprocessor's input-proof signatures as ETH's).
+scDeploy:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/host-contracts
+    tag: latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  configmap:
+    # Own ConfigMap so Polygon addresses never collide with ETH's host-sc-addresses.
+    name: polygon-sc-addresses
+  env:
+    - {name: HARDHAT_NETWORK, value: "polygonAmoy"}
+    - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+    - {name: RPC_URL, value: "http://anvil-host-polygon-anvil-node:8545"}
+    - {name: CHAIN_ID, value: "80002"}
+    # Same account #9 as the ETH host (see values-host-contracts-e2e.yaml): stays
+    # the ACL owner so HCU block-cap subtests behave identically on Polygon.
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
+    # Shared gateway (one gateway serves both host chains).
+    - {name: CHAIN_ID_GATEWAY, value: "54321"}
+    - name: DECRYPTION_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gw-sc-addresses
+          key: decryption.address
+    - name: INPUT_VERIFICATION_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gw-sc-addresses
+          key: input_verification.address
+    # Canonical ETH ProtocolConfig to mirror the KMS context from. protocol_config
+    # is written by the ETH host-contracts deploy, so this MUST run after it.
+    - name: CANONICAL_PROTOCOL_CONFIG_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: host-sc-addresses
+          key: protocol_config.address
+    - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}
+    - {name: KMS_PCR_VALUES, value: '[{"pcr0":"0x00","pcr1":"0x00","pcr2":"0x00"}]'}
+  deployCommands:
+    - npx hardhat task:deployAllHostContracts --with-kms-generation false --protocol-config-source canonical --canonical-rpc-url http://anvil-host-anvil-node:8545 --canonical-protocol-config-address "${CANONICAL_PROTOCOL_CONFIG_ADDRESS}"
+  verifyContracts: false
+persistence:
+  enabled: true
+  volumeClaim:
+    # Own PVC - do NOT reuse the ETH host-contracts workdir.
+    name: host-polygon-sc-deploy-workdir
+    create: true
+    storageCapacity: 1Gi
+    storageClassName: ""
+scUpgrade:
+  enabled: false
